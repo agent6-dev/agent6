@@ -293,20 +293,20 @@ class _Skipped(pydantic.BaseModel):
 
 _PANEL_EVENTS = frozenset(
     {
-        "loop.review.start",
-        "loop.review.seat",
-        "loop.review.panel",
-        "loop.review.skipped",
-        "loop.review.reused",
+        "review.start",
+        "review.seat",
+        "review.panel",
+        "review.skipped",
+        "review.reused",
     }
 )
 _ACTION_EVENTS = frozenset(
     {
-        "loop.review.finding.resolved",
-        "loop.review.finding.reopened",
-        "loop.review.fix.requested",
-        "loop.review.fix.submitted",
-        "loop.review.fix.failed",
+        "review.finding.resolved",
+        "review.finding.reopened",
+        "review.fix.requested",
+        "review.fix.submitted",
+        "review.fix.failed",
     }
 )
 
@@ -352,7 +352,7 @@ def _observe(
 def _panel_event(view: ReviewView, event: Mapping[str, Any]) -> ReviewView:
     kind = event["type"]
     old = next((p for p in view.panels if p.panel_id == event.get("panel_id")), None)
-    if kind == "loop.review.start":
+    if kind == "review.start":
         start = _Start.model_validate(event)
         panel = PanelView(
             start.panel_id,
@@ -363,14 +363,14 @@ def _panel_event(view: ReviewView, event: Mapping[str, Any]) -> ReviewView:
             rules_complete=start.rules_complete,
             rules_reason=start.rules_reason,
         )
-    elif kind == "loop.review.skipped":
+    elif kind == "review.skipped":
         skipped = _Skipped.model_validate(event)
         panel = dataclasses.replace(
             old or PanelView(skipped.panel_id, skipped.execution_id),
             completion="skipped",
             reason=skipped.reason,
         )
-    elif kind == "loop.review.reused":
+    elif kind == "review.reused":
         reused = _Reused.model_validate(event)
         prior = next((p for p in view.panels if p.panel_id == reused.reused_panel_id), None)
         if prior is None or prior.target != reused.target:
@@ -384,7 +384,7 @@ def _panel_event(view: ReviewView, event: Mapping[str, Any]) -> ReviewView:
             completion="reused",
             reason=f"panel {prior.panel_id[:12]} reviewed the same trees",
         )
-    elif kind == "loop.review.seat":
+    elif kind == "review.seat":
         if old is None:
             raise ReviewReadError("seat has no panel start")
         verdict = pydantic.TypeAdapter(review_records.ReviewVerdict).validate_python(event)
@@ -431,7 +431,7 @@ def _transition(
         finding = dataclasses.replace(finding, fix_state="delivery_unknown")
     else:
         if not any(
-            a.type == "loop.review.fix.requested" and a.request_id == action.request_id
+            a.type == "review.fix.requested" and a.request_id == action.request_id
             for a in finding.actions
         ):
             raise ReviewReadError("Fix delivery has no matching request")
@@ -538,7 +538,7 @@ def panel_text(panel: review_records.ReviewPanel) -> str:
 
 def _panel_fate_text(kind: str, event: Mapping[str, Any]) -> str:
     """Return the notice for a panel that did not sit: skipped with its reason, or reused."""
-    if kind == "loop.review.skipped":
+    if kind == "review.skipped":
         skipped = _Skipped.model_validate(event)
         return f"Review {skipped.panel_id[:12]} skipped: {skipped.reason}"
     reused = _Reused.model_validate(event)
@@ -559,7 +559,7 @@ def notice_texts(event: Mapping[str, Any]) -> tuple[str, ...]:
     """
     kind = event.get("type")
     try:
-        if kind == "loop.review.panel":
+        if kind == "review.panel":
             if "target" not in event:
                 return ("Review has legacy count-only evidence; findings are unavailable.",)
             panel = review_records.ReviewPanel.model_validate(event_log.payload(event))
@@ -570,27 +570,27 @@ def notice_texts(event: Mapping[str, Any]) -> tuple[str, ...]:
                 for o in panel.findings
             )
             return tuple(lines)
-        if kind in ("loop.review.skipped", "loop.review.reused"):
+        if kind in ("review.skipped", "review.reused"):
             return (_panel_fate_text(kind, event),)
         if kind not in _ACTION_EVENTS:
             return ()
         action = ActionRecord.model_validate(event)
         label = f"Finding {action.finding_id}"
-        if kind == "loop.review.finding.resolved" and action.resolution is not None:
+        if kind == "review.finding.resolved" and action.resolution is not None:
             resolution = action.resolution
             duplicate = (
                 f" (duplicate of {resolution.duplicate_of})" if resolution.duplicate_of else ""
             )
             body = f"{label} resolved as {resolution.disposition}{duplicate}: {resolution.reason}"
-        elif kind == "loop.review.finding.reopened":
+        elif kind == "review.finding.reopened":
             body = f"{label} reopened: {action.reason}"
         else:
             detail = {
-                "loop.review.fix.requested": (
+                "review.fix.requested": (
                     "Fix requested; delivery unknown until submission is recorded"
                 ),
-                "loop.review.fix.submitted": "steer submitted; finding stays open",
-                "loop.review.fix.failed": f"Fix delivery failed: {action.error}",
+                "review.fix.submitted": "steer submitted; finding stays open",
+                "review.fix.failed": f"Fix delivery failed: {action.error}",
             }.get(kind, "incomplete disposition record")
             body = f"{label}: {detail}"
         return (body,)

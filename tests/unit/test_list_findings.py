@@ -96,7 +96,7 @@ def test_a_session_before_its_first_review_says_so(tmp_path: pathlib.Path) -> No
     assert listed.to_wire() == {"findings": [], "note": "No review panel has run."}
     assert listed.summary() == "0 open"
     with saved.logs_path.open("a", encoding="utf-8") as stream:
-        stream.write('{"type":"loop.review.panel","blocked":false}\n')
+        stream.write('{"type":"review.panel","blocked":false}\n')
     assert review_actions.findings_result(saved.session_dir).note.startswith("Legacy review")
 
 

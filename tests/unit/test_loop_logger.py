@@ -91,7 +91,7 @@ def test_skill_warning_reaches_the_shared_fold_and_live_console(
 
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     warning = "skill 'x' SKILL.md is under a hidden path; not loaded"
-    event = {"type": "loop.skills.warning", "warning": warning}
+    event = {"type": "skills.warning", "warning": warning}
     out = io.StringIO()
     view = console_render.ConsoleView(out, color=False)
     log = live.loop_logger("run", view)

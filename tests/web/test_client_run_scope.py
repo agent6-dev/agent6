@@ -160,7 +160,7 @@ def test_the_machine_page_offers_stop() -> None:
 def test_the_in_flight_mark_needs_a_live_run() -> None:
     """A stale run's Overview card shows no working ellipsis.
 
-    A killed worker leaves a `role.call` with no `role.result`, so `in_flight` stays true.
+    A killed worker leaves a `model.call` with no `model.result`, so `in_flight` stays true.
     """
     body = _paint_run_body()
     assert "r.in_flight && s.live" in body, "the in-flight mark must read liveness too"

@@ -202,7 +202,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
 ) -> steer.SteerState:
     """Install the escalating SIGINT handler and return the harness's steer callables.
 
-    The first Ctrl-C pauses at the next boundary and emits `session.steer_requested`;
+    The first Ctrl-C pauses at the next boundary and emits `steer.signalled`;
     the prompt is a front-end's modal when one is live, else the pause menu, else a
     plain prompt on the controlling terminal. The second interrupts the in-flight
     call and prompts now. The third, or one at the prompt itself, stops the run.
@@ -239,7 +239,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
         # A stale answer file would answer this prompt; one with a pending request is a live steer.
         if not ipc.steer_request_pending(session_dir):
             ipc.clear_steer_answer(session_dir)
-        events.emit(journal.SessionSteerRequested(source="sigint"))
+        events.emit(journal.SteerSignalled(source="sigint"))
         # A live front-end prompts in its own modal; its terminal is not scribbled on.
         if not process.frontend_is_live(session_dir):
             tty_message(

@@ -21,9 +21,9 @@ from agent6.tools import schema
 
 # Who said what, from which field; settled events only (deltas repeat them), and every steer.
 _SPEAKER = {
-    "role.result": ("assistant", "text"),
+    "model.result": ("assistant", "text"),
     "session.start": ("user", "user_task"),
-    "loop.steer.injected": ("user", "text"),
+    "steer.injected": ("user", "text"),
 }
 
 
@@ -134,7 +134,7 @@ def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> st
             if etype == "tool.call":
                 lines.append(f"[tool] {event.get('name', '')}")
             continue
-        if etype == "role.result" and kinds.is_side_role(str(event.get("role", ""))):
+        if etype == "model.result" and kinds.is_side_role(str(event.get("role", ""))):
             continue  # a side call's answer, not this session's own
         speaker, field = said
         body = str(event.get(field, "")).strip()

@@ -51,14 +51,14 @@ def _panel_rows(
     )
     return [
         {
-            "type": "loop.review.start",
+            "type": "review.start",
             "ts": "2026-10-25T10:00:00+00:00",
             "panel_id": "p",
             "execution_id": "e",
             "target": dataclasses.asdict(target),
             "seats": [],
         },
-        {"type": "loop.review.panel", "ts": _TS, **record.model_dump(mode="json")},
+        {"type": "review.panel", "ts": _TS, **record.model_dump(mode="json")},
     ]
 
 
@@ -293,7 +293,7 @@ CASES = [
     ),
     (
         "legacy counts",
-        [_START, *_verify_rows(), {"type": "loop.review.panel", "blocked": False}, _END],
+        [_START, *_verify_rows(), {"type": "review.panel", "blocked": False}, _END],
         _facts(),
         "other",
         "legacy review counts",

@@ -464,7 +464,7 @@ class _EventCapture:
 
 
 def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
-    """A resumed execution emits loop.pin.restored with the snapshot's pins.
+    """A resumed execution emits pin.restored with the snapshot's pins.
 
     A fork's fresh log has no pin.added events, so the surfaces would show zero pins.
     """
@@ -532,7 +532,7 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
             pins=("keep A", "ship X"),
         ),
     )
-    restored = [e for e in ev.events if e["type"] == "loop.pin.restored"]
+    restored = [e for e in ev.events if e["type"] == "pin.restored"]
     assert restored and restored[0]["pins"] == ["keep A", "ship X"]
     assert restored[0]["count"] == 2
 
@@ -681,7 +681,7 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
             pins=(),
         ),
     )
-    restored = [e for e in ev.events if e["type"] == "loop.pin.restored"]
+    restored = [e for e in ev.events if e["type"] == "pin.restored"]
     assert restored, "an empty restore must still be announced"
     assert restored[0]["pins"] == []
     assert restored[0]["count"] == 0
@@ -912,7 +912,7 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: pathlib.
     assert "checkpoint" in subject
     # A diff.updated is emitted too, so the folds count the final commit.
     kinds = [k for k, _ in emitted]
-    assert "loop.auto_commit" in kinds and "diff.updated" in kinds
+    assert "checkpoint.committed" in kinds and "diff.updated" in kinds
 
 
 def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: pathlib.Path) -> None:
@@ -1065,7 +1065,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
             verify_command=(),
         ),
     )
-    restored_ev = [e for e in ev.events if e["type"] == "loop.compact.restored"]
+    restored_ev = [e for e in ev.events if e["type"] == "compact.restored"]
     assert restored_ev, "the restored context's elisions were never announced"
     assert restored_ev[0]["elided"] == 3
     assert restored_ev[0]["gists"] == 1
@@ -1136,7 +1136,7 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
         original_task="go",
         root_task_id=None,
     )
-    restored = [e for e in ev.events if e["type"] == "loop.pin.restored"]
+    restored = [e for e in ev.events if e["type"] == "pin.restored"]
     assert restored and restored[0]["pins"] == ["never touch schema files"]
     # The block the worker sees is the SAME one a restart re-shows.
     first_call = provider.call.call_args_list[0]
@@ -1210,9 +1210,9 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
         original_task="go",
         root_task_id=None,
     )
-    restored = [e for e in ev.events if e["type"] == "loop.pin.restored"]
+    restored = [e for e in ev.events if e["type"] == "pin.restored"]
     assert restored and restored[0]["pins"] == ["keep this"]  # only the fitting one
-    refused = [e for e in ev.events if e["type"] == "loop.pin.refused"]
+    refused = [e for e in ev.events if e["type"] == "pin.refused"]
     assert len(refused) == 3  # the empty, the over-cap, and the blank
 
 
@@ -1292,7 +1292,7 @@ def test_a_gate_swapped_between_executions_is_announced_to_the_worker(
     )
     wf.resume()
 
-    (swap,) = [e for e in ev.events if e["type"] == "loop.verify_swapped"]
+    (swap,) = [e for e in ev.events if e["type"] == "verify.swapped"]
     assert swap["was"] == ["pytest", "-q"] and swap["now"] == ["make", "check"]
     sent = provider.call.call_args.kwargs["messages"]
     told = json.dumps(sent)
@@ -1371,8 +1371,8 @@ def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: pathlib.Path)
     wf.resume()
 
     dispatcher.adopt_verify_command.assert_called_once_with(("pytest", "-q"))
-    assert [e for e in ev.events if e["type"] == "loop.verify_swapped"] == []
-    (carried,) = [e for e in ev.events if e["type"] == "loop.verify_inferred"]
+    assert [e for e in ev.events if e["type"] == "verify.swapped"] == []
+    (carried,) = [e for e in ev.events if e["type"] == "verify.inferred"]
     assert carried["command"] == ["pytest", "-q"] and carried["source"] == "resumed"
     # The execution's own snapshot names the carried gate as the one in force.
     written = json.loads(snap_path.read_text(encoding="utf-8"))
@@ -1610,7 +1610,7 @@ def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(
     )
     wf.resume()
 
-    assert not [e for e in ev.events if e["type"] == "loop.verify_swapped"]
+    assert not [e for e in ev.events if e["type"] == "verify.swapped"]
     told = json.dumps(provider.call.call_args.kwargs["messages"])
     assert "changed between executions" not in told
 

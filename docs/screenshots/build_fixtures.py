@@ -47,7 +47,7 @@ KEEP_TRANSCRIPTS_HEAD_FEATURE = 4
 STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "agent6"
 OUT = Path(__file__).resolve().parent / "seed" / "runs"
 
-DELTA_EVENTS = {"role.thinking_delta", "role.text_delta"}
+DELTA_EVENTS = {"model.thinking_delta", "model.text_delta"}
 KEEP_DELTA_TAIL = 80  # keep the last N deltas so the stream pane shows reasoning
 
 # Path scrubbing: anything machine-specific -> a neutral demo path.

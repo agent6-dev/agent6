@@ -150,7 +150,7 @@ def test_selected_finding_shows_its_own_panels_rules(
     """Show the selected panel's sources, not a later panel's rules or an invented empty set."""
     saved = review_helpers.reviewed_repo(tmp_path)
     rows = [json.loads(line) for line in saved.logs_path.read_text().splitlines()]
-    start = next(row for row in rows if row["type"] == "loop.review.start")
+    start = next(row for row in rows if row["type"] == "review.start")
     blob = start["rule_sources"][0]["blob_id"]
     base_tree = start["target"]["base_tree"]
     if not recorded:
@@ -159,7 +159,7 @@ def test_selected_finding_shows_its_own_panels_rules(
     saved.logs_path.write_text("".join(json.dumps(row) + "\n" for row in rows))
     sink = event_log.EventSink(saved.logs_path)
     sink.emit(
-        journal.LoopReviewStart(
+        journal.ReviewStart(
             panel_id="later",
             execution_id="execution",
             turn=2,
@@ -172,7 +172,7 @@ def test_selected_finding_shows_its_own_panels_rules(
         )
     )
     sink.emit(
-        journal.LoopReviewSkipped(
+        journal.ReviewSkipped(
             panel_id="later",
             execution_id="execution",
             reason="Later rule set is hidden",

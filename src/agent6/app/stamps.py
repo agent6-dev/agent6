@@ -495,8 +495,8 @@ def pin_gate(
     _stamp(gate)
 
     def _repin_adopted_gate(event: dict[str, Any]) -> None:
-        """Re-pin on a `loop.verify_inferred` event that adopted a gate."""
-        if event.get("type") == "loop.verify_inferred" and event.get("adopted_at") is not None:
+        """Re-pin on a `verify.inferred` event that adopted a gate."""
+        if event.get("type") == "verify.inferred" and event.get("adopted_at") is not None:
             command = tuple(event.get("command", ()))
             _stamp(manifest.GateStamp(command=command, source="adopted" if command else ""))
 

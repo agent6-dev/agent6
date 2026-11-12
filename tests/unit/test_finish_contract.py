@@ -81,7 +81,7 @@ def test_a_nonconforming_finish_is_refused_with_the_problems() -> None:
     ctx = wf._turn_context(state, turn=3, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     refusal = finish_gates.finish_contract(turn, state, ctx)
     assert refusal is not None
-    assert isinstance(refusal.event, journal.LoopFinishContractRefused)
+    assert isinstance(refusal.event, journal.FinishRefusedContract)
     assert refusal.event.turn == 3 and refusal.event.problems
     wf._turn_finish_gates(state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
     assert turn.finish is None

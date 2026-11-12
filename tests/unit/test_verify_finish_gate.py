@@ -758,7 +758,7 @@ def test_a_timed_out_gate_reruns_scoped_to_the_nearest_tests(
     notice = turn.tool_results[-1].text
     assert "the gate ran scoped to the tests nearest the run's change (tests/test_mod.py)" in notice
     assert "not a full-suite pass" in notice
-    assert ("loop.verify_scoped", {"paths": ["tests/test_mod.py"], "turn": 3}) in emitted
+    assert ("verify.scoped", {"paths": ["tests/test_mod.py"], "turn": 3}) in emitted
     # The next gate skips the doomed full run.
     dispatcher.run_verify.reset_mock(side_effect=True)
     dispatcher.run_verify.return_value = _exec(0)

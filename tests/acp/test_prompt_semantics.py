@@ -80,7 +80,7 @@ def test_followup_verbs_reach_the_model_as_task_text(
     monkeypatch.setattr(resume, "resume_task", drive)
     bridge = runner.RunBridge(server=server.ACPServer(io.BytesIO(), io.BytesIO()))
     assert bridge.run(current, text) == "end_turn"
-    assert events == ["loop.steer.requested", "loop.steer.injected"]
+    assert events == ["steer.requested", "steer.injected"]
     assert text.strip() in json.dumps(conversation.to_wire())
 
 

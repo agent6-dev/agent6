@@ -20,8 +20,8 @@ def _run_dir(tmp_path: pathlib.Path) -> pathlib.Path:
             json.dumps(e) + "\n"
             for e in (
                 {"type": "session.start", "mode": "run", "user_task": "polish the\nTUI"},
-                {"type": "loop.steer.injected", "chars": 14, "text": "focus on tests"},
-                {"type": "loop.steer.injected", "chars": 12, "text": "fix the docs"},
+                {"type": "steer.injected", "chars": 14, "text": "focus on tests"},
+                {"type": "steer.injected", "chars": 12, "text": "fix the docs"},
             )
         ),
         encoding="utf-8",

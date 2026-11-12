@@ -226,9 +226,9 @@ def test_deltas_are_folded_once_across_the_whole_run() -> None:
     A fresh fold per event would emit every partial message as if it were whole.
     """
     events: list[dict[str, Any]] = [
-        {"type": "role.text_delta", "text": "the "},
-        {"type": "role.text_delta", "text": "answer"},
-        {"type": "role.result", "role": "worker", "ok": True},
+        {"type": "model.text_delta", "text": "the "},
+        {"type": "model.text_delta", "text": "answer"},
+        {"type": "model.result", "role": "worker", "ok": True},
     ]
     updates = updates_for_events(events, acp_session_id="s")
     assert _kinds(updates) == ["agent_message_chunk"]
@@ -236,9 +236,9 @@ def test_deltas_are_folded_once_across_the_whole_run() -> None:
 
 
 def test_a_headless_run_still_has_something_to_show() -> None:
-    """Without streaming, the settled text on role.result reaches the editor."""
+    """Without streaming, the settled text on model.result reaches the editor."""
     events: list[dict[str, Any]] = [
-        {"type": "role.result", "role": "worker", "ok": True, "text": "done it"}
+        {"type": "model.result", "role": "worker", "ok": True, "text": "done it"}
     ]
     updates = updates_for_events(events, acp_session_id="s")
     assert updates[0]["params"]["update"]["content"]["text"] == "done it"
@@ -531,9 +531,9 @@ def test_context_use_and_spend_follow_each_budget_update() -> None:
     The cost is the run's, so an earlier execution's spend is added to this one's.
     """
     events = [
-        {"type": "role.call", "role": "worker", "model": "big", "provider": "p"},
+        {"type": "model.call", "role": "worker", "model": "big", "provider": "p"},
         {
-            "type": "role.result",
+            "type": "model.result",
             "role": "worker",
             "ok": True,
             "input_tokens": 100,
@@ -558,7 +558,7 @@ def test_usage_is_silent_without_a_window_and_costless_while_unpriced() -> None:
     A plan-metered run spends no dollars, so it carries no cost, as in the listing's cost cell.
     """
     result = {
-        "type": "role.result",
+        "type": "model.result",
         "role": "worker",
         "ok": True,
         "input_tokens": 5,
@@ -566,13 +566,13 @@ def test_usage_is_silent_without_a_window_and_costless_while_unpriced() -> None:
         "cache_write_tokens": 0,
     }
     unknown = [
-        {"type": "role.call", "role": "worker", "model": "tiny", "provider": "p"},
+        {"type": "model.call", "role": "worker", "model": "tiny", "provider": "p"},
         result,
         {"type": "budget.update", "usd_total": 0.1, "usd_partial": False},
     ]
     assert _updates_of(_info(), unknown) == []
     partial = [
-        {"type": "role.call", "role": "worker", "model": "big", "provider": "p"},
+        {"type": "model.call", "role": "worker", "model": "big", "provider": "p"},
         result,
         {"type": "budget.update", "usd_total": 0.1, "usd_partial": True},
     ]
@@ -580,7 +580,7 @@ def test_usage_is_silent_without_a_window_and_costless_while_unpriced() -> None:
         {"sessionUpdate": "usage_update", "used": 5, "size": 200_000}
     ]
     plan = [
-        {"type": "role.call", "role": "worker", "model": "big", "provider": "p"},
+        {"type": "model.call", "role": "worker", "model": "big", "provider": "p"},
         result,
         {
             "type": "budget.update",

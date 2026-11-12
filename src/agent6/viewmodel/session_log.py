@@ -77,7 +77,7 @@ class LogScan:
         pending_questions: The questions nobody has answered, across every execution.
         oldest_pending_question_ep: When the oldest of them was asked, as epoch seconds.
         left_out: The (path, reason) of each edit the commits left out, across every
-            execution; the reason is `ignored` or `untracked` (`loop.edit.left_out`).
+            execution; the reason is `ignored` or `untracked` (`checkpoint.left_out`).
         review: The shared fold of panel evidence and finding history.
         end_ep: The latest execution's end time as epoch seconds; None while it runs.
         execution_id: The current execution's recorded id, if present.
@@ -459,7 +459,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         verifications.append(record)
                         if record.verify_id:
                             pending_verifications.discard(record.verify_id)
-                elif etype == "loop.baseline":
+                elif etype == "verify.baseline":
                     if baseline_ok is None:
                         baseline_ok = bool(ev.get("ok"))
                     for i, record in enumerate(verifications):
@@ -467,9 +467,9 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         legacy = not ev.get("verify_id") and i == len(verifications) - 1
                         if matches or legacy:
                             verifications[i] = dataclasses.replace(record, baseline=True)
-                elif etype == "loop.verify_swapped":
+                elif etype == "verify.swapped":
                     gate_swapped = True
-                elif etype == "loop.edit.left_out":
+                elif etype == "checkpoint.left_out":
                     for reason in ("ignored", "untracked"):
                         raw_paths = ev.get(reason)
                         for p in raw_paths if isinstance(raw_paths, list) else []:

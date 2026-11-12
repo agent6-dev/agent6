@@ -19,7 +19,7 @@ def test_a_degraded_jail_is_said_once_on_the_headless_log(tmp_path: pathlib.Path
     sink.emit(
         journal.JailDegraded(detail="agent6-jail: mount /proc: EPERM\n  continuing without it")
     )
-    sink.emit(journal.LoopSteerRequested(turn=1))
+    sink.emit(journal.SteerRequested(turn=1))
     assert lines == [
         "[agent6] sandbox degraded: agent6-jail: mount /proc: EPERM continuing without it"
     ]

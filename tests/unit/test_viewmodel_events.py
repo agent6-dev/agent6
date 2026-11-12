@@ -41,15 +41,13 @@ def test_known_families_parse_to_their_records() -> None:
     assert ev.parse_event({"type": "session.resume"}) == journal.SessionResume(
         session_id="", user_task="", steer="", mode="", turn=0, messages=0, execution_id=""
     )
-    assert ev.parse_event({"type": "session.steer_requested"}) == journal.SessionSteerRequested(
-        source=""
-    )
+    assert ev.parse_event({"type": "steer.signalled"}) == journal.SteerSignalled(source="")
 
 
 def test_unknown_and_telemetry_and_typeless_become_rawevent() -> None:
     # A telemetry type the fold never consumes, an unknown/future type, and a line
     # with no `type` all fall to RawEvent (the fold's old `case _`).
-    samples = ({"type": "loop.auto_commit.failed", "sha": "x"}, {"type": "totally.new"}, {"foo": 1})
+    samples = ({"type": "checkpoint.failed", "sha": "x"}, {"type": "totally.new"}, {"foo": 1})
     for raw in samples:
         parsed = ev.parse_event(raw)
         assert isinstance(parsed, ev.RawEvent)
@@ -58,21 +56,21 @@ def test_unknown_and_telemetry_and_typeless_become_rawevent() -> None:
 
 def test_coercion_matches_the_folds_historical_defaults() -> None:
     # Missing fields default, not raise (the fold never validated).
-    assert ev.parse_event({"type": "role.call"}) == journal.RoleCall(
+    assert ev.parse_event({"type": "model.call"}) == journal.ModelCall(
         role="", model="", provider="", model_call_id="", seat_index=None
     )
     # The pairing fields read with defaults, so a journal written without them folds as before;
     # a seat index is an int, never a bool.
     paired = ev.parse_event(
-        {"type": "role.call", "role": "review:x", "model_call_id": "abc", "seat_index": 1}
+        {"type": "model.call", "role": "review:x", "model_call_id": "abc", "seat_index": 1}
     )
-    assert paired == journal.RoleCall(
+    assert paired == journal.ModelCall(
         role="review:x", model="", provider="", model_call_id="abc", seat_index=1
     )
     result = ev.parse_event(
-        {"type": "role.result", "ok": False, "model_call_id": "abc", "seat_index": True}
+        {"type": "model.result", "ok": False, "model_call_id": "abc", "seat_index": True}
     )
-    assert isinstance(result, journal.RoleResult)
+    assert isinstance(result, journal.ModelResult)
     assert result.ok is False and result.seat_index is None and result.input_tokens == 0
     # An unknown verification word reads as none; a garbled numeric degrades the row.
     stop = ev.parse_event({"type": "session.stop", "verification": "maybe"})
@@ -121,18 +119,24 @@ def test_tool_rows_and_deltas_read_their_call_identity() -> None:
     )
     assert call.provider_tool_call_id == "toolu_1"
     delta = ev.parse_event(
-        {"type": "role.text_delta", "role": "worker", "text": "hi", "model_call_id": "c1"}
+        {"type": "model.text_delta", "role": "worker", "text": "hi", "model_call_id": "c1"}
     )
-    assert isinstance(delta, journal.RoleTextDelta) and delta.model_call_id == "c1"
+    assert isinstance(delta, journal.ModelTextDelta) and delta.model_call_id == "c1"
     assert delta.execution_id is None  # a row without the field leaves it unset
 
 
 def test_an_attempt_row_reads_into_its_record_with_defaults() -> None:
-    """A role.attempt row parses; a row without the attempt number reads as the first."""
+    """A model.attempt row parses; a row without the attempt number reads as the first."""
     row = ev.parse_event(
-        {"type": "role.attempt", "role": "worker", "model_call_id": "c1", "ok": False, "error": "x"}
+        {
+            "type": "model.attempt",
+            "role": "worker",
+            "model_call_id": "c1",
+            "ok": False,
+            "error": "x",
+        }
     )
-    assert isinstance(row, journal.RoleAttempt)
+    assert isinstance(row, journal.ModelAttempt)
     assert (row.attempt, row.ok, row.model_call_id, row.request_id) == (1, False, "c1", None)
 
 

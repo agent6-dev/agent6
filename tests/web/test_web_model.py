@@ -134,7 +134,7 @@ def test_run_summary_survives_torn_utf8_tail(tmp_path: pathlib.Path) -> None:
     # A live writer can leave the last line torn mid multibyte sequence; the fold keeps whole lines.
     d = _bucket(tmp_path, "runs") / "torn"
     d.mkdir(parents=True)
-    full = json.dumps({"type": "role.text_delta", "text": "café"}, ensure_ascii=False).encode()
+    full = json.dumps({"type": "model.text_delta", "text": "café"}, ensure_ascii=False).encode()
     cut = full.rindex(b"\xc3\xa9") + 1  # keep only the first byte of the é
     head = json.dumps({"type": "session.start", "mode": "run", "user_task": "torn tail"}).encode()
     (d / "logs.jsonl").write_bytes(head + b"\n" + full[:cut])
@@ -297,8 +297,8 @@ def test_conversation_payload_carries_operator_inputs(tmp_path: pathlib.Path) ->
         "r2h",
         [
             {"type": "session.start", "mode": "run", "user_task": "polish the web"},
-            {"type": "loop.steer.injected", "chars": 14, "text": "focus on tests"},
-            {"type": "loop.steer.injected", "chars": 8, "text": "ship\nit"},
+            {"type": "steer.injected", "chars": 14, "text": "focus on tests"},
+            {"type": "steer.injected", "chars": 8, "text": "ship\nit"},
         ],
     )
     payload = model.conversation_payload(d)
@@ -315,7 +315,7 @@ def test_machine_conversation_payload_uses_newest_state_log(tmp_path: pathlib.Pa
     md = sessions_layout.machines_root(paths.state_dir(tmp_path)) / "m2"
     (md / "states" / "0001-work").mkdir(parents=True)
     (md / "states" / "0001-work" / "logs.jsonl").write_text(
-        json.dumps({"type": "loop.steer.injected", "text": "hello"}) + "\n", encoding="utf-8"
+        json.dumps({"type": "steer.injected", "text": "hello"}) + "\n", encoding="utf-8"
     )
     payload = model.machine_conversation_payload(md)
     assert set(payload) == {"items"}

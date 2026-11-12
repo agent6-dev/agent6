@@ -163,7 +163,7 @@ def test_unreviewed_run_names_the_absent_panel(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "No review"})
         + "\n"
         + (
-            json.dumps({"type": "loop.review.panel", "panel_id": "broken", "target": {}}) + "\n"
+            json.dumps({"type": "review.panel", "panel_id": "broken", "target": {}}) + "\n"
             if unreadable
             else ""
         )
@@ -274,7 +274,7 @@ def test_expanded_task_keeps_the_full_operator_words(
     steer = "Continue " + "steer words " * 600 + "\nLAST STEER LINE"
     rows = [
         {"type": "session.start", "mode": "run", "user_task": words},
-        {"type": "loop.steer.injected", "text": steer},
+        {"type": "steer.injected", "text": steer},
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))

@@ -39,9 +39,9 @@ MAX_LOG_TAIL = 400
 _STREAM_TAIL = 6000
 
 # Live-view only: a reasoning model would flood the log with contentless delta lines.
-STREAM_DELTA_EVENTS = frozenset({"role.thinking_delta", "role.text_delta"})
+STREAM_DELTA_EVENTS = frozenset({"model.thinking_delta", "model.text_delta"})
 # Loop-side mirrors of events the log already shows.
-LOG_NOISE_EVENTS = frozenset({"loop.budget"})
+LOG_NOISE_EVENTS = frozenset({"budget.turn"})
 
 
 def _answered_only(
@@ -133,7 +133,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 cursor_task_id=cursor,
             )
 
-        case journal.LoopAutoCommit(turn=turn, sha=sha, subject=subject):
+        case journal.CheckpointCommitted(turn=turn, sha=sha, subject=subject):
             if not sha:
                 return state
             commit = state_types.RunCommit(turn=turn, sha=sha, subject=subject)
@@ -147,7 +147,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 recent_diffs=_push_bounded(state.recent_diffs, entry, _MAX_DIFF_HISTORY),
             )
 
-        case journal.RoleCall(role=role, model=model, provider=provider):
+        case journal.ModelCall(role=role, model=model, provider=provider):
             prior = state.last_role
             return dataclasses.replace(
                 state,
@@ -163,7 +163,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 ),
             )
 
-        case journal.RoleTextDelta(text=piece):
+        case journal.ModelTextDelta(text=piece):
             # Scrub the concatenation: an escape sequence can arrive split across deltas.
             last = state.last_role
             if last is None or not last.in_flight or not piece:
@@ -174,7 +174,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 last_role=dataclasses.replace(last, streamed_text=joined[-_STREAM_TAIL:]),
             )
 
-        case journal.RoleThinkingDelta(text=piece):
+        case journal.ModelThinkingDelta(text=piece):
             last = state.last_role
             if last is None or not last.in_flight or not piece:
                 return state
@@ -184,7 +184,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 last_role=dataclasses.replace(last, streamed_thinking=joined[-_STREAM_TAIL:]),
             )
 
-        case journal.RoleResult(input_tokens=tin, cache_read_tokens=cr, cache_write_tokens=cc):
+        case journal.ModelResult(input_tokens=tin, cache_read_tokens=cr, cache_write_tokens=cc):
             last = state.last_role
             if last is None:
                 return state
@@ -310,20 +310,20 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             )
             return dataclasses.replace(state, questions=new_q)
 
-        case journal.LoopCompactRestored(elided=elided, gists=gists):
+        case journal.CompactRestored(elided=elided, gists=gists):
             return dataclasses.replace(state, compact_elided=elided, compact_gists_live=gists)
 
-        case journal.LoopCompactDropped(count=n):
+        case journal.CompactDropped(count=n):
             return dataclasses.replace(state, compact_elided=state.compact_elided + n)
 
-        case journal.LoopCompactGists(gisted=gisted, demoted=demoted):
+        case journal.CompactGistDone(gisted=gisted, demoted=demoted):
             live = max(0, state.compact_gists_live + gisted - demoted)
             return dataclasses.replace(state, compact_gists_live=live)
 
-        case journal.LoopCompactSummariseDone():
+        case journal.CompactSummariseDone():
             return dataclasses.replace(state, compact_elided=0, compact_gists_live=0)
 
-        case journal.SessionSteerRequested():
+        case journal.SteerSignalled():
             return dataclasses.replace(state, steer_requests=state.steer_requests + 1)
 
         case journal.SessionStop():
@@ -510,7 +510,7 @@ def fold_until_commit(
             commit it matches wins.
 
     Returns:
-        The state after that commit's `loop.auto_commit`, or None when no commit has it.
+        The state after that commit's `checkpoint.committed`, or None when no commit has it.
     """
     if len(sha) < 7:
         return None

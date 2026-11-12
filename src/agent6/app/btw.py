@@ -129,7 +129,7 @@ def _final_prose(session_dir: pathlib.Path) -> str:
             event = json.loads(line)
         except ValueError:
             continue  # a torn last line while it was still writing
-        if isinstance(event, dict) and event.get("type") == "role.result":
+        if isinstance(event, dict) and event.get("type") == "model.result":
             answer = str(event.get("text", "")) or answer
     return answer.strip()
 

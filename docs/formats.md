@@ -90,6 +90,18 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `btw_id` | `str` | Side-question identifier. |
 | `question` | `str` | The question presented to the operator. |
 
+### budget.turn
+
+**Support: public.** A turn's usage heartbeat before its model call.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `input_tokens` | `int` | Input tokens consumed so far. |
+| `output_tokens` | `int` | Output token count. |
+| `cache_read_tokens` | `int` | Cached input tokens consumed so far. |
+| `cost_usd` | `float` | Estimated spend in USD. |
+
 ### budget.update
 
 **Support: public.** The tracker's accounting since this process began, its caps and the account's reading.
@@ -121,6 +133,38 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `account.credits_unlimited` | `bool` | Whether the credits are unlimited. |
 | `account.credits_balance` | `str` | The credit balance as the backend sent it; empty when none. |
 
+### checkpoint.committed
+
+**Support: public.** A turn's checkpoint commit landed.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `sha` | `str` | The commit identifier, possibly abbreviated. |
+| `subject` | `str` | The landed commit's subject. |
+| `task_id` | `str, optional` | Task identifier. |
+
+### checkpoint.failed
+
+**Support: public.** A checkpoint commit could not land.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `error` | `str` | The failure diagnostic. |
+| `worktree_status` | `str` | Git status when the commit failed. |
+| `commit_subject` | `str` | The attempted commit subject. |
+
+### checkpoint.left_out
+
+**Support: public.** A checkpoint left ignored or untracked edits outside its commit.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `ignored` | `list` | Ignored edits left outside the checkpoint. |
+| `untracked` | `list` | Untracked edits left outside the checkpoint. |
+
 ### command.backgrounded
 
 **Support: public.** A command was handed back as a background job.
@@ -130,6 +174,129 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `background_id` | `str` | Background job identifier. |
 | `handle` | `str` | Launcher-instance-scoped job handle. |
 | `elapsed_s` | `float` | Elapsed command time in seconds at handback. |
+
+### compact.deduped
+
+**Support: public.** Repeated tool results were removed from context.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `count` | `int` | Number of affected entries or notices. |
+| `calls` | `list` | The affected tool call identities. |
+
+### compact.dropped
+
+**Support: public.** Tool results were elided from context.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `count` | `int` | Number of affected entries or notices. |
+| `calls` | `list` | The affected tool call identities. |
+
+### compact.gist.call
+
+**Support: public.** The model was asked to summarize files for context.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `files` | `int` | Number of files to summarize. |
+
+### compact.gist.done
+
+**Support: public.** File summaries were created or demoted during compaction.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `gisted` | `int` | Number of file summaries created. |
+| `demoted` | `int` | Number of summaries replaced by smaller placeholders. |
+| `paths` | `list` | Affected repository-relative paths. |
+| `demoted_paths` | `list` | Paths whose summaries were demoted. |
+
+### compact.gist.failed
+
+**Support: public.** The file-summary call failed.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `error` | `str` | The failure diagnostic. |
+
+### compact.refused
+
+**Support: public.** There was too little history to summarize.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `reason` | `str` | The reason for the outcome. |
+
+### compact.requested
+
+**Support: public.** The operator requested a context restart.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `focus` | `str` | The requested summary or review focus. |
+
+### compact.restored
+
+**Support: public.** A resumed context restored its elision and summary counts.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `elided` | `int` | Number of restored elision markers. |
+| `gists` | `int` | Number of restored file summaries. |
+
+### compact.summarise.call
+
+**Support: public.** The model was asked to summarize the conversation.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `messages` | `int` | Number of conversation messages. |
+
+### compact.summarise.done
+
+**Support: public.** A summary replaced the conversation history.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `summary_chars` | `int` | Length of the summary in characters. |
+| `summary` | `str` | The result or outcome in words. |
+| `kept_messages` | `int` | Number of recent messages kept after the summary. |
+
+### compact.summarise.failed
+
+**Support: public.** The conversation-summary call failed.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `error` | `str` | The failure diagnostic. |
+
+### compact.thinking_dropped
+
+**Support: public.** Reasoning text was removed from context.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `messages` | `int` | Number of conversation messages. |
+| `chars` | `int` | Text length in characters. |
+
+### decision.recorded
+
+**Support: public.** An operator ruling was recorded in decisions.md.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `question` | `str` | The question presented to the operator. |
+| `answer` | `str` | The operator's answer. |
+
+### decision.unrecorded
+
+**Support: public.** An operator ruling could not be recorded or was missing at finish.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `error` | `str, optional` | The failure diagnostic. |
+| `missing` | `int, optional` | Number of operator rulings missing at finish. |
 
 ### diff.updated
 
@@ -194,6 +361,55 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `target_id` | `str` | Host-issued evidence reference, not launcher identity. |
 | `target` | `object` | ExecutionTargetStamp facts; null fields stay unobserved. |
 
+### finish.refused.contract
+
+**Support: public.** The finish payload did not satisfy the machine's result contract.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `problems` | `list` | Violations of the machine's finish contract. |
+
+### finish.refused.metric
+
+**Support: public.** A metric run's early finish was returned to the model.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `nudges_used` | `int` | Number of notices issued for this condition. |
+| `budget_remaining` | `float, optional` | Remaining budget fraction; null without a finite cap. |
+| `trigger` | `str, optional` | The action that triggered the gate or panel. |
+
+### finish.refused.review
+
+**Support: public.** The review panel rejected the declared finish.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `ending` | `str` | The declared finish being reviewed. |
+
+### finish.refused.tasks
+
+**Support: public.** A finish with open subtasks was returned to the model.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `nudges_used` | `int` | Number of notices issued for this condition. |
+| `trigger` | `str` | The action that triggered the gate or panel. |
+
+### finish.refused.verify
+
+**Support: public.** A finish without green verification was returned to the model.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `nudges_used` | `int` | Number of notices issued for this condition. |
+| `trigger` | `str` | The action that triggered the gate or panel. |
+
 ### graph.update
 
 **Support: public.** The task graph and its current focus.
@@ -211,290 +427,13 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `detail` | `str` | The sandbox degradation or surviving-process diagnostic. |
 
-### loop.auto_commit
+### jail.tool_unreachable
 
-**Support: public.** A turn's checkpoint commit landed.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `sha` | `str` | The commit identifier, possibly abbreviated. |
-| `subject` | `str` | The landed commit's subject. |
-| `task_id` | `str, optional` | Task identifier. |
-
-### loop.auto_commit.failed
-
-**Support: public.** A checkpoint commit could not land.
+**Support: public.** A tool found on the host could not run inside the sandbox.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `error` | `str` | The failure diagnostic. |
-| `worktree_status` | `str` | Git status when the commit failed. |
-| `commit_subject` | `str` | The attempted commit subject. |
-
-### loop.baseline
-
-**Support: public.** The baseline verification attempt finished.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `ok` | `bool` | Whether the operation succeeded. |
-| `turn` | `int` | The execution's turn number. |
-| `verify_id` | `str, optional` | Verification attempt identifier. |
-
-### loop.budget
-
-**Support: public.** A turn's usage heartbeat before its model call.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `input_tokens` | `int` | Input tokens consumed so far. |
-| `output_tokens` | `int` | Output token count. |
-| `cache_read_tokens` | `int` | Cached input tokens consumed so far. |
-| `cost_usd` | `float` | Estimated spend in USD. |
-
-### loop.compact.deduped
-
-**Support: public.** Repeated tool results were removed from context.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `count` | `int` | Number of affected entries or notices. |
-| `calls` | `list` | The affected tool call identities. |
-
-### loop.compact.dropped
-
-**Support: public.** Tool results were elided from context.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `count` | `int` | Number of affected entries or notices. |
-| `calls` | `list` | The affected tool call identities. |
-
-### loop.compact.gist.call
-
-**Support: public.** The model was asked to summarize files for context.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `files` | `int` | Number of files to summarize. |
-
-### loop.compact.gist.failed
-
-**Support: public.** The file-summary call failed.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `error` | `str` | The failure diagnostic. |
-
-### loop.compact.gists
-
-**Support: public.** File summaries were created or demoted during compaction.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `gisted` | `int` | Number of file summaries created. |
-| `demoted` | `int` | Number of summaries replaced by smaller placeholders. |
-| `paths` | `list` | Affected repository-relative paths. |
-| `demoted_paths` | `list` | Paths whose summaries were demoted. |
-
-### loop.compact.refused
-
-**Support: public.** There was too little history to summarize.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `reason` | `str` | The reason for the outcome. |
-
-### loop.compact.requested
-
-**Support: public.** The operator requested a context restart.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `focus` | `str` | The requested summary or review focus. |
-
-### loop.compact.restored
-
-**Support: public.** A resumed context restored its elision and summary counts.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `elided` | `int` | Number of restored elision markers. |
-| `gists` | `int` | Number of restored file summaries. |
-
-### loop.compact.summarise.call
-
-**Support: public.** The model was asked to summarize the conversation.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `messages` | `int` | Number of conversation messages. |
-
-### loop.compact.summarise.done
-
-**Support: public.** A summary replaced the conversation history.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `summary_chars` | `int` | Length of the summary in characters. |
-| `summary` | `str` | The result or outcome in words. |
-| `kept_messages` | `int` | Number of recent messages kept after the summary. |
-
-### loop.compact.summarise.failed
-
-**Support: public.** The conversation-summary call failed.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `error` | `str` | The failure diagnostic. |
-
-### loop.compact.thinking_dropped
-
-**Support: public.** Reasoning text was removed from context.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `messages` | `int` | Number of conversation messages. |
-| `chars` | `int` | Text length in characters. |
-
-### loop.decision.recorded
-
-**Support: public.** An operator ruling was recorded in decisions.md.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `question` | `str` | The question presented to the operator. |
-| `answer` | `str` | The operator's answer. |
-
-### loop.decision.unrecorded
-
-**Support: public.** An operator ruling could not be recorded or was missing at finish.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `error` | `str, optional` | The failure diagnostic. |
-| `missing` | `int, optional` | Number of operator rulings missing at finish. |
-
-### loop.edit.left_out
-
-**Support: public.** A checkpoint left ignored or untracked edits outside its commit.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `ignored` | `list` | Ignored edits left outside the checkpoint. |
-| `untracked` | `list` | Untracked edits left outside the checkpoint. |
-
-### loop.finish_contract.refused
-
-**Support: public.** The finish payload did not satisfy the machine's result contract.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `problems` | `list` | Violations of the machine's finish contract. |
-
-### loop.loop_guard.triggered
-
-**Support: public.** Repeated identical tool calls triggered a warning.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `tool` | `str` | The repeated tool's name. |
-| `streak` | `int` | Number of consecutive matching turns or calls. |
-
-### loop.media.refused
-
-**Support: public.** An attachment was refused by its tool or model route.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `provider_tool_call_id` | `str` | The provider's tool-use identifier. |
-| `reason` | `str` | The reason for the outcome. |
-| `route` | `str, optional` | The model route that refused the attachment. |
-| `text` | `str, optional` | The event's text. |
-| `attachment` | `object, optional` | Attachment metadata without its binary content. |
-
-### loop.memory_flip.nudged
-
-**Support: public.** Verification turned green and the model was asked to record the lesson.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-
-### loop.metric.auto_call
-
-**Support: public.** An automatic metric sample started.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `sha` | `str` | The commit identifier, possibly abbreviated. |
-
-### loop.metric.auto_failed
-
-**Support: public.** An automatic metric sample failed.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `error` | `str` | The failure diagnostic. |
-
-### loop.metric.sample
-
-**Support: public.** A metric sample was recorded.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `label` | `str` | Metric sample label. |
-| `score` | `float, optional` | Parsed metric score; null when unavailable. |
-| `exit_code` | `int, optional` | Command exit code; null when unavailable. |
-| `sha` | `str` | The commit identifier, possibly abbreviated. |
-
-### loop.metric_ceiling.stop
-
-**Support: public.** The metric ceiling ended the run.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-
-### loop.metric_early_finish.rejected
-
-**Support: public.** A metric run's early finish was returned to the model.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `nudges_used` | `int` | Number of notices issued for this condition. |
-| `budget_remaining` | `float, optional` | Remaining budget fraction; null without a finite cap. |
-| `trigger` | `str, optional` | The action that triggered the gate or panel. |
-
-### loop.metric_plateau.nudge
-
-**Support: public.** A metric plateau prompted another attempt.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `nudges_used` | `int` | Number of notices issued for this condition. |
-| `budget_remaining` | `float, optional` | Remaining budget fraction; null without a finite cap. |
-
-### loop.no_progress.nudge
-
-**Support: public.** Repeated turns without progress prompted a warning.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `streak` | `int` | Number of consecutive matching turns or calls. |
-| `level` | `int` | The warning's escalation level. |
+| `binary` | `str` | The unreachable executable's name. |
 
 ### loop.note
 
@@ -503,59 +442,6 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `text` | `str` | The event's text. |
-
-### loop.operator.presence
-
-**Support: public.** The operator's observed attachment state changed.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `presence` | `str` | The observed operator attachment and away state. |
-
-### loop.parallel.compared
-
-**Support: public.** Parallel candidates were ranked.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `group` | `str` | Parallel dispatch group identifier. |
-| `ranked_by` | `str` | The method used to rank the candidates. |
-| `rationale` | `str` | The ranking explanation. |
-| `ranking` | `list` | Candidates in ranked order with their verify and cost readings. |
-| `judge_cost_usd` | `float` | Ranking judge spend in USD. |
-| `judge_cost_partial` | `bool` | Whether the judge spend is a lower bound. |
-
-### loop.parallel.dispatched
-
-**Support: public.** Parallel lanes were dispatched.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `group` | `str` | Parallel dispatch group identifier. |
-| `lanes` | `int` | Lane count for dispatch, or lane results for completion. |
-| `tasks` | `list` | Task texts sent to the lanes. |
-| `source` | `str, optional` | Who dispatched: operator (a steer), model (the tool) or panel. |
-
-### loop.parallel.failed
-
-**Support: public.** Parallel lane dispatch or execution failed.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `group` | `str` | Parallel dispatch group identifier. |
-| `fanout` | `bool, optional` | Whether the failed group was a top-level fan-out. |
-| `lanes` | `list, optional` | Lane count for dispatch, or lane results for completion. |
-| `error` | `str, optional` | The failure diagnostic. |
-
-### loop.parallel.joined
-
-**Support: public.** Parallel lane results returned.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `group` | `str` | Parallel dispatch group identifier. |
-| `lanes` | `list` | Lane count for dispatch, or lane results for completion. |
-| `source` | `str, optional` | Who dispatched: operator (a steer), model (the tool) or panel. |
 
 ### loop.parked
 
@@ -574,580 +460,6 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `turn` | `int` | The execution's turn number. |
 
-### loop.pin.added
-
-**Support: public.** An operator instruction was pinned in context.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `text` | `str` | The event's text. |
-| `chars` | `int` | Text length in characters. |
-| `count` | `int` | Total pinned instructions. |
-
-### loop.pin.refused
-
-**Support: public.** An instruction exceeded the pinned-context limit.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `chars` | `int` | Text length in characters. |
-| `limit` | `int` | Pinned instruction character limit. |
-
-### loop.pin.restored
-
-**Support: public.** A resumed or forked execution restored pinned instructions.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `pins` | `list` | The full list of pinned instructions. |
-| `count` | `int` | Total pinned instructions. |
-
-### loop.plan_finish.nudge
-
-**Support: public.** The model was asked to finish its plan within the remaining budget.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `budget_remaining` | `float, optional` | Remaining budget fraction; null without a finite cap. |
-
-### loop.plan_read.failed
-
-**Support: public.** The plan could not be read.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `path` | `str` | The plan's file path. |
-| `error` | `str` | The failure diagnostic. |
-
-### loop.plan_reread
-
-**Support: public.** The plan was read back into context.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `path` | `str` | The plan's file path. |
-| `bytes` | `int` | UTF-8 text length in bytes. |
-
-### loop.plan_write.failed
-
-**Support: public.** The plan could not be written.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `path` | `str` | The plan's file path. |
-| `error` | `str` | The failure diagnostic. |
-
-### loop.plan_written
-
-**Support: public.** The plan was written to disk.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `path` | `str` | The plan's file path. |
-| `bytes` | `int` | UTF-8 text length in bytes. |
-
-### loop.provider.empty_tool_call_retry
-
-**Support: public.** A provider response with empty tool calls was retried.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `attempt` | `int` | Retry attempt number. |
-| `stop_reason` | `str` | The provider's response stop reason. |
-
-### loop.provider.fatal
-
-**Support: public.** A non-retryable provider error stopped the call.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `status_code` | `int, optional` | HTTP status code when available. |
-| `error` | `str` | The failure diagnostic. |
-
-### loop.provider.retry
-
-**Support: public.** A provider error prompted another attempt.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `attempt` | `int` | Retry attempt number. |
-| `error` | `str` | The failure diagnostic. |
-
-### loop.question.delivered
-
-**Support: public.** Queued answers were delivered to the model.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `ids` | `list` | Identifiers of the delivered questions. |
-
-### loop.question_nudge
-
-**Support: public.** A silent finish ended on a question and was returned to the model.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-
-### loop.reasoning_starvation
-
-**Support: public.** Reasoning consumed a response without usable output.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `reasoning_chars` | `int` | Reasoning output length in characters. |
-| `output_tokens` | `int` | Output token count. |
-| `stop_reason` | `str, optional` | The provider's response stop reason. |
-
-### loop.request.refused
-
-**Support: public.** An operator task-graph request could not be applied.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `kind` | `str` | The request or authentication operation kind. |
-| `text` | `str` | The event's text. |
-| `error` | `str` | The failure diagnostic. |
-
-### loop.resume.interrupted
-
-**Support: public.** Resume found tool calls that never returned and will not be rerun.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `tools` | `list` | Interrupted tool calls that will not be rerun. |
-
-### loop.review.finding.reopened
-
-**Support: public.** An operator reopened a finding.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `finding_id` | `str` | Finding identifier. |
-| `request_id` | `str` | Request identifier used to correlate or deduplicate work. |
-| `source` | `str` | Where the request or result came from. |
-| `version` | `int` | Review-state version after the action. |
-| `reason` | `str` | The reason for the outcome. |
-
-### loop.review.finding.resolved
-
-**Support: public.** An operator recorded a finding's disposition.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `finding_id` | `str` | Finding identifier. |
-| `request_id` | `str` | Request identifier used to correlate or deduplicate work. |
-| `source` | `str` | Where the request or result came from. |
-| `version` | `int` | Review-state version after the action. |
-| `resolution` | `object` | The finding's disposition and supporting reason. |
-
-### loop.review.fix.failed
-
-**Support: public.** A finding's fix request could not be delivered.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `finding_id` | `str` | Finding identifier. |
-| `request_id` | `str` | Request identifier used to correlate or deduplicate work. |
-| `source` | `str` | Where the request or result came from. |
-| `version` | `int` | Review-state version after the action. |
-| `error` | `str` | The failure diagnostic. |
-
-### loop.review.fix.requested
-
-**Support: public.** An operator requested a fix for a finding.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `finding_id` | `str` | Finding identifier. |
-| `request_id` | `str` | Request identifier used to correlate or deduplicate work. |
-| `source` | `str` | Where the request or result came from. |
-| `version` | `int` | Review-state version after the action. |
-| `target` | `object` | The immutable review target, or provider request class. |
-| `action` | `str` | Fix delivery action: live-steer or resume. |
-
-### loop.review.fix.submitted
-
-**Support: public.** A finding's fix request reached an execution.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `finding_id` | `str` | Finding identifier. |
-| `request_id` | `str` | Request identifier used to correlate or deduplicate work. |
-| `source` | `str` | Where the request or result came from. |
-| `version` | `int` | Review-state version after the action. |
-| `execution_id` | `str` | Execution identifier. |
-
-### loop.review.panel
-
-**Support: public.** A review panel completed and recorded its evidence and blocking decision.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `panel_id` | `str` | Review panel identifier. |
-| `execution_id` | `str` | Execution identifier. |
-| `turn` | `int` | The execution's turn number. |
-| `trigger` | `str` | The action that triggered the gate or panel. |
-| `target` | `object` | The immutable review target, or provider request class. |
-| `findings` | `list` | Grounded findings or panel observations. |
-| `injected_finding_ids` | `list` | Finding identifiers supplied to the worker. |
-| `block_on` | `str` | The configured panel blocking rule. |
-| `roster` | `list, optional` | The seats that sat: index, model route, focus, scope and temperature. |
-| `raw_blocked` | `bool` | Whether the verdicts meet the blocking rule. |
-| `blocked` | `bool` | Whether the armed gate blocks the finish. |
-| `disarmed` | `bool` | Whether the review gate's rejection cap disarmed it. |
-| `n_block` | `int` | Number of distinct blocking provider/model routes. |
-| `n_abstain` | `int` | Number of abstaining seats. |
-| `completion` | `str` | Whether the panel completed or was inconclusive. |
-
-### loop.review.rejected_finish
-
-**Support: public.** The review panel rejected the declared finish.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `ending` | `str` | The declared finish being reviewed. |
-
-### loop.review.rejection_cap_reached
-
-**Support: public.** The review gate reached its rejection limit.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `rejections` | `int` | Number of review rejections. |
-
-### loop.review.reused
-
-**Support: public.** A complete panel over the same trees, paths, seats and rule stood in for a new one.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `panel_id` | `str` | Review panel identifier. |
-| `execution_id` | `str` | Execution identifier. |
-| `turn` | `int` | The execution's turn number. |
-| `trigger` | `str` | The action that triggered the gate or panel. |
-| `reused_panel_id` | `str` | The complete panel whose verdict stood in. |
-| `target` | `object` | The immutable review target both panels share. |
-| `findings` | `int` | How many findings the reused panel recorded. |
-
-### loop.review.seat
-
-**Support: public.** A review seat returned a grounded verdict or abstained.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `panel_id` | `str` | Review panel identifier. |
-| `execution_id` | `str` | Execution identifier. |
-| `turn` | `int, optional` | The execution's turn number. |
-| `trigger` | `str, optional` | The action that triggered the gate or panel. |
-| `seat_index` | `int` | Zero-based review seat index. |
-| `focus` | `str` | The requested summary or review focus. |
-| `model_route` | `str` | The seat's configured model route. |
-| `verdict` | `str` | Seat verdict: pass, block or abstain. |
-| `findings` | `list` | Grounded findings or panel observations. |
-| `summary` | `str` | The result or outcome in words. |
-| `error` | `str, optional` | The failure diagnostic. |
-| `session_id` | `str, optional` | The read-only seat session, when assigned. |
-
-### loop.review.skipped
-
-**Support: public.** A review panel could not run.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `panel_id` | `str` | Review panel identifier. |
-| `execution_id` | `str` | Execution identifier. |
-| `turn` | `int, optional` | The execution's turn number. |
-| `trigger` | `str, optional` | The action that triggered the gate or panel. |
-| `reason` | `str` | The reason for the outcome. |
-| `error` | `str, optional` | The failure diagnostic. |
-| `remaining` | `float, optional` | Remaining budget fraction. |
-
-### loop.review.start
-
-**Support: public.** A review panel began over an immutable target.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `panel_id` | `str` | Review panel identifier. |
-| `execution_id` | `str` | Execution identifier. |
-| `turn` | `int` | The execution's turn number. |
-| `trigger` | `str` | The action that triggered the gate or panel. |
-| `target` | `object` | The immutable review target, or provider request class. |
-| `rule_sources` | `list` | Base-tree rule files supplied to the panel. |
-| `rules_complete` | `bool` | Whether every required rule was supplied. |
-| `rules_reason` | `str, optional` | Why rule collection was incomplete; null when complete. |
-| `seats` | `list` | The resolved review seat configurations. |
-
-### loop.run_budget.nudge
-
-**Support: public.** The model was asked to finish within its remaining run budget.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `budget_remaining` | `float, optional` | Remaining budget fraction; null without a finite cap. |
-
-### loop.sandbox_tool_unreachable
-
-**Support: public.** A tool found on the host could not run inside the sandbox.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `binary` | `str` | The unreachable executable's name. |
-
-### loop.silent_no_work.nudge
-
-**Support: public.** A silent finish without work was returned to the model.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `nudges_used` | `int` | Number of notices issued for this condition. |
-
-### loop.skills.warning
-
-**Support: public.** A skill declaration produced a warning.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `warning` | `str` | The skill diagnostic. |
-
-### loop.stagnation.nudged
-
-**Support: public.** Elapsed time without edits or verification prompted a warning.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `elapsed_s` | `int` | Elapsed seconds without edits or verification. |
-
-### loop.standing.resumed
-
-**Support: public.** A standing goal resumed after absorbing a soft stop.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `reason` | `str` | The reason for the outcome. |
-| `task_id` | `str` | Task identifier. |
-| `turn` | `int` | The execution's turn number. |
-
-### loop.standing.set
-
-**Support: public.** The operator set a standing goal.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `task_id` | `str` | Task identifier. |
-| `title` | `str` | Task or standing-goal text. |
-
-### loop.steer.aborted
-
-**Support: public.** The operator's steer aborted the run.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-
-### loop.steer.detached
-
-**Support: public.** The operator's steer stopped the run for background resume.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-
-### loop.steer.exited
-
-**Support: public.** The operator's steer ended the run and left the terminal.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-
-### loop.steer.feedback
-
-**Support: public.** A steer directive returned feedback without invoking the model.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `text` | `str` | The feedback for the operator. |
-
-### loop.steer.injected
-
-**Support: public.** An operator instruction was injected into context.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `chars` | `int` | Text length in characters. |
-| `text` | `str` | The event's text. |
-
-### loop.steer.requested
-
-**Support: public.** The loop reached an operator steer request.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-
-### loop.steer.skill
-
-**Support: public.** An operator steer invoked a skill.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `name` | `str` | Tool or skill name. |
-| `args` | `str` | Tool argument preview, or the skill invocation's argument text. |
-
-### loop.steer.undo
-
-**Support: public.** The operator's steer requested an undo fork.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-
-### loop.task.queued
-
-**Support: public.** The operator queued a task.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `task_id` | `str` | Task identifier. |
-| `title` | `str` | Task or standing-goal text. |
-
-### loop.task.retired
-
-**Support: public.** The operator retired a task.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `task_id` | `str` | Task identifier. |
-| `title` | `str` | Task or standing-goal text. |
-
-### loop.task.stuck_nudge
-
-**Support: public.** Time on one task prompted a change of approach.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `task_id` | `str` | Task identifier. |
-| `turns` | `int` | Number of execution turns, or turns spent on one task. |
-| `nudges_used` | `int` | Number of notices issued for this condition. |
-
-### loop.task.surfaced
-
-**Support: public.** A task became the current focus.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `task_id` | `str` | Task identifier. |
-
-### loop.task_finish.gated
-
-**Support: public.** A finish with open subtasks was returned to the model.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `nudges_used` | `int` | Number of notices issued for this condition. |
-| `trigger` | `str` | The action that triggered the gate or panel. |
-
-### loop.test_only_green.notice
-
-**Support: public.** Verification passed after changes confined to tests.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `paths` | `list` | Affected repository-relative paths. |
-
-### loop.tool_error.nudge
-
-**Support: public.** Repeated tool errors prompted a warning.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `streak` | `int` | Number of consecutive matching turns or calls. |
-| `level` | `int` | The warning's escalation level. |
-
-### loop.verify_broken.nudge
-
-**Support: public.** An unusable verify command prompted a correction request.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-
-### loop.verify_finish.gated
-
-**Support: public.** A finish without green verification was returned to the model.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `nudges_used` | `int` | Number of notices issued for this condition. |
-| `trigger` | `str` | The action that triggered the gate or panel. |
-
-### loop.verify_harness
-
-**Support: public.** The harness requested verification.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `reason` | `str` | Why the harness requested verification. |
-| `turn` | `int` | The execution's turn number. |
-
-### loop.verify_inferred
-
-**Support: public.** The verify command was inferred, restored, adopted or disabled.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `command` | `list` | Resolved verify argv; empty when no command is adopted. |
-| `source` | `str` | Where the request or result came from. |
-| `adopted_at` | `int, optional` | Turn where the gate was adopted, restored or dropped. |
-
-### loop.verify_scoped
-
-**Support: public.** Verification was narrowed to tests near the changed files.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `paths` | `list` | Affected repository-relative paths. |
-| `turn` | `int` | The execution's turn number. |
-
-### loop.verify_settled.nudge
-
-**Support: public.** Repeated green verification without edits prompted a finish request.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `idle` | `int` | Consecutive settled turns. |
-
-### loop.verify_swapped
-
-**Support: public.** Resume replaced the saved verify command.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `was` | `list` | Saved verification argv. |
-| `now` | `list` | Replacement verification argv. |
-
-### loop.went_quiet.nudge
-
-**Support: public.** A response without tool calls prompted the model to continue.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `turn` | `int` | The execution's turn number. |
-| `nudges_used` | `int` | Number of notices issued for this condition. |
-| `nudges_max` | `int` | Maximum notices allowed for this condition. |
-| `output_tokens` | `int` | Output token count. |
-
 ### mcp.server_unavailable
 
 **Support: public.** A configured MCP server could not start.
@@ -1156,6 +468,44 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `server` | `str` | Configured MCP server name. |
 | `error` | `str` | The failure diagnostic. |
+
+### media.refused
+
+**Support: public.** An attachment was refused by its tool or model route.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `provider_tool_call_id` | `str` | The provider's tool-use identifier. |
+| `reason` | `str` | The reason for the outcome. |
+| `route` | `str, optional` | The model route that refused the attachment. |
+| `text` | `str, optional` | The event's text. |
+| `attachment` | `object, optional` | Attachment metadata without its binary content. |
+
+### metric.auto_call
+
+**Support: public.** An automatic metric sample started.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `sha` | `str` | The commit identifier, possibly abbreviated. |
+
+### metric.auto_failed
+
+**Support: public.** An automatic metric sample failed.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `error` | `str` | The failure diagnostic. |
+
+### metric.ceiling_reached
+
+**Support: public.** The metric ceiling ended the run.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
 
 ### metric.end
 
@@ -1170,6 +520,18 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `stderr_tail` | `str` | Capped standard-error tail. |
 | `score` | `float, optional` | Parsed metric score; null when unavailable. |
 
+### metric.sample
+
+**Support: public.** A metric sample was recorded.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `label` | `str` | Metric sample label. |
+| `score` | `float, optional` | Parsed metric score; null when unavailable. |
+| `exit_code` | `int, optional` | Command exit code; null when unavailable. |
+| `sha` | `str` | The commit identifier, possibly abbreviated. |
+
 ### metric.start
 
 **Support: public.** The metric command started.
@@ -1178,57 +540,9 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `command` | `list` | Command argv. |
 
-### provider.auth
+### model.attempt
 
-**Support: public.** A provider credential refresh, exchange or recovery finished.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `provider` | `str` | Configured provider name. |
-| `kind` | `str` | The request or authentication operation kind. |
-| `outcome` | `str` | The operation's outcome. |
-
-### provider.request
-
-**Support: public.** An HTTP attempt was made for a model call.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
-| `role` | `str` | The calling model role. |
-| `provider` | `str` | Configured provider name. |
-| `model` | `str` | Model identifier. |
-| `model_call_id` | `str` | The logical model call that made this request. |
-| `panel_id` | `str, optional` | Review panel identifier. |
-| `seat_index` | `int, optional` | Zero-based review seat index. |
-| `request_id` | `str` | HTTP attempt identifier, also stored at the transcript's top level. |
-| `target` | `str` | The immutable review target, or provider request class. |
-
-### question.answer
-
-**Support: public.** The operator answered questions or nobody could answer.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `id` | `str` | Question prompt identifier. |
-| `answers` | `list` | Answers aligned with the requested questions. |
-| `source` | `str` | Where the request or result came from. |
-| `unseen` | `bool` | Whether nobody could answer and no question remains queued. |
-
-### question.prompt
-
-**Support: public.** Questions were presented to the operator.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `id` | `str` | Question prompt identifier. |
-| `questions` | `list` | The questions presented. |
-| `call_id` | `int, optional` | The tool call correlated with this event. |
-| `wait` | `bool` | Whether the call waits for answers. |
-
-### role.attempt
-
-**Support: public.** One request attempt of a model call ended; the ending attempt's role.result follows.
+**Support: public.** One request attempt of a model call ended; the ending attempt's model.result follows.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1250,7 +564,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `stop_reason` | `str, optional` | The provider's response stop reason. |
 | `error` | `str, optional` | The failure diagnostic. |
 
-### role.call
+### model.call
 
 **Support: public.** A model call started for a role.
 
@@ -1264,7 +578,18 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `model_call_id` | `str` | Identifier pairing the model call with its result. |
 | `seat_index` | `int, optional` | Zero-based review seat index. |
 
-### role.result
+### model.reasoning_starvation
+
+**Support: public.** Reasoning consumed a response without usable output.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `reasoning_chars` | `int` | Reasoning output length in characters. |
+| `output_tokens` | `int` | Output token count. |
+| `stop_reason` | `str, optional` | The provider's response stop reason. |
+
+### model.result
 
 **Support: public.** A model call returned or failed, once per logical call, with its last attempt's usage.
 
@@ -1287,7 +612,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `stop_reason` | `str, optional` | The provider's response stop reason. |
 | `error` | `str, optional` | The failure diagnostic. |
 
-### role.text_delta
+### model.text_delta
 
 **Support: public.** A piece of assistant text streamed.
 
@@ -1300,7 +625,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `panel_id` | `str, optional` | Review panel identifier. |
 | `seat_index` | `int, optional` | The review seat's roster position; null outside a review seat. |
 
-### role.thinking_delta
+### model.thinking_delta
 
 **Support: public.** A piece of assistant reasoning streamed.
 
@@ -1312,6 +637,491 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `model_call_id` | `str, optional` | The model call streaming the piece; null in a journal written before ids. |
 | `panel_id` | `str, optional` | Review panel identifier. |
 | `seat_index` | `int, optional` | The review seat's roster position; null outside a review seat. |
+
+### nudge.loop_guard
+
+**Support: public.** Repeated identical tool calls triggered a warning.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `tool` | `str` | The repeated tool's name. |
+| `streak` | `int` | Number of consecutive matching turns or calls. |
+
+### nudge.memory_flip
+
+**Support: public.** Verification turned green and the model was asked to record the lesson.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+
+### nudge.metric_plateau
+
+**Support: public.** A metric plateau prompted another attempt.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `nudges_used` | `int` | Number of notices issued for this condition. |
+| `budget_remaining` | `float, optional` | Remaining budget fraction; null without a finite cap. |
+
+### nudge.no_progress
+
+**Support: public.** Repeated turns without progress prompted a warning.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `streak` | `int` | Number of consecutive matching turns or calls. |
+| `level` | `int` | The warning's escalation level. |
+
+### nudge.plan_finish
+
+**Support: public.** The model was asked to finish its plan within the remaining budget.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `budget_remaining` | `float, optional` | Remaining budget fraction; null without a finite cap. |
+
+### nudge.question
+
+**Support: public.** A silent finish ended on a question and was returned to the model.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+
+### nudge.run_budget
+
+**Support: public.** The model was asked to finish within its remaining run budget.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `budget_remaining` | `float, optional` | Remaining budget fraction; null without a finite cap. |
+
+### nudge.silent_no_work
+
+**Support: public.** A silent finish without work was returned to the model.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `nudges_used` | `int` | Number of notices issued for this condition. |
+
+### nudge.stagnation
+
+**Support: public.** Elapsed time without edits or verification prompted a warning.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `elapsed_s` | `int` | Elapsed seconds without edits or verification. |
+
+### nudge.task_stuck
+
+**Support: public.** Time on one task prompted a change of approach.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `task_id` | `str` | Task identifier. |
+| `turns` | `int` | Number of execution turns, or turns spent on one task. |
+| `nudges_used` | `int` | Number of notices issued for this condition. |
+
+### nudge.tool_error
+
+**Support: public.** Repeated tool errors prompted a warning.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `streak` | `int` | Number of consecutive matching turns or calls. |
+| `level` | `int` | The warning's escalation level. |
+
+### nudge.verify_broken
+
+**Support: public.** An unusable verify command prompted a correction request.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+
+### nudge.verify_settled
+
+**Support: public.** Repeated green verification without edits prompted a finish request.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `idle` | `int` | Consecutive settled turns. |
+
+### nudge.went_quiet
+
+**Support: public.** A response without tool calls prompted the model to continue.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `nudges_used` | `int` | Number of notices issued for this condition. |
+| `nudges_max` | `int` | Maximum notices allowed for this condition. |
+| `output_tokens` | `int` | Output token count. |
+
+### operator.presence
+
+**Support: public.** The operator's observed attachment state changed.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `presence` | `str` | The observed operator attachment and away state. |
+
+### parallel.compared
+
+**Support: public.** Parallel candidates were ranked.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `group` | `str` | Parallel dispatch group identifier. |
+| `ranked_by` | `str` | The method used to rank the candidates. |
+| `rationale` | `str` | The ranking explanation. |
+| `ranking` | `list` | Candidates in ranked order with their verify and cost readings. |
+| `judge_cost_usd` | `float` | Ranking judge spend in USD. |
+| `judge_cost_partial` | `bool` | Whether the judge spend is a lower bound. |
+
+### parallel.dispatched
+
+**Support: public.** Parallel lanes were dispatched.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `group` | `str` | Parallel dispatch group identifier. |
+| `lanes` | `int` | Lane count for dispatch, or lane results for completion. |
+| `tasks` | `list` | Task texts sent to the lanes. |
+| `source` | `str, optional` | Who dispatched: operator (a steer), model (the tool) or panel. |
+
+### parallel.failed
+
+**Support: public.** Parallel lane dispatch or execution failed.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `group` | `str` | Parallel dispatch group identifier. |
+| `fanout` | `bool, optional` | Whether the failed group was a top-level fan-out. |
+| `lanes` | `list, optional` | Lane count for dispatch, or lane results for completion. |
+| `error` | `str, optional` | The failure diagnostic. |
+
+### parallel.joined
+
+**Support: public.** Parallel lane results returned.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `group` | `str` | Parallel dispatch group identifier. |
+| `lanes` | `list` | Lane count for dispatch, or lane results for completion. |
+| `source` | `str, optional` | Who dispatched: operator (a steer), model (the tool) or panel. |
+
+### pin.added
+
+**Support: public.** An operator instruction was pinned in context.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `text` | `str` | The event's text. |
+| `chars` | `int` | Text length in characters. |
+| `count` | `int` | Total pinned instructions. |
+
+### pin.refused
+
+**Support: public.** An instruction exceeded the pinned-context limit.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `chars` | `int` | Text length in characters. |
+| `limit` | `int` | Pinned instruction character limit. |
+
+### pin.restored
+
+**Support: public.** A resumed or forked execution restored pinned instructions.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `pins` | `list` | The full list of pinned instructions. |
+| `count` | `int` | Total pinned instructions. |
+
+### plan.read_failed
+
+**Support: public.** The plan could not be read.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `path` | `str` | The plan's file path. |
+| `error` | `str` | The failure diagnostic. |
+
+### plan.reread
+
+**Support: public.** The plan was read back into context.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `path` | `str` | The plan's file path. |
+| `bytes` | `int` | UTF-8 text length in bytes. |
+
+### plan.write_failed
+
+**Support: public.** The plan could not be written.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `path` | `str` | The plan's file path. |
+| `error` | `str` | The failure diagnostic. |
+
+### plan.written
+
+**Support: public.** The plan was written to disk.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `path` | `str` | The plan's file path. |
+| `bytes` | `int` | UTF-8 text length in bytes. |
+
+### provider.auth
+
+**Support: public.** A provider credential refresh, exchange or recovery finished.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `provider` | `str` | Configured provider name. |
+| `kind` | `str` | The request or authentication operation kind. |
+| `outcome` | `str` | The operation's outcome. |
+
+### provider.empty_tool_call_retry
+
+**Support: public.** A provider response with empty tool calls was retried.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `attempt` | `int` | Retry attempt number. |
+| `stop_reason` | `str` | The provider's response stop reason. |
+
+### provider.fatal
+
+**Support: public.** A non-retryable provider error stopped the call.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `status_code` | `int, optional` | HTTP status code when available. |
+| `error` | `str` | The failure diagnostic. |
+
+### provider.request
+
+**Support: public.** An HTTP attempt was made for a model call.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
+| `role` | `str` | The calling model role. |
+| `provider` | `str` | Configured provider name. |
+| `model` | `str` | Model identifier. |
+| `model_call_id` | `str` | The logical model call that made this request. |
+| `panel_id` | `str, optional` | Review panel identifier. |
+| `seat_index` | `int, optional` | Zero-based review seat index. |
+| `request_id` | `str` | HTTP attempt identifier, also stored at the transcript's top level. |
+| `target` | `str` | The immutable review target, or provider request class. |
+
+### provider.retry
+
+**Support: public.** A provider error prompted another attempt.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `attempt` | `int` | Retry attempt number. |
+| `error` | `str` | The failure diagnostic. |
+
+### question.answer
+
+**Support: public.** The operator answered questions or nobody could answer.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | `str` | Question prompt identifier. |
+| `answers` | `list` | Answers aligned with the requested questions. |
+| `source` | `str` | Where the request or result came from. |
+| `unseen` | `bool` | Whether nobody could answer and no question remains queued. |
+
+### question.delivered
+
+**Support: public.** Queued answers were delivered to the model.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `ids` | `list` | Identifiers of the delivered questions. |
+
+### question.prompt
+
+**Support: public.** Questions were presented to the operator.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | `str` | Question prompt identifier. |
+| `questions` | `list` | The questions presented. |
+| `call_id` | `int, optional` | The tool call correlated with this event. |
+| `wait` | `bool` | Whether the call waits for answers. |
+
+### review.finding.reopened
+
+**Support: public.** An operator reopened a finding.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `finding_id` | `str` | Finding identifier. |
+| `request_id` | `str` | Request identifier used to correlate or deduplicate work. |
+| `source` | `str` | Where the request or result came from. |
+| `version` | `int` | Review-state version after the action. |
+| `reason` | `str` | The reason for the outcome. |
+
+### review.finding.resolved
+
+**Support: public.** An operator recorded a finding's disposition.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `finding_id` | `str` | Finding identifier. |
+| `request_id` | `str` | Request identifier used to correlate or deduplicate work. |
+| `source` | `str` | Where the request or result came from. |
+| `version` | `int` | Review-state version after the action. |
+| `resolution` | `object` | The finding's disposition and supporting reason. |
+
+### review.fix.failed
+
+**Support: public.** A finding's fix request could not be delivered.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `finding_id` | `str` | Finding identifier. |
+| `request_id` | `str` | Request identifier used to correlate or deduplicate work. |
+| `source` | `str` | Where the request or result came from. |
+| `version` | `int` | Review-state version after the action. |
+| `error` | `str` | The failure diagnostic. |
+
+### review.fix.requested
+
+**Support: public.** An operator requested a fix for a finding.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `finding_id` | `str` | Finding identifier. |
+| `request_id` | `str` | Request identifier used to correlate or deduplicate work. |
+| `source` | `str` | Where the request or result came from. |
+| `version` | `int` | Review-state version after the action. |
+| `target` | `object` | The immutable review target, or provider request class. |
+| `action` | `str` | Fix delivery action: live-steer or resume. |
+
+### review.fix.submitted
+
+**Support: public.** A finding's fix request reached an execution.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `finding_id` | `str` | Finding identifier. |
+| `request_id` | `str` | Request identifier used to correlate or deduplicate work. |
+| `source` | `str` | Where the request or result came from. |
+| `version` | `int` | Review-state version after the action. |
+| `execution_id` | `str` | Execution identifier. |
+
+### review.panel
+
+**Support: public.** A review panel completed and recorded its evidence and blocking decision.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `panel_id` | `str` | Review panel identifier. |
+| `execution_id` | `str` | Execution identifier. |
+| `turn` | `int` | The execution's turn number. |
+| `trigger` | `str` | The action that triggered the gate or panel. |
+| `target` | `object` | The immutable review target, or provider request class. |
+| `findings` | `list` | Grounded findings or panel observations. |
+| `injected_finding_ids` | `list` | Finding identifiers supplied to the worker. |
+| `block_on` | `str` | The configured panel blocking rule. |
+| `roster` | `list, optional` | The seats that sat: index, model route, focus, scope and temperature. |
+| `raw_blocked` | `bool` | Whether the verdicts meet the blocking rule. |
+| `blocked` | `bool` | Whether the armed gate blocks the finish. |
+| `disarmed` | `bool` | Whether the review gate's rejection cap disarmed it. |
+| `n_block` | `int` | Number of distinct blocking provider/model routes. |
+| `n_abstain` | `int` | Number of abstaining seats. |
+| `completion` | `str` | Whether the panel completed or was inconclusive. |
+
+### review.rejection_cap_reached
+
+**Support: public.** The review gate reached its rejection limit.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `rejections` | `int` | Number of review rejections. |
+
+### review.reused
+
+**Support: public.** A complete panel over the same trees, paths, seats and rule stood in for a new one.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `panel_id` | `str` | Review panel identifier. |
+| `execution_id` | `str` | Execution identifier. |
+| `turn` | `int` | The execution's turn number. |
+| `trigger` | `str` | The action that triggered the gate or panel. |
+| `reused_panel_id` | `str` | The complete panel whose verdict stood in. |
+| `target` | `object` | The immutable review target both panels share. |
+| `findings` | `int` | How many findings the reused panel recorded. |
+
+### review.seat
+
+**Support: public.** A review seat returned a grounded verdict or abstained.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `panel_id` | `str` | Review panel identifier. |
+| `execution_id` | `str` | Execution identifier. |
+| `turn` | `int, optional` | The execution's turn number. |
+| `trigger` | `str, optional` | The action that triggered the gate or panel. |
+| `seat_index` | `int` | Zero-based review seat index. |
+| `focus` | `str` | The requested summary or review focus. |
+| `model_route` | `str` | The seat's configured model route. |
+| `verdict` | `str` | Seat verdict: pass, block or abstain. |
+| `findings` | `list` | Grounded findings or panel observations. |
+| `summary` | `str` | The result or outcome in words. |
+| `error` | `str, optional` | The failure diagnostic. |
+| `session_id` | `str, optional` | The read-only seat session, when assigned. |
+
+### review.skipped
+
+**Support: public.** A review panel could not run.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `panel_id` | `str` | Review panel identifier. |
+| `execution_id` | `str` | Execution identifier. |
+| `turn` | `int, optional` | The execution's turn number. |
+| `trigger` | `str, optional` | The action that triggered the gate or panel. |
+| `reason` | `str` | The reason for the outcome. |
+| `error` | `str, optional` | The failure diagnostic. |
+| `remaining` | `float, optional` | Remaining budget fraction. |
+
+### review.start
+
+**Support: public.** A review panel began over an immutable target.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `panel_id` | `str` | Review panel identifier. |
+| `execution_id` | `str` | Execution identifier. |
+| `turn` | `int` | The execution's turn number. |
+| `trigger` | `str` | The action that triggered the gate or panel. |
+| `target` | `object` | The immutable review target, or provider request class. |
+| `rule_sources` | `list` | Base-tree rule files supplied to the panel. |
+| `rules_complete` | `bool` | Whether every required rule was supplied. |
+| `rules_reason` | `str, optional` | Why rule collection was incomplete; null when complete. |
+| `seats` | `list` | The resolved review seat configurations. |
 
 ### session.resume
 
@@ -1327,6 +1137,15 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `messages` | `int` | Number of conversation messages. |
 | `execution_id` | `str` | Execution identifier. |
 
+### session.resume.interrupted
+
+**Support: public.** Resume found tool calls that never returned and will not be rerun.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `tools` | `list` | Interrupted tool calls that will not be rerun. |
+
 ### session.start
 
 **Support: public.** Emitted once when the session is created.
@@ -1337,14 +1156,6 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `user_task` | `str` | The displayed task text. |
 | `mode` | `str` | The execution mode. |
 | `execution_id` | `str` | Execution identifier. |
-
-### session.steer_requested
-
-**Support: public.** Ctrl-C requested an operator steer during the run.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `source` | `str` | Where the request or result came from. |
 
 ### session.stop
 
@@ -1378,6 +1189,139 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `new_session_id` | `str` | Identifier of the undo fork. |
 | `undone_text` | `str` | The operator message taken back. |
+
+### skills.warning
+
+**Support: public.** A skill declaration produced a warning.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `warning` | `str` | The skill diagnostic. |
+
+### standing.resumed
+
+**Support: public.** A standing goal resumed after absorbing a soft stop.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `reason` | `str` | The reason for the outcome. |
+| `task_id` | `str` | Task identifier. |
+| `turn` | `int` | The execution's turn number. |
+
+### standing.set
+
+**Support: public.** The operator set a standing goal.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `task_id` | `str` | Task identifier. |
+| `title` | `str` | Task or standing-goal text. |
+
+### steer.aborted
+
+**Support: public.** The operator's steer aborted the run.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+
+### steer.detached
+
+**Support: public.** The operator's steer stopped the run for background resume.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+
+### steer.exited
+
+**Support: public.** The operator's steer ended the run and left the terminal.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+
+### steer.feedback
+
+**Support: public.** A steer directive returned feedback without invoking the model.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `text` | `str` | The feedback for the operator. |
+
+### steer.injected
+
+**Support: public.** An operator instruction was injected into context.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `chars` | `int` | Text length in characters. |
+| `text` | `str` | The event's text. |
+
+### steer.requested
+
+**Support: public.** The loop reached an operator steer request.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+
+### steer.signalled
+
+**Support: public.** Ctrl-C requested an operator steer during the run.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `source` | `str` | Where the request or result came from. |
+
+### steer.skill
+
+**Support: public.** An operator steer invoked a skill.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | `str` | Tool or skill name. |
+| `args` | `str` | Tool argument preview, or the skill invocation's argument text. |
+
+### steer.undo
+
+**Support: public.** The operator's steer requested an undo fork.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+
+### task.queued
+
+**Support: public.** The operator queued a task.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `task_id` | `str` | Task identifier. |
+| `title` | `str` | Task or standing-goal text. |
+
+### task.request_refused
+
+**Support: public.** An operator task-graph request could not be applied.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `kind` | `str` | The request or authentication operation kind. |
+| `text` | `str` | The event's text. |
+| `error` | `str` | The failure diagnostic. |
+
+### task.retired
+
+**Support: public.** The operator retired a task.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `task_id` | `str` | Task identifier. |
+| `title` | `str` | Task or standing-goal text. |
+
+### task.surfaced
+
+**Support: public.** A task became the current focus.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `task_id` | `str` | Task identifier. |
 
 ### tool.call
 
@@ -1426,6 +1370,16 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `head_tail` | `str, optional` | A read preview or attachment summary. |
 | `lines_total` | `int, optional` | Total lines in the file read. |
 
+### verify.baseline
+
+**Support: public.** The baseline verification attempt finished.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `ok` | `bool` | Whether the operation succeeded. |
+| `turn` | `int` | The execution's turn number. |
+| `verify_id` | `str, optional` | Verification attempt identifier. |
+
 ### verify.end
 
 **Support: public.** A verification attempt finished with evidence about the observed tree.
@@ -1451,6 +1405,34 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `baseline` | `bool` | Whether the attempt measured the baseline tree. |
 | `reason` | `str` | The reason for the outcome. |
 
+### verify.inferred
+
+**Support: public.** The verify command was inferred, restored, adopted or disabled.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `command` | `list` | Resolved verify argv; empty when no command is adopted. |
+| `source` | `str` | Where the request or result came from. |
+| `adopted_at` | `int, optional` | Turn where the gate was adopted, restored or dropped. |
+
+### verify.requested
+
+**Support: public.** The harness requested verification.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `reason` | `str` | Why the harness requested verification. |
+| `turn` | `int` | The execution's turn number. |
+
+### verify.scoped
+
+**Support: public.** Verification was narrowed to tests near the changed files.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `paths` | `list` | Affected repository-relative paths. |
+| `turn` | `int` | The execution's turn number. |
+
 ### verify.start
 
 **Support: public.** A verification attempt started.
@@ -1467,6 +1449,24 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `scoped` | `bool` | Whether verification ran only the selected nearby tests. |
 | `selected_paths` | `list` | Paths selected for scoped verification. |
 | `timeout_s` | `float` | Verification wall-clock limit in seconds. |
+
+### verify.swapped
+
+**Support: public.** Resume replaced the saved verify command.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `was` | `list` | Saved verification argv. |
+| `now` | `list` | Replacement verification argv. |
+
+### verify.test_only_green
+
+**Support: public.** Verification passed after changes confined to tests.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `paths` | `list` | Affected repository-relative paths. |
 
 ### workspace.setup
 
@@ -1524,7 +1524,7 @@ Source: [`providers.provider_types.TranscriptAttempt.write`](https://github.com/
 | --- | --- | --- |
 | `ts` | `JSON` | The UTC start timestamp in `YYYYMMDDTHHMMSSffffffZ` form. |
 | `seq` | `JSON` | The run-global sequence, starting at 1 and continuing across resumes. |
-| `model_call_id` | `JSON` | The logical call id from `role.call`; null without a call context. |
+| `model_call_id` | `JSON` | The logical call id from `model.call`; null without a call context. |
 | `request_id` | `JSON` | The HTTP attempt id from `provider.request`; empty for a local process. |
 | `seat` | `JSON` | The role or review focus label, not a unique seat identity. |
 | `outcome` | `JSON` | `incomplete`, `completed`, `failed`, `interrupted` or `aborted`. |

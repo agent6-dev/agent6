@@ -396,7 +396,7 @@ class Reviewer:
         if not critique.satisfied:
             state.gates.review_rejections += 1
             self.log(f"  review rejected {ending} at turn {turn.number}")
-            self.emit(journal.LoopReviewRejectedFinish(turn=turn.number, ending=ending))
+            self.emit(journal.FinishRefusedReview(turn=turn.number, ending=ending))
             turn.review_text = REVIEW_REJECTED[ending] + critique.text
             return True
         if critique.capped:
@@ -405,7 +405,7 @@ class Reviewer:
                 f" ({self.settings.max_rejections}) is reached: the end stands"
             )
             self.emit(
-                journal.LoopReviewRejectionCapReached(
+                journal.ReviewRejectionCapReached(
                     turn=turn.number,
                     rejections=state.gates.review_rejections,
                 )
@@ -434,13 +434,11 @@ class Reviewer:
                 else ""
             )
         except (errors.GitError, OSError) as exc:
-            self.emit(
-                journal.LoopReviewSkipped(**identity, reason="target_unreadable", error=str(exc))
-            )
+            self.emit(journal.ReviewSkipped(**identity, reason="target_unreadable", error=str(exc)))
             return None
         if target is None or not diff.strip():
             self.emit(
-                journal.LoopReviewSkipped(
+                journal.ReviewSkipped(
                     **identity,
                     reason="no_target" if target is None else "no_diff",
                 )
@@ -462,7 +460,7 @@ class Reviewer:
             A satisfied critique naming the panel whose findings stand.
         """
         self.emit(
-            journal.LoopReviewReused(
+            journal.ReviewReused(
                 **identity,
                 reused_panel_id=prior.panel_id,
                 target=pydantic.TypeAdapter(review_records.ReviewTarget).dump_python(
@@ -540,7 +538,7 @@ class Reviewer:
             panel_id=panel_id, execution_id=state.execution_id, turn=0, trigger="review_target"
         )
         if not diff.strip():
-            self.emit(journal.LoopReviewSkipped(**identity, reason="no_diff"))
+            self.emit(journal.ReviewSkipped(**identity, reason="no_diff"))
             return None
         return self._sit(
             state, identity, target, diff, block_on="none", turn=0, trigger="review_target"
@@ -582,7 +580,7 @@ class Reviewer:
         remaining = self.budget_remaining()
         if remaining is not None and remaining < self.settings.min_remaining_budget_fraction:
             self.emit(
-                journal.LoopReviewSkipped(
+                journal.ReviewSkipped(
                     **identity,
                     reason="min_remaining_budget_fraction",
                     remaining=round(remaining, 3),
@@ -593,7 +591,7 @@ class Reviewer:
             prepared = self.prepare(state, target, diff, panel_id=panel_id)
         except (errors.GitError, OSError) as exc:
             self.emit(
-                journal.LoopReviewSkipped(
+                journal.ReviewSkipped(
                     **identity,
                     reason="target_unreadable",
                     error=exc.safe_message if isinstance(exc, errors.GitError) else str(exc),
@@ -602,7 +600,7 @@ class Reviewer:
             return None
         target, ctx = prepared.target, prepared.context
         self.emit(
-            journal.LoopReviewStart(
+            journal.ReviewStart(
                 **identity,
                 target=pydantic.TypeAdapter(review_records.ReviewTarget).dump_python(
                     target, mode="json"
@@ -616,7 +614,7 @@ class Reviewer:
         if not ctx.rules.complete:
             self.log(terminal.printable_name(ctx.rules.reason or "review rules incomplete"))
             self.emit(
-                journal.LoopReviewSkipped(
+                journal.ReviewSkipped(
                     **identity, reason=ctx.rules.reason or "review rules incomplete"
                 )
             )
@@ -635,11 +633,11 @@ class Reviewer:
                 turn=turn,
             )
         except budget.BudgetExceededError:
-            self.emit(journal.LoopReviewSkipped(**identity, reason="budget"))
+            self.emit(journal.ReviewSkipped(**identity, reason="budget"))
             return None
         for verdict in result.per_seat:
             self.emit(
-                journal.LoopReviewSeat(
+                journal.ReviewSeat(
                     **identity,
                     **pydantic.TypeAdapter(review_records.ReviewVerdict).dump_python(
                         verdict, mode="json"
@@ -686,7 +684,7 @@ class Reviewer:
             n_abstain=result.n_abstain,
             completion="inconclusive" if inconclusive else "complete",
         )
-        self.emit(journal.LoopReviewPanel(**record.model_dump(mode="json")))
+        self.emit(journal.ReviewPanel(**record.model_dump(mode="json")))
         state.review_panels += (record,)
         if inconclusive:
             text = review_panel.inconclusive_note(result)

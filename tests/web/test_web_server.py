@@ -1010,7 +1010,7 @@ def test_sse_run_emits_the_last_delta_of_a_burst(
         "delta-run",
         [
             {"type": "session.start", "user_task": "stream"},
-            {"type": "role.call", "role": "worker", "model": "model"},
+            {"type": "model.call", "role": "worker", "model": "model"},
         ],
     )
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "delta-run"
@@ -1021,7 +1021,7 @@ def test_sse_run_emits_the_last_delta_of_a_burst(
         resp = conn.getresponse()
         _read_until(resp, lambda s: s.get("log_count") == 2)
         with (session_dir / "logs.jsonl").open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"type": "role.text_delta", "text": "done"}) + "\n")
+            fh.write(json.dumps({"type": "model.text_delta", "text": "done"}) + "\n")
         snap = _read_until(
             resp,
             lambda s: (
@@ -1075,7 +1075,9 @@ def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_execution(
         with logs.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps({"type": "session.resume", "ts": time.time()}) + "\n")
             fh.write(
-                json.dumps({"type": "role.call", "role": "worker", "model": "m", "ts": time.time()})
+                json.dumps(
+                    {"type": "model.call", "role": "worker", "model": "m", "ts": time.time()}
+                )
                 + "\n"
             )
         snap = _read_until(resp, lambda s: s.get("finished") is False)
@@ -1279,7 +1281,7 @@ def test_sse_run_dead_worker_frame_is_terminal(
     _make_run(
         tmp_path,
         "dead-worker",
-        [{"type": "session.start", "user_task": "x"}, {"type": "role.call", "role": "worker"}],
+        [{"type": "session.start", "user_task": "x"}, {"type": "model.call", "role": "worker"}],
     )
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "dead-worker"
     (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
@@ -1314,7 +1316,7 @@ def test_sse_run_pidless_stale_frame_is_terminal(
     _make_run(
         tmp_path,
         "pidless-stale",
-        [{"type": "session.start", "user_task": "x"}, {"type": "role.call", "role": "worker"}],
+        [{"type": "session.start", "user_task": "x"}, {"type": "model.call", "role": "worker"}],
     )
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "pidless-stale"
     assert not (session_dir / "worker.pid").exists()
@@ -1460,7 +1462,7 @@ def test_sse_machine_frame_carries_the_idle_age(
         log.parent.mkdir(parents=True, exist_ok=True)
     # An event 15 minutes old: the age must report the event's, not the frame's.
     log.write_text(
-        json.dumps({"type": "role.call", "role": "agent", "model": "m", "ts": time.time() - 900})
+        json.dumps({"type": "model.call", "role": "agent", "model": "m", "ts": time.time() - 900})
         + "\n",
         encoding="utf-8",
     )
@@ -1940,7 +1942,7 @@ def test_steer_btw_opens_a_side_ask(
         (d / "manifest.json").write_text(json.dumps({"version": 3, "mode": "ask"}))
         lines = [
             {"type": "session.start", "user_task": "q"},
-            {"type": "role.result", "text": "no"},
+            {"type": "model.result", "text": "no"},
             {"type": "session.stop", "reason": "answered", "verification": "passed"},
         ]
         (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in lines))
@@ -2077,9 +2079,9 @@ def test_bare_diff_returns_the_latest_commit(
     (d / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "user_task": "work"})
         + "\n"
-        + json.dumps({"type": "loop.auto_commit", "sha": c1, "turn": 1})
+        + json.dumps({"type": "checkpoint.committed", "sha": c1, "turn": 1})
         + "\n"
-        + json.dumps({"type": "loop.auto_commit", "sha": c2, "turn": 2})
+        + json.dumps({"type": "checkpoint.committed", "sha": c2, "turn": 2})
         + "\n",
         encoding="utf-8",
     )
@@ -2144,8 +2146,8 @@ def test_session_snapshot_as_of_a_commit(
     session_dir.mkdir(parents=True)
     events = [
         {"type": "session.start", "session_id": "asof-run", "mode": "run", "user_task": "t"},
-        {"type": "loop.auto_commit", "turn": 1, "sha": "a" * 40, "subject": "one"},
-        {"type": "loop.auto_commit", "turn": 2, "sha": "b" * 40, "subject": "two"},
+        {"type": "checkpoint.committed", "turn": 1, "sha": "a" * 40, "subject": "one"},
+        {"type": "checkpoint.committed", "turn": 2, "sha": "b" * 40, "subject": "two"},
     ]
     (session_dir / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
@@ -2175,7 +2177,7 @@ def test_snapshot_refuses_the_old_step_query(
     directory = paths.state_dir(tmp_path) / "sessions" / bucket / "history"
     directory.mkdir(parents=True)
     (directory / "logs.jsonl").write_text(
-        json.dumps({"type": "loop.auto_commit", "turn": 1, "sha": "a" * 40}) + "\n"
+        json.dumps({"type": "checkpoint.committed", "turn": 1, "sha": "a" * 40}) + "\n"
     )
     status, raw, _ = _get(port, f"/api/{kind}/history?{query}")
     assert status == 422
@@ -2482,7 +2484,7 @@ def test_the_draft_route_serves_what_the_commit_picker_asks_for(
             json.dumps(e) + "\n"
             for e in (
                 {"type": "session.start", "mode": "machine", "user_task": "draft one"},
-                {"type": "loop.auto_commit", "turn": 1, "sha": sha, "subject": "draft it"},
+                {"type": "checkpoint.committed", "turn": 1, "sha": sha, "subject": "draft it"},
             )
         ),
         encoding="utf-8",

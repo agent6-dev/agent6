@@ -274,7 +274,7 @@ def test_in_loop_records_base_rules_and_sends_exact_text(repo: pathlib.Path, lin
         f"TASK:\nt\n\nREVIEW RULES (base tree):\nAGENTS.md (blob {blob}):\nbase rule\n"
         f"\n\nVERIFY: not run.\n\nDIFF:\n{diff}"
     )
-    start = next(row for row in rows if row["type"] == "loop.review.start")
+    start = next(row for row in rows if row["type"] == "review.start")
     assert start["rule_sources"] == [{"path": "AGENTS.md", "blob_id": blob, "supplied_bytes": 10}]
     assert start["rules_complete"] is True
     assert all("base rule" not in json.dumps(row) for row in rows)
@@ -334,8 +334,8 @@ def test_incomplete_rules_skip_the_in_loop_panel(repo: pathlib.Path, directory: 
         is None
     )
     provider.call.assert_not_called()
-    start = next(row for row in rows if row["type"] == "loop.review.start")
-    skipped = next(row for row in rows if row["type"] == "loop.review.skipped")
+    start = next(row for row in rows if row["type"] == "review.start")
+    skipped = next(row for row in rows if row["type"] == "review.skipped")
     assert start["rules_complete"] is False
     assert skipped["reason"] == start["rules_reason"]
     assert "64 KiB" in skipped["reason"]

@@ -15,7 +15,7 @@ from agent6.viewmodel import log_line, review, state, transcript
 
 def start_event(**changes: Any) -> dict[str, Any]:
     return {
-        "type": "loop.review.start",
+        "type": "review.start",
         "panel_id": "panel",
         "execution_id": "exec",
         "target": dataclasses.asdict(
@@ -32,7 +32,7 @@ def start_event(**changes: Any) -> dict[str, Any]:
 def test_rule_metadata_survives_start_completion_and_wire_round_trip() -> None:
     rows = [
         start_event(),
-        {"type": "loop.review.skipped", "panel_id": "panel", "execution_id": "exec", "reason": "r"},
+        {"type": "review.skipped", "panel_id": "panel", "execution_id": "exec", "reason": "r"},
     ]
     view = state.fold_session(rows).review
     assert view.completion == "skipped"

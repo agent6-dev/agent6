@@ -113,12 +113,12 @@ MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, st
         "",
     ),
     # A prompt is still pending when a LATER event lands: Ctrl-C in the
-    # launching terminal emits session.steer_requested from the signal handler
+    # launching terminal emits steer.signalled from the signal handler
     # while the approval waits. "Blocked" is about the unanswered prompt, not
     # about which event happened to be last.
     (
         "waiting-with-a-later-event",
-        [_START, _APPROVAL, {"type": "session.steer_requested", "source": "sigint"}],
+        [_START, _APPROVAL, {"type": "steer.signalled", "source": "sigint"}],
         "",
         LIVE,
         "waiting",
@@ -493,7 +493,7 @@ def test_pending_steer_is_visible_until_consumed(tmp_path: pathlib.Path) -> None
     assert listing.summarize_session_dir(d).detail == expected
     assert ipc.take_steer_answer(d) == "Please finish the tests"
     ipc.clear_steer_request(d)
-    events.append({"type": "loop.steer.injected", "text": "Please finish the tests"})
+    events.append({"type": "steer.injected", "text": "Please finish the tests"})
     assert session_status.status_for_session_dir(
         d, status_facts(viewmodel_state.fold_session(events))
     ) == ("running", "")

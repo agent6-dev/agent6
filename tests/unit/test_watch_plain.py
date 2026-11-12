@@ -19,7 +19,7 @@ def test_format_plain_event_renders_known_fields() -> None:
     raw = json.dumps(
         {
             "ts": 1100.0,
-            "event": "loop.auto_commit",
+            "event": "checkpoint.committed",
             "session_id": "ignored-by-formatter",
             "turn": 3,
             "sha": "abc123def456",
@@ -27,7 +27,7 @@ def test_format_plain_event_renders_known_fields() -> None:
     )
     out = plan_watch.format_plain_event(raw, session_start_ts=1000.0)
     assert "+  100.0s" in out
-    assert "loop.auto_commit" in out
+    assert "checkpoint.committed" in out
     assert "turn=3" in out
     assert "sha='abc123def456'" in out
     assert "session_id" not in out  # filtered
@@ -113,7 +113,7 @@ def test_raw_watch_preserves_a_partial_replay_line(
     target = tmp_path / "live-run"
     target.mkdir()
     events = target / "logs.jsonl"
-    events.write_bytes(b'{"type":"role.')
+    events.write_bytes(b'{"type":"model.')
     appended = False
 
     def _append_tail(_seconds: float) -> None:
@@ -131,7 +131,7 @@ def test_raw_watch_preserves_a_partial_replay_line(
     monkeypatch.setattr(viewmodel_tail.time, "sleep", _append_tail)
     assert plan_watch._cmd_watch_plain(target, since=5) == 0  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
-    assert "role.call" in out
+    assert "model.call" in out
     assert "role='worker'" in out
 
 
@@ -142,7 +142,7 @@ def test_format_plain_event_renders_elapsed_for_iso_ts() -> None:
     later = "2026-06-08T05:42:39+00:00"  # +60s
     anchor = viewmodel_events.event_epoch(start)
     out = plan_watch.format_plain_event(
-        json.dumps({"ts": later, "type": "loop.auto_commit"}), session_start_ts=anchor
+        json.dumps({"ts": later, "type": "checkpoint.committed"}), session_start_ts=anchor
     )
     assert "+   60.0s" in out
-    assert "loop.auto_commit" in out
+    assert "checkpoint.committed" in out

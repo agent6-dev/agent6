@@ -49,8 +49,8 @@ def summarize_session_log(logs_path: pathlib.Path) -> str:
         "tool.call",
         "verify.end",
         "session.stop",
-        "loop.auto_commit",
-        "loop.metric.sample",
+        "checkpoint.committed",
+        "metric.sample",
     }
     notable = [e for e in events if e.get("type") in notable_types][-15:]
     if notable:
@@ -70,8 +70,8 @@ def fmt_run_event(e: dict[str, Any]) -> str:
         return f"verify.end {label}{reason}"
     if t == "session.stop":
         return f"session.stop reason={e.get('reason')}"
-    if t == "loop.metric.sample":
-        return f"loop.metric.sample score={e.get('score')}"
+    if t == "metric.sample":
+        return f"metric.sample score={e.get('score')}"
     return t
 
 

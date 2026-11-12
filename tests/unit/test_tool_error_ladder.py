@@ -37,11 +37,11 @@ def test_the_ladder_nudges_escalates_then_stops() -> None:
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     nudge, escalation, stop = _climb(state, nudges.TOOL_ERROR_STOP_AFTER)
     assert isinstance(nudge, advice.Nudge) and nudge.text == nudges.TOOL_ERROR_NUDGE
-    assert nudge.event == journal.LoopToolErrorNudge(
+    assert nudge.event == journal.NudgeToolError(
         turn=3, streak=nudges.TOOL_ERROR_NUDGE_AFTER, level=1
     )
     assert isinstance(escalation, advice.Nudge) and escalation.text == nudges.TOOL_ERROR_ESCALATION
-    assert isinstance(escalation.event, journal.LoopToolErrorNudge)
+    assert isinstance(escalation.event, journal.NudgeToolError)
     assert escalation.event.streak == nudges.TOOL_ERROR_ESCALATE_AFTER
     assert escalation.event.level == 2
     assert isinstance(stop, advice.Stop) and stop.end().reason == "tool_error_stuck"

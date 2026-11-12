@@ -353,7 +353,7 @@ class ParallelDispatcher:
         what = "review seat(s)" if record.source == "panel" else "lane(s)"
         self.log(f"PARALLEL: dispatching group {identity} ({len(lanes)} {what})")
         self.emit(
-            journal.LoopParallelDispatched(
+            journal.ParallelDispatched(
                 group=group,
                 lanes=len(lanes),
                 tasks=[lane.task[:200] for lane in lanes],
@@ -377,7 +377,7 @@ class ParallelDispatcher:
             # The front-end callback may fail after launching: unknown usage stays held.
             self.log(f"PARALLEL: group {identity} dispatch failed: {exc}")
             self.fail_nodes(record, f"dispatch failed: {exc}")
-            self.emit(journal.LoopParallelFailed(group=identity, error=str(exc)))
+            self.emit(journal.ParallelFailed(group=identity, error=str(exc)))
             message = f"[parallel] group {identity} dispatch failed: {exc}. Nothing was joined."
             record = self.settled(record, {}).advanced("complete", message=message)
             self.write(record)
@@ -421,7 +421,7 @@ class ParallelDispatcher:
             for j in joins
         ]
         self.emit(
-            journal.LoopParallelJoined(group=record.identity, lanes=payload, source=record.source)
+            journal.ParallelJoined(group=record.identity, lanes=payload, source=record.source)
         )
         failures = [
             p
@@ -429,7 +429,7 @@ class ParallelDispatcher:
             if j.status not in ("joined", "no_changes")
         ]
         if failures:
-            self.emit(journal.LoopParallelFailed(group=record.identity, lanes=failures))
+            self.emit(journal.ParallelFailed(group=record.identity, lanes=failures))
         message = parallel_join.summary_text(record.identity, joins)
         record = record.advanced("complete", message=message)
         self.write(record)
@@ -737,7 +737,7 @@ class ParallelDispatcher:
         snap = self.budget.snapshot()
         cost, _ = self.budget.estimate_usd()
         self.emit(
-            journal.LoopBudget(
+            journal.BudgetTurn(
                 turn=turn,
                 input_tokens=snap.input_total,
                 output_tokens=snap.output_total,
@@ -766,7 +766,7 @@ class ParallelDispatcher:
             sha = self.chain.commit(subject)
             if sha:
                 self.log(f"  pre-dispatch checkpoint: {sha[:12]}")
-                self.emit(journal.LoopAutoCommit(turn=turn, sha=sha, subject=subject))
+                self.emit(journal.CheckpointCommitted(turn=turn, sha=sha, subject=subject))
                 self.emit(
                     journal.DiffUpdated(
                         sha=sha,

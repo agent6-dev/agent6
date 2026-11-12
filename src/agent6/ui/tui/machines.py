@@ -80,14 +80,14 @@ def _discrete_log_line(evt: dict[str, object], *, in_flight: bool = False) -> ri
 
     Args:
         evt: The event.
-        in_flight: The turn is still open; only then is a role.call marked as thinking,
+        in_flight: The turn is still open; only then is a model.call marked as thinking,
             since a replayed finished turn would otherwise read as live.
 
     Returns:
         The line for a role call, a tool call or a tool result; None for any other event.
     """
     t = evt.get("type")
-    if t == "role.call":
+    if t == "model.call":
         mark = " thinking…" if in_flight else ""
         return rich_text.Text(
             f"  → {evt.get('role', '')}/{evt.get('model', '')}{mark}", style="cyan"
@@ -478,16 +478,16 @@ class MachineWatchScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
                 continue
             if isinstance(evt, dict):
                 batch.append(evt)
-        # The last unclosed role.call is the only turn that can be in flight.
+        # The last unclosed model.call is the only turn that can be in flight.
         open_call = -1
         for i, evt in enumerate(batch):
-            if evt.get("type") == "role.call":
+            if evt.get("type") == "model.call":
                 open_call = i
-            elif evt.get("type") == "role.result":
+            elif evt.get("type") == "model.result":
                 open_call = -1
         for i, evt in enumerate(batch):
             etype = evt.get("type")
-            if etype in ("role.thinking_delta", "role.text_delta"):
+            if etype in ("model.thinking_delta", "model.text_delta"):
                 self._pending += str(evt.get("text", ""))
                 continue
             discrete = _discrete_log_line(evt, in_flight=live and i == open_call)

@@ -958,7 +958,7 @@ def test_the_notice_fires_at_three_and_re_arms_after_a_quiet_turn() -> None:
     state.spiral.note_call('read_file:{"path": "x.txt"}')
     nudge = guards.loop_guard_notice(turn(3), state, ctx)
     assert nudge is not None and "`read_file`" in nudge.text and "3 times" in nudge.text
-    assert nudge.event == journal.LoopLoopGuardTriggered(turn=3, tool="read_file", streak=3)
+    assert nudge.event == journal.NudgeLoopGuard(turn=3, tool="read_file", streak=3)
     state.spiral.note_call('read_file:{"path": "x.txt"}')
     assert guards.loop_guard_notice(turn(4), state, ctx) is None
     state.spiral.note_call('read_file:{"path": "x.txt"}')

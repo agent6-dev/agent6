@@ -144,7 +144,7 @@ class RunInfo:
 
         Returns:
             The title and the commands at `session.start`; the usage once a call's
-            `role.result` and `budget.update` have both landed.
+            `model.result` and `budget.update` have both landed.
         """
         match str(event.get("type", "")):
             case "session.start":
@@ -167,18 +167,18 @@ class RunInfo:
                             word + "\n" + receipt.verification_summary(record),
                         )
                     ]
-            case "role.call":
+            case "model.call":
                 self._size = self.window(
                     str(event.get("provider", "")), str(event.get("model", ""))
                 )
-                self._owed = {"role.result", "budget.update"}
-            case "role.result":
+                self._owed = {"model.result", "budget.update"}
+            case "model.result":
                 used = sum(
                     int(event.get(k) or 0)
                     for k in ("input_tokens", "cache_read_tokens", "cache_write_tokens")
                 )
                 self._used = used if used > 0 else self._used
-                return self._settle("role.result")
+                return self._settle("model.result")
             case "budget.update":
                 # The listing's cost cell rule: dollars only when some were spent and all priced.
                 usd = event.get("usd_total")

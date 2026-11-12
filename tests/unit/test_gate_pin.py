@@ -53,9 +53,7 @@ def test_a_gate_adopted_mid_execution_re_pins(tmp_path: pathlib.Path) -> None:
     )
     assert sessions_manifest.read_manifest(layout.session_dir).harness.gate.command == ()
 
-    events.emit(
-        journal.LoopVerifyInferred(command=["pytest", "-q"], source="agents_md", adopted_at=3)
-    )
+    events.emit(journal.VerifyInferred(command=["pytest", "-q"], source="agents_md", adopted_at=3))
 
     pinned = sessions_manifest.read_manifest(layout.session_dir).harness
     assert pinned.gate.command == ("pytest", "-q")
@@ -70,10 +68,8 @@ def test_an_un_adopted_gate_re_pins_gateless(tmp_path: pathlib.Path) -> None:
     stamps.pin_gate(
         layout.session_dir, sessions_manifest.GateStamp(), events=events, reporter=reporter
     )
-    events.emit(
-        journal.LoopVerifyInferred(command=["pytest", "-q"], source="agents_md", adopted_at=3)
-    )
-    events.emit(journal.LoopVerifyInferred(command=[], source="unadopted", adopted_at=5))
+    events.emit(journal.VerifyInferred(command=["pytest", "-q"], source="agents_md", adopted_at=3))
+    events.emit(journal.VerifyInferred(command=[], source="unadopted", adopted_at=5))
     pinned = sessions_manifest.read_manifest(layout.session_dir).harness
     assert pinned.gate.command == () and pinned.gate.source == ""
 
@@ -89,7 +85,7 @@ def test_a_preflight_inference_is_not_an_adoption(tmp_path: pathlib.Path) -> Non
         events=events,
         reporter=reporter,
     )
-    events.emit(journal.LoopVerifyInferred(command=["pytest"], source="repo_signals"))
+    events.emit(journal.VerifyInferred(command=["pytest"], source="repo_signals"))
     pinned = sessions_manifest.read_manifest(layout.session_dir).harness
     assert pinned.gate.command == ("make", "check")
     assert pinned.gate.source == "configured"
@@ -104,7 +100,7 @@ def test_a_pin_that_cannot_be_written_is_reported(tmp_path: pathlib.Path) -> Non
         layout.session_dir, sessions_manifest.GateStamp(), events=events, reporter=reporter
     )
     layout.manifest_path.unlink()
-    events.emit(journal.LoopVerifyInferred(command=["pytest"], source="agents_md", adopted_at=1))
+    events.emit(journal.VerifyInferred(command=["pytest"], source="agents_md", adopted_at=1))
     assert any("could not record this run's verify gate" in line for line in said)
 
 
@@ -225,10 +221,10 @@ def test_a_gate_that_changed_between_executions_takes_no_blame_for_the_edits(
     layout = _layout(tmp_path)
     records = [
         {"type": "loop.start"},
-        {"type": "loop.baseline", "ok": True, "turn": 0},
+        {"type": "verify.baseline", "ok": True, "turn": 0},
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         {"type": "session.resume"},
-        {"type": "loop.verify_swapped", "was": ["pytest"], "now": ["make", "test"]},
+        {"type": "verify.swapped", "was": ["pytest"], "now": ["make", "test"]},
         {"type": "verify.start"},
         {"type": "verify.end", "exit_code": 1},
         {"type": "session.stop", "reason": "finish_session", "verification": "failed"},
@@ -278,10 +274,10 @@ def test_a_resumed_red_gate_reads_the_first_executions_baseline(
         {"type": "loop.start"},
         {"type": "verify.start"},
         {"type": "verify.end", "exit_code": 0 if baseline_ok else 1},
-        {"type": "loop.baseline", "ok": baseline_ok, "turn": 0},
+        {"type": "verify.baseline", "ok": baseline_ok, "turn": 0},
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         {"type": "session.resume"},
-        {"type": "loop.baseline", "ok": not baseline_ok, "turn": 0},
+        {"type": "verify.baseline", "ok": not baseline_ok, "turn": 0},
         {"type": "verify.start"},
         {"type": "verify.end", "exit_code": 1},
         {"type": "session.stop", "reason": "finish_session", "verification": "failed"},

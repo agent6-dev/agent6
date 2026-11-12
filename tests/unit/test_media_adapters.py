@@ -268,7 +268,7 @@ def test_media_refusal_records_the_provider_tool_call_id(tmp_path: pathlib.Path)
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     assert recovery.replace(conversation, None, sink.emit)
     rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
-    assert [row["type"] for row in rows] == ["loop.media.refused"] * 2
+    assert [row["type"] for row in rows] == ["media.refused"] * 2
     assert [row.get("provider_tool_call_id") for row in rows] == ["a", "c"]
     assert all("call_id" not in row for row in rows)
 

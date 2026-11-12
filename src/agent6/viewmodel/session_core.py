@@ -24,10 +24,10 @@ _CORE_TYPES = frozenset(
         "environment.acquired",
         "environment.starting",
         "execution.environment",
-        "loop.pin.added",
-        "loop.pin.restored",
+        "pin.added",
+        "pin.restored",
         "question.answer",
-        "role.result",
+        "model.result",
         "session.resume",
         "session.start",
         "session.stop",
@@ -110,7 +110,7 @@ def apply(  # noqa: PLR0911, PLR0912  # one branch per family
                     verify_timeout_s=events.verify_limit_hit(outcome, limit),
                 ),
             )
-        case journal.RoleResult(ok=False, role=role, error=error) if not kinds.is_side_role(role):
+        case journal.ModelResult(ok=False, role=role, error=error) if not kinds.is_side_role(role):
             # A side call's failure never ends the run, so it is not the reason.
             return dataclasses.replace(
                 core, lifecycle=dataclasses.replace(life, provider_error=error or "")
@@ -123,11 +123,11 @@ def apply(  # noqa: PLR0911, PLR0912  # one branch per family
                     life, unattended_questions=life.unattended_questions + 1
                 ),
             )
-        case journal.LoopPinAdded(text=text):
+        case journal.PinAdded(text=text):
             return dataclasses.replace(
                 core, lifecycle=dataclasses.replace(life, pins=(*life.pins, text))
             )
-        case journal.LoopPinRestored(pins=pins):
+        case journal.PinRestored(pins=pins):
             return dataclasses.replace(core, lifecycle=dataclasses.replace(life, pins=tuple(pins)))
         case journal.EnvironmentStarting() | journal.EnvironmentAcquired():
             view = held_environment(event)

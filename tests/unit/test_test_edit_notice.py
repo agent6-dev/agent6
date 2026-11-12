@@ -20,7 +20,7 @@ from agent6.sessions import journal
 from agent6.tools import results
 
 NOTICE_HEAD = "[harness verify] The gate was red at the last verify and green at this one;"
-EVENT = "loop.test_only_green.notice"
+EVENT = "verify.test_only_green"
 
 
 def test_is_test_path_conventions() -> None:

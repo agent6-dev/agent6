@@ -634,7 +634,7 @@ def infer_verify_if_unset(
         cwd: The workspace.
         mode: The session mode; only run and plan infer.
         available: The target executable lookup; passive local callers use the advisory PATH.
-        events: Receives `loop.verify_inferred`.
+        events: Receives `verify.inferred`.
         transcript_sink: The recorder the inference call goes to.
         budget: The tracker the inference call bills.
         reporter: Receives the note naming what was picked.
@@ -646,7 +646,7 @@ def infer_verify_if_unset(
         return cfg
     if not cfg.harness.verify_infer:
         # Pinned gateless: mid-run adoption reads the same knob and stays off too.
-        events.emit(journal.LoopVerifyInferred(command=[], source="disabled"))
+        events.emit(journal.VerifyInferred(command=[], source="disabled"))
         if mode == "run":
             reporter.note(
                 "verify_infer = false: running gateless"
@@ -686,7 +686,7 @@ def infer_verify_if_unset(
     inferred = verify_infer.infer_verify_command(
         cwd, agents_md, available=available, llm_call=_llm_call, hide=hide
     )
-    events.emit(journal.LoopVerifyInferred(command=list(inferred.argv), source=inferred.source))
+    events.emit(journal.VerifyInferred(command=list(inferred.argv), source=inferred.source))
     passed = verify_infer.passed_over_text(inferred)
     passed_line = f"\n         passed over: {passed}" if passed else ""
     if not inferred.argv:

@@ -224,7 +224,7 @@ def test_journal_keeps_operator_words_before_composition(
     start = next(row for row in rows if row["type"] == "session.resume")
     assert start["user_task"] == words
     assert start["steer"] == steer
-    assert next(row for row in rows if row["type"] == "loop.steer.injected")["text"] == steer
+    assert next(row for row in rows if row["type"] == "steer.injected")["text"] == steer
     capsys.readouterr()
     assert cli_main(["sessions", "show", session.name]) == 0
     shown = capsys.readouterr().out.replace("\n" + " " * 12, "\n")

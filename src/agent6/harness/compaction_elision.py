@@ -41,7 +41,7 @@ IDENTIFYING_KEYS: Final = ("path", "argv", "symbol", "name", "id", "url", "query
 def call_label(tool_name: str, tool_input: Any) -> str:
     """Return a short identity for a tool call, such as "read_file src/foo.py".
 
-    The placeholder hint and the `loop.compact.*` event payloads share it, so
+    The placeholder hint and the `compact.*` event payloads share it, so
     every surface can say what left the model's context.
 
     Args:

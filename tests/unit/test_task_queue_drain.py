@@ -110,9 +110,9 @@ def test_a_queued_task_is_journalled_for_the_surfaces(tmp_path: pathlib.Path) ->
     wf.operator_tasks.take(root)
 
     kinds = [e["type"] for e in _events(sink)]
-    assert "loop.task.queued" in kinds
+    assert "task.queued" in kinds
     assert "graph.update" in kinds
-    queued = next(e for e in _events(sink) if e["type"] == "loop.task.queued")
+    queued = next(e for e in _events(sink) if e["type"] == "task.queued")
     assert queued["title"] == "note it"
 
 
@@ -183,4 +183,4 @@ def test_a_parked_run_takes_a_queued_task_and_continues(tmp_path: pathlib.Path) 
         "add a --json flag",
     ]
     types = [e["type"] for e in _events(sink)]
-    assert types[-3:] == ["loop.task.queued", "graph.update", "loop.parked.resumed"]
+    assert types[-3:] == ["task.queued", "graph.update", "loop.parked.resumed"]

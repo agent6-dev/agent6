@@ -133,7 +133,7 @@ def test_a_checkpoint_names_its_task_in_a_trailer_and_its_event(tmp_path: pathli
     sha = points.commit("agent6 turn 1: edit", turn=1, task_id="task-7")
     body = _git(tmp_path, "log", "-1", "--format=%B", sha)
     assert f"{git_read.TASK_TRAILER}: task-7" in body
-    assert next(e for e in events if e["type"] == "loop.auto_commit")["task_id"] == "task-7"
+    assert next(e for e in events if e["type"] == "checkpoint.committed")["task_id"] == "task-7"
 
 
 def test_tasks_merge_lands_one_commit_per_task_range_under_its_title(

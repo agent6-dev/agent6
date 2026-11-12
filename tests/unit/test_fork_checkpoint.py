@@ -711,7 +711,7 @@ def test_fork_clones_state_writes_lineage_and_branch(
     state = paths.state_dir(repo)
     src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
     src.logs_path.write_text(
-        json.dumps({"type": "loop.baseline", "ok": True, "turn": 0}) + "\n",
+        json.dumps({"type": "verify.baseline", "ok": True, "turn": 0}) + "\n",
         encoding="utf-8",
     )
 

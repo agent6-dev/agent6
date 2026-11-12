@@ -213,7 +213,7 @@ class MediaRecovery:
                     self.unsupported.add(modality)
                 if emit is not None:
                     emit(
-                        journal.LoopMediaRefused(
+                        journal.MediaRefused(
                             provider_tool_call_id=item.tool_use_id,
                             route=self.capabilities.route.spec,
                             reason=reason,
@@ -251,7 +251,7 @@ def call_with_media_recovery(
     limited = conversation.limit_attachments()
     for call_id, reason in limited:
         if emit is not None:
-            emit(journal.LoopMediaRefused(provider_tool_call_id=call_id, reason=reason))
+            emit(journal.MediaRefused(provider_tool_call_id=call_id, reason=reason))
     if (recovery.replace(conversation, None, emit) or limited) and changed is not None:
         changed()
     try:
@@ -400,7 +400,7 @@ class ProviderCaller:
                         " not retrying"
                     )
                     self.emit(
-                        journal.LoopProviderFatal(status_code=exc.status_code, error=str(exc)[:200])
+                        journal.ProviderFatal(status_code=exc.status_code, error=str(exc)[:200])
                     )
                     raise
                 if closes_call(exc, context):
@@ -411,7 +411,7 @@ class ProviderCaller:
                     f"LOOP: provider error attempt {attempt}/{attempts}: {exc}"
                     f" - retrying in {delay:.2f}s"
                 )
-                self.emit(journal.LoopProviderRetry(attempt=attempt, error=str(exc)[:200]))
+                self.emit(journal.ProviderRetry(attempt=attempt, error=str(exc)[:200]))
             else:
                 self.counter.output_tokens += resp.output_tokens
                 if settles_call(resp, context):
@@ -424,7 +424,7 @@ class ProviderCaller:
                     f" retrying in {delay:.2f}s"
                 )
                 self.emit(
-                    journal.LoopProviderEmptyToolCallRetry(
+                    journal.ProviderEmptyToolCallRetry(
                         attempt=attempt,
                         stop_reason=str(resp.stop_reason),
                     )

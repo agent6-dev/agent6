@@ -30,13 +30,13 @@ OPERATOR = "❯"  # noqa: RUF001  # a prompt glyph, not a mistyped >
 
 # Events that render between turns: type -> (kind, the field holding the text).
 _BETWEEN_TURNS: dict[str, tuple[transcript_items.ItemKind, str]] = {
-    "loop.steer.feedback": ("marker", "text"),
-    "loop.steer.injected": ("operator", "text"),
+    "steer.feedback": ("marker", "text"),
+    "steer.injected": ("operator", "text"),
     "btw.answered": ("marker", "block"),
 }
 
 # Where the operator's own words live in the journal; `tools.sessions._SPEAKER` quotes them.
-_OPERATOR_TEXT = {"session.start": "user_task", "loop.steer.injected": "text"}
+_OPERATOR_TEXT = {"session.start": "user_task", "steer.injected": "text"}
 
 
 def worker_models(events: Iterable[dict[str, Any]]) -> tuple[str, ...]:
@@ -48,11 +48,11 @@ def worker_models(events: Iterable[dict[str, Any]]) -> tuple[str, ...]:
         events: The raw events, in order.
 
     Returns:
-        Every `role.call` worker model once, the primary worker first.
+        Every `model.call` worker model once, the primary worker first.
     """
     seen: dict[str, None] = {}
     for event in events:
-        if event.get("type") == "role.call" and event.get("role") == "worker":
+        if event.get("type") == "model.call" and event.get("role") == "worker":
             model = str(event.get("model", "")).strip()
             if model:
                 seen.setdefault(model, None)
@@ -148,7 +148,7 @@ class TranscriptFold:
             self._usd = float(event.get("usd_total", 0) or 0)
             self._usd_partial = bool(event.get("usd_partial")) or self._usd_partial
             return True
-        if etype == "loop.auto_commit":
+        if etype == "checkpoint.committed":
             self._commit_subject = str(event.get("subject", "")).strip()
             return True
         if etype == "verify.end":
@@ -199,12 +199,12 @@ class TranscriptFold:
 
         Args:
             event: The pin event.
-            etype: Its type, `loop.pin.added` or `loop.pin.restored`.
+            etype: Its type, `pin.added` or `pin.restored`.
 
         Returns:
             The flushed message, then the pins item; nothing when every pin was shown.
         """
-        raw = [event.get("text", "")] if etype == "loop.pin.added" else event.get("pins") or ()
+        raw = [event.get("text", "")] if etype == "pin.added" else event.get("pins") or ()
         texts = [str(t).strip() for t in raw] if isinstance(raw, (list, tuple)) else []
         fresh = [t for t in texts if t and t not in self._pins_shown]
         if not fresh:
@@ -227,16 +227,16 @@ class TranscriptFold:
         if self._fold_receipt(event, etype):
             deferred, self._deferred = self._deferred, []
             return deferred
-        if etype == "role.call":
+        if etype == "model.call":
             self._thinking.clear()
             self._text.clear()
             return []
         # Side streams belong to the live pane, not the driving role's settled speech.
-        if etype in ("role.thinking_delta", "role.text_delta") and not self._is_side_call(event):
-            buffer = self._thinking if etype == "role.thinking_delta" else self._text
+        if etype in ("model.thinking_delta", "model.text_delta") and not self._is_side_call(event):
+            buffer = self._thinking if etype == "model.thinking_delta" else self._text
             buffer.append(str(event.get("text", "")))
             return []
-        if etype == "role.result":
+        if etype == "model.result":
             # Only the driving role speaks: a side call's answer would read as the agent's.
             settled = "" if self._is_side_call(event) else str(event.get("text", ""))
             return self._flush_message(settled=settled)
@@ -273,7 +273,7 @@ class TranscriptFold:
             out = self._flush_message()
             out.append(transcript_items.TranscriptItem("marker", body=body))
             return out
-        if etype in ("loop.pin.added", "loop.pin.restored"):
+        if etype in ("pin.added", "pin.restored"):
             return self._pin_items(event, etype)
         aside = _BETWEEN_TURNS.get(etype)
         if aside is not None:

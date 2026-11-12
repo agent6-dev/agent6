@@ -400,7 +400,7 @@ class Harness:
                 f" not re-run: {', '.join(interrupted)}"
             )
             self.emit(
-                journal.LoopResumeInterrupted(
+                journal.SessionResumeInterrupted(
                     turn=snapshot.next_turn - 1,
                     tools=list(interrupted),
                 )
@@ -426,7 +426,7 @@ class Harness:
                 f" it is now `{now}`. The instructions above still name the old one."
             )
             self.log(f"LOOP: verify gate swapped on resume: {was} -> {now}")
-            self.emit(journal.LoopVerifySwapped(was=list(snapshot.verify_command), now=list(gate)))
+            self.emit(journal.VerifySwapped(was=list(snapshot.verify_command), now=list(gate)))
 
         if snapshot.verify_withheld and gate and self.dispatcher.command_policy() != "deny":
             # Denial resets per execution; its notice can survive even in a compacted summary.
@@ -693,7 +693,7 @@ class Harness:
                 return parked
             self._turn_before_call(conversation, state, ctx)
         for call_id, reason in conversation.limit_attachments():
-            self.emit(journal.LoopMediaRefused(provider_tool_call_id=call_id, reason=reason))
+            self.emit(journal.MediaRefused(provider_tool_call_id=call_id, reason=reason))
         conversation.roll_cache_marks()
         wire = conversation.to_wire()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
@@ -732,7 +732,7 @@ class Harness:
             session_id = self.session_id or "<session-id>"
             remedy = f"plan.md unreadable: {exc}; fix it and `agent6 resume {session_id}`"
             self.log(f"LOOP: {remedy}")
-            self.emit(journal.LoopPlanReadFailed(path=str(self.plan_output_path), error=str(exc)))
+            self.emit(journal.PlanReadFailed(path=str(self.plan_output_path), error=str(exc)))
             return self.finish(
                 state,
                 loop_snapshot.End("plan_unreadable", remedy, checkpoint=False),
@@ -744,7 +744,7 @@ class Harness:
         conversation.notice(f"{nudges.PLAN_ON_DISK_HEADER}\n\n{text}")
         self.log(f"  plan re-read from disk: {len(text)} chars")
         self.emit(
-            journal.LoopPlanReread(
+            journal.PlanReread(
                 path=str(self.plan_output_path),
                 bytes=len(text.encode("utf-8")),
             )
@@ -819,7 +819,7 @@ class Harness:
         conversation.notice(banner)
         state.focus.surfaced_task_id = current_id
         self.log(f"LOOP: surfaced current task {current_id}")
-        self.emit(journal.LoopTaskSurfaced(task_id=current_id))
+        self.emit(journal.TaskSurfaced(task_id=current_id))
         # The cursor and status writes above bypass dispatch, which emits graph.update.
         self._emit_graph_snapshot()
 
@@ -1064,7 +1064,7 @@ class Harness:
                 attachment = result.attachment
                 if attachment is not None and (reason := media_budget.refusal(attachment)):
                     attachment = None
-                    self.emit(journal.LoopMediaRefused(provider_tool_call_id=tu.id, reason=reason))
+                    self.emit(journal.MediaRefused(provider_tool_call_id=tu.id, reason=reason))
                     raise tool_errors.ToolError(reason)
                 wire_result = result.to_wire()
                 if note := tool_effects.left_out_note(self, turn, name, result, tool_input):
@@ -1778,11 +1778,11 @@ class Harness:
             )
         except OSError as exc:
             self.log(f"LOOP: decision not recorded: {exc}")
-            self.emit(journal.LoopDecisionUnrecorded(error=str(exc)))
+            self.emit(journal.DecisionUnrecorded(error=str(exc)))
             return
         state.decisions_recorded.append(entry)
         self.log(f"LOOP: decision recorded ({len(answer)} chars)")
-        self.emit(journal.LoopDecisionRecorded(question=question[:200], answer=answer[:200]))
+        self.emit(journal.DecisionRecorded(question=question[:200], answer=answer[:200]))
 
     def _check_decisions_recorded(self, state: loop_state.LoopState) -> None:
         """Report a recorded ruling missing from decisions.md at the finish; never a block.
@@ -1799,7 +1799,7 @@ class Harness:
         missing = [e for e in state.decisions_recorded if e.strip() not in text]
         if missing:
             self.log(f"LOOP: {len(missing)} recorded decision(s) missing from decisions.md")
-            self.emit(journal.LoopDecisionUnrecorded(missing=len(missing)))
+            self.emit(journal.DecisionUnrecorded(missing=len(missing)))
 
     def _load_skills(self) -> skills.ResolvedSkills | None:
         """Return the installed skills for the system prompt, in run mode.
@@ -1815,7 +1815,7 @@ class Harness:
         resolved = self.dispatcher.resolved_skills()
         for w in resolved.warnings:
             self.log(f"LOOP: skills: WARNING: {w}")
-            self.emit(journal.LoopSkillsWarning(warning=str(w)))
+            self.emit(journal.SkillsWarning(warning=str(w)))
         if resolved.enabled or resolved.always:
             self.log(
                 f"LOOP: skills: {len(resolved.enabled)} indexed, {len(resolved.always)} always-on"
@@ -2067,7 +2067,7 @@ class Harness:
         snap = self.budget.snapshot()
         cost, _ = self.budget.estimate_usd()
         self.emit(
-            journal.LoopBudget(
+            journal.BudgetTurn(
                 turn=turn,
                 input_tokens=snap.input_total,
                 output_tokens=snap.output_total,

@@ -561,7 +561,7 @@ def test_show_nests_attempts_directly_under_the_verify_field(
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "verify.end", "exit_code": 1, "duration_s": 2.5},
             {"type": "verify.end", "exit_code": 0, "duration_s": 1.2},
-            {"type": "loop.pin.added", "text": "Keep the regression checks"},
+            {"type": "pin.added", "text": "Keep the regression checks"},
             {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
@@ -585,7 +585,7 @@ def test_show_names_the_start_gates_verdict_beside_the_final_one(
         "fan-l1",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "loop.baseline", "ok": False, "turn": 0},
+            {"type": "verify.baseline", "ok": False, "turn": 0},
             {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )

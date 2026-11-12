@@ -150,7 +150,7 @@ def _sandbox_unreachable_tools(layout: sessions_layout.SessionLayout) -> list[st
     out: list[str] = []
     try:
         for line in layout.logs_path.read_text(encoding="utf-8").splitlines():
-            if '"loop.sandbox_tool_unreachable"' not in line:
+            if '"jail.tool_unreachable"' not in line:
                 continue
             try:
                 binary = json.loads(line).get("binary")

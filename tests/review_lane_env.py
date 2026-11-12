@@ -147,9 +147,9 @@ def run_panel(
                 if emit is not None:
 
                     def media_event(row: dict[str, Any]) -> None:
-                        if row.get("type") == "loop.media.refused":
+                        if row.get("type") == "media.refused":
                             emit(
-                                journal.LoopMediaRefused(
+                                journal.MediaRefused(
                                     provider_tool_call_id=row["provider_tool_call_id"],
                                     reason=row["reason"],
                                 )

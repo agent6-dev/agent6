@@ -24,7 +24,7 @@ _TOKEN_TYPES = (
     ("cache_read", "cache_read_tokens"),
     ("cache_write", "cache_write_tokens"),
 )
-_FINDING_ACTIONS = ("loop.review.finding.resolved", "loop.review.finding.reopened")
+_FINDING_ACTIONS = ("review.finding.resolved", "review.finding.reopened")
 # What still folds once an execution has ended: the settled budget, the stranded notice and
 # the review dispositions; everything else belongs to the next execution.
 _AFTER_END = frozenset({"budget.update", "session.stranded"})
@@ -102,7 +102,7 @@ class TelemetryFold:
         logs: list[telemetry_records.LogRecord] = []
         if kind in ("session.start", "session.resume"):
             spans.extend(self._start_execution(event, now))
-        if kind.startswith("loop.review."):
+        if kind.startswith("review."):
             logs.extend(self._findings_update(event, now))
         execution = self._execution
         if execution is None or (execution.ended and kind not in _AFTER_END):
@@ -604,18 +604,18 @@ class TelemetryFold:
         step.logs.append(log)
 
     _HANDLERS: ClassVar[dict[str, Callable[[TelemetryFold, telemetry_records.Step], None]]] = {
-        "role.attempt": _role_attempt,
-        "role.call": _role_call,
-        "role.result": _role_result,
+        "model.attempt": _role_attempt,
+        "model.call": _role_call,
+        "model.result": _role_result,
         "tool.call": _tool_call,
         "tool.result": _tool_result,
         "verify.start": _verify_start,
         "verify.end": _verify_end,
-        "loop.review.start": _review_start,
-        "loop.review.seat": _review_seat,
-        "loop.review.panel": _review_panel,
-        "loop.review.reused": _review_reused,
-        "loop.review.skipped": _review_skipped,
+        "review.start": _review_start,
+        "review.seat": _review_seat,
+        "review.panel": _review_panel,
+        "review.reused": _review_reused,
+        "review.skipped": _review_skipped,
         "approval.prompt": _prompt,
         "question.prompt": _prompt,
         "approval.answer": _answer,

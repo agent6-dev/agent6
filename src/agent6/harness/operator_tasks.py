@@ -42,7 +42,7 @@ class OperatorTasks:
     def take(self, root_task_id: str | None) -> bool:
         """Apply what the operator asked since the last turn boundary, in the order asked.
 
-        A refused request is logged and emitted (`loop.request.refused`); the rest still land.
+        A refused request is logged and emitted (`task.request_refused`); the rest still land.
 
         Args:
             root_task_id: The run's root task, or None before the graph is seeded.
@@ -64,7 +64,7 @@ class OperatorTasks:
             except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
                 self.log(f"LOOP: {request.kind} request refused: {exc}")
                 self.emit(
-                    journal.LoopRequestRefused(
+                    journal.TaskRequestRefused(
                         kind=request.kind,
                         text=request.text[:200],
                         error=str(exc),
@@ -143,7 +143,7 @@ class OperatorTasks:
             )
         )
         self.log(f"LOOP: operator queued task {node.id}: {title}")
-        self.emit(journal.LoopTaskQueued(task_id=node.id, title=title))
+        self.emit(journal.TaskQueued(task_id=node.id, title=title))
 
     def retire(self, task_id: str) -> None:
         """Retire a task the operator no longer wants: obsolete, not skipped.
@@ -160,7 +160,7 @@ class OperatorTasks:
             )
         )
         self.log(f"LOOP: operator retired task {node.id}")
-        self.emit(journal.LoopTaskRetired(task_id=node.id, title=node.title))
+        self.emit(journal.TaskRetired(task_id=node.id, title=node.title))
 
     def set_standing(self, root_id: str, goal: str) -> None:
         """Set the standing goal, retiring the one it replaces.
@@ -188,7 +188,7 @@ class OperatorTasks:
             )
         )
         self.log(f"LOOP: standing goal set: {node.id}")
-        self.emit(journal.LoopStandingSet(task_id=node.id, title=goal))
+        self.emit(journal.StandingSet(task_id=node.id, title=goal))
 
     @property
     def _graph(self) -> graph_curator.GraphCurator:

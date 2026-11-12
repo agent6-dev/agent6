@@ -231,10 +231,10 @@ def test_load_replays_the_recorded_conversation_before_answering(tmp_path: pathl
     d = _record(cwd, "quiet-run-AAAAAA", task, mtime=time.time())
     rows = [
         {"type": "session.start", "mode": "run", "user_task": task},
-        {"type": "role.thinking_delta", "text": "Check the empty input."},
-        {"type": "role.text_delta", "text": "I will "},
-        {"type": "role.text_delta", "text": "inspect it."},
-        {"type": "role.result", "role": "worker", "text": "I will inspect it."},
+        {"type": "model.thinking_delta", "text": "Check the empty input."},
+        {"type": "model.text_delta", "text": "I will "},
+        {"type": "model.text_delta", "text": "inspect it."},
+        {"type": "model.result", "role": "worker", "text": "I will inspect it."},
         {
             "type": "tool.call",
             "call_id": 1,
@@ -331,7 +331,7 @@ def test_loaded_executions_keep_distinct_tools_and_resume_the_same_run(
         {"type": "session.start", "mode": "run", "user_task": "first"},
         call,
         {"type": "session.resume"},
-        {"type": "loop.steer.injected", "text": "carry on"},
+        {"type": "steer.injected", "text": "carry on"},
         call,
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))

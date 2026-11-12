@@ -1418,15 +1418,15 @@ def test_model_deltas_stream_once_in_journal_order_and_side_calls_stay_hidden(
 ) -> None:
     """Deltas stream live, and side-role deltas are not messages to the operator."""
     events = [
-        {"type": "role.call", "role": "reviewer"},
-        {"type": "role.text_delta", "role": "reviewer", "text": "private"},
-        {"type": "role.result", "role": "reviewer", "text": "private"},
-        {"type": "role.call", "role": "worker"},
-        {"type": "role.thinking_delta", "role": "worker", "text": "think "},
-        {"type": "role.text_delta", "role": "worker", "text": "answer "},
-        {"type": "role.thinking_delta", "role": "worker", "text": "two"},
-        {"type": "role.text_delta", "role": "worker", "text": "one"},
-        {"type": "role.result", "role": "worker", "text": "ignored fallback"},
+        {"type": "model.call", "role": "reviewer"},
+        {"type": "model.text_delta", "role": "reviewer", "text": "private"},
+        {"type": "model.result", "role": "reviewer", "text": "private"},
+        {"type": "model.call", "role": "worker"},
+        {"type": "model.thinking_delta", "role": "worker", "text": "think "},
+        {"type": "model.text_delta", "role": "worker", "text": "answer "},
+        {"type": "model.thinking_delta", "role": "worker", "text": "two"},
+        {"type": "model.text_delta", "role": "worker", "text": "one"},
+        {"type": "model.result", "role": "worker", "text": "ignored fallback"},
     ]
     at = [-1]
 
@@ -2163,9 +2163,9 @@ def test_the_tail_sends_the_title_the_commands_and_the_usage(tmp_path: pathlib.P
             execution_id="execution",
         )
     )
-    sink.emit(journal.RoleCall(role="worker", model="m", provider="p", model_call_id="call"))
+    sink.emit(journal.ModelCall(role="worker", model="m", provider="p", model_call_id="call"))
     sink.emit(
-        journal.RoleResult(
+        journal.ModelResult(
             role="worker",
             model="m",
             provider="p",
@@ -2195,13 +2195,13 @@ def test_a_streamed_final_answer_is_not_sent_again_as_the_end_summary(
     Zed showed the final message twice, the deltas and then the `done` item's body.
     """
     events = [
-        {"type": "role.call", "role": "worker"},
-        {"type": "role.text_delta", "role": "worker", "text": "Appended the line.\n\n"},
-        {"type": "role.text_delta", "role": "worker", "text": "DONE"},
-        {"type": "role.result", "role": "worker", "text": "Appended the line.\n\nDONE"},
+        {"type": "model.call", "role": "worker"},
+        {"type": "model.text_delta", "role": "worker", "text": "Appended the line.\n\n"},
+        {"type": "model.text_delta", "role": "worker", "text": "DONE"},
+        {"type": "model.result", "role": "worker", "text": "Appended the line.\n\nDONE"},
         # The finish comes a call later, with no text of its own; the summary is the last text.
-        {"type": "role.call", "role": "worker"},
-        {"type": "role.result", "role": "worker", "text": ""},
+        {"type": "model.call", "role": "worker"},
+        {"type": "model.result", "role": "worker", "text": ""},
         {
             "type": "tool.call",
             "name": "finish_session",
@@ -2251,8 +2251,8 @@ def test_the_editors_own_prompt_is_not_echoed_back_as_a_user_message(
     """
     events = [
         {"type": "session.start", "user_task": "Now reply PING.\n\nKeep this line too."},
-        {"type": "loop.steer.injected", "text": "Now reply PING.", "chars": 15},
-        {"type": "loop.steer.injected", "text": "keep the API", "chars": 12},
+        {"type": "steer.injected", "text": "Now reply PING.", "chars": 15},
+        {"type": "steer.injected", "text": "keep the API", "chars": 12},
     ]
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())

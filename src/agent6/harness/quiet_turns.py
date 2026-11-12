@@ -72,7 +72,7 @@ def silent_no_work(state: loop_state.LoopState, ctx: advice.TurnContext) -> advi
     quiet.silent_no_work_nudges_used += 1
     return advice.Nudge(
         nudges.SILENT_NO_WORK_NUDGE,
-        event=journal.LoopSilentNoWorkNudge(
+        event=journal.NudgeSilentNoWork(
             turn=ctx.turn, nudges_used=quiet.silent_no_work_nudges_used
         ),
         log=(
@@ -102,7 +102,7 @@ def question_in_prose(
     state.quiet.question_nudged = True
     return advice.Nudge(
         nudges.QUESTION_NUDGE,
-        event=journal.LoopQuestionNudge(turn=ctx.turn),
+        event=journal.NudgeQuestion(turn=ctx.turn),
         log=f"  silent_finish nudged: ended on a question at turn {ctx.turn}",
     )
 
@@ -130,7 +130,7 @@ def went_quiet(
     starved = provider_call.reasoning_starvation(resp) > 0
     return advice.Nudge(
         nudges.reasoning_starved_nudge(resp.output_tokens) if starved else nudges.WENT_QUIET_NUDGE,
-        event=journal.LoopWentQuietNudge(
+        event=journal.NudgeWentQuiet(
             turn=ctx.turn,
             nudges_used=quiet.went_quiet_nudges_used,
             nudges_max=cap,
@@ -268,7 +268,7 @@ def handle_went_quiet(
             f" providers/openai.py if it isn't already."
         )
         wf.emit(
-            journal.LoopReasoningStarvation(
+            journal.ModelReasoningStarvation(
                 turn=turn,
                 reasoning_chars=reasoning_chars,
                 output_tokens=resp.output_tokens,

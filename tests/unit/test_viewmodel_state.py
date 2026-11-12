@@ -92,7 +92,7 @@ def test_a_log_line_is_one_line() -> None:
     """
     line = log_line.format_log_line(
         {
-            "type": "loop.provider.retry",
+            "type": "provider.retry",
             "error": "non-JSON response (status 200):\n: keepalive\n\n: keepalive\n",
         }
     )
@@ -108,13 +108,13 @@ def test_format_log_line_keeps_the_compaction_reason() -> None:
     read as nothing having happened.
     """
     failed = log_line.format_log_line(
-        {"type": "loop.compact.summarise.failed", "error": "provider 429: rate limited"}
+        {"type": "compact.summarise.failed", "error": "provider 429: rate limited"}
     )
     assert "429" in failed
-    gist = log_line.format_log_line({"type": "loop.compact.gist.failed", "error": "boom"})
+    gist = log_line.format_log_line({"type": "compact.gist.failed", "error": "boom"})
     assert "boom" in gist
     requested = log_line.format_log_line(
-        {"type": "loop.compact.requested", "focus": "keep the auth work"}
+        {"type": "compact.requested", "focus": "keep the auth work"}
     )
     assert "keep the auth work" in requested
 
@@ -145,9 +145,9 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
     assert context_fill(s) is None  # no call yet
     for ev in (
         {"type": "session.start", "user_task": "x", "mode": "run"},
-        {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
+        {"type": "model.call", "role": "worker", "model": "m", "provider": "p"},
         {
-            "type": "role.result",
+            "type": "model.result",
             "role": "worker",
             "ok": True,
             "input_tokens": 1_000,
@@ -162,17 +162,17 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
 
 
 def test_format_log_line_names_the_pins_in_force() -> None:
-    """loop.pin.restored names the pins in force at execution start, for a --pin run or a resume.
+    """pin.restored names the pins in force at execution start, for a --pin run or a resume.
 
     The line said "restored from the snapshot" for both and named none of them.
     """
     line = log_line.format_log_line(
-        {"type": "loop.pin.restored", "pins": ["never touch test_calc.py"], "count": 1}
+        {"type": "pin.restored", "pins": ["never touch test_calc.py"], "count": 1}
     )
     assert "1 pinned: never touch test_calc.py" in line
     assert "snapshot" not in line
     assert "no pinned instructions" in log_line.format_log_line(
-        {"type": "loop.pin.restored", "pins": [], "count": 0}
+        {"type": "pin.restored", "pins": [], "count": 0}
     )
 
 
@@ -361,12 +361,12 @@ def test_tool_result_with_mismatched_name_does_not_overwrite() -> None:
 def test_role_call_then_result_clears_in_flight() -> None:
     s = viewmodel_state.apply_event(
         viewmodel_state.initial_state(),
-        {"type": "role.call", "role": "worker", "model": "gpt-5", "provider": "openai"},
+        {"type": "model.call", "role": "worker", "model": "gpt-5", "provider": "openai"},
     )
     assert s.last_role is not None
     assert s.last_role.in_flight is True
     s = viewmodel_state.apply_event(
-        s, {"type": "role.result", "role": "worker", "input_tokens": 10, "output_tokens": 20}
+        s, {"type": "model.result", "role": "worker", "input_tokens": 10, "output_tokens": 20}
     )
     assert s.last_role is not None
     assert s.last_role.in_flight is False
@@ -525,10 +525,10 @@ def test_full_run_trace_replay() -> None:
     events = [
         {"type": "session.start", "user_task": "do thing"},
         {"type": "graph.update", "nodes": tasks, "cursor": "two"},
-        {"type": "role.call", "role": "worker", "model": "gpt-5"},
+        {"type": "model.call", "role": "worker", "model": "gpt-5"},
         {"type": "tool.call", "name": "apply_patch", "args_preview": {"path": "x.py"}},
         {"type": "tool.result", "name": "apply_patch", "ok": True, "summary": "applied=1"},
-        {"type": "role.result", "role": "worker", "input_tokens": 50, "output_tokens": 100},
+        {"type": "model.result", "role": "worker", "input_tokens": 50, "output_tokens": 100},
         {
             "type": "budget.update",
             "input_total": 50,
@@ -568,8 +568,8 @@ def test_fold_run_reduces_events_to_a_snapshot() -> None:
     state = viewmodel_state.fold_session(
         [
             {"type": "session.start", "user_task": "do it"},
-            {"type": "role.call", "role": "worker", "model": "m"},
-            {"type": "role.text_delta", "text": "hi"},
+            {"type": "model.call", "role": "worker", "model": "m"},
+            {"type": "model.text_delta", "text": "hi"},
             {"type": "session.stop", "verification": "passed"},
         ]
     )
@@ -702,20 +702,20 @@ def test_resume_start_unfinishes_the_run() -> None:
 
 
 def test_role_result_tracks_context_tokens_and_provider() -> None:
-    """role.result folds the call's full prompt into ctx_tokens, which survives the next role.call.
+    """model.result folds the call's full prompt into ctx_tokens, which outlives the next call.
 
     Fresh, cache read and cache write together; an error result without usage keeps the last known.
     """
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(
-        s, {"type": "role.call", "role": "worker", "model": "m", "provider": "p"}
+        s, {"type": "model.call", "role": "worker", "model": "m", "provider": "p"}
     )
     assert s.last_role is not None and s.last_role.provider == "p"
     assert s.last_role.ctx_tokens == 0  # nothing measured yet
     s = viewmodel_state.apply_event(
         s,
         {
-            "type": "role.result",
+            "type": "model.result",
             "role": "worker",
             "ok": True,
             "input_tokens": 1_000,
@@ -725,11 +725,11 @@ def test_role_result_tracks_context_tokens_and_provider() -> None:
     )
     assert s.last_role is not None and s.last_role.ctx_tokens == 43_000
     s = viewmodel_state.apply_event(
-        s, {"type": "role.call", "role": "worker", "model": "m", "provider": "p"}
+        s, {"type": "model.call", "role": "worker", "model": "m", "provider": "p"}
     )
     assert s.last_role is not None and s.last_role.ctx_tokens == 43_000  # carried over
     s = viewmodel_state.apply_event(
-        s, {"type": "role.result", "role": "worker", "ok": False, "error": "boom"}
+        s, {"type": "model.result", "role": "worker", "ok": False, "error": "boom"}
     )
     assert s.last_role is not None and s.last_role.ctx_tokens == 43_000  # kept on error
 
@@ -747,7 +747,7 @@ def test_run_start_after_run_end_unfinishes_without_banking() -> None:
         s, {"type": "session.stop", "verification": "unverified", "reason": "answered"}
     )
     s = viewmodel_state.apply_event(s, {"type": "session.start", "user_task": "follow-up"})
-    s = viewmodel_state.apply_event(s, {"type": "role.call", "role": "worker", "model": "m"})
+    s = viewmodel_state.apply_event(s, {"type": "model.call", "role": "worker", "model": "m"})
     assert s.finished is False
     assert s.stop_reason == ""
     assert session_state_as_dict(s)["status_label"] == "running"
@@ -889,12 +889,12 @@ def test_compaction_events_fold_into_elision_counters() -> None:
     """/status counts elided markers and live gists in the current context."""
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(
-        s, {"type": "loop.compact.dropped", "count": 3, "calls": ["read_file a.py", "grep 'q'"]}
+        s, {"type": "compact.dropped", "count": 3, "calls": ["read_file a.py", "grep 'q'"]}
     )
     s = viewmodel_state.apply_event(
         s,
         {
-            "type": "loop.compact.gists",
+            "type": "compact.gist.done",
             "gisted": 2,
             "demoted": 1,
             "paths": ["a.py", "b.py"],
@@ -902,7 +902,7 @@ def test_compaction_events_fold_into_elision_counters() -> None:
         },
     )
     s = viewmodel_state.apply_event(
-        s, {"type": "loop.compact.dropped", "count": 1, "calls": ["read_file d.py"]}
+        s, {"type": "compact.dropped", "count": 1, "calls": ["read_file d.py"]}
     )
     assert s.compact_elided == 4
     assert s.compact_gists_live == 1
@@ -910,12 +910,12 @@ def test_compaction_events_fold_into_elision_counters() -> None:
 
 def test_format_log_line_compaction_identities() -> None:
     dropped = log_line.format_log_line(
-        {"type": "loop.compact.dropped", "count": 2, "calls": ["read_file a.py", "grep 'q'"]}
+        {"type": "compact.dropped", "count": 2, "calls": ["read_file a.py", "grep 'q'"]}
     )
     assert "elided 2" in dropped and "read_file a.py" in dropped and "grep 'q'" in dropped
     gists = log_line.format_log_line(
         {
-            "type": "loop.compact.gists",
+            "type": "compact.gist.done",
             "gisted": 1,
             "demoted": 1,
             "paths": ["a.py"],
@@ -924,7 +924,7 @@ def test_format_log_line_compaction_identities() -> None:
     )
     assert "1 distilled (a.py)" in gists and "1 demoted (b.py)" in gists
     done = log_line.format_log_line(
-        {"type": "loop.compact.summarise.done", "summary_chars": 2341, "summary": "did things"}
+        {"type": "compact.summarise.done", "summary_chars": 2341, "summary": "did things"}
     )
     assert "2341-char progress summary" in done
 
@@ -932,10 +932,10 @@ def test_format_log_line_compaction_identities() -> None:
 def test_pin_added_events_accumulate() -> None:
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(
-        s, {"type": "loop.pin.added", "text": "never touch schema", "chars": 18, "count": 1}
+        s, {"type": "pin.added", "text": "never touch schema", "chars": 18, "count": 1}
     )
     s = viewmodel_state.apply_event(
-        s, {"type": "loop.pin.added", "text": "ship X first", "chars": 12, "count": 2}
+        s, {"type": "pin.added", "text": "ship X first", "chars": 12, "count": 2}
     )
     assert s.pins == ("never touch schema", "ship X first")
 
@@ -944,12 +944,12 @@ def test_tier2_restart_resets_elision_counters() -> None:
     """A summarise-and-restart resets the /status elision counters with the context it wiped."""
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(
-        s, {"type": "loop.compact.dropped", "count": 9, "calls": ["read_file a.py"]}
+        s, {"type": "compact.dropped", "count": 9, "calls": ["read_file a.py"]}
     )
     s = viewmodel_state.apply_event(
         s,
         {
-            "type": "loop.compact.gists",
+            "type": "compact.gist.done",
             "gisted": 3,
             "demoted": 0,
             "paths": ["a.py", "b.py", "c.py"],
@@ -957,25 +957,23 @@ def test_tier2_restart_resets_elision_counters() -> None:
         },
     )
     s = viewmodel_state.apply_event(
-        s, {"type": "loop.compact.summarise.done", "summary_chars": 900, "summary": "s"}
+        s, {"type": "compact.summarise.done", "summary_chars": 900, "summary": "s"}
     )
     assert s.compact_elided == 0
     assert s.compact_gists_live == 0
 
 
 def test_pins_restored_event_replaces_not_appends() -> None:
-    """loop.pin.restored never double-counts a resume's pins and shows a fork's snapshot pins."""
+    """pin.restored never double-counts a resume's pins and shows a fork's snapshot pins."""
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(
-        s, {"type": "loop.pin.added", "text": "keep A", "chars": 6, "count": 1}
+        s, {"type": "pin.added", "text": "keep A", "chars": 6, "count": 1}
     )
-    s = viewmodel_state.apply_event(
-        s, {"type": "loop.pin.restored", "pins": ["keep A"], "count": 1}
-    )
+    s = viewmodel_state.apply_event(s, {"type": "pin.restored", "pins": ["keep A"], "count": 1})
     assert s.pins == ("keep A",)  # replace, not append
     fork = viewmodel_state.apply_event(
         viewmodel_state.initial_state(),
-        {"type": "loop.pin.restored", "pins": ["keep A", "ship X"], "count": 2},
+        {"type": "pin.restored", "pins": ["keep A", "ship X"], "count": 2},
     )
     assert fork.pins == ("keep A", "ship X")
 
@@ -990,8 +988,8 @@ _WRONG_SHAPE_EVENTS: list[dict[str, Any]] = [
     {"type": "tool.call", "name": "x", "args_preview": "not-a-dict"},
     {"type": "question.prompt", "questions": {"question": "q"}},
     {"type": "question.answer", "id": "q1", "answers": 5},
-    {"type": "loop.compact.dropped", "count": 1, "calls": 5},
-    {"type": "loop.compact.gists", "gisted": 1, "paths": True, "demoted": 1, "demoted_paths": 1},
+    {"type": "compact.dropped", "count": 1, "calls": 5},
+    {"type": "compact.gist.done", "gisted": 1, "paths": True, "demoted": 1, "demoted_paths": 1},
     {"type": "graph.update", "nodes": {"a": {"title": "a", "children": 5}}},
 ]
 
@@ -1069,11 +1067,11 @@ def test_auto_commits_fold_into_the_commit_list() -> None:
     """Commits stay oldest first; a sha-less auto_commit adds no commit."""
     s = viewmodel_state.apply_event(
         viewmodel_state.initial_state(),
-        {"type": "loop.auto_commit", "turn": 3, "sha": "a" * 40, "subject": "fix parser"},
+        {"type": "checkpoint.committed", "turn": 3, "sha": "a" * 40, "subject": "fix parser"},
     )
-    s = viewmodel_state.apply_event(s, {"type": "loop.auto_commit", "turn": 4, "sha": ""})
+    s = viewmodel_state.apply_event(s, {"type": "checkpoint.committed", "turn": 4, "sha": ""})
     s = viewmodel_state.apply_event(
-        s, {"type": "loop.auto_commit", "turn": 5, "sha": "b" * 40, "subject": "add test"}
+        s, {"type": "checkpoint.committed", "turn": 5, "sha": "b" * 40, "subject": "add test"}
     )
     assert [(st.turn, st.sha[:1], st.subject) for st in s.commits] == [
         (3, "a", "fix parser"),
@@ -1086,7 +1084,7 @@ def test_run_history_is_named_commits_on_the_wire() -> None:
     from agent6.viewmodel import state_view
 
     state = viewmodel_state.fold_session(
-        [{"type": "loop.auto_commit", "turn": 3, "sha": "a" * 40, "subject": "fix parser"}]
+        [{"type": "checkpoint.committed", "turn": 3, "sha": "a" * 40, "subject": "fix parser"}]
     )
     payload = json.loads(json.dumps(state_view.session_state_as_dict(state)))
     assert "steps" not in payload
@@ -1104,8 +1102,8 @@ def test_fold_until_commit_stops_at_that_commit() -> None:
     """The fold includes the selected commit and refuses a foreign sha."""
     events = [
         {"type": "session.start", "session_id": "s", "mode": "run", "user_task": "t"},
-        {"type": "loop.auto_commit", "turn": 1, "sha": "a" * 40, "subject": "one"},
-        {"type": "loop.auto_commit", "turn": 2, "sha": "b" * 40, "subject": "two"},
+        {"type": "checkpoint.committed", "turn": 1, "sha": "a" * 40, "subject": "one"},
+        {"type": "checkpoint.committed", "turn": 2, "sha": "b" * 40, "subject": "two"},
     ]
     at = viewmodel_state.fold_until_commit(events, "a" * 40)
     assert at is not None and [s.turn for s in at.commits] == [1]
@@ -1121,7 +1119,7 @@ def test_a_cut_log_line_says_it_was_cut() -> None:
     """A clipped log-line field is marked, so a provider error never reads as ending there."""
     error = "E" * 150 + "-TRUNCATION-BOUNDARY-" + "Z" * 60
     line = log_line.format_log_line(
-        {"ts": "2026-09-01T22:00:00.000Z", "type": "role.result", "role": "worker", "error": error}
+        {"ts": "2026-09-01T22:00:00.000Z", "type": "model.result", "role": "worker", "error": error}
     )
     assert "…" in line and "BOUNDARY" not in line
     prompt = log_line.format_log_line(
@@ -1250,7 +1248,7 @@ def test_a_journal_written_before_the_turn_rename_keeps_its_commit_turns() -> No
     """An `auto_commit` event stamped `iteration` folds to a commit with that turn number."""
     s = viewmodel_state.apply_event(
         viewmodel_state.initial_state(),
-        {"type": "loop.auto_commit", "iteration": 3, "sha": "a" * 40, "subject": "fix parser"},
+        {"type": "checkpoint.committed", "iteration": 3, "sha": "a" * 40, "subject": "fix parser"},
     )
     assert [st.turn for st in s.commits] == [3]
 

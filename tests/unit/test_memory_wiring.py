@@ -202,7 +202,7 @@ def test_mixed_patch_records_memory_and_workspace_effects(
         " run's commits leave it out."
     )
     events.emit.assert_called_once_with(
-        journal.LoopEditLeftOut(turn=1, ignored=[], untracked=["notes.txt"])
+        journal.CheckpointLeftOut(turn=1, ignored=[], untracked=["notes.txt"])
     )
 
 

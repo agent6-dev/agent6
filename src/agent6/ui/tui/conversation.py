@@ -419,13 +419,13 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         elif etype == "approval.answer":
             if self._approval is not None and self._approval[0] == str(event.get("id", "")):
                 self._note_answered("allowed" if event.get("approved") else "denied")
-        if etype in ("role.call", "role.result"):
+        if etype in ("model.call", "model.result"):
             self._live_think.clear()
             self._live_text.clear()
             self._approval_done = None
-        elif etype == "role.thinking_delta":
+        elif etype == "model.thinking_delta":
             self._live_think.append(str(event.get("text", "")))
-        elif etype == "role.text_delta":
+        elif etype == "model.text_delta":
             self._live_text.append(str(event.get("text", "")))
 
     def _open_approval(self) -> ApprovalPrompt | None:

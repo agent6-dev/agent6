@@ -39,11 +39,11 @@ def test_the_ladder_nudges_escalates_then_stops_softly() -> None:
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     nudge, escalation, stop = _climb(state, nudges.NO_PROGRESS_STOP_AFTER)
     assert isinstance(nudge, advice.Nudge) and nudge.text == nudges.NO_PROGRESS_NUDGE
-    assert nudge.event == journal.LoopNoProgressNudge(
+    assert nudge.event == journal.NudgeNoProgress(
         turn=nudges.NO_PROGRESS_NUDGE_AFTER, streak=4, level=1
     )
     assert isinstance(escalation, advice.Nudge) and escalation.text == nudges.NO_PROGRESS_ESCALATION
-    assert isinstance(escalation.event, journal.LoopNoProgressNudge)
+    assert isinstance(escalation.event, journal.NudgeNoProgress)
     assert escalation.event.streak == nudges.NO_PROGRESS_ESCALATE_AFTER
     assert isinstance(stop, advice.Stop) and stop.end().reason == "no_progress"
     assert stop.soft == "no_progress" and stop.declared == ""

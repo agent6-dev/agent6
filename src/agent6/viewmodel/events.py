@@ -340,15 +340,15 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             )
         case "diff.updated":
             return journal.DiffUpdated(patch=_text(raw, "patch"), sha=_text(raw, "sha"))
-        case "loop.auto_commit":
-            return journal.LoopAutoCommit(
+        case "checkpoint.committed":
+            return journal.CheckpointCommitted(
                 # Journals written before the turn rename stamp `iteration`.
                 turn=as_int(raw.get("turn", raw.get("iteration"))),
                 sha=_text(raw, "sha"),
                 subject=_text(raw, "subject"),
             )
-        case "role.call":
-            return journal.RoleCall(
+        case "model.call":
+            return journal.ModelCall(
                 role=_text(raw, "role"),
                 model=_text(raw, "model"),
                 provider=_text(raw, "provider"),
@@ -356,8 +356,8 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 seat_index=_seat_index(raw),
                 execution_id=raw.get("execution_id"),
             )
-        case "role.attempt":
-            return journal.RoleAttempt(
+        case "model.attempt":
+            return journal.ModelAttempt(
                 role=_text(raw, "role"),
                 model=_text(raw, "model"),
                 provider=_text(raw, "provider"),
@@ -372,8 +372,8 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 cache_read_tokens=as_int(raw.get("cache_read_tokens")),
                 cache_write_tokens=as_int(raw.get("cache_write_tokens")),
             )
-        case "role.result":
-            return journal.RoleResult(
+        case "model.result":
+            return journal.ModelResult(
                 role=_text(raw, "role"),
                 model=_text(raw, "model"),
                 provider=_text(raw, "provider"),
@@ -387,12 +387,12 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 cache_write_tokens=as_int(raw.get("cache_write_tokens")),
                 error=str(raw["error"]) if raw.get("error") else None,
             )
-        case "role.text_delta":
-            return journal.RoleTextDelta(
+        case "model.text_delta":
+            return journal.ModelTextDelta(
                 role=_text(raw, "role"), text=_text(raw, "text"), **_call_identity(raw)
             )
-        case "role.thinking_delta":
-            return journal.RoleThinkingDelta(
+        case "model.thinking_delta":
+            return journal.ModelThinkingDelta(
                 role=_text(raw, "role"), text=_text(raw, "text"), **_call_identity(raw)
             )
         case "tool.call":
@@ -511,39 +511,39 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 unseen=raw.get("unseen") is True,
                 source=_text(raw, "source"),
             )
-        case "loop.pin.added":
-            return journal.LoopPinAdded(
+        case "pin.added":
+            return journal.PinAdded(
                 text=_text(raw, "text"),
                 chars=as_int(raw.get("chars")),
                 count=as_int(raw.get("count")),
             )
-        case "loop.pin.restored":
-            return journal.LoopPinRestored(
+        case "pin.restored":
+            return journal.PinRestored(
                 pins=_strings(raw.get("pins", ()) or ()), count=as_int(raw.get("count"))
             )
-        case "loop.compact.restored":
-            return journal.LoopCompactRestored(
+        case "compact.restored":
+            return journal.CompactRestored(
                 elided=as_int(raw.get("elided")), gists=as_int(raw.get("gists"))
             )
-        case "loop.compact.dropped":
-            return journal.LoopCompactDropped(
+        case "compact.dropped":
+            return journal.CompactDropped(
                 count=as_int(raw.get("count")), calls=_strings(raw.get("calls", ()) or ())
             )
-        case "loop.compact.gists":
-            return journal.LoopCompactGists(
+        case "compact.gist.done":
+            return journal.CompactGistDone(
                 gisted=as_int(raw.get("gisted")),
                 demoted=as_int(raw.get("demoted")),
                 paths=_strings(raw.get("paths", ()) or ()),
                 demoted_paths=_strings(raw.get("demoted_paths", ()) or ()),
             )
-        case "loop.compact.summarise.done":
-            return journal.LoopCompactSummariseDone(
+        case "compact.summarise.done":
+            return journal.CompactSummariseDone(
                 summary_chars=as_int(raw.get("summary_chars")),
                 summary=_text(raw, "summary"),
                 kept_messages=as_int(raw.get("kept_messages")),
             )
-        case "session.steer_requested":
-            return journal.SessionSteerRequested(source=_text(raw, "source"))
+        case "steer.signalled":
+            return journal.SteerSignalled(source=_text(raw, "source"))
         case "session.undone":
             return journal.SessionUndone(
                 new_session_id=_text(raw, "new_session_id"), undone_text=_text(raw, "undone_text")

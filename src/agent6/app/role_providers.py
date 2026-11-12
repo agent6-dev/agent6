@@ -369,7 +369,7 @@ def _usage_fields(usage: provider_types.ProviderUsage | None) -> dict[str, Any]:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class InstrumentedProvider:
-    """Wrap a provider with `role.call`, `role.attempt`, `role.result` and `budget.update` emission.
+    """Wrap a provider to emit `model.call`, `model.attempt`, `model.result` and `budget.update`.
 
     Attributes:
         inner: The wrapped provider, unchanged.
@@ -438,7 +438,7 @@ class InstrumentedProvider:
             kinds.CallContext(seat_index=self.seat_index)
         )
         caller_observe = context.observe if context is not None else None
-        request_ids: list[str] = []  # the attempt's HTTP request, for its role.attempt row
+        request_ids: list[str] = []  # the attempt's HTTP request, for its model.attempt row
 
         def observe(facts: request_headers.RequestFacts) -> None:
             request_ids.append(facts.request_id)
@@ -463,7 +463,7 @@ class InstrumentedProvider:
         # One lifecycle per logical call: the first attempt opens it, the one that settles or
         # closes it ends it, and every attempt leaves its own row beneath.
         if self.events is not None and context.attempt == 1:
-            self.events.emit(journal.RoleCall(**self._identity(call_context)))
+            self.events.emit(journal.ModelCall(**self._identity(call_context)))
         # Every live view subscribes to the delta events; a caller callback chains through.
         role_for_event = self.role
         events = self.events
@@ -471,13 +471,13 @@ class InstrumentedProvider:
 
         def _on_text(piece: str) -> None:
             if events is not None:
-                events.emit(journal.RoleTextDelta(role=role_for_event, text=piece, **identity))
+                events.emit(journal.ModelTextDelta(role=role_for_event, text=piece, **identity))
             if text_delta_callback is not None:
                 text_delta_callback(piece)
 
         def _on_thinking(piece: str) -> None:
             if events is not None:
-                events.emit(journal.RoleThinkingDelta(role=role_for_event, text=piece, **identity))
+                events.emit(journal.ModelThinkingDelta(role=role_for_event, text=piece, **identity))
             if thinking_delta_callback is not None:
                 thinking_delta_callback(piece)
 
@@ -555,7 +555,7 @@ class InstrumentedProvider:
             return
         identity = self._identity(call_context)
         self.events.emit(
-            journal.RoleAttempt(
+            journal.ModelAttempt(
                 **identity,
                 attempt=context.attempt,
                 request_id=request_ids[-1] if request_ids else None,
@@ -564,10 +564,10 @@ class InstrumentedProvider:
         )
         if ends_call:
             settled: dict[str, Any] = {"text": text} if text is not None else {}
-            self.events.emit(journal.RoleResult(**identity, **outcome, **settled))
+            self.events.emit(journal.ModelResult(**identity, **outcome, **settled))
 
     def _identity(self, call_context: kinds.CallContext) -> dict[str, Any]:
-        """Return the fields that pair a `role.call` with its `role.result`."""
+        """Return the fields that pair a `model.call` with its `model.result`."""
         return {
             "role": self.role,
             "model": self.model,

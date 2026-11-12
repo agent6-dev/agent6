@@ -352,7 +352,7 @@ def test_watch_screen_disables_steer_and_message_when_ended(
 def test_watch_screen_suppresses_phantom_thinking_on_an_ended_machine(
     tmp_path: pathlib.Path, monkeypatch: object
 ) -> None:
-    """An ended machine's log ending on a role.call renders no live thinking line."""
+    """An ended machine's log ending on a model.call renders no live thinking line."""
     from agent6.machine import load_machine
     from agent6.ui.cli import main as cli_main
 
@@ -365,7 +365,7 @@ def test_watch_screen_suppresses_phantom_thinking_on_an_ended_machine(
     state = instance / "states" / "0000-route"
     state.mkdir(parents=True)
     (state / "logs.jsonl").write_text(
-        '{"type": "role.call", "role": "worker", "model": "kimi"}\n', encoding="utf-8"
+        '{"type": "model.call", "role": "worker", "model": "kimi"}\n', encoding="utf-8"
     )
 
     class _WatchHost(textual_app.App[None]):
@@ -1075,7 +1075,7 @@ def test_machine_run_confirm_backs_out_on_q(tmp_path: pathlib.Path, monkeypatch:
 
 
 def test_a_live_machine_marks_only_the_turn_in_flight(tmp_path: pathlib.Path) -> None:
-    """Replaying the state log marks only an open `role.call` as thinking, and only when live.
+    """Replaying the state log marks only an open `model.call` as thinking, and only when live.
 
     Three finished turns and one in flight read as four live markers.
     """
@@ -1126,11 +1126,11 @@ reason = "done"
     evs: list[dict[str, Any]] = [{"type": "session.start", "mode": "run", "user_task": "t"}]
     for i in (1, 2, 3):  # three COMPLETED turns
         evs += [
-            {"type": "role.call", "role": "worker", "model": "m1"},
-            {"type": "role.thinking_delta", "text": f"turn {i} reasoning. "},
-            {"type": "role.result", "role": "worker", "input_tokens": 10, "output_tokens": 5},
+            {"type": "model.call", "role": "worker", "model": "m1"},
+            {"type": "model.thinking_delta", "text": f"turn {i} reasoning. "},
+            {"type": "model.result", "role": "worker", "input_tokens": 10, "output_tokens": 5},
         ]
-    evs.append({"type": "role.call", "role": "worker", "model": "m1"})  # in flight
+    evs.append({"type": "model.call", "role": "worker", "model": "m1"})  # in flight
     (sd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
     (root / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
 
@@ -1259,7 +1259,7 @@ def test_a_steer_refused_while_its_modal_is_open_writes_nothing(tmp_path: pathli
     (state / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
         + "\n"
-        + json.dumps({"type": "role.call", "role": "worker", "model": "m"})
+        + json.dumps({"type": "model.call", "role": "worker", "model": "m"})
         + "\n",
         encoding="utf-8",
     )

@@ -32,9 +32,9 @@ def _journal() -> list[dict[str, Any]]:
             "user_task": "SECRET TASK",
             "execution_id": "e1",
         },
-        {"type": "loop.budget", "ts": _ts(1), "turn": 1},
+        {"type": "budget.turn", "ts": _ts(1), "turn": 1},
         {
-            "type": "role.call",
+            "type": "model.call",
             "ts": _ts(1),
             "role": "worker",
             "model": "m",
@@ -42,7 +42,7 @@ def _journal() -> list[dict[str, Any]]:
             "model_call_id": "c1",
         },
         {
-            "type": "role.result",
+            "type": "model.result",
             "ts": _ts(3),
             "role": "worker",
             "model": "m",
@@ -85,7 +85,7 @@ def _journal() -> list[dict[str, Any]]:
             "tree_after": "t",
             "scoped": False,
         },
-        {"type": "loop.budget", "ts": _ts(41), "turn": 2},
+        {"type": "budget.turn", "ts": _ts(41), "turn": 2},
         {**start, "ts": _ts(42)},
         {**panel, "ts": _ts(45)},
         {
@@ -224,7 +224,7 @@ def test_panel_telemetry_counts_distinct_blocking_routes() -> None:
     assert result.n_block == 2 and len(result.merged_findings) == 1
     rows = _journal()
     for row in rows:
-        if row["type"] == "loop.review.panel":
+        if row["type"] == "review.panel":
             row["n_block"] = result.n_block
     _fold, spans, _logs = _run(rows)
     panel = _by_name(spans)[telemetry_records.SPAN_REVIEW]
@@ -313,7 +313,7 @@ def test_what_follows_an_end_still_folds_against_it() -> None:
         {"type": "budget.update", "ts": _ts(61), "usd_total": 0.40, "plan_observed_points": 5},
         {"type": "session.stranded", "ts": _ts(62)},
         {
-            "type": "loop.review.finding.resolved",
+            "type": "review.finding.resolved",
             "ts": _ts(300),
             "finding_id": "f0",
             "request_id": "r1",
@@ -321,7 +321,7 @@ def test_what_follows_an_end_still_folds_against_it() -> None:
             "version": _review_version(_journal()) + 1,
             "resolution": {"disposition": "wont_fix", "reason": "known"},
         },
-        {"type": "loop.budget", "ts": _ts(301), "turn": 3},  # nothing after an end opens work
+        {"type": "budget.turn", "ts": _ts(301), "turn": 3},  # nothing after an end opens work
     ]
     fold, spans, logs = _run(rows)
     assert _counter(fold, "agent6_cost_usd_total") == 0.40
@@ -333,7 +333,7 @@ def test_what_follows_an_end_still_folds_against_it() -> None:
     assert resolved.span_id == root.span_id and _attr(resolved, "agent6.disposition") == "wont_fix"
     assert fold.metrics().gauges[("agent6_open_findings", (("severity", "block"),))] == 0
     assert [s.name for s in spans].count(telemetry_records.SPAN_TURN) == 2
-    assert start["type"] == "loop.review.start" and panel["type"] == "loop.review.panel"
+    assert start["type"] == "review.start" and panel["type"] == "review.panel"
 
 
 def test_the_ask_repls_repeated_starts_share_one_cumulative_tracker() -> None:
@@ -403,7 +403,7 @@ def test_turn_zero_and_a_failed_tool_read_as_the_journal_means_them() -> None:
     """The harness's pre-turn work opens no turn span; a failed dispatch counts as an error."""
     rows = [
         {"type": "session.start", "ts": _ts(0), "execution_id": "e"},
-        {"type": "loop.verify_harness", "ts": _ts(1), "turn": 0},
+        {"type": "verify.requested", "ts": _ts(1), "turn": 0},
         {"type": "tool.call", "ts": _ts(2), "name": "read_file", "call_id": 1, "turn": 1},
         {"type": "tool.result", "ts": _ts(3), "name": "read_file", "ok": False, "call_id": 1},
         {
@@ -436,9 +436,9 @@ def test_a_journal_without_pairing_ids_pairs_only_what_is_certain() -> None:
     assert len(tools) == 4 and all(_attr(s, "agent6.incomplete") is None for s in tools)
     concurrent = [
         {"type": "session.start", "ts": _ts(0), "execution_id": "e"},
-        {"type": "role.call", "ts": _ts(1), "role": "review:a", "model": "m", "provider": "p"},
-        {"type": "role.call", "ts": _ts(1), "role": "review:b", "model": "m", "provider": "p"},
-        {"type": "role.result", "ts": _ts(2), "role": "review:b", "ok": True, "input_tokens": 7},
+        {"type": "model.call", "ts": _ts(1), "role": "review:a", "model": "m", "provider": "p"},
+        {"type": "model.call", "ts": _ts(1), "role": "review:b", "model": "m", "provider": "p"},
+        {"type": "model.result", "ts": _ts(2), "role": "review:b", "ok": True, "input_tokens": 7},
         {
             "type": "session.stop",
             "ts": _ts(3),
@@ -460,7 +460,7 @@ def test_free_labels_stop_at_the_bound() -> None:
     for i in range(telemetry_metrics.LABEL_VALUES + 5):
         rows.append(
             {
-                "type": "role.call",
+                "type": "model.call",
                 "ts": _ts(i),
                 "role": "worker",
                 "model": f"m{i}",
@@ -470,7 +470,7 @@ def test_free_labels_stop_at_the_bound() -> None:
         )
         rows.append(
             {
-                "type": "role.result",
+                "type": "model.result",
                 "ts": _ts(i),
                 "model_call_id": f"c{i}",
                 "ok": True,
@@ -538,13 +538,13 @@ def test_event_ns_keeps_microseconds_exactly() -> None:
 def test_attempts_count_their_own_tokens_under_one_model_call_span() -> None:
     """Two attempts of one call make one span; each attempt counts once, the result not again."""
     rows = _journal()
-    call = next(row for row in rows if row["type"] == "role.call")
-    result = next(row for row in rows if row["type"] == "role.result")
+    call = next(row for row in rows if row["type"] == "model.call")
+    result = next(row for row in rows if row["type"] == "model.result")
     at = rows.index(result)
     identity = {k: call[k] for k in ("role", "model", "provider", "model_call_id")}
     attempts = [
         {
-            "type": "role.attempt",
+            "type": "model.attempt",
             "ts": result["ts"],
             **identity,
             "attempt": 1,
@@ -554,7 +554,7 @@ def test_attempts_count_their_own_tokens_under_one_model_call_span() -> None:
             "error": "busy",
         },
         {
-            "type": "role.attempt",
+            "type": "model.attempt",
             "ts": result["ts"],
             **identity,
             "attempt": 2,

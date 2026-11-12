@@ -729,7 +729,7 @@ def test_verify_infer_false_pins_gatelessness_at_preflight(tmp_path: pathlib.Pat
     )
     assert cfg_off.harness.verify_command == ()
     rows = [json.loads(line) for line in off_log.read_text(encoding="utf-8").splitlines()]
-    assert any(r["type"] == "loop.verify_inferred" and r["source"] == "disabled" for r in rows)
+    assert any(r["type"] == "verify.inferred" and r["source"] == "disabled" for r in rows)
 
 
 def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: pathlib.Path) -> None:

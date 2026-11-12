@@ -112,7 +112,7 @@ def parallel_dispatched_body(event: dict[str, Any]) -> str:
     """Word a dispatched group: how many lanes for how many tasks, and which.
 
     Args:
-        event: The `loop.parallel.dispatched` event.
+        event: The `parallel.dispatched` event.
 
     Returns:
         The head line, then one bullet per task; an event carrying no lane count
@@ -144,7 +144,7 @@ def parallel_compared_body(event: dict[str, Any]) -> str:
     """Word a fan-out's ranking: best first, each with its gate verdict and cost.
 
     Args:
-        event: The `loop.parallel.compared` event.
+        event: The `parallel.compared` event.
 
     Returns:
         The head line naming who ranked, one line per candidate, then the judge's rationale.
@@ -171,7 +171,7 @@ def parallel_joined_body(event: dict[str, Any]) -> str:
     """Word a joined group: one line per lane with its status, id, branch and sha.
 
     Args:
-        event: The `loop.parallel.joined` event.
+        event: The `parallel.joined` event.
 
     Returns:
         The head line, then one line per lane.
@@ -207,7 +207,7 @@ def parallel_failed_body(event: dict[str, Any]) -> str | None:
     """Word a dispatch failure or a fan-out's failed lanes.
 
     Args:
-        event: The `loop.parallel.failed` event.
+        event: The `parallel.failed` event.
 
     Returns:
         The dispatch error when the event carries one; a fan-out's failed lanes
@@ -300,20 +300,20 @@ def jail_degraded_body(event: dict[str, Any]) -> str:
 
 # Events that render as a marker between turns; a builder returning None renders nothing.
 MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
-    "loop.skills.warning": lambda event: f"skills: WARNING: {event.get('warning', '')}",
-    "loop.review.start": review.rules_notice,
+    "skills.warning": lambda event: f"skills: WARNING: {event.get('warning', '')}",
+    "review.start": review.rules_notice,
     "mcp.server_unavailable": mcp_unavailable_body,
     "jail.degraded": jail_degraded_body,
-    "loop.parallel.dispatched": parallel_dispatched_body,
-    "loop.parallel.joined": parallel_joined_body,
-    "loop.parallel.failed": parallel_failed_body,
-    "loop.parallel.compared": parallel_compared_body,
-    "loop.task.queued": task_queued_body,
-    "loop.task.retired": task_retired_body,
-    "loop.standing.set": standing_set_body,
-    "loop.request.refused": request_refused_body,
-    "loop.compact.requested": compact_requested_body,
-    "loop.compact.summarise.done": compact_done_body,
-    "loop.compact.summarise.failed": compact_failed_body,
-    "loop.compact.refused": compact_refused_body,
+    "parallel.dispatched": parallel_dispatched_body,
+    "parallel.joined": parallel_joined_body,
+    "parallel.failed": parallel_failed_body,
+    "parallel.compared": parallel_compared_body,
+    "task.queued": task_queued_body,
+    "task.retired": task_retired_body,
+    "standing.set": standing_set_body,
+    "task.request_refused": request_refused_body,
+    "compact.requested": compact_requested_body,
+    "compact.summarise.done": compact_done_body,
+    "compact.summarise.failed": compact_failed_body,
+    "compact.refused": compact_refused_body,
 }

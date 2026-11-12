@@ -27,7 +27,7 @@ from agent6 import journal_tail, paths
 from agent6.sessions import journal
 
 # Flushed but never fsynced: a reasoning model emits tens of thousands per run.
-_EPHEMERAL_EVENTS = frozenset({"role.text_delta", "role.thinking_delta"})
+_EPHEMERAL_EVENTS = frozenset({"model.text_delta", "model.thinking_delta"})
 # The fields `emit` adds around a payload; a reader validating a payload strips them.
 ENVELOPE_KEYS = frozenset({"ts", "type", "event_id"})
 

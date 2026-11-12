@@ -186,7 +186,7 @@ def test_a_prompt_opening_fires_session_waiting(tmp_path: pathlib.Path) -> None:
         session_dir=tmp_path,
         note=reporter.STDIO_REPORTER.note,
     )
-    listen({"type": "role.call", "role": "worker"})
+    listen({"type": "model.call", "role": "worker"})
     assert not out.exists()
     listen({"type": "approval.prompt", "id": "approval-1", "prompt": "run `rm -rf build`?\nmore"})
     env = json.loads(out.read_text(encoding="utf-8"))

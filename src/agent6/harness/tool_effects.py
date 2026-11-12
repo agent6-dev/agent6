@@ -57,7 +57,7 @@ def left_out_note(
     if not (ignored or untracked):
         return ""
     wf.emit(
-        journal.LoopEditLeftOut(
+        journal.CheckpointLeftOut(
             turn=turn.number,
             ignored=list(ignored),
             untracked=list(untracked),
@@ -268,14 +268,14 @@ def capture_finish(
         wf.plan_output_path.write_text(plan_md, encoding="utf-8")
         wf.log(f"  plan written: {wf.plan_output_path} ({len(plan_md)} chars)")
         wf.emit(
-            journal.LoopPlanWritten(
+            journal.PlanWritten(
                 path=str(wf.plan_output_path),
                 bytes=len(plan_md.encode("utf-8")),
             )
         )
     except OSError as exc:
         wf.log(f"  plan write failed: {exc}")
-        wf.emit(journal.LoopPlanWriteFailed(path=str(wf.plan_output_path), error=str(exc)))
+        wf.emit(journal.PlanWriteFailed(path=str(wf.plan_output_path), error=str(exc)))
 
 
 def note_tool_error(

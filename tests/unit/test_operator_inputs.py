@@ -10,12 +10,12 @@ from agent6.viewmodel import operator_inputs
 def test_task_then_steers_in_order_across_executions() -> None:
     events = [
         {"type": "session.start", "user_task": "polish the TUI", "mode": "run"},
-        {"type": "role.result", "text": "done"},
-        {"type": "loop.steer.injected", "chars": 14, "text": "focus on tests"},
+        {"type": "model.result", "text": "done"},
+        {"type": "steer.injected", "chars": 14, "text": "focus on tests"},
         {"type": "session.stop", "reason": "steer_abort"},
         # A resume appends to the same journal; its steer joins the list.
         {"type": "session.resume"},
-        {"type": "loop.steer.injected", "chars": 7, "text": "ship it"},
+        {"type": "steer.injected", "chars": 7, "text": "ship it"},
     ]
     assert operator_inputs(events) == ["polish the TUI", "focus on tests", "ship it"]
 
@@ -23,11 +23,11 @@ def test_task_then_steers_in_order_across_executions() -> None:
 def test_blank_countonly_and_consecutive_repeats_drop() -> None:
     events = [
         {"type": "session.start", "user_task": "t"},
-        {"type": "loop.steer.injected", "text": "again"},
-        {"type": "loop.steer.injected", "text": "again"},
-        {"type": "loop.steer.injected", "text": "   "},
-        {"type": "loop.steer.injected", "chars": 5},  # an older log: count only
-        {"type": "loop.steer.injected", "text": "again"},
+        {"type": "steer.injected", "text": "again"},
+        {"type": "steer.injected", "text": "again"},
+        {"type": "steer.injected", "text": "   "},
+        {"type": "steer.injected", "chars": 5},  # an older log: count only
+        {"type": "steer.injected", "text": "again"},
     ]
     # The blank and count-only entries render nothing, so the final "again"
     # still sits next to the first and collapses with it.

@@ -61,16 +61,16 @@ def test_logscreen_renders_structural_events(tmp_path: pathlib.Path) -> None:
 
 
 def test_logscreen_skips_streaming_deltas(tmp_path: pathlib.Path) -> None:
-    # Thousands of role.thinking_delta events are live-stream noise, not audit-log lines.
+    # Thousands of model.thinking_delta events are live-stream noise, not audit-log lines.
     logs = tmp_path / "logs.jsonl"
     _write_log(
         logs,
         [
-            {"type": "role.call", "role": "worker", "ts": "t"},
-            {"type": "role.thinking_delta", "text": "hmm", "ts": "t"},
-            {"type": "role.thinking_delta", "text": " let me", "ts": "t"},
-            {"type": "role.text_delta", "text": "ok", "ts": "t"},
-            {"type": "role.result", "ts": "t"},
+            {"type": "model.call", "role": "worker", "ts": "t"},
+            {"type": "model.thinking_delta", "text": "hmm", "ts": "t"},
+            {"type": "model.thinking_delta", "text": " let me", "ts": "t"},
+            {"type": "model.text_delta", "text": "ok", "ts": "t"},
+            {"type": "model.result", "ts": "t"},
         ],
     )
 
@@ -79,7 +79,7 @@ def test_logscreen_skips_streaming_deltas(tmp_path: pathlib.Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause()
             lines = _lines(app.screen)  # type: ignore[arg-type]
-            assert len(lines) == 2  # role.call + role.result; the 3 deltas are dropped
+            assert len(lines) == 2  # model.call + model.result; the 3 deltas are dropped
             assert not any("delta" in ln for ln in lines)
 
     asyncio.run(scenario())
@@ -92,7 +92,7 @@ def test_logscreen_skips_the_loop_mirrors_like_the_dashboard_tail(tmp_path: path
         logs,
         [
             {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a"}, "ts": "t"},
-            {"type": "loop.budget", "turn": 1, "ts": "t"},
+            {"type": "budget.turn", "turn": 1, "ts": "t"},
             {"type": "budget.update", "input_total": 1, "output_total": 2, "ts": "t"},
         ],
     )

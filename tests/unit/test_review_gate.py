@@ -717,9 +717,9 @@ def test_a_red_settled_stop_names_itself_and_spends_no_finish_return() -> None:
         "[harness settled] The tree stopped changing, but the verify gate is red, so the run"
         " goes on (return 1 of 2); 1 more settled stop returns before the run ends red."
     )
-    gated = [e for e in events.events if e["type"] == "loop.verify_finish.gated"]
+    gated = [e for e in events.events if e["type"] == "finish.refused.verify"]
     assert gated == [
-        {"type": "loop.verify_finish.gated", "turn": 9, "nudges_used": 1, "trigger": "settled"}
+        {"type": "finish.refused.verify", "turn": 9, "nudges_used": 1, "trigger": "settled"}
     ]
     # The model's own red finish still has both of its returns.
     ctx = wf._turn_context(state, turn=10, execution_start=1)  # pyright: ignore[reportPrivateUsage]
@@ -729,7 +729,7 @@ def test_a_red_settled_stop_names_itself_and_spends_no_finish_return() -> None:
     refusal = finish_gates.verify_finish(finishing, state, ctx)
     assert refusal is not None and "finish_session not honoured" in refusal.text
     assert "(return 1 of 2)" in refusal.text
-    assert isinstance(refusal.event, journal.LoopVerifyFinishGated)
+    assert isinstance(refusal.event, journal.FinishRefusedVerify)
     assert refusal.event.trigger == "finish_session"
 
 
@@ -833,7 +833,7 @@ def test_before_finish_panel_reviews_a_model_controlled_run(tmp_path: pathlib.Pa
         )
     assert panel.calls == 1
     rows = [json.loads(line) for line in log.read_text().splitlines()]
-    assert [row["reason"] for row in rows if row["type"] == "loop.review.skipped"] == []
+    assert [row["reason"] for row in rows if row["type"] == "review.skipped"] == []
 
 
 _TARGET_DIFF = (
@@ -924,7 +924,7 @@ def test_a_review_session_panel_sits_on_its_target_once(
     assert critique is not None and critique.satisfied
     assert "x = 2 breaks the invariant" in critique.text
     kinds = [type(e).__name__ for e in events]
-    assert kinds == ["LoopReviewStart", "LoopReviewSeat", "LoopReviewPanel"]
+    assert kinds == ["ReviewStart", "ReviewSeat", "ReviewPanel"]
     start, _seat, panel = events
     assert start.trigger == "review_target" and start.turn == 0
     assert start.target["head_tree"] == "ht" and start.target["base_tree"] == "bt"
@@ -934,7 +934,7 @@ def test_a_review_session_panel_sits_on_its_target_once(
     # A resume of the session reads the recorded panel; the trees did not change.
     again = reviewer.review_target(state, target, _TARGET_DIFF)
     assert again is not None and "reused" in again.text
-    assert type(events[-1]).__name__ == "LoopReviewReused"
+    assert type(events[-1]).__name__ == "ReviewReused"
 
 
 def test_a_review_target_without_a_diff_is_skipped(
@@ -945,7 +945,7 @@ def test_a_review_target_without_a_diff_is_skipped(
     target = review_records.ReviewTarget("b", "bt", "h", "bt", "h", (), "revisions")
     assert reviewer.review_target(_state(), target, "  \n") is None
     (skipped,) = events
-    assert type(skipped).__name__ == "LoopReviewSkipped" and skipped.reason == "no_diff"
+    assert type(skipped).__name__ == "ReviewSkipped" and skipped.reason == "no_diff"
 
 
 @pytest.fixture(autouse=True)

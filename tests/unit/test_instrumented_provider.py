@@ -55,13 +55,13 @@ def _emitted(events: mock.MagicMock, kind: str) -> list[dict[str, Any]]:
 
 
 def test_a_call_and_its_result_share_one_id_and_identity() -> None:
-    """`role.call` and `role.result` carry one `model_call_id`, the model and the provider."""
+    """`model.call` and `model.result` carry one `model_call_id`, the model and the provider."""
     inner = mock.MagicMock()
     inner.call.return_value = _resp()
     wrapper = _wrap(inner)
     wrapper.call(system="s", messages=[{"role": "user", "content": "hi"}])
-    (call,) = _emitted(wrapper.events, "role.call")  # type: ignore[arg-type]
-    (result,) = _emitted(wrapper.events, "role.result")  # type: ignore[arg-type]
+    (call,) = _emitted(wrapper.events, "model.call")  # type: ignore[arg-type]
+    (result,) = _emitted(wrapper.events, "model.result")  # type: ignore[arg-type]
     assert len(call["model_call_id"]) == 32 and call["model_call_id"] == result["model_call_id"]
     assert "seat_index" not in call and "seat_index" not in result
     for fields in (call, result):
@@ -79,8 +79,8 @@ def test_a_failed_call_keeps_its_id_and_a_seat_carries_its_index() -> None:
     wrapper = dataclasses.replace(_wrap(inner), seat_index=2)
     with pytest.raises(RuntimeError):
         wrapper.call(system="s", messages=[{"role": "user", "content": "hi"}])
-    (call,) = _emitted(wrapper.events, "role.call")  # type: ignore[arg-type]
-    (result,) = _emitted(wrapper.events, "role.result")  # type: ignore[arg-type]
+    (call,) = _emitted(wrapper.events, "model.call")  # type: ignore[arg-type]
+    (result,) = _emitted(wrapper.events, "model.result")  # type: ignore[arg-type]
     assert call["model_call_id"] == result["model_call_id"]
     assert call["seat_index"] == result["seat_index"] == 2
     assert result["ok"] is False and result["model"] == "moonshotai/kimi-k2.6"
@@ -155,7 +155,7 @@ def test_the_journal_records_what_the_assistant_said(tmp_path: pathlib.Path) -> 
     settled = [
         json.loads(line)
         for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines()
-        if json.loads(line)["type"] == "role.result"
+        if json.loads(line)["type"] == "model.result"
     ]
     assert [e["text"] for e in settled] == ["the answer"]
 

@@ -25,7 +25,7 @@ def test_ordering_reads_tails_not_whole_journals(
     repo.mkdir()
     state = paths.state_dir(repo)
     body = (
-        json.dumps({"ts": 1000, "type": "role.text_delta", "text": "x" * 64}) + "\n"
+        json.dumps({"ts": 1000, "type": "model.text_delta", "text": "x" * 64}) + "\n"
     ).encode() * 10_000
     sessions: list[pathlib.Path] = []
     for i in range(100):
@@ -117,7 +117,7 @@ def test_activity_follows_appends_and_replacement(tmp_path: pathlib.Path) -> Non
     os.utime(log, (9000, 9000))
     assert listing.session_mtime(tmp_path) == 1000
     with log.open("a") as stream:
-        stream.write('{"type": "role.text_delta", "ts": 2000}\n')
+        stream.write('{"type": "model.text_delta", "ts": 2000}\n')
     os.utime(log, (9000, 9000))
     assert listing.session_mtime(tmp_path) == 2000
     log.write_text('{"ts": 3000}\n')

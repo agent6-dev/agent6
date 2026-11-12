@@ -31,7 +31,7 @@ def _live_run(d: pathlib.Path) -> None:
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "add it"},
-        {"type": "role.call", "role": "worker", "model": "m"},
+        {"type": "model.call", "role": "worker", "model": "m"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 

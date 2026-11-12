@@ -60,7 +60,7 @@ def test_idle_turns_draw_one_nudge_then_a_soft_declared_stop() -> None:
         "[harness settled] The last three turns changed nothing; finish_session ends the run,"
         " and at 12 unchanged turns the run ends on its own."
     ]
-    assert nudge_answers[0].event == journal.LoopVerifySettledNudge(
+    assert nudge_answers[0].event == journal.NudgeVerifySettled(
         turn=nudges.VERIFY_SETTLED_NUDGE_AFTER + 1, idle=3
     )
     assert len(stops) == 1 and answers[-1] is stops[0]
@@ -184,7 +184,7 @@ def test_minus_one_disables_the_settled_stop_but_keeps_the_nudge(
     nudge_answers = [a for a in answers if isinstance(a, advice.Nudge)]
     assert not any(isinstance(a, advice.Stop) for a in answers)
     assert len(nudge_answers) == 1 and answers[3] is nudge_answers[0]
-    assert nudge_answers[0].event == journal.LoopVerifySettledNudge(turn=4, idle=3)
+    assert nudge_answers[0].event == journal.NudgeVerifySettled(turn=4, idle=3)
     assert nudge_answers[0].text == (
         "[harness settled] The last three turns changed nothing; finish_session ends the run."
     )

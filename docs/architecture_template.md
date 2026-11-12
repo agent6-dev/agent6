@@ -80,7 +80,7 @@ A run keeps one message history with one provider and one model.
 - the model drives by calling tools; the harness dispatches, snapshots, tracks budget
 - multi-step work is the next tool call in the same conversation: no planner-to-worker handoff, no separate reviewer by default
 - the in-loop review panel is opt-in (`[review]`), layered on the same history
-- `repo_context.review_rules` loads base-tree rule blobs through `vcs.review_rule_reader`; `loop.review.start` records the paths, blob IDs, byte counts and completeness for the panel
+- `repo_context.review_rules` loads base-tree rule blobs through `vcs.review_rule_reader`; `review.start` records the paths, blob IDs, byte counts and completeness for the panel
 - under `backend = "claude_code"` the provider keeps one `claude` process per execution and replays that history as labelled text and retained media whenever a call is not a continuation of its last round ([Config](config.md))
 
 An in-loop panel records the run base and reviewed head's tree IDs, full grounded seat verdicts, and findings with durable IDs in `loop.review.*` events.
@@ -508,7 +508,7 @@ It writes nothing to the repo or the memory: the operator turns a candidate into
 `app/review_directive.py` resolves its reviewed side through `vcs.review.comparison`, loads base rules through `harness.repo_context.review_rules`, and builds the bounded message from `prompts/review_directive.py`.
 `app.run` prepares a detached worktree through `app.fork_worktrees` when the range needs another checkout, for both ask and run.
 `app.execution` injects the live review preparer through `OperatorBridge`; a live request for another tree returns a new-session command without changing the checkout.
-`loop.steer.feedback` carries refusals and no-op answers to the shared transcript fold without a model call.
+`steer.feedback` carries refusals and no-op answers to the shared transcript fold without a model call.
 The directive uses the session's tools and permissions and returns markdown, without writing findings or a review journal.
 
 ## Parallel runs
@@ -557,7 +557,7 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
 
 - the fan-out is a session of its own under the origin's runs, named by the fan-out id; `stop <id>` ends it with its lanes, and `resume` refuses it
     - a manifest with the fan-out stamp and no run branch
-    - a journal: the dispatch, the judge's streamed `role.*` events (`role = "judge"`), `loop.parallel.compared` with the ranking and rationale, the judge's cost as its own spend, the end
+    - a journal: the dispatch, the judge's streamed `role.*` events (`role = "judge"`), `parallel.compared` with the ranking and rationale, the judge's cost as its own spend, the end
     - a manifest comparison record: the group id, ranking, method, rationale and judge cost; lane manifests keep only their placement and group id
     - a worker pid while the lanes run and the judge ranks them
 - every lane's manifest names the session that dispatched it (`parallel.coordinator`, stamped from the private launch), so each listing nests lanes under their coordinator, folded into a count
@@ -584,7 +584,7 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
     - merge each branch onto the chain in dispatch order (`chain_merge` syncs merged files into the worktree)
 - a lane that ended with a result and no commit beyond its base joins as `no_changes` and merges nothing
 - each segment gets one DAG node: `passed` with the last joined sha (none when every lane made no changes), or `failed` when every lane failed or conflicted; a conflict aborts that merge and tells the model; the run continues either way
-- `loop.parallel.dispatched` / `joined` / `failed` render as conversation markers, so the blocked wait is visible
+- `parallel.dispatched` / `joined` / `failed` render as conversation markers, so the blocked wait is visible
 
 **Subordinate work cannot fan out.** `app.lane_launch.dispatch_authority` separates work dispatch from configured harness-panel scheduling on `OperatorBridge.lane_authority`.
 Every lane bootstrap sets `AGENT6_SUBRUN=1`; a matching private worker launch retains panel authority under `[review]`, but its model and steer cannot dispatch work even with `parallel.tool = true`.
@@ -648,7 +648,7 @@ Plan and ask expose no edit tools and spawn freely; a `run --parallel` fan-out t
 
 Files that are untracked at start are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt.
 A resume adds the files that appeared between executions and the run cannot show it wrote, and its note names them.
-An edit to one of them, or to a path git ignores, stays out of the run's commits: the edit's tool result says so (`loop.edit.left_out`), and the end summary lists the paths still on disk and absent from the commits.
+An edit to one of them, or to a path git ignores, stays out of the run's commits: the edit's tool result says so (`checkpoint.left_out`), and the end summary lists the paths still on disk and absent from the commits.
 After an execution that died mid-turn the rule turns over: a call of that turn may have written what appeared, so those files stay the run's, and the note names them.
 
 Uncommitted changes to tracked files are asked about over the `ask_user` channel: stash for the run, include them in its commits, or cancel, which parks the run with `parked_reason` "uncommitted changes".
@@ -881,7 +881,7 @@ Claude Code receives MCP image or resource items, replays retained attachments a
 - `models.cache.cached_input_capabilities` reads explicit image and document facts from fresh listings, bound to the endpoint, provider entry and exact model.
 - Missing modality data means unknown; names never imply support.
 - `provider_call.call_with_media_recovery` applies the calling role's facts to canonical tool results and retries one recognized `MediaInputError` without rerunning tools.
-- Delivery refusals emit `loop.media.refused` with each affected tool use's `provider_tool_call_id` and update the worker's latest snapshot before retrying.
+- Delivery refusals emit `media.refused` with each affected tool use's `provider_tool_call_id` and update the worker's latest snapshot before retrying.
 - Confirmed unsupported modalities stay unsupported for that route during the execution; malformed media and size rejections do not change capability facts.
 
 See [Media retention](security.md#media-retention) for persistence and visual-secret disclosure.

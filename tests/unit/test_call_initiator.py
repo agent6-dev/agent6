@@ -111,7 +111,7 @@ def test_a_given_call_context_is_shared_by_every_attempt() -> None:
 
 
 def test_streamed_deltas_carry_the_call_identity(tmp_path: pathlib.Path) -> None:
-    """Each delta row names the model call and the execution its role.call names."""
+    """Each delta row names the model call and the execution its model.call names."""
     import json
 
     from agent6 import budget as agent6_budget
@@ -142,7 +142,7 @@ def test_streamed_deltas_carry_the_call_identity(tmp_path: pathlib.Path) -> None
     )
     rows = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
     by_type = {row["type"]: row for row in rows}
-    for name in ("role.call", "role.text_delta", "role.thinking_delta", "role.result"):
+    for name in ("model.call", "model.text_delta", "model.thinking_delta", "model.result"):
         assert by_type[name]["model_call_id"] == "given", name
         assert by_type[name]["execution_id"] == "exec-1", name
 
@@ -172,7 +172,7 @@ def _rows(tmp_path: pathlib.Path) -> list[dict[str, Any]]:
 
 
 def test_a_retried_call_is_one_lifecycle_with_an_attempt_row_each(tmp_path: pathlib.Path) -> None:
-    """A transient error leaves role.call once, a row per attempt and role.result once."""
+    """A transient error leaves model.call once, a row per attempt and model.result once."""
     calls: list[int] = []
 
     class _Flaky:
@@ -183,12 +183,12 @@ def test_a_retried_call_is_one_lifecycle_with_an_attempt_row_each(tmp_path: path
             return _ok()
 
     _caller(_wrapped(_Flaky(), tmp_path), retry_count=1).call("s", [], [], 10)
-    rows = [r for r in _rows(tmp_path) if r["type"].startswith("role.")]
+    rows = [r for r in _rows(tmp_path) if r["type"].startswith("model.")]
     assert [r["type"] for r in rows] == [
-        "role.call",
-        "role.attempt",
-        "role.attempt",
-        "role.result",
+        "model.call",
+        "model.attempt",
+        "model.attempt",
+        "model.result",
     ]
     assert len({r["model_call_id"] for r in rows}) == 1
     first, second = rows[1], rows[2]
@@ -206,8 +206,8 @@ def test_a_permanent_error_closes_the_call_on_its_first_attempt(tmp_path: pathli
 
     with pytest.raises(ProviderError):
         _caller(_wrapped(_Refusing(), tmp_path), retry_count=3).call("s", [], [], 10)
-    types = [r["type"] for r in _rows(tmp_path) if r["type"].startswith("role.")]
-    assert types == ["role.call", "role.attempt", "role.result"]
+    types = [r["type"] for r in _rows(tmp_path) if r["type"].startswith("model.")]
+    assert types == ["model.call", "model.attempt", "model.result"]
 
 
 def test_an_empty_tool_call_response_is_an_attempt_of_the_same_call(
@@ -234,11 +234,11 @@ def test_an_empty_tool_call_response_is_an_attempt_of_the_same_call(
             return next(responses)
 
     _caller(_wrapped(_Empty(), tmp_path), retry_count=1).call("s", [], [], 10)
-    rows = [r for r in _rows(tmp_path) if r["type"].startswith("role.")]
+    rows = [r for r in _rows(tmp_path) if r["type"].startswith("model.")]
     assert [r["type"] for r in rows] == [
-        "role.call",
-        "role.attempt",
-        "role.attempt",
-        "role.result",
+        "model.call",
+        "model.attempt",
+        "model.attempt",
+        "model.result",
     ]
     assert rows[1]["ok"] is True and rows[3]["text"] == "ok"

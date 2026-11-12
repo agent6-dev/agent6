@@ -24,7 +24,7 @@ def test_the_second_exec_failure_of_a_host_binary_draws_one_note() -> None:
     assert guards.unreachable_tool(state, "run_command", argv, _exec(exec_failed=True)) is None
     note = guards.unreachable_tool(state, "run_command", argv, _exec(exec_failed=True))
     assert note is not None and "`sh` is installed on this machine" in note.text
-    assert note.event == journal.LoopSandboxToolUnreachable(binary="sh")
+    assert note.event == journal.JailToolUnreachable(binary="sh")
     assert note.log == "LOOP: sandbox tool unreachable: sh exists on host, fails in jail"
     assert state.reach.warned is True
     assert guards.unreachable_tool(state, "run_command", argv, _exec(exec_failed=True)) is None

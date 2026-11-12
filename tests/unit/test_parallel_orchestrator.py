@@ -3746,8 +3746,8 @@ def test_run_parallel_is_a_session_of_its_own(
         for line in (coordinator / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     types = [event["type"] for event in events]
-    assert types[:2] == ["session.start", "loop.parallel.dispatched"]
-    assert "loop.parallel.compared" in types and types[-1] == "session.stop"
+    assert types[:2] == ["session.start", "parallel.dispatched"]
+    assert "parallel.compared" in types and types[-1] == "session.stop"
     assert events[-1]["execution_id"] == events[0]["execution_id"]
     assert not (coordinator / "worker.pid").exists()
     # The lanes carry the gate verdicts; the fan-out's own end is that they were ranked.
@@ -3778,9 +3778,9 @@ def test_the_compare_judge_streams_into_the_coordinators_journal(
             for index, piece in enumerate(pieces, start=1):
                 on_text(piece)
                 events = journal()
-                assert events[-1]["type"] == "role.text_delta"
+                assert events[-1]["type"] == "model.text_delta"
                 assert events[-1]["role"] == "judge" and events[-1]["text"] == piece
-                assert not any(e["type"] == "loop.parallel.compared" for e in events)
+                assert not any(e["type"] == "parallel.compared" for e in events)
                 live = state.initial_state()
                 for event in events:
                     live = state.apply_event(live, event)
@@ -3817,9 +3817,9 @@ def test_the_compare_judge_streams_into_the_coordinators_journal(
 
     assert rc == 0
     events = journal()
-    assert [e["text"] for e in events if e["type"] == "role.text_delta"] == list(pieces)
-    assert next(e for e in events if e["type"] == "role.call")["model"] == "judge-model"
-    compared = next(e for e in events if e["type"] == "loop.parallel.compared")
+    assert [e["text"] for e in events if e["type"] == "model.text_delta"] == list(pieces)
+    assert next(e for e in events if e["type"] == "model.call")["model"] == "judge-model"
+    compared = next(e for e in events if e["type"] == "parallel.compared")
     assert compared["ranked_by"] == "judge"
     assert compared["rationale"] == "Lane two covers the edge case."
     items = transcript.fold_transcript(events)

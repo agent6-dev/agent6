@@ -68,7 +68,7 @@ def test_tail_does_not_stop_at_a_run_end_a_resume_superseded(tmp_path: pathlib.P
         + "\n"
         + json.dumps({"type": "session.resume"})
         + "\n"
-        + json.dumps({"type": "role.call"})
+        + json.dumps({"type": "model.call"})
         + "\n",
         encoding="utf-8",
     )
@@ -77,13 +77,13 @@ def test_tail_does_not_stop_at_a_run_end_a_resume_superseded(tmp_path: pathlib.P
         "session.start",
         "session.stop",
         "session.resume",
-        "role.call",
+        "model.call",
     ]
 
 
 def _torn_utf8_line() -> tuple[bytes, bytes]:
     """A JSON line split in the middle of a multibyte UTF-8 sequence."""
-    full = json.dumps({"type": "role.text_delta", "text": "café"}, ensure_ascii=False).encode()
+    full = json.dumps({"type": "model.text_delta", "text": "café"}, ensure_ascii=False).encode()
     cut = full.rindex(b"\xc3\xa9") + 1
     return full[:cut], full[cut:]
 
@@ -117,7 +117,7 @@ def test_tail_completes_torn_utf8_line_across_polls(tmp_path: pathlib.Path) -> N
     t.start()
     out = list(viewmodel_tail.tail_events(p, follow=True, poll_s=0.05, stop_when_finished=True))
     t.join(timeout=2)
-    assert [e["type"] for e in out] == ["first", "role.text_delta", "session.stop"]
+    assert [e["type"] for e in out] == ["first", "model.text_delta", "session.stop"]
     assert out[1]["text"] == "café"
 
 
@@ -298,7 +298,7 @@ def test_stop_when_finished_follows_through_a_resumed_run(tmp_path: pathlib.Path
     p.write_text(
         '{"type": "session.start"}\n'
         '{"type": "session.stop", "reason": "steer_abort"}\n'
-        '{"type": "role.call"}\n'
+        '{"type": "model.call"}\n'
         '{"type": "session.stop", "reason": "finish_session"}\n',
         encoding="utf-8",
     )

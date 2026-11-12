@@ -73,7 +73,7 @@ def run(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> layout.Sessi
         }
     )
     saved.logs_path.write_text(
-        json.dumps({"type": "loop.review.panel", **panel.model_dump(mode="json")}) + "\n"
+        json.dumps({"type": "review.panel", **panel.model_dump(mode="json")}) + "\n"
     )
     saved.manifest_path.write_text(
         manifest.SessionManifest(
@@ -167,7 +167,7 @@ def test_every_merge_path_refuses_open_blocks_even_when_panel_did_not_reject(
 def test_unreadable_structured_evidence_refuses_with_its_reason(
     tmp_path: pathlib.Path, run: layout.SessionLayout
 ) -> None:
-    run.logs_path.write_text(json.dumps({"type": "loop.review.panel", "panel_id": "broken"}))
+    run.logs_path.write_text(json.dumps({"type": "review.panel", "panel_id": "broken"}))
     result = _merge(tmp_path, run)
     assert result.status == "error"
     assert "review" in result.error and "target" in result.error
@@ -181,7 +181,7 @@ def test_unknown_review_or_resolved_findings_do_not_require_a_clean_panel(
     if evidence == "missing":
         run.logs_path.unlink()
     elif evidence == "legacy":
-        run.logs_path.write_text('{"type":"loop.review.panel","blocked":true,"n_block":2}\n')
+        run.logs_path.write_text('{"type":"review.panel","blocked":true,"n_block":2}\n')
     else:
         _resolve_all(run)
     assert _merge(tmp_path, run).status == "merged"
@@ -208,7 +208,7 @@ def test_merge_rechecks_dispositions_after_taking_the_writer_lock(
 
     def reopen_then_acquire(session_dir: pathlib.Path) -> int | None:
         event_log.EventSink(run.logs_path).emit(
-            journal.LoopReviewFindingReopened(
+            journal.ReviewFindingReopened(
                 finding_id="f1",
                 request_id="reopen",
                 reason="Still reproducible",

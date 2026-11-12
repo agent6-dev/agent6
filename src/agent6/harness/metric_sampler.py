@@ -93,7 +93,7 @@ class MetricSampler:
         )
         history.append(sample)
         self.emit(
-            journal.LoopMetricSample(
+            journal.MetricSample(
                 turn=turn,
                 label=label,
                 score=score,
@@ -123,7 +123,7 @@ class MetricSampler:
             return None
         history = state.metric.history
         self.log(f"LOOP: auto metric after the committed edit at turn {turn}")
-        self.emit(journal.LoopMetricAutoCall(turn=turn, sha=sha[:12]))
+        self.emit(journal.MetricAutoCall(turn=turn, sha=sha[:12]))
         try:
             result = self.dispatcher.dispatch("run_metric_command", {})
         except tool_errors.ToolError as exc:
@@ -140,7 +140,7 @@ class MetricSampler:
                     error=error,
                 )
             )
-            self.emit(journal.LoopMetricAutoFailed(turn=turn, error=error[:200]))
+            self.emit(journal.MetricAutoFailed(turn=turn, error=error[:200]))
             return metric_rules.format_metric_feedback(history, goal=goal)
         assert isinstance(result, results.MetricResult)  # run_metric_command's result type
         return self.record(history, result, turn=turn, label=f"auto turn {turn}", sha=sha)

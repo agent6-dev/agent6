@@ -72,9 +72,7 @@ def test_an_early_finish_on_a_metric_run_is_refused_while_runway_remains() -> No
     assert [r is not None for r in refusals] == [True, True, True, False]
     first = refusals[0]
     assert first is not None and first.text == metric_rules.METRIC_FINISH_NUDGE
-    assert first.event == journal.LoopMetricEarlyFinishRejected(
-        turn=1, nudges_used=1, budget_remaining=0.9
-    )
+    assert first.event == journal.FinishRefusedMetric(turn=1, nudges_used=1, budget_remaining=0.9)
     assert first.log == "  metric early-finish rejected #1 at turn 1 (budget 90% left)"
     assert state.metric.finish_nudges_used == metric_rules.METRIC_EARLY_FINISH_PATIENCE
 
@@ -82,7 +80,7 @@ def test_an_early_finish_on_a_metric_run_is_refused_while_runway_remains() -> No
     quiet.finish, quiet.ending = None, "silent_finish"
     silent = metric_rules.metric_early_finish(quiet, _state(), runway)
     assert silent is not None
-    assert isinstance(silent.event, journal.LoopMetricEarlyFinishRejected)
+    assert isinstance(silent.event, journal.FinishRefusedMetric)
     assert silent.event.trigger == "silent_finish"
     assert "(silent)" in silent.log
 

@@ -147,7 +147,7 @@ def test_launcher_loss_at_finish_replaces_the_passing_baseline(
         finally:
             release.touch()
     rows = [json.loads(line) for line in saved.logs_path.read_text().splitlines()]
-    assert [row["reason"] for row in rows if row["type"] == "loop.verify_harness"] == [
+    assert [row["reason"] for row in rows if row["type"] == "verify.requested"] == [
         "start",
         "finish",
     ]

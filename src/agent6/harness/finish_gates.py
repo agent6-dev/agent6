@@ -290,7 +290,7 @@ def finish_contract(
         return None
     return advice.Refusal(
         contract_refusal(problems),
-        event=journal.LoopFinishContractRefused(turn=turn.number, problems=problems),
+        event=journal.FinishRefusedContract(turn=turn.number, problems=problems),
         log=f"  finish_session returned: result violates the contract at turn {turn.number}",
     )
 
@@ -333,7 +333,7 @@ def open_tasks_finish(
     ending = turn.ending or "finish_session"
     return advice.Refusal(
         nudge,
-        event=journal.LoopTaskFinishGated(
+        event=journal.FinishRefusedTasks(
             turn=turn.number, nudges_used=state.gates.task_nudges_used, trigger=ending
         ),
         log=(
@@ -386,7 +386,7 @@ def verify_finish(
     ending = turn.ending or "finish_session"
     return advice.Refusal(
         notice,
-        event=journal.LoopVerifyFinishGated(turn=turn.number, nudges_used=used, trigger=ending),
+        event=journal.FinishRefusedVerify(turn=turn.number, nudges_used=used, trigger=ending),
         log=(
             f"  {'settled stop' if settled else 'finish_session'} returned: verify not green"
             f" (return #{used} of {ctx.verify_retries}) at turn {turn.number}"

@@ -126,7 +126,7 @@ def assert_no_review_store(repo: pathlib.Path, directory: pathlib.Path) -> None:
     assert not (paths.state_dir(repo) / "reviews").exists()
     assert not (directory / "review.jsonl").exists()
     events = [json.loads(line) for line in (directory / "logs.jsonl").read_text().splitlines()]
-    assert not any(event["type"].startswith("loop.review.") for event in events)
+    assert not any(event["type"].startswith("review.") for event in events)
 
 
 class SeatProvider:
@@ -179,7 +179,7 @@ def test_the_panel_sits_on_the_reviewed_branch_and_records_its_findings(
     assert cli("ask", "/review feature-x") == 0
     directory = session(repo, "ask")
     events = [json.loads(line) for line in (directory / "logs.jsonl").read_text().splitlines()]
-    (panel,) = [e for e in events if e["type"] == "loop.review.panel"]
+    (panel,) = [e for e in events if e["type"] == "review.panel"]
     assert panel["trigger"] == "review_target" and panel["turn"] == 0
     assert panel["target"]["head_tree"] == world_tests.git(repo, "rev-parse", "feature-x^{tree}")
     assert panel["target"]["base_tree"] == world_tests.git(repo, "rev-parse", "main^{tree}")

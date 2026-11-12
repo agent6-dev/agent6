@@ -298,13 +298,13 @@ def test_pause_menu_status_shows_ctx_and_profile(
             for e in (
                 {"type": "session.start", "user_task": "polish", "mode": "run"},
                 {
-                    "type": "role.call",
+                    "type": "model.call",
                     "role": "worker",
                     "provider": "anthropic",
                     "model": "claude-sonnet-4-5",
                 },
                 {
-                    "type": "role.result",
+                    "type": "model.result",
                     "role": "worker",
                     "input_tokens": 90_000,
                     "output_tokens": 10,
@@ -335,9 +335,9 @@ def test_pause_menu_status_shows_compaction_truth(
             json.dumps(e) + "\n"
             for e in (
                 {"type": "session.start", "user_task": "polish", "mode": "run"},
-                {"type": "loop.compact.dropped", "count": 9, "calls": ["read_file a.py"]},
+                {"type": "compact.dropped", "count": 9, "calls": ["read_file a.py"]},
                 {
-                    "type": "loop.compact.gists",
+                    "type": "compact.gist.done",
                     "gisted": 3,
                     "demoted": 0,
                     "paths": ["a.py", "b.py", "c.py"],
@@ -429,8 +429,8 @@ def test_pause_menu_status_and_bare_pin_list_pins(
             json.dumps(e) + "\n"
             for e in (
                 {"type": "session.start", "user_task": "polish", "mode": "run"},
-                {"type": "loop.pin.added", "text": "never touch schema", "chars": 18, "count": 1},
-                {"type": "loop.pin.added", "text": "goal:\nship X", "chars": 12, "count": 2},
+                {"type": "pin.added", "text": "never touch schema", "chars": 18, "count": 1},
+                {"type": "pin.added", "text": "goal:\nship X", "chars": 12, "count": 2},
             )
         ),
         encoding="utf-8",
@@ -490,7 +490,7 @@ def test_pause_menu_seeds_recall_from_the_journal(
             json.dumps(e) + "\n"
             for e in (
                 {"type": "session.start", "user_task": "polish the\nTUI", "mode": "run"},
-                {"type": "loop.steer.injected", "chars": 14, "text": "focus on tests"},
+                {"type": "steer.injected", "chars": 14, "text": "focus on tests"},
             )
         ),
         encoding="utf-8",

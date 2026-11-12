@@ -91,9 +91,9 @@ def seed_carryover(
             harness.dispatcher.verify_withheld = True
         if fact := harness.verify_fact(state):
             conversation.notice(f"[harness verify] {fact}")
-        harness.emit(journal.LoopPinRestored(pins=list(state.pins), count=len(state.pins)))
+        harness.emit(journal.PinRestored(pins=list(state.pins), count=len(state.pins)))
         elided, gists = compaction_rules.count_elisions(conversation)
-        harness.emit(journal.LoopCompactRestored(elided=elided, gists=gists))
+        harness.emit(journal.CompactRestored(elided=elided, gists=gists))
     elif harness.initial_pins:
         # The pin owner applies the cap and the non-empty check; a refused pin is logged.
         for pin in harness.initial_pins:
@@ -102,9 +102,9 @@ def seed_carryover(
                     f"  --pin refused (empty or over the {operator_bridge.PINS_MAX_CHARS}-char cap)"
                 )
                 harness.emit(
-                    journal.LoopPinRefused(chars=len(pin), limit=operator_bridge.PINS_MAX_CHARS)
+                    journal.PinRefused(chars=len(pin), limit=operator_bridge.PINS_MAX_CHARS)
                 )
-        harness.emit(journal.LoopPinRestored(pins=list(state.pins), count=len(state.pins)))
+        harness.emit(journal.PinRestored(pins=list(state.pins), count=len(state.pins)))
         if state.pins:
             conversation.notice(prompts_compaction.pinned_block(state.pins))
 
@@ -127,7 +127,7 @@ def carry_adopted_gate(
         return ()
     harness.log(f"LOOP: verify gate carried from the last execution: {' '.join(argv)}")
     harness.emit(
-        journal.LoopVerifyInferred(
+        journal.VerifyInferred(
             command=list(argv),
             source="resumed",
             adopted_at=snapshot.next_turn,

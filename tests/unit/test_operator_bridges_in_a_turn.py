@@ -129,6 +129,6 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: pat
     assert curator.get("0001").children[-1] == goal.id
 
     kinds = [json.loads(line)["type"] for line in events.path.read_text().splitlines()]
-    assert "loop.task.queued" in kinds
-    assert "loop.task.retired" in kinds
-    assert "loop.standing.set" in kinds
+    assert "task.queued" in kinds
+    assert "task.retired" in kinds
+    assert "standing.set" in kinds

@@ -131,9 +131,7 @@ def no_progress(
         )
     return advice.Nudge(
         nudges.NO_PROGRESS_ESCALATION if rung == "escalate" else nudges.NO_PROGRESS_NUDGE,
-        event=journal.LoopNoProgressNudge(
-            turn=turn.number, streak=streak, level=Ladder.level(rung)
-        ),
+        event=journal.NudgeNoProgress(turn=turn.number, streak=streak, level=Ladder.level(rung)),
     )
 
 
@@ -310,7 +308,7 @@ def verify_settled(
     if not refused and guard.nudge_due():
         return advice.Nudge(
             nudges.verify_settled_nudge(stop_after),
-            event=journal.LoopVerifySettledNudge(turn=turn.number, idle=guard.idle),
+            event=journal.NudgeVerifySettled(turn=turn.number, idle=guard.idle),
         )
     return None
 
@@ -378,7 +376,7 @@ def tool_error_ladder(
         text = nudges.TOOL_ERROR_ESCALATION if rung == "escalate" else nudges.TOOL_ERROR_NUDGE
     return advice.Nudge(
         text,
-        event=journal.LoopToolErrorNudge(turn=turn.number, streak=streak, level=Ladder.level(rung)),
+        event=journal.NudgeToolError(turn=turn.number, streak=streak, level=Ladder.level(rung)),
     )
 
 
@@ -408,9 +406,7 @@ def loop_guard_notice(
     tool = (spiral.last_call_sig or "").split(":", 1)[0] or "<unknown>"
     return advice.Nudge(
         nudges.loop_guard_words(tool, spiral.call_streak),
-        event=journal.LoopLoopGuardTriggered(
-            turn=turn.number, tool=tool, streak=spiral.call_streak
-        ),
+        event=journal.NudgeLoopGuard(turn=turn.number, tool=tool, streak=spiral.call_streak),
         log=(
             f"  loop guard: {tool} called {spiral.call_streak}x in a row;"
             " the model is told to change course"
@@ -491,7 +487,7 @@ def stagnation(
     text = nudges.STAGNATION_NUDGE if ctx.gate_present() else nudges.STAGNATION_NUDGE_GATELESS
     return advice.Nudge(
         text.format(minutes=minutes),
-        event=journal.LoopStagnationNudged(turn=turn.number, elapsed_s=int(elapsed)),
+        event=journal.NudgeStagnation(turn=turn.number, elapsed_s=int(elapsed)),
         log=(
             f"  stagnation: {minutes}m with no edit and no verify;"
             " the model is reminded the budget is finite"
@@ -575,7 +571,7 @@ def memory_flip(
     state.memory.flip_nudged = True
     return advice.Nudge(
         nudges.MEMORY_FLIP_NUDGE,
-        event=journal.LoopMemoryFlipNudged(turn=turn.number),
+        event=journal.NudgeMemoryFlip(turn=turn.number),
         log=(
             "  memory: verify flipped green with nothing recorded;"
             " the model is asked to write the rule"
@@ -669,7 +665,7 @@ def unreachable_tool(
     state.reach.warned = True
     return advice.Nudge(
         nudges.unreachable_tool_notice(binary),
-        event=journal.LoopSandboxToolUnreachable(binary=binary),
+        event=journal.JailToolUnreachable(binary=binary),
         log=f"LOOP: sandbox tool unreachable: {binary} exists on host, fails in jail",
     )
 
@@ -759,7 +755,7 @@ def stuck_on_task(
         return None
     return advice.Nudge(
         dag_focus.stuck_on_task_nudge(current_id, node, focus.turns_on_task),
-        event=journal.LoopTaskStuckNudge(
+        event=journal.NudgeTaskStuck(
             task_id=current_id, turns=focus.turns_on_task, nudges_used=focus.stuck_nudges_fired
         ),
         log=(
@@ -805,7 +801,7 @@ def plan_budget_nudge(state: loop_state.LoopState, ctx: advice.TurnContext) -> a
     state.budget_nudges.plan_finish = True
     return advice.Nudge(
         nudges.PLAN_BUDGET_NUDGE,
-        event=journal.LoopPlanFinishNudge(turn=ctx.turn, budget_remaining=remaining),
+        event=journal.NudgePlanFinish(turn=ctx.turn, budget_remaining=remaining),
         log=(
             f"LOOP: plan finish-nudge at turn {ctx.turn}"
             f" (turns={too_many_turns}, low_budget={low_budget})"
@@ -834,7 +830,7 @@ def run_budget_nudge(state: loop_state.LoopState, ctx: advice.TurnContext) -> ad
     state.budget_nudges.run_budget = True
     return advice.Nudge(
         nudges.RUN_BUDGET_NUDGE if ctx.gate_present() else nudges.RUN_BUDGET_NUDGE_GATELESS,
-        event=journal.LoopRunBudgetNudge(turn=ctx.turn, budget_remaining=remaining),
+        event=journal.NudgeRunBudget(turn=ctx.turn, budget_remaining=remaining),
         log=f"LOOP: run budget-nudge at turn {ctx.turn}",
     )
 

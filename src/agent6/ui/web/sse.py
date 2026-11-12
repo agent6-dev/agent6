@@ -39,7 +39,7 @@ from agent6.viewmodel import (
 DELTA_COALESCE_S = 0.15
 HEARTBEAT_S = 15.0
 MACHINE_POLL_S = 0.5
-STREAMING_DELTAS = frozenset({"role.text_delta", "role.thinking_delta"})
+STREAMING_DELTAS = frozenset({"model.text_delta", "model.thinking_delta"})
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

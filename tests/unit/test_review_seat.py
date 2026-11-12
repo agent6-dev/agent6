@@ -824,7 +824,7 @@ def test_repo_review_records_attachment_limit_refusals(cross_turn: bool) -> None
     assert verdict.error is None
     emit.assert_called_once()
     refused = emit.call_args.args[0]
-    assert isinstance(refused, journal.LoopMediaRefused)
+    assert isinstance(refused, journal.MediaRefused)
     assert refused.provider_tool_call_id == "one"
     assert ("4 MiB" if cross_turn else "2 MiB") in refused.reason
 

@@ -150,7 +150,7 @@ def test_other_streams_keep_failed_usage_on_the_result(
     )
     snap = tracker.snapshot()
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
-    (result,) = [row for row in rows if row["type"] == "role.result"]
+    (result,) = [row for row in rows if row["type"] == "model.result"]
     if not reported_usage:
         assert snap.per_model == {}
         assert (

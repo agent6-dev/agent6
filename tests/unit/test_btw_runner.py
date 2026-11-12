@@ -24,7 +24,7 @@ def _answered_ask(root: pathlib.Path, name: str, answer: str) -> pathlib.Path:
         "\n".join(
             [
                 json.dumps({"type": "session.start", "user_task": "q"}),
-                json.dumps({"type": "role.result", "text": answer}),
+                json.dumps({"type": "model.result", "text": answer}),
                 json.dumps(
                     {"type": "session.stop", "reason": "answered", "verification": "passed"}
                 ),
@@ -62,7 +62,7 @@ def test_the_run_is_never_blocked_and_the_answer_arrives_later(tmp_path: pathlib
 
     deadline = time.monotonic() + 15.0
     while "libx265" not in out.getvalue() and time.monotonic() < deadline:
-        view.feed({"type": "role.result"})  # turn boundaries keep arriving
+        view.feed({"type": "model.result"})  # turn boundaries keep arriving
         time.sleep(0.2)
     text = out.getvalue()
     assert "--- btw: why h265" in text
@@ -175,7 +175,7 @@ def test_a_btw_answer_renders_in_the_shared_fold(tmp_path: pathlib.Path) -> None
     from agent6.viewmodel import transcript
 
     fold = transcript.TranscriptFold()
-    fold.feed({"type": "role.text_delta", "text": "working"})
+    fold.feed({"type": "model.text_delta", "text": "working"})
     items = fold.feed({"type": "btw.answered", "btw_id": "x", "block": "--- btw: why\nbecause"})
     kinds = [i.kind for i in items]
     assert kinds == ["text", "marker"], "a btw must not join the turn's own prose"

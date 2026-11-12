@@ -118,7 +118,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         emitted = [
             json.loads(line) for line in (worker_dir / "logs.jsonl").read_text().splitlines()
         ]
-        charged = next(row for row in emitted if row.get("type") == "loop.budget")
+        charged = next(row for row in emitted if row.get("type") == "budget.turn")
         assert charged["cost_usd"] == 1.0 + (panel_cost or 0.0)
         # The worker can die here, before finalization publishes another budget update.
         parent.settle_lane("parent-p1", launch.session_id, lanes.lane_usage(worker_dir))

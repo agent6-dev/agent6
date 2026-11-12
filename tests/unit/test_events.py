@@ -22,13 +22,13 @@ def _read_lines(path: pathlib.Path) -> list[dict[str, object]]:
 def test_emit_appends_json_lines(tmp_path: pathlib.Path) -> None:
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     sink.emit(journal.LoopNote(text="do a thing"))
-    sink.emit(journal.LoopSteerRequested(turn=1))
+    sink.emit(journal.SteerRequested(turn=1))
     lines = _read_lines(tmp_path / "logs.jsonl")
     assert len(lines) == 2
     assert lines[0]["type"] == "loop.note"
     assert lines[0]["text"] == "do a thing"
     assert "ts" in lines[0]
-    assert lines[1]["type"] == "loop.steer.requested"
+    assert lines[1]["type"] == "steer.requested"
     assert lines[1]["turn"] == 1
 
 
@@ -40,7 +40,7 @@ def test_reopen_drops_torn_tail_before_resumed_events(
     first = event_log.EventSink(path)
     first.emit(journal.SessionStart(user_task="task", mode="execute", execution_id="first"))
     committed = path.read_bytes()
-    fragment = b'{"type":"role.text_delta","text":"caf\xc3'
+    fragment = b'{"type":"model.text_delta","text":"caf\xc3'
     with path.open("ab") as fh:
         fh.write(fragment)
 
@@ -56,7 +56,7 @@ def test_reopen_drops_torn_tail_before_resumed_events(
             execution_id="resumed",
         )
     )
-    resumed.emit(journal.RoleTextDelta(role="worker", text="done"))
+    resumed.emit(journal.ModelTextDelta(role="worker", text="done"))
     resumed.emit(
         journal.SessionStop(
             execution_id="execution",
@@ -66,7 +66,7 @@ def test_reopen_drops_torn_tail_before_resumed_events(
         )
     )
 
-    expected = ["session.start", "session.resume", "role.text_delta", "session.stop"]
+    expected = ["session.start", "session.resume", "model.text_delta", "session.stop"]
     assert [event["type"] for event in tail.tail_events(path, follow=False)] == expected
     assert [event["type"] for event in tail.LogTail(path).read()] == expected
     assert path.read_bytes().startswith(committed)
@@ -141,8 +141,8 @@ def test_durable_emit_raises_on_unwritable_journal(tmp_path: pathlib.Path) -> No
             )
         )
     assert seen == []
-    sink.emit(journal.RoleTextDelta(role="worker", text="still live"))  # ephemeral: must not raise
-    assert [e["type"] for e in seen] == ["role.text_delta"]
+    sink.emit(journal.ModelTextDelta(role="worker", text="still live"))  # ephemeral: must not raise
+    assert [e["type"] for e in seen] == ["model.text_delta"]
 
 
 def test_delta_events_flush_but_do_not_fsync(
@@ -161,8 +161,8 @@ def test_delta_events_flush_but_do_not_fsync(
     monkeypatch.setattr(os, "fsync", _fake_fsync)
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
 
-    sink.emit(journal.RoleThinkingDelta(role="worker", text="reasoning"))
-    sink.emit(journal.RoleTextDelta(role="worker", text="answer"))
+    sink.emit(journal.ModelThinkingDelta(role="worker", text="reasoning"))
+    sink.emit(journal.ModelTextDelta(role="worker", text="answer"))
     assert synced == []  # no fsync for the deltas
 
     sink.emit(journal.ToolCall(name="read_file", args_preview={}, call_id=1))
@@ -172,7 +172,7 @@ def test_delta_events_flush_but_do_not_fsync(
     types = [
         json.loads(line)["type"] for line in (tmp_path / "logs.jsonl").read_text().splitlines()
     ]
-    assert types == ["role.thinking_delta", "role.text_delta", "tool.call"]
+    assert types == ["model.thinking_delta", "model.text_delta", "tool.call"]
 
 
 def test_emit_survives_lone_surrogate(tmp_path: pathlib.Path) -> None:
@@ -230,6 +230,6 @@ def test_the_log_dir_is_created_once_not_per_event(
     monkeypatch.setattr(agent6_paths, "mkdir_for_real_user", counting)
     sink = event_log.EventSink(tmp_path / "run" / "logs.jsonl")
     sink.emit(journal.LoopNote(text="ready"))
-    sink.emit(journal.LoopSteerRequested(turn=1))
+    sink.emit(journal.SteerRequested(turn=1))
     assert calls == [tmp_path / "run"]
     assert (tmp_path / "run" / "logs.jsonl").read_text(encoding="utf-8").count("\n") == 2

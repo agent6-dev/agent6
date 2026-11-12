@@ -87,7 +87,7 @@ class Standing:
             nudge = nudges.standing_resume_nudge(reason, nid, title)
         state.standing.tools_mark = state.ok_tool_calls
         self.log(f"  standing re-entry ({reason}) -> {nid} at turn {turn}")
-        self.emit(journal.LoopStandingResumed(reason=reason, task_id=nid, turn=turn))
+        self.emit(journal.StandingResumed(reason=reason, task_id=nid, turn=turn))
         return nudge
 
     def absorb_soft_stop(

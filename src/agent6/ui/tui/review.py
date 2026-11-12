@@ -268,7 +268,7 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             label = (
                 action.resolution.disposition
                 if action.resolution
-                else action.type.removeprefix("loop.review.")
+                else action.type.removeprefix("review.")
             )
             body += "\n" + keymap.REVIEW_TEXT["history"].format(action=label, reason=reason)
         panel = next(p for p in self._view.panels if p.panel_id == observation.panel_id)

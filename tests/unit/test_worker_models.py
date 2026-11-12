@@ -9,11 +9,11 @@ from agent6.viewmodel import worker_models
 
 def test_first_seen_unique_workers_only() -> None:
     events = [
-        {"type": "role.call", "role": "worker", "model": "m1"},
-        {"type": "role.call", "role": "reviewer", "model": "mc"},
-        {"type": "role.call", "role": "worker", "model": "m2"},
-        {"type": "role.call", "role": "worker", "model": "m1"},
-        {"type": "role.call", "role": "worker"},  # no model field: skipped, never blank
+        {"type": "model.call", "role": "worker", "model": "m1"},
+        {"type": "model.call", "role": "reviewer", "model": "mc"},
+        {"type": "model.call", "role": "worker", "model": "m2"},
+        {"type": "model.call", "role": "worker", "model": "m1"},
+        {"type": "model.call", "role": "worker"},  # no model field: skipped, never blank
     ]
     assert worker_models(events) == ("m1", "m2")
     assert worker_models([]) == ()

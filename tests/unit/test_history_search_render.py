@@ -352,7 +352,7 @@ def test_event_snippet_windows_inside_the_matched_field(
     event = json.dumps(
         {
             "ts": "2026-07-12T09:15:30.1Z",
-            "type": "role.thinking_delta",
+            "type": "model.thinking_delta",
             "text": "I improved the NEEDLE of one bullet in README.md",
         }
     )
@@ -412,7 +412,7 @@ def test_byte_offsets_convert_to_characters_on_non_ascii_lines() -> None:
     event = json.dumps(
         {
             "ts": "2026-07-12T09:15:30.1Z",
-            "type": "role.text_delta",
+            "type": "model.text_delta",
             "text": "café ’naïve’ résumé… NEEDLE found mid prose",  # noqa: RUF001
         },
         ensure_ascii=False,
@@ -452,14 +452,14 @@ def test_distinct_sentences_ending_with_the_query_stay_distinct(
     e1 = json.dumps(
         {
             "ts": "2026-07-12T08:00:00.1Z",
-            "type": "role.text_delta",
+            "type": "model.text_delta",
             "text": "I deleted the broken NEEDLE",
         }
     )
     e2 = json.dumps(
         {
             "ts": "2026-07-12T09:30:00.1Z",
-            "type": "role.text_delta",
+            "type": "model.text_delta",
             "text": "then I rewrote a completely new NEEDLE",
         }
     )
@@ -484,7 +484,9 @@ def test_distinct_sentences_with_the_same_match_suffix_stay_distinct(
         ("08:00:00", "I deleted the NEEDLE from the parser"),
         ("09:30:00", "I restored the NEEDLE from the parser"),
     ):
-        event = json.dumps({"ts": f"2026-07-12T{when}.1Z", "type": "role.text_delta", "text": text})
+        event = json.dumps(
+            {"ts": f"2026-07-12T{when}.1Z", "type": "model.text_delta", "text": text}
+        )
         lines.append(_rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", event, "NEEDLE"))
     hits = history_cmds._parse_rg_matches("\n".join(lines))
     history_cmds._render_history_hits(hits, pathlib.Path("/s/sessions"))

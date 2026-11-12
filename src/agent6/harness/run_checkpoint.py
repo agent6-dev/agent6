@@ -105,7 +105,7 @@ class Checkpoints:
             return ""
         self.log(f"  {label}: {sha[:12]}")
         self.emit(
-            journal.LoopAutoCommit(turn=turn, sha=sha, subject=subject, task_id=task_id or "")
+            journal.CheckpointCommitted(turn=turn, sha=sha, subject=subject, task_id=task_id or "")
         )
         # Every fold tallies commits and the latest diff from diff.updated alone.
         self.emit(
@@ -145,7 +145,7 @@ class Checkpoints:
         except (errors.GitError, OSError):
             pass  # the status itself failed: the event goes without the snapshot
         self.emit(
-            journal.LoopAutoCommitFailed(
+            journal.CheckpointFailed(
                 turn=turn,
                 error=str(exc)[:2000],
                 worktree_status=worktree_status,

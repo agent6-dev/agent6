@@ -401,7 +401,7 @@ def metric_plateau(
             end,
             soft="metric_plateau",
             declared="metric_plateau",
-            event=journal.LoopMetricCeilingStop(turn=turn.number),
+            event=journal.MetricCeilingReached(turn=turn.number),
             log=log,
         )
     if in_final_slice and guard.plateau_nudges_used >= METRIC_PLATEAU_PATIENCE:
@@ -412,7 +412,7 @@ def metric_plateau(
     budget_note = "n/a" if remaining is None else f"{remaining:.0%} left"
     return advice.Nudge(
         metric_plateau_nudge(remaining),
-        event=journal.LoopMetricPlateauNudge(
+        event=journal.NudgeMetricPlateau(
             turn=turn.number, nudges_used=guard.plateau_nudges_used, budget_remaining=remaining
         ),
         log=(
@@ -451,7 +451,7 @@ def metric_early_finish(
     trigger = turn.ending if turn.ending not in (None, "finish_session") else ""
     return advice.Refusal(
         METRIC_FINISH_NUDGE,
-        event=journal.LoopMetricEarlyFinishRejected(
+        event=journal.FinishRefusedMetric(
             turn=turn.number,
             nudges_used=used,
             budget_remaining=remaining,

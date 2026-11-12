@@ -166,8 +166,8 @@ def test_confirmed_resume_returns_shared_receipt(
     assert finding["status"] == "open" and finding["fix_state"] == "submitted"
     assert finding["resolution"] is None
     assert [a["type"] for a in finding["actions"]] == [
-        "loop.review.fix.requested",
-        "loop.review.fix.submitted",
+        "review.fix.requested",
+        "review.fix.submitted",
     ]
     assert finding["actions"][-1]["execution_id"] == "resumed"
     assert [(p["panel_id"], p["execution_id"]) for p in completed["panels"]] == [

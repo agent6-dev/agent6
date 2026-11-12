@@ -103,7 +103,7 @@ These five compose: #1 and #4 make early/aggressive compaction (#2, #3, #5) safe
 
 ## Measurement harness (objective A/B)
 
-agent6 already emits `loop.compact.*` telemetry and has bench harnesses (`bench/agents`, `bench/swebench`) and verify + DAG status. Instrument three metrics, hold the model and task set fixed, flip one candidate at a time:
+agent6 already emits `compact.*` telemetry and has bench harnesses (`bench/agents`, `bench/swebench`) and verify + DAG status. Instrument three metrics, hold the model and task set fixed, flip one candidate at a time:
 
 - **Task completion rate.** DAG root `passed` and/or final verify pass at run end. Primary quality metric.
 - **Redundant re-reads.** In `tools/dispatch.py`, hash each tool call's `(name, args)`; count calls whose hash matched an earlier call in the same run. Break out pre- vs post-compaction. This is the direct signal for failure (b) and the cleanest discriminator for #1, #2, #6, #8.

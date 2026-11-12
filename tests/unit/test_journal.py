@@ -63,13 +63,13 @@ def test_the_sink_writes_the_envelope_and_leaves_unset_fields_out(tmp_path: path
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     sink.emit(journal.LoopNote(text="ready"))
     sink.emit(journal.GraphUpdate(nodes={}, cursor=None))
-    sink.emit(journal.LoopPinRestored(pins=("keep tests",), count=1))
+    sink.emit(journal.PinRestored(pins=("keep tests",), count=1))
     sink.emit(journal.BudgetUpdate(usd_total=0))
     rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
     assert [row["type"] for row in rows] == [
         "loop.note",
         "graph.update",
-        "loop.pin.restored",
+        "pin.restored",
         "budget.update",
     ]
     assert all(row["event_id"] and row["ts"] for row in rows)

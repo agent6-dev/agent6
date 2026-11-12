@@ -237,9 +237,9 @@ _RESUMABLE = frozenset({"stale", "stopped", "failed"})
 _IN_FLIGHT = {
     "verify.start": "verify command running",
     "tool.call": "tool call running",
-    "role.call": "provider call in flight",
-    "role.text_delta": "provider call in flight",
-    "role.thinking_delta": "provider call in flight",
+    "model.call": "provider call in flight",
+    "model.text_delta": "provider call in flight",
+    "model.thinking_delta": "provider call in flight",
 }
 
 
@@ -580,7 +580,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                 [
                     str(event.get("text", ""))
                     for event in tail.tail_events(layout.logs_path, follow=False)
-                    if event.get("type") == "loop.steer.injected"
+                    if event.get("type") == "steer.injected"
                 ]
                 or [summary.task_label.continued_task]
             )

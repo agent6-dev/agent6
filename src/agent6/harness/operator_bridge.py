@@ -28,12 +28,12 @@ PINS_MAX_CHARS = 4_000
 
 # The steer texts that end or hand over the run: the verb, its event, its log line.
 STEER_VERBS: dict[str, tuple[str, type[journal.Event], str]] = {
-    "abort": ("abort", journal.LoopSteerAborted, "abort - halting the run"),
-    "exit": ("exit", journal.LoopSteerExited, "exit - halting the run and leaving the terminal"),
-    "/undo": ("undo", journal.LoopSteerUndo, "/undo - forking back before the last message"),
+    "abort": ("abort", journal.SteerAborted, "abort - halting the run"),
+    "exit": ("exit", journal.SteerExited, "exit - halting the run and leaving the terminal"),
+    "/undo": ("undo", journal.SteerUndo, "/undo - forking back before the last message"),
     "detach": (
         "detach",
-        journal.LoopSteerDetached,
+        journal.SteerDetached,
         "detach - stopping to resume in the background",
     ),
 }
@@ -194,7 +194,7 @@ class Steering:
         """
         if not self.bridge.steer_requested():
             return None
-        self.emit(journal.LoopSteerRequested(turn=turn))
+        self.emit(journal.SteerRequested(turn=turn))
         self.log(f"STEER: operator steering at turn {turn}")
         try:
             text = self.bridge.steer_prompt()
@@ -213,11 +213,11 @@ class Steering:
             inject, message = prepared
             if inject:
                 state.settled.restart()
-                self.emit(journal.LoopSteerInjected(chars=len(text), text=text))
+                self.emit(journal.SteerInjected(chars=len(text), text=text))
                 conversation.notice(f"{heading}\n{message}", origin="operator")
             else:
                 self.log(message)
-                self.emit(journal.LoopSteerFeedback(text=message))
+                self.emit(journal.SteerFeedback(text=message))
             return None
         # The steer is new work: the idle turns before it say nothing about the turns after.
         state.settled.restart()
@@ -228,7 +228,7 @@ class Steering:
         ):
             return None
         self.log(f"  injecting steering instruction ({len(steer_text)} chars)")
-        self.emit(journal.LoopSteerInjected(chars=len(text), text=text))
+        self.emit(journal.SteerInjected(chars=len(text), text=text))
         asked = loop_conversation.last_assistant_prose(conversation)
         if question := nudges.ending_question(asked):
             self.record_decision(state, question, steer_text)
@@ -252,7 +252,7 @@ class Steering:
             return False
         skill, args = found
         self.log(f"  skill steer: {skill.name}")
-        self.emit(journal.LoopSteerSkill(name=skill.name, args=args))
+        self.emit(journal.SteerSkill(name=skill.name, args=args))
         conversation.notice(
             "OPERATOR STEERING (a mid-run instruction from the operator):\n"
             + skills.skill_steer_payload(skill.name, skill.text, args),
@@ -291,7 +291,7 @@ class Steering:
         if not try_pin(state.pins, instruction):
             # parse_pin rejects an empty directive, so a refusal here is always the cap.
             self.log(f"  /pin over cap (> {PINS_MAX_CHARS}); delivered as an ordinary steer")
-            self.emit(journal.LoopPinRefused(chars=len(instruction), limit=PINS_MAX_CHARS))
+            self.emit(journal.PinRefused(chars=len(instruction), limit=PINS_MAX_CHARS))
             conversation.notice(
                 f"OPERATOR STEERING (not pinned: the {PINS_MAX_CHARS}-char pin cap is"
                 " full, so this instruction does not survive context compaction):\n"
@@ -300,9 +300,7 @@ class Steering:
             )
             return True
         self.log(f"  pinned instruction ({len(instruction)} chars, {len(state.pins)} pins)")
-        self.emit(
-            journal.LoopPinAdded(text=instruction, chars=len(instruction), count=len(state.pins))
-        )
+        self.emit(journal.PinAdded(text=instruction, chars=len(instruction), count=len(state.pins)))
         conversation.notice(
             "OPERATOR STEERING (pinned: this instruction survives context compaction"
             " and binds for the rest of the run):\n"

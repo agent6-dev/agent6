@@ -65,7 +65,7 @@ def reviewed_session(cwd: pathlib.Path) -> layout.SessionLayout:
         completion="complete",
     )
     sink = event_log.EventSink(saved.logs_path)
-    sink.emit(journal.LoopReviewPanel(**panel.model_dump(mode="json")))
+    sink.emit(journal.ReviewPanel(**panel.model_dump(mode="json")))
     return saved
 
 
@@ -143,7 +143,7 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
         )
     )
     sink.emit(
-        journal.LoopReviewStart(
+        journal.ReviewStart(
             panel_id="panel",
             execution_id="execution",
             turn=1,
@@ -162,7 +162,7 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
         )
     )
     sink.emit(
-        journal.LoopReviewPanel(
+        journal.ReviewPanel(
             panel_id="panel",
             execution_id="execution",
             turn=1,

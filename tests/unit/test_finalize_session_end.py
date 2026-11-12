@@ -1345,10 +1345,7 @@ def test_the_sandbox_warning_states_its_remedy_once(
         "r-tools",
         [
             {"type": "session.start", "session_id": "r-tools", "user_task": "t"},
-            *(
-                {"type": "loop.sandbox_tool_unreachable", "binary": b}
-                for b in ("cargo", "node", "pyenv")
-            ),
+            *({"type": "jail.tool_unreachable", "binary": b} for b in ("cargo", "node", "pyenv")),
             {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
@@ -1461,7 +1458,7 @@ def test_the_left_out_list_prints_names_on_one_line(
     layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="r-left11")
     layout.ensure()
     layout.logs_path.write_text(
-        json.dumps({"type": "loop.edit.left_out", "turn": 1, "untracked": ["a\nb.txt"]}) + "\n",
+        json.dumps({"type": "checkpoint.left_out", "turn": 1, "untracked": ["a\nb.txt"]}) + "\n",
         encoding="utf-8",
     )
     finalize._print_left_out(layout, cwd=repo, ref="", reporter=reporter.STDIO_REPORTER)

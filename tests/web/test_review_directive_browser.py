@@ -72,7 +72,7 @@ def test_review_refusal_renders_in_the_conversation(
     )
     rows = [
         {"type": "session.start", "mode": "ask", "user_task": "inspect"},
-        {"type": "loop.steer.feedback", "text": feedback},
+        {"type": "steer.feedback", "text": feedback},
         {"type": "session.stop", "reason": "silent_finish"},
     ]
     (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))

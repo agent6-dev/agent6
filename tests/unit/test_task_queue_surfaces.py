@@ -57,7 +57,7 @@ def test_the_transcript_says_a_task_arrived() -> None:
     items = transcript.fold_transcript(
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "loop.task.queued", "task_id": "01M2", "title": "add a --json flag"},
+            {"type": "task.queued", "task_id": "01M2", "title": "add a --json flag"},
         ]
     )
 
@@ -65,7 +65,7 @@ def test_the_transcript_says_a_task_arrived() -> None:
 
 
 def test_the_log_line_names_the_task() -> None:
-    line = log_line.format_log_line({"type": "loop.task.queued", "title": "add a --json flag"})
+    line = log_line.format_log_line({"type": "task.queued", "title": "add a --json flag"})
 
     assert "add a --json flag" in line
 

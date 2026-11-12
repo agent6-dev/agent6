@@ -28,16 +28,16 @@ from agent6.viewmodel import summarize_session_dir
 
 # The harness's own interventions, named with their counts.
 _NOTICE_EVENTS = (
-    "loop.no_progress.nudge",
-    "loop.tool_error.nudge",
-    "loop.loop_guard.triggered",
-    "loop.stagnation.nudged",
-    "loop.review.rejected_finish",
-    "loop.metric_plateau.nudge",
-    "loop.metric_early_finish.rejected",
-    "loop.verify_settled.nudge",
-    "loop.memory_flip.nudged",
-    "loop.sandbox_tool_unreachable",
+    "nudge.no_progress",
+    "nudge.tool_error",
+    "nudge.loop_guard",
+    "nudge.stagnation",
+    "finish.refused.review",
+    "nudge.metric_plateau",
+    "finish.refused.metric",
+    "nudge.verify_settled",
+    "nudge.memory_flip",
+    "jail.tool_unreachable",
 )
 # The caps that keep the digest within any configured model's window.
 _STEERS_MAX = 20
@@ -264,9 +264,9 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
             continue
         unanswered.extend(_clip(q, _QUESTION_CHARS) for q in _unseen_questions(event, prompts))
         etype = str(event.get("type", ""))
-        if etype == "loop.steer.injected":
+        if etype == "steer.injected":
             steers.append(_clip(str(event.get("text", "")), _STEER_CHARS))
-        elif etype == "loop.decision.recorded":
+        elif etype == "decision.recorded":
             decisions.append((str(event.get("question", "")), str(event.get("answer", ""))))
         elif etype == "verify.end":
             execution_rc = _int(event["exit_code"]) if event.get("exit_code") is not None else None
@@ -299,7 +299,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
                     f"[{name}] {_clip(str(event.get('summary', '')), _TOOL_ERROR_CHARS)}"
                 )
         elif etype in _NOTICE_EVENTS:
-            notices[etype.removeprefix("loop.")] += 1
+            notices[etype] += 1
         elif etype == "session.stop":
             stop_reason = str(event.get("reason", ""))
             turns = _int(event.get("turns")) if "turns" in event else turns

@@ -258,12 +258,12 @@ def _extract_metrics(state_home: Path) -> dict[str, Any]:
             m["verification"] = e.get("verification")
         elif t == "loop.prompt_revision.result":
             m["task_rewritten"] = True
-        elif t == "loop.compact.summarise.done":
+        elif t == "compact.summarise.done":
             m["compactions"] += 1
             compacted = True
-        elif t == "loop.compact.dropped":
+        elif t == "compact.dropped":
             m["drops"] += 1
-        elif t == "loop.task.surfaced":
+        elif t == "task.surfaced":
             m["surfaced"] += 1
         elif t == "tool.call":
             m["tool_calls"] += 1

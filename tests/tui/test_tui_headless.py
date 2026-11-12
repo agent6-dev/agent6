@@ -350,9 +350,9 @@ def test_render_and_modals(tmp_path: pathlib.Path) -> None:
                         },
                     },
                 ),
-                _ev(type="role.call", role="worker", model="kimi-k2.6"),
-                _ev(type="role.thinking_delta", role="worker", text="let me [check]"),
-                _ev(type="role.text_delta", role="worker", text="answer is [x]"),
+                _ev(type="model.call", role="worker", model="kimi-k2.6"),
+                _ev(type="model.thinking_delta", role="worker", text="let me [check]"),
+                _ev(type="model.text_delta", role="worker", text="answer is [x]"),
                 _ev(type="tool.call", name="grep", args={"pattern": "[a-z]+", "path": "x.py"}),
                 _ev(type="tool.result", name="grep", ok=True, summary="3 matches in [src]"),
                 _ev(type="diff.updated", index=1, patch="--- a\n+++ b\n@@ [x] @@"),
@@ -380,7 +380,7 @@ def test_render_and_modals(tmp_path: pathlib.Path) -> None:
 
             # An external steer request routes to the docked bar, which takes focus.
 
-            app._handle_event(_ev(type="session.steer_requested", source="sigint"))
+            app._handle_event(_ev(type="steer.signalled", source="sigint"))
             app._tick()
             bar = app._dash.query_one("#dash-input", composer.SteerInput)
             await _settle_focus(pilot, bar)
@@ -974,7 +974,7 @@ def test_end_hold_follows_the_resumed_execution(tmp_path: pathlib.Path, monkeypa
         (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
         with (tmp_path / "logs.jsonl").open("a", encoding="utf-8") as log:
             log.write(json.dumps(_ev(type="session.resume", turn=2)) + "\n")
-            log.write(json.dumps(_ev(type="role.call", role="worker", model="m")) + "\n")
+            log.write(json.dumps(_ev(type="model.call", role="worker", model="m")) + "\n")
         return ""
 
     monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
@@ -1171,10 +1171,10 @@ def test_context_pct_readout_in_top_line_and_bar(tmp_path: pathlib.Path, monkeyp
         async with app.run_test(size=(150, 40)) as pilot:
             await _show_dashboard(pilot)
             app._handle_event(_ev(type="session.start", user_task="x", mode="run"))
-            app._handle_event(_ev(type="role.call", role="worker", model="m", provider="p"))
+            app._handle_event(_ev(type="model.call", role="worker", model="m", provider="p"))
             app._handle_event(
                 _ev(
-                    type="role.result",
+                    type="model.result",
                     role="worker",
                     ok=True,
                     input_tokens=1_000,
@@ -1215,7 +1215,7 @@ def test_working_timer_anchors_to_the_last_events_ts_not_the_attach(tmp_path: pa
             app._handle_event(
                 _ev(type="session.start", user_task="x", mode="run", ts=wedged_at - 5)
             )
-            app._handle_event(_ev(type="role.call", role="worker", model="m", ts=wedged_at))
+            app._handle_event(_ev(type="model.call", role="worker", model="m", ts=wedged_at))
             app._tick()
             await pilot.pause()
             assert app.seconds_since_event() >= 2399
@@ -1274,7 +1274,7 @@ def test_plan_meter_reads_this_executions_points_after_a_resume(tmp_path: pathli
         async with app.run_test(size=(150, 40)) as pilot:
             await _show_dashboard(pilot)
             app._handle_event(_ev(type="session.start", user_task="x", mode="run"))
-            app._handle_event(_ev(type="role.call", role="worker", model="m"))
+            app._handle_event(_ev(type="model.call", role="worker", model="m"))
             app._handle_event(_ev(**plan, plan_observed_points=2.0))
             app._handle_event(_ev(type="session.resume"))
             app._handle_event(_ev(**plan, plan_observed_points=0.5))
@@ -1300,7 +1300,7 @@ def test_budget_meter_reads_this_executions_spend_not_the_runs_total(
         async with app.run_test(size=(150, 40)) as pilot:
             await _show_dashboard(pilot)
             app._handle_event(_ev(type="session.start", user_task="x", mode="run"))
-            app._handle_event(_ev(type="role.call", role="worker", model="m"))
+            app._handle_event(_ev(type="model.call", role="worker", model="m"))
             app._handle_event(_ev(type="budget.update", usd_total=2.0, usd_cap=2.5))
             app._handle_event(_ev(type="session.resume"))
             app._handle_event(_ev(type="budget.update", usd_total=0.5, usd_cap=2.5))
@@ -1348,9 +1348,9 @@ def test_payload_literal_does_not_swallow_a_real_steer(tmp_path: pathlib.Path) -
                 _ev(
                     type="tool.call",
                     name="run_command",
-                    args={"argv": ["rg", "session.steer_requested", "src/"]},
+                    args={"argv": ["rg", "steer.signalled", "src/"]},
                 ),
-                _ev(type="role.call", role="worker", model="kimi"),
+                _ev(type="model.call", role="worker", model="kimi"),
             )
         ),
         encoding="utf-8",
@@ -1366,7 +1366,7 @@ def test_payload_literal_does_not_swallow_a_real_steer(tmp_path: pathlib.Path) -
                 await pilot.pause()
             assert app._seen_steer == 0  # pyright: ignore[reportPrivateUsage]
             assert app.state.steer_requests == 0
-            app._handle_event(_ev(type="session.steer_requested", source="sigint"))  # pyright: ignore[reportPrivateUsage]
+            app._handle_event(_ev(type="steer.signalled", source="sigint"))  # pyright: ignore[reportPrivateUsage]
             app._tick()  # pyright: ignore[reportPrivateUsage]
             bar = app._dash.query_one(composer.SteerInput)
             await _settle_focus(pilot, bar)
@@ -1383,8 +1383,8 @@ def test_historical_steer_request_does_not_grab_the_bar_on_open(tmp_path: pathli
             json.dumps(e) + "\n"
             for e in (
                 _ev(type="session.start", user_task="fix it"),
-                _ev(type="session.steer_requested", source="sigint"),
-                _ev(type="role.call", role="worker", model="kimi"),
+                _ev(type="steer.signalled", source="sigint"),
+                _ev(type="model.call", role="worker", model="kimi"),
             )
         ),
         encoding="utf-8",
@@ -1406,7 +1406,7 @@ def test_historical_steer_request_does_not_grab_the_bar_on_open(tmp_path: pathli
             bar = app._dash.query_one("#dash-input", composer.SteerInput)
             assert app.focused is not bar  # but it did NOT grab the composer
             # a NEW steer request (a live Ctrl-C while watching) still routes here
-            app._handle_event(_ev(type="session.steer_requested", source="sigint"))
+            app._handle_event(_ev(type="steer.signalled", source="sigint"))
             app._tick()
             await _settle_focus(pilot, bar)
             assert app.focused is bar
@@ -1588,7 +1588,7 @@ def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
 
     events = [
         {"type": "session.start", "session_id": "dead-01", "mode": "run", "user_task": "t"},
-        {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
+        {"type": "model.call", "role": "worker", "model": "m", "provider": "p"},
     ]
     (tmp_path / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
@@ -1641,7 +1641,7 @@ def test_dashboard_heartbeat_ticks_while_active(tmp_path: pathlib.Path) -> None:
 
     events = [
         {"type": "session.start", "session_id": "live-01", "mode": "run", "user_task": "t"},
-        {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
+        {"type": "model.call", "role": "worker", "model": "m", "provider": "p"},
     ]
     (tmp_path / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
@@ -1749,7 +1749,7 @@ def test_composer_compact_directive_routes_to_compact_request(tmp_path: pathlib.
 
     events = [
         {"type": "session.start", "session_id": "live-01", "mode": "run", "user_task": "t"},
-        {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
+        {"type": "model.call", "role": "worker", "model": "m", "provider": "p"},
     ]
     (tmp_path / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
@@ -1827,7 +1827,7 @@ def test_the_hidden_detail_level_says_what_it_hides(tmp_path: pathlib.Path) -> N
 
     events = [
         {"type": "session.start", "mode": "run", "user_task": "look"},
-        {"type": "role.thinking_delta", "text": "let me look"},
+        {"type": "model.thinking_delta", "text": "let me look"},
         {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "40 lines"},
     ]
@@ -1859,7 +1859,7 @@ def test_the_hidden_detail_level_says_what_it_hides(tmp_path: pathlib.Path) -> N
 
 
 def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: pathlib.Path) -> None:
-    """Before any role.call the header names the driver and says the worker is starting.
+    """Before any model.call the header names the driver and says the worker is starting.
 
     The first call then supplies the role and model shown with its in-flight beat.
     """
@@ -1889,7 +1889,7 @@ def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: pa
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(_ev(type="session.start", user_task="t", mode="plan")) + "\n")
                 fh.write(
-                    json.dumps(_ev(type="role.call", role="planner", model="m1", provider="p"))
+                    json.dumps(_ev(type="model.call", role="planner", model="m1", provider="p"))
                     + "\n"
                 )
             await waits.wait_for(
@@ -1956,7 +1956,7 @@ def test_the_dashboard_header_leads_with_the_status_and_never_wraps(tmp_path: pa
             await _show_dashboard(pilot)
             model = "moonshotai/kimi-k2.7-code-20260612-with-a-very-long-suffix"
             app._handle_event(_ev(type="session.start", user_task="t " * 80, mode="run"))
-            app._handle_event(_ev(type="role.call", role="worker", model=model, provider="p"))
+            app._handle_event(_ev(type="model.call", role="worker", model=model, provider="p"))
             app._handle_event(
                 _ev(type="session.stop", verification="unverified", reason="max_turns")
             )
@@ -2011,8 +2011,8 @@ def test_the_compact_summary_counts_the_runs_tool_calls_not_the_window(
     """The compact summary counts the run's calls past the bounded window, finish call excluded."""
     events: list[dict[str, object]] = [
         _ev(type="session.start", session_id=tmp_path.name, mode="run", user_task="t"),
-        _ev(type="role.call", role="worker", model="m", provider="p"),
-        _ev(type="role.result", role="worker", ok=True),
+        _ev(type="model.call", role="worker", model="m", provider="p"),
+        _ev(type="model.result", role="worker", ok=True),
     ]
     for i in range(60):
         events.append(_ev(type="tool.call", name="read_file", args={"path": f"f{i}.py"}))

@@ -32,7 +32,7 @@ def main() -> None:
         repo.mkdir()
         os.environ["XDG_STATE_HOME"] = str(root / "state")
         state = paths.state_dir(repo)
-        event = {"ts": "2026-01-01T00:00:00+00:00", "type": "role.text_delta", "text": ""}
+        event = {"ts": "2026-01-01T00:00:00+00:00", "type": "model.text_delta", "text": ""}
         event["text"] = "x" * (111 - len(json.dumps(event, separators=(",", ":"))))
         line = (json.dumps(event, separators=(",", ":")) + "\n").encode()
         assert len(line) == 112

@@ -156,20 +156,20 @@ class ConsoleView:
             self._bump_idle()
             if etype in ("approval.prompt", "question.prompt", "session.stop"):
                 self._attention(event)
-            # Active through a jailed command too, which runs between role.result and role.call.
-            if etype in ("session.start", "role.call", "tool.call"):
+            # Active through a jailed command too, which runs between model.result and model.call.
+            if etype in ("session.start", "model.call", "tool.call"):
                 self._active = True
-            elif etype in ("session.stop", "session.steer_requested"):
+            elif etype in ("session.stop", "steer.signalled"):
                 self._active = False
                 # The run ending is a clean break for a btw that landed after the last turn.
                 self._end_block()
                 self._drain_btw()
-            if etype in ("role.thinking_delta", "role.text_delta"):
-                self._stream(str(event.get("text", "")), thinking=etype == "role.thinking_delta")
-                if etype == "role.text_delta" and self._phase == "text":
+            if etype in ("model.thinking_delta", "model.text_delta"):
+                self._stream(str(event.get("text", "")), thinking=etype == "model.thinking_delta")
+                if etype == "model.text_delta" and self._phase == "text":
                     self._text_streamed = True
                 return
-            if etype == "role.call":
+            if etype == "model.call":
                 self._end_block()
                 self._drain_btw()
                 self._text_streamed = False
@@ -179,7 +179,7 @@ class ConsoleView:
                 self._end_block()
                 self._line(self._queued_question(event))
                 return
-            if etype == "role.result":
+            if etype == "model.result":
                 self._end_block()
                 self._drain_btw()
                 items = self._fold.feed(event)
@@ -187,7 +187,7 @@ class ConsoleView:
                     for item in items:
                         self._render(item)
                 return
-            if etype == "session.steer_requested":
+            if etype == "steer.signalled":
                 # A pause message is about to print; an open dim block would bleed into it.
                 self._end_block()
                 return
@@ -198,7 +198,7 @@ class ConsoleView:
             if etype == "graph.update":
                 self._render_plan(event)
                 return
-            if etype == "loop.provider.retry":
+            if etype == "provider.retry":
                 # A retry resets the idle clock; unsaid, a run wedged on failures reads as fresh.
                 self._end_block()
                 attempt = event.get("attempt")

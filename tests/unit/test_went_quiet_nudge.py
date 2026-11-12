@@ -337,7 +337,7 @@ def test_a_billed_empty_turn_says_so(tmp_path: pathlib.Path) -> None:
     # Non-subscription run: dollar-metered, so the word is "billed".
     assert quiet and "128 output tokens billed on it" in quiet[0], quiet
     events = [json.loads(ln) for ln in (tmp_path / "logs.jsonl").read_text().splitlines()]
-    nudge = next(e for e in events if e["type"] == "loop.went_quiet.nudge")
+    nudge = next(e for e in events if e["type"] == "nudge.went_quiet")
     assert nudge["output_tokens"] == 128
 
 

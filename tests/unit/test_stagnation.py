@@ -35,7 +35,7 @@ def test_the_notice_fires_once_and_names_the_gate_only_when_one_can_run() -> Non
     state = _state()
     nudge = guards.stagnation(_turn(), state, _ctx(gate_present=lambda: True))
     assert nudge is not None and "no edit and no verify" in nudge.text
-    assert isinstance(nudge.event, journal.LoopStagnationNudged) and nudge.event.turn == 4
+    assert isinstance(nudge.event, journal.NudgeStagnation) and nudge.event.turn == 4
     assert state.stagnation.nudged is True
     assert guards.stagnation(_turn(5), state, _ctx(gate_present=lambda: True)) is None
 

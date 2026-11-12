@@ -37,11 +37,7 @@ def load_panels(path: pathlib.Path) -> tuple[review_records.ReviewPanel, ...]:
                     row = json.loads(line)
                 except ValueError:
                     continue
-                if (
-                    isinstance(row, dict)
-                    and row.get("type") == "loop.review.panel"
-                    and "target" in row
-                ):
+                if isinstance(row, dict) and row.get("type") == "review.panel" and "target" in row:
                     panels.append(review_records.ReviewPanel.model_validate(event_log.payload(row)))
     except FileNotFoundError:
         return ()

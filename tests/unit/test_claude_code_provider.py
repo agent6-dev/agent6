@@ -306,7 +306,7 @@ def test_local_transcript_keeps_the_call_id_without_an_http_request_id(
     provider.call(system="s", messages=USER0)
     provider.close()
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
-    (call,) = [row for row in rows if row["type"] == "role.call"]
+    (call,) = [row for row in rows if row["type"] == "model.call"]
     (path,) = (tmp_path / "transcripts").glob("*.json")
     transcript = json.loads(path.read_text())
     assert transcript["model_call_id"] == call["model_call_id"]

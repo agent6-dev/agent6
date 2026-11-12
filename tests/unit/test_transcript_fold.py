@@ -9,9 +9,9 @@ from agent6.viewmodel import fold_transcript, restate, session_status, transcrip
 
 def _read(path: str) -> list[dict[str, object]]:
     return [
-        {"type": "role.call", "role": "worker"},
-        {"type": "role.thinking_delta", "text": "let me look"},
-        {"type": "role.result"},
+        {"type": "model.call", "role": "worker"},
+        {"type": "model.thinking_delta", "text": "let me look"},
+        {"type": "model.result"},
         {"type": "tool.call", "name": "read_file", "args_preview": {"path": path}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
     ]
@@ -246,7 +246,7 @@ def test_parallel_dispatched_renders_a_truthful_marker() -> None:
     # The dispatched event carries only group + per-segment tasks (lane ids do not
     # exist yet); the fold renders a task count + the task summary, never raw json.
     items = fold_transcript(
-        [{"type": "loop.parallel.dispatched", "group": "p1", "tasks": ["fix the bug", "add tests"]}]
+        [{"type": "parallel.dispatched", "group": "p1", "tasks": ["fix the bug", "add tests"]}]
     )
     (item,) = items
     assert item.kind == "marker"
@@ -259,7 +259,7 @@ def test_parallel_joined_names_lane_ids_branches_shas() -> None:
     items = fold_transcript(
         [
             {
-                "type": "loop.parallel.joined",
+                "type": "parallel.joined",
                 "group": "p1",
                 "lanes": [
                     {"session_id": "co-p1-l1", "branch": "agent6/co-p1-l1", "status": "joined",
@@ -282,14 +282,14 @@ def test_a_panel_dispatch_reads_as_review_seats_not_lanes() -> None:
     dispatched, joined = fold_transcript(
         [
             {
-                "type": "loop.parallel.dispatched",
+                "type": "parallel.dispatched",
                 "group": "rpanel",
                 "lanes": 2,
                 "tasks": ["Review: security", "Review: tests"],
                 "source": "panel",
             },
             {
-                "type": "loop.parallel.joined",
+                "type": "parallel.joined",
                 "group": "run-rpanel",
                 "source": "panel",
                 "lanes": [
@@ -318,11 +318,9 @@ def test_a_panel_dispatch_reads_as_review_seats_not_lanes() -> None:
 def test_parallel_failed_renders_the_dispatch_error_but_not_the_join_subset() -> None:
     # A dispatch failure (carries `error`) renders; a post-join failure (carries
     # only `lanes`, already shown by the joined marker) is not double-rendered.
-    (item,) = fold_transcript(
-        [{"type": "loop.parallel.failed", "group": "p2", "error": "dirty tree"}]
-    )
+    (item,) = fold_transcript([{"type": "parallel.failed", "group": "p2", "error": "dirty tree"}])
     assert item.kind == "marker" and "group p2 dispatch failed: dirty tree" in item.body
-    assert fold_transcript([{"type": "loop.parallel.failed", "group": "p2", "lanes": [{}]}]) == []
+    assert fold_transcript([{"type": "parallel.failed", "group": "p2", "lanes": [{}]}]) == []
 
 
 def test_salient_arg_prefers_a_primary_key() -> None:
@@ -426,7 +424,7 @@ def test_operator_steer_text_becomes_an_operator_item() -> None:
     from agent6.viewmodel import transcript, transcript_style
 
     fold = transcript.TranscriptFold()
-    items = fold.feed({"type": "loop.steer.injected", "chars": 9, "text": "try it\nagain"})
+    items = fold.feed({"type": "steer.injected", "chars": 9, "text": "try it\nagain"})
     assert [i.kind for i in items] == ["operator"]
     assert items[0].body == "try it\nagain"
     for level in ("hidden", "collapsed", "expanded"):
@@ -435,7 +433,7 @@ def test_operator_steer_text_becomes_an_operator_item() -> None:
         assert f"{transcript.OPERATOR} try it" in flat
         assert ("again" in flat) == (level == "expanded")
     # An old log without the text field adds no item.
-    assert fold.feed({"type": "loop.steer.injected", "chars": 9}) == []
+    assert fold.feed({"type": "steer.injected", "chars": 9}) == []
 
 
 def test_pins_render_once_as_harness_lines() -> None:
@@ -448,30 +446,30 @@ def test_pins_render_once_as_harness_lines() -> None:
     from agent6.viewmodel import transcript
 
     fold = transcript.TranscriptFold()
-    items = fold.feed({"type": "loop.pin.restored", "pins": ["never touch tests"], "count": 1})
+    items = fold.feed({"type": "pin.restored", "pins": ["never touch tests"], "count": 1})
     assert [(i.kind, i.body) for i in items] == [("marker", "pinned: never touch tests")]
-    items = fold.feed({"type": "loop.pin.added", "text": "keep the API", "chars": 12, "count": 2})
+    items = fold.feed({"type": "pin.added", "text": "keep the API", "chars": 12, "count": 2})
     assert [(i.kind, i.body) for i in items] == [("marker", "pinned: keep the API")]
-    restated = {"type": "loop.pin.restored", "pins": ["never touch tests", "keep the API"]}
+    restated = {"type": "pin.restored", "pins": ["never touch tests", "keep the API"]}
     assert fold.feed(restated) == []
-    assert fold.feed({"type": "loop.pin.restored", "pins": [], "count": 0}) == []
+    assert fold.feed({"type": "pin.restored", "pins": [], "count": 0}) == []
 
 
 def test_an_internal_side_call_is_not_rendered_as_agent_speech() -> None:
     """Only the role DRIVING the session speaks to the operator.
 
     agent6 makes side calls with their own roles -- the verify-command inferer
-    runs before the loop even starts. Its `role.result` was folded into a
+    runs before the loop even starts. Its `model.result` was folded into a
     message like any other, so an editor over ACP and the web conversation both
     opened with a bare "[]": the inferer's raw answer for "no verify command
     found", presented as the agent talking.
     """
     events: list[dict[str, object]] = [
-        {"type": "role.call", "role": "verify_inferer", "model": "m"},
-        {"type": "role.result", "role": "verify_inferer", "ok": True, "text": "[]"},
+        {"type": "model.call", "role": "verify_inferer", "model": "m"},
+        {"type": "model.result", "role": "verify_inferer", "ok": True, "text": "[]"},
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "role.call", "role": "worker", "model": "m"},
-        {"type": "role.result", "role": "worker", "ok": True, "text": "the real answer"},
+        {"type": "model.call", "role": "worker", "model": "m"},
+        {"type": "model.result", "role": "worker", "ok": True, "text": "the real answer"},
     ]
     bodies = [i.body for i in fold_transcript(events) if i.kind == "text"]
     assert "the real answer" in bodies, "the driving role must still speak"
@@ -485,9 +483,9 @@ def test_a_streamed_reply_still_renders_when_the_role_is_unnamed() -> None:
     """
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "role.call", "role": "worker"},
-        {"type": "role.text_delta", "text": "streamed prose"},
-        {"type": "role.result"},
+        {"type": "model.call", "role": "worker"},
+        {"type": "model.text_delta", "text": "streamed prose"},
+        {"type": "model.result"},
     ]
     assert "streamed prose" in [i.body for i in fold_transcript(events) if i.kind == "text"]
 
@@ -497,9 +495,9 @@ def test_streamed_deltas_are_scrubbed_even_when_a_sequence_splits() -> None:
     from agent6.viewmodel import state
 
     s = state.initial_state()
-    s = state.apply_event(s, {"type": "role.call", "role": "worker", "model": "m"})
-    s = state.apply_event(s, {"type": "role.text_delta", "text": "safe \x1b]52;c;cGF5"})
-    s = state.apply_event(s, {"type": "role.text_delta", "text": "bG9hZA==\x07 text"})
+    s = state.apply_event(s, {"type": "model.call", "role": "worker", "model": "m"})
+    s = state.apply_event(s, {"type": "model.text_delta", "text": "safe \x1b]52;c;cGF5"})
+    s = state.apply_event(s, {"type": "model.text_delta", "text": "bG9hZA==\x07 text"})
     assert s.last_role is not None
     # The opener died with its own delta; the continuation is inert text.
     assert s.last_role.streamed_text == "safe bG9hZA== text"
@@ -530,13 +528,13 @@ def test_restate_compacts_since_the_last_operator_input() -> None:
     """
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "build the thing"},
-        {"type": "role.call", "role": "worker"},
-        {"type": "role.text_delta", "text": "early work, out of frame"},
-        {"type": "role.result"},
-        {"type": "loop.steer.injected", "text": "focus on the parser"},
-        {"type": "role.call", "role": "worker"},
-        {"type": "role.text_delta", "text": "on it"},
-        {"type": "role.result"},
+        {"type": "model.call", "role": "worker"},
+        {"type": "model.text_delta", "text": "early work, out of frame"},
+        {"type": "model.result"},
+        {"type": "steer.injected", "text": "focus on the parser"},
+        {"type": "model.call", "role": "worker"},
+        {"type": "model.text_delta", "text": "on it"},
+        {"type": "model.result"},
         {"type": "tool.call", "name": "read_file", "args_preview": {"path": "parser.py"}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
         {"type": "tool.call", "name": "apply_edit", "args_preview": {"path": "parser.py"}},
@@ -565,7 +563,7 @@ def test_done_item_is_a_receipt_when_the_journal_carries_the_pieces() -> None:
         {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "ok"},
         {"type": "budget.update", "usd_total": 0.0112},
         {
-            "type": "loop.auto_commit",
+            "type": "checkpoint.committed",
             "sha": "abc123",
             "subject": "fix median for even length",
         },
@@ -774,7 +772,7 @@ def test_a_resumed_executions_receipt_is_its_own() -> None:
         {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "user_task": "t"},
         {"type": "tool.call", "name": "apply_edit", "args_preview": {"path": "a.py"}},
         {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "ok"},
-        {"type": "loop.auto_commit", "sha": "abc123", "subject": "first"},
+        {"type": "checkpoint.committed", "sha": "abc123", "subject": "first"},
         {"type": "diff.updated", "sha": "abc123", "patch": "+x\n"},
         {"type": "budget.update", "usd_total": 0.01},
         {"type": "session.stop", "ts": "2026-08-09T20:00:45+00:00", "reason": "stopped"},
@@ -983,23 +981,23 @@ def test_restate_names_a_call_still_running() -> None:
 
 
 def test_compaction_renders_as_markers_on_the_conversation() -> None:
-    """Every `loop.compact.*` event produces a conversation item.
+    """Every `compact.*` event produces a conversation item.
 
     The surfaces showed nothing when tier 2 replaced the history, the summariser failed, or a
     promised `/compact` was refused; only the log pane said so.
     """
     items = fold_transcript(
         [
-            {"type": "loop.compact.requested", "focus": "the parser"},
-            {"type": "loop.compact.refused", "reason": "too little history to summarise"},
-            {"type": "loop.compact.requested", "focus": ""},
+            {"type": "compact.requested", "focus": "the parser"},
+            {"type": "compact.refused", "reason": "too little history to summarise"},
+            {"type": "compact.requested", "focus": ""},
             {
-                "type": "loop.compact.summarise.done",
+                "type": "compact.summarise.done",
                 "summary_chars": 1200,
                 "summary": "...",
                 "kept_messages": 3,
             },
-            {"type": "loop.compact.summarise.failed", "error": "429 rate limited"},
+            {"type": "compact.summarise.failed", "error": "429 rate limited"},
         ]
     )
     assert [it.kind for it in items] == ["marker"] * 5
@@ -1015,7 +1013,7 @@ def test_parallel_compared_renders_the_ranking() -> None:
     (item,) = fold_transcript(
         [
             {
-                "type": "loop.parallel.compared",
+                "type": "parallel.compared",
                 "group": "fan",
                 "ranked_by": "judge",
                 "rationale": "The first candidate covers the edge case.",
@@ -1042,11 +1040,11 @@ def test_parallel_dispatched_counts_lanes_when_the_event_carries_them() -> None:
     The task count alone said "dispatched 1 parallel task" over two lanes.
     """
     (item,) = fold_transcript(
-        [{"type": "loop.parallel.dispatched", "group": "fan", "lanes": 2, "tasks": ["t"]}]
+        [{"type": "parallel.dispatched", "group": "fan", "lanes": 2, "tasks": ["t"]}]
     )
     assert "dispatched 2 lanes (group fan)" in item.body
     (item,) = fold_transcript(
-        [{"type": "loop.parallel.dispatched", "group": "p1", "lanes": 3, "tasks": ["a", "b"]}]
+        [{"type": "parallel.dispatched", "group": "p1", "lanes": 3, "tasks": ["a", "b"]}]
     )
     assert "dispatched 3 lanes for 2 tasks (group p1)" in item.body
 
@@ -1056,7 +1054,7 @@ def test_parallel_joined_renders_a_failed_lanes_reason() -> None:
     (item,) = fold_transcript(
         [
             {
-                "type": "loop.parallel.joined",
+                "type": "parallel.joined",
                 "group": "run-p1",
                 "lanes": [
                     {

@@ -217,7 +217,7 @@ def test_attach_replay_does_not_reask_an_answered_prompt(
         {"type": "session.start", "user_task": "t"},
         {"type": "approval.prompt", "id": "approval-1", "prompt": "ANSWERED LONG AGO"},
         {"type": "approval.answer", "id": "approval-1", "approved": True},
-        {"type": "role.call", "role": "worker", "model": "m"},
+        {"type": "model.call", "role": "worker", "model": "m"},
     ]
     _write_log(log, history)
 

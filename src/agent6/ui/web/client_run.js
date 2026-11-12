@@ -531,7 +531,7 @@ function paintRun(cards, s) {
   }
   if (s.last_role) {
     // The in-flight mark means a call is in flight. A killed worker leaves a
-    // role.call with no role.result, so it would stay on beside "stale".
+    // model.call with no model.result, so it would stay on beside "stale".
     const r = s.last_role;
     const inFlight = r.in_flight && s.live;
     cards.head.appendChild(el('div', 'sub muted', `${esc(r.role)} / ${esc(r.model)}${inFlight ? ' …' : ''}`));

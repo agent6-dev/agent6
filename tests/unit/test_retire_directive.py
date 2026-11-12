@@ -148,6 +148,6 @@ def test_an_id_that_vanished_is_logged_and_skipped(tmp_path: pathlib.Path) -> No
         json.loads(line)
         for line in (session_dir / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     ]
-    refused = [e for e in events if e.get("type") == "loop.request.refused"]
+    refused = [e for e in events if e.get("type") == "task.request_refused"]
     assert [(e["kind"], e["text"]) for e in refused] == [("retire", "01MISSINGMISSINGMISSINGMIS")]
     assert refused[0]["error"]

@@ -403,23 +403,23 @@ def _extract_metrics(state_home: Path, session_id: str, traps: tuple[str, ...]) 
             # Recorded benchmark rows keep their schema; live events use turns.
             m["iterations"] = e.get("turns")
             m["verification"] = e.get("verification")
-        elif t == "loop.compact.summarise.done":
+        elif t == "compact.summarise.done":
             m["compactions"] += 1
             compacted = True
-        elif t == "loop.compact.dropped":
+        elif t == "compact.dropped":
             m["drop_events"] += 1
             m["drops_total"] += int(e.get("n") or 0)
             if not dropped:
                 m["first_drop_at_tool_call"] = m["tool_calls"]
             dropped = True
-        elif t == "loop.task.surfaced":
+        elif t == "task.surfaced":
             m["surfaced"] += 1
-        elif t == "loop.memory_flip.nudged":
+        elif t == "nudge.memory_flip":
             m["memory_flip_nudges"] += 1
-        elif t == "loop.compact.gists":
+        elif t == "compact.gist.done":
             m["gists_total"] += int(e.get("gisted") or 0)
             m["gist_demotions"] += int(e.get("demoted") or 0)
-        elif t == "loop.compact.gist.failed":
+        elif t == "compact.gist.failed":
             m["gist_failures"] += 1
         elif t == "tool.call":
             m["tool_calls"] += 1

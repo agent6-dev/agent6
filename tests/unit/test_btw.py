@@ -126,8 +126,8 @@ def test_the_answer_is_the_final_prose(tmp_path: pathlib.Path) -> None:
         "quiet-fox-AAAAAA",
         events=[
             {"type": "session.start"},
-            {"type": "role.result", "text": "first thought"},
-            {"type": "role.result", "text": "use ffmpeg -c:v libx265"},
+            {"type": "model.result", "text": "first thought"},
+            {"type": "model.result", "text": "use ffmpeg -c:v libx265"},
             {"type": "session.stop", "reason": "answered", "verification": "passed"},
         ],
     )

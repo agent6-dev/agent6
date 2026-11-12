@@ -50,12 +50,12 @@ def _panel(
             completion=completion,
         )
     )
-    return {"type": "loop.review.panel", "event_id": panel_id, **record.model_dump(mode="json")}
+    return {"type": "review.panel", "event_id": panel_id, **record.model_dump(mode="json")}
 
 
 def _reused(panel_id: str = "p2", reused: str = "p1") -> dict[str, Any]:
     return {
-        "type": "loop.review.reused",
+        "type": "review.reused",
         "event_id": panel_id,
         "panel_id": panel_id,
         "execution_id": "exec",
@@ -76,7 +76,7 @@ def _action(
     **fields: Any,
 ) -> dict[str, Any]:
     return dict(
-        type=f"loop.review.{kind}",
+        type=f"review.{kind}",
         event_id=kind + request_id,
         finding_id=finding_id,
         request_id=request_id,
@@ -91,12 +91,12 @@ def _action(
     [
         {"type": "session.resume", "execution_id": "next"},
         {
-            "type": "loop.review.skipped",
+            "type": "review.skipped",
             "panel_id": "p2",
             "execution_id": "exec",
             "reason": "budget",
         },
-        {"type": "loop.review.rejection_cap_reached", "rejections": 4},
+        {"type": "review.rejection_cap_reached", "rejections": 4},
         _reused(),
         _panel("p2", findings=False),
         _panel("p2", findings=False, completion="inconclusive"),
@@ -289,7 +289,7 @@ def test_submitted_fixes_survive_completed_resume(tmp_path: pathlib.Path) -> Non
             reason="",
         )
     )
-    sink.emit(journal.LoopAutoCommit(turn=2, sha="a" * 40, subject="fix: handle empty input"))
+    sink.emit(journal.CheckpointCommitted(turn=2, sha="a" * 40, subject="fix: handle empty input"))
     sink.emit(
         journal.SessionStop(
             execution_id="resumed",
@@ -366,8 +366,8 @@ def test_freshness_compares_both_trees_and_coverage() -> None:
     "rows",
     [
         [],
-        [{"type": "loop.review.panel", "blocked": False}],
-        [{"type": "loop.review.seat", "findings": 0, "verdict": "pass"}],
+        [{"type": "review.panel", "blocked": False}],
+        [{"type": "review.seat", "findings": 0, "verdict": "pass"}],
     ],
 )
 def test_legacy_and_missing_evidence_are_not_clean(rows: list[dict[str, Any]]) -> None:
@@ -382,8 +382,8 @@ def test_legacy_and_missing_evidence_are_not_clean(rows: list[dict[str, Any]]) -
     "journal,expected",
     [
         ("", "no panel ran"),
-        ('{"type":"loop.review.panel","blocked":false}\n', "unknown · freshness: unknown"),
-        ('{"type":"loop.review.panel",', "unknown · freshness: unknown"),
+        ('{"type":"review.panel","blocked":false}\n', "unknown · freshness: unknown"),
+        ('{"type":"review.panel",', "unknown · freshness: unknown"),
         (None, "unknown · freshness: unknown"),
     ],
 )
@@ -417,7 +417,7 @@ def test_corrupt_new_evidence_keeps_its_reason(tmp_path: pathlib.Path) -> None:
 def test_unreadable_journal_tail_cannot_certify_a_review(tmp_path: pathlib.Path) -> None:
     """Keep a torn finding record from making an earlier clean panel look authoritative."""
     log = tmp_path / "logs.jsonl"
-    log.write_text(json.dumps(_panel(findings=False)) + '\n{"type":"loop.review.panel",')
+    log.write_text(json.dumps(_panel(findings=False)) + '\n{"type":"review.panel",')
     view = session_log.scan_session_log(log).review
     assert view.read_failure
     assert view.for_comparison(_target()).freshness == "unknown"
@@ -459,7 +459,7 @@ def test_replayed_resolution_request_does_not_change_history() -> None:
 
 
 def test_legacy_tail_cannot_certify_an_earlier_review() -> None:
-    view = state.fold_session([_panel(), {"type": "loop.review.panel", "blocked": False}]).review
+    view = state.fold_session([_panel(), {"type": "review.panel", "blocked": False}]).review
     assert view.for_comparison(_target()).freshness == "unknown"
 
 
@@ -483,14 +483,14 @@ def test_bad_disposition_preserves_the_open_finding(change: dict[str, Any]) -> N
 def test_start_and_seat_keep_the_roster_and_full_verdict() -> None:
     panel = _panel()
     start = {
-        "type": "loop.review.start",
+        "type": "review.start",
         "panel_id": "p1",
         "execution_id": "exec",
         "target": panel["target"],
         "seats": [{"seat_index": 0, "model_route": "p/m", "focus": "security"}],
     }
     seat = {
-        "type": "loop.review.seat",
+        "type": "review.seat",
         "panel_id": "p1",
         "execution_id": "exec",
         "seat_index": 0,
@@ -529,7 +529,7 @@ def test_a_reused_panel_covers_the_trees_of_the_panel_it_names() -> None:
 def test_a_skipped_panel_says_why_in_words() -> None:
     """The receipt and the findings card read the skip's reason, not "reviewed head unknown"."""
     skipped = {
-        "type": "loop.review.skipped",
+        "type": "review.skipped",
         "panel_id": "p1",
         "execution_id": "exec",
         "reason": "no_diff",

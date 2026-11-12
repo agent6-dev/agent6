@@ -27,7 +27,7 @@ def _undone_run(d: pathlib.Path) -> None:
     d.mkdir(parents=True, exist_ok=True)
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "add it"},
-        {"type": "loop.steer.injected", "chars": 14, "text": "name it better"},
+        {"type": "steer.injected", "chars": 14, "text": "name it better"},
         {
             "type": "session.undone",
             "new_session_id": "fork-child-AAAAAA",

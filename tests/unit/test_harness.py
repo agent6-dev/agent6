@@ -1765,7 +1765,7 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: path
     assert result.reason == "max_turns"
     assert dispatcher.calls.count("run_verify_command") == 3
     assert dispatcher.calls.count("run_metric_command") == 1
-    failed = [e for e in ev.events if e["type"] == "loop.metric.auto_failed"]
+    failed = [e for e in ev.events if e["type"] == "metric.auto_failed"]
     assert len(failed) == 1 and "withheld for the rest of the run" in str(failed[0]["error"])
 
 
@@ -3633,7 +3633,7 @@ def _read_history(*reads: tuple[str, str]) -> list[dict[str, Any]]:
 
 
 def test_tier1_compact_event_names_what_was_elided() -> None:
-    """loop.compact.dropped carries the elided call identities, not just a count."""
+    """compact.dropped carries the elided call identities, not just a count."""
     ev = _EventCapture()
     wf = _wf(
         events=ev,
@@ -3643,7 +3643,7 @@ def test_tier1_compact_event_names_what_was_elided() -> None:
     )
     msgs = _read_history(("a.py", "X" * 1000), ("b.py", "X" * 1000), ("c.py", "X" * 1000))
     _compact_via_wire(wf, msgs)
-    dropped = [e for e in ev.events if e["type"] == "loop.compact.dropped"]
+    dropped = [e for e in ev.events if e["type"] == "compact.dropped"]
     assert dropped and dropped[-1]["calls"] == ["read_file a.py"]
 
 
@@ -3662,7 +3662,7 @@ def test_tier1_gist_event_carries_paths() -> None:
     doc = json.dumps({"content": "authoritative spec. " * 300})
     msgs = _read_history(("docs/spec.md", doc), ("b.py", "x" * 500), ("c.py", "y" * 500))
     _compact_via_wire(wf, msgs)
-    gists = [e for e in ev.events if e["type"] == "loop.compact.gists"]
+    gists = [e for e in ev.events if e["type"] == "compact.gist.done"]
     assert gists
     assert gists[-1]["paths"] == ["docs/spec.md"]
     assert gists[-1]["demoted_paths"] == []
@@ -3675,12 +3675,12 @@ def test_summarise_done_event_carries_summary_text() -> None:
     summariser.call.return_value = _resp("done: tried A; best=42 at sha9")
     wf = _wf(events=ev, compaction=compaction_window.CompactionSettings(summariser=summariser))
     _restart_via_wire(wf, _long_history(6))
-    done = [e for e in ev.events if e["type"] == "loop.compact.summarise.done"]
+    done = [e for e in ev.events if e["type"] == "compact.summarise.done"]
     assert done and done[-1]["summary"] == "done: tried A; best=42 at sha9"
 
 
 def test_forced_compact_threads_focus_to_summariser() -> None:
-    """`/compact <focus>` reaches the summariser prompt and the loop.compact.requested event."""
+    """`/compact <focus>` reaches the summariser prompt and the compact.requested event."""
     ev = _EventCapture()
     summariser = mock.MagicMock()
     summariser.call.return_value = _resp("s")
@@ -3700,7 +3700,7 @@ def test_forced_compact_threads_focus_to_summariser() -> None:
     sent = str(summariser.call.call_args)
     assert "Operator focus for this summary" in sent
     assert "weigh the auth decisions" in sent
-    req = [e for e in ev.events if e["type"] == "loop.compact.requested"]
+    req = [e for e in ev.events if e["type"] == "compact.requested"]
     assert req and req[-1]["focus"] == "weigh the auth decisions"
 
 
@@ -3722,7 +3722,7 @@ def test_forced_compact_below_the_floor_says_it_was_refused() -> None:
     assert _compact_via_wire(wf, _long_history(1)) is False
     assert cleared == [True]
     summariser.call.assert_not_called()
-    refused = [e for e in ev.events if e["type"] == "loop.compact.refused"]
+    refused = [e for e in ev.events if e["type"] == "compact.refused"]
     assert refused, "the consumed request must say why nothing happened"
     assert "history" in str(refused[-1].get("reason", ""))
 
@@ -4657,11 +4657,11 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
         json.loads(line)["type"]
         for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     ]
-    assert "loop.compact.summarise.done" in event_types  # tier-2 restart happened
-    assert "loop.task.surfaced" in event_types
+    assert "compact.summarise.done" in event_types  # tier-2 restart happened
+    assert "task.surfaced" in event_types
     # The focus banner re-surfaces AFTER the restart wiped it.
-    restart_at = event_types.index("loop.compact.summarise.done")
-    assert "loop.task.surfaced" in event_types[restart_at + 1 :]
+    restart_at = event_types.index("compact.summarise.done")
+    assert "task.surfaced" in event_types[restart_at + 1 :]
 
 
 def test_summarise_and_restart_falls_back_to_worker_provider() -> None:
@@ -4826,7 +4826,7 @@ def test_steer_pin_records_and_injects_marked_notice() -> None:
     block = messages[0]["content"][0]["text"]
     assert "pinned:" in block and "survives context compaction" in block
     assert "never touch the schema files" in block
-    added = [e for e in ev.events if e["type"] == "loop.pin.added"]
+    added = [e for e in ev.events if e["type"] == "pin.added"]
     assert added and added[-1]["text"] == "never touch the schema files"
     assert added[-1]["count"] == 1
 
@@ -4853,7 +4853,7 @@ def test_steer_pin_over_cap_delivers_as_ordinary_steer() -> None:
     assert "OPERATOR STEERING" in text and "y" * 100 in text
     assert "not pinned" in text  # the refusal is visible on every surface
     assert "PINNED" not in text
-    refused = [e for e in ev.events if e["type"] == "loop.pin.refused"]
+    refused = [e for e in ev.events if e["type"] == "pin.refused"]
     assert refused and refused[-1]["limit"] == operator_bridge.PINS_MAX_CHARS
 
 
@@ -5435,7 +5435,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
         json.loads(line)["type"]
         for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     ]
-    assert "loop.compact.summarise.done" in event_types  # summarise-and-restart happened cleanly
+    assert "compact.summarise.done" in event_types  # summarise-and-restart happened cleanly
 
 
 def test_pass_pending_root_tasks_passes_only_pending_roots() -> None:
@@ -7314,7 +7314,7 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: pathlib
         root_task_id=None,
         original_task="t",
     )
-    unreachable = [e for e in events if e["type"] == "loop.sandbox_tool_unreachable"]
+    unreachable = [e for e in events if e["type"] == "jail.tool_unreachable"]
     assert [e["binary"] for e in unreachable] == ["sh"]  # once, at the 2nd failure
     assert provider.reachability_notes >= 1  # the model was told
 
@@ -7381,7 +7381,7 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: pathlib.P
         root_task_id=None,
         original_task="t",
     )
-    assert not any(e["type"] == "loop.sandbox_tool_unreachable" for e in events)
+    assert not any(e["type"] == "jail.tool_unreachable" for e in events)
     assert provider.reachability_notes == 0
 
 
@@ -7753,7 +7753,7 @@ def test_dispatch_returns_a_typed_result_and_injects_no_notice(tmp_path: pathlib
     assert result.message.startswith("[parallel] group run-p1 complete (1 lane(s))")
     assert "FAILED -- lane failed" in result.message
     assert len(conversation.messages) == before
-    dispatched = [e for e in ev.events if e["type"] == "loop.parallel.dispatched"]
+    dispatched = [e for e in ev.events if e["type"] == "parallel.dispatched"]
     assert dispatched and dispatched[0]["source"] == "model"
     # A refusal before any lane names itself and dispatches nothing.
     refused = wf.parallel.dispatch(
@@ -8146,7 +8146,7 @@ def test_auto_commit_with_nothing_changed_emits_no_event(tmp_path: pathlib.Path)
     turn.edit_since_verify_pass = False
     with mock.patch.object(run_chain.RunChain, "commit", return_value=""):
         wf._turn_auto_commit_and_metric(_state(), turn)  # pyright: ignore[reportPrivateUsage]
-    assert [e for e in events if e["type"] == "loop.auto_commit"] == []
+    assert [e for e in events if e["type"] == "checkpoint.committed"] == []
     assert turn.committed is False
 
 
@@ -8172,7 +8172,7 @@ def test_auto_commit_failure_surface_tells_the_truth(tmp_path: pathlib.Path) -> 
         "agent6 turn 2: fix",
         turn=2,
     )
-    (evt,) = [e for e in events if e["type"] == "loop.auto_commit.failed"]
+    (evt,) = [e for e in events if e["type"] == "checkpoint.failed"]
     assert evt["turn"] == 2
     assert "unable to write" in evt["error"]
     assert evt["commit_subject"] == "agent6 turn 2: fix"
@@ -8701,7 +8701,7 @@ def test_operator_answers_become_recorded_rulings(tmp_path: pathlib.Path) -> Non
     assert not any(
         c.kwargs.get("missing")
         for c in events.emit.call_args_list
-        if c.args[:1] == ("loop.decision.unrecorded",)
+        if c.args[:1] == ("decision.unrecorded",)
     )
 
 
@@ -8739,7 +8739,7 @@ def test_a_skill_command_steer_expands_in_the_loop(tmp_path: pathlib.Path) -> No
     conv = mock.MagicMock()
     assert wf.steering.handle(conv, 1, st) is None
     # The steer reads the cached resolution: the assembly warnings are not re-emitted per steer.
-    assert not [c for c in events.emit.call_args_list if c.args[:1] == ("loop.skills.warning",)]
+    assert not [c for c in events.emit.call_args_list if c.args[:1] == ("skills.warning",)]
     injected = conv.notice.call_args.args[0]
     assert "Apply the operator-installed skill 'caveman'" in injected
     assert (
@@ -9507,7 +9507,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Pat
     assert result.reason == "finish_session"
     assert dispatcher.adopted == []
     assert wf.config.harness.verify_command == ("configured-gate",)
-    assert "loop.verify_inferred" not in events_path.read_text(encoding="utf-8")
+    assert "verify.inferred" not in events_path.read_text(encoding="utf-8")
 
 
 def test_the_original_task_section_ends_at_the_skeletons_next_heading(
@@ -9637,7 +9637,7 @@ def test_finish_delivers_an_answer_that_lands_during_its_turn(
     assert result.reason == "finish_session"
     assert len(calls) == (3 if land_answer else 2)
     rows = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
-    delivered = [row for row in rows if row["type"] == "loop.question.delivered"]
+    delivered = [row for row in rows if row["type"] == "question.delivered"]
     if land_answer:
         notices = [
             block["text"]
@@ -9718,7 +9718,7 @@ def test_presence_flips_in_a_park_coalesce_at_the_turn_boundary(
     assert loop_steer.park_for_steer(wf, conversation, state, turn=1, reason="quiet") is None
     assert loop_steer.operator_boundary(wf, conversation, 1, state) is None
     rows = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
-    assert [row["presence"] for row in rows if row["type"] == "loop.operator.presence"] == [
+    assert [row["presence"] for row in rows if row["type"] == "operator.presence"] == [
         away,
         "a front-end is attached",
         away,
@@ -9872,8 +9872,7 @@ def test_media_recovery_updates_canonical_history_snapshot_and_execution_fact(
     assert saved["messages"] == conv.to_wire()
     assert "cHJpdmF0ZSBwaXhlbHM=" not in json.dumps(saved)
     assert any(
-        e["type"] == "loop.media.refused" and e["provider_tool_call_id"] == "t1"
-        for e in events.events
+        e["type"] == "media.refused" and e["provider_tool_call_id"] == "t1" for e in events.events
     )
     add_media("t2")
     wf._turn_provider_call("s", conv, [], state, turn=2)  # pyright: ignore[reportPrivateUsage]
@@ -9935,6 +9934,6 @@ def test_a_subject_that_cannot_read_git_reports_the_failed_commit(tmp_path: path
     fault = errors.GitError("unable to read tree")
     with mock.patch.object(type(wf.chain), "name_status", side_effect=fault):
         wf._turn_auto_commit_and_metric(_state(), turn)  # pyright: ignore[reportPrivateUsage]
-    (evt,) = [e for e in events if e["type"] == "loop.auto_commit.failed"]
+    (evt,) = [e for e in events if e["type"] == "checkpoint.failed"]
     assert evt["commit_subject"] == "checkpoint" and "unable to read tree" in evt["error"]
     assert turn.committed is False

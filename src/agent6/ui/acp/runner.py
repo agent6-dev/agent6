@@ -655,13 +655,13 @@ class RunBridge:
                 for body in info.feed(event) if info is not None else ():
                     self.server.notify_raw(body)
                 paths = updates.result_paths(event) if event_type == "tool.result" else ()
-                if event_type == "role.call":
+                if event_type == "model.call":
                     streamed.clear()
-                is_delta = event_type in ("role.thinking_delta", "role.text_delta")
+                is_delta = event_type in ("model.thinking_delta", "model.text_delta")
                 side_delta = is_delta and kinds.is_side_role(str(event.get("role", "")))
                 items = [] if side_delta else fold.feed(event)
                 if is_delta and not side_delta:
-                    kind = "thinking" if event_type == "role.thinking_delta" else "text"
+                    kind = "thinking" if event_type == "model.thinking_delta" else "text"
                     if kind == "text":
                         if "text" not in streamed:
                             spoken.clear()  # a new message begins
@@ -676,7 +676,7 @@ class RunBridge:
                 for item in items:
                     if item.kind not in streamed:
                         self._send_item(session, item, announced, paths, "".join(spoken), prompt)
-                if event_type == "role.result":
+                if event_type == "model.result":
                     streamed.clear()
                 if order is not None:
                     order.flush(consumed[0])

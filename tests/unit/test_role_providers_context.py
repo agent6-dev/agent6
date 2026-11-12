@@ -148,7 +148,7 @@ def test_review_requests_belong_to_real_distinct_seat_sessions(
         assert len(calls) == 2
         child_dirs = [directory.parent.parent / "read_only" / s.session_id for s in result.per_seat]
         requests = [r for child in child_dirs for r in _events(child, "provider.request")]
-        logical = [r for child in child_dirs for r in _events(child, "role.call")]
+        logical = [r for child in child_dirs for r in _events(child, "model.call")]
         transcripts = [r for child in child_dirs for r in _transcripts(child)]
         assert len(requests) == len(logical) == len(transcripts) == 2
         assert {r["seat_index"] for r in requests} == {0, 1}
@@ -182,7 +182,7 @@ def test_worker_request_and_transcript_carry_call_id_without_seat_fields(
     _mock_http(monkeypatch)
     providers = _session(tmp_path, streaming=streaming)
     providers.provider.call(system="s", messages=[])
-    (call,) = _events(tmp_path, "role.call")
+    (call,) = _events(tmp_path, "model.call")
     (request,) = _events(tmp_path, "provider.request")
     (transcript,) = _transcripts(tmp_path)
     assert request.get("model_call_id") == call["model_call_id"]

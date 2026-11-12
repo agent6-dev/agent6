@@ -303,7 +303,7 @@ def test_historical_baseline_marks_only_its_observation(tmp_path: pathlib.Path) 
     (tmp_path / "logs.jsonl").write_text(
         '{"type":"verify.end","command":["true"],"exit_code":0}\n'
         '{"type":"verify.end","command":["false"],"exit_code":1}\n'
-        '{"type":"loop.baseline","ok":false}\n',
+        '{"type":"verify.baseline","ok":false}\n',
         encoding="utf-8",
     )
     view = receipt.read_receipt(tmp_path, tmp_path)

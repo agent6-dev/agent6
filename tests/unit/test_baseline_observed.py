@@ -136,7 +136,7 @@ def test_the_gate_runs_before_the_first_turn_and_records_the_baseline(
     texts = [n.text for n in wf.gate.start_baseline(state)]
     assert state.verify.baseline_ok is (rc == 0)
     assert state.verify.last_ok is (rc == 0)
-    assert ("loop.baseline", {"ok": rc == 0, "turn": 0, "verify_id": None}) in events
+    assert ("verify.baseline", {"ok": rc == 0, "turn": 0, "verify_id": None}) in events
     # The operator reads the verdict in the run log; the model reads a red one in its first request.
     assert lines[-1] == f"LOOP: gate {'green' if rc == 0 else 'red (exit 1)'} before the run"
     if rc == 0:

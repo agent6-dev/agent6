@@ -225,7 +225,7 @@ def test_panels_count_and_inject_each_finding_once(
     panels = [
         json.loads(line)
         for line in events.path.read_text().splitlines()
-        if json.loads(line)["type"] == "loop.review.panel"
+        if json.loads(line)["type"] == "review.panel"
     ]
     observations = panels[0].get("findings")
     assert isinstance(observations, list) and observations
@@ -244,7 +244,7 @@ def test_panels_count_and_inject_each_finding_once(
     prompt = seat_provider.call.call_args_list[0].kwargs["messages"][0]["content"][0]["text"]
     assert "ALREADY RAISED" in prompt
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
-    starts = [row for row in rows if row["type"] == "loop.review.start"]
+    starts = [row for row in rows if row["type"] == "review.start"]
     assert len({row["panel_id"] for row in starts}) == len(starts)
     resume_start = next(row for row in rows if row["type"] == "session.resume")
     assert starts[-1]["execution_id"] == resume_start["execution_id"]
@@ -317,7 +317,7 @@ def test_resumes_match_findings_by_the_cited_git_blob(tmp_path: pathlib.Path) ->
     panels = [
         row
         for line in events.path.read_text().splitlines()
-        if (row := json.loads(line))["type"] == "loop.review.panel"
+        if (row := json.loads(line))["type"] == "review.panel"
     ]
     assert len(panels) == 3
     assert all(len(panel["findings"]) == 1 for panel in panels)
@@ -335,7 +335,7 @@ def test_resumes_match_findings_by_the_cited_git_blob(tmp_path: pathlib.Path) ->
     reused = [
         row
         for line in events.path.read_text().splitlines()
-        if (row := json.loads(line))["type"] == "loop.review.reused"
+        if (row := json.loads(line))["type"] == "review.reused"
     ]
     assert [row["reused_panel_id"] for row in reused] == [
         panels[0]["panel_id"],
@@ -396,11 +396,11 @@ def test_a_finish_retried_on_unchanged_trees_reuses_the_panel(
     assert result.reason == "finish_session" and result.turns == 2
     assert seat_provider.call.call_count == 1
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
-    kinds = [row["type"] for row in rows if row["type"].startswith("loop.review.")]
-    assert kinds.count("loop.review.start") == 1 and kinds.count("loop.review.reused") == 1
-    assert kinds.index("loop.review.rejected_finish") < kinds.index("loop.review.reused")
-    reused = next(row for row in rows if row["type"] == "loop.review.reused")
-    panel = next(row for row in rows if row["type"] == "loop.review.panel")
+    kinds = [r["type"] for r in rows if r["type"].startswith(("review.", "finish.refused."))]
+    assert kinds.count("review.start") == 1 and kinds.count("review.reused") == 1
+    assert kinds.index("finish.refused.review") < kinds.index("review.reused")
+    reused = next(row for row in rows if row["type"] == "review.reused")
+    panel = next(row for row in rows if row["type"] == "review.panel")
     assert reused["reused_panel_id"] == panel["panel_id"] and reused["findings"] == 1
     feedback = [
         b["text"]

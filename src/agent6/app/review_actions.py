@@ -164,7 +164,7 @@ def _recorded(view: review.ReviewView, request: ActionRequest) -> tuple[ActionRe
     if not records:
         return None
     expected = {"fix": "fix.requested", "resolve": "finding.resolved", "reopen": "finding.reopened"}
-    wanted = "loop.review." + expected[request.action.action]
+    wanted = "review." + expected[request.action.action]
     if any(a.finding_id not in request.finding_ids for a in records) or records[0].type != wanted:
         raise ReviewActionError("request_id already belongs to another finding or action")
     results: list[ActionResult] = []
@@ -353,11 +353,11 @@ def _validate(
 
 # The finding-action records by the kind a request names.
 _ACTION_RECORDS: dict[str, Callable[..., journal.Event]] = {
-    "finding.resolved": journal.LoopReviewFindingResolved,
-    "finding.reopened": journal.LoopReviewFindingReopened,
-    "fix.requested": journal.LoopReviewFixRequested,
-    "fix.submitted": journal.LoopReviewFixSubmitted,
-    "fix.failed": journal.LoopReviewFixFailed,
+    "finding.resolved": journal.ReviewFindingResolved,
+    "finding.reopened": journal.ReviewFindingReopened,
+    "fix.requested": journal.ReviewFixRequested,
+    "fix.submitted": journal.ReviewFixSubmitted,
+    "fix.failed": journal.ReviewFixFailed,
 }
 
 
@@ -483,7 +483,7 @@ def _acknowledge_resume(
             continue
         for action in finding.actions:
             if (
-                action.type == "loop.review.fix.requested"
+                action.type == "review.fix.requested"
                 and action.action == "resume"
                 and action.source is not None
             ):

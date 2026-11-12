@@ -19,8 +19,8 @@ def _mk(d: pathlib.Path) -> None:
     d.mkdir(parents=True)
     events = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
-        {"type": "loop.auto_commit", "turn": 1, "sha": "a" * 40, "subject": "one"},
-        {"type": "loop.auto_commit", "turn": 2, "sha": "b" * 40, "subject": "two"},
+        {"type": "checkpoint.committed", "turn": 1, "sha": "a" * 40, "subject": "one"},
+        {"type": "checkpoint.committed", "turn": 2, "sha": "b" * 40, "subject": "two"},
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
@@ -68,7 +68,7 @@ def test_the_top_line_counts_tasks_as_of_the_selected_commit(
             "cursor": "t1",
             "nodes": {"t1": {"title": "first", "parent_id": None, "status": "pending"}},
         },
-        {"type": "loop.auto_commit", "turn": 1, "sha": "a" * 40, "subject": "one"},
+        {"type": "checkpoint.committed", "turn": 1, "sha": "a" * 40, "subject": "one"},
         {
             "type": "graph.update",
             "cursor": "t2",
@@ -77,7 +77,7 @@ def test_the_top_line_counts_tasks_as_of_the_selected_commit(
                 "t2": {"title": "second", "parent_id": None, "status": "pending"},
             },
         },
-        {"type": "loop.auto_commit", "turn": 2, "sha": "b" * 40, "subject": "two"},
+        {"type": "checkpoint.committed", "turn": 2, "sha": "b" * 40, "subject": "two"},
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")

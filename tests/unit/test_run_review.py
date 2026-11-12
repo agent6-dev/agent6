@@ -35,7 +35,7 @@ _EVENTS: list[dict[str, Any]] = [
         "mode": "run",
         "user_task": "fix the parser",
     },
-    {"type": "role.result", "role": "worker", "text": "Reading the parser."},
+    {"type": "model.result", "role": "worker", "text": "Reading the parser."},
     {"type": "tool.call", "name": "read_file", "args_preview": {"path": "src/p.py"}, "call_id": 1},
     {"type": "tool.result", "name": "read_file", "ok": True, "summary": "40 bytes", "call_id": 1},
     {"type": "tool.call", "name": "run_command", "args_preview": {"cmd": "pytest"}, "call_id": 2},
@@ -46,9 +46,9 @@ _EVENTS: list[dict[str, Any]] = [
         "summary": "exit 1: 2 failed",
         "call_id": 2,
     },
-    {"type": "loop.steer.injected", "chars": 20, "text": "do not touch the lexer"},
-    {"type": "loop.decision.recorded", "question": "keep the old API?", "answer": "yes"},
-    {"type": "loop.no_progress.nudge", "turn": 4},
+    {"type": "steer.injected", "chars": 20, "text": "do not touch the lexer"},
+    {"type": "decision.recorded", "question": "keep the old API?", "answer": "yes"},
+    {"type": "nudge.no_progress", "turn": 4},
     {
         "type": "verify.end",
         "command": ["pytest"],
@@ -65,8 +65,8 @@ _EVENTS: list[dict[str, Any]] = [
         "stdout_tail": "3 passed",
         "stderr_tail": "",
     },
-    {"type": "role.result", "role": "reviewer", "text": "a side seat's answer"},
-    {"type": "role.result", "role": "worker", "text": "Done: the lexer is untouched."},
+    {"type": "model.result", "role": "reviewer", "text": "a side seat's answer"},
+    {"type": "model.result", "role": "worker", "text": "Done: the lexer is untouched."},
     {"type": "budget.update", "usd_total": 0.25},
     {"type": "session.stop", "reason": "finish_session", "turns": 6, "verification": "passed"},
 ]
@@ -118,7 +118,7 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: pathlib.Path) -> None:
     ]
     assert d.errors_by_tool == (("run_command", 1),)
     assert d.first_errors == ("[run_command] exit 1: 2 failed",)
-    assert d.notices == (("no_progress.nudge", 1),)
+    assert d.notices == (("nudge.no_progress", 1),)
     assert d.memory_wrote == ("lexer-rule",)
     assert d.memory_index == "- money-rounding: Money rounds half-up on the cent."
     assert "assistant: Done: the lexer is untouched." in d.conversation
@@ -133,7 +133,7 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: pathlib.Path) -> None:
         "rulings recorded (1):",
         "verify runs (2):",
         "tool errors (1 of 2 calls):",
-        "harness notices: no_progress.nudge x1",
+        "harness notices: nudge.no_progress x1",
         "memory facts this session wrote: lexer-rule",
         "memory index (every run on this repo is shown it):\n- money-rounding:",
         "conversation (tail):",
@@ -351,7 +351,7 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
 
 
 def test_the_caps_are_named_not_silent(repo: pathlib.Path) -> None:
-    many = [{"type": "loop.steer.injected", "chars": 1, "text": f"steer {i}"} for i in range(25)]
+    many = [{"type": "steer.injected", "chars": 1, "text": f"steer {i}"} for i in range(25)]
     layout = _write_session(repo, events=many)
     d = review_session.run_digest(layout)
     assert len(d.steers) == 20

@@ -346,8 +346,7 @@ def test_a_detached_run_is_not_followed_by_the_prompt(
     """After `/detach` there is nothing to follow up on: the run continues in the background."""
     layout = _seed_session(tmp_path, monkeypatch, session_id="detached-run-AAAAAA")
     (layout.session_dir / "logs.jsonl").write_text(
-        '{"type": "session.start", "ts": "2026-01-01T00:00:00Z"}\n'
-        '{"type": "loop.steer.detached"}\n',
+        '{"type": "session.start", "ts": "2026-01-01T00:00:00Z"}\n{"type": "steer.detached"}\n',
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)

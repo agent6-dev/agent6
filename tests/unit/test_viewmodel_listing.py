@@ -1015,10 +1015,10 @@ def test_summary_manifest_only_fork_shows_mode_and_task(tmp_path: pathlib.Path) 
 
 def test_summary_launching_run_reads_starting(tmp_path: pathlib.Path) -> None:
     # A run with no verify_command spends ~80s inferring one BEFORE session.start.
-    # During it the log has a role.call (the inference LLM call) but no session.start,
+    # During it the log has a model.call (the inference LLM call) but no session.start,
     # and the worker is alive -- it must read "starting" (its real mode+task from
     # the manifest), not a blank "? / (no task) / running" that looks missing.
-    rd = _write_run(tmp_path, "runs", "boot", [{"type": "role.call", "role": "verify_inferer"}])
+    rd = _write_run(tmp_path, "runs", "boot", [{"type": "model.call", "role": "verify_inferer"}])
     (rd / "manifest.json").write_text(
         json.dumps({"mode": "run", "user_task": "refactor the loop"}), encoding="utf-8"
     )
@@ -1033,7 +1033,7 @@ def test_summary_pre_start_dead_worker_says_it_died_launching(tmp_path: pathlib.
     Its pid file survives with preflight events and real spend; a dir with no pid file ever stays
     "created".
     """
-    rd = _write_run(tmp_path, "runs", "dead", [{"type": "role.call", "role": "verify_inferer"}])
+    rd = _write_run(tmp_path, "runs", "dead", [{"type": "model.call", "role": "verify_inferer"}])
     (rd / "manifest.json").write_text(
         json.dumps({"mode": "run", "user_task": "t"}), encoding="utf-8"
     )
@@ -1311,7 +1311,7 @@ def test_summary_second_run_start_reads_running(tmp_path: pathlib.Path) -> None:
             {"type": "session.start", "mode": "ask", "user_task": "q"},
             {"type": "session.stop", "verification": "passed", "reason": "answered"},
             {"type": "session.start", "mode": "ask", "user_task": "q2"},
-            {"type": "role.call", "role": "worker", "model": "m"},
+            {"type": "model.call", "role": "worker", "model": "m"},
         ],
     )
     assert summarize_session_dir(rd).status == "running"

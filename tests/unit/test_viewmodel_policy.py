@@ -126,7 +126,7 @@ def test_the_environment_comes_from_the_journal_tail_not_a_replay(
 ) -> None:
     """The current target is read backward from the tail; a replay of the journal costs seconds."""
     _manifest(tmp_path)
-    filler: dict[str, object] = {"type": "role.text_delta", "ts": 1.0, "text": "x" * 64}
+    filler: dict[str, object] = {"type": "model.text_delta", "ts": 1.0, "text": "x" * 64}
     _journal(tmp_path, *([filler] * 2000))
     _journal(tmp_path, _target_event("t1", "e1"), {"type": "session.start", "execution_id": "e1"})
 

@@ -54,7 +54,7 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     reviewer.critique(state, trigger="periodic", turn=1)
-    panel = next(row for row in rows if row["type"] == "loop.review.panel")
+    panel = next(row for row in rows if row["type"] == "review.panel")
     target = panel.get("target")
     assert isinstance(target, dict)
     assert target["snapshot_commit"] == tip
@@ -65,8 +65,8 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
     assert chain.tip() == tip
     assert git(tmp_path, "rev-parse", "HEAD").strip() == base
     assert (tmp_path / ".git" / "index").read_bytes() == index
-    start = next(row for row in rows if row["type"] == "loop.review.start")
-    seat_row = next(row for row in rows if row["type"] == "loop.review.seat")
+    start = next(row for row in rows if row["type"] == "review.start")
+    seat_row = next(row for row in rows if row["type"] == "review.seat")
     assert start["panel_id"] == panel["panel_id"] == seat_row["panel_id"]
     assert seat_row["summary"] == "ok"
     assert seat_row["findings"] == []
@@ -112,13 +112,13 @@ def test_a_panel_over_unchanged_trees_is_reused_not_sat_again(tmp_path: pathlib.
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     first = reviewer.critique(state, trigger="periodic", turn=1)
     assert first is not None and provider.call.call_count == 1
-    (panel,) = [row for row in rows if row["type"] == "loop.review.panel"]
+    (panel,) = [row for row in rows if row["type"] == "review.panel"]
     assert panel["roster"] == [
         dict(seat_index=0, model_route="m", focus="s", scope="diff", temperature=0.0)
     ]
     again = reviewer.critique(state, trigger="periodic", turn=2)
     assert again is not None and provider.call.call_count == 1
-    (reused,) = [row for row in rows if row["type"] == "loop.review.reused"]
+    (reused,) = [row for row in rows if row["type"] == "review.reused"]
     assert reused["reused_panel_id"] == panel["panel_id"] != reused["panel_id"]
     assert reused["turn"] == 2 and reused["findings"] == 1
     assert again.text == (
@@ -127,11 +127,11 @@ def test_a_panel_over_unchanged_trees_is_reused_not_sat_again(tmp_path: pathlib.
         " nothing new was raised."
     )
     assert "leak" not in again.text  # a finding reaches the worker once
-    assert len([row for row in rows if row["type"] == "loop.review.start"]) == 1
+    assert len([row for row in rows if row["type"] == "review.start"]) == 1
     # An end on the same trees: a fresh panel's repeat would neither reject nor inject.
     ended = reviewer.critique(state, trigger="finish", turn=3)
     assert ended is not None and ended.satisfied and provider.call.call_count == 1
-    assert len([row for row in rows if row["type"] == "loop.review.reused"]) == 2
+    assert len([row for row in rows if row["type"] == "review.reused"]) == 2
     # A changed tree sits a new panel.
     (repo / "foo.py").write_text("x = 3\n")
     chain.commit("edit again")
@@ -170,7 +170,7 @@ def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Pat
     reviewer.critique(
         loop_state.LoopState(original_task="t", tool_calls=0), trigger="periodic", turn=1
     )
-    starts = [row for row in rows if row["type"] == "loop.review.start"]
+    starts = [row for row in rows if row["type"] == "review.start"]
     assert len(starts) == 1
     target = starts[0]["target"]
     assert isinstance(target, dict)

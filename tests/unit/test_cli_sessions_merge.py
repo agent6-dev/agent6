@@ -1333,10 +1333,10 @@ def test_merge_squash_trailer_names_every_code_writer(
         "".join(
             json.dumps(e) + "\n"
             for e in (
-                {"type": "role.call", "role": "worker", "model": "m-one"},
-                {"type": "role.call", "role": "reviewer", "model": "m-rev"},
-                {"type": "role.call", "role": "worker", "model": "m-two"},
-                {"type": "role.call", "role": "worker", "model": "m-one"},
+                {"type": "model.call", "role": "worker", "model": "m-one"},
+                {"type": "model.call", "role": "reviewer", "model": "m-rev"},
+                {"type": "model.call", "role": "worker", "model": "m-two"},
+                {"type": "model.call", "role": "worker", "model": "m-one"},
             )
         ),
         encoding="utf-8",

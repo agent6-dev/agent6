@@ -97,6 +97,17 @@ class BtwOpened(Event):
     question: str = pydantic.Field(description="The question presented to the operator.")
 
 
+class BudgetTurn(Event):
+    """A turn's usage heartbeat before its model call."""
+
+    TYPE: ClassVar[str] = "budget.turn"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    input_tokens: int = pydantic.Field(description="Input tokens consumed so far.")
+    output_tokens: int = pydantic.Field(description="Output token count.")
+    cache_read_tokens: int = pydantic.Field(description="Cached input tokens consumed so far.")
+    cost_usd: float = pydantic.Field(description="Estimated spend in USD.")
+
+
 class BudgetUpdate(Event):
     """The tracker's accounting since this process began, its caps and the account's reading."""
 
@@ -149,6 +160,39 @@ class BudgetUpdate(Event):
     )
 
 
+class CheckpointCommitted(Event):
+    """A turn's checkpoint commit landed."""
+
+    TYPE: ClassVar[str] = "checkpoint.committed"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    sha: str = pydantic.Field(description="The commit identifier, possibly abbreviated.")
+    subject: str = pydantic.Field(description="The landed commit's subject.")
+    task_id: str | None = pydantic.Field(default=None, description="Task identifier.")
+
+
+class CheckpointFailed(Event):
+    """A checkpoint commit could not land."""
+
+    TYPE: ClassVar[str] = "checkpoint.failed"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    error: str = pydantic.Field(description="The failure diagnostic.")
+    worktree_status: str = pydantic.Field(description="Git status when the commit failed.")
+    commit_subject: str = pydantic.Field(description="The attempted commit subject.")
+
+
+class CheckpointLeftOut(Event):
+    """A checkpoint left ignored or untracked edits outside its commit."""
+
+    TYPE: ClassVar[str] = "checkpoint.left_out"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    ignored: Sequence[Any] = pydantic.Field(
+        description="Ignored edits left outside the checkpoint.",
+    )
+    untracked: Sequence[Any] = pydantic.Field(
+        description="Untracked edits left outside the checkpoint.",
+    )
+
+
 class CommandBackgrounded(Event):
     """A command was handed back as a background job."""
 
@@ -156,6 +200,122 @@ class CommandBackgrounded(Event):
     background_id: str = pydantic.Field(description="Background job identifier.")
     handle: str = pydantic.Field(description="Launcher-instance-scoped job handle.")
     elapsed_s: float = pydantic.Field(description="Elapsed command time in seconds at handback.")
+
+
+class CompactDeduped(Event):
+    """Repeated tool results were removed from context."""
+
+    TYPE: ClassVar[str] = "compact.deduped"
+    count: int = pydantic.Field(description="Number of affected entries or notices.")
+    calls: Sequence[Any] = pydantic.Field(description="The affected tool call identities.")
+
+
+class CompactDropped(Event):
+    """Tool results were elided from context."""
+
+    TYPE: ClassVar[str] = "compact.dropped"
+    count: int = pydantic.Field(description="Number of affected entries or notices.")
+    calls: Sequence[Any] = pydantic.Field(description="The affected tool call identities.")
+
+
+class CompactGistCall(Event):
+    """The model was asked to summarize files for context."""
+
+    TYPE: ClassVar[str] = "compact.gist.call"
+    files: int = pydantic.Field(description="Number of files to summarize.")
+
+
+class CompactGistDone(Event):
+    """File summaries were created or demoted during compaction."""
+
+    TYPE: ClassVar[str] = "compact.gist.done"
+    gisted: int = pydantic.Field(description="Number of file summaries created.")
+    demoted: int = pydantic.Field(
+        description="Number of summaries replaced by smaller placeholders.",
+    )
+    paths: Sequence[Any] = pydantic.Field(description="Affected repository-relative paths.")
+    demoted_paths: Sequence[Any] = pydantic.Field(description="Paths whose summaries were demoted.")
+
+
+class CompactGistFailed(Event):
+    """The file-summary call failed."""
+
+    TYPE: ClassVar[str] = "compact.gist.failed"
+    error: str = pydantic.Field(description="The failure diagnostic.")
+
+
+class CompactRefused(Event):
+    """There was too little history to summarize."""
+
+    TYPE: ClassVar[str] = "compact.refused"
+    reason: str = pydantic.Field(description="The reason for the outcome.")
+
+
+class CompactRequested(Event):
+    """The operator requested a context restart."""
+
+    TYPE: ClassVar[str] = "compact.requested"
+    focus: str = pydantic.Field(description="The requested summary or review focus.")
+
+
+class CompactRestored(Event):
+    """A resumed context restored its elision and summary counts."""
+
+    TYPE: ClassVar[str] = "compact.restored"
+    elided: int = pydantic.Field(description="Number of restored elision markers.")
+    gists: int = pydantic.Field(description="Number of restored file summaries.")
+
+
+class CompactSummariseCall(Event):
+    """The model was asked to summarize the conversation."""
+
+    TYPE: ClassVar[str] = "compact.summarise.call"
+    messages: int = pydantic.Field(description="Number of conversation messages.")
+
+
+class CompactSummariseDone(Event):
+    """A summary replaced the conversation history."""
+
+    TYPE: ClassVar[str] = "compact.summarise.done"
+    summary_chars: int = pydantic.Field(description="Length of the summary in characters.")
+    summary: str = pydantic.Field(description="The result or outcome in words.")
+    kept_messages: int = pydantic.Field(
+        description="Number of recent messages kept after the summary.",
+    )
+
+
+class CompactSummariseFailed(Event):
+    """The conversation-summary call failed."""
+
+    TYPE: ClassVar[str] = "compact.summarise.failed"
+    error: str = pydantic.Field(description="The failure diagnostic.")
+
+
+class CompactThinkingDropped(Event):
+    """Reasoning text was removed from context."""
+
+    TYPE: ClassVar[str] = "compact.thinking_dropped"
+    messages: int = pydantic.Field(description="Number of conversation messages.")
+    chars: int = pydantic.Field(description="Text length in characters.")
+
+
+class DecisionRecorded(Event):
+    """An operator ruling was recorded in decisions.md."""
+
+    TYPE: ClassVar[str] = "decision.recorded"
+    question: str = pydantic.Field(description="The question presented to the operator.")
+    answer: str = pydantic.Field(description="The operator's answer.")
+
+
+class DecisionUnrecorded(Event):
+    """An operator ruling could not be recorded or was missing at finish."""
+
+    TYPE: ClassVar[str] = "decision.unrecorded"
+    error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
+    missing: int | None = pydantic.Field(
+        default=None,
+        description="Number of operator rulings missing at finish.",
+    )
 
 
 class DiffUpdated(Event):
@@ -228,6 +388,58 @@ class ExecutionTarget(Event):
     )
 
 
+class FinishRefusedContract(Event):
+    """The finish payload did not satisfy the machine's result contract."""
+
+    TYPE: ClassVar[str] = "finish.refused.contract"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    problems: Sequence[Any] = pydantic.Field(
+        description="Violations of the machine's finish contract.",
+    )
+
+
+class FinishRefusedMetric(Event):
+    """A metric run's early finish was returned to the model."""
+
+    TYPE: ClassVar[str] = "finish.refused.metric"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
+    budget_remaining: float | None = pydantic.Field(
+        default=None,
+        description="Remaining budget fraction; null without a finite cap.",
+    )
+    trigger: str | None = pydantic.Field(
+        default=None,
+        description="The action that triggered the gate or panel.",
+    )
+
+
+class FinishRefusedReview(Event):
+    """The review panel rejected the declared finish."""
+
+    TYPE: ClassVar[str] = "finish.refused.review"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    ending: str = pydantic.Field(description="The declared finish being reviewed.")
+
+
+class FinishRefusedTasks(Event):
+    """A finish with open subtasks was returned to the model."""
+
+    TYPE: ClassVar[str] = "finish.refused.tasks"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
+    trigger: str = pydantic.Field(description="The action that triggered the gate or panel.")
+
+
+class FinishRefusedVerify(Event):
+    """A finish without green verification was returned to the model."""
+
+    TYPE: ClassVar[str] = "finish.refused.verify"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
+    trigger: str = pydantic.Field(description="The action that triggered the gate or panel.")
+
+
 class GraphUpdate(Event):
     """The task graph and its current focus."""
 
@@ -248,296 +460,11 @@ class JailDegraded(Event):
     )
 
 
-class LoopAutoCommit(Event):
-    """A turn's checkpoint commit landed."""
-
-    TYPE: ClassVar[str] = "loop.auto_commit"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    sha: str = pydantic.Field(description="The commit identifier, possibly abbreviated.")
-    subject: str = pydantic.Field(description="The landed commit's subject.")
-    task_id: str | None = pydantic.Field(default=None, description="Task identifier.")
-
-
-class LoopAutoCommitFailed(Event):
-    """A checkpoint commit could not land."""
-
-    TYPE: ClassVar[str] = "loop.auto_commit.failed"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    error: str = pydantic.Field(description="The failure diagnostic.")
-    worktree_status: str = pydantic.Field(description="Git status when the commit failed.")
-    commit_subject: str = pydantic.Field(description="The attempted commit subject.")
-
-
-class LoopBaseline(Event):
-    """The baseline verification attempt finished."""
-
-    TYPE: ClassVar[str] = "loop.baseline"
-    ok: bool = pydantic.Field(description="Whether the operation succeeded.")
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    verify_id: str | None = pydantic.Field(
-        default=None,
-        description="Verification attempt identifier.",
-    )
-
-
-class LoopBudget(Event):
-    """A turn's usage heartbeat before its model call."""
-
-    TYPE: ClassVar[str] = "loop.budget"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    input_tokens: int = pydantic.Field(description="Input tokens consumed so far.")
-    output_tokens: int = pydantic.Field(description="Output token count.")
-    cache_read_tokens: int = pydantic.Field(description="Cached input tokens consumed so far.")
-    cost_usd: float = pydantic.Field(description="Estimated spend in USD.")
-
-
-class LoopCompactDeduped(Event):
-    """Repeated tool results were removed from context."""
-
-    TYPE: ClassVar[str] = "loop.compact.deduped"
-    count: int = pydantic.Field(description="Number of affected entries or notices.")
-    calls: Sequence[Any] = pydantic.Field(description="The affected tool call identities.")
-
-
-class LoopCompactDropped(Event):
-    """Tool results were elided from context."""
-
-    TYPE: ClassVar[str] = "loop.compact.dropped"
-    count: int = pydantic.Field(description="Number of affected entries or notices.")
-    calls: Sequence[Any] = pydantic.Field(description="The affected tool call identities.")
-
-
-class LoopCompactGistCall(Event):
-    """The model was asked to summarize files for context."""
-
-    TYPE: ClassVar[str] = "loop.compact.gist.call"
-    files: int = pydantic.Field(description="Number of files to summarize.")
-
-
-class LoopCompactGistFailed(Event):
-    """The file-summary call failed."""
-
-    TYPE: ClassVar[str] = "loop.compact.gist.failed"
-    error: str = pydantic.Field(description="The failure diagnostic.")
-
-
-class LoopCompactGists(Event):
-    """File summaries were created or demoted during compaction."""
-
-    TYPE: ClassVar[str] = "loop.compact.gists"
-    gisted: int = pydantic.Field(description="Number of file summaries created.")
-    demoted: int = pydantic.Field(
-        description="Number of summaries replaced by smaller placeholders.",
-    )
-    paths: Sequence[Any] = pydantic.Field(description="Affected repository-relative paths.")
-    demoted_paths: Sequence[Any] = pydantic.Field(description="Paths whose summaries were demoted.")
-
-
-class LoopCompactRefused(Event):
-    """There was too little history to summarize."""
-
-    TYPE: ClassVar[str] = "loop.compact.refused"
-    reason: str = pydantic.Field(description="The reason for the outcome.")
-
-
-class LoopCompactRequested(Event):
-    """The operator requested a context restart."""
-
-    TYPE: ClassVar[str] = "loop.compact.requested"
-    focus: str = pydantic.Field(description="The requested summary or review focus.")
-
-
-class LoopCompactRestored(Event):
-    """A resumed context restored its elision and summary counts."""
-
-    TYPE: ClassVar[str] = "loop.compact.restored"
-    elided: int = pydantic.Field(description="Number of restored elision markers.")
-    gists: int = pydantic.Field(description="Number of restored file summaries.")
-
-
-class LoopCompactSummariseCall(Event):
-    """The model was asked to summarize the conversation."""
-
-    TYPE: ClassVar[str] = "loop.compact.summarise.call"
-    messages: int = pydantic.Field(description="Number of conversation messages.")
-
-
-class LoopCompactSummariseDone(Event):
-    """A summary replaced the conversation history."""
-
-    TYPE: ClassVar[str] = "loop.compact.summarise.done"
-    summary_chars: int = pydantic.Field(description="Length of the summary in characters.")
-    summary: str = pydantic.Field(description="The result or outcome in words.")
-    kept_messages: int = pydantic.Field(
-        description="Number of recent messages kept after the summary.",
-    )
-
-
-class LoopCompactSummariseFailed(Event):
-    """The conversation-summary call failed."""
-
-    TYPE: ClassVar[str] = "loop.compact.summarise.failed"
-    error: str = pydantic.Field(description="The failure diagnostic.")
-
-
-class LoopCompactThinkingDropped(Event):
-    """Reasoning text was removed from context."""
-
-    TYPE: ClassVar[str] = "loop.compact.thinking_dropped"
-    messages: int = pydantic.Field(description="Number of conversation messages.")
-    chars: int = pydantic.Field(description="Text length in characters.")
-
-
-class LoopDecisionRecorded(Event):
-    """An operator ruling was recorded in decisions.md."""
-
-    TYPE: ClassVar[str] = "loop.decision.recorded"
-    question: str = pydantic.Field(description="The question presented to the operator.")
-    answer: str = pydantic.Field(description="The operator's answer.")
-
-
-class LoopDecisionUnrecorded(Event):
-    """An operator ruling could not be recorded or was missing at finish."""
-
-    TYPE: ClassVar[str] = "loop.decision.unrecorded"
-    error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
-    missing: int | None = pydantic.Field(
-        default=None,
-        description="Number of operator rulings missing at finish.",
-    )
-
-
-class LoopEditLeftOut(Event):
-    """A checkpoint left ignored or untracked edits outside its commit."""
-
-    TYPE: ClassVar[str] = "loop.edit.left_out"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    ignored: Sequence[Any] = pydantic.Field(
-        description="Ignored edits left outside the checkpoint.",
-    )
-    untracked: Sequence[Any] = pydantic.Field(
-        description="Untracked edits left outside the checkpoint.",
-    )
-
-
-class LoopFinishContractRefused(Event):
-    """The finish payload did not satisfy the machine's result contract."""
-
-    TYPE: ClassVar[str] = "loop.finish_contract.refused"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    problems: Sequence[Any] = pydantic.Field(
-        description="Violations of the machine's finish contract.",
-    )
-
-
-class LoopLoopGuardTriggered(Event):
-    """Repeated identical tool calls triggered a warning."""
-
-    TYPE: ClassVar[str] = "loop.loop_guard.triggered"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    tool: str = pydantic.Field(description="The repeated tool's name.")
-    streak: int = pydantic.Field(description="Number of consecutive matching turns or calls.")
-
-
-class LoopMediaRefused(Event):
-    """An attachment was refused by its tool or model route."""
-
-    TYPE: ClassVar[str] = "loop.media.refused"
-    provider_tool_call_id: str = pydantic.Field(description="The provider's tool-use identifier.")
-    reason: str = pydantic.Field(description="The reason for the outcome.")
-    route: str | None = pydantic.Field(
-        default=None,
-        description="The model route that refused the attachment.",
-    )
-    text: str | None = pydantic.Field(default=None, description="The event's text.")
-    attachment: dict[str, Any] | None = pydantic.Field(
-        default=None,
-        description="Attachment metadata without its binary content.",
-    )
-
-
-class LoopMemoryFlipNudged(Event):
-    """Verification turned green and the model was asked to record the lesson."""
-
-    TYPE: ClassVar[str] = "loop.memory_flip.nudged"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-
-
-class LoopMetricAutoCall(Event):
-    """An automatic metric sample started."""
-
-    TYPE: ClassVar[str] = "loop.metric.auto_call"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    sha: str = pydantic.Field(description="The commit identifier, possibly abbreviated.")
-
-
-class LoopMetricAutoFailed(Event):
-    """An automatic metric sample failed."""
-
-    TYPE: ClassVar[str] = "loop.metric.auto_failed"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    error: str = pydantic.Field(description="The failure diagnostic.")
-
-
-class LoopMetricSample(Event):
-    """A metric sample was recorded."""
-
-    TYPE: ClassVar[str] = "loop.metric.sample"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    label: str = pydantic.Field(description="Metric sample label.")
-    score: float | None = pydantic.Field(
-        default=None,
-        description="Parsed metric score; null when unavailable.",
-    )
-    exit_code: int | None = pydantic.Field(
-        default=None,
-        description="Command exit code; null when unavailable.",
-    )
-    sha: str = pydantic.Field(description="The commit identifier, possibly abbreviated.")
-
-
-class LoopMetricCeilingStop(Event):
-    """The metric ceiling ended the run."""
-
-    TYPE: ClassVar[str] = "loop.metric_ceiling.stop"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-
-
-class LoopMetricEarlyFinishRejected(Event):
-    """A metric run's early finish was returned to the model."""
-
-    TYPE: ClassVar[str] = "loop.metric_early_finish.rejected"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
-    budget_remaining: float | None = pydantic.Field(
-        default=None,
-        description="Remaining budget fraction; null without a finite cap.",
-    )
-    trigger: str | None = pydantic.Field(
-        default=None,
-        description="The action that triggered the gate or panel.",
-    )
-
-
-class LoopMetricPlateauNudge(Event):
-    """A metric plateau prompted another attempt."""
-
-    TYPE: ClassVar[str] = "loop.metric_plateau.nudge"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
-    budget_remaining: float | None = pydantic.Field(
-        default=None,
-        description="Remaining budget fraction; null without a finite cap.",
-    )
-
-
-class LoopNoProgressNudge(Event):
-    """Repeated turns without progress prompted a warning."""
-
-    TYPE: ClassVar[str] = "loop.no_progress.nudge"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    streak: int = pydantic.Field(description="Number of consecutive matching turns or calls.")
-    level: int = pydantic.Field(description="The warning's escalation level.")
+class JailToolUnreachable(Event):
+    """A tool found on the host could not run inside the sandbox."""
+
+    TYPE: ClassVar[str] = "jail.tool_unreachable"
+    binary: str = pydantic.Field(description="The unreachable executable's name.")
 
 
 class LoopNote(Event):
@@ -545,74 +472,6 @@ class LoopNote(Event):
 
     TYPE: ClassVar[str] = "loop.note"
     text: str = pydantic.Field(description="The event's text.")
-
-
-class LoopOperatorPresence(Event):
-    """The operator's observed attachment state changed."""
-
-    TYPE: ClassVar[str] = "loop.operator.presence"
-    presence: str = pydantic.Field(description="The observed operator attachment and away state.")
-
-
-class LoopParallelCompared(Event):
-    """Parallel candidates were ranked."""
-
-    TYPE: ClassVar[str] = "loop.parallel.compared"
-    group: str = pydantic.Field(description="Parallel dispatch group identifier.")
-    ranked_by: str = pydantic.Field(description="The method used to rank the candidates.")
-    rationale: str = pydantic.Field(description="The ranking explanation.")
-    ranking: Sequence[Any] = pydantic.Field(
-        description="Candidates in ranked order with their verify and cost readings.",
-    )
-    judge_cost_usd: float = pydantic.Field(description="Ranking judge spend in USD.")
-    judge_cost_partial: bool = pydantic.Field(
-        description="Whether the judge spend is a lower bound.",
-    )
-
-
-class LoopParallelDispatched(Event):
-    """Parallel lanes were dispatched."""
-
-    TYPE: ClassVar[str] = "loop.parallel.dispatched"
-    group: str = pydantic.Field(description="Parallel dispatch group identifier.")
-    lanes: int = pydantic.Field(
-        description="Lane count for dispatch, or lane results for completion.",
-    )
-    tasks: Sequence[Any] = pydantic.Field(description="Task texts sent to the lanes.")
-    source: str = pydantic.Field(
-        default="operator",
-        description="Who dispatched: operator (a steer), model (the tool) or panel.",
-    )
-
-
-class LoopParallelFailed(Event):
-    """Parallel lane dispatch or execution failed."""
-
-    TYPE: ClassVar[str] = "loop.parallel.failed"
-    group: str = pydantic.Field(description="Parallel dispatch group identifier.")
-    fanout: bool | None = pydantic.Field(
-        default=None,
-        description="Whether the failed group was a top-level fan-out.",
-    )
-    lanes: Sequence[Any] | None = pydantic.Field(
-        default=None,
-        description="Lane count for dispatch, or lane results for completion.",
-    )
-    error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
-
-
-class LoopParallelJoined(Event):
-    """Parallel lane results returned."""
-
-    TYPE: ClassVar[str] = "loop.parallel.joined"
-    group: str = pydantic.Field(description="Parallel dispatch group identifier.")
-    lanes: Sequence[Any] = pydantic.Field(
-        description="Lane count for dispatch, or lane results for completion.",
-    )
-    source: str = pydantic.Field(
-        default="operator",
-        description="Who dispatched: operator (a steer), model (the tool) or panel.",
-    )
 
 
 class LoopParked(Event):
@@ -630,591 +489,52 @@ class LoopParkedResumed(Event):
     turn: int = pydantic.Field(description="The execution's turn number.")
 
 
-class LoopPinAdded(Event):
-    """An operator instruction was pinned in context."""
-
-    TYPE: ClassVar[str] = "loop.pin.added"
-    text: str = pydantic.Field(description="The event's text.")
-    chars: int = pydantic.Field(description="Text length in characters.")
-    count: int = pydantic.Field(description="Total pinned instructions.")
-
-
-class LoopPinRefused(Event):
-    """An instruction exceeded the pinned-context limit."""
-
-    TYPE: ClassVar[str] = "loop.pin.refused"
-    chars: int = pydantic.Field(description="Text length in characters.")
-    limit: int = pydantic.Field(description="Pinned instruction character limit.")
-
-
-class LoopPinRestored(Event):
-    """A resumed or forked execution restored pinned instructions."""
-
-    TYPE: ClassVar[str] = "loop.pin.restored"
-    pins: Sequence[Any] = pydantic.Field(description="The full list of pinned instructions.")
-    count: int = pydantic.Field(description="Total pinned instructions.")
-
-
-class LoopPlanFinishNudge(Event):
-    """The model was asked to finish its plan within the remaining budget."""
-
-    TYPE: ClassVar[str] = "loop.plan_finish.nudge"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    budget_remaining: float | None = pydantic.Field(
-        default=None,
-        description="Remaining budget fraction; null without a finite cap.",
-    )
-
-
-class LoopPlanReadFailed(Event):
-    """The plan could not be read."""
-
-    TYPE: ClassVar[str] = "loop.plan_read.failed"
-    path: str = pydantic.Field(description="The plan's file path.")
-    error: str = pydantic.Field(description="The failure diagnostic.")
-
-
-class LoopPlanReread(Event):
-    """The plan was read back into context."""
-
-    TYPE: ClassVar[str] = "loop.plan_reread"
-    path: str = pydantic.Field(description="The plan's file path.")
-    bytes: int = pydantic.Field(description="UTF-8 text length in bytes.")
-
-
-class LoopPlanWriteFailed(Event):
-    """The plan could not be written."""
-
-    TYPE: ClassVar[str] = "loop.plan_write.failed"
-    path: str = pydantic.Field(description="The plan's file path.")
-    error: str = pydantic.Field(description="The failure diagnostic.")
-
-
-class LoopPlanWritten(Event):
-    """The plan was written to disk."""
-
-    TYPE: ClassVar[str] = "loop.plan_written"
-    path: str = pydantic.Field(description="The plan's file path.")
-    bytes: int = pydantic.Field(description="UTF-8 text length in bytes.")
-
-
-class LoopProviderEmptyToolCallRetry(Event):
-    """A provider response with empty tool calls was retried."""
-
-    TYPE: ClassVar[str] = "loop.provider.empty_tool_call_retry"
-    attempt: int = pydantic.Field(description="Retry attempt number.")
-    stop_reason: str = pydantic.Field(description="The provider's response stop reason.")
-
-
-class LoopProviderFatal(Event):
-    """A non-retryable provider error stopped the call."""
-
-    TYPE: ClassVar[str] = "loop.provider.fatal"
-    status_code: int | None = pydantic.Field(
-        default=None,
-        description="HTTP status code when available.",
-    )
-    error: str = pydantic.Field(description="The failure diagnostic.")
-
-
-class LoopProviderRetry(Event):
-    """A provider error prompted another attempt."""
-
-    TYPE: ClassVar[str] = "loop.provider.retry"
-    attempt: int = pydantic.Field(description="Retry attempt number.")
-    error: str = pydantic.Field(description="The failure diagnostic.")
-
-
-class LoopQuestionDelivered(Event):
-    """Queued answers were delivered to the model."""
-
-    TYPE: ClassVar[str] = "loop.question.delivered"
-    ids: Sequence[Any] = pydantic.Field(description="Identifiers of the delivered questions.")
-
-
-class LoopQuestionNudge(Event):
-    """A silent finish ended on a question and was returned to the model."""
-
-    TYPE: ClassVar[str] = "loop.question_nudge"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-
-
-class LoopReasoningStarvation(Event):
-    """Reasoning consumed a response without usable output."""
-
-    TYPE: ClassVar[str] = "loop.reasoning_starvation"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    reasoning_chars: int = pydantic.Field(description="Reasoning output length in characters.")
-    output_tokens: int = pydantic.Field(description="Output token count.")
-    stop_reason: str | None = pydantic.Field(
-        default=None,
-        description="The provider's response stop reason.",
-    )
-
-
-class LoopRequestRefused(Event):
-    """An operator task-graph request could not be applied."""
-
-    TYPE: ClassVar[str] = "loop.request.refused"
-    kind: str = pydantic.Field(description="The request or authentication operation kind.")
-    text: str = pydantic.Field(description="The event's text.")
-    error: str = pydantic.Field(description="The failure diagnostic.")
-
-
-class LoopResumeInterrupted(Event):
-    """Resume found tool calls that never returned and will not be rerun."""
-
-    TYPE: ClassVar[str] = "loop.resume.interrupted"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    tools: Sequence[Any] = pydantic.Field(
-        description="Interrupted tool calls that will not be rerun.",
-    )
-
-
-class LoopReviewFindingReopened(Event):
-    """An operator reopened a finding."""
-
-    TYPE: ClassVar[str] = "loop.review.finding.reopened"
-    finding_id: str = pydantic.Field(description="Finding identifier.")
-    request_id: str = pydantic.Field(
-        description="Request identifier used to correlate or deduplicate work.",
-    )
-    source: str = pydantic.Field(description="Where the request or result came from.")
-    version: int = pydantic.Field(description="Review-state version after the action.")
-    reason: str = pydantic.Field(description="The reason for the outcome.")
-
-
-class LoopReviewFindingResolved(Event):
-    """An operator recorded a finding's disposition."""
-
-    TYPE: ClassVar[str] = "loop.review.finding.resolved"
-    finding_id: str = pydantic.Field(description="Finding identifier.")
-    request_id: str = pydantic.Field(
-        description="Request identifier used to correlate or deduplicate work.",
-    )
-    source: str = pydantic.Field(description="Where the request or result came from.")
-    version: int = pydantic.Field(description="Review-state version after the action.")
-    resolution: dict[str, Any] = pydantic.Field(
-        description="The finding's disposition and supporting reason.",
-    )
-
-
-class LoopReviewFixFailed(Event):
-    """A finding's fix request could not be delivered."""
-
-    TYPE: ClassVar[str] = "loop.review.fix.failed"
-    finding_id: str = pydantic.Field(description="Finding identifier.")
-    request_id: str = pydantic.Field(
-        description="Request identifier used to correlate or deduplicate work.",
-    )
-    source: str = pydantic.Field(description="Where the request or result came from.")
-    version: int = pydantic.Field(description="Review-state version after the action.")
-    error: str = pydantic.Field(description="The failure diagnostic.")
-
-
-class LoopReviewFixRequested(Event):
-    """An operator requested a fix for a finding."""
-
-    TYPE: ClassVar[str] = "loop.review.fix.requested"
-    finding_id: str = pydantic.Field(description="Finding identifier.")
-    request_id: str = pydantic.Field(
-        description="Request identifier used to correlate or deduplicate work.",
-    )
-    source: str = pydantic.Field(description="Where the request or result came from.")
-    version: int = pydantic.Field(description="Review-state version after the action.")
-    target: dict[str, Any] = pydantic.Field(
-        description="The immutable review target, or provider request class.",
-    )
-    action: str = pydantic.Field(description="Fix delivery action: live-steer or resume.")
-
-
-class LoopReviewFixSubmitted(Event):
-    """A finding's fix request reached an execution."""
-
-    TYPE: ClassVar[str] = "loop.review.fix.submitted"
-    finding_id: str = pydantic.Field(description="Finding identifier.")
-    request_id: str = pydantic.Field(
-        description="Request identifier used to correlate or deduplicate work.",
-    )
-    source: str = pydantic.Field(description="Where the request or result came from.")
-    version: int = pydantic.Field(description="Review-state version after the action.")
-    execution_id: str = pydantic.Field(description="Execution identifier.")
-
-
-class LoopReviewPanel(Event):
-    """A review panel completed and recorded its evidence and blocking decision."""
-
-    TYPE: ClassVar[str] = "loop.review.panel"
-    panel_id: str = pydantic.Field(description="Review panel identifier.")
-    execution_id: str = pydantic.Field(description="Execution identifier.")
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    trigger: str = pydantic.Field(description="The action that triggered the gate or panel.")
-    target: dict[str, Any] = pydantic.Field(
-        description="The immutable review target, or provider request class.",
-    )
-    findings: Sequence[Any] = pydantic.Field(description="Grounded findings or panel observations.")
-    injected_finding_ids: Sequence[Any] = pydantic.Field(
-        description="Finding identifiers supplied to the worker.",
-    )
-    block_on: str = pydantic.Field(description="The configured panel blocking rule.")
-    roster: Sequence[Any] | None = pydantic.Field(
-        default=None,
-        description="The seats that sat: index, model route, focus, scope and temperature.",
-    )
-    raw_blocked: bool = pydantic.Field(description="Whether the verdicts meet the blocking rule.")
-    blocked: bool = pydantic.Field(description="Whether the armed gate blocks the finish.")
-    disarmed: bool = pydantic.Field(
-        description="Whether the review gate's rejection cap disarmed it.",
-    )
-    n_block: int = pydantic.Field(description="Number of distinct blocking provider/model routes.")
-    n_abstain: int = pydantic.Field(description="Number of abstaining seats.")
-    completion: str = pydantic.Field(description="Whether the panel completed or was inconclusive.")
-
-
-class LoopReviewRejectedFinish(Event):
-    """The review panel rejected the declared finish."""
-
-    TYPE: ClassVar[str] = "loop.review.rejected_finish"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    ending: str = pydantic.Field(description="The declared finish being reviewed.")
-
-
-class LoopReviewRejectionCapReached(Event):
-    """The review gate reached its rejection limit."""
-
-    TYPE: ClassVar[str] = "loop.review.rejection_cap_reached"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    rejections: int = pydantic.Field(description="Number of review rejections.")
-
-
-class LoopReviewReused(Event):
-    """A complete panel over the same trees, paths, seats and rule stood in for a new one."""
-
-    TYPE: ClassVar[str] = "loop.review.reused"
-    panel_id: str = pydantic.Field(description="Review panel identifier.")
-    execution_id: str = pydantic.Field(description="Execution identifier.")
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    trigger: str = pydantic.Field(description="The action that triggered the gate or panel.")
-    reused_panel_id: str = pydantic.Field(description="The complete panel whose verdict stood in.")
-    target: dict[str, Any] = pydantic.Field(
-        description="The immutable review target both panels share.",
-    )
-    findings: int = pydantic.Field(description="How many findings the reused panel recorded.")
-
-
-class LoopReviewSeat(Event):
-    """A review seat returned a grounded verdict or abstained."""
-
-    TYPE: ClassVar[str] = "loop.review.seat"
-    panel_id: str = pydantic.Field(description="Review panel identifier.")
-    execution_id: str = pydantic.Field(description="Execution identifier.")
-    turn: int | None = pydantic.Field(default=None, description="The execution's turn number.")
-    trigger: str | None = pydantic.Field(
-        default=None,
-        description="The action that triggered the gate or panel.",
-    )
-    seat_index: int = pydantic.Field(description="Zero-based review seat index.")
-    focus: str = pydantic.Field(description="The requested summary or review focus.")
-    model_route: str = pydantic.Field(description="The seat's configured model route.")
-    verdict: str = pydantic.Field(description="Seat verdict: pass, block or abstain.")
-    findings: Sequence[Any] = pydantic.Field(description="Grounded findings or panel observations.")
-    summary: str = pydantic.Field(description="The result or outcome in words.")
-    error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
-    session_id: str = pydantic.Field(
-        default="", description="The read-only seat session, when assigned."
-    )
-
-
-class LoopReviewSkipped(Event):
-    """A review panel could not run."""
-
-    TYPE: ClassVar[str] = "loop.review.skipped"
-    panel_id: str = pydantic.Field(description="Review panel identifier.")
-    execution_id: str = pydantic.Field(description="Execution identifier.")
-    turn: int | None = pydantic.Field(default=None, description="The execution's turn number.")
-    trigger: str | None = pydantic.Field(
-        default=None,
-        description="The action that triggered the gate or panel.",
-    )
-    reason: str = pydantic.Field(description="The reason for the outcome.")
-    error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
-    remaining: float | None = pydantic.Field(default=None, description="Remaining budget fraction.")
-
-
-class LoopReviewStart(Event):
-    """A review panel began over an immutable target."""
-
-    TYPE: ClassVar[str] = "loop.review.start"
-    panel_id: str = pydantic.Field(description="Review panel identifier.")
-    execution_id: str = pydantic.Field(description="Execution identifier.")
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    trigger: str = pydantic.Field(description="The action that triggered the gate or panel.")
-    target: dict[str, Any] = pydantic.Field(
-        description="The immutable review target, or provider request class.",
-    )
-    rule_sources: Sequence[Any] = pydantic.Field(
-        description="Base-tree rule files supplied to the panel.",
-    )
-    rules_complete: bool = pydantic.Field(description="Whether every required rule was supplied.")
-    rules_reason: str | None = pydantic.Field(
-        default=None,
-        description="Why rule collection was incomplete; null when complete.",
-    )
-    seats: Sequence[Any] = pydantic.Field(description="The resolved review seat configurations.")
-
-
-class LoopRunBudgetNudge(Event):
-    """The model was asked to finish within its remaining run budget."""
-
-    TYPE: ClassVar[str] = "loop.run_budget.nudge"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    budget_remaining: float | None = pydantic.Field(
-        default=None,
-        description="Remaining budget fraction; null without a finite cap.",
-    )
-
-
-class LoopSandboxToolUnreachable(Event):
-    """A tool found on the host could not run inside the sandbox."""
-
-    TYPE: ClassVar[str] = "loop.sandbox_tool_unreachable"
-    binary: str = pydantic.Field(description="The unreachable executable's name.")
-
-
-class LoopSilentNoWorkNudge(Event):
-    """A silent finish without work was returned to the model."""
-
-    TYPE: ClassVar[str] = "loop.silent_no_work.nudge"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
-
-
-class LoopSkillsWarning(Event):
-    """A skill declaration produced a warning."""
-
-    TYPE: ClassVar[str] = "loop.skills.warning"
-    warning: str = pydantic.Field(description="The skill diagnostic.")
-
-
-class LoopStagnationNudged(Event):
-    """Elapsed time without edits or verification prompted a warning."""
-
-    TYPE: ClassVar[str] = "loop.stagnation.nudged"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    elapsed_s: int = pydantic.Field(description="Elapsed seconds without edits or verification.")
-
-
-class LoopStandingResumed(Event):
-    """A standing goal resumed after absorbing a soft stop."""
-
-    TYPE: ClassVar[str] = "loop.standing.resumed"
-    reason: str = pydantic.Field(description="The reason for the outcome.")
-    task_id: str = pydantic.Field(description="Task identifier.")
-    turn: int = pydantic.Field(description="The execution's turn number.")
-
-
-class LoopStandingSet(Event):
-    """The operator set a standing goal."""
-
-    TYPE: ClassVar[str] = "loop.standing.set"
-    task_id: str = pydantic.Field(description="Task identifier.")
-    title: str = pydantic.Field(description="Task or standing-goal text.")
-
-
-class LoopSteerAborted(Event):
-    """The operator's steer aborted the run."""
-
-    TYPE: ClassVar[str] = "loop.steer.aborted"
-
-
-class LoopSteerDetached(Event):
-    """The operator's steer stopped the run for background resume."""
-
-    TYPE: ClassVar[str] = "loop.steer.detached"
-
-
-class LoopSteerExited(Event):
-    """The operator's steer ended the run and left the terminal."""
-
-    TYPE: ClassVar[str] = "loop.steer.exited"
-
-
-class LoopSteerFeedback(Event):
-    """A steer directive returned feedback without invoking the model."""
-
-    TYPE: ClassVar[str] = "loop.steer.feedback"
-    text: str = pydantic.Field(description="The feedback for the operator.")
-
-
-class LoopSteerInjected(Event):
-    """An operator instruction was injected into context."""
-
-    TYPE: ClassVar[str] = "loop.steer.injected"
-    chars: int = pydantic.Field(description="Text length in characters.")
-    text: str = pydantic.Field(description="The event's text.")
-
-
-class LoopSteerRequested(Event):
-    """The loop reached an operator steer request."""
-
-    TYPE: ClassVar[str] = "loop.steer.requested"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-
-
-class LoopSteerSkill(Event):
-    """An operator steer invoked a skill."""
-
-    TYPE: ClassVar[str] = "loop.steer.skill"
-    name: str = pydantic.Field(description="Tool or skill name.")
-    args: str = pydantic.Field(
-        description="Tool argument preview, or the skill invocation's argument text.",
-    )
-
-
-class LoopSteerUndo(Event):
-    """The operator's steer requested an undo fork."""
-
-    TYPE: ClassVar[str] = "loop.steer.undo"
-
-
-class LoopTaskQueued(Event):
-    """The operator queued a task."""
-
-    TYPE: ClassVar[str] = "loop.task.queued"
-    task_id: str = pydantic.Field(description="Task identifier.")
-    title: str = pydantic.Field(description="Task or standing-goal text.")
-
-
-class LoopTaskRetired(Event):
-    """The operator retired a task."""
-
-    TYPE: ClassVar[str] = "loop.task.retired"
-    task_id: str = pydantic.Field(description="Task identifier.")
-    title: str = pydantic.Field(description="Task or standing-goal text.")
-
-
-class LoopTaskStuckNudge(Event):
-    """Time on one task prompted a change of approach."""
-
-    TYPE: ClassVar[str] = "loop.task.stuck_nudge"
-    task_id: str = pydantic.Field(description="Task identifier.")
-    turns: int = pydantic.Field(
-        description="Number of execution turns, or turns spent on one task.",
-    )
-    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
-
-
-class LoopTaskSurfaced(Event):
-    """A task became the current focus."""
-
-    TYPE: ClassVar[str] = "loop.task.surfaced"
-    task_id: str = pydantic.Field(description="Task identifier.")
-
-
-class LoopTaskFinishGated(Event):
-    """A finish with open subtasks was returned to the model."""
-
-    TYPE: ClassVar[str] = "loop.task_finish.gated"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
-    trigger: str = pydantic.Field(description="The action that triggered the gate or panel.")
-
-
-class LoopTestOnlyGreenNotice(Event):
-    """Verification passed after changes confined to tests."""
-
-    TYPE: ClassVar[str] = "loop.test_only_green.notice"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    paths: Sequence[Any] = pydantic.Field(description="Affected repository-relative paths.")
-
-
-class LoopToolErrorNudge(Event):
-    """Repeated tool errors prompted a warning."""
-
-    TYPE: ClassVar[str] = "loop.tool_error.nudge"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    streak: int = pydantic.Field(description="Number of consecutive matching turns or calls.")
-    level: int = pydantic.Field(description="The warning's escalation level.")
-
-
-class LoopVerifyBrokenNudge(Event):
-    """An unusable verify command prompted a correction request."""
-
-    TYPE: ClassVar[str] = "loop.verify_broken.nudge"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-
-
-class LoopVerifyFinishGated(Event):
-    """A finish without green verification was returned to the model."""
-
-    TYPE: ClassVar[str] = "loop.verify_finish.gated"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
-    trigger: str = pydantic.Field(description="The action that triggered the gate or panel.")
-
-
-class LoopVerifyHarness(Event):
-    """The harness requested verification."""
-
-    TYPE: ClassVar[str] = "loop.verify_harness"
-    reason: str = pydantic.Field(description="Why the harness requested verification.")
-    turn: int = pydantic.Field(description="The execution's turn number.")
-
-
-class LoopVerifyInferred(Event):
-    """The verify command was inferred, restored, adopted or disabled."""
-
-    TYPE: ClassVar[str] = "loop.verify_inferred"
-    command: Sequence[Any] = pydantic.Field(
-        description="Resolved verify argv; empty when no command is adopted.",
-    )
-    source: str = pydantic.Field(description="Where the request or result came from.")
-    adopted_at: int | None = pydantic.Field(
-        default=None,
-        description="Turn where the gate was adopted, restored or dropped.",
-    )
-
-
-class LoopVerifyScoped(Event):
-    """Verification was narrowed to tests near the changed files."""
-
-    TYPE: ClassVar[str] = "loop.verify_scoped"
-    paths: Sequence[Any] = pydantic.Field(description="Affected repository-relative paths.")
-    turn: int = pydantic.Field(description="The execution's turn number.")
-
-
-class LoopVerifySettledNudge(Event):
-    """Repeated green verification without edits prompted a finish request."""
-
-    TYPE: ClassVar[str] = "loop.verify_settled.nudge"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    idle: int = pydantic.Field(description="Consecutive settled turns.")
-
-
-class LoopVerifySwapped(Event):
-    """Resume replaced the saved verify command."""
-
-    TYPE: ClassVar[str] = "loop.verify_swapped"
-    was: Sequence[Any] = pydantic.Field(description="Saved verification argv.")
-    now: Sequence[Any] = pydantic.Field(description="Replacement verification argv.")
-
-
-class LoopWentQuietNudge(Event):
-    """A response without tool calls prompted the model to continue."""
-
-    TYPE: ClassVar[str] = "loop.went_quiet.nudge"
-    turn: int = pydantic.Field(description="The execution's turn number.")
-    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
-    nudges_max: int = pydantic.Field(description="Maximum notices allowed for this condition.")
-    output_tokens: int = pydantic.Field(description="Output token count.")
-
-
 class McpServerUnavailable(Event):
     """A configured MCP server could not start."""
 
     TYPE: ClassVar[str] = "mcp.server_unavailable"
     server: str = pydantic.Field(description="Configured MCP server name.")
     error: str = pydantic.Field(description="The failure diagnostic.")
+
+
+class MediaRefused(Event):
+    """An attachment was refused by its tool or model route."""
+
+    TYPE: ClassVar[str] = "media.refused"
+    provider_tool_call_id: str = pydantic.Field(description="The provider's tool-use identifier.")
+    reason: str = pydantic.Field(description="The reason for the outcome.")
+    route: str | None = pydantic.Field(
+        default=None,
+        description="The model route that refused the attachment.",
+    )
+    text: str | None = pydantic.Field(default=None, description="The event's text.")
+    attachment: dict[str, Any] | None = pydantic.Field(
+        default=None,
+        description="Attachment metadata without its binary content.",
+    )
+
+
+class MetricAutoCall(Event):
+    """An automatic metric sample started."""
+
+    TYPE: ClassVar[str] = "metric.auto_call"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    sha: str = pydantic.Field(description="The commit identifier, possibly abbreviated.")
+
+
+class MetricAutoFailed(Event):
+    """An automatic metric sample failed."""
+
+    TYPE: ClassVar[str] = "metric.auto_failed"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    error: str = pydantic.Field(description="The failure diagnostic.")
+
+
+class MetricCeilingReached(Event):
+    """The metric ceiling ended the run."""
+
+    TYPE: ClassVar[str] = "metric.ceiling_reached"
+    turn: int = pydantic.Field(description="The execution's turn number.")
 
 
 class MetricEnd(Event):
@@ -1235,6 +555,23 @@ class MetricEnd(Event):
     )
 
 
+class MetricSample(Event):
+    """A metric sample was recorded."""
+
+    TYPE: ClassVar[str] = "metric.sample"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    label: str = pydantic.Field(description="Metric sample label.")
+    score: float | None = pydantic.Field(
+        default=None,
+        description="Parsed metric score; null when unavailable.",
+    )
+    exit_code: int | None = pydantic.Field(
+        default=None,
+        description="Command exit code; null when unavailable.",
+    )
+    sha: str = pydantic.Field(description="The commit identifier, possibly abbreviated.")
+
+
 class MetricStart(Event):
     """The metric command started."""
 
@@ -1242,73 +579,10 @@ class MetricStart(Event):
     command: Sequence[Any] = pydantic.Field(description="Command argv.")
 
 
-class ProviderAuth(Event):
-    """A provider credential refresh, exchange or recovery finished."""
+class ModelAttempt(Event):
+    """One request attempt of a model call ended; the ending attempt's model.result follows."""
 
-    TYPE: ClassVar[str] = "provider.auth"
-    provider: str = pydantic.Field(description="Configured provider name.")
-    kind: str = pydantic.Field(description="The request or authentication operation kind.")
-    outcome: str = pydantic.Field(description="The operation's outcome.")
-
-
-class ProviderRequest(Event):
-    """An HTTP attempt was made for a model call."""
-
-    TYPE: ClassVar[str] = "provider.request"
-    execution_id: str | None = pydantic.Field(
-        default=None,
-        description="The execution the call ran in; null for a call outside one.",
-    )
-    role: str = pydantic.Field(description="The calling model role.")
-    provider: str = pydantic.Field(description="Configured provider name.")
-    model: str = pydantic.Field(description="Model identifier.")
-    model_call_id: str = pydantic.Field(
-        description="The logical model call that made this request.",
-    )
-    panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
-    seat_index: int | None = pydantic.Field(
-        default=None,
-        description="Zero-based review seat index.",
-    )
-    request_id: str = pydantic.Field(
-        description="HTTP attempt identifier, also stored at the transcript's top level.",
-    )
-    target: str = pydantic.Field(
-        description="The immutable review target, or provider request class.",
-    )
-
-
-class QuestionAnswer(Event):
-    """The operator answered questions or nobody could answer."""
-
-    TYPE: ClassVar[str] = "question.answer"
-    id: str = pydantic.Field(description="Question prompt identifier.")
-    answers: Sequence[Any] = pydantic.Field(
-        description="Answers aligned with the requested questions.",
-    )
-    source: str = pydantic.Field(description="Where the request or result came from.")
-    unseen: bool = pydantic.Field(
-        description="Whether nobody could answer and no question remains queued.",
-    )
-
-
-class QuestionPrompt(Event):
-    """Questions were presented to the operator."""
-
-    TYPE: ClassVar[str] = "question.prompt"
-    id: str = pydantic.Field(description="Question prompt identifier.")
-    questions: Sequence[Any] = pydantic.Field(description="The questions presented.")
-    call_id: int | None = pydantic.Field(
-        default=None,
-        description="The tool call correlated with this event.",
-    )
-    wait: bool = pydantic.Field(description="Whether the call waits for answers.")
-
-
-class RoleAttempt(Event):
-    """One request attempt of a model call ended; the ending attempt's role.result follows."""
-
-    TYPE: ClassVar[str] = "role.attempt"
+    TYPE: ClassVar[str] = "model.attempt"
     execution_id: str | None = pydantic.Field(
         default=None,
         description="The execution the call ran in; null for a call outside one.",
@@ -1357,10 +631,10 @@ class RoleAttempt(Event):
     error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
 
 
-class RoleCall(Event):
+class ModelCall(Event):
     """A model call started for a role."""
 
-    TYPE: ClassVar[str] = "role.call"
+    TYPE: ClassVar[str] = "model.call"
     execution_id: str | None = pydantic.Field(
         default=None,
         description="The execution the call ran in; null for a call outside one.",
@@ -1378,10 +652,23 @@ class RoleCall(Event):
     )
 
 
-class RoleResult(Event):
+class ModelReasoningStarvation(Event):
+    """Reasoning consumed a response without usable output."""
+
+    TYPE: ClassVar[str] = "model.reasoning_starvation"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    reasoning_chars: int = pydantic.Field(description="Reasoning output length in characters.")
+    output_tokens: int = pydantic.Field(description="Output token count.")
+    stop_reason: str | None = pydantic.Field(
+        default=None,
+        description="The provider's response stop reason.",
+    )
+
+
+class ModelResult(Event):
     """A model call returned or failed, once per logical call, with its last attempt's usage."""
 
-    TYPE: ClassVar[str] = "role.result"
+    TYPE: ClassVar[str] = "model.result"
     execution_id: str | None = pydantic.Field(
         default=None,
         description="The execution the call ran in; null for a call outside one.",
@@ -1426,10 +713,10 @@ class RoleResult(Event):
     error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
 
 
-class RoleTextDelta(Event):
+class ModelTextDelta(Event):
     """A piece of assistant text streamed."""
 
-    TYPE: ClassVar[str] = "role.text_delta"
+    TYPE: ClassVar[str] = "model.text_delta"
     role: str = pydantic.Field(description="The calling model role.")
     text: str = pydantic.Field(description="The event's text.")
     execution_id: str | None = pydantic.Field(
@@ -1447,10 +734,10 @@ class RoleTextDelta(Event):
     )
 
 
-class RoleThinkingDelta(Event):
+class ModelThinkingDelta(Event):
     """A piece of assistant reasoning streamed."""
 
-    TYPE: ClassVar[str] = "role.thinking_delta"
+    TYPE: ClassVar[str] = "model.thinking_delta"
     role: str = pydantic.Field(description="The calling model role.")
     text: str = pydantic.Field(description="The event's text.")
     execution_id: str | None = pydantic.Field(
@@ -1466,6 +753,539 @@ class RoleThinkingDelta(Event):
         default=None,
         description="The review seat's roster position; null outside a review seat.",
     )
+
+
+class NudgeLoopGuard(Event):
+    """Repeated identical tool calls triggered a warning."""
+
+    TYPE: ClassVar[str] = "nudge.loop_guard"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    tool: str = pydantic.Field(description="The repeated tool's name.")
+    streak: int = pydantic.Field(description="Number of consecutive matching turns or calls.")
+
+
+class NudgeMemoryFlip(Event):
+    """Verification turned green and the model was asked to record the lesson."""
+
+    TYPE: ClassVar[str] = "nudge.memory_flip"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+
+
+class NudgeMetricPlateau(Event):
+    """A metric plateau prompted another attempt."""
+
+    TYPE: ClassVar[str] = "nudge.metric_plateau"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
+    budget_remaining: float | None = pydantic.Field(
+        default=None,
+        description="Remaining budget fraction; null without a finite cap.",
+    )
+
+
+class NudgeNoProgress(Event):
+    """Repeated turns without progress prompted a warning."""
+
+    TYPE: ClassVar[str] = "nudge.no_progress"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    streak: int = pydantic.Field(description="Number of consecutive matching turns or calls.")
+    level: int = pydantic.Field(description="The warning's escalation level.")
+
+
+class NudgePlanFinish(Event):
+    """The model was asked to finish its plan within the remaining budget."""
+
+    TYPE: ClassVar[str] = "nudge.plan_finish"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    budget_remaining: float | None = pydantic.Field(
+        default=None,
+        description="Remaining budget fraction; null without a finite cap.",
+    )
+
+
+class NudgeQuestion(Event):
+    """A silent finish ended on a question and was returned to the model."""
+
+    TYPE: ClassVar[str] = "nudge.question"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+
+
+class NudgeRunBudget(Event):
+    """The model was asked to finish within its remaining run budget."""
+
+    TYPE: ClassVar[str] = "nudge.run_budget"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    budget_remaining: float | None = pydantic.Field(
+        default=None,
+        description="Remaining budget fraction; null without a finite cap.",
+    )
+
+
+class NudgeSilentNoWork(Event):
+    """A silent finish without work was returned to the model."""
+
+    TYPE: ClassVar[str] = "nudge.silent_no_work"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
+
+
+class NudgeStagnation(Event):
+    """Elapsed time without edits or verification prompted a warning."""
+
+    TYPE: ClassVar[str] = "nudge.stagnation"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    elapsed_s: int = pydantic.Field(description="Elapsed seconds without edits or verification.")
+
+
+class NudgeTaskStuck(Event):
+    """Time on one task prompted a change of approach."""
+
+    TYPE: ClassVar[str] = "nudge.task_stuck"
+    task_id: str = pydantic.Field(description="Task identifier.")
+    turns: int = pydantic.Field(
+        description="Number of execution turns, or turns spent on one task.",
+    )
+    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
+
+
+class NudgeToolError(Event):
+    """Repeated tool errors prompted a warning."""
+
+    TYPE: ClassVar[str] = "nudge.tool_error"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    streak: int = pydantic.Field(description="Number of consecutive matching turns or calls.")
+    level: int = pydantic.Field(description="The warning's escalation level.")
+
+
+class NudgeVerifyBroken(Event):
+    """An unusable verify command prompted a correction request."""
+
+    TYPE: ClassVar[str] = "nudge.verify_broken"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+
+
+class NudgeVerifySettled(Event):
+    """Repeated green verification without edits prompted a finish request."""
+
+    TYPE: ClassVar[str] = "nudge.verify_settled"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    idle: int = pydantic.Field(description="Consecutive settled turns.")
+
+
+class NudgeWentQuiet(Event):
+    """A response without tool calls prompted the model to continue."""
+
+    TYPE: ClassVar[str] = "nudge.went_quiet"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
+    nudges_max: int = pydantic.Field(description="Maximum notices allowed for this condition.")
+    output_tokens: int = pydantic.Field(description="Output token count.")
+
+
+class OperatorPresence(Event):
+    """The operator's observed attachment state changed."""
+
+    TYPE: ClassVar[str] = "operator.presence"
+    presence: str = pydantic.Field(description="The observed operator attachment and away state.")
+
+
+class ParallelCompared(Event):
+    """Parallel candidates were ranked."""
+
+    TYPE: ClassVar[str] = "parallel.compared"
+    group: str = pydantic.Field(description="Parallel dispatch group identifier.")
+    ranked_by: str = pydantic.Field(description="The method used to rank the candidates.")
+    rationale: str = pydantic.Field(description="The ranking explanation.")
+    ranking: Sequence[Any] = pydantic.Field(
+        description="Candidates in ranked order with their verify and cost readings.",
+    )
+    judge_cost_usd: float = pydantic.Field(description="Ranking judge spend in USD.")
+    judge_cost_partial: bool = pydantic.Field(
+        description="Whether the judge spend is a lower bound.",
+    )
+
+
+class ParallelDispatched(Event):
+    """Parallel lanes were dispatched."""
+
+    TYPE: ClassVar[str] = "parallel.dispatched"
+    group: str = pydantic.Field(description="Parallel dispatch group identifier.")
+    lanes: int = pydantic.Field(
+        description="Lane count for dispatch, or lane results for completion.",
+    )
+    tasks: Sequence[Any] = pydantic.Field(description="Task texts sent to the lanes.")
+    source: str = pydantic.Field(
+        default="operator",
+        description="Who dispatched: operator (a steer), model (the tool) or panel.",
+    )
+
+
+class ParallelFailed(Event):
+    """Parallel lane dispatch or execution failed."""
+
+    TYPE: ClassVar[str] = "parallel.failed"
+    group: str = pydantic.Field(description="Parallel dispatch group identifier.")
+    fanout: bool | None = pydantic.Field(
+        default=None,
+        description="Whether the failed group was a top-level fan-out.",
+    )
+    lanes: Sequence[Any] | None = pydantic.Field(
+        default=None,
+        description="Lane count for dispatch, or lane results for completion.",
+    )
+    error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
+
+
+class ParallelJoined(Event):
+    """Parallel lane results returned."""
+
+    TYPE: ClassVar[str] = "parallel.joined"
+    group: str = pydantic.Field(description="Parallel dispatch group identifier.")
+    lanes: Sequence[Any] = pydantic.Field(
+        description="Lane count for dispatch, or lane results for completion.",
+    )
+    source: str = pydantic.Field(
+        default="operator",
+        description="Who dispatched: operator (a steer), model (the tool) or panel.",
+    )
+
+
+class PinAdded(Event):
+    """An operator instruction was pinned in context."""
+
+    TYPE: ClassVar[str] = "pin.added"
+    text: str = pydantic.Field(description="The event's text.")
+    chars: int = pydantic.Field(description="Text length in characters.")
+    count: int = pydantic.Field(description="Total pinned instructions.")
+
+
+class PinRefused(Event):
+    """An instruction exceeded the pinned-context limit."""
+
+    TYPE: ClassVar[str] = "pin.refused"
+    chars: int = pydantic.Field(description="Text length in characters.")
+    limit: int = pydantic.Field(description="Pinned instruction character limit.")
+
+
+class PinRestored(Event):
+    """A resumed or forked execution restored pinned instructions."""
+
+    TYPE: ClassVar[str] = "pin.restored"
+    pins: Sequence[Any] = pydantic.Field(description="The full list of pinned instructions.")
+    count: int = pydantic.Field(description="Total pinned instructions.")
+
+
+class PlanReadFailed(Event):
+    """The plan could not be read."""
+
+    TYPE: ClassVar[str] = "plan.read_failed"
+    path: str = pydantic.Field(description="The plan's file path.")
+    error: str = pydantic.Field(description="The failure diagnostic.")
+
+
+class PlanReread(Event):
+    """The plan was read back into context."""
+
+    TYPE: ClassVar[str] = "plan.reread"
+    path: str = pydantic.Field(description="The plan's file path.")
+    bytes: int = pydantic.Field(description="UTF-8 text length in bytes.")
+
+
+class PlanWriteFailed(Event):
+    """The plan could not be written."""
+
+    TYPE: ClassVar[str] = "plan.write_failed"
+    path: str = pydantic.Field(description="The plan's file path.")
+    error: str = pydantic.Field(description="The failure diagnostic.")
+
+
+class PlanWritten(Event):
+    """The plan was written to disk."""
+
+    TYPE: ClassVar[str] = "plan.written"
+    path: str = pydantic.Field(description="The plan's file path.")
+    bytes: int = pydantic.Field(description="UTF-8 text length in bytes.")
+
+
+class ProviderAuth(Event):
+    """A provider credential refresh, exchange or recovery finished."""
+
+    TYPE: ClassVar[str] = "provider.auth"
+    provider: str = pydantic.Field(description="Configured provider name.")
+    kind: str = pydantic.Field(description="The request or authentication operation kind.")
+    outcome: str = pydantic.Field(description="The operation's outcome.")
+
+
+class ProviderEmptyToolCallRetry(Event):
+    """A provider response with empty tool calls was retried."""
+
+    TYPE: ClassVar[str] = "provider.empty_tool_call_retry"
+    attempt: int = pydantic.Field(description="Retry attempt number.")
+    stop_reason: str = pydantic.Field(description="The provider's response stop reason.")
+
+
+class ProviderFatal(Event):
+    """A non-retryable provider error stopped the call."""
+
+    TYPE: ClassVar[str] = "provider.fatal"
+    status_code: int | None = pydantic.Field(
+        default=None,
+        description="HTTP status code when available.",
+    )
+    error: str = pydantic.Field(description="The failure diagnostic.")
+
+
+class ProviderRequest(Event):
+    """An HTTP attempt was made for a model call."""
+
+    TYPE: ClassVar[str] = "provider.request"
+    execution_id: str | None = pydantic.Field(
+        default=None,
+        description="The execution the call ran in; null for a call outside one.",
+    )
+    role: str = pydantic.Field(description="The calling model role.")
+    provider: str = pydantic.Field(description="Configured provider name.")
+    model: str = pydantic.Field(description="Model identifier.")
+    model_call_id: str = pydantic.Field(
+        description="The logical model call that made this request.",
+    )
+    panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
+    seat_index: int | None = pydantic.Field(
+        default=None,
+        description="Zero-based review seat index.",
+    )
+    request_id: str = pydantic.Field(
+        description="HTTP attempt identifier, also stored at the transcript's top level.",
+    )
+    target: str = pydantic.Field(
+        description="The immutable review target, or provider request class.",
+    )
+
+
+class ProviderRetry(Event):
+    """A provider error prompted another attempt."""
+
+    TYPE: ClassVar[str] = "provider.retry"
+    attempt: int = pydantic.Field(description="Retry attempt number.")
+    error: str = pydantic.Field(description="The failure diagnostic.")
+
+
+class QuestionAnswer(Event):
+    """The operator answered questions or nobody could answer."""
+
+    TYPE: ClassVar[str] = "question.answer"
+    id: str = pydantic.Field(description="Question prompt identifier.")
+    answers: Sequence[Any] = pydantic.Field(
+        description="Answers aligned with the requested questions.",
+    )
+    source: str = pydantic.Field(description="Where the request or result came from.")
+    unseen: bool = pydantic.Field(
+        description="Whether nobody could answer and no question remains queued.",
+    )
+
+
+class QuestionDelivered(Event):
+    """Queued answers were delivered to the model."""
+
+    TYPE: ClassVar[str] = "question.delivered"
+    ids: Sequence[Any] = pydantic.Field(description="Identifiers of the delivered questions.")
+
+
+class QuestionPrompt(Event):
+    """Questions were presented to the operator."""
+
+    TYPE: ClassVar[str] = "question.prompt"
+    id: str = pydantic.Field(description="Question prompt identifier.")
+    questions: Sequence[Any] = pydantic.Field(description="The questions presented.")
+    call_id: int | None = pydantic.Field(
+        default=None,
+        description="The tool call correlated with this event.",
+    )
+    wait: bool = pydantic.Field(description="Whether the call waits for answers.")
+
+
+class ReviewFindingReopened(Event):
+    """An operator reopened a finding."""
+
+    TYPE: ClassVar[str] = "review.finding.reopened"
+    finding_id: str = pydantic.Field(description="Finding identifier.")
+    request_id: str = pydantic.Field(
+        description="Request identifier used to correlate or deduplicate work.",
+    )
+    source: str = pydantic.Field(description="Where the request or result came from.")
+    version: int = pydantic.Field(description="Review-state version after the action.")
+    reason: str = pydantic.Field(description="The reason for the outcome.")
+
+
+class ReviewFindingResolved(Event):
+    """An operator recorded a finding's disposition."""
+
+    TYPE: ClassVar[str] = "review.finding.resolved"
+    finding_id: str = pydantic.Field(description="Finding identifier.")
+    request_id: str = pydantic.Field(
+        description="Request identifier used to correlate or deduplicate work.",
+    )
+    source: str = pydantic.Field(description="Where the request or result came from.")
+    version: int = pydantic.Field(description="Review-state version after the action.")
+    resolution: dict[str, Any] = pydantic.Field(
+        description="The finding's disposition and supporting reason.",
+    )
+
+
+class ReviewFixFailed(Event):
+    """A finding's fix request could not be delivered."""
+
+    TYPE: ClassVar[str] = "review.fix.failed"
+    finding_id: str = pydantic.Field(description="Finding identifier.")
+    request_id: str = pydantic.Field(
+        description="Request identifier used to correlate or deduplicate work.",
+    )
+    source: str = pydantic.Field(description="Where the request or result came from.")
+    version: int = pydantic.Field(description="Review-state version after the action.")
+    error: str = pydantic.Field(description="The failure diagnostic.")
+
+
+class ReviewFixRequested(Event):
+    """An operator requested a fix for a finding."""
+
+    TYPE: ClassVar[str] = "review.fix.requested"
+    finding_id: str = pydantic.Field(description="Finding identifier.")
+    request_id: str = pydantic.Field(
+        description="Request identifier used to correlate or deduplicate work.",
+    )
+    source: str = pydantic.Field(description="Where the request or result came from.")
+    version: int = pydantic.Field(description="Review-state version after the action.")
+    target: dict[str, Any] = pydantic.Field(
+        description="The immutable review target, or provider request class.",
+    )
+    action: str = pydantic.Field(description="Fix delivery action: live-steer or resume.")
+
+
+class ReviewFixSubmitted(Event):
+    """A finding's fix request reached an execution."""
+
+    TYPE: ClassVar[str] = "review.fix.submitted"
+    finding_id: str = pydantic.Field(description="Finding identifier.")
+    request_id: str = pydantic.Field(
+        description="Request identifier used to correlate or deduplicate work.",
+    )
+    source: str = pydantic.Field(description="Where the request or result came from.")
+    version: int = pydantic.Field(description="Review-state version after the action.")
+    execution_id: str = pydantic.Field(description="Execution identifier.")
+
+
+class ReviewPanel(Event):
+    """A review panel completed and recorded its evidence and blocking decision."""
+
+    TYPE: ClassVar[str] = "review.panel"
+    panel_id: str = pydantic.Field(description="Review panel identifier.")
+    execution_id: str = pydantic.Field(description="Execution identifier.")
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    trigger: str = pydantic.Field(description="The action that triggered the gate or panel.")
+    target: dict[str, Any] = pydantic.Field(
+        description="The immutable review target, or provider request class.",
+    )
+    findings: Sequence[Any] = pydantic.Field(description="Grounded findings or panel observations.")
+    injected_finding_ids: Sequence[Any] = pydantic.Field(
+        description="Finding identifiers supplied to the worker.",
+    )
+    block_on: str = pydantic.Field(description="The configured panel blocking rule.")
+    roster: Sequence[Any] | None = pydantic.Field(
+        default=None,
+        description="The seats that sat: index, model route, focus, scope and temperature.",
+    )
+    raw_blocked: bool = pydantic.Field(description="Whether the verdicts meet the blocking rule.")
+    blocked: bool = pydantic.Field(description="Whether the armed gate blocks the finish.")
+    disarmed: bool = pydantic.Field(
+        description="Whether the review gate's rejection cap disarmed it.",
+    )
+    n_block: int = pydantic.Field(description="Number of distinct blocking provider/model routes.")
+    n_abstain: int = pydantic.Field(description="Number of abstaining seats.")
+    completion: str = pydantic.Field(description="Whether the panel completed or was inconclusive.")
+
+
+class ReviewRejectionCapReached(Event):
+    """The review gate reached its rejection limit."""
+
+    TYPE: ClassVar[str] = "review.rejection_cap_reached"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    rejections: int = pydantic.Field(description="Number of review rejections.")
+
+
+class ReviewReused(Event):
+    """A complete panel over the same trees, paths, seats and rule stood in for a new one."""
+
+    TYPE: ClassVar[str] = "review.reused"
+    panel_id: str = pydantic.Field(description="Review panel identifier.")
+    execution_id: str = pydantic.Field(description="Execution identifier.")
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    trigger: str = pydantic.Field(description="The action that triggered the gate or panel.")
+    reused_panel_id: str = pydantic.Field(description="The complete panel whose verdict stood in.")
+    target: dict[str, Any] = pydantic.Field(
+        description="The immutable review target both panels share.",
+    )
+    findings: int = pydantic.Field(description="How many findings the reused panel recorded.")
+
+
+class ReviewSeat(Event):
+    """A review seat returned a grounded verdict or abstained."""
+
+    TYPE: ClassVar[str] = "review.seat"
+    panel_id: str = pydantic.Field(description="Review panel identifier.")
+    execution_id: str = pydantic.Field(description="Execution identifier.")
+    turn: int | None = pydantic.Field(default=None, description="The execution's turn number.")
+    trigger: str | None = pydantic.Field(
+        default=None,
+        description="The action that triggered the gate or panel.",
+    )
+    seat_index: int = pydantic.Field(description="Zero-based review seat index.")
+    focus: str = pydantic.Field(description="The requested summary or review focus.")
+    model_route: str = pydantic.Field(description="The seat's configured model route.")
+    verdict: str = pydantic.Field(description="Seat verdict: pass, block or abstain.")
+    findings: Sequence[Any] = pydantic.Field(description="Grounded findings or panel observations.")
+    summary: str = pydantic.Field(description="The result or outcome in words.")
+    error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
+    session_id: str = pydantic.Field(
+        default="", description="The read-only seat session, when assigned."
+    )
+
+
+class ReviewSkipped(Event):
+    """A review panel could not run."""
+
+    TYPE: ClassVar[str] = "review.skipped"
+    panel_id: str = pydantic.Field(description="Review panel identifier.")
+    execution_id: str = pydantic.Field(description="Execution identifier.")
+    turn: int | None = pydantic.Field(default=None, description="The execution's turn number.")
+    trigger: str | None = pydantic.Field(
+        default=None,
+        description="The action that triggered the gate or panel.",
+    )
+    reason: str = pydantic.Field(description="The reason for the outcome.")
+    error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
+    remaining: float | None = pydantic.Field(default=None, description="Remaining budget fraction.")
+
+
+class ReviewStart(Event):
+    """A review panel began over an immutable target."""
+
+    TYPE: ClassVar[str] = "review.start"
+    panel_id: str = pydantic.Field(description="Review panel identifier.")
+    execution_id: str = pydantic.Field(description="Execution identifier.")
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    trigger: str = pydantic.Field(description="The action that triggered the gate or panel.")
+    target: dict[str, Any] = pydantic.Field(
+        description="The immutable review target, or provider request class.",
+    )
+    rule_sources: Sequence[Any] = pydantic.Field(
+        description="Base-tree rule files supplied to the panel.",
+    )
+    rules_complete: bool = pydantic.Field(description="Whether every required rule was supplied.")
+    rules_reason: str | None = pydantic.Field(
+        default=None,
+        description="Why rule collection was incomplete; null when complete.",
+    )
+    seats: Sequence[Any] = pydantic.Field(description="The resolved review seat configurations.")
 
 
 class SessionResume(Event):
@@ -1481,6 +1301,16 @@ class SessionResume(Event):
     execution_id: str = pydantic.Field(description="Execution identifier.")
 
 
+class SessionResumeInterrupted(Event):
+    """Resume found tool calls that never returned and will not be rerun."""
+
+    TYPE: ClassVar[str] = "session.resume.interrupted"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    tools: Sequence[Any] = pydantic.Field(
+        description="Interrupted tool calls that will not be rerun.",
+    )
+
+
 class SessionStart(Event):
     """Emitted once when the session is created."""
 
@@ -1489,13 +1319,6 @@ class SessionStart(Event):
     user_task: str = pydantic.Field(description="The displayed task text.")
     mode: str = pydantic.Field(description="The execution mode.")
     execution_id: str = pydantic.Field(description="Execution identifier.")
-
-
-class SessionSteerRequested(Event):
-    """Ctrl-C requested an operator steer during the run."""
-
-    TYPE: ClassVar[str] = "session.steer_requested"
-    source: str = pydantic.Field(description="Where the request or result came from.")
 
 
 class SessionStop(Event):
@@ -1546,6 +1369,125 @@ class SessionUndone(Event):
     TYPE: ClassVar[str] = "session.undone"
     new_session_id: str = pydantic.Field(description="Identifier of the undo fork.")
     undone_text: str = pydantic.Field(description="The operator message taken back.")
+
+
+class SkillsWarning(Event):
+    """A skill declaration produced a warning."""
+
+    TYPE: ClassVar[str] = "skills.warning"
+    warning: str = pydantic.Field(description="The skill diagnostic.")
+
+
+class StandingResumed(Event):
+    """A standing goal resumed after absorbing a soft stop."""
+
+    TYPE: ClassVar[str] = "standing.resumed"
+    reason: str = pydantic.Field(description="The reason for the outcome.")
+    task_id: str = pydantic.Field(description="Task identifier.")
+    turn: int = pydantic.Field(description="The execution's turn number.")
+
+
+class StandingSet(Event):
+    """The operator set a standing goal."""
+
+    TYPE: ClassVar[str] = "standing.set"
+    task_id: str = pydantic.Field(description="Task identifier.")
+    title: str = pydantic.Field(description="Task or standing-goal text.")
+
+
+class SteerAborted(Event):
+    """The operator's steer aborted the run."""
+
+    TYPE: ClassVar[str] = "steer.aborted"
+
+
+class SteerDetached(Event):
+    """The operator's steer stopped the run for background resume."""
+
+    TYPE: ClassVar[str] = "steer.detached"
+
+
+class SteerExited(Event):
+    """The operator's steer ended the run and left the terminal."""
+
+    TYPE: ClassVar[str] = "steer.exited"
+
+
+class SteerFeedback(Event):
+    """A steer directive returned feedback without invoking the model."""
+
+    TYPE: ClassVar[str] = "steer.feedback"
+    text: str = pydantic.Field(description="The feedback for the operator.")
+
+
+class SteerInjected(Event):
+    """An operator instruction was injected into context."""
+
+    TYPE: ClassVar[str] = "steer.injected"
+    chars: int = pydantic.Field(description="Text length in characters.")
+    text: str = pydantic.Field(description="The event's text.")
+
+
+class SteerRequested(Event):
+    """The loop reached an operator steer request."""
+
+    TYPE: ClassVar[str] = "steer.requested"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+
+
+class SteerSignalled(Event):
+    """Ctrl-C requested an operator steer during the run."""
+
+    TYPE: ClassVar[str] = "steer.signalled"
+    source: str = pydantic.Field(description="Where the request or result came from.")
+
+
+class SteerSkill(Event):
+    """An operator steer invoked a skill."""
+
+    TYPE: ClassVar[str] = "steer.skill"
+    name: str = pydantic.Field(description="Tool or skill name.")
+    args: str = pydantic.Field(
+        description="Tool argument preview, or the skill invocation's argument text.",
+    )
+
+
+class SteerUndo(Event):
+    """The operator's steer requested an undo fork."""
+
+    TYPE: ClassVar[str] = "steer.undo"
+
+
+class TaskQueued(Event):
+    """The operator queued a task."""
+
+    TYPE: ClassVar[str] = "task.queued"
+    task_id: str = pydantic.Field(description="Task identifier.")
+    title: str = pydantic.Field(description="Task or standing-goal text.")
+
+
+class TaskRequestRefused(Event):
+    """An operator task-graph request could not be applied."""
+
+    TYPE: ClassVar[str] = "task.request_refused"
+    kind: str = pydantic.Field(description="The request or authentication operation kind.")
+    text: str = pydantic.Field(description="The event's text.")
+    error: str = pydantic.Field(description="The failure diagnostic.")
+
+
+class TaskRetired(Event):
+    """The operator retired a task."""
+
+    TYPE: ClassVar[str] = "task.retired"
+    task_id: str = pydantic.Field(description="Task identifier.")
+    title: str = pydantic.Field(description="Task or standing-goal text.")
+
+
+class TaskSurfaced(Event):
+    """A task became the current focus."""
+
+    TYPE: ClassVar[str] = "task.surfaced"
+    task_id: str = pydantic.Field(description="Task identifier.")
 
 
 class ToolCall(Event):
@@ -1679,6 +1621,18 @@ class ToolResult(Event):
     )
 
 
+class VerifyBaseline(Event):
+    """The baseline verification attempt finished."""
+
+    TYPE: ClassVar[str] = "verify.baseline"
+    ok: bool = pydantic.Field(description="Whether the operation succeeded.")
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    verify_id: str | None = pydantic.Field(
+        default=None,
+        description="Verification attempt identifier.",
+    )
+
+
 class VerifyEnd(Event):
     """A verification attempt finished with evidence about the observed tree."""
 
@@ -1728,6 +1682,36 @@ class VerifyEnd(Event):
     reason: str = pydantic.Field(description="The reason for the outcome.")
 
 
+class VerifyInferred(Event):
+    """The verify command was inferred, restored, adopted or disabled."""
+
+    TYPE: ClassVar[str] = "verify.inferred"
+    command: Sequence[Any] = pydantic.Field(
+        description="Resolved verify argv; empty when no command is adopted.",
+    )
+    source: str = pydantic.Field(description="Where the request or result came from.")
+    adopted_at: int | None = pydantic.Field(
+        default=None,
+        description="Turn where the gate was adopted, restored or dropped.",
+    )
+
+
+class VerifyRequested(Event):
+    """The harness requested verification."""
+
+    TYPE: ClassVar[str] = "verify.requested"
+    reason: str = pydantic.Field(description="Why the harness requested verification.")
+    turn: int = pydantic.Field(description="The execution's turn number.")
+
+
+class VerifyScoped(Event):
+    """Verification was narrowed to tests near the changed files."""
+
+    TYPE: ClassVar[str] = "verify.scoped"
+    paths: Sequence[Any] = pydantic.Field(description="Affected repository-relative paths.")
+    turn: int = pydantic.Field(description="The execution's turn number.")
+
+
 class VerifyStart(Event):
     """A verification attempt started."""
 
@@ -1763,6 +1747,22 @@ class VerifyStart(Event):
     timeout_s: float = pydantic.Field(description="Verification wall-clock limit in seconds.")
 
 
+class VerifySwapped(Event):
+    """Resume replaced the saved verify command."""
+
+    TYPE: ClassVar[str] = "verify.swapped"
+    was: Sequence[Any] = pydantic.Field(description="Saved verification argv.")
+    now: Sequence[Any] = pydantic.Field(description="Replacement verification argv.")
+
+
+class VerifyTestOnlyGreen(Event):
+    """Verification passed after changes confined to tests."""
+
+    TYPE: ClassVar[str] = "verify.test_only_green"
+    turn: int = pydantic.Field(description="The execution's turn number.")
+    paths: Sequence[Any] = pydantic.Field(description="Affected repository-relative paths.")
+
+
 class WorkspaceSetup(Event):
     """The workspace setup command finished."""
 
@@ -1786,139 +1786,141 @@ class WorkspaceSetup(Event):
 
 
 # Every record by its row type, in type order.
+
+
 EVENT_TYPES: dict[str, type[Event]] = {
     "approval.answer": ApprovalAnswer,
     "approval.prompt": ApprovalPrompt,
     "btw.answered": BtwAnswered,
     "btw.opened": BtwOpened,
+    "budget.turn": BudgetTurn,
     "budget.update": BudgetUpdate,
+    "checkpoint.committed": CheckpointCommitted,
+    "checkpoint.failed": CheckpointFailed,
+    "checkpoint.left_out": CheckpointLeftOut,
     "command.backgrounded": CommandBackgrounded,
+    "compact.deduped": CompactDeduped,
+    "compact.dropped": CompactDropped,
+    "compact.gist.call": CompactGistCall,
+    "compact.gist.done": CompactGistDone,
+    "compact.gist.failed": CompactGistFailed,
+    "compact.refused": CompactRefused,
+    "compact.requested": CompactRequested,
+    "compact.restored": CompactRestored,
+    "compact.summarise.call": CompactSummariseCall,
+    "compact.summarise.done": CompactSummariseDone,
+    "compact.summarise.failed": CompactSummariseFailed,
+    "compact.thinking_dropped": CompactThinkingDropped,
+    "decision.recorded": DecisionRecorded,
+    "decision.unrecorded": DecisionUnrecorded,
     "diff.updated": DiffUpdated,
     "environment.acquired": EnvironmentAcquired,
     "environment.starting": EnvironmentStarting,
     "execution.environment": ExecutionEnvironment,
     "execution.jobs": ExecutionJobs,
     "execution.target": ExecutionTarget,
+    "finish.refused.contract": FinishRefusedContract,
+    "finish.refused.metric": FinishRefusedMetric,
+    "finish.refused.review": FinishRefusedReview,
+    "finish.refused.tasks": FinishRefusedTasks,
+    "finish.refused.verify": FinishRefusedVerify,
     "graph.update": GraphUpdate,
     "jail.degraded": JailDegraded,
-    "loop.auto_commit": LoopAutoCommit,
-    "loop.auto_commit.failed": LoopAutoCommitFailed,
-    "loop.baseline": LoopBaseline,
-    "loop.budget": LoopBudget,
-    "loop.compact.deduped": LoopCompactDeduped,
-    "loop.compact.dropped": LoopCompactDropped,
-    "loop.compact.gist.call": LoopCompactGistCall,
-    "loop.compact.gist.failed": LoopCompactGistFailed,
-    "loop.compact.gists": LoopCompactGists,
-    "loop.compact.refused": LoopCompactRefused,
-    "loop.compact.requested": LoopCompactRequested,
-    "loop.compact.restored": LoopCompactRestored,
-    "loop.compact.summarise.call": LoopCompactSummariseCall,
-    "loop.compact.summarise.done": LoopCompactSummariseDone,
-    "loop.compact.summarise.failed": LoopCompactSummariseFailed,
-    "loop.compact.thinking_dropped": LoopCompactThinkingDropped,
-    "loop.decision.recorded": LoopDecisionRecorded,
-    "loop.decision.unrecorded": LoopDecisionUnrecorded,
-    "loop.edit.left_out": LoopEditLeftOut,
-    "loop.finish_contract.refused": LoopFinishContractRefused,
-    "loop.loop_guard.triggered": LoopLoopGuardTriggered,
-    "loop.media.refused": LoopMediaRefused,
-    "loop.memory_flip.nudged": LoopMemoryFlipNudged,
-    "loop.metric.auto_call": LoopMetricAutoCall,
-    "loop.metric.auto_failed": LoopMetricAutoFailed,
-    "loop.metric.sample": LoopMetricSample,
-    "loop.metric_ceiling.stop": LoopMetricCeilingStop,
-    "loop.metric_early_finish.rejected": LoopMetricEarlyFinishRejected,
-    "loop.metric_plateau.nudge": LoopMetricPlateauNudge,
-    "loop.no_progress.nudge": LoopNoProgressNudge,
+    "jail.tool_unreachable": JailToolUnreachable,
     "loop.note": LoopNote,
-    "loop.operator.presence": LoopOperatorPresence,
-    "loop.parallel.compared": LoopParallelCompared,
-    "loop.parallel.dispatched": LoopParallelDispatched,
-    "loop.parallel.failed": LoopParallelFailed,
-    "loop.parallel.joined": LoopParallelJoined,
     "loop.parked": LoopParked,
     "loop.parked.resumed": LoopParkedResumed,
-    "loop.pin.added": LoopPinAdded,
-    "loop.pin.refused": LoopPinRefused,
-    "loop.pin.restored": LoopPinRestored,
-    "loop.plan_finish.nudge": LoopPlanFinishNudge,
-    "loop.plan_read.failed": LoopPlanReadFailed,
-    "loop.plan_reread": LoopPlanReread,
-    "loop.plan_write.failed": LoopPlanWriteFailed,
-    "loop.plan_written": LoopPlanWritten,
-    "loop.provider.empty_tool_call_retry": LoopProviderEmptyToolCallRetry,
-    "loop.provider.fatal": LoopProviderFatal,
-    "loop.provider.retry": LoopProviderRetry,
-    "loop.question.delivered": LoopQuestionDelivered,
-    "loop.question_nudge": LoopQuestionNudge,
-    "loop.reasoning_starvation": LoopReasoningStarvation,
-    "loop.request.refused": LoopRequestRefused,
-    "loop.resume.interrupted": LoopResumeInterrupted,
-    "loop.review.finding.reopened": LoopReviewFindingReopened,
-    "loop.review.finding.resolved": LoopReviewFindingResolved,
-    "loop.review.fix.failed": LoopReviewFixFailed,
-    "loop.review.fix.requested": LoopReviewFixRequested,
-    "loop.review.fix.submitted": LoopReviewFixSubmitted,
-    "loop.review.panel": LoopReviewPanel,
-    "loop.review.rejected_finish": LoopReviewRejectedFinish,
-    "loop.review.rejection_cap_reached": LoopReviewRejectionCapReached,
-    "loop.review.reused": LoopReviewReused,
-    "loop.review.seat": LoopReviewSeat,
-    "loop.review.skipped": LoopReviewSkipped,
-    "loop.review.start": LoopReviewStart,
-    "loop.run_budget.nudge": LoopRunBudgetNudge,
-    "loop.sandbox_tool_unreachable": LoopSandboxToolUnreachable,
-    "loop.silent_no_work.nudge": LoopSilentNoWorkNudge,
-    "loop.skills.warning": LoopSkillsWarning,
-    "loop.stagnation.nudged": LoopStagnationNudged,
-    "loop.standing.resumed": LoopStandingResumed,
-    "loop.standing.set": LoopStandingSet,
-    "loop.steer.aborted": LoopSteerAborted,
-    "loop.steer.detached": LoopSteerDetached,
-    "loop.steer.exited": LoopSteerExited,
-    "loop.steer.feedback": LoopSteerFeedback,
-    "loop.steer.injected": LoopSteerInjected,
-    "loop.steer.requested": LoopSteerRequested,
-    "loop.steer.skill": LoopSteerSkill,
-    "loop.steer.undo": LoopSteerUndo,
-    "loop.task.queued": LoopTaskQueued,
-    "loop.task.retired": LoopTaskRetired,
-    "loop.task.stuck_nudge": LoopTaskStuckNudge,
-    "loop.task.surfaced": LoopTaskSurfaced,
-    "loop.task_finish.gated": LoopTaskFinishGated,
-    "loop.test_only_green.notice": LoopTestOnlyGreenNotice,
-    "loop.tool_error.nudge": LoopToolErrorNudge,
-    "loop.verify_broken.nudge": LoopVerifyBrokenNudge,
-    "loop.verify_finish.gated": LoopVerifyFinishGated,
-    "loop.verify_harness": LoopVerifyHarness,
-    "loop.verify_inferred": LoopVerifyInferred,
-    "loop.verify_scoped": LoopVerifyScoped,
-    "loop.verify_settled.nudge": LoopVerifySettledNudge,
-    "loop.verify_swapped": LoopVerifySwapped,
-    "loop.went_quiet.nudge": LoopWentQuietNudge,
     "mcp.server_unavailable": McpServerUnavailable,
+    "media.refused": MediaRefused,
+    "metric.auto_call": MetricAutoCall,
+    "metric.auto_failed": MetricAutoFailed,
+    "metric.ceiling_reached": MetricCeilingReached,
     "metric.end": MetricEnd,
+    "metric.sample": MetricSample,
     "metric.start": MetricStart,
+    "model.attempt": ModelAttempt,
+    "model.call": ModelCall,
+    "model.reasoning_starvation": ModelReasoningStarvation,
+    "model.result": ModelResult,
+    "model.text_delta": ModelTextDelta,
+    "model.thinking_delta": ModelThinkingDelta,
+    "nudge.loop_guard": NudgeLoopGuard,
+    "nudge.memory_flip": NudgeMemoryFlip,
+    "nudge.metric_plateau": NudgeMetricPlateau,
+    "nudge.no_progress": NudgeNoProgress,
+    "nudge.plan_finish": NudgePlanFinish,
+    "nudge.question": NudgeQuestion,
+    "nudge.run_budget": NudgeRunBudget,
+    "nudge.silent_no_work": NudgeSilentNoWork,
+    "nudge.stagnation": NudgeStagnation,
+    "nudge.task_stuck": NudgeTaskStuck,
+    "nudge.tool_error": NudgeToolError,
+    "nudge.verify_broken": NudgeVerifyBroken,
+    "nudge.verify_settled": NudgeVerifySettled,
+    "nudge.went_quiet": NudgeWentQuiet,
+    "operator.presence": OperatorPresence,
+    "parallel.compared": ParallelCompared,
+    "parallel.dispatched": ParallelDispatched,
+    "parallel.failed": ParallelFailed,
+    "parallel.joined": ParallelJoined,
+    "pin.added": PinAdded,
+    "pin.refused": PinRefused,
+    "pin.restored": PinRestored,
+    "plan.read_failed": PlanReadFailed,
+    "plan.reread": PlanReread,
+    "plan.write_failed": PlanWriteFailed,
+    "plan.written": PlanWritten,
     "provider.auth": ProviderAuth,
+    "provider.empty_tool_call_retry": ProviderEmptyToolCallRetry,
+    "provider.fatal": ProviderFatal,
     "provider.request": ProviderRequest,
+    "provider.retry": ProviderRetry,
     "question.answer": QuestionAnswer,
+    "question.delivered": QuestionDelivered,
     "question.prompt": QuestionPrompt,
-    "role.attempt": RoleAttempt,
-    "role.call": RoleCall,
-    "role.result": RoleResult,
-    "role.text_delta": RoleTextDelta,
-    "role.thinking_delta": RoleThinkingDelta,
+    "review.finding.reopened": ReviewFindingReopened,
+    "review.finding.resolved": ReviewFindingResolved,
+    "review.fix.failed": ReviewFixFailed,
+    "review.fix.requested": ReviewFixRequested,
+    "review.fix.submitted": ReviewFixSubmitted,
+    "review.panel": ReviewPanel,
+    "review.rejection_cap_reached": ReviewRejectionCapReached,
+    "review.reused": ReviewReused,
+    "review.seat": ReviewSeat,
+    "review.skipped": ReviewSkipped,
+    "review.start": ReviewStart,
     "session.resume": SessionResume,
+    "session.resume.interrupted": SessionResumeInterrupted,
     "session.start": SessionStart,
-    "session.steer_requested": SessionSteerRequested,
     "session.stop": SessionStop,
     "session.stranded": SessionStranded,
     "session.undone": SessionUndone,
+    "skills.warning": SkillsWarning,
+    "standing.resumed": StandingResumed,
+    "standing.set": StandingSet,
+    "steer.aborted": SteerAborted,
+    "steer.detached": SteerDetached,
+    "steer.exited": SteerExited,
+    "steer.feedback": SteerFeedback,
+    "steer.injected": SteerInjected,
+    "steer.requested": SteerRequested,
+    "steer.signalled": SteerSignalled,
+    "steer.skill": SteerSkill,
+    "steer.undo": SteerUndo,
+    "task.queued": TaskQueued,
+    "task.request_refused": TaskRequestRefused,
+    "task.retired": TaskRetired,
+    "task.surfaced": TaskSurfaced,
     "tool.call": ToolCall,
     "tool.result": ToolResult,
+    "verify.baseline": VerifyBaseline,
     "verify.end": VerifyEnd,
+    "verify.inferred": VerifyInferred,
+    "verify.requested": VerifyRequested,
+    "verify.scoped": VerifyScoped,
     "verify.start": VerifyStart,
+    "verify.swapped": VerifySwapped,
+    "verify.test_only_green": VerifyTestOnlyGreen,
     "workspace.setup": WorkspaceSetup,
 }
 

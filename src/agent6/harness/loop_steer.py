@@ -123,7 +123,7 @@ def operator_state(
     presence = prompts.presence()
     if presence and presence != state.operator_presence:
         state.operator_presence = presence
-        harness.emit(journal.LoopOperatorPresence(presence=presence))
+        harness.emit(journal.OperatorPresence(presence=presence))
     if boundary and presence and presence != state.operator_presence_notified:
         state.operator_presence_notified = presence
         conversation.notice(f"OPERATOR PRESENCE: {presence}.")
@@ -135,7 +135,7 @@ def operator_state(
             harness.steering.record_decision(state, question.question, answer)
         state.delivered_questions.append(item.id)
     conversation.notice(answers_notice(late), origin="operator")
-    harness.emit(journal.LoopQuestionDelivered(ids=[item.id for item in late]))
+    harness.emit(journal.QuestionDelivered(ids=[item.id for item in late]))
     return True
 
 

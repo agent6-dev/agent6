@@ -68,7 +68,7 @@ def test_run_latest_commit_highlights_and_reuses_the_commit_payload(
     )
     events = [
         {"type": "session.start", "mode": "run", "user_task": "Highlight Python"},
-        {"type": "loop.auto_commit", "sha": head, "turn": 1},
+        {"type": "checkpoint.committed", "sha": head, "turn": 1},
         {"type": "diff.updated", "sha": head, "patch": "plain fallback"},
     ]
     log = session / "logs.jsonl"

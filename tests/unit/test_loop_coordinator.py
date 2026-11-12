@@ -452,8 +452,8 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
     assert all(n.rationale == "dispatched through /parallel by the operator" for n in steering)
     assert len(graph.commit_calls) == 2
     # dispatched carries tasks and group (no lane ids yet); joined names the real ids.
-    dispatched = events.of("loop.parallel.dispatched")
-    joined = events.of("loop.parallel.joined")
+    dispatched = events.of("parallel.dispatched")
+    joined = events.of("parallel.joined")
     assert dispatched and dispatched[0] == {
         "group": "p1",
         "lanes": 2,
@@ -464,7 +464,7 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
     assert [ln["session_id"] for ln in joined[0]["lanes"]] == ["run-abc-p1-l1", "run-abc-p1-l2"]
     # The join names the group the lanes were stamped with, the id `sessions compare` takes.
     assert joined[0]["group"] == "run-abc-p1"
-    assert not events.of("loop.parallel.failed")
+    assert not events.of("parallel.failed")
     # One summary message names both joined lanes.
     summary = [
         t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel] group")
@@ -509,7 +509,7 @@ def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: pathlib.Path) -
     note = next(note for _id, _status, note in graph.status_calls)
     assert f"{coord_id}-p1-l1" in note and f"{coord_id}-p1-l2" in note
     # Both lanes still surface per-lane in the joined event.
-    joined = events.of("loop.parallel.joined")[0]
+    joined = events.of("parallel.joined")[0]
     assert [ln["session_id"] for ln in joined["lanes"]] == [
         f"{coord_id}-p1-l1",
         f"{coord_id}-p1-l2",
@@ -598,9 +598,9 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path)
     # The clean lane's file reached the worktree; the conflicted merge touched nothing.
     assert (repo / "lane1.txt").read_text(encoding="utf-8") == "lane 1\n"
     assert (repo / "conflict.txt").read_text(encoding="utf-8") == "main version"
-    joined = events.of("loop.parallel.joined")[0]
+    joined = events.of("parallel.joined")[0]
     assert [ln["status"] for ln in joined["lanes"]] == ["joined", "conflict"]
-    failed = events.of("loop.parallel.failed")
+    failed = events.of("parallel.failed")
     assert failed and [ln["session_id"] for ln in failed[0]["lanes"]] == [f"{coord_id}-p1-l2"]
     # The conflicting node is marked failed (NodeStatus has no "blocked").
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
@@ -614,7 +614,7 @@ def test_a_group_of_no_change_lanes_passes_without_merging(tmp_path: pathlib.Pat
     """Lanes that ended with a result and no commit pass their nodes; nothing merges.
 
     The chain ref, HEAD and the index stay where they were, the join names `no_changes`, no
-    `loop.parallel.failed` fires and the summary says so.
+    `parallel.failed` fires and the summary says so.
     """
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -642,9 +642,9 @@ def test_a_group_of_no_change_lanes_passes_without_merging(tmp_path: pathlib.Pat
     assert _head(repo) == head_before
     assert _git(repo, "log", "--merges", "--oneline", "--all") == ""  # no ref gained a merge
     assert _git(repo, "status", "--porcelain") == ""
-    joined = events.of("loop.parallel.joined")[0]
+    joined = events.of("parallel.joined")[0]
     assert [ln["status"] for ln in joined["lanes"]] == ["no_changes", "no_changes"]
-    assert not events.of("loop.parallel.failed")
+    assert not events.of("parallel.failed")
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert [n.status for n in steering] == ["passed", "passed"]
     assert all(not n.commit_sha for n in steering)
@@ -676,9 +676,9 @@ def test_a_mixed_group_merges_only_the_lanes_that_committed(tmp_path: pathlib.Pa
     )
     wf.run("start")
 
-    joined = events.of("loop.parallel.joined")[0]
+    joined = events.of("parallel.joined")[0]
     assert [ln["status"] for ln in joined["lanes"]] == ["joined", "no_changes", "failed"]
-    failed = events.of("loop.parallel.failed")
+    failed = events.of("parallel.failed")
     assert failed and [ln["session_id"] for ln in failed[0]["lanes"]] == [f"{coord_id}-p1-l3"]
     assert (repo / "lane1.txt").read_text(encoding="utf-8") == "lane 1\n"
     assert "agent6/run-mx-p1-l1" in _git(repo, "log", "--oneline", "refs/agent6/coord")
@@ -742,7 +742,7 @@ def test_failed_lane_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
     result = wf.run("start")
 
     assert result.reason == "max_turns"  # did not crash
-    joined = events.of("loop.parallel.joined")[0]
+    joined = events.of("parallel.joined")[0]
     assert [ln["status"] for ln in joined["lanes"]] == ["failed", "joined"]
     assert joined["lanes"][0]["detail"] == "lane boom"
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
@@ -760,7 +760,7 @@ def test_failed_lane_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
 def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) -> None:
     """A raising group spawner does not abort the coordinator.
 
-    The run continues, loop.parallel.failed fires, truthful feedback is injected, and no steering
+    The run continues, parallel.failed fires, truthful feedback is injected, and no steering
     node is left pending.
     """
     repo = tmp_path / "repo"
@@ -796,7 +796,7 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) 
     assert provider.call.call_count == 2  # the run CONTINUED past the fault
     assert result.reason == "max_turns"
     # The failure is rendered truthfully on every surface.
-    failed = events.of("loop.parallel.failed")
+    failed = events.of("parallel.failed")
     assert failed and failed[0]["group"] == "run-boom-p1"  # the stamped group id
     assert "disk full" in str(failed[0])
     texts = _user_texts(_final_messages(provider))
@@ -876,7 +876,7 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: pathlib.Path) ->
     assert spawner.calls and spawner.calls[0][1] == "p1"  # dispatched
     # The wip edit reached the chain before the lanes were cut from it.
     assert _git(repo, "show", "refs/agent6/coord:wip.txt") == "uncommitted work"
-    commits = events.of("loop.auto_commit")
+    commits = events.of("checkpoint.committed")
     diffs = events.of("diff.updated")
     assert commits  # the state fold sees the checkpoint step
     assert diffs and diffs[-1]["sha"] == commits[-1]["sha"]

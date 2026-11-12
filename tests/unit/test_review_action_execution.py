@@ -90,10 +90,10 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
         json.loads(line)
         for line in (pathlib.Path(delivered[0]) / "logs.jsonl").read_text().splitlines()
     ]
-    submitted = next(row for row in rows if row["type"] == "loop.review.fix.submitted")
+    submitted = next(row for row in rows if row["type"] == "review.fix.submitted")
     started = next(row for row in rows if row["type"] == "session.start" and "execution_id" in row)
     assert submitted["execution_id"] == started["execution_id"]
-    assert any(row["type"] == "loop.steer.injected" and "Defect f1" in row["text"] for row in rows)
+    assert any(row["type"] == "steer.injected" and "Defect f1" in row["text"] for row in rows)
 
     request = review_records.FindingAction(
         request_id="resume-fix", expected_version=3, action="fix", resume=True
@@ -285,8 +285,8 @@ def test_cli_finding_resume_reports_launch_and_forwards_evidence_and_config(
         version = 3 if acknowledge_before_return else 2
         assert view.version == version
         assert finding.status == "open"
-        assert [action.type for action in finding.actions] == ["loop.review.fix.requested"] + (
-            ["loop.review.fix.submitted"] if acknowledge_before_return else []
+        assert [action.type for action in finding.actions] == ["review.fix.requested"] + (
+            ["review.fix.submitted"] if acknowledge_before_return else []
         )
         assert all(action.request_id == "cli-resume" for action in finding.actions)
         assert len(launches) == 1

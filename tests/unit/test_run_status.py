@@ -188,9 +188,9 @@ def test_status_waiting_when_blocked_on_an_operator_answer(
             "verify command running",
         ),
         ({"type": "tool.call", "name": "run_command", "args_preview": {}}, "tool call running"),
-        ({"type": "role.call", "role": "worker"}, "provider call in flight"),
-        ({"type": "role.text_delta", "role": "worker", "text": "x"}, "provider call in flight"),
-        ({"type": "loop.auto_commit"}, "long step"),
+        ({"type": "model.call", "role": "worker"}, "provider call in flight"),
+        ({"type": "model.text_delta", "role": "worker", "text": "x"}, "provider call in flight"),
+        ({"type": "checkpoint.committed"}, "long step"),
     ],
 )
 def test_status_names_what_a_long_step_waits_on(
@@ -558,10 +558,10 @@ def test_status_of_a_provider_failure_keeps_the_providers_error(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start", "mode": "run"},
-            {"ts": _ts(4), "type": "role.call", "role": "worker", "model": "claude-sonnet-4-5"},
-            {"ts": _ts(3), "type": "role.result", "role": "worker", "ok": False, "error": error},
-            {"ts": _ts(3), "type": "loop.provider.fatal", "status_code": 401, "error": error},
-            {"ts": _ts(2), "type": "role.result", "role": "reviewer", "ok": False, "error": "x"},
+            {"ts": _ts(4), "type": "model.call", "role": "worker", "model": "claude-sonnet-4-5"},
+            {"ts": _ts(3), "type": "model.result", "role": "worker", "ok": False, "error": error},
+            {"ts": _ts(3), "type": "provider.fatal", "status_code": 401, "error": error},
+            {"ts": _ts(2), "type": "model.result", "role": "reviewer", "ok": False, "error": "x"},
             {
                 "ts": _ts(1),
                 "type": "session.stop",
@@ -629,8 +629,8 @@ def test_status_shows_usage_from_budget_update_event(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # `sessions show` must read budget.update (the authoritative post-call totals),
-    # not loop.budget (emitted BEFORE each call: lags one call, 0 on turn 1).
-    # A stray loop.budget must NOT override the real usage.
+    # not budget.turn (emitted BEFORE each call: lags one call, 0 on turn 1).
+    # A stray budget.turn must NOT override the real usage.
     d = _make_run(
         tmp_path,
         monkeypatch,
@@ -638,7 +638,7 @@ def test_status_shows_usage_from_budget_update_event(
             {"ts": _ts(40), "type": "session.start"},
             {
                 "ts": _ts(30),
-                "type": "loop.budget",
+                "type": "budget.turn",
                 "turn": 1,
                 "input_tokens": 0,
                 "output_tokens": 0,
@@ -688,8 +688,8 @@ def test_status_names_the_pins_in_force(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start"},
-            {"ts": _ts(30), "type": "loop.pin.restored", "pins": ["never touch tests"]},
-            {"ts": _ts(20), "type": "loop.pin.added", "text": "keep the API stable"},
+            {"ts": _ts(30), "type": "pin.restored", "pins": ["never touch tests"]},
+            {"ts": _ts(20), "type": "pin.added", "text": "keep the API stable"},
         ],
     )
     sessions_show._cmd_status("winsome-dawn-YWH5ZS")

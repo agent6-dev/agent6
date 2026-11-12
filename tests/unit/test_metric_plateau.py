@@ -29,7 +29,7 @@ def test_a_tie_with_runway_is_a_notice_that_costs_no_patience() -> None:
     for i in range(1, 6):
         answer = metric_rules.metric_plateau(_tie(i), state, ctx)
         assert isinstance(answer, advice.Nudge) and "80% of the budget remains" in answer.text
-        assert answer.event == journal.LoopMetricPlateauNudge(
+        assert answer.event == journal.NudgeMetricPlateau(
             turn=i, nudges_used=0, budget_remaining=0.8
         )
     assert state.metric.plateau_nudges_used == 0
@@ -47,7 +47,7 @@ def test_final_slice_ties_spend_the_patience_then_stop() -> None:
     assert [
         a.event.nudges_used
         for a in notices
-        if isinstance(a, advice.Nudge) and isinstance(a.event, journal.LoopMetricPlateauNudge)
+        if isinstance(a, advice.Nudge) and isinstance(a.event, journal.NudgeMetricPlateau)
     ] == [1, 2, 3]
     assert isinstance(stop, advice.Stop) and stop.event is None
     assert stop.soft == "metric_plateau" and stop.declared == "metric_plateau"
@@ -66,7 +66,7 @@ def test_a_ceiling_stops_at_once_with_its_event() -> None:
         _tie(4), state, turn_context(metric=True, budget_remaining=lambda: 0.9)
     )
     assert isinstance(stop, advice.Stop)
-    assert stop.event == journal.LoopMetricCeilingStop(turn=4)
+    assert stop.event == journal.MetricCeilingReached(turn=4)
     assert stop.end().reason == "metric_plateau"
 
 

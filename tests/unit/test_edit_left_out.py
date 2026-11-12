@@ -131,10 +131,10 @@ def test_an_edit_to_a_gitignored_path_says_so_in_its_tool_result(tmp_path: pathl
         "data/rates.json is ignored by git: the edit is on disk, and this run's commits"
         " leave it out."
     )
-    left_out = [e for e in events if e["type"] == "loop.edit.left_out"]
+    left_out = [e for e in events if e["type"] == "checkpoint.left_out"]
     assert left_out == [
         {
-            "type": "loop.edit.left_out",
+            "type": "checkpoint.left_out",
             "turn": 3,
             "ignored": ["data/rates.json"],
             "untracked": [],
@@ -157,7 +157,7 @@ def test_an_edit_to_a_start_untracked_file_says_so_in_its_tool_result(
         "notes.txt was untracked when the run started: the edit is on disk, and this run's"
         " commits leave it out."
     )
-    assert [e["untracked"] for e in events if e["type"] == "loop.edit.left_out"] == [["notes.txt"]]
+    assert [e["untracked"] for e in events if e["type"] == "checkpoint.left_out"] == [["notes.txt"]]
 
 
 def test_a_memory_store_write_carries_no_note(tmp_path: pathlib.Path) -> None:
@@ -179,7 +179,7 @@ def test_a_memory_store_write_carries_no_note(tmp_path: pathlib.Path) -> None:
         state_dir=state,
     )
     assert "note" not in wire
-    assert not [e for e in events if e["type"] == "loop.edit.left_out"]
+    assert not [e for e in events if e["type"] == "checkpoint.left_out"]
 
 
 def test_an_edit_the_commits_hold_carries_no_note(tmp_path: pathlib.Path) -> None:
@@ -189,7 +189,7 @@ def test_an_edit_the_commits_hold_carries_no_note(tmp_path: pathlib.Path) -> Non
     for rel in ("new.py", "data/units.json"):
         wire, events = _dispatch_edit(repo, results.EditResult(applied=("replace",), path=rel))
         assert wire == {"applied": ["replace"], "path": rel}
-        assert not [e for e in events if e["type"] == "loop.edit.left_out"]
+        assert not [e for e in events if e["type"] == "checkpoint.left_out"]
 
 
 def _end_footer(
@@ -204,7 +204,7 @@ def _end_footer(
     session_dir.mkdir(parents=True)
     events: list[dict[str, object]] = [
         {"type": "session.start", "session_id": session_id, "user_task": "t"},
-        {"type": "loop.edit.left_out", "turn": 1, **left_out},
+        {"type": "checkpoint.left_out", "turn": 1, **left_out},
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (session_dir / "logs.jsonl").write_text(

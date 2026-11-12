@@ -20,14 +20,14 @@ def worker() -> list[dict[str, Any]]:
     return [
         {"type": "session.start", "ts": "2026-07-16T00:00:03+00:00", "execution_id": "worker"},
         {
-            "type": "role.call",
+            "type": "model.call",
             "ts": "2026-07-16T00:00:03+00:00",
             "model_call_id": "c",
             "model": "m",
             "provider": "p",
         },
         {
-            "type": "role.result",
+            "type": "model.result",
             "ts": "2026-07-16T00:00:04+00:00",
             "model_call_id": "c",
             "input_tokens": 1000,

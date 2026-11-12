@@ -123,8 +123,8 @@ def test_failed_stream_usage_reaches_the_journal_and_telemetry(
     )
 
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
-    (call,) = [row for row in rows if row["type"] == "role.call"]
-    (result,) = [row for row in rows if row["type"] == "role.result"]
+    (call,) = [row for row in rows if row["type"] == "model.call"]
+    (result,) = [row for row in rows if row["type"] == "model.result"]
     assert result["ok"] is False
     assert result["model_call_id"] == call["model_call_id"]
     assert {
@@ -181,7 +181,7 @@ def test_successful_stream_reports_the_same_usage_fields(
     with mock.patch("httpx2.stream", return_value=contextlib.closing(response)):
         wrapper.call(system="s", messages=[])
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
-    (result,) = [row for row in rows if row["type"] == "role.result"]
+    (result,) = [row for row in rows if row["type"] == "model.result"]
     assert result["ok"] is True
     assert (
         result["input_tokens"],
@@ -224,7 +224,7 @@ def test_failure_before_usage_does_not_invent_tokens(
     ):
         wrapper.call(system="s", messages=[], should_abort=stream.abort.is_set)
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
-    (result,) = [row for row in rows if row["type"] == "role.result"]
+    (result,) = [row for row in rows if row["type"] == "model.result"]
     assert (
         not {"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "cost_usd"}
         & result.keys()

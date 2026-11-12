@@ -34,7 +34,7 @@ def _session(
         encoding="utf-8",
     )
     lines = [json.dumps({"type": "session.start", "user_task": task})]
-    lines += [json.dumps({"type": "role.result", "text": t}) for t in turns]
+    lines += [json.dumps({"type": "model.result", "text": t}) for t in turns]
     (d / "logs.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return d
 
@@ -101,14 +101,14 @@ def test_a_side_calls_answer_is_not_read_as_the_assistants_own_words(
 ) -> None:
     """A side call's answer is not read as the assistant's own words.
 
-    Side calls emit `role.result` too; only the worker's answer belongs in the assistant's reply.
+    Side calls emit `model.result` too; only the worker's answer belongs in the assistant's reply.
     """
     d = _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "t", [])
     lines = (d / "logs.jsonl").read_text(encoding="utf-8").splitlines()
-    lines.append(json.dumps({"type": "role.result", "role": "worker", "text": "use ffmpeg"}))
+    lines.append(json.dumps({"type": "model.result", "role": "worker", "text": "use ffmpeg"}))
     side = ("review:security", "verify_inferer", "squash", "summariser")
     for role in side:
-        lines.append(json.dumps({"type": "role.result", "role": role, "text": f"FROM {role}"}))
+        lines.append(json.dumps({"type": "model.result", "role": role, "text": f"FROM {role}"}))
     (d / "logs.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
     layout = sessions_layout.session_layout(tmp_path, "brave-elk-BBBBBB")
     assert layout is not None
@@ -118,11 +118,11 @@ def test_a_side_calls_answer_is_not_read_as_the_assistants_own_words(
 
 
 def test_a_role_result_with_no_role_reads_as_the_sessions_own_words(tmp_path: pathlib.Path) -> None:
-    """Older journals carry no `role` field on `role.result`; that absence is not a side role."""
+    """Older journals carry no `role` field on `model.result`; that absence is not a side role."""
     d = _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "t", [])
     lines = (d / "logs.jsonl").read_text(encoding="utf-8").splitlines()
-    lines.append(json.dumps({"type": "role.result", "text": "use ffmpeg"}))
-    lines.append(json.dumps({"type": "role.result", "role": "", "text": "with libx265"}))
+    lines.append(json.dumps({"type": "model.result", "text": "use ffmpeg"}))
+    lines.append(json.dumps({"type": "model.result", "role": "", "text": "with libx265"}))
     (d / "logs.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
     layout = sessions_layout.session_layout(tmp_path, "brave-elk-BBBBBB")
     assert layout is not None
@@ -238,10 +238,10 @@ def _peak_bytes_reading(fn: Callable[[], object]) -> int:
 def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathlib.Path) -> None:
     """Written by the real emitter, not by hand.
 
-    The prose reached the journal only as `role.text_delta`, which is emitted only when streaming is
-    on, so a headless run (CI, a redirected stdout, every spawned ask) recorded no assistant text,
-    and this tool returned the task and a list of tool names. Every fixture that hand-wrote
-    `{"type": "role.result", "text": ...}` passed against a shape the engine never emitted.
+    The prose reached the journal only as `model.text_delta`, which is emitted only when streaming
+    is on, so a headless run (CI, a redirected stdout, every spawned ask) recorded no assistant
+    text, and this tool returned the task and a list of tool names. Every fixture that hand-wrote
+    `{"type": "model.result", "text": ...}` passed against a shape the engine never emitted.
     """
     import types
     from unittest import mock

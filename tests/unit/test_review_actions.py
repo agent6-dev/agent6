@@ -510,9 +510,9 @@ def test_resume_receipt_distinguishes_launch_from_worker_acknowledgement(
         result = review_actions.act(saved.session_dir, "f1", request, source="cli", resume=resume)
         view = review_actions.read_review(saved.session_dir)
         finding = view.findings[0]
-        expected_types = ["loop.review.fix.requested"]
+        expected_types = ["review.fix.requested"]
         if acknowledge_before_return:
-            expected_types.append("loop.review.fix.submitted")
+            expected_types.append("review.fix.submitted")
         assert [action.type for action in finding.actions] == expected_types
         assert finding.actions[0].action == "resume"
         assert finding.status == "open"
@@ -573,7 +573,7 @@ def test_successful_launcher_preserves_recorded_failure(tmp_path: pathlib.Path) 
         assert fd is not None
         try:
             event_log.EventSink(saved.logs_path).emit(
-                journal.LoopReviewFixFailed(
+                journal.ReviewFixFailed(
                     finding_id="f1",
                     request_id="resume",
                     source="cli",
@@ -618,9 +618,9 @@ def test_resume_fix_is_acknowledged_after_an_intervening_resolution(tmp_path: pa
         finding = review_actions.read_review(saved.session_dir).findings[0]
         assert finding.status == "resolved" and finding.fix_state == "submitted"
         assert [action.type for action in finding.actions] == [
-            "loop.review.fix.requested",
-            "loop.review.finding.resolved",
-            "loop.review.fix.submitted",
+            "review.fix.requested",
+            "review.finding.resolved",
+            "review.fix.submitted",
         ]
         assert finding.actions[-1].execution_id == "resumed"
         assert finding.actions[-1].source == "cli"

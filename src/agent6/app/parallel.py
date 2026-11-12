@@ -165,7 +165,7 @@ def run_parallel(
         ),
     )
     events.emit(
-        journal.LoopParallelDispatched(group=fanout_id, lanes=len(lanes), tasks=[operator_task])
+        journal.ParallelDispatched(group=fanout_id, lanes=len(lanes), tasks=[operator_task])
     )
     configured_gate = bool(cfg.harness.verify_command)
     if spawner is None:
@@ -335,7 +335,7 @@ def _drive_fanout(
     )
     if batch.failed:
         events.emit(
-            journal.LoopParallelFailed(
+            journal.ParallelFailed(
                 group=fanout_id,
                 fanout=True,
                 lanes=[
@@ -399,7 +399,7 @@ def _drive_fanout(
         reporter.out(line)
     by_id = {c.session_id: c for c in batch.candidates}
     events.emit(
-        journal.LoopParallelCompared(
+        journal.ParallelCompared(
             group=fanout_id,
             ranked_by=outcome.ranked_by,
             rationale=outcome.rationale,

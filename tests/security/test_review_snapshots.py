@@ -124,7 +124,7 @@ def test_in_loop_subdirectory_panel_uses_repository_relative_evidence(
     panels = [
         review_records.ReviewPanel.model_validate(event_log.payload(row))
         for row in rows
-        if row["type"] == "loop.review.panel"
+        if row["type"] == "review.panel"
     ]
     assert len(panels) == 1 and state.review_panels == (panels[0],)
     record = panels[0]
@@ -297,7 +297,7 @@ def test_panel_classifies_immutable_bytes_before_its_single_record(
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     result = reviewer.critique(state, trigger="finish", turn=1)
     assert result is not None and not result.satisfied
-    panels = [row for row in rows if row["type"] == "loop.review.panel"]
+    panels = [row for row in rows if row["type"] == "review.panel"]
     assert len(panels) == 1
     record = state.review_panels[0]
     assert record.target.snapshot_commit == tip
@@ -317,7 +317,7 @@ def test_panel_classifies_immutable_bytes_before_its_single_record(
         else:
             assert ("1 MiB" if refusal == "oversize" else "regular file") in reason
     assert all(f.finding.severity == "block" for f in record.findings)
-    assert not any(row["type"] == "loop.review.line_origin" for row in rows)
+    assert not any(row["type"] == "review.line_origin" for row in rows)
     assert (tmp_path / ".git" / "index").read_bytes() == index
     assert review_helpers.git(tmp_path, "show-ref") == refs
     assert (tmp_path / "code.py").read_text() == "workspace\nnot context\n"

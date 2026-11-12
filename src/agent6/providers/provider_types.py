@@ -229,7 +229,7 @@ class TranscriptAttempt:
         Attributes:
             ts: The UTC start timestamp in `YYYYMMDDTHHMMSSffffffZ` form.
             seq: The run-global sequence, starting at 1 and continuing across resumes.
-            model_call_id: The logical call id from `role.call`; null without a call context.
+            model_call_id: The logical call id from `model.call`; null without a call context.
             request_id: The HTTP attempt id from `provider.request`; empty for a local process.
             seat: The role or review focus label, not a unique seat identity.
             outcome: `incomplete`, `completed`, `failed`, `interrupted` or `aborted`.

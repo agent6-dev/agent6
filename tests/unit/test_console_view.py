@@ -72,9 +72,9 @@ def test_reasoning_tool_call_and_result_all_render() -> None:
     out = _render(
         [
             {"type": "session.start", "user_task": "fix the failing test"},
-            {"type": "role.call", "role": "worker"},
-            {"type": "role.thinking_delta", "role": "worker", "text": "let me read the file"},
-            {"type": "role.result", "role": "worker"},
+            {"type": "model.call", "role": "worker"},
+            {"type": "model.thinking_delta", "role": "worker", "text": "let me read the file"},
+            {"type": "model.result", "role": "worker"},
             {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
@@ -88,19 +88,19 @@ def test_reasoning_tool_call_and_result_all_render() -> None:
 
 
 def test_non_streamed_role_result_renders_once() -> None:
-    """Settled prose on role.result renders once, with or without delta events before it."""
+    """Settled prose on model.result renders once, with or without delta events before it."""
     settled: dict[str, object] = {
-        "type": "role.result",
+        "type": "model.result",
         "role": "worker",
         "text": "the settled answer",
     }
-    out = _render([{"type": "role.call", "role": "worker"}, settled])
+    out = _render([{"type": "model.call", "role": "worker"}, settled])
     assert out.count("the settled answer") == 1
 
     streamed = _render(
         [
-            {"type": "role.call", "role": "worker"},
-            {"type": "role.text_delta", "role": "worker", "text": "the settled answer"},
+            {"type": "model.call", "role": "worker"},
+            {"type": "model.text_delta", "role": "worker", "text": "the settled answer"},
             settled,
         ]
     )
@@ -111,9 +111,9 @@ def test_whitespace_only_text_prints_no_empty_block() -> None:
     # Only whitespace text streams before the tool call, so no "worker: response" bar prints.
     out = _render(
         [
-            {"type": "role.call", "role": "worker"},
-            {"type": "role.text_delta", "role": "worker", "text": "  \n "},
-            {"type": "role.result", "role": "worker"},
+            {"type": "model.call", "role": "worker"},
+            {"type": "model.text_delta", "role": "worker", "text": "  \n "},
+            {"type": "model.result", "role": "worker"},
             {"type": "tool.call", "name": "apply_edit", "args_preview": {}},
             {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "ok"},
         ]
@@ -144,9 +144,9 @@ def test_steer_request_closes_open_dim_block() -> None:
     # The open dim thinking block is reset before the pause message, so it does not inherit the dim.
     buf = io.StringIO()
     view = console_render.ConsoleView(buf, color=True)
-    view.feed({"type": "role.thinking_delta", "text": "pondering the fix"})
+    view.feed({"type": "model.thinking_delta", "text": "pondering the fix"})
     assert not buf.getvalue().endswith("\033[0m\n")  # block still open
-    view.feed({"type": "session.steer_requested", "source": "sigint"})
+    view.feed({"type": "steer.signalled", "source": "sigint"})
     assert buf.getvalue().endswith("\033[0m\n")  # closed + reset before the message prints
 
 
@@ -235,12 +235,12 @@ def test_cli_heartbeat_shows_working_when_the_stream_stalls(
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
-        view.feed({"type": "role.call", "role": "worker", "model": "m"})
-        view.feed({"type": "role.text_delta", "text": "Let me investigate"})
+        view.feed({"type": "model.call", "role": "worker", "model": "m"})
+        view.feed({"type": "model.text_delta", "text": "Let me investigate"})
         time.sleep(_STALL_WAIT_S)  # let the stall register and the spinner tick
         assert "working…" in out.getvalue()
         # Output resuming clears the spinner (\r + erase) and shows the new text.
-        view.feed({"type": "role.text_delta", "text": " the theme system"})
+        view.feed({"type": "model.text_delta", "text": " the theme system"})
         assert "the theme system" in out.getvalue()
         assert "\x1b[2K" in out.getvalue()  # the spinner line was erased
     finally:
@@ -266,8 +266,8 @@ def test_the_heartbeat_flushes_a_partial_line_while_output_flows() -> None:
     out = _CountingTTY()
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
-        view.feed({"type": "role.call", "role": "worker", "model": "m"})
-        view.feed({"type": "role.text_delta", "text": "partial"})
+        view.feed({"type": "model.call", "role": "worker", "model": "m"})
+        view.feed({"type": "model.text_delta", "text": "partial"})
         before = out.flushes
         time.sleep(1.2)  # two heartbeat ticks, under every stall threshold
         assert out.flushes > before, "the heartbeat flushed nothing while output flowed"
@@ -286,10 +286,10 @@ def test_cli_heartbeat_does_not_split_a_streaming_block_at_short_gaps() -> None:
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
-        view.feed({"type": "role.call", "role": "worker", "model": "m"})
-        view.feed({"type": "role.text_delta", "text": "writing to tests/test"})
+        view.feed({"type": "model.call", "role": "worker", "model": "m"})
+        view.feed({"type": "model.text_delta", "text": "writing to tests/test"})
         time.sleep(_STALL_WAIT_S)  # over the between-blocks threshold, under 10s
-        view.feed({"type": "role.text_delta", "text": "_calc.py now"})
+        view.feed({"type": "model.text_delta", "text": "_calc.py now"})
         got = out.getvalue()
         assert "working…" not in got  # no spinner mid-block at a short gap
         assert "tests/test_calc.py" in got  # the streamed path stayed whole
@@ -298,14 +298,14 @@ def test_cli_heartbeat_does_not_split_a_streaming_block_at_short_gaps() -> None:
 
 
 def test_cli_heartbeat_spins_during_a_long_tool_run() -> None:
-    """The heartbeat spins during a long tool run between role.result and the next role.call."""
+    """The heartbeat spins during a long tool run between model.result and the next model.call."""
     import time
 
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
-        view.feed({"type": "role.call", "role": "worker", "model": "m"})
-        view.feed({"type": "role.result", "role": "worker"})  # turn done...
+        view.feed({"type": "model.call", "role": "worker", "model": "m"})
+        view.feed({"type": "model.result", "role": "worker"})  # turn done...
         # ...now a tool.call starts a long jail command (no result yet).
         view.feed({"type": "tool.call", "name": "run_verify_command", "args_preview": {}})
         time.sleep(_STALL_WAIT_S)
@@ -320,7 +320,7 @@ def test_cli_heartbeat_silent_on_a_non_tty() -> None:
 
     buf = io.StringIO()
     view = console_render.ConsoleView(buf, color=False)
-    view.feed({"type": "role.call", "role": "worker", "model": "m"})
+    view.feed({"type": "model.call", "role": "worker", "model": "m"})
     time.sleep(_STALL_WAIT_S)
     assert "working…" not in buf.getvalue()
     view.close()
@@ -333,7 +333,7 @@ def test_notice_clears_the_spinner_before_printing() -> None:
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
-        view.feed({"type": "role.call", "role": "worker", "model": "m"})
+        view.feed({"type": "model.call", "role": "worker", "model": "m"})
         time.sleep(_STALL_WAIT_S)  # spinner up
         assert "working…" in out.getvalue()
         view.notice("[agent6]   auto-commit: abc123")
@@ -373,7 +373,7 @@ def test_replayed_history_does_not_reset_the_idle_timer() -> None:
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
         wedged_at = time.time() - 2400
-        view.feed({"type": "role.call", "role": "worker", "model": "m", "ts": wedged_at - 1})
+        view.feed({"type": "model.call", "role": "worker", "model": "m", "ts": wedged_at - 1})
         view.feed({"type": "tool.call", "name": "run_command", "args_preview": {}, "ts": wedged_at})
         idle = time.monotonic() - view._last_output_at  # pyright: ignore[reportPrivateUsage]
         assert idle >= 2399, f"replay reset the idle timer to {idle:.1f}s"
@@ -394,9 +394,9 @@ def test_streamed_model_text_cannot_reach_the_terminal_with_controls() -> None:
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
-        view.feed({"type": "role.call", "role": "worker", "model": "m"})
-        view.feed({"type": "role.text_delta", "text": "safe \x1b]52;c;cGF5"})
-        view.feed({"type": "role.text_delta", "text": "bG9hZA==\x07 more"})
+        view.feed({"type": "model.call", "role": "worker", "model": "m"})
+        view.feed({"type": "model.text_delta", "text": "safe \x1b]52;c;cGF5"})
+        view.feed({"type": "model.text_delta", "text": "bG9hZA==\x07 more"})
         got = out.getvalue()
         assert "\x1b]52" not in got and "\x07" not in got
         assert "safe" in got and "more" in got
@@ -466,7 +466,7 @@ def test_a_provider_retry_says_so_instead_of_resetting_the_clock() -> None:
     out = _render(
         [
             {
-                "type": "loop.provider.retry",
+                "type": "provider.retry",
                 "attempt": 2,
                 "error": "HTTP error calling https://api.example/v1: connection refused",
             }
@@ -481,9 +481,9 @@ def test_a_streamed_answer_is_not_repeated_on_the_answered_line() -> None:
     out = _render(
         [
             {"type": "session.start", "user_task": "name the class", "mode": "ask"},
-            {"type": "role.call", "role": "worker"},
-            {"type": "role.text_delta", "role": "worker", "text": "CoreTest"},
-            {"type": "role.result", "role": "worker", "text": "CoreTest"},
+            {"type": "model.call", "role": "worker"},
+            {"type": "model.text_delta", "role": "worker", "text": "CoreTest"},
+            {"type": "model.result", "role": "worker", "text": "CoreTest"},
             {
                 "type": "session.stop",
                 "verification": "passed",
@@ -497,8 +497,8 @@ def test_a_streamed_answer_is_not_repeated_on_the_answered_line() -> None:
     out = _render(
         [
             {"type": "session.start", "user_task": "name the class", "mode": "ask"},
-            {"type": "role.call", "role": "worker"},
-            {"type": "role.result", "role": "worker", "text": "CoreTest"},
+            {"type": "model.call", "role": "worker"},
+            {"type": "model.result", "role": "worker", "text": "CoreTest"},
             {
                 "type": "session.stop",
                 "verification": "passed",
