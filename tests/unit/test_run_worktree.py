@@ -1339,6 +1339,24 @@ def test_a_gate_on_an_untracked_path_with_no_setup_command_refuses_before_anythi
     assert "`## Setup command`" in err and "AGENTS.md" in err
 
 
+def test_a_gate_on_an_untracked_path_refuses_a_parallel_run_before_any_lane_is_cloned(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every lane cloned, ran, and ended red: its clone had no `.venv` for the gate."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _untracked_venv(repo)
+    _pin_gate(repo)
+    prov = _script(monkeypatch)
+
+    assert cli_main(["run", "--parallel", "2", "--session-id", "par-GATE01", "task"]) == 2
+    err = capsys.readouterr().err
+
+    assert prov.calls == 0
+    assert _nothing_was_created(repo, "par-GATE01")
+    assert "REFUSING: the verify gate runs `.venv/bin/python`" in err
+    assert "a lane's clone" in err
+
+
 def test_the_gate_is_inferred_in_the_checkout_and_carried_into_the_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
