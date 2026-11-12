@@ -408,7 +408,7 @@ function newWorkDock(presets, presetDefault, sessions) {
   const cap = el('input', 'field'); cap.type = 'number'; cap.step = 'any'; cap.placeholder = 'config';
   cap.title = 'the metered spend ceiling in USD for this session (--max-usd); -1 is unlimited';
   cap.style.width = '7em';
-  const advanced = el('details', 'more');
+  const advanced = el('details', 'advanced');
   advanced.appendChild(el('summary', null, 'advanced…'));
   advanced.appendChild(pickerRow([['from plan', seed], ['max USD', cap]]));
   if (pending.seed_from) { seed.value = pending.seed_from; advanced.open = true; }

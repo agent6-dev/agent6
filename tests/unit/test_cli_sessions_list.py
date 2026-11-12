@@ -140,6 +140,7 @@ def test_runs_list_json_carries_the_row_facts(
         "lane",
         "coordinator",
         "worktree",
+        "branch",
         "review_queue",
         "queue_group",
         "lane_groups",
