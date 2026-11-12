@@ -194,6 +194,32 @@ def test_config_load_refuses_a_settled_stop_of_zero_or_below_minus_one(
     assert "must be 1 or more, or exactly -1 for no limit" in text
 
 
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ('preset = "review"\n', "agent6.preset"),
+        ('[git.commit.checkpoint]\nmessage = "model"\n', "git.commit.checkpoint_message"),
+        ('[git.commit.squash]\nmessage = "model"\n', "git.commit.squash_message"),
+        ('[prompt]\ndecompose = "on"\n', "[harness.prompt]"),
+        ("[parallel]\nmax_lanes = 2\n", "[harness.parallel]"),
+        ('[workspace]\nbase_dir = "/tmp/x"\n', "[git.worktree]"),
+        ('[harness]\nverify_command = ["true"]\n', "harness.verify.command"),
+        ("[harness]\nverify_infer = false\n", "harness.verify.infer"),
+        ("[harness]\nverify_timeout_s = 5\n", "harness.verify.timeout_s"),
+        ('[harness]\nverify_when = "turn"\n', "harness.verify.when"),
+        ("[harness]\nverify_at_start = true\n", "harness.verify.at_start"),
+        ("[harness]\nverify_retries = 1\n", "harness.verify.retries"),
+    ],
+)
+def test_loader_names_the_new_home_of_a_moved_key(repo: pathlib.Path, old: str, new: str) -> None:
+    """A key written before its move is refused with the place to write it now."""
+    paths_mod.repo_config_path(repo).write_text(old, encoding="utf-8")
+    with pytest.raises(ConfigError) as exc:
+        layer.load_effective(repo)
+    assert f"use {new}" in str(exc.value)
+    assert "extra_forbidden" in str(exc.value)
+
+
 @pytest.mark.parametrize("layered", [False, True])
 def test_loader_refuses_the_old_settled_stop_key(repo: pathlib.Path, layered: bool) -> None:
     """Both loaders name the removed key and the key that replaces it."""
