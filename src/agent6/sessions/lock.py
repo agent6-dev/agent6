@@ -184,10 +184,32 @@ def workspace_lease_path(root: pathlib.Path) -> pathlib.Path:
     return state_dir / "locks" / f"{paths.repo_id(paths.checkout_root(root))}.workspace.lock"
 
 
-def hold_workspace(root: pathlib.Path) -> bool:
-    """Hold the checkout's lease, shared, for the rest of this process.
+def checkouts_from(root: pathlib.Path) -> tuple[pathlib.Path, ...]:
+    """Return the checkout holding a path and every checkout above it, nearest first.
 
-    A run, a resume, a machine and an exec take it before they look for packs, and keep it
+    A nested checkout sits inside the workspaces above it, so its users and a pack of any of
+    them meet on all of their leases.
+
+    Args:
+        root: Any path inside the checkout.
+
+    Returns:
+        The checkout roots.
+    """
+    root = root.resolve()
+    return tuple(
+        dict.fromkeys(
+            paths.checkout_root(path)
+            for path in (root, *root.parents)
+            if path == root or (path / ".git").exists()
+        )
+    )
+
+
+def hold_workspace(root: pathlib.Path) -> bool:
+    """Hold the lease of the checkout and of every checkout above it, shared, for this process.
+
+    A run, a resume, a machine and an exec take them before they look for packs, and keep them
     while their commands may run: `pack` cannot start meanwhile, since a pack made during a
     live sandbox would put the secrets within its reach. A second hold of the same checkout
     reuses the first.
@@ -196,19 +218,20 @@ def hold_workspace(root: pathlib.Path) -> bool:
         root: Any path inside the checkout.
 
     Returns:
-        True when held; False while `pack` writes the checkout.
+        True when held; False while `pack` writes one of the checkouts.
     """
-    lease = workspace_lease_path(root)
-    if lease in _held:
-        return True
-    paths.mkdir_for_real_user(lease.parent)
-    fd = os.open(lease, os.O_CREAT | os.O_RDWR, 0o644)
-    try:
-        portable.lock_shared_nonblocking(fd)
-    except OSError:
-        os.close(fd)
-        return False
-    _held[lease] = fd
+    for checkout in checkouts_from(root):
+        lease = workspace_lease_path(checkout)
+        if lease in _held:
+            continue
+        paths.mkdir_for_real_user(lease.parent)
+        fd = os.open(lease, os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            portable.lock_shared_nonblocking(fd)
+        except OSError:
+            os.close(fd)
+            return False
+        _held[lease] = fd
     return True
 
 

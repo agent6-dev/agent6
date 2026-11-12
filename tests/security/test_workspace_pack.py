@@ -148,3 +148,23 @@ def test_pack_of_a_nested_checkout_needs_the_leases_above_it(tmp_path: pathlib.P
     lock.release_workspaces()
     pack.pack(child)
     assert (child / ".agent6" / "pack.json").exists()
+
+
+def test_a_user_of_a_nested_checkout_stops_a_pack_of_the_workspace_above_it(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A session in a worktree inside the project read a pack written beside it.
+
+    A lane's clone under `.agent6/worktrees` sits in the workspace a container mounts, so its
+    commands reach the project's `.agent6/config/`: the pack waits for it as for a run of the
+    project itself.
+    """
+    project = tmp_path / "project"
+    (project / ".git").mkdir(parents=True)
+    lane = project / ".agent6/worktrees/project-1/run-p1/lane-1"
+    (lane / ".git").mkdir(parents=True)
+    assert lock.hold_workspace(lane)
+    with pytest.raises(errors.PackError, match=str(project)):
+        pack.pack(project)
+    lock.release_workspaces()
+    pack.pack(project)

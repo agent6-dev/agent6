@@ -354,12 +354,7 @@ def _exclusive_leases(root: pathlib.Path) -> list[int]:
         PackError: A run, exec or machine of one of the checkouts is live.
     """
     held: list[int] = []
-    checkouts = dict.fromkeys(
-        paths.checkout_root(path)
-        for path in (root, *root.parents)
-        if path == root or (path / ".git").exists()
-    )
-    for checkout in checkouts:
+    for checkout in lock.checkouts_from(root):
         fd = lock.exclude_workspace(checkout)
         if fd is None:
             for earlier in held:

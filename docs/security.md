@@ -218,7 +218,7 @@ Each `--security-opt` flag on this page turns off a protection of the container 
     - a grant at or inside a private dir is refused at config load
     - `partial` `sandbox.isolation` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses
     - a `sandbox.extra_read_paths` or `extra_write_paths` entry inside a `hide_paths` entry refuses at every jailed level: the launcher binds a grant through the mask above it
-    - every run, resume, machine and exec holds the checkout's workspace lease (shared) for its lifetime, and `pack` takes it alone before it writes, so neither starts under the other; a nested checkout's pack also needs the leases of the checkouts above it
+    - every run, resume, machine and exec holds the checkout's workspace lease (shared) for its lifetime, and `pack` takes it alone before it writes, so neither starts under the other; a session and a pack of a nested checkout hold the leases of the checkouts above it too, since a worktree under `.agent6/worktrees` sits inside the workspace
     - a present `.agent6/pack.json` refuses startup at every isolation level, including `partial`.
       Run `agent6 unpack` in that workspace, or delete the pack from that directory: `pack.json`, `config/`, `repo/` and `skills/`
     - run preflight scans the project tree once for nested packs, without following symlinks or entering `.git`, and refuses with every pack's path.
