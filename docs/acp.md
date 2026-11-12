@@ -134,9 +134,9 @@ Five tools, of which a default config publishes two:
 
 | Tool | Withheld when |
 | --- | --- |
-| `query_dag` (a run's task graph) | never |
+| `get_task_graph` (a run's task graph) | never |
 | `list_sessions` (this repository's sessions) | never |
-| `run_verify` (the configured gate, jailed) | no `[harness] verify_command`, or `[sandbox] run_commands` is not `allow` |
+| `run_verify_command` (the configured gate, jailed) | no `[harness] verify_command`, or `[sandbox] run_commands` is not `allow` |
 | `run_in_sandbox` (an argv, jailed) | `[sandbox] run_commands` is not `allow` |
 | `apply_patch_in_sandbox` (a patch, then the gate) | either of the two above |
 
@@ -151,4 +151,4 @@ Five tools, of which a default config publishes two:
 }
 ```
 
-The tools reach the repository the server was started in, under that repository's sandbox policy; `list_sessions` and `query_dag` read its state dir and nothing else.
+The tools reach the repository the server was started in, under that repository's sandbox policy; `list_sessions` and `get_task_graph` read its state dir and nothing else.

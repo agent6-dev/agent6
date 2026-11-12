@@ -8,8 +8,8 @@ agent's own tools': every command routes through the jail by way of a
 `ToolDispatcher` built on the loaded config, and `[sandbox].run_commands =
 "ask"` is a hard deny, since nobody answers at the MCP boundary.
 
-The tools: `run_verify`, `run_in_sandbox`, `apply_patch_in_sandbox`,
-`query_dag`, `list_sessions`.
+The tools: `run_verify_command`, `run_in_sandbox`, `apply_patch_in_sandbox`,
+`get_task_graph`, `list_sessions`.
 """
 
 from __future__ import annotations
@@ -64,10 +64,10 @@ class _ToolSpec:
 
 
 # The command-spawning tools, withdrawn together when commands are off.
-_COMMAND_TOOLS = frozenset({"run_verify", "run_in_sandbox", "apply_patch_in_sandbox"})
+_COMMAND_TOOLS = frozenset({"run_verify_command", "run_in_sandbox", "apply_patch_in_sandbox"})
 
 # Withdrawn without a verify command: `apply_patch_in_sandbox` must refuse before applying.
-_GATE_TOOLS = frozenset({"run_verify", "apply_patch_in_sandbox"})
+_GATE_TOOLS = frozenset({"run_verify_command", "apply_patch_in_sandbox"})
 
 
 def _schema_violation(value: Any, schema: dict[str, Any], where: str) -> str | None:
@@ -232,7 +232,7 @@ class MCPServer:
         """Return the published tools, before the withdrawals."""
         return [
             _ToolSpec(
-                name="run_verify",
+                name="run_verify_command",
                 description=(
                     "Run the workspace's configured verify command inside the agent6"
                     " jail. Returns {command, returncode, stdout, stderr,"
@@ -243,7 +243,7 @@ class MCPServer:
                     "properties": {},
                     "additionalProperties": False,
                 },
-                handler=self._h_run_verify,
+                handler=self._h_run_verify_command,
             ),
             _ToolSpec(
                 name="run_in_sandbox",
@@ -287,7 +287,7 @@ class MCPServer:
                 handler=self._h_apply_patch_in_sandbox,
             ),
             _ToolSpec(
-                name="query_dag",
+                name="get_task_graph",
                 description=(
                     "Load the task graph for a given run id (default: most recent)."
                     " Returns {session_id, nodes: {id: {title, status, parent_id, ...}}}."
@@ -297,14 +297,14 @@ class MCPServer:
                     "properties": {"session_id": {"type": "string"}},
                     "additionalProperties": False,
                 },
-                handler=self._h_query_dag,
+                handler=self._h_get_task_graph,
             ),
             _ToolSpec(
                 name="list_sessions",
                 description=(
                     "Enumerate sessions under the per-repo state dir (most-recent first): the"
                     " listing row every hub shares (status, label, level, reason, mode, task,"
-                    " cost) plus the manifest (lineage: parent, branch, worktree, base_sha)."
+                    " usage) plus the manifest (lineage: parent, branch, worktree, base_sha)."
                 ),
                 input_schema={
                     "type": "object",
@@ -434,7 +434,7 @@ class MCPServer:
         self._stdout.write(json.dumps(msg, separators=(",", ":")).encode("utf-8") + b"\n")
         self._stdout.flush()
 
-    def _h_run_verify(self, _args: dict[str, Any]) -> dict[str, Any]:
+    def _h_run_verify_command(self, _args: dict[str, Any]) -> dict[str, Any]:
         """Return the verify command's result."""
         return self._dispatcher.dispatch("run_verify_command", {}).to_wire()
 
@@ -451,7 +451,7 @@ class MCPServer:
         verify_result = self._dispatcher.dispatch("run_verify_command", {})
         return {"apply": apply_result.to_wire(), "verify": verify_result.to_wire()}
 
-    def _h_query_dag(self, args: dict[str, Any]) -> dict[str, Any]:
+    def _h_get_task_graph(self, args: dict[str, Any]) -> dict[str, Any]:
         """Load a session's task graph.
 
         Args:

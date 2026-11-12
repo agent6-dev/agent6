@@ -123,10 +123,10 @@ def test_mcp_serve_roundtrip(tmp_path: pathlib.Path) -> None:
     assert isinstance(tools_resp, dict)
     tools = tools_resp["tools"]
     assert {t["name"] for t in tools} == {
-        "run_verify",
+        "run_verify_command",
         "run_in_sandbox",
         "apply_patch_in_sandbox",
-        "query_dag",
+        "get_task_graph",
         "list_sessions",
     }
     list_sessions_resp = by_id[3]["result"]
@@ -140,11 +140,11 @@ def test_mcp_serve_roundtrip(tmp_path: pathlib.Path) -> None:
 
 
 def test_mcp_run_verify_resolves_through_real_dispatcher(tmp_path: pathlib.Path) -> None:
-    """End-to-end `run_verify` through the real server + jailed dispatcher.
+    """End-to-end `run_verify_command` through the real server + jailed dispatcher.
 
-    Regression: the handler dispatched the dispatcher tool name `run_verify`,
+    Regression: the handler dispatched the dispatcher tool name `run_verify_command`,
     but the registered name is `run_verify_command`, so every call came back
-    `{"isError": true, "text": "Unknown tool: run_verify"}`. The unit tests
+    `{"isError": true, "text": "Unknown tool: run_verify_command"}`. The unit tests
     monkeypatched `dispatch` and so encoded the wrong name; only an end-to-end
     call against the real dispatcher catches it. verify_command is `["true"]`,
     which exits 0 inside the jail.
@@ -176,7 +176,7 @@ def test_mcp_run_verify_resolves_through_real_dispatcher(tmp_path: pathlib.Path)
                     "jsonrpc": "2.0",
                     "id": 1,
                     "method": "tools/call",
-                    "params": {"name": "run_verify", "arguments": {}},
+                    "params": {"name": "run_verify_command", "arguments": {}},
                 }
             ],
         )
@@ -187,6 +187,6 @@ def test_mcp_run_verify_resolves_through_real_dispatcher(tmp_path: pathlib.Path)
     assert len(responses) == 1
     result = responses[0]["result"]
     assert isinstance(result, dict)
-    # The bug surfaced as isError + "Unknown tool: run_verify"; assert neither.
+    # The bug surfaced as isError + "Unknown tool: run_verify_command"; assert neither.
     assert not result.get("isError"), result
     assert result["structuredContent"]["returncode"] == 0

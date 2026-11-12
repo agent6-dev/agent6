@@ -105,10 +105,10 @@ def test_tools_list_advertises_five_tools(tmp_path: pathlib.Path) -> None:
     tools = resps[0]["result"]["tools"]
     names = {t["name"] for t in tools}
     assert names == {
-        "run_verify",
+        "run_verify_command",
         "run_in_sandbox",
         "apply_patch_in_sandbox",
-        "query_dag",
+        "get_task_graph",
         "list_sessions",
     }
     # Every tool advertises a JSON-schema object.
@@ -131,12 +131,12 @@ def test_withdrawn_command_tools_are_absent_and_named(tmp_path: pathlib.Path) ->
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "tools/call",
-                "params": {"name": "run_verify", "arguments": {}},
+                "params": {"name": "run_verify_command", "arguments": {}},
             },
         ],
     )
     names = {t["name"] for t in resps[0]["result"]["tools"]}
-    assert names == {"query_dag", "list_sessions"}
+    assert names == {"get_task_graph", "list_sessions"}
     err = resps[1]["error"]["message"]
     assert "withdrawn" in err and "run_commands" in err and "'deny'" in err
 
@@ -146,9 +146,9 @@ def test_the_gate_tools_are_withdrawn_when_the_workspace_has_no_gate(
 ) -> None:
     """With no verify command there is nothing to run.
 
-    `run_verify` reached the jail with an empty argv and answered "tuple index out of range", and
-    `apply_patch_in_sandbox` applied the patch and THEN failed the same way, leaving the workspace
-    changed under a call reported as failed.
+    `run_verify_command` reached the jail with an empty argv and answered "tuple index out of
+    range", and `apply_patch_in_sandbox` applied the patch and THEN failed the same way, leaving
+    the workspace changed under a call reported as failed.
     """
     p = tmp_path / "agent6.toml"
     p.write_text(
@@ -174,7 +174,7 @@ def test_the_gate_tools_are_withdrawn_when_the_workspace_has_no_gate(
     )
 
     names = {t["name"] for t in resps[0]["result"]["tools"]}
-    assert names == {"run_in_sandbox", "query_dag", "list_sessions"}
+    assert names == {"run_in_sandbox", "get_task_graph", "list_sessions"}
     err = resps[1]["error"]["message"]
     assert "withdrawn" in err and "verify_command" in err
 
@@ -312,7 +312,7 @@ def test_query_dag_missing_run_returns_tool_error(tmp_path: pathlib.Path) -> Non
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {"name": "query_dag", "arguments": {}},
+                "params": {"name": "get_task_graph", "arguments": {}},
             }
         ],
     )
@@ -322,7 +322,7 @@ def test_query_dag_missing_run_returns_tool_error(tmp_path: pathlib.Path) -> Non
 
 @pytest.mark.parametrize("bad", ["../../elsewhere/runs/x", "/etc", "a/b", ".."])
 def test_query_dag_rejects_traversing_run_id(tmp_path: pathlib.Path, bad: str) -> None:
-    """query_dag rejects a traversing session id.
+    """get_task_graph rejects a traversing session id.
 
     A client-supplied id builds a path under the session buckets; a `..` or absolute id would read
     another repo's state, so it must be a single component, like the web surface's guard.
@@ -335,7 +335,7 @@ def test_query_dag_rejects_traversing_run_id(tmp_path: pathlib.Path, bad: str) -
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {"name": "query_dag", "arguments": {"session_id": bad}},
+                "params": {"name": "get_task_graph", "arguments": {"session_id": bad}},
             }
         ],
     )
@@ -368,7 +368,7 @@ def test_query_dag_reads_persisted_nodes(tmp_path: pathlib.Path) -> None:
                 "id": 1,
                 "method": "tools/call",
                 "params": {
-                    "name": "query_dag",
+                    "name": "get_task_graph",
                     "arguments": {"session_id": "r1"},
                 },
             }
@@ -404,12 +404,11 @@ def test_run_verify_delegates_to_dispatcher(
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {"name": "run_verify", "arguments": {}},
+                "params": {"name": "run_verify_command", "arguments": {}},
             }
         ],
     )
-    # The MCP tool is `run_verify`; internally it dispatches the dispatcher's
-    # `run_verify_command` (the registered handler name).
+    # The MCP tool and the dispatcher's handler share one name.
     assert captured == [("run_verify_command", {})]
     assert resps[0]["result"]["structuredContent"]["returncode"] == 0
 
@@ -498,7 +497,7 @@ def test_tool_arguments_are_checked_against_the_published_schema(
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {"name": "run_verify", "arguments": {"surprise": 1}},
+                "params": {"name": "run_verify_command", "arguments": {"surprise": 1}},
             },
             {  # argv items must be strings
                 "jsonrpc": "2.0",
@@ -516,7 +515,7 @@ def test_tool_arguments_are_checked_against_the_published_schema(
                 "jsonrpc": "2.0",
                 "id": 4,
                 "method": "tools/call",
-                "params": {"name": "query_dag", "arguments": {"session_id": 5}},
+                "params": {"name": "get_task_graph", "arguments": {"session_id": 5}},
             },
         ],
     )
@@ -613,7 +612,7 @@ def test_unexecutable_operator_command_surfaces_as_iserror(
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {"name": "run_verify", "arguments": {}},
+                "params": {"name": "run_verify_command", "arguments": {}},
             },
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
         ],
@@ -635,9 +634,10 @@ def test_unexecutable_operator_command_surfaces_as_iserror(
 def test_no_one_to_ask_withdraws_rather_than_breaks(configured: str, offered: bool) -> None:
     """With no one to ask, the asking tools are withdrawn rather than offered and broken.
 
-    There is no human on a JSON-RPC transport, so `ask` cannot be answered; offered, run_verify and
-    run_in_sandbox fail on every call under the default config, and apply_patch_in_sandbox applies
-    the patch and then errors on verify, leaving the workspace changed and the call failed.
+    There is no human on a JSON-RPC transport, so `ask` cannot be answered; offered,
+    run_verify_command and run_in_sandbox fail on every call under the default config, and
+    apply_patch_in_sandbox applies the patch and then errors on verify, leaving the workspace
+    changed and the call failed.
     """
     from agent6.config import Config
 
