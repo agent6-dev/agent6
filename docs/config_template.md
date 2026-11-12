@@ -349,9 +349,10 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 ### `[harness.parallel]`
 
 Lane limit for `run --parallel N|selector,...`.
-Each lane is a disposable clone running its own `agent6/<id>` branch; lanes are imported and ranked, nothing merges for you.
+Each lane is a disposable clone running its own `agent6/<id>` branch; lanes are imported and ranked, and the first-ranked lane joins the run's own branch.
 `harness.parallel.judges` names who ranks them: each judge ranks once, and the lowest sum of ranks wins.
-`--max-usd` is per lane (the total is printed before spawning); `--auto-approve` forwards to every lane.
+`git.auto_merge = true` then lands the run as it lands any run; without it, `agent6 sessions merge <run id>` does.
+`--max-usd` caps the lanes and the judges together; `--auto-approve` forwards to every lane.
 A live run dispatches lanes the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
 `harness.parallel.tool = true` offers a run's model the `parallel` tool, which dispatches a task through the same path ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.
 A subordinate model or steer cannot dispatch work; its configured harness panel may create bounded read-only leaves.

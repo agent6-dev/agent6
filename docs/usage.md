@@ -135,7 +135,11 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 ### Parallel directive
 
 `/parallel [SPEC --] TASK` runs a task in isolated lanes, including as the first prompt to `agent6 run`, through the same fan-out as `run --parallel SPEC TASK`.
-The two land differently: `run --parallel` imports and ranks the lanes and merges nothing; a live run's steer merges each lane's work onto the run's chain in dispatch order.
+A lane is a child of the run that dispatched it: the parent hands down, the child pushes up, and the root is the one owner.
+The lane gets its config, task and remaining budget from its parent; its approvals, questions and spend go up to the parent while it runs; its work and memory reach the repository only when the parent imports it at its end.
+The two land differently: a live run's steer merges each lane's work onto the run's chain in dispatch order, and `run --parallel` joins one lane.
+`run --parallel` is a run that makes no model call of its own: [`harness.parallel.judges`](config.md#harnessparallel) rank the lanes, the first-ranked lane joins the run's branch, the run's own gate judges the result, and the run ends `finished · lanes ranked`.
+The other lanes keep their branches, so `agent6 sessions merge <lane>` still lands one by hand.
 `SPEC` is a positive lane count or a comma-separated list of selectors, the same as `run --parallel`.
 A selector is an exact role name (`default`, `worker`, `planner`, `reviewer`, `helper`), which brings that role's model, effort and temperature together, or `[provider/]model`, which runs that model with the worker's effort and temperature; a model named like a role is written `provider/reviewer`.
 The spec ends at a whitespace-delimited `--` token.
@@ -168,7 +172,7 @@ The tool is offered only in run mode, never inside a subordinate run and never i
 A worker lane's configured harness panel retains authority to create bounded read-only leaves; neither the worker's model nor its `/parallel` steer may dispatch work.
 The knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel.
 
-A fan-out group has no model loop: steer one of its lanes instead.
+A `run --parallel` run made no model call: `agent6 resume <id> --steer "..."` continues it from the joined work with the worker model.
 `agent6 stop ID` on a session with live lanes stops its descendants too, by the lineage their manifests record, including read-only leaves behind a worker that already ended.
 Worker import preserves descendant records and receipts in the original repository's state directory before clone cleanup.
 Their spend is included in the worker's total, not an extra charge, and their evidence certifies only the child's reviewed target, not the top-level tree.
@@ -211,7 +215,7 @@ State is snapshotted before each model call and checkpointed per turn.
   `sessions prune` keeps a fork that has not started: its branch, chain ref and worktree stay.
 - `--at-turn 0` on a run that is itself a fork picks the seed it started from, before anything it did; the fork line says so
 - a `--parallel` lane continues through `agent6 fork <lane-id>`, in a worktree at the lane's last commit; `resume` refuses a lane from your checkout, whose tree is not the lane's
-- a fan-out stopped only by lane caps reads `failed · budget exhausted` and exits `3`; its report says to raise the budget cap and fork each stopped lane
+- a `run --parallel` run whose budget ended every lane reads `failed · budget exhausted` and exits `3`; each stopped lane continues through `agent6 fork <lane-id>`
 - the first `--steer` on a fork becomes the fork's task and names its row and its merge subject; later steers are continuations
 - a resume with `--steer` keeps the original session label, with the latest steer beneath it as `continued: <steer>`; new questions in an ask REPL are not continuations
 - under the `agent6` and `conventional` squash message styles, a resumed run's merge keeps the task as its subject (`conventional` prefixes it with the type and scope), with `continued: <steer>` in the body

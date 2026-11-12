@@ -778,7 +778,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 else:
                     reason = (
                         f"the run ended on {result.reason}, not finish_session"
-                        if result.reason != "finish_session"
+                        if result.reason not in finalize.LANDING_ENDS
                         else f"the gate on the final tree is {result.verification}"
                     )
                     reporter.note(f"auto_merge skipped: {reason}")

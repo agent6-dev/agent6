@@ -481,3 +481,33 @@ def test_verify_at_start_off_runs_no_start_gate(monkeypatch: pytest.MonkeyPatch)
     assert wf.gate.start_baseline(state) == []
     dispatcher.run_verify.assert_not_called()
     assert state.verify.baseline_ok is None
+
+
+@pytest.mark.parametrize(("rc", "word"), [(0, "passed"), (1, "failed")])
+def test_the_gate_judges_the_tree_a_rank_join_left_as_the_runs_own(
+    rc: int, word: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that ends on its opening dispatch has no turn to verify in; the gate still runs."""
+    state, (wf, dispatcher) = _state(), _start_wf(rc)
+    _patch_git(monkeypatch, wf)
+
+    wf.gate.after_rank_join(state)
+
+    dispatcher.run_verify.assert_called_once()
+    # The tree is the join's, so the verdict is the run's own and no baseline.
+    assert state.verify.baseline_ok is None
+    assert state.verify.last_ok is (rc == 0)
+    assert wf.gate.verification(state.verify) == word
+
+
+def test_no_gate_runs_after_a_rank_join_when_the_harness_may_not_run_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`harness.verify.when = "never"` keeps the harness off the gate here as at every end."""
+    state, (wf, dispatcher) = _state(), _start_wf(0, when="never")
+    _patch_git(monkeypatch, wf)
+
+    wf.gate.after_rank_join(state)
+
+    dispatcher.run_verify.assert_not_called()
+    assert state.verify.last_ok is None

@@ -266,7 +266,8 @@ class GitConfig(pydantic.BaseModel):
     auto_merge: bool = pydantic.Field(
         default=False,
         description=(
-            "automatic merge into the base branch only for end reason `finish_session` with a "
+            "automatic merge into the base branch only for end reason `finish_session`, or "
+            "`lanes_ranked` for a `run --parallel` run that joined its best-ranked lane, with a "
             "passed or absent verify gate; other ends: no auto-merge, reason printed; hidden "
             "chain ref merged with `git.branch_per_run = false`; conflict: nothing moved, "
             "instructions printed"

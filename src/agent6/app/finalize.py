@@ -124,8 +124,13 @@ def stranded_edits(
     return dirty
 
 
+# The ends `git.auto_merge` may land: the model's own finish, and a `run --parallel` run whose
+# best-ranked lane joined it.
+LANDING_ENDS = ("finish_session", "lanes_ranked")
+
+
 def auto_merge_eligible(result: loop_snapshot.SessionResult) -> bool:
-    """Tell whether the model finished the run over a green or absent gate.
+    """Tell whether the run ended on a landing end over a green or absent gate.
 
     Args:
         result: The session's result.
@@ -135,7 +140,7 @@ def auto_merge_eligible(result: loop_snapshot.SessionResult) -> bool:
     """
     return (
         result.completed
-        and result.reason == "finish_session"
+        and result.reason in LANDING_ENDS
         and result.verification in ("passed", "not_applicable")
     )
 

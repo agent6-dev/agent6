@@ -516,6 +516,12 @@ The directive uses the session's tools and permissions and returns markdown, wit
 ## Parallel runs
 
 The primitive is a task run as a subordinate isolated run whose branch joins back.
+One rule holds for every child (a lane, a review seat): the parent hands down, the child pushes up, and the root is the one owner.
+
+- handed down: the config snapshot, the task and pins, the turn cap and deadline, and what the parent's budget has left
+- pushed up: the child's approvals and waiting questions, its spend while it runs, and at its end its branch, its record and its memory, which the parent imports
+- owned by the root alone: the operator's answers, the one budget ledger, and every write to the repository's branches and memory
+
 Three consumers drive it: `run --parallel`, the web and TUI composers' `/parallel` new-work directive, and a live run's `/parallel` steer.
 
 All three share `parse_spec` in [directive.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/directive.py), a pure-stdlib leaf both `harness` and `ui` import.
@@ -537,7 +543,7 @@ The primitive is git plumbing in [subrun.py](https://github.com/agent6-dev/agent
 - `LaneSpawner` / `GroupLaneSpawner`: the Protocols for dispatching one lane, or a sibling group, and awaiting completion.
 
 [app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) implements those Protocols: it holds the front-end's `LaneRuntime`, plans the lanes, clones, spawns, awaits and imports one lane, and builds the coordinator's `/parallel` dispatcher.
-[app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) drives the fan-out session: spawn, await, import, rank, report.
+[app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) is a fan-out driver no command calls.
 [app/parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel_results.py) imports the finished lanes, carries memory and decisions back, and stamps and prints the ranking.
 [app/workdirs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/workdirs.py) places clones and linked worktrees (`[git.worktree].base_dir`; `[container].worktree_base_dir` under a container), keeps a base inside the repository out of its git, writes lane configs, recovers orphaned lanes and removes imported or safely swept clones.
 The detached spawn `app/lanes.py` drives (`ui.spawn`'s `spawn_lane`: the fixed `python -P -E -m agent6.ui.cli.lane_agent` argv, the child's pid kept) is injected as a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`; liveness probes use `sessions.process` and stop requests use the run-dir bridge (`sessions.ipc`).
@@ -557,11 +563,13 @@ TOML cannot preserve a selected `None` temperature with the unchanged sampling v
 The snapshot records each affected field in `parallel.config_notes`, written with the lane's first manifest and printed in the lane's end report and fan-out lane report.
 These notes survive manifest rewrites, import and temporary config cleanup; they document the loss and do not override the child config.
 
-- the fan-out is a session of its own under the origin's runs, named by the fan-out id; `stop <id>` ends it with its lanes, and `resume` refuses it
-    - a manifest with the fan-out stamp and no run branch
-    - a journal: the dispatch, the judge's streamed `role.*` events (`role = "judge"`), `parallel.compared` with the ranking and rationale, the judge's cost as its own spend, the end
+- `run --parallel` is a run: `ExecutionInputs.opening` carries its spec and task to the harness, and the loop's opening step (`loop_steer.ranked_opening`) dispatches the group under the join policy `rank` in place of the first model call
+    - the dispatcher asks its ranker once the lanes settle (`app_lanes.build_lane_ranker`: `[harness.parallel].judges` over each lane's diff from the base, its gate verdict and its cost, billed to the run's own tracker), writes the order on the dispatch record before any join, joins the first lane onto the run's chain and records each other lane as `ranked` with its place
+    - the journal: the dispatch, the judges' streamed `model.*` events (`role = "judge"`), `parallel.compared` with the ranking and rationale, `parallel.joined`, the end (`lanes_ranked`, `no_lane_result` or `budget_exhausted`)
     - a manifest comparison record: the group id, ranking, method, rationale and judge cost; lane manifests keep only their placement and group id
-    - a worker pid while the lanes run and the judge ranks them
+    - `VerifyGate.after_rank_join` runs the run's own gate on the joined tree, and `git.auto_merge` lands the run as it lands any run (`finalize.LANDING_ENDS`)
+    - under `git.control = "model"` the run has no chain: every lane is placed and none is joined
+    - a resume with a steer continues from the joined work with the worker model
 - every lane's manifest names the session that dispatched it (`parallel.coordinator`, stamped from the private launch), so each listing nests lanes under their coordinator, folded into a count
 - each lane's live session dir symlinks into its mode's bucket under `<origin_state>/sessions/` on locate: a fan-out is visible in every hub while it runs
 - on completion a lane imports and the symlink becomes the real directory; a failed-to-start lane keeps its clone, and a refused lane keeps its clone and symlink (never the only copy lost)
@@ -573,10 +581,10 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
 - the model's `parallel` tool (`[harness.parallel].tool`, off by default) runs through the same dispatcher with `source = "model"`: the dispatcher's `parallel_handler` is the loop's `_parallel_tool`, which validates the arguments, applies the model-lane ceilings (200 turns, 1,800 s) as `LaneLimits` the lanes' launch files enforce again, dispatches for the turn in progress and returns the result as the tool's answer; the tool is listed only when `ToolDispatcher.parallel_available()` holds (the knob, run mode, not a subordinate, a handler installed), and the same gates refuse a call that slips past the list
 - a resumed execution reconciles every record that is not complete or whose panel charges lack journal confirmation before its first provider call: the grant is restored as recorded (settled lanes released, never a second split), the recoverer finds the lanes by their session dirs (a live one is stopped as `agent6 stop` stops a run, one whose record is only in its clone is imported, one already imported is read as it stands), usage is settled exactly once, a lane whose work the chain already reaches is recorded joined at the merge that landed it and never merged twice, the rest join in order, and the result is delivered once for the original call; a record with no lane found completes as `dispatch interrupted before launch; nothing ran`; a complete record never delivered is delivered; a session older than the records has none to reconcile
 - a dispatch may give a lane `LaneLimits` (a turn cap and a wall-clock deadline) in its launch file: the bootstrap clamps `harness.max_turns` (a configured `-1` cannot lift the cap) and arms its own backstop, the stop bridges at the deadline and SIGTERM to itself a grace later; the coordinator's await ends at the same deadline, and a lane that reaches it reads `ended at its deadline`, never a success
-- imported candidates auto-compare into a ranked report with `sessions merge <id>` lines: a structured judge ([judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py)) where a reviewer model exists, else verify-then-cost
+- the ranking is `app.compare.rank`: each of `[harness.parallel].judges` ranks once ([judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py)) and the lowest sum of ranks wins; a tie, or a config with no judge, falls to verify-then-cost
 - the compare stamps each lane's manifest (`placement`, one writer): every view shows the rank and why; listings star the winner
-- nothing merges automatically
-- `--max-usd` is per lane and caps the judge like one more lane; the `$X/lane x N + judge = $Y total` line prints before spawning
+- only the first-ranked lane joins; the other lanes keep their branches for `sessions merge <lane>`
+- `--max-usd` is the run's cap: the lanes and the judges bill one tracker
 
 **A `/parallel` steer dispatches a sibling group** through `OperatorBridge.lane_spawner`, on `Harness.bridge` (the injection point keeping `harness` from importing `ui`; `app/execution.py` wires the front-end's spawner, run mode only).
 

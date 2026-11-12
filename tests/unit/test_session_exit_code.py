@@ -185,6 +185,13 @@ def test_auto_merge_needs_a_model_finish_and_a_vouched_for_tree() -> None:
     assert not finalize.auto_merge_eligible(
         _result(completed=False, reason="max_turns", verification="passed")
     )
+    # A `run --parallel` run lands its best-ranked lane by the same gate rule.
+    assert finalize.auto_merge_eligible(
+        _result(completed=True, reason="lanes_ranked", verification="passed")
+    )
+    assert not finalize.auto_merge_eligible(
+        _result(completed=True, reason="lanes_ranked", verification="unverified")
+    )
 
 
 @pytest.mark.parametrize("reason", ["verify_settled", "settled", "silent_finish", "metric_plateau"])

@@ -17,7 +17,7 @@ This page is the reference for the command-line surface; the patterns behind the
 - `--model [provider/]model`: the model for the mode's role, over every config layer; a bare id keeps the role's provider, and a resume keeps the recorded route unless it sets its own
   The web and TUI resume composers default to that route and offer the config's routes as choices.
   A resume that changes the route prints both the chosen and recorded routes.
-- `--parallel 3` (or `reviewer,provider/model-a`: a role name brings its model, effort and temperature; a `[provider/]model` runs with the worker's): isolated lanes, auto-compared into a ranked report; the fan-out is a session of its own that `attach`, `stop` and `sessions show` address, its lanes folded under it (`--lanes` expands them) ([parallel](config.md#harnessparallel))
+- `--parallel 3` (or `reviewer,provider/model-a`: a role name brings its model, effort and temperature; a `[provider/]model` runs with the worker's): isolated lanes, ranked by `harness.parallel.judges`, the first-ranked lane joined onto the run's own branch; the run is a session that `attach`, `stop`, `sessions show`, `sessions merge` and `resume` address, its lanes folded under it (`--lanes` expands them) ([parallel](config.md#harnessparallel))
 - `--worktree`: from the repository's top level, the run works in its own git worktree at HEAD's commit, under `[git.worktree].base_dir`
     - your checkout and its uncommitted changes stay as they are and are not carried, and neither is anything git does not track ([worktrees](usage.md#worktrees)), so you can keep working there or start more runs
     - `sessions merge` lands the work and `sessions prune` then removes the worktree, as it does for a run that committed nothing and left no edits
@@ -178,7 +178,7 @@ Exit codes for `agent6 run`, `ask` and `resume`, for scripts to branch on:
 | `0` | finished with a green gate, or nothing to gate on |
 | `1` | ended unfinished: out of turns, stuck, a provider error, a crash |
 | `2` | operator error (bad flag or config, a refusal before anything ran) |
-| `3` | budget exhausted, including a `run --parallel` fan-out whose every lane stopped at its cap |
+| `3` | budget exhausted, including a `run --parallel` run whose budget ended every lane |
 | `4` | finished over a red or timed-out verify gate, or a never-run gate under `harness.verify.when = "finish"` or `"turn"` |
 | `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing, or one with `[git].commit_per_turn = false`, stays `0`) |
 | `130` | interrupted, or stopped by the operator: Ctrl-C, SIGTERM to a run, ask, plan or fan-out (`timeout`, CI, the kill `agent6 stop` falls back to), `agent6 stop`, abort or exit at the pause menu, stop after a commit |

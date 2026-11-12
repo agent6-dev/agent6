@@ -1084,3 +1084,23 @@ def test_an_opening_whose_lanes_all_fail_ends_with_no_lane_result(
     assert provider.call.call_count == 0
     assert (result.reason, result.completed) == ("no_lane_result", False)
     assert git_read.chain_tip(repo, "refs/agent6/coord") is None
+
+
+def test_a_stop_asked_while_the_opening_ran_ends_the_run_as_a_stop(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The operator's stop outranks the ranking: the run reads stopped, not `lanes_ranked`."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    spawner = _FakeGroupSpawner(repo, "session", tmp_path / "wt")
+    events = _FakeEvents(tmp_path / "session" / "logs.jsonl")
+    wf, provider = _opening_wf(repo, spawner, events, order=(1, 2, 3))
+    wf.bridge = dataclasses.replace(
+        wf.bridge, stop_requested=lambda: True, stop_is_now=lambda: True
+    )
+
+    result = wf.run("add a lane file")
+
+    assert provider.call.call_count == 0
+    assert (result.reason, result.completed) == ("steer_abort", False)
+    assert [stop["reason"] for stop in events.of("session.stop")] == ["steer_abort"]
