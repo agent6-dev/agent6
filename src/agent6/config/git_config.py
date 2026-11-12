@@ -221,9 +221,11 @@ class GitConfig(pydantic.BaseModel):
         },
         default="tasks",
         description=(
-            "Method for `agent6 sessions merge` to land a run on its base; task commits use "
-            "the subtask title, while checkpoints outside subtasks use "
-            "`[git.commit.squash]`, so a run that never decomposed lands as one commit; "
+            "Method for `agent6 sessions merge` to land a run on its base; a task's commit "
+            "takes the `[git.commit.squash]` message under the `model` style with the subtask's "
+            "title and acceptance as its body, else the subtask's title; checkpoints outside "
+            "subtasks use `[git.commit.squash]`, so a run that never decomposed lands as one "
+            "commit; "
             "consolidation only, per-turn commits stay on the run's chain; `sessions merge "
             "-m` lands one commit with that message"
         ),

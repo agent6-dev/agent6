@@ -137,8 +137,10 @@ def dispatch_merge(
 
     A squash builds its message per `[git.commit.squash].message`; an operator message
     overrides any style. `tasks` lands one squash per consecutive range of checkpoints
-    that worked on one subtask, each under that subtask's title; a range outside any
-    subtask takes the squash style's message, and an operator message lands one squash.
+    that worked on one subtask: under the `model` style the model names the range's work
+    and the subtask's title and acceptance follow as the body, under every other style the
+    title is the subject and the acceptance the body; a range outside any subtask takes
+    the squash style's message, and an operator message lands one squash.
 
     Args:
         cwd: The repository.
@@ -178,6 +180,30 @@ def dispatch_merge(
             warn=warn,
         )
 
+    def range_message(
+        range_base: str, range_tip: str, node: graph_models.TaskNode | None
+    ) -> str | None:
+        if node is None:
+            return style_message(range_base, range_tip)
+        record = task_commit_message(node)
+        if cfg.git.commit.squash.message != "model":
+            return record
+        # The model names the range's work; the task stays its record, as the body.
+        written = merge_message.model_squash_message(
+            cwd,
+            cfg,
+            git_read.list_run_commits(cwd, range_base, range_tip),
+            base_sha=range_base,
+            run_branch=range_tip,
+            task=record.splitlines()[0],
+            finish_summaries=finish_summaries,
+            transcript_dir=transcript_dir,
+            budget=budget,
+            events=events,
+            warn=warn,
+        )
+        return f"{written.rstrip()}\n\n{record}" if written else record
+
     if method == "tasks" and message is None:
         return land_tasks(
             cwd,
@@ -186,7 +212,7 @@ def dispatch_merge(
             base_sha=merge_base or base_sha,
             tasks=tasks or {},
             identity=identity,
-            style_message=style_message,
+            range_message=range_message,
         )
     if method in ("squash", "tasks") and message is None:
         message = style_message(merge_base or base_sha, run_branch)
@@ -213,7 +239,7 @@ def land_tasks(
     base_sha: str,
     tasks: Mapping[str, graph_models.TaskNode],
     identity: git_read.CommitIdentity,
-    style_message: Callable[[str, str], str | None],
+    range_message: Callable[[str, str, graph_models.TaskNode | None], str | None],
 ) -> git_ops.MergeResult:
     """Land the chain as one squash per task range, in chain order.
 
@@ -229,8 +255,8 @@ def land_tasks(
         base_sha: Where the un-landed part of the chain starts.
         tasks: The task graph's nodes by id; a range naming a node lands under its title.
         identity: The committer.
-        style_message: Builds the message of a range outside any subtask, from its base
-            and tip.
+        range_message: Builds a range's message from its base, its tip and the task node it
+            worked on (None outside any subtask).
 
     Returns:
         The target's move, or the first conflict, with nothing landed.
@@ -243,7 +269,7 @@ def land_tasks(
     start, previous = landed, base_sha
     for task_id, range_tip in ranges:
         node = tasks.get(task_id) if task_id else None
-        message = task_commit_message(node) if node else style_message(previous, range_tip)
+        message = range_message(previous, range_tip, node)
         made = git_ops.merge_commit(
             cwd,
             landed,

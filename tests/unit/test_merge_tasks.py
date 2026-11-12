@@ -168,6 +168,49 @@ def test_tasks_merge_lands_one_commit_per_task_range_under_its_title(
     assert merged is not None and merged.method == "tasks"
 
 
+def test_tasks_merge_under_the_model_style_takes_the_models_message_with_the_task_as_body(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The configured squash style names each range; the task's title and acceptance follow."""
+    from agent6.app import merge_message, role_providers
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    (tmp_path / "g" / "agent6").mkdir(parents=True)
+    (tmp_path / "g" / "agent6" / "config.toml").write_text(
+        '[git.commit.squash]\nmessage = "model"\n', encoding="utf-8"
+    )
+    base = _repo(tmp_path)
+    layout = _session(tmp_path, "run-TASK05", base)
+    first, second = _subtasks(layout, "Add the parser", "Wire the parser into the CLI")
+    ref = git_read.chain_ref_for("run-TASK05")
+    _checkpoint(tmp_path, ref, base, "parser.py", first.id)
+    _checkpoint(tmp_path, ref, base, "cli.py", second.id)
+    asked: list[str] = []
+
+    def draft(_provider: object, *, system: str, user: str, max_tokens: int) -> str:
+        asked.append(user)
+        if "Task: Add the parser" in user:
+            return "feat(parser): add the parser\n\nOne pass over the grammar."
+        return "feat(cli): wire the parser in\n\nThe CLI calls it."
+
+    def provider(*_args: object, **_kwargs: object) -> object:
+        return object()
+
+    monkeypatch.setattr(role_providers, "build_role_provider", provider)
+    monkeypatch.setattr(merge_message, "call_for_text", draft)
+
+    assert main(["sessions", "merge", "run-TASK05"]) == 0
+
+    subjects = _git(tmp_path, "log", "--format=%s", "main").splitlines()
+    assert subjects == ["feat(cli): wire the parser in", "feat(parser): add the parser", "init"]
+    body = _git(tmp_path, "log", "-1", "--format=%b", "main")
+    assert "The CLI calls it." in body
+    assert "Wire the parser into the CLI\n\nWire the parser into the CLI is in place" in body
+    # Each range's request carries its own diff, not the run's.
+    assert len(asked) == 2 and "+parser.py" in asked[0] and "+parser.py" not in asked[1]
+
+
 def test_tasks_merge_of_an_undecomposed_run_lands_one_commit(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
