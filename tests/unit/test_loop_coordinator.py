@@ -9,16 +9,18 @@ and the summary run end-to-end.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import pathlib
 import subprocess
 import types
+from collections.abc import Sequence
 from typing import Any
 from unittest import mock
 
 import pytest
 
-from agent6 import lane_records
+from agent6 import directive, lane_records
 from agent6.app import lanes
 from agent6.config import Config
 from agent6.graph import curator, models
@@ -28,6 +30,7 @@ from agent6.sessions import journal, lane_dispatch
 from agent6.tools import results as tools_results
 from agent6.ui.cli import parallel as cli_parallel
 from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import transcript as viewmodel_transcript
 
 
@@ -996,3 +999,83 @@ def test_coordinator_spawner_gate_under_subrun(
         )
         is None
     )
+
+
+# A run that opens with a ranked dispatch (`run --parallel`).
+
+
+def _ranker(order: tuple[int, ...]) -> Any:
+    """Rank a group's lanes in the given lane order, by number."""
+
+    def rank(
+        results: Sequence[lane_records.LaneResult], *, group: str, base: str
+    ) -> lane_records.Ranking:
+        by_lane = {res.spec.lane: res.spec.session_id for res in results}
+        return lane_records.Ranking(
+            order=tuple(by_lane[n] for n in order if n in by_lane), ranked_by="judge"
+        )
+
+    return rank
+
+
+def _opening_wf(
+    repo: pathlib.Path,
+    spawner: _FakeGroupSpawner,
+    events: _FakeEvents,
+    *,
+    order: tuple[int, ...],
+    verify_command: tuple[str, ...] = (),
+) -> tuple[loop.Harness, mock.MagicMock]:
+    provider = mock.MagicMock()
+    wf = _build_wf(
+        repo,
+        provider,
+        steer_text="",
+        lane_spawner=spawner,
+        events=events,
+        verify_command=verify_command,
+    )
+    wf.opening = directive.Segment(task="add a lane file", spec="3")
+    wf.bridge = dataclasses.replace(wf.bridge, lane_ranker=_ranker(order))
+    return wf, provider
+
+
+def test_a_run_that_opens_with_a_ranked_dispatch_lands_the_winner_and_calls_no_model(
+    tmp_path: pathlib.Path,
+) -> None:
+    """`run --parallel` is a run: its chain holds the winner's work and it ends `lanes_ranked`."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    spawner = _FakeGroupSpawner(repo, "session", tmp_path / "wt")
+    events = _FakeEvents(tmp_path / "session" / "logs.jsonl")
+    wf, provider = _opening_wf(repo, spawner, events, order=(2, 1, 3))
+
+    result = wf.run("add a lane file")
+
+    assert provider.call.call_count == 0
+    assert (result.reason, result.completed, result.turns) == ("lanes_ranked", True, 1)
+    assert spawner.tasks() == ["add a lane file"] * 3
+    files = _git(repo, "ls-tree", "--name-only", "refs/agent6/coord").split()
+    assert files == ["README.md", "lane2.txt"]
+    (joined,) = events.of("parallel.joined")
+    assert [lane["status"] for lane in joined["lanes"]] == ["outranked", "joined", "outranked"]
+    (stop,) = events.of("session.stop")
+    assert stop["reason"] == "lanes_ranked"
+    assert "ranked 3 of 3; not joined" in stop["summary"]
+
+
+def test_an_opening_whose_lanes_all_fail_ends_with_no_lane_result(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Nothing is joined and nothing is passed off as a result."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    spawner = _FakeGroupSpawner(repo, "session", tmp_path / "wt", fail={1, 2, 3})
+    events = _FakeEvents(tmp_path / "session" / "logs.jsonl")
+    wf, provider = _opening_wf(repo, spawner, events, order=(1, 2, 3))
+
+    result = wf.run("add a lane file")
+
+    assert provider.call.call_count == 0
+    assert (result.reason, result.completed) == ("no_lane_result", False)
+    assert git_read.chain_tip(repo, "refs/agent6/coord") is None

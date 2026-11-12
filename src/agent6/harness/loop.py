@@ -144,6 +144,9 @@ class Harness:
         contract: The bounded conversation a `read_only` session drives in place of a
             worker's: its own system prompt and opening, a call ceiling, no gates, no
             advisors, no compaction; None for the worker's execution.
+        opening: The dispatch a fresh run makes in place of its first model call, joined by
+            rank: `run --parallel`'s spec and task. The run ends when it lands. None for a
+            run that opens with the model.
         turns_reached: The turn being driven, 0 before the loop starts; the app's
             interrupt fallbacks read it for a truthful `session.stop`.
     """
@@ -190,6 +193,7 @@ class Harness:
     mode: kinds.LoopMode = "run"
     plan_output_path: pathlib.Path | None = None
     contract: kinds.ConversationContract | None = None
+    opening: directive.Segment | None = None
     # A snapshot write fault warns once, not every turn; it disables resume, never the run.
     snapshot_write_failed: bool = dataclasses.field(default=False, init=False)
     turns_reached: int = dataclasses.field(default=0, init=False)
@@ -625,12 +629,13 @@ class Harness:
         Returns:
             The end when the operator's verify command cannot execute, else None.
         """
-        if self.contract is None:
+        # A run that opens with a ranked dispatch leaves the baseline to its lanes.
+        if self.contract is None and self.opening is None:
             try:
                 for notice in self.gate.start_baseline(state):
                     conversation.notice(notice.text)
             except tool_errors.OperatorCommandUnexecutableError as exc:
-                return self._unexecutable_abort(exc, turn=start_turn, state=state)
+                return self.unexecutable_abort(exc, turn=start_turn, state=state)
         # The start gate is the harness's time: the stagnation window opens at the first turn.
         state.stagnation = guards.StagnationGuard(wait_at_start=self.dispatcher.operator_wait_s)
         self._sit_review_target(state, conversation)
@@ -1101,7 +1106,7 @@ class Harness:
                 content = tool_effects.note_tool_error(self, state, name, tool_input, exc)
                 self._take(state, turn, ctx, guards.tool_error_ladder(turn, state, ctx))
             except tool_errors.OperatorCommandUnexecutableError as exc:
-                return self._unexecutable_abort(exc, turn=turn.number, state=state)
+                return self.unexecutable_abort(exc, turn=turn.number, state=state)
             turn.tool_results.append(
                 loop_conversation.ToolResultItem(
                     tool_use_id=tu.id,
@@ -1121,7 +1126,7 @@ class Harness:
         try:
             self.gate.harness_verify(state, turn)
         except tool_errors.OperatorCommandUnexecutableError as exc:
-            return self._unexecutable_abort(exc, turn=turn.number, state=state)
+            return self.unexecutable_abort(exc, turn=turn.number, state=state)
         return None
 
     def _turn_auto_commit_and_metric(
@@ -1216,7 +1221,7 @@ class Harness:
         try:
             turn.metric_feedback = self.metrics.auto_feedback(state, turn=turn.number, sha=sha)
         except tool_errors.OperatorCommandUnexecutableError as exc:
-            return self._unexecutable_abort(exc, turn=turn.number, state=state)
+            return self.unexecutable_abort(exc, turn=turn.number, state=state)
         turn.metric_plateau_finish = self.metrics.plateau_finish(state.metric.history)
         return None
 
@@ -1310,7 +1315,7 @@ class Harness:
         try:
             self.gate.harness_verify(state, turn, ending=True)
         except tool_errors.OperatorCommandUnexecutableError as exc:
-            return self._unexecutable_abort(exc, turn=turn.number, state=state)
+            return self.unexecutable_abort(exc, turn=turn.number, state=state)
         turn.ending = ending
         for gate in gates:
             if self._refuse(state, turn, gate(turn, state, ctx)):
@@ -1658,7 +1663,7 @@ class Harness:
         except OSError as exc:
             self.log(f"LOOP: memory use record failed: {exc}")
 
-    def _unexecutable_abort(
+    def unexecutable_abort(
         self,
         exc: tool_errors.OperatorCommandUnexecutableError,
         *,

@@ -471,6 +471,32 @@ class VerifyGate:
             notices.append(loop_conversation.Notice(nudges.BASELINE_RED_NOTICE))
         return notices
 
+    def after_rank_join(self, state: loop_state.LoopState) -> None:
+        """Run the gate on the tree a rank join left, as the run's own verdict.
+
+        A run that ends on its opening dispatch has no turn to verify in. A denied gate is
+        withheld and one that cannot run records nothing, so the run ends unverified. An
+        unexecutable operator command raises `OperatorCommandUnexecutableError`.
+
+        Args:
+            state: The execution's state.
+        """
+        verdict = state.verify
+        if not (self.mode == "run" and self.when != "never" and self.present(verdict)):
+            return
+        self.log("LOOP: harness verify (finish) on the joined tree")
+        self.emit(journal.VerifyRequested(reason="finish", turn=0))
+        try:
+            result = self.dispatcher.run_verify()
+        except tool_errors.ToolDeniedError:
+            self.dispatcher.verify_withheld = True
+            return
+        except tool_errors.ToolError:
+            return
+        if verdict.observe(result.verification):
+            verdict.last_tail = f"{result.stdout}\n{result.stderr}".strip()[-2000:]
+            self._record_verdict(state, result, judged_base=False)
+
     def harness_verify(
         self, state: loop_state.LoopState, turn: loop_state.TurnState, *, ending: bool = False
     ) -> None:

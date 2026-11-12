@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from agent6 import terminal
 from agent6.harness import loop_conversation, loop_snapshot, loop_state
 from agent6.sessions import journal, lane_dispatch
-from agent6.tools import operator_prompts
+from agent6.tools import operator_prompts, tool_errors
 from agent6.vcs.git import ops as git_ops
 
 if TYPE_CHECKING:
@@ -76,27 +76,97 @@ def operator_boundary(
     """
     # A background command's ending reaches disk only when observed; `/shells` reads it.
     harness.dispatcher.settle_background()
-    if harness.bridge.stop_requested() or harness.bridge.should_abort():
-        immediate = harness.bridge.stop_is_now() or harness.bridge.should_abort()
-        harness.bridge.stop_clear()
-        when = f"during turn {turn}" if immediate else f"after turn {turn}"
-        cut = "; running command was cut short" if immediate and state.command_cut else ""
-        if immediate:
-            harness.bridge.steer_clear()
-            harness.log(f"LOOP: operator stop {when}{cut}")
-        else:
-            harness.log(f"LOOP: operator stop at the turn boundary (turn {turn})")
+    stopped = operator_stop(harness, turn, state)
+    if stopped is not None:
+        return stopped
+    operator_state(harness, conversation, state)
+    return steer_outcome(harness, harness.steering.handle(conversation, turn, state), turn, state)
+
+
+def operator_stop(
+    harness: loop.Harness, turn: int, state: loop_state.LoopState
+) -> loop_snapshot.SessionResult | None:
+    """End the execution on a pending stop request, consuming it.
+
+    Args:
+        harness: The execution's harness.
+        turn: The turn the stop arrived in or after.
+        state: The execution's state.
+
+    Returns:
+        The end, or None when no stop is pending.
+    """
+    if not (harness.bridge.stop_requested() or harness.bridge.should_abort()):
+        return None
+    immediate = harness.bridge.stop_is_now() or harness.bridge.should_abort()
+    harness.bridge.stop_clear()
+    when = f"during turn {turn}" if immediate else f"after turn {turn}"
+    cut = "; running command was cut short" if immediate and state.command_cut else ""
+    if immediate:
+        harness.bridge.steer_clear()
+        harness.log(f"LOOP: operator stop {when}{cut}")
+    else:
+        harness.log(f"LOOP: operator stop at the turn boundary (turn {turn})")
+    return harness.finish(
+        state,
+        loop_snapshot.End(
+            "steer_abort",
+            f"operator stopped the run {when}{cut}{harness.dirty_tree_note()}",
+            checkpoint=False,
+        ),
+        turn=turn,
+    )
+
+
+def ranked_opening(
+    harness: loop.Harness,
+    conversation: loop_conversation.Conversation,
+    turn: int,
+    state: loop_state.LoopState,
+) -> loop_snapshot.SessionResult:
+    """Run the dispatch a run opens with, joined by rank, and end the run on what landed.
+
+    The lane ranked first joins the run's chain; the run's own gate then judges the joined
+    tree. No model call is made: a resume with a steer continues from there.
+
+    Args:
+        harness: The execution's harness, built with an opening.
+        conversation: The run's conversation, snapshotted before the lanes run.
+        turn: The run's first turn.
+        state: The execution's state.
+
+    Returns:
+        The end: `lanes_ranked` when a lane ended with a result, `budget_exhausted` when the
+        budget ended them all, `no_lane_result` otherwise, or the operator's stop.
+    """
+    assert harness.opening is not None
+    result = harness.parallel.dispatch(
+        conversation, turn, state, [harness.opening], source="operator", join="rank"
+    )
+    harness.parallel.record_delivery(result)
+    stopped = operator_stop(harness, turn, state)
+    if stopped is not None:
+        return stopped
+    landed = [join for join in result.lanes if join.status in ("joined", "no_changes")]
+    if not landed:
+        spent = harness.budget is not None and harness.budget.is_exhausted()
         return harness.finish(
             state,
             loop_snapshot.End(
-                "steer_abort",
-                f"operator stopped the run {when}{cut}{harness.dirty_tree_note()}",
-                checkpoint=False,
+                "budget_exhausted" if spent else "no_lane_result", result.message, roots=False
             ),
             turn=turn,
         )
-    operator_state(harness, conversation, state)
-    return steer_outcome(harness, harness.steering.handle(conversation, turn, state), turn, state)
+    if landed[0].status == "joined":
+        try:
+            harness.gate.after_rank_join(state)
+        except tool_errors.OperatorCommandUnexecutableError as exc:
+            return harness.unexecutable_abort(exc, turn=turn, state=state)
+    return harness.finish(
+        state,
+        loop_snapshot.End("lanes_ranked", result.message, completed=True, verdict="grounded"),
+        turn=turn,
+    )
 
 
 def operator_state(
@@ -227,6 +297,8 @@ def execution_opening(
     """
     if not resuming:
         operator_state(harness, conversation, state)
+        if harness.opening is not None:
+            return ranked_opening(harness, conversation, turn, state)
         return None
     resume_opening(harness, conversation, state)
     # An interrupted dispatch is finished or diagnosed before the first call.

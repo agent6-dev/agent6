@@ -21,7 +21,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, kinds, paths, review_records
+from agent6 import directive, errors, kinds, paths, review_records
 from agent6.app import (
     child_watch,
     conversation_state,
@@ -98,6 +98,8 @@ class ExecutionInputs:
         base_rules: A review session's base-tree AGENTS.md, in place of the checkout's.
         review_target: A review session's comparison and its diff, for the panel.
         contract: The bounded conversation a `read_only` session drives; None for a worker's.
+        opening: `run --parallel`'s spec and task: the dispatch a fresh run makes in place of
+            its first model call, joined by rank; None for a run that opens with the model.
     """
 
     session_id: str
@@ -131,6 +133,7 @@ class ExecutionInputs:
     base_rules: str | None = None
     review_target: tuple[review_records.ReviewTarget, str] | None = None
     contract: kinds.ConversationContract | None = None
+    opening: directive.Segment | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -615,6 +618,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             merged_in=inputs.merged_in,
             mode=mode,
             contract=inputs.contract,
+            opening=inputs.opening,
             plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
             review=review_gate.ReviewSettings(
                 when=cfg.review.when,
