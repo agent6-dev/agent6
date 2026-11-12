@@ -319,6 +319,68 @@ def commit_paths(
     return git_command.run(path, "rev-parse", "HEAD").stdout.strip()
 
 
+def stage_paths(path: pathlib.Path, paths: Sequence[str]) -> None:
+    """Stage these repo-relative paths, literally named.
+
+    Args:
+        path: The repository.
+        paths: The paths to add to the index.
+    """
+    git_command.run(path, "add", "--", *paths, env_extra=git_read.LITERAL_PATHSPECS)
+
+
+def unstage_paths(path: pathlib.Path, paths: Sequence[str]) -> None:
+    """Take these repo-relative paths out of the index; the working tree keeps its content.
+
+    Args:
+        path: The repository.
+        paths: The paths to restore in the index from HEAD.
+    """
+    git_command.run(path, "restore", "--staged", "--", *paths, env_extra=git_read.LITERAL_PATHSPECS)
+
+
+def restore_worktree_file(path: pathlib.Path, rel: str) -> None:
+    """Restore one file's working-tree content from the index, dropping its unstaged edits.
+
+    Args:
+        path: The repository.
+        rel: The repo-relative path of a tracked file.
+    """
+    git_command.run(path, "restore", "--worktree", "--", rel, env_extra=git_read.LITERAL_PATHSPECS)
+
+
+def commit_index(
+    path: pathlib.Path, message: str, *, identity: git_read.CommitIdentity | None = None
+) -> str:
+    """Commit what the index holds, nothing more.
+
+    Args:
+        path: The repository.
+        message: The commit message.
+        identity: The author and committer overrides; None uses the repo's config.
+
+    Returns:
+        The new HEAD sha.
+
+    Raises:
+        GitError: Nothing is staged.
+    """
+    if git_command.run(path, "diff", "--cached", "--quiet", check=False).ok:
+        raise errors.GitError("nothing is staged")
+    git_command.run(path, "commit", "-m", message, env_extra=_identity_env(identity))
+    return git_command.run(path, "rev-parse", "HEAD").stdout.strip()
+
+
+def switch_branch(path: pathlib.Path, name: str) -> None:
+    """Switch the checkout to an existing branch; git refuses when local changes would be lost.
+
+    Args:
+        path: The repository.
+        name: The branch, validated by the caller.
+    """
+    git_command.run(path, "switch", name)
+
+
 def _identity_env(identity: git_read.CommitIdentity | None) -> dict[str, str] | None:
     """Return the author and committer env for a commit, or None for the repo's own identity."""
     if identity is None:

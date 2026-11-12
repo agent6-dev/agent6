@@ -286,6 +286,48 @@ class FixManyBody(_Body):
     resume: bool = False
 
 
+class GitPathsBody(_Body):
+    """Files for a Git page stage or unstage.
+
+    Attributes:
+        paths: The repo-relative paths, at least one.
+    """
+
+    paths: tuple[str, ...] = pydantic.Field(min_length=1)
+
+
+class GitPathBody(_Body):
+    """One tracked file for a Git page discard.
+
+    Attributes:
+        path: The repo-relative path.
+    """
+
+    path: str
+
+
+class GitCommitBody(_Body):
+    """A Git page commit of the index.
+
+    Attributes:
+        message: The commit message.
+    """
+
+    message: str
+
+
+class GitBranchBody(_Body):
+    """A Git page branch to create or switch to.
+
+    Attributes:
+        name: The branch name.
+        start_point: For a new branch, the revision to cut from; "" is HEAD.
+    """
+
+    name: str
+    start_point: str = ""
+
+
 class ConfigSetBody(_Body):
     """A config write; `unset` removes the key from the target layer instead.
 
@@ -603,6 +645,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if path == "/api/login":
             self._login()
             return
+        if path.startswith("/api/git/"):
+            self._route_git_post(path.removeprefix("/api/git/"))
+            return
         if path == "/api/new":
             body = NewWorkBody.model_validate(self._read_body())
             session_dir, err = spawn.spawn_new_work(
@@ -619,17 +664,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             session_id = session_dir.name if session_dir is not None else None
             self._ok_or_err(session_id is not None, {"session_id": session_id}, err)
             return
-        if path == "/api/sessions/rm_asks":
-            self._read_body()  # drains the body for keep-alive framing
-            ok, msg = actions.remove_asks(self.cwd, self.config_paths)
-            self._ok_or_err(ok, {"message": msg}, msg)
-            return
-        if path == "/api/sessions/prune":
-            body = PruneBody.model_validate(self._read_body())
-            ok, msg = actions.prune_sessions(
-                self.cwd, delete_squashed=body.delete_squashed, config_paths=self.config_paths
-            )
-            self._ok_or_err(ok, {"message": msg}, msg)
+        if path in ("/api/sessions/rm_asks", "/api/sessions/prune"):
+            self._route_sessions_post(path)
             return
         if path in (
             "/api/config",
@@ -688,6 +724,58 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._post_not_found(f"not found: /api/session/{session_id}/findings/{'/'.join(rest)}")
             return
         self._send_json(payload, status=status)
+
+    def _route_sessions_post(self, path: str) -> None:
+        """Dispatch the session-store maintenance writes."""
+        if path == "/api/sessions/rm_asks":
+            self._read_body()  # drains the body for keep-alive framing
+            ok, msg = actions.remove_asks(self.cwd, self.config_paths)
+        else:
+            body = PruneBody.model_validate(self._read_body())
+            ok, msg = actions.prune_sessions(
+                self.cwd, delete_squashed=body.delete_squashed, config_paths=self.config_paths
+            )
+        self._ok_or_err(ok, {"message": msg}, msg)
+
+    def _route_git_post(self, sub: str) -> None:
+        """Dispatch a Git page write; a live session answers 409, git's own refusal 422.
+
+        Attributes:
+            message: The one-line outcome.
+            sha: The commit a `commit` created.
+
+        Args:
+            sub: The verb after `/api/git/`.
+        """
+        body = self._read_body()
+        cwd = self.cwd
+        try:
+            if sub == "stage":
+                payload = {"message": git_model.stage(cwd, GitPathsBody.model_validate(body).paths)}
+            elif sub == "unstage":
+                payload = {
+                    "message": git_model.unstage(cwd, GitPathsBody.model_validate(body).paths)
+                }
+            elif sub == "discard":
+                payload = {"message": git_model.discard(cwd, GitPathBody.model_validate(body).path)}
+            elif sub == "commit":
+                payload = git_model.commit(cwd, GitCommitBody.model_validate(body).message)
+            elif sub == "branch":
+                branch = GitBranchBody.model_validate(body)
+                payload = {"message": git_model.create_branch(cwd, branch.name, branch.start_point)}
+            elif sub == "switch":
+                name = GitBranchBody.model_validate(body).name
+                payload = {"message": git_model.switch(cwd, name)}
+            else:
+                self._send_json({"error": f"not found: /api/git/{sub}"}, status=404)
+                return
+        except git_model.GitWriteRefusedError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, status=409)
+            return
+        except git_model.GitRequestError as exc:
+            self._send_json({"ok": False, "error": str(exc)}, status=422)
+            return
+        self._send_json({"ok": True, **payload})
 
     def _route_config_post(self, path: str) -> None:
         """Dispatch config leaf, entry and roster writes."""

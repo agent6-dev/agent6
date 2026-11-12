@@ -11,11 +11,13 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import pathlib
+from collections.abc import Callable, Sequence
 from typing import Any
 
+from agent6 import errors, paths
 from agent6.ui.web import diff_highlight, highlight, markdown
-from agent6.vcs import git_diff, git_files, git_history, git_read
-from agent6.viewmodel import format
+from agent6.vcs import git_diff, git_files, git_history, git_ops, git_read
+from agent6.viewmodel import format, listing
 
 # Commits per graph page, and the most a request may ask for.
 GRAPH_PAGE = 200
@@ -53,6 +55,10 @@ class GitRequestError(Exception):
 
 class BlobTooLargeError(GitRequestError):
     """A file over `BLOB_MAX_BYTES`, which the server answers 413."""
+
+
+class GitWriteRefusedError(GitRequestError):
+    """A Git page write refused while a session is live in the checkout; answered 409."""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -189,7 +195,7 @@ def _ref_row(r: git_history.RefRow) -> dict[str, Any]:
     return {"name": r.name, "full": r.full, "kind": r.kind, "sha": r.sha, "head": r.head}
 
 
-def _file_row(f: git_history.ChangedFile) -> dict[str, Any]:
+def _file_row(f: git_history.ChangedFile, state: str = "") -> dict[str, Any]:
     """Return one changed file.
 
     Attributes:
@@ -199,9 +205,13 @@ def _file_row(f: git_history.ChangedFile) -> dict[str, Any]:
         additions: The number of added lines.
         deletions: The number of deleted lines.
         binary: Whether Git reports a binary change.
+        staged: Whether the index differs from HEAD for the file (working tree only).
+        unstaged: Whether the working tree differs from the index (working tree only).
+        untracked: Whether git does not track the file (working tree only).
 
     Args:
         f: The changed file.
+        state: The file's `git status` code, "" for a file between two commits.
 
     Returns:
         The changed-file row.
@@ -213,6 +223,9 @@ def _file_row(f: git_history.ChangedFile) -> dict[str, Any]:
         "additions": f.additions,
         "deletions": f.deletions,
         "binary": f.binary,
+        "staged": bool(state) and state != "??" and state[0] != " ",
+        "unstaged": bool(state) and state != "??" and state[1] != " ",
+        "untracked": state == "??",
     }
 
 
@@ -220,8 +233,11 @@ def _files(repo: pathlib.Path, base: str, head: str) -> tuple[list[dict[str, Any
     """Return the files that differ from the base, cut at `FILES_MAX`, and whether they were."""
     if head == git_history.WORKTREE:
         rows = git_history.worktree_files(repo, base)
-    else:
-        rows = git_history.changed_files(repo, base, head)
+        states = {rel: code for code, rel in git_read.porcelain_entries(repo)}
+        return [_file_row(f, states.get(f.path, "")) for f in rows[:FILES_MAX]], (
+            len(rows) > FILES_MAX
+        )
+    rows = git_history.changed_files(repo, base, head)
     return [_file_row(f) for f in rows[:FILES_MAX]], len(rows) > FILES_MAX
 
 
@@ -432,6 +448,186 @@ def worktree_payload(repo: pathlib.Path) -> dict[str, Any]:
     base = sha or git_read.EMPTY_TREE
     files, truncated = _files(repo, base, git_history.WORKTREE)
     return {"base": base, "files": files, "truncated": truncated}
+
+
+def _writable(repo: pathlib.Path) -> None:
+    """Refuse a write while a session is live in this checkout; its worker owns the tree.
+
+    Args:
+        repo: The repository.
+
+    Raises:
+        GitWriteRefusedError: A live session works in the checkout.
+    """
+    live = listing.live_sessions_in_checkout(paths.state_dir(repo))
+    if live:
+        raise GitWriteRefusedError(
+            f"session {', '.join(live)} is live in this checkout; wait for it or stop it first"
+        )
+
+
+def _git_write(repo: pathlib.Path, act: Callable[[], str]) -> str:
+    """Run one write under the live-session guard.
+
+    Args:
+        repo: The repository.
+        act: The write; it returns the one-line outcome.
+
+    Returns:
+        The outcome.
+
+    Raises:
+        GitRequestError: Git refused the write; its words are the reason.
+    """
+    _repo(repo)
+    _writable(repo)
+    try:
+        return act()
+    except errors.GitError as exc:
+        raise GitRequestError(str(exc).strip() or "git refused") from exc
+
+
+def stage(repo: pathlib.Path, rel_paths: Sequence[str]) -> str:
+    """Stage the named files.
+
+    Args:
+        repo: The repository.
+        rel_paths: The repo-relative paths.
+
+    Returns:
+        The one-line outcome.
+    """
+    checked = [_check_path(p) for p in rel_paths]
+    return _git_write(
+        repo, lambda: (git_ops.stage_paths(repo, checked), f"staged {_count(checked)}")[1]
+    )
+
+
+def unstage(repo: pathlib.Path, rel_paths: Sequence[str]) -> str:
+    """Take the named files out of the index; the working tree keeps its content.
+
+    Args:
+        repo: The repository.
+        rel_paths: The repo-relative paths.
+
+    Returns:
+        The one-line outcome.
+    """
+    checked = [_check_path(p) for p in rel_paths]
+    return _git_write(
+        repo, lambda: (git_ops.unstage_paths(repo, checked), f"unstaged {_count(checked)}")[1]
+    )
+
+
+def discard(repo: pathlib.Path, rel_path: str) -> str:
+    """Restore one tracked file's working-tree content from the index.
+
+    An untracked file is refused: nothing the page does deletes a file git never saw.
+
+    Args:
+        repo: The repository.
+        rel_path: The repo-relative path.
+
+    Returns:
+        The one-line outcome.
+
+    Raises:
+        GitRequestError: The file is untracked or has no unstaged change.
+    """
+    rel = _check_path(rel_path)
+    states = {path: code for code, path in git_read.porcelain_entries(repo)}
+    state = states.get(rel, "")
+    if state == "??":
+        raise GitRequestError(f"{rel} is untracked: the page deletes no file")
+    if state[1:2] in ("", " "):
+        raise GitRequestError(f"{rel} has no unstaged change to discard")
+    return _git_write(
+        repo, lambda: (git_ops.restore_worktree_file(repo, rel), f"restored {rel}")[1]
+    )
+
+
+def commit(repo: pathlib.Path, message: str) -> dict[str, str]:
+    """Commit the index with the operator's message under the repository's own identity.
+
+    Attributes:
+        sha: The new HEAD commit.
+        message: The one-line outcome.
+
+    Args:
+        repo: The repository.
+        message: The commit message; blank is refused.
+
+    Returns:
+        The new commit's sha and the outcome.
+
+    Raises:
+        GitRequestError: The message is blank.
+    """
+    if not message.strip():
+        raise GitRequestError("a commit needs a message")
+    sha = _git_write(repo, lambda: git_ops.commit_index(repo, message.strip()))
+    return {"sha": sha, "message": f"committed {sha[:12]}"}
+
+
+def create_branch(repo: pathlib.Path, name: str, start_point: str = "") -> str:
+    """Create a branch at HEAD, or at `start_point`, and check it out.
+
+    Args:
+        repo: The repository.
+        name: The new branch's name.
+        start_point: The revision to cut from, "" for HEAD.
+
+    Returns:
+        The one-line outcome.
+
+    Raises:
+        GitRequestError: The name is not a branch name, or the branch exists.
+    """
+    _branch_name(name)
+    if git_read.branch_exists(repo, name):
+        raise GitRequestError(f"branch {name!r} exists; switch to it instead")
+    start = _resolve(repo, start_point) if start_point else None
+    return _git_write(
+        repo,
+        lambda: (git_ops.create_branch(repo, name, start_point=start), f"on new branch {name}")[1],
+    )
+
+
+def switch(repo: pathlib.Path, name: str) -> str:
+    """Switch the checkout to an existing branch.
+
+    Args:
+        repo: The repository.
+        name: The branch.
+
+    Returns:
+        The one-line outcome.
+
+    Raises:
+        GitRequestError: The name is not a branch name, or no such branch exists.
+    """
+    _branch_name(name)
+    if not git_read.branch_exists(repo, name):
+        raise GitRequestError(f"no branch {name!r}")
+    return _git_write(repo, lambda: (git_ops.switch_branch(repo, name), f"on branch {name}")[1])
+
+
+def _branch_name(name: str) -> None:
+    """Refuse a name git would not take as a branch.
+
+    Args:
+        name: The bare branch name.
+
+    Raises:
+        GitRequestError: The name is empty, flag-shaped or fails `check-ref-format`.
+    """
+    if not name or name.startswith("-") or not git_read.valid_branch_name(name):
+        raise GitRequestError(f"not a branch name: {name!r}")
+
+
+def _count(rel_paths: Sequence[str]) -> str:
+    """Return `1 file` or `N files`."""
+    return f"{len(rel_paths)} file{'' if len(rel_paths) == 1 else 's'}"
 
 
 def _endpoint(repo: pathlib.Path, rev: str, sha: str) -> dict[str, Any]:

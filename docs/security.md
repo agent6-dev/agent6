@@ -564,6 +564,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
       By default, these flags switch off the repository's hooks, fsmonitor, external diff, textconv, commit signing, and filter and merge drivers.
     - `sessions diff` and `ask` read only.
     - `skills install` clones with fixed argv.
+- The web Git page's writes go through the same package, under the sign-in: stage and unstage by file, restore one tracked file from the index after a confirm, commit the index under the repository's own identity, create a branch at HEAD, switch branches.
+  Each is refused while a session is live in the checkout; the page never deletes an untracked file, pushes, pulls, fetches, rebases, amends or resets.
 - One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch or chain ref the manifest confirms was squash-merged.
   A branch's or chain ref's line carries the sha to undelete it.
 - Host-side git calls use `git_policy.git_environment` to remove configured `api_key_env` names, so credential helpers and content drivers never inherit them.

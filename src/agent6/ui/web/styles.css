@@ -517,6 +517,10 @@ button.active { border-color: var(--accent); color: var(--accent); }
    lane SVG is exactly one row tall and rows stack with no gap, so a lane's line runs
    unbroken from row to row. Below 781px the side panel opens over the graph. --- */
 .git-bar { position: relative; margin-top: 10px; margin-bottom: 10px; }
+.git-branch { gap: 6px; flex-wrap: wrap; }
+.git-commit { gap: 8px; align-items: flex-start; margin: 8px 0; }
+.git-commit textarea { flex: 1 1 auto; min-height: 44px; }
+.gf-acts { display: inline-flex; gap: 4px; margin-left: auto; }
 .git-counts { font-size: 12px; }
 .gc-row { display: flex; align-items: center; gap: 10px; height: 30px; padding-right: 12px; cursor: pointer; }
 @media (hover: hover) { .gc-row:hover { background: var(--surface2); } }

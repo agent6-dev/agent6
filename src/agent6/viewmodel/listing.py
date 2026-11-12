@@ -572,6 +572,30 @@ def resume_blocker(session_dir: pathlib.Path) -> str:
     return ""
 
 
+def live_sessions_in_checkout(state_dir: pathlib.Path) -> tuple[str, ...]:
+    """Return the ids of the live sessions working in the repository's own checkout.
+
+    A worktree run, a fork and a fan-out lane work elsewhere and are left out; a session
+    whose manifest cannot be read counts, since nothing says it works elsewhere.
+
+    Args:
+        state_dir: The repository's state dir.
+
+    Returns:
+        The session ids, in listing order.
+    """
+    live: list[str] = []
+    for session_dir in session_dirs(state_dir):
+        if not process.worker_is_alive(session_dir):
+            continue
+        manifest: sessions_manifest.SessionManifest | None = None
+        with contextlib.suppress(sessions_manifest.ManifestError):
+            manifest = sessions_manifest.read_manifest(session_dir)
+        if manifest is None or (manifest.worktree is None and manifest.parallel is None):
+            live.append(session_dir.name)
+    return tuple(live)
+
+
 def session_action_applies(action: str, *, fanout: bool) -> bool:
     """Hide loop and commit-chain actions on groups; their event records remain reviewable.
 

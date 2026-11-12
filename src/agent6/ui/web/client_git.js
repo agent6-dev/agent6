@@ -147,7 +147,7 @@ function imagePair(ctx, f) {
 // list or a folder tree (the choice kept per browser): a row per file, reachable by
 // `data-path`; a click opens the file's diff over the whole tab.
 const FILES_VIEW_KEY = 'a6-files-view';
-function fileList(files, truncated, open) {
+function fileList(files, truncated, open, actions) {
   const root = el('div', 'gfiles');
   const head = el('div', 'row gf-head'); root.appendChild(head);
   head.appendChild(el('div', 'muted gf-count', fileCount(files.length) + ' changed'));
@@ -161,6 +161,7 @@ function fileList(files, truncated, open) {
     row.appendChild(statusBadge(f.status));
     row.appendChild(filePath(f, short));
     row.appendChild(fileCounts(f));
+    if (actions) { const acts = actions(f); if (acts) row.appendChild(acts); }
     actionable(row, () => open(files.indexOf(f)), f.status + ' ' + f.path);
     return row;
   };
@@ -278,6 +279,29 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   const counts = el('span', 'muted git-counts');
   bar.appendChild(refsBtn); bar.appendChild(compareBtn); bar.appendChild(reloadBtn); bar.appendChild(counts);
 
+  // -- your branch: switch to one, start one at HEAD, review one ----------------------
+  // Every write goes to /api/git/<verb>, refused while a session is live in this checkout.
+  const branchRow = el('span', 'row git-branch');
+  const branchSel = el('select', 'field'); branchSel.title = 'the branch to switch to or review';
+  const switchBtn = el('button', 'mini', 'Switch');
+  switchBtn.title = 'check this branch out (git switch); refused while a session is live here or local changes would be lost';
+  const reviewBtn = el('button', 'mini', 'Review');
+  reviewBtn.title = 'start a review session over this branch: /review <branch> in the new-work composer';
+  const newName = el('input', 'field'); newName.placeholder = 'new branch…'; newName.style.width = '10em';
+  const createBtn = el('button', 'mini', 'Create'); createBtn.title = 'create the branch at HEAD and check it out';
+  const paintBranches = () => {
+    branchSel.textContent = '';
+    for (const r of refs.filter(r => r.kind === 'branch')) {
+      const o = el('option', null, r.name); o.value = r.name; if (r.name === head.branch) o.selected = true; branchSel.appendChild(o);
+    }
+    switchBtn.disabled = !branchSel.value || branchSel.value === head.branch;
+    reviewBtn.disabled = !branchSel.value;
+  };
+  branchSel.onchange = () => { switchBtn.disabled = branchSel.value === head.branch; };
+  reviewBtn.onclick = () => { handToNewWork({ task: '/review ' + branchSel.value }); location.hash = '#/'; };
+  for (const x of [branchSel, switchBtn, reviewBtn, newName, createBtn]) branchRow.appendChild(x);
+  bar.appendChild(branchRow);
+
   const body = el('div', 'git-body'); app.appendChild(body);
   const graph = el('div', 'git-graph'); body.appendChild(graph);
   const side = el('div', 'git-side'); body.appendChild(side);
@@ -351,10 +375,20 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     catch (e) { toast(e.message, true); return; }
     if (!app.isConnected) return;
     refs = r.refs; head = r.head; wt = w;
+    paintBranches();
     if (selected === GIT_WORKTREE) showWorktree();
     await loadGraph(true);
   };
   reloadBtn.onclick = reload;
+  // One write, then the page re-reads what git now holds.
+  const gitWrite = async (verb, body) => {
+    try { const d = await postJSON('/api/git/' + verb, body); toast(d.message || verb); await reload(); }
+    catch (e) { toast(e.message, true); }
+  };
+  switchBtn.onclick = () => gitWrite('switch', { name: branchSel.value });
+  createBtn.onclick = () => { const name = newName.value.trim(); if (!name) return; newName.value = ''; gitWrite('branch', { name }); };
+  newName.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); createBtn.onclick(); } };
+  paintBranches();
 
   // -- the side panel: a commit, or the compare --------------------------------------
   const sideHead = (title) => {
@@ -390,7 +424,32 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     const asHead = el('button', 'mini', 'Set as head'); asHead.onclick = () => setCompare('head', GIT_WORKTREE_PICK);
     acts.appendChild(asHead);
     pad.appendChild(acts);
-    pad.appendChild(fileList(wt.files, wt.truncated, (i) => showDiff({ base: wt.base, head: GIT_WORKTREE, files: wt.files }, i)));
+    // Your own hands on the index: stage and unstage by file, discard one file's unstaged
+    // edits after a confirm, commit what is staged. Nothing here touches an untracked file.
+    const staged = wt.files.filter(f => f.staged);
+    const commitBox = el('div', 'row git-commit');
+    const msg = el('textarea', 'field');
+    msg.placeholder = staged.length ? 'commit message for ' + fileCount(staged.length) + ' staged…' : 'stage files to commit';
+    msg.disabled = !staged.length;
+    const commitBtn = el('button', 'primary mini', 'Commit staged'); commitBtn.disabled = !staged.length;
+    commitBtn.onclick = () => { if (!msg.value.trim()) { toast('a commit needs a message', true); return; } gitWrite('commit', { message: msg.value }); };
+    commitBox.appendChild(msg); commitBox.appendChild(commitBtn);
+    pad.appendChild(commitBox);
+    const fileActions = (f) => {
+      const row = el('span', 'gf-acts');
+      const add = (label, title, run) => {
+        const b = el('button', 'mini', label); b.title = title;
+        b.onclick = (e) => { e.stopPropagation(); run(); }; b.onkeydown = (e) => e.stopPropagation();
+        row.appendChild(b);
+      };
+      if (f.unstaged || f.untracked) add('Stage', 'add this file to the index (git add)', () => gitWrite('stage', { paths: [f.path] }));
+      if (f.staged) add('Unstage', 'take this file out of the index; its content stays (git restore --staged)', () => gitWrite('unstage', { paths: [f.path] }));
+      if (f.unstaged && !f.untracked) add('Discard', 'restore this file from the index, dropping its unstaged edits (git restore)', () => {
+        if (confirm('Discard the unstaged edits to ' + f.path + '? The file is restored from the index; the edits are not kept anywhere.')) gitWrite('discard', { path: f.path });
+      });
+      return row.children.length ? row : null;
+    };
+    pad.appendChild(fileList(wt.files, wt.truncated, (i) => showDiff({ base: wt.base, head: GIT_WORKTREE, files: wt.files }, i), fileActions));
     openSide();
   };
   const showCommit = async (sha, selection = new URLSearchParams()) => {

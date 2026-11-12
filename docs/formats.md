@@ -1862,8 +1862,8 @@ Source: [`ui.web.server._Handler._route_post`](https://github.com/agent6-dev/age
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `session_id` | `JSON` | The session created by new work. |
-| `message` | `JSON` | The action's result text. |
 | `draft` | `JSON` | The machine-authoring draft identifier. |
+| `message` | `JSON` | The action's result text. |
 
 ### `/api/session/<id>/fork` result
 
@@ -2094,6 +2094,9 @@ Source: [`ui.web.git_model._file_row`](https://github.com/agent6-dev/agent6/blob
 | `additions` | `JSON` | The number of added lines. |
 | `deletions` | `JSON` | The number of deleted lines. |
 | `binary` | `JSON` | Whether Git reports a binary change. |
+| `staged` | `JSON` | Whether the index differs from HEAD for the file (working tree only). |
+| `unstaged` | `JSON` | Whether the working tree differs from the index (working tree only). |
+| `untracked` | `JSON` | Whether git does not track the file (working tree only). |
 
 ### `/api/git/graph` commit row
 
@@ -2830,6 +2833,47 @@ Source: [`agent6.ui.web.server.FixManyBody`](https://github.com/agent6-dev/agent
 | `all_open` | `bool` | Fix every open finding without a queued Fix. |
 | `request_id` | `str` | The caller's retry identity. |
 | `resume` | `bool` | Whether the operator confirmed resuming an idle session to fix. |
+
+### GitPathsBody
+
+**Support: public.** Files for a Git page stage or unstage.
+
+Source: [`agent6.ui.web.server.GitPathsBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `paths` | `tuple[str, ...]` | The repo-relative paths, at least one. |
+
+### GitPathBody
+
+**Support: public.** One tracked file for a Git page discard.
+
+Source: [`agent6.ui.web.server.GitPathBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `path` | `str` | The repo-relative path. |
+
+### GitCommitBody
+
+**Support: public.** A Git page commit of the index.
+
+Source: [`agent6.ui.web.server.GitCommitBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `message` | `str` | The commit message. |
+
+### GitBranchBody
+
+**Support: public.** A Git page branch to create or switch to.
+
+Source: [`agent6.ui.web.server.GitBranchBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | `str` | The branch name. |
+| `start_point` | `str` | For a new branch, the revision to cut from; "" is HEAD. |
 
 ### ConfigSetBody
 

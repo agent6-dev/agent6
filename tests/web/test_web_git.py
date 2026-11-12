@@ -970,3 +970,129 @@ def test_a_file_swapped_for_a_fifo_after_its_stat_is_not_waited_on(
 
     monkeypatch.setattr(os, "stat", swapping_stat)
     assert git_files.worktree_blob(path, "b.txt", max_bytes=1 << 20) is None
+
+
+def _post(port: int, path: str, body: dict[str, Any]) -> tuple[int, Any]:
+    conn = signin.SignedIn(port, timeout=10)
+    try:
+        conn.request("POST", path, json.dumps(body), {"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        return resp.status, json.loads(resp.read())
+    finally:
+        conn.close()
+
+
+def _run_git(path: pathlib.Path, *args: str) -> str:
+    import subprocess
+
+    return subprocess.run(
+        ["git", "-C", str(path), *args], check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def _worktree_rows(port: int) -> dict[str, Any]:
+    return {f["path"]: f for f in _ok(port, "/api/git/worktree")["files"]}
+
+
+def test_the_worktree_panel_stages_unstages_and_commits_the_index_only(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """Rows carry index and working-tree state; a commit records the index and nothing else."""
+    path, shas = repo
+    (path / "b.txt").write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+    (path / "dir" / "f.txt").write_text("nested\nmore\n", encoding="utf-8")
+    (path / "fresh.txt").write_text("new\n", encoding="utf-8")
+    rows = _worktree_rows(port)
+    assert (rows["b.txt"]["staged"], rows["b.txt"]["unstaged"], rows["b.txt"]["untracked"]) == (
+        False,
+        True,
+        False,
+    )
+    assert rows["fresh.txt"]["untracked"] is True and rows["fresh.txt"]["staged"] is False
+    status, body = _post(port, "/api/git/stage", {"paths": ["b.txt", "fresh.txt"]})
+    assert (status, body) == (200, {"ok": True, "message": "staged 2 files"})
+    rows = _worktree_rows(port)
+    assert rows["b.txt"]["staged"] is True and rows["b.txt"]["unstaged"] is False
+    assert rows["fresh.txt"]["staged"] is True and rows["fresh.txt"]["untracked"] is False
+    assert rows["dir/f.txt"]["staged"] is False and rows["dir/f.txt"]["unstaged"] is True
+    status, body = _post(port, "/api/git/unstage", {"paths": ["fresh.txt"]})
+    assert (status, body) == (200, {"ok": True, "message": "unstaged 1 file"})
+    assert _worktree_rows(port)["fresh.txt"]["untracked"] is True
+    status, body = _post(port, "/api/git/commit", {"message": "grow b"})
+    assert status == 200 and body["ok"] is True
+    assert body["message"] == "committed " + body["sha"][:12]
+    assert _run_git(path, "rev-parse", "HEAD") == body["sha"]
+    assert _run_git(path, "rev-parse", "HEAD~1") == shas["merge"]
+    assert _run_git(path, "show", "--stat", "--format=", "HEAD").count("|") == 1
+    rows = _worktree_rows(port)
+    assert set(rows) == {"dir/f.txt", "fresh.txt"}  # the unstaged edit and the untracked file stay
+    status, body = _post(port, "/api/git/commit", {"message": "again"})
+    assert status == 422 and "nothing is staged" in body["error"]
+    status, body = _post(port, "/api/git/commit", {"message": "  "})
+    assert status == 422 and "needs a message" in body["error"]
+    status, body = _post(port, "/api/git/stage", {"paths": ["../etc/passwd"]})
+    assert status == 422 and "not a repository path" in body["error"]
+
+
+def test_discard_restores_one_tracked_file_and_deletes_nothing(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """Discard puts one tracked file back as the index has it; an untracked file is refused."""
+    path, _shas = repo
+    (path / "b.txt").write_text("changed\n", encoding="utf-8")
+    (path / "fresh.txt").write_text("new\n", encoding="utf-8")
+    status, body = _post(port, "/api/git/discard", {"path": "fresh.txt"})
+    assert status == 422 and "untracked" in body["error"]
+    assert (path / "fresh.txt").exists()
+    status, body = _post(port, "/api/git/discard", {"path": "b.txt"})
+    assert (status, body) == (200, {"ok": True, "message": "restored b.txt"})
+    assert (path / "b.txt").read_text(encoding="utf-8") == "one\ntwo\nthree\n"
+    status, body = _post(port, "/api/git/discard", {"path": "b.txt"})
+    assert status == 422 and "no unstaged change" in body["error"]
+
+
+def test_branches_are_created_and_switched_unless_a_session_is_live_here(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """Create checks a new branch out at HEAD; Switch moves to one; a live session refuses both."""
+    import os
+
+    from agent6 import paths
+
+    path, _shas = repo
+    before = _ok(port, "/api/git/refs")["head"]
+    status, body = _post(port, "/api/git/branch", {"name": "topic"})
+    assert (status, body) == (200, {"ok": True, "message": "on new branch topic"})
+    head = _ok(port, "/api/git/refs")["head"]
+    assert head == {"sha": before["sha"], "branch": "topic"}
+    status, body = _post(port, "/api/git/branch", {"name": "topic"})
+    assert status == 422 and "exists" in body["error"]
+    status, body = _post(port, "/api/git/branch", {"name": "-flag"})
+    assert status == 422 and "not a branch name" in body["error"]
+    status, body = _post(port, "/api/git/switch", {"name": before["branch"]})
+    assert (status, body) == (200, {"ok": True, "message": f"on branch {before['branch']}"})
+    assert _ok(port, "/api/git/refs")["head"]["branch"] == before["branch"]
+    status, body = _post(port, "/api/git/switch", {"name": "nope"})
+    assert status == 422 and "no branch" in body["error"]
+    # A live session in this checkout owns the tree: every write waits for it.
+    live = paths.state_dir(path) / "sessions" / "runs" / "busy-run-AAAAAA"
+    live.mkdir(parents=True)
+    (live / "logs.jsonl").write_text("", encoding="utf-8")
+    (live / "manifest.json").write_text(
+        json.dumps({"session_id": live.name, "mode": "ask"}), encoding="utf-8"
+    )
+    (live / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    status, body = _post(port, "/api/git/switch", {"name": "topic"})
+    assert status == 409 and "busy-run-AAAAAA is live in this checkout" in body["error"]
+    (path / "b.txt").write_text("changed\n", encoding="utf-8")
+    status, body = _post(port, "/api/git/stage", {"paths": ["b.txt"]})
+    assert status == 409
+    # A worktree run works elsewhere and blocks nothing here.
+    (live / "manifest.json").write_text(
+        json.dumps({"session_id": live.name, "mode": "run", "worktree": str(path / "wt")}),
+        encoding="utf-8",
+    )
+    status, body = _post(port, "/api/git/stage", {"paths": ["b.txt"]})
+    assert (status, body) == (200, {"ok": True, "message": "staged 1 file"})
+    status, body = _post(port, "/api/git/bogus", {})
+    assert status == 404
