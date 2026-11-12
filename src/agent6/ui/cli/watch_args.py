@@ -16,10 +16,10 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "attach",
         help=(
             "Attach to a session or machine and drive it live: the conversation as `agent6 run`"
-            " prints it and, on a terminal, its approvals and questions to answer. For a run, --raw prints one line"
-            " per event, --tui opens the full-screen view and --json prints one snapshot of its"
-            " state. The plain and raw followers exit non-zero if the worker dies before the run"
-            " ends. Omit the target for the newest session."
+            " prints it and, on a terminal, its approvals and questions to answer. For a run,"
+            " --raw prints one line per event, --tui opens the full-screen view and --json prints"
+            " one snapshot of its state. The plain and raw followers exit non-zero if the worker"
+            " dies before the run ends. Omit the target for the newest session."
         ),
     )
     watch_target = watch_p.add_argument(
