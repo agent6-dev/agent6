@@ -53,15 +53,22 @@ class NewWorkBody(_Body):
 
     Attributes:
         mode: The session mode to start.
-        task: The operator's task text.
+        task: The operator's task text; empty only with `seed_from`.
         preset: The preset override, empty for configured selection.
         model: The provider/model override, empty for configured selection.
+        worktree: Work in a new git worktree (`run --worktree`); run mode only.
+        seed_from: The session whose context seeds the run (`run --from`); a plan becomes
+            the task when `task` is empty.
+        max_usd: The metered spend ceiling (`--max-usd`), or null for the config's.
     """
 
     mode: str
     task: str
     preset: str = ""
     model: str = ""
+    worktree: bool = False
+    seed_from: str = ""
+    max_usd: float | None = None
 
 
 class SteerBody(_Body):
@@ -604,6 +611,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 body.task,
                 preset=body.preset,
                 model=body.model,
+                options=spawn.RunOptions(
+                    worktree=body.worktree, seed_from=body.seed_from, max_usd=body.max_usd
+                ),
                 config_paths=self.config_paths,
             )
             session_id = session_dir.name if session_dir is not None else None
@@ -795,10 +805,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         elif verb == "rm":
             self._read_body()
             ok, msg = actions.remove_session(self.cwd, session_id, self.config_paths)
-        elif verb in ("run_plan", "review"):
+        elif verb == "review":
             self._read_body()
-            act = actions.run_plan if verb == "run_plan" else actions.review_run
-            payload, err = act(self.cwd, session_id, self.config_paths)
+            payload, err = actions.review_run(self.cwd, session_id, self.config_paths)
             self._ok_or_err(payload is not None, payload or {}, err)
             return
         else:

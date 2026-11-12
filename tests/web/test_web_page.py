@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "3de4b753faad8af0dda7983642c56830386c645282406665c3e2b460d61c2f14"
+PAGE_SHA256 = "983b2c95c515bd34854eaab34415dbc6696d71521880ab2ad3879d2989c03e38"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -209,7 +209,9 @@ def test_the_pickers_sit_in_a_row_above_each_composer() -> None:
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
     dock = client[client.index("function newWorkDock") : client.index("// The create-machine")]
     assert "row.appendChild(task); row.appendChild(go);" in dock
-    picks = dock.index("pickerRow([['mode', mode], ['preset', preset], ['model', model]])")
+    picks = dock.index(
+        "pickerRow([['mode', mode], ['worktree', worktree], ['preset', preset], ['model', model]])"
+    )
     assert picks < dock.index("root.appendChild(row);")
     composer = client[client.index("function makeComposer") :]
     assert "pickerRow([['continue under preset', preset], ['model', model]])" in composer

@@ -417,6 +417,7 @@ class SteerInput(widgets.TextArea):
 
     policy = ""  # the session policy's short form, set once the run dir is known
     mode: ComposerMode = "steer"
+    allow_empty = False  # Enter on an empty bar submits "": a seeded run needs no task
 
     def set_mode(
         self,
@@ -452,7 +453,7 @@ class SteerInput(widgets.TextArea):
             event.prevent_default()
             event.stop()
             text = self.text.strip()
-            if text:
+            if text or self.allow_empty:
                 self.post_message(self.Submitted(text))
                 self.clear()
         elif event.key in ("ctrl+j", "shift+enter"):

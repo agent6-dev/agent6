@@ -1886,16 +1886,6 @@ Source: [`ui.web.actions.undo_session`](https://github.com/agent6-dev/agent6/blo
 | `undone_text` | `JSON` | The instruction removed by undo. |
 | `notice` | `JSON` | The undo result message. |
 
-### `/api/session/<id>/run_plan` result
-
-**Support: public.** Execute a finished plan by spawning `agent6 run --from <id>` detached.
-
-Source: [`ui.web.actions.run_plan`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/actions.py).
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `run_id` | `JSON` | The session created to execute the plan. |
-
 ### `/api/session/<id>/review` result
 
 **Support: public.** Review a finished run's record through `agent6 sessions review`, a call of minutes.
@@ -2641,9 +2631,12 @@ Source: [`agent6.ui.web.server.NewWorkBody`](https://github.com/agent6-dev/agent
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `mode` | `str` | The session mode to start. |
-| `task` | `str` | The operator's task text. |
+| `task` | `str` | The operator's task text; empty only with `seed_from`. |
 | `preset` | `str` | The preset override, empty for configured selection. |
 | `model` | `str` | The provider/model override, empty for configured selection. |
+| `worktree` | `bool` | Work in a new git worktree (`run --worktree`); run mode only. |
+| `seed_from` | `str` | The session whose context seeds the run (`run --from`); a plan becomes the task when `task` is empty. |
+| `max_usd` | `float \| None` | The metered spend ceiling (`--max-usd`), or null for the config's. |
 
 ### SteerBody
 

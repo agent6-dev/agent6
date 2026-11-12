@@ -334,6 +334,7 @@ def test_new_task_view_starts_the_chosen_mode_and_preset(
         *,
         preset: str = "",
         model: str = "",
+        options: object = None,
         config_paths: object = (),
     ):
         started.append((mode, task, preset))
@@ -389,6 +390,7 @@ def test_a_start_whose_screen_was_left_still_opens_the_session(
         *,
         preset: str = "",
         model: str = "",
+        options: object = None,
         config_paths: object = (),
     ):
         entered.set()
@@ -443,6 +445,7 @@ def test_a_refusal_after_the_screen_was_left_still_reaches_the_operator(
         *,
         preset: str = "",
         model: str = "",
+        options: object = None,
         config_paths: object = (),
     ):
         entered.set()
@@ -496,6 +499,7 @@ def test_new_task_view_keeps_the_text_on_a_refusal(
         *,
         preset: str = "",
         model: str = "",
+        options: object = None,
         config_paths: object = (),
     ):
         return None, "REFUSING: 1 tracked file has uncommitted changes:\n- [git] seed.txt"
@@ -548,6 +552,7 @@ def test_the_starting_notice_paints_ansi_cyan(
         *,
         preset: str = "",
         model: str = "",
+        options: object = None,
         config_paths: object = (),
     ):
         gate.wait(timeout=5.0)
@@ -595,6 +600,7 @@ def test_the_refusal_notice_paints_ansi_red(
         *,
         preset: str = "",
         model: str = "",
+        options: object = None,
         config_paths: object = (),
     ):
         return None, "REFUSING: the tree is dirty"
@@ -1250,6 +1256,7 @@ def test_new_task_view_model_box_follows_the_mode_and_preset(
         *,
         preset: str = "",
         model: str = "",
+        options: object = None,
         config_paths: object = (),
     ):
         started.append((mode, task, preset, model))
@@ -1327,6 +1334,7 @@ def test_new_task_view_model_box_says_none_when_no_route_resolves(
         *,
         preset: str = "",
         model: str = "",
+        options: object = None,
         config_paths: object = (),
     ):
         started.append((mode, task, preset, model))
@@ -1402,13 +1410,20 @@ def test_new_task_view_tab_reaches_the_mode_picker_first(tmp_path: pathlib.Path)
             first = app.focused
             assert first is not None and first.id == "draft-input"
             stops: list[str | None] = []
-            for _ in range(3):
+            for _ in range(6):
                 await pilot.press("tab")
                 await pilot.pause()
                 focused = app.focused
                 assert focused is not None
                 stops.append(focused.id)
-            assert stops == ["draft-mode", "draft-preset", "draft-model"]
+            assert stops == [
+                "draft-mode",
+                "draft-checkout",
+                "draft-preset",
+                "draft-model",
+                "draft-seed",
+                "draft-max-usd",
+            ]
 
     asyncio.run(scenario())
 

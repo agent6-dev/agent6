@@ -278,6 +278,13 @@ async function route() {
 }
 window.addEventListener('hashchange', route);
 
+// Text and a plan handed to the new-work composer by another view (a diff
+// line's quote, a receipt's revert request, a plan's Run this plan): the dock
+// takes them once when it paints.
+function handToNewWork(fields) {
+  window.pendingNewWork = Object.assign({}, window.pendingNewWork || {}, fields);
+}
+
 // --- hub ---------------------------------------------------------------------
 // /parallel model-id autocomplete for the new-work composer. When the task text
 // starts with `/parallel ` and the caret sits before `--`, offer the known
@@ -368,21 +375,42 @@ function pickerRow(pairs) {
 }
 
 // The new-work composer, docked at the bottom of the Sessions page: the mode,
-// preset and model row above task text + Start (Enter starts, Shift+Enter
-// newline). `presets`
-// and `presetDefault` are the hub payload's list and the label of its first
-// option, which keeps the config's own preset. The model box lists every
+// worktree, preset and model row and the advanced fold (the plan to run from,
+// a spend cap) above task text + Start (Enter starts, Shift+Enter newline).
+// `presets` and `presetDefault` are the hub payload's list and the label of
+// its first option, which keeps the config's own preset; `sessions` are the
+// hub's rows, whose finished plans the fold offers. The model box lists every
 // provider/model the config can run (/api/routes) under a first option that
 // names the route the config resolves for the mode and preset, relabelled and
 // picked again on every change of either. Each first option adds no flag;
-// any other pick rides as --preset / --model.
-function newWorkDock(presets, presetDefault) {
+// any other pick rides as --preset / --model / --worktree / --from / --max-usd.
+function newWorkDock(presets, presetDefault, sessions) {
   const root = el('div', 'composer dock dock-fixed');
   const row = el('div', 'row');
+  const pending = window.pendingNewWork || {}; delete window.pendingNewWork;
   const task = el('textarea', 'field'); task.placeholder = 'task / question…';
-  task.value = window.pendingNewWork || ''; delete window.pendingNewWork;
+  task.value = pending.task || '';
   const mode = el('select', 'field');
   for (const m of ['run', 'plan', 'ask']) { const o = el('option', null, m); o.value = m; mode.appendChild(o); }
+  const worktree = el('input'); worktree.type = 'checkbox';
+  worktree.title = 'start the run in a new git worktree of this repository (run --worktree)';
+  const seed = el('select', 'field');
+  seed.title = 'seed the run with a plan: its text becomes the task when you type none (run --from)';
+  const noSeed = el('option', null, 'none'); noSeed.value = ''; seed.appendChild(noSeed);
+  const live = new Set(['running', 'starting', 'waiting']);
+  for (const r of (sessions || []).filter(r => r.mode === 'plan' && !live.has(r.status))) {
+    const o = el('option', null, r.session_id + ' · ' + (r.task_line || '').split('\n')[0].slice(0, 40));
+    o.value = r.session_id; seed.appendChild(o);
+  }
+  const cap = el('input', 'field'); cap.type = 'number'; cap.step = 'any'; cap.placeholder = 'config';
+  cap.title = 'the metered spend ceiling in USD for this session (--max-usd); -1 is unlimited';
+  cap.style.width = '7em';
+  const advanced = el('details', 'more');
+  advanced.appendChild(el('summary', null, 'advanced…'));
+  advanced.appendChild(pickerRow([['from plan', seed], ['max USD', cap]]));
+  if (pending.seed_from) { seed.value = pending.seed_from; advanced.open = true; }
+  // A worktree and a seed are run options: the other modes grey them.
+  const followMode = () => { worktree.disabled = seed.disabled = mode.value !== 'run'; };
   const preset = el('select', 'field');
   preset.title = 'config preset for this run (a preset cannot change mid-run)';
   const dflt = el('option', null, presetDefault); dflt.value = ''; preset.appendChild(dflt);
@@ -408,13 +436,18 @@ function newWorkDock(presets, presetDefault) {
     model.value = '';
     model.disabled = false;
   };
-  mode.onchange = fillRoutes; preset.onchange = fillRoutes; fillRoutes();
+  mode.onchange = () => { followMode(); fillRoutes(); }; preset.onchange = fillRoutes; fillRoutes(); followMode();
   const go = el('button', 'primary', 'Start');
   const start = async () => {
-    if (!task.value.trim()) return;
+    if (!task.value.trim() && !(seed.value && mode.value === 'run')) return;
     go.disabled = true;
     try {
-      const d = await postJSON('/api/new', { mode: mode.value, task: task.value, preset: preset.value, model: model.value });
+      const d = await postJSON('/api/new', {
+        mode: mode.value, task: task.value, preset: preset.value, model: model.value,
+        worktree: mode.value === 'run' && worktree.checked,
+        seed_from: mode.value === 'run' ? seed.value : '',
+        max_usd: cap.value.trim() ? Number(cap.value) : null,
+      });
       if (d.session_id) location.hash = '#/session/' + encodeURIComponent(d.session_id);
     } catch (e) { toast(e.message, true); go.disabled = false; }
   };
@@ -428,9 +461,10 @@ function newWorkDock(presets, presetDefault) {
   };
   row.appendChild(task); row.appendChild(go);
   root.appendChild(growGrip(task));
-  root.appendChild(pickerRow([['mode', mode], ['preset', preset], ['model', model]]));
+  root.appendChild(pickerRow([['mode', mode], ['worktree', worktree], ['preset', preset], ['model', model]]));
+  root.appendChild(advanced);
   root.appendChild(row);
-  root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask · Shift+Enter newline · '
+  root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask (a run from a plan needs no task) · Shift+Enter newline · '
     + '/parallel [SPEC --] TASK fans out lanes (SPEC: count or models; repeat to queue more)'));
   return root;
 }
@@ -644,7 +678,7 @@ async function renderHub(focus, gen) {
   };
   let lists = build(data, sort);
   view.appendChild(lists);
-  view.appendChild(machinesTab ? createMachineDock() : newWorkDock(data.presets, data.preset_default_label));
+  view.appendChild(machinesTab ? createMachineDock() : newWorkDock(data.presets, data.preset_default_label, data.sessions));
   // Without this the hub paints once, so a lane that finished, failed or
   // crashed keeps its "running" pill until a manual reload; clicking the
   // already-active tab does not re-enter route(). Refresh the lists only: a

@@ -333,6 +333,7 @@ def test_hub_new_work_fans_out_while_checkout_busy(
         preset: str,
         model: str,
         spec: str,
+        options: object = None,
         config_paths: object = (),
     ) -> tuple[pathlib.Path | None, str]:
         spawned.append(f"{spec}:{task}")

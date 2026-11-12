@@ -8,6 +8,7 @@ the work in-process.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import pathlib
 import shutil
@@ -50,6 +51,33 @@ DETACHED_AWAY_ENV: dict[str, str] = {"AGENT6_DETACHED_AWAY": "wait"}
 DETACHED_RUN_ENV: dict[str, str] = {"AGENT6_STREAM_TO_LOG": "1", **DETACHED_AWAY_ENV}
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class RunOptions:
+    """The run options a composer offers beside the mode, preset and model.
+
+    Attributes:
+        worktree: Work in a new git worktree (`run --worktree`); run mode only.
+        seed_from: The session whose context seeds the run (`run --from`); with it a task
+            may be empty, and a plan source becomes the task.
+        max_usd: The metered spend ceiling (`--max-usd`), or None for the config's.
+    """
+
+    worktree: bool = False
+    seed_from: str = ""
+    max_usd: float | None = None
+
+    def argv(self) -> list[str]:
+        """Return the flags, in the order the help lists them."""
+        flags: list[str] = []
+        if self.worktree:
+            flags.append("--worktree")
+        if self.seed_from:
+            flags += ["--from", self.seed_from]
+        if self.max_usd is not None:
+            flags += ["--max-usd", str(self.max_usd)]
+        return flags
+
+
 def spawn_new_work(  # noqa: PLR0911
     cwd: pathlib.Path,
     mode: str,
@@ -57,6 +85,7 @@ def spawn_new_work(  # noqa: PLR0911
     *,
     preset: str = "",
     model: str = "",
+    options: RunOptions | None = None,
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[pathlib.Path | None, str]:
     """Start a session detached from a hub.
@@ -65,25 +94,23 @@ def spawn_new_work(  # noqa: PLR0911
     segment: a malformed directive refuses before any spawn, and any segment's
     failure fails the whole message while naming the lanes already running. A plain
     run into a checkout another run is driving refuses at once; a fan-out's lanes
-    clone the checkout and take no such lock.
+    clone the checkout and a worktree run has a checkout of its own, so neither
+    takes that lock.
 
     Args:
         cwd: The checkout.
         mode: The session mode.
-        task: The task text.
+        task: The task text; empty only with a seed session.
         preset: The `--preset` value, when any.
         model: The `--model` value, when any.
+        options: The run options beside the preset and model.
         config_paths: The front-end's explicit config, when any.
 
     Returns:
         The new session's dir (the first lane's for a fan-out) and "", or None and why.
     """
-    if mode not in kinds.OPERATOR_MODES:
-        return None, f"unknown mode {mode!r}"
-    if not task.strip():
-        return None, "empty task"
-    # The child refuses this too; refusing here answers before anything is spawned.
-    if (problem := directive.steer_problem(task)) is not None:
+    options = options or RunOptions()
+    if (problem := _refusal(mode, task, options)) is not None:
         return None, problem
     segments = None
     if mode == "run":
@@ -92,15 +119,29 @@ def spawn_new_work(  # noqa: PLR0911
         except directive.DirectiveError as exc:
             return None, str(exc)
     if segments is None:
-        if mode == "run" and lock.repo_writer_held(state := paths.state_dir(cwd), cwd):
+        if (
+            mode == "run"
+            and not options.worktree
+            and lock.repo_writer_held(state := paths.state_dir(cwd), cwd)
+        ):
             holder = lock.repo_writer_holder(state, cwd) or "another run"
             return None, (
                 f"run {holder} is already driving this checkout; steer it with this task"
-                " (or /parallel it) from its run view, or wait for it to finish"
+                " (or /parallel it) from its run view, start this one in a worktree, or wait"
+                " for it to finish"
             )
         return _spawn_run(
-            cwd, mode, task, preset=preset, model=model, spec="", config_paths=config_paths
+            cwd,
+            mode,
+            task,
+            preset=preset,
+            model=model,
+            spec="",
+            options=options,
+            config_paths=config_paths,
         )
+    if options.worktree or options.seed_from:
+        return None, "/parallel lanes clone the checkout; drop the worktree and the seed session"
     refusal = validate.directive_model_refusal(
         cwd, segments, config_paths, preset=preset, model=model
     )
@@ -117,6 +158,7 @@ def spawn_new_work(  # noqa: PLR0911
             preset=preset,
             model=model,
             spec=seg.spec or "1",
+            options=options,
             config_paths=config_paths,
         )
         if session_dir is None:
@@ -133,6 +175,18 @@ def spawn_new_work(  # noqa: PLR0911
     return first, ""
 
 
+def _refusal(mode: str, task: str, options: RunOptions) -> str | None:
+    """Return why the request cannot start, before anything is spawned; None when it can."""
+    if mode not in kinds.OPERATOR_MODES:
+        return f"unknown mode {mode!r}"
+    if not task.strip() and not options.seed_from:
+        return "empty task"
+    if (options.worktree or options.seed_from) and mode != "run":
+        return f"a worktree and a seed session are run options; this is {mode}"
+    # The child refuses this too; refusing here answers before anything is spawned.
+    return directive.steer_problem(task)
+
+
 def _spawn_run(
     cwd: pathlib.Path,
     mode: str,
@@ -141,6 +195,7 @@ def _spawn_run(
     preset: str,
     model: str,
     spec: str,
+    options: RunOptions,
     config_paths: tuple[pathlib.Path, ...],
 ) -> tuple[pathlib.Path | None, str]:
     """Spawn one detached session and locate it by its new session dir.
@@ -148,10 +203,11 @@ def _spawn_run(
     Args:
         cwd: The checkout.
         mode: The session mode.
-        task: The task text, passed after `--` so it never reads as a flag.
+        task: The task text, passed after `--` so it never reads as a flag; "" passes none.
         preset: The `--preset` value, when any.
         model: The `--model` value, when any.
         spec: The `--parallel` spec of a fan-out lane; "" for a plain run.
+        options: The run options beside the preset and model.
         config_paths: The front-end's explicit config, when any.
 
     Returns:
@@ -164,7 +220,9 @@ def _spawn_run(
         argv += ["--model", model]
     if spec:
         argv += ["--parallel", spec]
-    argv += ["--", task]
+    argv += options.argv()
+    if task.strip():
+        argv += ["--", task]
     state = paths.state_dir(cwd)
     return spawn_and_locate(
         argv,

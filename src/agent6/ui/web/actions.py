@@ -10,8 +10,6 @@ arbitrary input. The browser is trusted as far as the operator behind the bind.
 
 from __future__ import annotations
 
-import contextlib
-import os
 import pathlib
 from typing import Any
 
@@ -27,7 +25,7 @@ from agent6.machine import (
     load_machine,
     write_stop_request,
 )
-from agent6.sessions import ipc, layout, manifest, process
+from agent6.sessions import ipc, layout, process
 from agent6.ui import directive_actions, spawn
 from agent6.ui.web import model
 from agent6.viewmodel import (
@@ -302,53 +300,6 @@ def resume_run(
         cwd, session_dir.name, steer=text, preset=preset, model=route, config_paths=config_paths
     )
     return (err == ""), (err or "resuming")
-
-
-def run_plan(
-    cwd: pathlib.Path, session_id: str, config_paths: tuple[pathlib.Path, ...] = ()
-) -> tuple[dict[str, str] | None, str]:
-    """Execute a finished plan by spawning `agent6 run --from <id>` detached.
-
-    The plan session is untouched, so revising it keeps working.
-
-    Attributes:
-        run_id: The session created to execute the plan.
-
-    Args:
-        cwd: The repository.
-        session_id: The plan.
-        config_paths: The `--config` files in command-line order.
-
-    Returns:
-        The new run id in a dict and "", or None and the reason.
-    """
-    session_dir = model.session_dir_for(cwd, session_id)
-    if session_dir is None:
-        return None, f"no session {session_id!r}"
-    manifest_mode = ""
-    with contextlib.suppress(manifest.ManifestError):
-        manifest_mode = manifest.read_manifest(session_dir).mode
-    if manifest_mode != "plan":
-        return None, f"{session_id!r} is not a plan"
-    plan_path = session_dir / "plan.md"
-    try:
-        plan_md = plan_path.read_text(encoding="utf-8")
-    except OSError:
-        return None, f"plan {session_id!r} has no plan.md that can be read yet"
-    if not plan_md.strip():
-        return None, f"plan {session_id!r} has an empty plan.md"
-    runs = layout.bucket_dir(agent6_paths.state_dir(cwd), "runs")
-    agent6_paths.mkdir_for_real_user(runs)
-    new_dir, err = spawn.spawn_and_locate(
-        [*spawn.agent6_argv(config_paths), "run", "--from", session_id],
-        cwd,
-        before={p for p in runs.iterdir() if p.is_dir()},
-        list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],
-        env={**os.environ, **spawn.DETACHED_RUN_ENV},
-    )
-    if new_dir is None:
-        return None, err or "could not start the run"
-    return {"run_id": new_dir.name}, ""
 
 
 def stop_run(cwd: pathlib.Path, session_id: str, *, after_turn: bool) -> tuple[bool, str]:

@@ -404,6 +404,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 self.config_paths,
                 presets=layer_presets.available_preset_names(self.repo_cwd, self.config_paths),
                 routes=choices.available_routes(self.repo_cwd, self.config_paths),
+                plans=new_work.plan_choices(self._summaries.values()),
             )
         )
 

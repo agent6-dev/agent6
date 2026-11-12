@@ -395,7 +395,6 @@ WEB = (
     Producer("ui.web.server", "_Handler._route_post", "Web POST result fields"),
     Producer("ui.web.actions", "fork_run", "`/api/session/<id>/fork` result"),
     Producer("ui.web.actions", "undo_session", "`/api/session/<id>/undo` result"),
-    Producer("ui.web.actions", "run_plan", "`/api/session/<id>/run_plan` result"),
     Producer("ui.web.actions", "review_run", "`/api/session/<id>/review` result"),
     Producer("ui.web.model", "hub_payload", "`/api/hub` payload"),
     Producer("ui.web.model", "_machine_row", "`/api/hub` machine row", "entry"),

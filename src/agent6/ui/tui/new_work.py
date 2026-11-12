@@ -2,8 +2,9 @@
 # Copyright 2026 Eric Lesiuta
 """The conversation view before there is a conversation.
 
-The hub's `n` opens it: a run's chrome with the transcript pane empty and a
-mode, preset and model row above the composer. Enter starts the session
+The hub's `n` opens it, and so does a plan's Run this plan: a run's chrome with
+the transcript pane empty and the picker rows above the composer (mode, checkout,
+preset and model; the plan to run from and a spend cap). Enter starts the session
 detached and hands it to the live view; a refusal renders where the transcript
 will be, and the typed text stays in the composer to fix and resend.
 """
@@ -12,7 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import pathlib
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import ClassVar
 
 import textual
@@ -25,13 +26,17 @@ from agent6 import directive, kinds
 from agent6.models import choices
 from agent6.ui import spawn
 from agent6.ui.tui import composer, forms, menubar, screen_chrome
+from agent6.viewmodel import LIVE_STATUS_WORDS, listing
 
 _INTRO = (
     "Describe the task (or the question, for ask). Enter starts it; Ctrl-J adds a line.\n"
-    "Tab reaches the mode, preset and model pickers below.\n"
+    "Tab reaches the pickers below: mode, checkout, preset and model, then the plan to run"
+    " from and a spend cap in USD.\n"
+    "A run from a plan needs no task: Enter on an empty line starts it.\n"
     "/parallel [SPEC --] TASK fans out isolated lanes.\n"
     "SPEC is a count or comma-separated models; repeat /parallel to queue more."
 )
+_WORKTREE = "worktree"
 
 
 def model_suggestions(models: list[str], text: str, *, limit: int = 8) -> rich_text.Text | None:
@@ -60,6 +65,26 @@ def model_suggestions(models: list[str], text: str, *, limit: int = 8) -> rich_t
     return rich_text.Text.assemble(("models: ", "dim"), "  ".join(shown), (more, "dim"))
 
 
+def plan_choices(summaries: Iterable[listing.SessionSummary]) -> list[tuple[str, str]]:
+    """Return the plans a run can start from, newest first, as (label, session id) rows.
+
+    Args:
+        summaries: The listed sessions.
+
+    Returns:
+        Every plan that is not live, labelled by its id and its task's first line.
+    """
+    plans = sorted(
+        (s for s in summaries if s.mode == "plan" and s.status not in LIVE_STATUS_WORDS),
+        key=lambda s: s.last_activity,
+        reverse=True,
+    )
+    return [
+        (f"{s.session_id} · {s.task_label.line().splitlines()[0][:40]}", s.session_id)
+        for s in plans
+    ]
+
+
 class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     """Type a task, pick a mode, a preset and a model; Enter starts it.
 
@@ -73,7 +98,8 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     #draft-main { height: 1fr; }
     #draft-scroll { height: 1fr; }
     #draft-notice { height: auto; padding: 0 1; pointer: text; }
-    #draft-options { padding: 0 1; }
+    #draft-options, #draft-advanced { padding: 0 1; }
+    #draft-advanced .picker-input { height: 1; width: 12; border: none; padding: 0 1; }
     """
 
     # The composer has the focus: Esc and Ctrl+Q fire before it.
@@ -105,7 +131,8 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     HELP_TITLE: ClassVar = "agent6 — new session"
     HELP_HINTS: ClassVar = (
         "Enter starts the task; Ctrl-J or Shift+Enter inserts a newline",
-        "Tab moves between the text, the mode, the preset and the model",
+        "Tab moves between the text, the mode, the checkout, the preset and the model, then"
+        " the plan to run from and the spend cap",
     )
 
     def __init__(
@@ -115,15 +142,30 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         *,
         presets: list[str] | None = None,
         routes: list[str] | None = None,
+        plans: list[tuple[str, str]] | None = None,
+        seed_from: str = "",
         task: str = "",
         on_started: Callable[[pathlib.Path], None] | None = None,
     ) -> None:
-        """Bind the screen to the repo, its config and the preset and route choices."""
+        """Bind the screen to the repo, its config and the preset, route and plan choices.
+
+        Args:
+            repo_cwd: The checkout new work starts in.
+            config_paths: The front-end's `--config` files.
+            presets: The preset names the picker offers.
+            routes: The provider/model routes the picker offers.
+            plans: The plans the run can start from, as (label, session id) rows.
+            seed_from: The plan picked on opening, "" for none.
+            task: The composer's initial text.
+            on_started: Receives the started session's dir; None exits the app with it.
+        """
         super().__init__()
         self.repo_cwd = repo_cwd
         self.config_paths = config_paths
         self._presets = presets if presets is not None else []
         self._routes = routes if routes is not None else []
+        self._plans = plans if plans is not None else []
+        self._seed_from = seed_from
         self._starting = False
         self._initial_task = task
         self._on_started = on_started
@@ -151,6 +193,13 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
                 allow_blank=False,
                 id="draft-mode",
             )
+            yield widgets.Static("checkout", classes="picker-label")
+            yield forms.Picker(
+                [("this checkout", ""), ("a new worktree", _WORKTREE)],
+                value="",
+                allow_blank=False,
+                id="draft-checkout",
+            )
             yield widgets.Static("preset", classes="picker-label")
             preset = choices.default_preset(self.repo_cwd, self.config_paths)
             yield forms.Picker(
@@ -164,6 +213,18 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             yield forms.Picker(
                 self._model_options(route), value="", allow_blank=False, id="draft-model"
             )
+        with forms.PickerRow(id="draft-advanced"):
+            yield widgets.Static("from plan", classes="picker-label")
+            yield forms.Picker(
+                [("none", ""), *self._plans],
+                value=self._seed_from if any(i == self._seed_from for _, i in self._plans) else "",
+                allow_blank=False,
+                id="draft-seed",
+            )
+            yield widgets.Static("max USD", classes="picker-label")
+            yield widgets.Input(
+                placeholder="config", type="number", id="draft-max-usd", classes="picker-input"
+            )
         yield composer.SteerInput(id="draft-input")
         yield widgets.Footer()
 
@@ -173,7 +234,14 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         bar = self.query_one("#draft-input", composer.SteerInput)
         bar.set_mode(mode="start")
         bar.load_text(self._initial_task)
+        bar.allow_empty = bool(self.query_one("#draft-seed", widgets.Select).value)
         bar.focus()
+
+    @textual.on(widgets.Select.Changed, "#draft-seed")
+    def _follow_seed(self) -> None:
+        """Let an empty composer line submit once a plan seeds the run."""
+        bar = self.query_one("#draft-input", composer.SteerInput)
+        bar.allow_empty = bool(self.query_one("#draft-seed", widgets.Select).value)
 
     def _model_options(self, route: str) -> list[tuple[str, str]]:
         """Return the model picker's rows: the config default, then every route."""
@@ -205,19 +273,36 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         )
 
     def on_steer_input_submitted(self, message: composer.SteerInput.Submitted) -> None:
-        """Start the session with the picked mode, preset and model."""
+        """Start the session with the picked mode, checkout, preset, model, plan and cap."""
         if self._starting:
             return
         mode = str(self.query_one("#draft-mode", widgets.Select).value)
         preset = str(self.query_one("#draft-preset", widgets.Select).value)
         model = str(self.query_one("#draft-model", widgets.Select).value)
+        cap = self.query_one("#draft-max-usd", widgets.Input).value.strip()
+        try:
+            max_usd = float(cap) if cap else None
+        except ValueError:
+            self._notice(f"max USD must be a number, not {cap!r}", "bold red")
+            return
+        options = spawn.RunOptions(
+            worktree=self.query_one("#draft-checkout", widgets.Select).value == _WORKTREE,
+            seed_from=str(self.query_one("#draft-seed", widgets.Select).value),
+            max_usd=max_usd,
+        )
         self._starting = True
         self._notice(f"starting the {mode}…", "bold cyan")
-        self._start(self.app, mode, message.text, preset, model)
+        self._start(self.app, mode, message.text, preset, model, options)
 
     @textual.work(thread=True, exclusive=True)
     def _start(
-        self, app: textual_app.App[object], mode: str, task: str, preset: str, model: str
+        self,
+        app: textual_app.App[object],
+        mode: str,
+        task: str,
+        preset: str,
+        model: str,
+        options: spawn.RunOptions,
     ) -> None:
         """Spawn the session detached and locate it, off the UI thread.
 
@@ -229,9 +314,16 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             task: The typed text; a refusal loads it back into the composer.
             preset: The picked preset, "" for the config's own.
             model: The picked route, "" for the config's own.
+            options: The picked checkout, plan and spend cap.
         """
         session_dir, err = spawn.spawn_new_work(
-            self.repo_cwd, mode, task, preset=preset, model=model, config_paths=self.config_paths
+            self.repo_cwd,
+            mode,
+            task,
+            preset=preset,
+            model=model,
+            options=options,
+            config_paths=self.config_paths,
         )
         app.call_from_thread(self._started, session_dir, err, task)
 

@@ -314,6 +314,7 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
         steer: str = "",
         preset: str = "",
         model: str = "",
+        options: object = None,
         config_paths: object = (),
     ) -> str:
         calls.append((cwd, session_id, steer, preset, model))
@@ -329,12 +330,12 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
     assert calls == [(tmp_path, "run-r", "also fix the docs", "no_review", "o/b")]
 
 
-def test_run_plan_http_returns_the_child_and_leaves_the_plan_unchanged(
+def test_new_work_from_a_plan_needs_no_task_and_leaves_the_plan_unchanged(
     server: tuple[web_server.WebServer, int],
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-
+    """`/api/new` with `seed_from` spawns `run --from <plan>`; an empty task is the plan's."""
     _srv, port = server
     plan = paths.state_dir(tmp_path) / "sessions" / "plans" / "plan-http-AAAAAA"
     plan.mkdir(parents=True)
@@ -349,17 +350,20 @@ def test_run_plan_http_returns_the_child_and_leaves_the_plan_unchanged(
     def fake_spawn(
         argv: list[str], _cwd: pathlib.Path, **_kwargs: object
     ) -> tuple[pathlib.Path, str]:
-        assert argv[-3:] == ["run", "--from", plan.name]
-        child.mkdir(parents=True)
+        assert argv[-5:] == ["run", "--from", plan.name, "--max-usd", "3.0"]
+        child.mkdir(parents=True, exist_ok=True)
         return child, ""
 
     monkeypatch.setattr(spawn, "spawn_and_locate", fake_spawn)
 
-    status, data = _post(port, f"/api/session/{plan.name}/run_plan", {})
-
+    status, data = _post(
+        port, "/api/new", {"mode": "run", "task": "", "seed_from": plan.name, "max_usd": 3.0}
+    )
     assert status == 200
-    assert data == {"ok": True, "run_id": child.name}
+    assert data == {"ok": True, "session_id": child.name}
     assert {name: (plan / name).read_bytes() for name in before} == before
+    status, data = _post(port, "/api/new", {"mode": "plan", "task": "x", "worktree": True})
+    assert status == 422 and "run options" in str(data["error"])
 
 
 def test_resume_refused_while_the_worker_is_alive(
@@ -3089,6 +3093,7 @@ def test_new_work_carries_the_picked_model(
         *,
         preset: str = "",
         model: str = "",
+        options: object = None,
         config_paths: object = (),
     ) -> tuple[pathlib.Path | None, str]:
         seen.append((mode, task, preset, model))

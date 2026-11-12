@@ -59,6 +59,49 @@ def test_unknown_mode_and_empty_task_are_refused(
     assert captured == []
 
 
+def test_the_run_options_ride_as_their_flags_and_a_seeded_run_needs_no_task(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--worktree`, `--from` and `--max-usd` follow the preset and model; a plan is the task."""
+    captured = _capture_locate(monkeypatch)
+    options = spawn.RunOptions(worktree=True, seed_from="plan-one-AAAAAA", max_usd=2.5)
+    spawn.spawn_new_work(tmp_path, "run", "", preset="fast", options=options)
+    assert captured[-1][1:] == [
+        "run",
+        "--preset",
+        "fast",
+        "--worktree",
+        "--from",
+        "plan-one-AAAAAA",
+        "--max-usd",
+        "2.5",
+    ]
+    spawn.spawn_new_work(tmp_path, "run", "and this", options=spawn.RunOptions(seed_from="p"))
+    assert captured[-1][1:] == ["run", "--from", "p", "--", "and this"]
+    spawn.spawn_new_work(tmp_path, "ask", "why?", options=spawn.RunOptions(max_usd=1))
+    assert captured[-1][1:] == ["ask", "--max-usd", "1", "--", "why?"]
+
+
+def test_run_only_options_are_refused_for_other_modes_and_fan_outs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured = _capture_locate(monkeypatch)
+    worktree = spawn.RunOptions(worktree=True)
+    assert spawn.spawn_new_work(tmp_path, "plan", "x", options=worktree) == (
+        None,
+        "a worktree and a seed session are run options; this is plan",
+    )
+    assert spawn.spawn_new_work(tmp_path, "run", "/parallel 2 -- x", options=worktree) == (
+        None,
+        "/parallel lanes clone the checkout; drop the worktree and the seed session",
+    )
+    assert spawn.spawn_new_work(tmp_path, "ask", "", options=spawn.RunOptions(max_usd=1)) == (
+        None,
+        "empty task",
+    )
+    assert captured == []
+
+
 def test_detached_env_streams_and_waits(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -284,6 +327,7 @@ def test_parallel_partial_spawn_failure_surfaces(
         preset: str,
         model: str,
         spec: str,
+        options: object = None,
         config_paths: object = (),
     ) -> tuple[pathlib.Path | None, str]:
         if "task B" in task:
@@ -338,10 +382,13 @@ def test_a_busy_checkout_is_refused_at_once(
     monkeypatch.setattr(lock, "repo_writer_held", _held)
     monkeypatch.setattr(lock, "repo_writer_holder", _holder)
     session_dir, err = spawn.spawn_new_work(tmp_path, "run", "do it")
-    assert session_dir is None and "busy-run" in err
+    assert session_dir is None and "busy-run" in err and "worktree" in err
     assert captured == []
     spawn.spawn_new_work(tmp_path, "ask", "why?")
     assert captured[-1][1:] == ["ask", "--", "why?"]
+    # A worktree run has a checkout of its own, so the busy one is no refusal.
+    spawn.spawn_new_work(tmp_path, "run", "do it", options=spawn.RunOptions(worktree=True))
+    assert captured[-1][1:] == ["run", "--worktree", "--", "do it"]
 
 
 def test_detached_resume_refuses_a_malformed_steer_before_spawning(

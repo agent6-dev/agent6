@@ -733,59 +733,6 @@ def test_machine_stop_notes_ended_and_marks_a_live_one(tmp_path: pathlib.Path) -
     assert (inst / "stop").is_file()
 
 
-def test_run_plan_spawns_from_plan_and_refuses_non_plans(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Run this plan spawns `agent6 run --from <id>` detached and hands back the new run id.
-
-    A non-plan session and a plan with no plan.md refuse without spawning; the plan is untouched.
-    """
-    import json
-
-    plan = paths.state_dir(tmp_path) / "sessions" / "plans" / "planny-one-AAAAAA"
-    plan.mkdir(parents=True)
-    (plan / "manifest.json").write_text(
-        json.dumps({"version": 2, "session_id": plan.name, "mode": "plan", "user_task": "t"}),
-        encoding="utf-8",
-    )
-    (plan / "logs.jsonl").write_text("", encoding="utf-8")
-    run = paths.state_dir(tmp_path) / "sessions" / "runs" / "runny-one-AAAAAA"
-    run.mkdir(parents=True)
-    (run / "manifest.json").write_text(
-        json.dumps({"version": 2, "session_id": run.name, "mode": "run", "user_task": "t"}),
-        encoding="utf-8",
-    )
-    (run / "logs.jsonl").write_text("", encoding="utf-8")
-    seen: dict[str, object] = {}
-
-    def _fake_spawn(argv: list[str], _cwd: pathlib.Path, **kw: object) -> tuple[pathlib.Path, str]:
-        seen["argv"] = argv
-        seen["env"] = kw.get("env")
-        child = paths.state_dir(tmp_path) / "sessions" / "runs" / "fresh-run-BBBBBB"
-        child.mkdir(parents=True, exist_ok=True)
-        return child, ""
-
-    monkeypatch.setattr(spawn, "spawn_and_locate", _fake_spawn)
-    # No plan.md yet: still planning (or never finished) -> refuse, no spawn.
-    payload, err = actions.run_plan(tmp_path, "planny-one-AAAAAA")
-    assert payload is None and "no plan.md" in err and not seen
-
-    (plan / "plan.md").write_text(" \n\t", encoding="utf-8")
-    payload, err = actions.run_plan(tmp_path, "planny-one-AAAAAA")
-    assert payload is None and "empty plan.md" in err and not seen
-
-    (plan / "plan.md").write_text("# Plan\n", encoding="utf-8")
-    payload, err = actions.run_plan(tmp_path, "planny-one-AAAAAA")
-    assert err == "" and payload == {"run_id": "fresh-run-BBBBBB"}
-    argv = seen["argv"]
-    assert isinstance(argv, list) and argv[-3:] == ["run", "--from", "planny-one-AAAAAA"]
-    env = seen["env"]
-    assert isinstance(env, dict) and env["AGENT6_DETACHED_AWAY"] == "wait"
-
-    payload, err = actions.run_plan(tmp_path, "runny-one-AAAAAA")
-    assert payload is None and "not a plan" in err
-
-
 def test_spawn_machine_run_takes_the_listed_name_or_path(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

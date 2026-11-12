@@ -80,18 +80,13 @@ async function renderRun(id, opts, gen) {
         location.hash = '#/';
       } catch (e) { toast(e.message, true); route(); } // the view polls again
     };
-    // Execute a finished plan: spawns `agent6 run --from <id>` detached
-    // and opens the run; the plan itself is untouched (the composer keeps
-    // revising it). paintRun shows this only on a plan with a plan.md.
+    // Execute a finished plan: opens the new-work composer with this plan
+    // chosen as the run's seed (`agent6 run --from <id>`); the plan itself is
+    // untouched (the composer keeps revising it). paintRun shows this only on
+    // a plan with a plan.md.
     const planBtn = el('button', null, 'Run this plan');
     planBtn.style.display = 'none';
-    planBtn.onclick = async () => {
-      try {
-        const d = await postJSON(base + '/run_plan', {});
-        toast('run started: ' + d.run_id);
-        location.hash = '#/session/' + encodeURIComponent(d.run_id);
-      } catch (e) { toast(e.message, true); }
-    };
+    planBtn.onclick = () => { handToNewWork({ seed_from: id }); location.hash = '#/'; };
     // A new run from the latest checkpoint, unstarted (the CLI's `fork --no-run`,
     // the TUI's Run > Fork): the new session's composer takes the instruction
     // that starts it, the way /undo hands over its fork.

@@ -137,8 +137,8 @@ function gitDiffViewer(body) {
       if (rev === GIT_WORKTREE) { const digest = d[side + '_digest']; return 'working tree' + (digest ? ', sha256 ' + digest.slice(0, 12) : ''); }
       return /^[0-9a-f]{40}$/.test(rev) ? 'commit ' + rev.slice(0, 12) : rev;
     }, note => {
-      window.pendingNewWork = (window.pendingNewWork || '') + note + '\n';
-      const n = (window.pendingNewWork.match(/^> /gm) || []).length;
+      handToNewWork({ task: ((window.pendingNewWork || {}).task || '') + note + '\n' });
+      const n = (window.pendingNewWork.task.match(/^> /gm) || []).length;
       toast(n + (n === 1 ? ' line quoted' : ' lines quoted') + ' for the new-work composer on Sessions');
     });
     await blameDiff(head, box, patch, ctx, f, d, mode, current, sideText);

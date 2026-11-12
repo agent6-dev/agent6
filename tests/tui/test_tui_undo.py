@@ -20,7 +20,7 @@ from agent6.app import fork, reporter, undo
 from agent6.sessions import process
 from agent6.ui import spawn
 from agent6.ui.tui import app as app_mod
-from agent6.ui.tui import composer
+from agent6.ui.tui import composer, new_work
 
 
 def _undone_run(d: pathlib.Path) -> None:
@@ -360,10 +360,13 @@ def test_resume_of_a_fan_out_refuses_here(tmp_path: pathlib.Path, monkeypatch: A
     asyncio.run(scenario())
 
 
-def test_run_this_plan_spawns_the_run_detached(tmp_path: pathlib.Path, monkeypatch: Any) -> None:
-    """Run > Run this plan on a finished plan spawns `agent6 run --from <id>` detached.
+def test_run_this_plan_opens_the_composer_with_the_plan_chosen(
+    tmp_path: pathlib.Path, monkeypatch: Any
+) -> None:
+    """Run > Run this plan opens the new-session composer seeded with the plan.
 
-    From the hub it ends the view with the new run; standalone it names the run to attach to.
+    Enter on the empty composer spawns `agent6 run --from <id>` detached. From the hub the
+    view ends with the new run; standalone it names the run to attach to.
     """
     seen: dict[str, Any] = {}
     child = tmp_path / "sessions" / "runs" / "fresh-run-CCCCCC"
@@ -390,7 +393,10 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: pathlib.Path, monkeypat
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             app.action_run_plan()
-            # The spawn worker ends the app itself, so wait on the exit value.
+            await pilot.pause()
+            assert isinstance(app.screen, new_work.NewWorkScreen)
+            assert str(app.screen.query_one("#draft-seed", widgets.Select).value) == plan.name
+            await pilot.press("enter")  # no task: the plan is the task
             deadline = time.monotonic() + 5
             while app.return_value is None and time.monotonic() < deadline:
                 await pilot.pause(0.05)
@@ -413,6 +419,8 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: pathlib.Path, monkeypat
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             app.action_run_plan()
+            await pilot.pause()
+            await pilot.press("enter")
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert app.return_value is None
@@ -421,18 +429,6 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: pathlib.Path, monkeypat
     asyncio.run(standalone())
 
     seen.clear()
-    (plan / "plan.md").write_text(" \n\t", encoding="utf-8")
-
-    async def refuse_empty() -> None:
-        app = app_mod.Agent6TUI(plan)
-        async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause()
-            app.action_run_plan()
-            await pilot.pause()
-
-    asyncio.run(refuse_empty())
-    assert not seen
-
     run = tmp_path / "sessions" / "runs" / "runny-one-AAAAAA"
     run.mkdir(parents=True)
     (run / "logs.jsonl").write_text("", encoding="utf-8")
@@ -442,7 +438,8 @@ def test_run_this_plan_spawns_the_run_detached(tmp_path: pathlib.Path, monkeypat
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             app.action_run_plan()
-            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert not isinstance(app.screen, new_work.NewWorkScreen)
 
     asyncio.run(refuse())
     assert not seen

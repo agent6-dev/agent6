@@ -35,13 +35,12 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
-from agent6 import paths
 from agent6.app import fork, reporter, stop, undo
 from agent6.models import choices
 from agent6.sessions import ipc, layout, process, shells
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui import directive_actions, spawn
-from agent6.ui.tui import composer, conversation, dashboard, modals, prompts, theme
+from agent6.ui.tui import composer, conversation, dashboard, modals, new_work, prompts, theme
 from agent6.vcs import git_read
 from agent6.viewmodel import (
     SessionState,
@@ -715,48 +714,30 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         )
 
     def action_run_plan(self) -> None:
-        """Spawn `agent6 run --from <id>` for a finished plan and, from the hub, open it."""
+        """Open the new-session composer with this plan chosen as the run's seed."""
         if self.mode != "plan":
             self.notify("this session is not a plan", severity="warning")
             return
-        plan_path = self.session_dir / "plan.md"
-        try:
-            plan_md = plan_path.read_text(encoding="utf-8")
-        except OSError:
-            self.notify(
-                "no readable plan.md yet (still planning, or never finished)", severity="warning"
+        cwd = pathlib.Path.cwd()
+        plan = self.session_dir.name
+        self.push_screen(
+            new_work.NewWorkScreen(
+                cwd,
+                self.config_paths,
+                presets=layer_presets.available_preset_names(cwd, self.config_paths),
+                routes=choices.available_routes(cwd, self.config_paths),
+                plans=[(f"{plan} · this plan", plan)],
+                seed_from=plan,
+                on_started=self._plan_run_started,
             )
-            return
-        if not plan_md.strip():
-            self.notify(f"plan {self.session_dir.name!r} has an empty plan.md", severity="warning")
-            return
-        runs = layout.bucket_dir(layout.layout_of(self.session_dir).state_dir, "runs")
-        paths.mkdir_for_real_user(runs)
-        self._spawn_run_plan(runs)
-
-    @textual.work(thread=True)
-    def _spawn_run_plan(self, runs: pathlib.Path) -> None:
-        """Spawn the detached `run --from` off the UI thread and post its notice.
-
-        Args:
-            runs: The runs bucket the new session lands in.
-        """
-        new_dir, err = spawn.spawn_and_locate(
-            [*spawn.agent6_argv(self.config_paths), "run", "--from", self.session_dir.name],
-            pathlib.Path.cwd(),
-            before={p for p in runs.iterdir() if p.is_dir()},
-            list_dirs=lambda: [p for p in runs.iterdir() if p.is_dir()],
-            env={**os.environ, **spawn.DETACHED_RUN_ENV},
         )
-        if new_dir is None:
-            self.call_from_thread(self.notify, err or "could not start the run", severity="error")
-            return
+
+    def _plan_run_started(self, new_dir: pathlib.Path) -> None:
+        """Hand the plan's new run to the hub, or name it for `agent6 attach`."""
         if self.from_hub:
-            self.call_from_thread(self.exit, TuiExit(open_next=new_dir))
+            self.exit(TuiExit(open_next=new_dir))
             return
-        self.call_from_thread(
-            self.notify, f"run started: {new_dir.name} (follow it: agent6 attach {new_dir.name})"
-        )
+        self.notify(f"run started: {new_dir.name} (follow it: agent6 attach {new_dir.name})")
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Hide loop actions on groups and disable forks under model-owned git.
