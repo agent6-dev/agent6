@@ -11,7 +11,9 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import pathlib
+import shutil
 from collections.abc import Sequence
+from typing import Literal
 
 from agent6 import errors, paths, terminal
 from agent6.sessions import lock, process
@@ -22,36 +24,77 @@ from agent6.viewmodel import session_dirs
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Checkout:
-    """A session's own checkout, recorded so its jail never reads the worktree's `.git` pointer.
+    """A session's own worktree, recorded so its jail never reads a linked one's `.git` pointer.
 
     Attributes:
-        worktree: The linked worktree.
-        git_dir: The repository git dir the worktree points into.
+        worktree: The worktree: a clone of the repository, or a linked worktree of it.
+        git_dir: The repository git dir a linked worktree points into; None for a clone, which
+            holds its own.
         set_up: Whether the worktree ran its setup command; a new one has not.
     """
 
     worktree: pathlib.Path
-    git_dir: pathlib.Path
+    git_dir: pathlib.Path | None
     set_up: bool = False
 
 
-def add_session_worktree(repo: pathlib.Path, path: pathlib.Path, sha: str) -> Checkout:
-    """Add a session's linked worktree, detached at the sha, and return it with its git dir.
+def add_session_worktree(
+    repo: pathlib.Path, path: pathlib.Path, sha: str, kind: Literal["clone", "linked"]
+) -> Checkout:
+    """Make a session's own worktree, detached at the sha.
 
     Args:
-        repo: The repository the worktree is linked to.
+        repo: The repository.
         path: Where the worktree goes.
         sha: The commit it starts at.
+        kind: `[git.worktree].kind`: a clone of the repository, or a linked worktree of it.
 
     Returns:
-        The worktree and the git dir the session's jail grants from.
+        The worktree, with the git dir the session's jail grants from when it is linked.
 
     Raises:
         GitError: Git refused the worktree.
     """
+    if kind == "clone":
+        # A local clone copies the whole object store, so a commit only a hidden ref holds is there.
+        git_ops.clone_repo(repo, path)
+        git_ops.checkout_detached(path, sha)
+        # A command typed in the clone finds the repository's sessions, as in a linked worktree.
+        origin = paths.checkout_root(repo)
+        (path / ".git" / paths.SESSION_CLONE_ORIGIN).write_text(f"{origin}\n", encoding="utf-8")
+        record = paths.session_clone_record(origin, path)
+        paths.mkdir_for_real_user(record.parent)
+        record.write_text(f"{path.resolve()}\n", encoding="utf-8")
+        return Checkout(path, None)
     checkout = Checkout(path, git_read.git_common_dir(repo))
     git_ops.add_worktree(repo, path, sha)
     return checkout
+
+
+def is_clone(worktree: pathlib.Path) -> bool:
+    """Return whether a session's worktree is a clone, which holds its own git data.
+
+    Args:
+        worktree: The session's worktree.
+
+    Returns:
+        True for a clone; False for a linked worktree, whose `.git` is a file.
+    """
+    return (worktree / ".git").is_dir()
+
+
+def mirror_origin(repo: pathlib.Path, worktree: pathlib.Path) -> pathlib.Path | None:
+    """Return the repository a session's clone copies its commits into.
+
+    Args:
+        repo: The repository the session belongs to.
+        worktree: The directory the session works in.
+
+    Returns:
+        The repository when the session works in a clone of it; None in the repository itself
+        or in a linked worktree, where a commit is the repository's as it is made.
+    """
+    return repo if worktree.resolve() != repo.resolve() and is_clone(worktree) else None
 
 
 def remove_fork_worktree(
@@ -86,8 +129,15 @@ def remove_fork_worktree(
     dirt = uncommitted_in_worktree(worktree, tips)
     if dirt:
         return False, dirt
-    lock_path = lock.checkout_lock_path(paths.state_dir(worktree), worktree)
-    if not git_ops.remove_worktree(repo, worktree):
+    lock_path = lock.checkout_lock_path(paths.state_dir(repo), worktree)
+    if is_clone(worktree):
+        record = paths.session_clone_record(paths.checkout_root(repo), worktree)
+        try:
+            shutil.rmtree(worktree)
+        except OSError:
+            return False, "could not be removed: a file in it would not delete"
+        record.unlink(missing_ok=True)
+    elif not git_ops.remove_worktree(repo, worktree):
         return False, (
             "could not be removed: not a linked worktree of this repository,"
             " or a file in it would not delete"

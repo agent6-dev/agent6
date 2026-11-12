@@ -17,6 +17,8 @@ from agent6.ui.cli import cli_main
 from agent6.ui.cli import run as cli_run
 from tests.unit import test_run_worktree as worktree_tests
 
+pytestmark = pytest.mark.usefixtures("linked_worktrees")
+
 
 def _checkout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch

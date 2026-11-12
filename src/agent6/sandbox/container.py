@@ -434,8 +434,8 @@ def check_checkout(
         raise ContainerMappingError(
             f"the linked worktree {checkout} names its repository by the host path {git_dir},"
             f" and the container mounts the workspace at {inside}: git cannot run there. Mount"
-            " the workspace at its host path, or run the task as a lane (`--parallel 1`), whose"
-            " clone holds its own git data."
+            ' the workspace at its host path, or set git.worktree.kind = "clone", whose clone'
+            " holds its own git data."
         )
 
 

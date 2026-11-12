@@ -20,6 +20,8 @@ from agent6.viewmodel import transcript
 from tests import review_lane_env
 from tests.unit import test_review_directive_world as world_tests
 
+pytestmark = pytest.mark.usefixtures("linked_worktrees")
+
 _CONFIG = """
 [sandbox]
 isolation = "none"

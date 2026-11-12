@@ -22,6 +22,8 @@ from agent6.sessions import process
 from agent6.ui.cli import main, sessions_cmds, steer_tty
 from agent6.vcs import git_read
 
+pytestmark = pytest.mark.usefixtures("linked_worktrees")
+
 _ID = "dead-run-BBBB22"
 
 

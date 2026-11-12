@@ -290,7 +290,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     if worktree:
         try:
             path = workdirs.place(cfg, repo, effective_session_id)
-            checkout = fork_worktrees.add_session_worktree(repo, path, base_sha)
+            checkout = fork_worktrees.add_session_worktree(
+                repo, path, base_sha, cfg.git.worktree.kind
+            )
         except errors.OperatorError as exc:
             reporter.refuse(str(exc))
             return 2
@@ -306,13 +308,14 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             isolation = session_prepare.hold_workspace_and_select_isolation(
                 cfg, cwd, frontend=frontend, reporter=reporter, worktree_git_dir=worktree_git_dir
             )
-            if cfg.git.control == "model" and isolation != "none":
+            if cfg.git.control == "model" and isolation != "none" and worktree_git_dir is not None:
                 # The repository git dir lies outside the worktree: read-only to jailed commands.
                 reporter.refuse(
                     "--worktree runs in a linked worktree whose .git is read-only to commands"
                     f' under sandbox.isolation = {isolation!r}; under [git].control = "model"'
                     ' the model could not commit there. Set [git].control = "agent6"'
-                    " (`agent6 config set --repo git.control agent6`), or run without --worktree."
+                    " (`agent6 config set --repo git.control agent6`), set git.worktree.kind ="
+                    ' "clone", or run without --worktree.'
                 )
                 return 2
         assert isolation is not None  # selected before the git preflight, or on the worktree
@@ -578,6 +581,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 standing_goal=standing_goal,
                 pins=tuple(pins),
                 worktree_git_dir=worktree_git_dir,
+                mirror_into=fork_worktrees.mirror_origin(repo, cwd),
                 worker_lock_fd=worker_lock_fd,
                 base_rules=review_world.rules if review_world is not None else None,
                 review_target=(

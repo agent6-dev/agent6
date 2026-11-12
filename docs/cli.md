@@ -37,7 +37,7 @@ agent6 finds the running Docker or Podman dev container of this workspace by its
 File tools, credentials and session records stay on the host; the start block shows the container, both roots, the user, HOME, who owns the container and every control the container does not enforce.
 The receipt names the environment each check ran in and whether the container was left running; `container.stop` runs only for a container the run started, after every attached run ended.
 Lanes, review seats, forks and `--worktree` runs get their worktrees under `container.worktree_base_dir` (`.agent6/worktrees` in the project), which the container mounts; agent6 keeps that directory out of git through `.git/info/exclude`.
-A fork or a `--worktree` run refuses when the container mounts the workspace at another path than the host's, because a linked worktree names its repository by the host path; a lane's clone runs at any path.
+With `git.worktree.kind = "linked"`, a fork or a `--worktree` run refuses when the container mounts the workspace at another path than the host's, because a linked worktree names its repository by the host path; a clone, the default, runs at any path.
 `agent6 exec` refuses under container isolation (use the runtime's own exec).
 
 ```toml

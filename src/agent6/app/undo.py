@@ -330,7 +330,11 @@ def _manifest_refusal(
             f"cannot undo {session_id}: its commits are {stamp.landed()}; take them back in"
             f" git, or continue from a turn with `agent6 fork {session_id} --at-turn N`."
         )
-    if manifest.worktree is not None and manifest.worktree_git_dir is None:
+    if (
+        manifest.worktree is not None
+        and manifest.worktree_git_dir is None
+        and not fork_worktrees.is_clone(manifest.worktree)
+    ):
         return (
             f"cannot undo {session_id}: its manifest names a worktree but not the repository"
             f" git dir it points into; `agent6 fork {session_id}` continues its commits in a"
@@ -422,7 +426,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
                 fork_worktrees.Checkout(
                     manifest.worktree, manifest.worktree_git_dir, manifest.workspace_set_up
                 )
-                if manifest.worktree is not None and manifest.worktree_git_dir is not None
+                if manifest.worktree is not None
                 else None
             ),
             checkout_untracked=exclude,

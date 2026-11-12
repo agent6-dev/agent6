@@ -64,6 +64,8 @@ class RunChain:
             from a changed tree degrade.
         base_sha: Where the run's un-landed work starts, the base of the review diff and
             the gate's scope; "" when unknown.
+        mirror_into: The repository a session in a clone copies each commit into; None in
+            the repository itself or a linked worktree of it.
     """
 
     root: pathlib.Path
@@ -75,6 +77,7 @@ class RunChain:
     identity: git_read.CommitIdentity | None = None
     per_turn: bool = True
     base_sha: str = ""
+    mirror_into: pathlib.Path | None = None
 
     @property
     def excluded(self) -> frozenset[str]:
@@ -94,19 +97,24 @@ class RunChain:
         """
         if self.ref is None:
             return ""
-        return (
-            git_ops.chain_commit(
-                self.root,
-                subject,
-                ref=self.ref,
-                fallback_parent=self.fallback_parent,
-                trailers={git_read.TASK_TRAILER: task_id} if task_id else None,
-                identity=self.identity,
-                also_branch=self.branch,
-                exclude=self.excluded,
-            )
-            or ""
+        sha = git_ops.chain_commit(
+            self.root,
+            subject,
+            ref=self.ref,
+            fallback_parent=self.fallback_parent,
+            trailers={git_read.TASK_TRAILER: task_id} if task_id else None,
+            identity=self.identity,
+            also_branch=self.branch,
+            exclude=self.excluded,
         )
+        if sha:
+            self.mirror()
+        return sha or ""
+
+    def mirror(self) -> None:
+        """Copy the chain's refs into the repository a session's clone belongs to, if any."""
+        if self.mirror_into is not None and self.ref is not None:
+            git_ops.mirror_session(self.mirror_into, self.root, self.ref, self.branch)
 
     def left_out(self, paths: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """Return the given paths the chain's commits leave out, by reason.

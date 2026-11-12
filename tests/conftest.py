@@ -153,6 +153,25 @@ def jail_bin(
     return bindir
 
 
+@pytest.fixture
+def linked_worktrees(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make every session worktree a linked one, whatever `[git.worktree].kind` says.
+
+    For the tests that pin the linked kind's own facts (the recorded git dir, `git worktree
+    list`, refs written by hand in the worktree): a module asks for it with `pytestmark`.
+    """
+    from agent6.app import fork_worktrees
+
+    make = fork_worktrees.add_session_worktree
+
+    def linked(
+        repo: pathlib.Path, path: pathlib.Path, sha: str, _kind: str
+    ) -> fork_worktrees.Checkout:
+        return make(repo, path, sha, "linked")
+
+    monkeypatch.setattr(fork_worktrees, "add_session_worktree", linked)
+
+
 @pytest.fixture(autouse=True)
 def _release_workspace_leases() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
     """Drop the workspace leases a test's run, exec or machine held; a real process exits."""

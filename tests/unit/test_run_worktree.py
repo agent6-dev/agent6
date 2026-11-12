@@ -49,6 +49,8 @@ from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import listing
 from tests import lane_env
 
+pytestmark = pytest.mark.usefixtures("linked_worktrees")
+
 
 @pytest.fixture(autouse=True)
 def _no_controlling_terminal(  # pyright: ignore[reportUnusedFunction]

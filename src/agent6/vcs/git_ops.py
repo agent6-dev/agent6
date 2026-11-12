@@ -809,6 +809,28 @@ class MergeResult:
     left_behind: tuple[str, ...] = ()
 
 
+def mirror_session(
+    path: pathlib.Path, clone: pathlib.Path, ref: str, branch: str | None, *, head: bool = False
+) -> None:
+    """Copy a session's refs from its clone into the repository, as the clone holds them now.
+
+    The session's hidden refs are forced, since an undo moves the chain back. The run branch
+    is the session's own name, so it is forced too.
+
+    Args:
+        path: The repository.
+        clone: The session's clone.
+        ref: The session's chain ref; every ref beside it is copied with it.
+        branch: The session's run branch, copied when the clone has it; None for none.
+        head: Copy the clone's HEAD onto the chain ref, for a model that commits itself.
+    """
+    space = ref.rsplit("/", 1)[0]
+    specs = [f"+HEAD:{ref}"] if head else [f"+{space}/*:{space}/*"]
+    if branch and git_read.branch_exists(clone, branch):
+        specs.append(f"+refs/heads/{branch}:refs/heads/{branch}")
+    git_command.run(path, "fetch", "--quiet", "--update-head-ok", str(clone), *specs)
+
+
 def fetch_branch(path: pathlib.Path, remote_path: pathlib.Path, refspec: str) -> None:
     """Fetch a refspec from another repository's path, without adding a remote."""
     git_command.run(path, "fetch", str(remote_path), refspec)

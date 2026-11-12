@@ -48,6 +48,8 @@ from agent6.ui.cli import (
 from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import session_state_as_dict
 
+pytestmark = pytest.mark.usefixtures("linked_worktrees")
+
 
 def _silent(_: str) -> None:
     return None

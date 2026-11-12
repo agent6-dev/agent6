@@ -13,6 +13,8 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import main
 from agent6.vcs import git_ops, git_read
 
+pytestmark = pytest.mark.usefixtures("linked_worktrees")
+
 
 def _git(repo: pathlib.Path, *args: str) -> str:
     return subprocess.run(

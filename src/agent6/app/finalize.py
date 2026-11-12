@@ -742,7 +742,8 @@ def finalize_auto_merge(
     run's refs stay intact and the note says how to merge by hand.
 
     Args:
-        cwd: The checkout.
+        cwd: The repository whose base branch the run lands on: the checkout, or the
+            repository a session's clone belongs to.
         layout: The session's layout.
         cfg: The run's config.
         reporter: Receives the notes.

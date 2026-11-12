@@ -204,6 +204,7 @@ Each `--security-opt` flag on this page turns off a protection of the container 
       The row names each refusal
     - a session started in a linked worktree also grants the repository git dir, including its `worktrees/<name>` admin entry with HEAD and index, at their real paths: a read-only bind under `full` `sandbox.isolation`, a Landlock read+exec rule under `partial`, in both cases whatever `protect_git` says.
       The main checkout's `.git` is read-only only under `full` `sandbox.isolation` with `protect_git`, so a worktree's is the more confined of the two.
+    - a session in a clone (`git.worktree.kind = "clone"`, the default for a fork and a `--worktree` run) is granted nothing beyond its worktree: its `.git` is its own, and agent6 copies its commits into the repository with a host-side `git fetch` from the clone, through the hardened git runner a lane's import uses
       A write grant inside the recorded git dir refuses the start: the jail protects paths under the workspace only, so no grant lifts the bind's read-only mode.
     - the granted dir is the manifest's `worktree_git_dir`, recorded when agent6 adds a worktree or validates the checkout's pointer at session start, before any model command.
       A pointer outside a valid repository refuses startup in one line naming `.git`.

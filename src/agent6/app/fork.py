@@ -447,7 +447,9 @@ def create_fork(
     if added:
         try:
             path = workdirs.place(plan.cfg, cwd, plan.dst.session_id)
-            checkout = fork_worktrees.add_session_worktree(cwd, path, plan.forked_from_sha)
+            checkout = fork_worktrees.add_session_worktree(
+                cwd, path, plan.forked_from_sha, plan.cfg.git.worktree.kind
+            )
         except (errors.OperatorError, errors.GitError, OSError) as exc:
             if isinstance(exc, errors.OperatorError):
                 reporter.refuse(str(exc))

@@ -131,9 +131,27 @@ class GitWorktreeConfig(pydantic.BaseModel):
         default="",
         description=(
             "base directory for the worktrees agent6 makes, grouped by repository: lane and "
-            "machine-state clones, fork and `run --worktree` linked worktrees; empty: "
+            "machine-state clones, fork and `run --worktree` worktrees; empty: "
             "`<cache_dir>/worktrees`; lane clone removed after work import; fork and `run "
             "--worktree` worktrees removed by `sessions prune` once merged or holding no work"
+        ),
+    )
+    # Measured on a 1,546-file repository: a clone takes 0.6 to 0.8 s, a linked worktree 0.3 to
+    # 0.7 s; mirroring one commit into the repository takes 20 ms.
+    kind: Literal["clone", "linked"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "clone": "Clone of the repository with its own git data",
+                "linked": "Linked git worktree sharing the repository's git data",
+            }
+        },
+        default="clone",
+        description=(
+            "Worktree a fork or a `run --worktree` run works in; a clone runs at any path, in "
+            "any container, and agent6 copies its commits into the repository as the run makes "
+            "them; a linked worktree is smaller for a large repository whose base is on "
+            "another filesystem, commits straight into the repository, and under a container "
+            "needs the workspace mounted at its host path; lanes and review seats are clones."
         ),
     )
     setup_command: validation.Argv = pydantic.Field(

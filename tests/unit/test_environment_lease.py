@@ -566,4 +566,4 @@ def test_a_linked_worktree_refuses_where_the_container_mounts_another_path(
     inside.mkdir()
     with pytest.raises(container.ContainerMappingError, match="names its repository") as refused:
         container.check_checkout(found, inside, workspace / ".git")
-    assert "--parallel 1" in str(refused.value) and "\n" not in str(refused.value)
+    assert 'git.worktree.kind = "clone"' in str(refused.value) and "\n" not in str(refused.value)

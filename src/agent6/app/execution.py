@@ -96,6 +96,8 @@ class ExecutionInputs:
             tree for the run; the model hears their names at its first turn.
         worktree_git_dir: The recorded repository git dir of a session in a linked worktree,
             granted to its jail beyond the workspace.
+        mirror_into: The repository a session in a clone copies its commits into; None in
+            the repository itself or a linked worktree of it.
         worker_lock_fd: The lifecycle's held session writer lock, shared with auto-merge.
         base_rules: A review session's base-tree AGENTS.md, in place of the checkout's.
         review_target: A review session's comparison and its diff, for the panel.
@@ -128,6 +130,7 @@ class ExecutionInputs:
     operator_edits: tuple[str, ...] = ()
     merged_in: git_ops.ChainMerge | None = None
     worktree_git_dir: pathlib.Path | None = None
+    mirror_into: pathlib.Path | None = None
     worker_lock_fd: int | None = None
     base_rules: str | None = None
     review_target: tuple[review_records.ReviewTarget, str] | None = None
@@ -539,6 +542,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 ),
                 per_turn=cfg.git.commit_per_turn,
                 base_sha=inputs.base_sha,
+                mirror_into=inputs.mirror_into,
             ),
             config=cfg,
             base_rules=inputs.base_rules,
@@ -724,12 +728,32 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 cleanup.callback(steer_state.restore)
                 # A stop never read at a boundary would stop the next execution at its first.
                 cleanup.callback(ipc.clear_stop_request, layout.session_dir)
+            if inputs.mirror_into is not None and mode == "run":
+                # Once more at the end: a merge taken in or an undo moves the chain with no commit;
+                # under `git.control = "model"` the model's own commits are the record.
+                try:
+                    if cfg.git.control == "model":
+                        git_ops.mirror_session(
+                            inputs.mirror_into,
+                            cwd,
+                            git_read.chain_ref_for(inputs.session_id),
+                            None,
+                            head=True,
+                        )
+                    elif wf is not None:
+                        wf.chain.mirror()
+                except errors.GitError as exc:
+                    reporter.warn(
+                        f"the run's commits could not be copied into {inputs.mirror_into}: {exc};"
+                        f" they are in its worktree {cwd}"
+                    )
             # A lane's base branch is its throwaway clone's: its dispatcher lands the work.
             lands_itself = cfg.git.auto_merge and mode == "run" and not lane_launch.is_lane()
             if not interrupted and result is not None and lands_itself:
                 if finalize.auto_merge_eligible(result):
                     finalize.finalize_auto_merge(
-                        cwd,
+                        # A clone has a base branch of its own; the run lands on the repository's.
+                        inputs.mirror_into or cwd,
                         layout=layout,
                         cfg=cfg,
                         reporter=reporter,

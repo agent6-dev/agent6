@@ -238,7 +238,8 @@ def _sources(
             {
                 f"{area}/{file.relative_to(source).as_posix()}": file
                 for file in _files(
-                    source, exclude=("locks", "pack-base.json") if area == "repo" else ()
+                    source,
+                    exclude=("locks", "pack-base.json", "worktrees") if area == "repo" else (),
                 )
             }
         )

@@ -19,6 +19,7 @@ from agent6 import paths as agent6_paths
 from agent6.app import (
     execution,
     finalize,
+    fork_worktrees,
     preflight,
     resume_chain,
     resume_questions,
@@ -259,7 +260,11 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             f" `agent6 fork {session_id}` continues it in a new worktree."
         )
         return 2
-    if manifest.worktree is not None and manifest.worktree_git_dir is None:
+    if (
+        manifest.worktree is not None
+        and manifest.worktree_git_dir is None
+        and not fork_worktrees.is_clone(manifest.worktree)
+    ):
         reporter.error(
             f"cannot resume {session_id}: its manifest names a worktree but not the repository"
             f" git dir it points into, so its jail cannot grant one; `agent6 fork {session_id}`"
@@ -271,6 +276,19 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         worker_lock_fd: int | None = session_prepare.take_single_writer(layout, reporter=reporter)
     except preflight.SessionRefusedError as refusal:
         return refusal.rc
+    if fork_worktrees.mirror_origin(repo, cwd) is not None:
+        # The repository's refs are the record between executions: a fork's seed, a merge.
+        try:
+            git_ops.mirror_session(
+                cwd, repo, git_read.chain_ref_for(session_id), manifest.run_branch or None
+            )
+        except errors.GitError as exc:
+            reporter.error(
+                f"cannot resume {session_id}: its worktree {cwd} has no copy of its"
+                f" commits and git could not fetch them: {exc}"
+            )
+            lock.release_single_writer(worker_lock_fd)
+            return 1
     # A finished run has nothing to continue without --steer; every other ending resumes.
     scan = session_log.scan_session_log(layout.logs_path)
     new_work = listing.needs_new_work(
@@ -485,8 +503,8 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         ):
             return 2
 
-        if manifest.worktree is not None and manifest.worktree_git_dir is not None:
-            cfg = cfg.with_hidden_in_checkout(manifest.worktree_git_dir.parent, cwd)
+        if manifest.worktree is not None:
+            cfg = cfg.with_hidden_in_checkout(repo, cwd)
         try:
             isolation = session_prepare.hold_workspace_and_select_isolation(
                 cfg,
@@ -676,6 +694,10 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 f" next merge start at {moved[:12]}"
             )
         merged_in: git_ops.ChainMerge | None = None
+        if merge_from and fork_worktrees.mirror_origin(repo, cwd) is not None:
+            # The branch is the repository's; a clone's copy of it is as old as the clone.
+            with contextlib.suppress(errors.GitError):
+                git_ops.fetch_branch(cwd, repo, f"+refs/heads/{merge_from}:refs/heads/{merge_from}")
         if merge_from:
             if mode != "run":
                 reporter.refuse(f"--merge continues a run's work; {session_id} is a {mode}")
@@ -778,6 +800,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 sandbox_overrides=sandbox_overrides,
                 resuming=True,
                 worktree_git_dir=manifest.worktree_git_dir,
+                mirror_into=fork_worktrees.mirror_origin(repo, cwd),
                 worker_lock_fd=worker_lock_fd,
                 base_rules=(
                     repo_context.review_rules(

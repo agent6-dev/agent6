@@ -335,10 +335,10 @@ def project_root(start: pathlib.Path, *, allow_pack: bool = False) -> pathlib.Pa
     """Return the project the path is inside, or the path itself outside one.
 
     Walks for `.git` rather than asking git, since this is on every command's path.
-    A linked worktree is its repository's project; any other `.git` file makes its
-    directory a project of its own. No stop at `$HOME`: under `git init $HOME` every
-    directory is one repo, and splitting it would give two runs separate locks on one
-    working tree.
+    A linked worktree is its repository's project, and so is a session's clone
+    (`session_clone_origin`); any other `.git` file makes its directory a project of its
+    own. No stop at `$HOME`: under `git init $HOME` every directory is one repo, and
+    splitting it would give two runs separate locks on one working tree.
 
     Args:
         start: The path, such as the cwd.
@@ -352,6 +352,8 @@ def project_root(start: pathlib.Path, *, allow_pack: bool = False) -> pathlib.Pa
         git_dir = linked_worktree_git_dir(root)
         if git_dir is not None and git_dir.name == ".git":
             root = git_dir.parent
+    elif (origin := session_clone_origin(root)) is not None:
+        root = origin
     if not allow_pack:
         pack_manifest.check_origin(root)
     return root
@@ -364,6 +366,48 @@ def checkout_root(start: pathlib.Path) -> pathlib.Path:
         if (candidate / ".git").exists():
             return candidate
     return start
+
+
+# Written into a session clone's own git dir, where no commit and no `git status` sees it.
+SESSION_CLONE_ORIGIN = "agent6-origin"
+
+
+def session_clone_origin(root: pathlib.Path) -> pathlib.Path | None:
+    """Return the repository a session's clone was made from, or None for any other checkout.
+
+    The link holds both ways, as a linked worktree's does: the clone names the repository
+    and the repository's state names the clone (`session_clone_record`). A marker alone,
+    in a directory someone else prepared or one a jailed command rewrote, names nothing, so
+    it cannot give a directory another repository's state and config.
+
+    Args:
+        root: The checkout whose git dir is read.
+
+    Returns:
+        The repository, resolved, when both sides agree.
+    """
+    try:
+        text = (root / ".git" / SESSION_CLONE_ORIGIN).read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    origin = pathlib.Path(text)
+    if not text or not origin.is_absolute() or not (origin / ".git").exists():
+        return None
+    origin = origin.resolve()
+    return origin if session_clone_record(origin, root).is_file() else None
+
+
+def session_clone_record(origin: pathlib.Path, clone: pathlib.Path) -> pathlib.Path:
+    """Return the file in a repository's state that names one of its session clones.
+
+    Args:
+        origin: The repository, a checkout root.
+        clone: The clone.
+
+    Returns:
+        `<state base>/<repository id>/worktrees/<clone id>`, which no jail can reach.
+    """
+    return state_base() / repo_id(origin.resolve()) / "worktrees" / repo_id(clone.resolve())
 
 
 def linked_worktree_git_dir(root: pathlib.Path) -> pathlib.Path | None:

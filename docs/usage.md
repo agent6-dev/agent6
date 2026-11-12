@@ -405,8 +405,9 @@ The verify command is the success gate.
 
 ## Worktrees
 
-`run --worktree`, a run-mode fork, each `--parallel` lane and a run-mode machine state work in a linked worktree or a clone of their own.
+`run --worktree`, a run-mode fork, each `--parallel` lane and a run-mode machine state work in a worktree of their own.
 
+- `[git.worktree].kind` chooses the worktree of a fork and a `--worktree` run: `clone` (the default), a clone of the repository whose commits agent6 copies into the repository as the run makes them, or `linked`, a linked git worktree; a lane, a review seat and a machine state work in a clone.
 - It starts with the repository's tracked files at the commit it was cut from: no uncommitted change, and nothing git does not track (`.venv`, `node_modules`, a build directory).
 - `[git.worktree].setup_command` builds what is missing; it runs once in each new worktree, before the first turn:
 
@@ -462,7 +463,7 @@ The pack contains:
 - `pack.json`: version 1, UTC pack time, origin host, home, repo id and workspace, and each file's SHA256, UTC mtime and last shared hash.
 - `config/`: global `config.toml`, `ui.toml` and `secrets.toml`, or only `secrets.toml` with `--repo-config`.
 - `skills/`: installed skills from the data directory.
-- `repo/`: the entire repository state directory, including repo config, sessions, asks, runs, memory, reviews and decisions, except `locks/` and `pack-base.json`.
+- `repo/`: the entire repository state directory, including repo config, sessions, asks, runs, memory, reviews and decisions, except `locks/`, `worktrees/` and `pack-base.json`.
 
 The cache, jail homes, worktrees and completions do not travel.
 
@@ -497,7 +498,7 @@ For a devcontainer or remote-ssh round trip:
 
 Recorded absolute paths in journals and session manifests remain history.
 Ordinary sessions resolve against the current checkout.
-A session's cached linked worktree does not travel; `resume` names the missing worktree and recommends `agent6 fork ID` to continue from its commits in a new worktree.
+A session's cached worktree does not travel; `resume` names the missing worktree and recommends `agent6 fork ID` to continue from its commits in a new worktree.
 The synced checkout must carry those git objects and refs.
 
 ## Configuration

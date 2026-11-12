@@ -17,6 +17,8 @@ from agent6.sessions import process
 from agent6.ui.cli import main
 from agent6.vcs import git_ops, git_read
 
+pytestmark = pytest.mark.usefixtures("linked_worktrees")
+
 
 @pytest.fixture(autouse=True)
 def _no_controlling_terminal(  # pyright: ignore[reportUnusedFunction]
