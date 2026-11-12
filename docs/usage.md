@@ -205,6 +205,7 @@ Every end has one reason and a headline every surface shows; [Exit codes and end
 
 A run whose worker exited without recording an end reads `stale`, for example after SIGKILL or a machine crash.
 `agent6 resume <id>` continues it from its last snapshot, and `agent6 sessions show <id>` prints that command.
+A resumed run opens with the verify fact: the last full verification's command, verdict and tree, and whether the tree changed since; every compaction restart carries the same fact.
 
 ## Plan, review, and ask
 

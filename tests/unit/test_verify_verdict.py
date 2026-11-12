@@ -58,6 +58,30 @@ def test_a_green_baseline_ends_a_failure_streak() -> None:
     assert v.fail_streak == 0 and v.fail_signature == ""
 
 
+def test_the_fact_names_the_command_the_verdict_and_whether_the_tree_moved() -> None:
+    """The worker's one-line verify fact follows the verdict through its states."""
+    v = verify_verdict.VerifyVerdict()
+    assert v.fact() == "No verification verdict covers the tree as it stands."
+    v.command, v.verify_tree = ("make", "check"), "a" * 40
+    v.note_pass()
+    assert v.fact() == (
+        f"Last full verification: `make check` passed on tree {'a' * 12}; the tree is"
+        " unchanged since."
+    )
+    v.note_edit()
+    assert v.fact().endswith("passed on tree aaaaaaaaaaaa; the tree has changed since.")
+    v.note_fail("sig")
+    assert "`make check` failed on tree aaaaaaaaaaaa; the tree is unchanged since." in v.fact()
+    # A resume onto another tree keeps the verified tree as a fact and carries no verdict.
+    moved = verify_verdict.VerifyVerdict(
+        command=("make", "check"), verify_tree="b" * 40, edited_since=True
+    )
+    assert moved.fact() == (
+        f"The last full verification ran `make check` on tree {'b' * 12}; the tree as it"
+        " stands is not that tree, so no verdict covers it."
+    )
+
+
 def test_the_verified_tree_restored_reads_untouched() -> None:
     """Edits made and undone leave the verified tree standing: the verdict follows the tree."""
     v = verify_verdict.VerifyVerdict(verify_tree="t" * 40)

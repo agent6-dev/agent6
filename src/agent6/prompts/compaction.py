@@ -98,6 +98,7 @@ def context_restart_notice(
     decisions: str = "",
     *,
     dag_available: bool = True,
+    verification: str = "",
 ) -> str:
     """Build the post-compaction restart preamble.
 
@@ -106,6 +107,7 @@ def context_restart_notice(
         pins: The operator's pinned instructions, rendered as standing orders.
         decisions: The recorded operator rulings, or "".
         dag_available: The run has a curator, so `list_tasks` exists.
+        verification: The verify fact (`VerifyVerdict.fact`), or "" for a run without a gate.
 
     Returns:
         The preamble, ending with the "PROGRESS SUMMARY:" label the summary follows.
@@ -117,5 +119,7 @@ def context_restart_notice(
         parts.append(block)
     if decisions.strip():
         parts.append(f"OPERATOR RULINGS (recorded, still binding):\n{decisions.strip()}\n")
+    if verification:
+        parts.append(f"VERIFICATION (the harness's record, not the summary's):\n{verification}\n")
     parts.append("PROGRESS SUMMARY:\n")
     return "\n\n".join(parts)

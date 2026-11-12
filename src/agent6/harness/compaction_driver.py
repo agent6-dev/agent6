@@ -47,6 +47,7 @@ class Compactor:
         mode: The run mode.
         dag_available: The DAG tools are wired, so the restart notice says so.
         decisions: The operator's rulings block for the restart notice, read fresh.
+        verify_fact: The verify fact for the restart notice, "" for a run without a gate.
         compact_requested: The operator's manual compaction request, or None.
         compact_clear: Consumes the manual request.
         log: The run log line sink.
@@ -60,6 +61,7 @@ class Compactor:
     mode: Literal["run", "plan", "ask", "read_only"]
     dag_available: bool
     decisions: Callable[[], str]
+    verify_fact: Callable[[loop_state.LoopState], str]
     compact_requested: Callable[[], str | None]
     compact_clear: Callable[[], None]
     log: Callable[[str], None]
@@ -303,6 +305,7 @@ class Compactor:
                 pins=state.pins,
                 decisions=self.decisions(),
                 dag_available=self.dag_available,
+                verification=self.verify_fact(state),
             )
             + summary,
             keep=messages[tail_start:],

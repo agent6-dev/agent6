@@ -1447,6 +1447,20 @@ class Harness:
         """Return the summary suffix naming an uncommitted worktree, or "" outside run mode."""
         return self.chain.dirty_note() if self.mode == "run" else ""
 
+    def verify_fact(self, state: loop_state.LoopState) -> str:
+        """Return the verify fact the worker reads at a resume or a restart.
+
+        Args:
+            state: The execution's state.
+
+        Returns:
+            `VerifyVerdict.fact`, or "" when no gate can judge the run and none has.
+        """
+        verdict = state.verify
+        if not (self.gate.present(verdict) or verdict.verify_tree or verdict.last_ok is not None):
+            return ""
+        return verdict.fact()
+
     # ---- the task graph ------------------------------------------------------
 
     def _emit_graph_snapshot(self) -> None:
@@ -1611,6 +1625,7 @@ class Harness:
             mode=self.mode,
             dag_available=self.dispatcher.dag_available,
             decisions=self._load_decisions,
+            verify_fact=self.verify_fact,
             compact_requested=self.bridge.compact_requested,
             compact_clear=self.bridge.compact_clear,
             log=self.log,

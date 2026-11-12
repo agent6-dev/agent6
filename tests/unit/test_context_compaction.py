@@ -354,6 +354,17 @@ def test_restart_notice_is_dag_aware() -> None:
         assert "list_tasks" not in notice
         assert "the task continues from it" in notice
         assert notice.endswith("PROGRESS SUMMARY:\n")
+    assert "VERIFICATION" not in compaction.context_restart_notice("run")
+
+
+def test_restart_notice_carries_the_verify_fact_before_the_summary() -> None:
+    """The harness's verification record heads the restart, apart from the model's summary."""
+    from agent6.prompts import compaction
+
+    fact = "Last full verification: `make check` passed on tree abc; the tree has changed since."
+    notice = compaction.context_restart_notice("run", verification=fact)
+    assert f"VERIFICATION (the harness's record, not the summary's):\n{fact}\n" in notice
+    assert notice.index("VERIFICATION") < notice.index("PROGRESS SUMMARY:")
 
 
 # --- read-waste reduction: identity placeholders + hot-file protection ------

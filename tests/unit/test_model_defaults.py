@@ -265,6 +265,7 @@ def test_helper_jobs_do_not_use_the_reviewer_route(
         mode="run",
         dag_available=False,
         decisions=lambda: "",
+        verify_fact=lambda _state: "",
         compact_requested=lambda: None,
         compact_clear=lambda: None,
         log=lambda _: None,

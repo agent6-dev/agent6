@@ -88,6 +88,8 @@ def seed_carryover(
         if resume_from.verify_withheld and harness.dispatcher.command_policy() == "deny":
             # The correction waits for an execution with the gate: keep it pending.
             harness.dispatcher.verify_withheld = True
+        if fact := harness.verify_fact(state):
+            conversation.notice(f"[harness verify] {fact}")
         harness.emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
         elided, gists = compaction_rules.count_elisions(conversation)
         harness.emit("loop.compact.restored", elided=elided, gists=gists)
@@ -154,10 +156,14 @@ def carry_verify_verdict(
     state.ok_tool_calls = snap.ok_tool_calls
     state.verify.final_verify_id = snap.final_verify_id
     if snap.verify_tree:
+        # The verified tree is a fact either way; its verdict carries only onto the same tree.
+        state.verify.command = tuple(snap.verify_command)
+        state.verify.verify_tree = snap.verify_tree
         if snap.verify_tree == harness.chain.tree_sha():
-            state.verify.verify_tree = snap.verify_tree
             state.verify.last_ok = snap.last_verify_ok
             state.verify.edited_since = snap.edited_since_verify
+        else:
+            state.verify.edited_since = True
         return
     if snap.last_verify_ok is None or not snap.head_sha:
         return
@@ -168,6 +174,7 @@ def carry_verify_verdict(
     except (errors.GitError, OSError):
         return
     if not dirty:
+        state.verify.command = tuple(snap.verify_command)
         state.verify.last_ok = snap.last_verify_ok
         state.verify.edited_since = snap.edited_since_verify
 

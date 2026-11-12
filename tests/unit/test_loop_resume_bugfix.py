@@ -1405,6 +1405,64 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: pat
     assert state.verify.green_and_untouched is True
 
 
+def test_a_resume_onto_another_tree_keeps_the_verified_tree_as_a_fact(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The verified tree and command carry without the verdict; the worker is told so."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    (repo / "x.txt").write_text("hi\n", encoding="utf-8")
+    ev = _EventCapture()
+    wf = _wf(
+        root=repo,
+        config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
+        events=ev,
+    )
+    snap = loop_snapshot.SessionSnapshot.model_validate(
+        {
+            "system": "s",
+            "messages": [],
+            "tool_calls": 3,
+            "next_turn": 4,
+            "root_task_id": None,
+            "original_task": "t",
+            "verify_command": ("true",),
+            "last_verify_ok": True,
+            "edited_since_verify": False,
+            "verify_tree": "c" * 40,
+        }
+    )
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    conversation = loop_conversation.Conversation.from_wire(
+        [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
+    )
+    loop_resume.seed_carryover(wf, state, conversation, snap)
+    assert state.verify.verify_tree == "c" * 40 and state.verify.command == ("true",)
+    assert state.verify.last_ok is None and state.verify.edited_since is True
+    assert not state.verify.judged_and_untouched
+    last = conversation.messages[-1]
+    assert isinstance(last, loop_conversation.UserMessage)
+    notice = last.items[-1]
+    assert isinstance(notice, loop_conversation.Notice)
+    assert notice.text == (
+        f"[harness verify] The last full verification ran `true` on tree {'c' * 12}; the tree"
+        " as it stands is not that tree, so no verdict covers it."
+    )
+    # A gateless run with no verification recorded hears nothing.
+    bare = _wf(root=repo, events=ev)
+    quiet = loop_conversation.Conversation.from_wire(
+        [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
+    )
+    loop_resume.seed_carryover(
+        bare,
+        loop_state.LoopState(original_task="t", tool_calls=0),
+        quiet,
+        snap.model_copy(update={"verify_command": (), "last_verify_ok": None, "verify_tree": None}),
+    )
+    assert len(quiet.messages) == 1
+
+
 def test_a_baseline_verdict_carries_only_onto_the_base_it_describes(
     tmp_path: pathlib.Path,
 ) -> None:

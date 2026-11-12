@@ -18,6 +18,7 @@ class VerifyVerdict:
     """Hold the verify bookkeeping of one execution.
 
     Attributes:
+        command: The argv of the verify whose verdict or tree this holds, () before any.
         last_ok: The last verify's result; None before any verify.
         scoped: Whether the full gate overran its timeout, so gates run scoped until a full pass.
         red_tree: The tree sha at the last red verify, "" when git could not say.
@@ -35,6 +36,7 @@ class VerifyVerdict:
     """
 
     final_verify_id: str | None = None
+    command: tuple[str, ...] = ()
     verify_tree: str | None = None
     last_ok: bool | None = None
     scoped: bool = False
@@ -63,6 +65,7 @@ class VerifyVerdict:
         if record is None:
             return True
         self.final_verify_id = record.verify_id
+        self.command = tuple(record.cmd)
         self.verify_tree = record.tree_after if record.stable_tree else None
         if not record.stable_tree or record.outcome not in ("passed", "failed"):
             self.last_ok = None
@@ -124,6 +127,26 @@ class VerifyVerdict:
         """
         if tree and self.verify_tree:
             self.edited_since = tree != self.verify_tree
+
+    def fact(self) -> str:
+        """Return the one sentence the worker reads at a resume or a context restart.
+
+        Returns:
+            The last full verification's command, verdict and tree, and whether the tree
+            changed since; or that no verdict covers the tree as it stands.
+        """
+        command = f"`{' '.join(self.command)}`" if self.command else "the verify command"
+        tree = f"tree {self.verify_tree[:12]}" if self.verify_tree else "an unrecorded tree"
+        if self.last_ok is None:
+            if not self.verify_tree:
+                return "No verification verdict covers the tree as it stands."
+            return (
+                f"The last full verification ran {command} on {tree}; the tree as it stands"
+                " is not that tree, so no verdict covers it."
+            )
+        verdict = "passed" if self.last_ok else "failed"
+        since = "has changed since" if self.edited_since else "is unchanged since"
+        return f"Last full verification: {command} {verdict} on {tree}; the tree {since}."
 
     @property
     def green_and_untouched(self) -> bool:

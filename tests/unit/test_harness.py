@@ -8179,7 +8179,9 @@ def test_a_resume_after_a_death_mid_turn_does_not_run_the_cut_off_call_again(
 
     assert result.completed is True
     assert dispatched == ["finish_session"]  # neither call of the dead turn ran again
-    assistant, answers = sent[0][-2], sent[0][-1]
+    # The dead turn's calls and answers; the verify fact notice follows them.
+    position = next(i for i, m in enumerate(sent[0]) if m["role"] == "assistant")
+    assistant, answers = sent[0][position], sent[0][position + 1]
     assert [b["id"] for b in assistant["content"]] == ["call-a", "call-b"]
     returned, cut_off = answers["content"][0], answers["content"][1]
     assert (returned["tool_use_id"], cut_off["tool_use_id"]) == ("call-a", "call-b")
@@ -8215,7 +8217,10 @@ def test_a_death_before_the_resumed_call_keeps_the_interrupted_turn(tmp_path: pa
         wf.resume()
     snap = loop_snapshot.load_session_snapshot(snapshot_path)
     assert snap.next_turn == 2
-    assert [b["tool_use_id"] for b in snap.messages[-1]["content"]] == ["call-a", "call-b"]
+    answers = next(
+        m for m in reversed(snap.messages) if m["content"][0].get("type") == "tool_result"
+    )
+    assert [b["tool_use_id"] for b in answers["content"]] == ["call-a", "call-b"]
 
 
 def test_a_resume_clears_a_marker_whose_turn_completed(tmp_path: pathlib.Path) -> None:
