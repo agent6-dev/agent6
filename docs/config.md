@@ -322,7 +322,7 @@ The first segment names a `[providers.*]` entry; everything after the first slas
 ## `[sandbox]`
 
 The field summary; the security model is in security.md: [Sandbox](security.md#2-sandbox) and [Network](security.md#5-network).
-For Go's compiled-package cache, see [Go build cache](usage.md#go-build-cache).
+For Go's compiled-package cache, see [Go build cache](cli.md#go-build-cache).
 
 `extra_read_paths`, `extra_write_paths` and `hide_paths` take absolute paths with no `..` segment, and `extra_device_paths` only paths under `/dev`; anything else refuses at config load.
 
@@ -343,7 +343,7 @@ For Go's compiled-package cache, see [Go build cache](usage.md#go-build-cache).
 ## `[container]`
 
 The container `sandbox.isolation = "container"` runs every command in; the runtime is the boundary and agent6 adds no confinement there.
-With `exec` empty, agent6 finds this workspace's running Docker or Podman dev container by its labels ([Commands inside a dev container](usage.md#commands-inside-a-dev-container)).
+With `exec` empty, agent6 finds this workspace's running Docker or Podman dev container by its labels ([Commands inside a dev container](cli.md#commands-inside-a-dev-container)).
 Filling this table alone changes nothing.
 
 | Field | Default | Meaning |
@@ -611,7 +611,7 @@ Every browser [signs in](web.md#sign-in) with the server's secret.
 
 ## `[telemetry]`
 
-What `agent6 telemetry export` sends, and where ([Telemetry export](usage.md#telemetry-export)).
+What `agent6 telemetry export` sends, and where ([Telemetry export](cli.md#telemetry-export)).
 The web scrape route requires `metrics = "prometheus"` and the [`web.metrics_route`](#web) opt-in.
 Off by default: no signal is selected, nothing is dialled, no socket is opened.
 Header values live in `secrets.toml` under `[telemetry.headers]`, never in config.

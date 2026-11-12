@@ -538,7 +538,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Paths and sides pass `ReviewLocation` validation; regular-file reads do not follow stored symlinks.
   Finding text and resolution reasons enter the browser as text, not HTML.
 - PWA assets are static and the service worker is a no-op passthrough (no Web Push, no VAPID).
-  Telemetry requires an operator-started export or the opt-in scrape route ([Telemetry export](usage.md#telemetry-export)); no auto-update, no remote control plane.
+  Telemetry requires an operator-started export or the opt-in scrape route ([Telemetry export](cli.md#telemetry-export)); no auto-update, no remote control plane.
 
 ### 6. Approvals
 

@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 run`/`resume` process exit codes.
 
-docs/usage.md documents a budget-exhausted run as exit 3 (resumable: raise the cap
+docs/cli.md documents a budget-exhausted run as exit 3 (resumable: raise the cap
 and `agent6 resume`), a finish over a red verify as exit 4 and an operator stop as
 exit 130; everything else completed=False is exit 1, a clean or ungated finish is 0, and so
 is an unverified finish when the harness runs no gate of its own.

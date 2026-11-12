@@ -780,7 +780,7 @@ Two shared layers sit under them.
 A run started from a hub, or detached mid-run with `/detach`, keeps going with no terminal on it (`ui/spawn.py`); `agent6 attach <id>` opens it again, tailing the same journal every other surface folds.
 
 **Stopping a run** is one function ([app/stop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/stop.py)) behind `agent6 stop`, the TUI's Run menu, `/stop` in every composer, the web stop route and an ACP cancel.
-[Follow and steer a run](usage.md#follow-and-steer-a-run) lists what the end block and listings say.
+[Exit codes and end reasons](cli.md#exit-codes-and-end-reasons) lists what the end block and listings say.
 
 - It writes an abort steer, which cuts a model call in flight, and the `stop.request` marker with its `now` urgency, which ends a running foreground command at once.
   Unless it is request-only, it waits for the run to end.

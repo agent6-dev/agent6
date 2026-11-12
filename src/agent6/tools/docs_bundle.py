@@ -12,6 +12,7 @@ AGENT6_DOC_FILES = (
     "README.md",
     "AGENTS.md",
     "USAGE.md",
+    "CLI.md",
     "INSTALLATION.md",
     "CONFIG.md",
     "FORMATS.md",

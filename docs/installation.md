@@ -101,7 +101,7 @@ AGENT6_JAIL_TARGET="$target" uv sync --reinstall-package agent6
 The target needs `/bin/sh`, `uname`, `mktemp`, `head -c`, `chmod`, executable writable `/tmp` and readable `/proc/self`.
 It needs no Python, Node or Rust toolchain.
 Preparation never installs dependencies, downloads a launcher or falls back to the host.
-`sandbox.isolation = "container"` activates it ([Commands inside a dev container](usage.md#commands-inside-a-dev-container)).
+`sandbox.isolation = "container"` activates it ([Commands inside a dev container](cli.md#commands-inside-a-dev-container)).
 See the [installation trust boundary](security.md#container-transport-boundary).
 
 The opt-in runtime test first attaches to this repository's existing labelled dev container with a non-root user and a different workspace path.

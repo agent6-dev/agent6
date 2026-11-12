@@ -134,6 +134,7 @@ nav:
   - Home: index.md
   - Installation: installation.md
   - Usage: usage.md
+  - Command line: cli.md
   - Terminal UI: terminal.md
   - Web UI: web.md
   - Editor integration: acp.md

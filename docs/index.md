@@ -89,7 +89,7 @@ agent6 sessions diff        # recorded changes
 agent6 sessions merge       # merge into the run's starting branch
 ```
 
-The other commands (`plan`, `ask`, `attach`, `steer`, `resume`, `fork`, the `sessions` verbs, `pack` and `unpack`) are in [Usage](usage.md).
+The other commands (`plan`, `ask`, `attach`, `steer`, `resume`, `fork`, the `sessions` verbs, `pack` and `unpack`) are on [Command line](cli.md).
 
 To give a finished run more work, use `agent6 resume <id> --steer "next task"`.
 
@@ -176,4 +176,4 @@ Budgets limit spending, tokens for unpriced calls, and supported subscription us
 
 </div>
 
-No telemetry unless you [configure an export](usage.md#telemetry-export), and no automatic updates.
+No telemetry unless you [configure an export](cli.md#telemetry-export), and no automatic updates.

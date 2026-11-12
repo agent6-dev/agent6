@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The end-state table in docs/usage.md is rendered from the code's own list of end reasons.
+"""The end-state table in docs/cli.md is rendered from the code's own list of end reasons.
 
 One row per `SessionEndReason`: its headline from `session_status.status_word`, its exit code from
 `finalize.session_exit_code`. A new reason, a moved label or a moved exit code turns this red
@@ -19,7 +19,7 @@ from agent6.app import finalize
 from agent6.harness import loop_snapshot
 from agent6.viewmodel import format, session_status
 
-_USAGE = pathlib.Path(__file__).resolve().parents[2] / "docs" / "usage.md"
+_CLI = pathlib.Path(__file__).resolve().parents[2] / "docs" / "cli.md"
 
 # A gate state an end can stand over: its name, then `verification`, `gate_red`, `gate_timed_out`,
 # the `verification` word the loop writes for it, and whether the harness runs the gate itself.
@@ -112,13 +112,13 @@ def _row(reason: loop_snapshot.SessionEndReason) -> str:
 
 
 def end_states_table() -> str:
-    """Return the table docs/usage.md holds, one row per end reason in declaration order."""
+    """Return the table docs/cli.md holds, one row per end reason in declaration order."""
     rows = [_row(reason) for reason in get_args(loop_snapshot.SessionEndReason)]
     return "\n".join(["| End reason | Headline | Exit code |", "|---|---|---|", *rows])
 
 
 def test_the_end_state_table_matches_the_code() -> None:
-    """The usage page's end-state table is the one the code renders.
+    """The command-line page's end-state table is the one the code renders.
 
     A label or an exit code that moves without its row would leave the page naming an end the
     surfaces no longer show.
@@ -126,8 +126,8 @@ def test_the_end_state_table_matches_the_code() -> None:
     assert set(_COMPLETED) | set(_OTHER_EXITS) | _NO_HEADLINE <= set(
         get_args(loop_snapshot.SessionEndReason)
     )
-    assert end_states_table() in _USAGE.read_text(encoding="utf-8"), (
-        "docs/usage.md is stale; paste the table printed by:"
+    assert end_states_table() in _CLI.read_text(encoding="utf-8"), (
+        "docs/cli.md is stale; paste the table printed by:"
         " uv run python tests/unit/test_end_states_doc.py"
     )
 

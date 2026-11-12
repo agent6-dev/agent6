@@ -135,5 +135,5 @@ On Ubuntu, `full` under Docker also needs the host to allow the jail launcher to
 [security]: https://agent6.dev/security/
 [skills]: https://agent6.dev/config/#skills
 [state-machines]: https://agent6.dev/state-machines/
-[telemetry]: https://agent6.dev/usage/#telemetry-export
+[telemetry]: https://agent6.dev/cli/#telemetry-export
 [usage]: https://agent6.dev/usage/

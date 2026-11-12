@@ -1,7 +1,7 @@
 # Terminal UI
 
 `agent6 tui` opens the full-screen interface on this repository; `agent6 tui <id>` opens one session.
-This page shows it screen by screen, then the plain CLI.
+This page shows it screen by screen; the plain CLI is on [Command line](cli.md).
 Every image is from a recorded run; click to enlarge.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox"
@@ -76,21 +76,6 @@ Values from lower layers may become visible.
 ## Keys
 
 ![The keys and actions overlay](screenshots/out/08-help.png)
-
-## Without the TUI
-
-`agent6 run` executes in the foreground; Ctrl-C opens its pause menu to steer it.
-
-- the menu Tab-completes its commands; Up recalls, Ctrl-R searches past messages; a steer sent from another surface while it is open is taken as the answer
-    - the [steer directives](usage.md#follow-and-steer-a-run) plus `/status`, `/tasks`, `/answer`, `/shells`, `/restate`, `/continue`, `/stop`, `/exit`, `/detach`, `/help`
-- `/detach` hands the run to the background after its current turn (`agent6 attach` reattaches); Ctrl-Z prints the run's state and never suspends it
-- `/exit` leaves the run resumable; `/stop`, or Ctrl-C at the pause prompt, stops it now, as `agent6 stop ID` does
-- `run -i` prompts after every commit: `/continue` (bare Enter), `/cost`, `/diff`, `/watch`, `/mcp`, `/init`, `/undo`, `/help`, `/quit`, `/exit`
-- hub-started runs run detached; `agent6 attach` follows them (conversation by default; `--tui`, `--raw`)
-
-<video controls muted loop playsinline preload="metadata" class="no-lightbox">
-  <source src="/screenshots/out/temps-demo.webm" type="video/webm">
-</video>
 
 ## Watching a state machine
 

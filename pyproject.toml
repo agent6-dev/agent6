@@ -43,6 +43,7 @@ exclude = ["src/agent6/jail"]
 "README.md" = "agent6/_docs/README.md"
 "docs/acp.md" = "agent6/_docs/ACP.md"
 "docs/architecture.md" = "agent6/_docs/ARCHITECTURE.md"
+"docs/cli.md" = "agent6/_docs/CLI.md"
 "docs/config.md" = "agent6/_docs/CONFIG.md"
 "docs/formats.md" = "agent6/_docs/FORMATS.md"
 "docs/installation.md" = "agent6/_docs/INSTALLATION.md"
