@@ -224,10 +224,10 @@ def test_an_ordinary_line_and_a_real_directive_say_nothing_extra(tmp_path: pathl
         True,
         "steer queued; it reaches the model at the next step",
     )
-    # `/parallel` separates tasks by design, so a later one is meant.
+    # `/parallel` separates tasks by design, so a later one is meant; it waits in the inbox.
     assert (
         directive_actions.submit_composer_line(d, "/parallel a /parallel b")[1]
-        == "steer queued; it reaches the model at the next step"
+        == "steer queued behind 1 other; they reach the model one per step"
     )
 
 
