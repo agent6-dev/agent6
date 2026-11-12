@@ -107,7 +107,7 @@ agent6 sessions merge         # land on the run's starting branch (warns first w
 agent6 resume ID --merge main # merge main into the run's work first; a conflict's markers are the run's first task
 agent6 sessions transcript    # the conversation as text; --no-thinking, --seq N, --tools calls|none
 agent6 sessions graph         # the task graph, each line led by the id /retire takes
-agent6 sessions compare <ids> # >=2 runs ranked by the reviewer model (a mechanical ranking when it is unavailable or fails), or a fan-out's saved verdict; --rejudge
+agent6 sessions compare <ids> # >=2 runs ranked by harness.parallel.judges (the reviewer model by default; the mechanical order when no judge returns a ranking), or a fan-out's saved verdict; --rejudge
 agent6 sessions dir [<id>]    # the repo's run history, or that session's directory
 agent6 history search <text>  # grep this repository's sessions' persisted data; --regex
 ```

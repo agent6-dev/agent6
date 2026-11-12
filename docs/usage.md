@@ -51,7 +51,7 @@ For example, `models.planner.effort = "max"` changes only the planner's effort.
 | `default` | `[models.default]` | required baseline and the only fallback for every role |
 | `worker` | `[models.worker]` | `agent6 run`, `agent6 ask`, their resumes, machine agent states, and model-written squash messages |
 | `planner` | `[models.planner]` | `agent6 plan` and plan resumes |
-| `reviewer` | `[models.reviewer]` | in-loop review panel seats without a route, the `sessions compare` and `--parallel` judge, and `sessions review` |
+| `reviewer` | `[models.reviewer]` | in-loop review panel seats without a route, the default judge of `sessions compare` and `--parallel` ([`harness.parallel.judges`](config.md#harnessparallel)), and `sessions review` |
 | `helper` | `[models.helper]` | context summarising, gisting (`compaction.elision_gists`), and verify-command inference |
 
 ```sh

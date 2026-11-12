@@ -462,6 +462,7 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 
 Lane limit for `run --parallel N|selector,...`.
 Each lane is a disposable clone running its own `agent6/<id>` branch; lanes are imported and ranked, nothing merges for you.
+`harness.parallel.judges` names who ranks them: each judge ranks once, and the lowest sum of ranks wins.
 `--max-usd` is per lane (the total is printed before spawning); `--auto-approve` forwards to every lane.
 A live run dispatches lanes the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
 `harness.parallel.tool = true` offers a run's model the `parallel` tool, which dispatches a task through the same path ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.
@@ -472,6 +473,7 @@ Headless surfaces without a dispatcher answer "not available".
 |---|---|---|
 | `tool` | `false` | offer a run's model the `parallel` tool, which dispatches a task to isolated lanes (fresh clones of the committed tree, each an ordinary run that may edit) and joins their commits back in order; each lane runs under 200 turns, 30 minutes and the run's remaining budget, which the lanes share; `harness.parallel.tool = false`: no run is offered it; neither value changes `run --parallel`, the `/parallel` steer or the review panel |
 | `max_lanes` | `4` | The most lanes one `--parallel` fan-out may run, `1` to `1024`; a spec asking for more is refused before anything is cloned; a review roster longer than this runs in batches of this width, with no seat dropped. |
+| `judges` | `["reviewer"]` | who ranks the candidates of a `run --parallel` fan-out and of `sessions compare`: selectors as `--parallel` takes them, a role name or `[provider/]model`; each judges once and the lowest sum of ranks wins, a tie going to the mechanical order (a passed gate first, then the lower cost); a role with no model route judges nothing; `[]`: the mechanical order alone |
 
 ### `[harness.prompt]`
 

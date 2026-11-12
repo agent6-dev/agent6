@@ -2,9 +2,10 @@
 # Copyright 2026 Eric Lesiuta
 """Rank candidates and print the ranked table.
 
-Shared by the `--parallel` auto-compare and `sessions compare`. The judge is the reviewer model
-when one resolves, else the mechanical ranking. The caller injects the provider builder and
-the in-flight status (`contextlib.nullcontext` shows nothing), so `app` never imports `ui`.
+Shared by the `--parallel` auto-compare and `sessions compare`. Each of
+`[harness.parallel].judges` ranks once and the lowest sum of ranks wins; with no ranking from
+a judge the order is the mechanical one. The caller injects the provider builder and the
+in-flight status (`contextlib.nullcontext` shows nothing), so `app` never imports `ui`.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from agent6 import kinds
 from agent6.app import reporter as app_reporter
 from agent6.app import role_providers
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import Config, ConfigError
 from agent6.harness import judge as harness_judge
 from agent6.providers import Provider, ProviderError, TranscriptSink
 from agent6.sessions import event_log
@@ -28,7 +29,7 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import format, listing
 from agent6.viewmodel.session import status as session_status
 
-# Builds the reviewer provider the judge call uses.
+# Builds the reviewer provider a judge call uses; `rank` sets that role to each judge in turn.
 BuildProvider = Callable[
     [Config, TranscriptSink, agent6_budget.BudgetTracker, event_log.EventSink | None], Provider
 ]
@@ -42,10 +43,11 @@ class RankOutcome:
 
     Attributes:
         ranking: The candidate ids, best first.
-        rationale: The judge's reasoning; empty on the mechanical path.
-        ranked_by: "judge" when the reviewer model ordered them, else "mechanical".
-        judge_cost_usd: The judge call's spend, billed even when it failed; 0.0 without a call.
-        judge_cost_partial: The spend is a lower bound (the reviewer model is unpriced).
+        rationale: The judge's reasoning, or each judge's under its selector when several
+            ranked; empty on the mechanical path.
+        ranked_by: "judge" when at least one judge's ranking ordered them, else "mechanical".
+        judge_cost_usd: The judges' spend, billed even for a failed call; 0.0 without a call.
+        judge_cost_partial: The spend is a lower bound (a judge's model is unpriced).
     """
 
     ranking: tuple[str, ...]
@@ -77,56 +79,111 @@ def rank(
 ) -> RankOutcome:
     """Rank candidates best first.
 
-    The reviewer model judges when it resolves; the mechanical ranking applies when it is
-    unset, there is one candidate, or the judge call fails.
+    Each of `[harness.parallel].judges` ranks once, one after another under one budget.
+    The lowest sum of ranks wins and a tie goes to the mechanical order. The mechanical
+    order alone applies with one candidate, with no judge, or when no judge returns a ranking.
 
     Args:
         cfg: The resolved config.
         candidates: The candidates to rank.
-        transcript_dir: Where the judge call's transcript is written.
+        transcript_dir: Where the judges' transcripts are written.
         build_provider: Builds the reviewer provider.
-        judging_status: Shown around the judge call.
-        max_usd: Caps the judge like one more lane; None uses the config budget.
-        events: The coordinator's journal; when present, the judge streams role events into it.
+        judging_status: Shown around the judge calls.
+        max_usd: Caps the judging like one more lane; None uses the config budget.
+        events: The coordinator's journal; when present, a judge streams role events into it.
         reporter: Where a failed judge is reported.
 
     Returns:
         The ranking and which path produced it.
     """
-    reviewer = cfg.models.resolve("reviewer")
-    if len(candidates) > 1 and reviewer is not None:
-        sink = TranscriptSink(transcript_dir, objects_dir=transcript_dir / "objects")
-        budget = session_setup.budget_tracker(cfg, max_usd=max_usd)
-        try:
-            provider: Provider = build_provider(cfg, sink, budget, events)
-            if events is not None:
-                provider = role_providers.InstrumentedProvider(
-                    inner=provider,
-                    role="judge",
-                    model=reviewer.model,
-                    provider_name=reviewer.provider,
-                    events=events,
-                    budget=budget,
-                    stream_text=True,
+    mechanical = harness_judge.mechanical_ranking(candidates)
+    # A role with no model route judges nothing: the way a config has no judge by default.
+    unrouted = {role for role in kinds.MODEL_ROLES if cfg.models.resolve(role) is None}
+    selectors = [sel for sel in cfg.harness.parallel.judges if sel not in unrouted]
+    if len(candidates) < 2 or not selectors:
+        return RankOutcome(mechanical, "", "mechanical")
+    sink = TranscriptSink(transcript_dir, objects_dir=transcript_dir / "objects")
+    budget = session_setup.budget_tracker(cfg, max_usd=max_usd)
+    verdicts: list[tuple[str, harness_judge.CompareVerdict]] = []
+    with judging_status():
+        for selector in selectors:
+            try:
+                # The judge sits in the reviewer role, the one `build_provider` builds.
+                seated = cfg.with_model_settings("reviewer", cfg.lane_settings(selector))
+                verdicts.append(
+                    (
+                        selector,
+                        _judge_once(seated, candidates, sink, budget, events, build_provider),
+                    )
                 )
-            with judging_status():
-                verdict = harness_judge.compare(provider, reviewer.model, candidates)
-            spent, unknown = budget.estimate_usd()
-            return RankOutcome(verdict.ranking, verdict.rationale, "judge", spent, unknown)
-        except (ProviderError, harness_judge.JudgeError) as exc:
-            # A failed judge is reported, with its spend: the table must not read as judged.
-            detail = str(exc).splitlines()[0] if str(exc).strip() else exc.__class__.__name__
-            spent, unknown = budget.estimate_usd()
-            spent_s = (
-                f"; judge spend {agent6_budget.format_usd(spent, partial=unknown)}"
-                if spent > 0 or unknown
-                else ""
-            )
-            reporter.err(f"judge failed ({detail}); ranked mechanically{spent_s}")
-            return RankOutcome(
-                harness_judge.mechanical_ranking(candidates), "", "mechanical", spent, unknown
-            )
-    return RankOutcome(harness_judge.mechanical_ranking(candidates), "", "mechanical")
+            except (ConfigError, ProviderError, harness_judge.JudgeError) as exc:
+                # A failed judge is reported: the table must not read as ranked by it.
+                detail = str(exc).splitlines()[0] if str(exc).strip() else exc.__class__.__name__
+                reporter.err(f"judge {selector} failed ({detail})")
+    spent, unknown = budget.estimate_usd()
+    if not verdicts:
+        spent_s = (
+            f"; judge spend {agent6_budget.format_usd(spent, partial=unknown)}"
+            if spent > 0 or unknown
+            else ""
+        )
+        reporter.err(f"no judge ranked the candidates; ranked mechanically{spent_s}")
+        return RankOutcome(mechanical, "", "mechanical", spent, unknown)
+    if len(verdicts) == 1:
+        return RankOutcome(
+            verdicts[0][1].ranking, verdicts[0][1].rationale, "judge", spent, unknown
+        )
+    # A candidate's place in each ranking, summed; the mechanical order settles a tie.
+    total = {
+        rid: sum(verdict.ranking.index(rid) for _sel, verdict in verdicts) for rid in mechanical
+    }
+    ranking = tuple(sorted(mechanical, key=lambda rid: (total[rid], mechanical.index(rid))))
+    rationale = "\n".join(
+        [f"lowest sum of ranks over {len(verdicts)} judges"]
+        + [f"  {selector}: {verdict.rationale}" for selector, verdict in verdicts]
+    )
+    return RankOutcome(ranking, rationale, "judge", spent, unknown)
+
+
+def _judge_once(
+    cfg: Config,
+    candidates: list[harness_judge.CandidateBrief],
+    sink: TranscriptSink,
+    budget: agent6_budget.BudgetTracker,
+    events: event_log.EventSink | None,
+    build_provider: BuildProvider,
+) -> harness_judge.CompareVerdict:
+    """Ask one judge for its ranking.
+
+    Args:
+        cfg: The config whose reviewer role is this judge.
+        candidates: The candidates to rank.
+        sink: The judges' transcript sink.
+        budget: The judging's tracker.
+        events: The coordinator's journal, or None.
+        build_provider: Builds the reviewer provider.
+
+    Returns:
+        The judge's verdict.
+
+    Raises:
+        ProviderError: The reviewer role has no model.
+    """
+    reviewer = cfg.models.resolve("reviewer")
+    if reviewer is None:
+        raise ProviderError("no model configured for the judge")
+    provider: Provider = build_provider(cfg, sink, budget, events)
+    if events is not None:
+        provider = role_providers.InstrumentedProvider(
+            inner=provider,
+            role="judge",
+            model=reviewer.model,
+            provider_name=reviewer.provider,
+            events=events,
+            budget=budget,
+            stream_text=True,
+        )
+    return harness_judge.compare(provider, reviewer.model, candidates)
 
 
 def verify_word(verification: kinds.Verification | None) -> str:

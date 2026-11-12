@@ -655,7 +655,7 @@ def test_failed_judge_announces_what_its_attempts_still_spent(
 
     assert rc == 0
     captured = capsys.readouterr()
-    assert "judge failed" in captured.err
+    assert "judge reviewer failed (" in captured.err
     assert "judge spend $0.02" in captured.err  # two attempts billed 0.0102 each
     assert "total: candidates $0.12 + judge $0.02 = $0.14" in captured.out
 
@@ -743,7 +743,8 @@ def test_compare_falls_back_to_mechanical_on_judge_error(
     assert "judge:" not in out
     # The degradation is announced (not silent), so a mechanical table isn't
     # mistaken for a judged one. Same `rank` path feeds `--parallel`'s auto-compare.
-    assert "judge failed" in err and "ranked mechanically" in err
+    assert "judge reviewer failed (" in err
+    assert "no judge ranked the candidates; ranked mechanically" in err
 
 
 # ---------------------------------------------------------------------------
@@ -863,6 +864,136 @@ def test_rank_mechanical_path_prints_no_judging_line(
 
     assert outcome.ranked_by == "mechanical"
     assert capsys.readouterr().out == ""
+
+
+def _judges_cfg(*judges: str) -> Config:
+    return Config.model_validate(
+        {
+            "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
+            "models": {"default": {"model": "o/worker-1"}, "reviewer": {"model": "o/reviewer-1"}},
+            "harness": {"parallel": {"judges": list(judges)}},
+        }
+    )
+
+
+def _three_candidates() -> list[harness_judge.CandidateBrief]:
+    """Three lanes whose mechanical order is B, A, C: a passed gate first, then the lower cost."""
+    lanes: tuple[tuple[str, kinds.Verification, float], ...] = (
+        ("A", "passed", 0.3),
+        ("B", "passed", 0.2),
+        ("C", "failed", 0.1),
+    )
+    return [
+        harness_judge.CandidateBrief(
+            session_id=f"run-{name}", task="t", diff="", verification=gate, cost_usd=cost
+        )
+        for name, gate, cost in lanes
+    ]
+
+
+def _seat_judges(monkeypatch: pytest.MonkeyPatch, replies: dict[str, str | Exception]) -> list[str]:
+    """Answer each judge by its model, and return the list of `role=model` seats as built."""
+    seats: list[str] = []
+
+    def build(cfg: Config, role: Any, **_k: Any) -> Provider:
+        resolved = cfg.models.resolve(role)
+        assert resolved is not None
+        seats.append(f"{role}={resolved.model}")
+        reply = replies[resolved.model]
+        if isinstance(reply, Exception):
+            return cast(Provider, _SlowFakeProvider(sleep_s=0, raise_exc=reply))
+        return cast(Provider, _FakeProvider([reply]))
+
+    monkeypatch.setattr(role_providers, "build_role_provider", build)
+    return seats
+
+
+def test_several_judges_rank_by_the_lowest_sum_of_ranks(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each of `[harness.parallel].judges` ranks once, seated in the reviewer role."""
+    seats = _seat_judges(
+        monkeypatch,
+        {
+            "reviewer-1": '{"ranking": ["run-A", "run-C", "run-B"], "rationale": "a first"}',
+            "worker-1": '{"ranking": ["run-C", "run-B", "run-A"], "rationale": "c first"}',
+        },
+    )
+
+    outcome = compare_ranking.rank(
+        _judges_cfg("reviewer", "worker"), _three_candidates(), transcript_dir=tmp_path
+    )
+
+    # Places summed: A 0+2, B 2+1, C 1+0.
+    assert outcome.ranking == ("run-C", "run-A", "run-B")
+    assert outcome.ranked_by == "judge"
+    assert seats == ["reviewer=reviewer-1", "reviewer=worker-1"]
+    assert outcome.rationale == (
+        "lowest sum of ranks over 2 judges\n  reviewer: a first\n  worker: c first"
+    )
+
+
+def test_a_tied_vote_falls_to_the_mechanical_order(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Three judges, each candidate first once: every sum is 3, so the gate and the cost decide."""
+    _seat_judges(
+        monkeypatch,
+        {
+            "reviewer-1": '{"ranking": ["run-A", "run-C", "run-B"], "rationale": "a"}',
+            "worker-1": '{"ranking": ["run-C", "run-B", "run-A"], "rationale": "c"}',
+            "other-9": '{"ranking": ["run-B", "run-A", "run-C"], "rationale": "b"}',
+        },
+    )
+
+    outcome = compare_ranking.rank(
+        _judges_cfg("reviewer", "worker", "o/other-9"),
+        _three_candidates(),
+        transcript_dir=tmp_path,
+    )
+
+    assert outcome.ranking == ("run-B", "run-A", "run-C")
+    assert outcome.ranked_by == "judge"
+
+
+def test_a_judge_that_fails_is_named_and_the_others_still_decide(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One failed judge does not turn a judged table into a mechanical one."""
+    _seat_judges(
+        monkeypatch,
+        {
+            "reviewer-1": ProviderError("down"),
+            "other-9": '{"ranking": ["run-C", "run-A", "run-B"], "rationale": "c first"}',
+            "other-8": ProviderError("gone"),
+        },
+    )
+
+    outcome = compare_ranking.rank(
+        _judges_cfg("reviewer", "o/other-9", "o/other-8"),
+        _three_candidates(),
+        transcript_dir=tmp_path,
+    )
+
+    assert outcome.ranking == ("run-C", "run-A", "run-B")
+    assert (outcome.ranked_by, outcome.rationale) == ("judge", "c first")
+    err = capsys.readouterr().err
+    assert "judge reviewer failed (provider (reviewer-1): down)" in err
+    assert "judge o/other-8 failed (provider (other-8): gone)" in err
+    assert "ranked mechanically" not in err
+
+
+def test_an_empty_judges_list_is_the_mechanical_order_with_no_call(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`judges = []` is the switch for no judge; a configured reviewer is not asked."""
+    seats = _seat_judges(monkeypatch, {})
+
+    outcome = compare_ranking.rank(_judges_cfg(), _three_candidates(), transcript_dir=tmp_path)
+
+    assert outcome.ranking == ("run-B", "run-A", "run-C")
+    assert (outcome.ranked_by, seats) == ("mechanical", [])
+    assert capsys.readouterr() == ("", "")
 
 
 def test_parallel_and_runs_compare_share_one_rank_implementation() -> None:

@@ -230,6 +230,35 @@ class ParallelConfig(pydantic.BaseModel):
         ),
     )
 
+    judges: validation.StrTuple = pydantic.Field(
+        default=("reviewer",),
+        description=(
+            "who ranks the candidates of a `run --parallel` fan-out and of `sessions compare`: "
+            "selectors as `--parallel` takes them, a role name or `[provider/]model`; each "
+            "judges once and the lowest sum of ranks wins, a tie going to the mechanical order "
+            "(a passed gate first, then the lower cost); a role with no model route judges "
+            "nothing; `[]`: the mechanical order alone"
+        ),
+    )
+
+    @pydantic.field_validator("judges")
+    @classmethod
+    def _each_judge_is_named(cls, v: tuple[str, ...]) -> tuple[str, ...]:
+        """Refuse a blank judge, which the lane grammar would read as the worker's own model.
+
+        Args:
+            v: The configured judges.
+
+        Returns:
+            The judges unchanged.
+
+        Raises:
+            ValueError: An entry is blank.
+        """
+        if any(not judge.strip() for judge in v):
+            raise ValueError("a judge is a role name or a `[provider/]model`; one entry is blank")
+        return v
+
 
 class PromptConfig(pydantic.BaseModel):
     """The `[harness.prompt]` table: the system-prompt override and task decomposition."""
