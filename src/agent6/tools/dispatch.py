@@ -953,10 +953,12 @@ class ToolDispatcher:
             The roster.
 
         Raises:
-            ToolError: No run directory was wired.
+            ToolError: No session directory was wired.
         """
         if self._shells is None:
-            raise tool_errors.ToolError("background commands need a run directory; none was wired")
+            raise tool_errors.ToolError(
+                "background commands need a session directory; none was wired"
+            )
         return self._shells
 
     def _fetch(self, raw: dict[str, Any]) -> results.FetchResult:

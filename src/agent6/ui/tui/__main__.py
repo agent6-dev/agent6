@@ -10,7 +10,7 @@ import sys
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Open the TUI on a run directory.
+    """Open the TUI on a session directory.
 
     Args:
         argv: The command line; None reads the process's own.
@@ -19,7 +19,7 @@ def main(argv: list[str] | None = None) -> int:
         The exit code: 2 for a missing session dir, 3 when textual is not installed.
     """
     parser = argparse.ArgumentParser(prog="python -m agent6.ui.tui")
-    parser.add_argument("--watch", required=True, help="Run directory to tail (<session-dir>)")
+    parser.add_argument("--watch", required=True, help="Session directory to tail (<session-dir>)")
     parser.add_argument(
         "--exit-on-end",
         action="store_true",

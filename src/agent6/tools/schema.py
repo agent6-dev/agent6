@@ -422,7 +422,7 @@ class FinishPlanningInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "finish_planning"
     TOOL_DESCRIPTION: ClassVar[str] = (
         "End the planning pass. `plan_markdown` is the plan document, in the"
-        " skeleton the system prompt gives, written to the run directory as"
+        " skeleton the system prompt gives, written to the session directory as"
         " plan.md for `agent6 run --from <run-id>`; `summary` is a paragraph"
         " for the operator. Tool calls after it are not executed."
     )

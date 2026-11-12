@@ -189,7 +189,7 @@ def test_a_cancel_reaches_the_run_it_names(
             if stopped:
                 break
             threading.Event().wait(0.05)
-        assert stopped, "the stop marker never reached a run directory"
+        assert stopped, "the stop marker never reached a session directory"
         assert stopped[0].parent.name == "runs", stopped[0]
         assert stopped[0].name, "the run id was empty, so the cancel addressed nothing"
         assert how == [(False, True)]

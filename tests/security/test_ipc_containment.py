@@ -45,7 +45,7 @@ def _contained_plain_files(approvals: pathlib.Path, tmp_path: pathlib.Path) -> N
 def test_an_approval_scope_cannot_steer_where_a_grant_lands(
     tmp_path: pathlib.Path, bad: str
 ) -> None:
-    """A scope that is a path cannot write a grant outside the run directory.
+    """A scope that is a path cannot write a grant outside the session directory.
 
     `mcp__../../../../tmp/x__t` parses to a server that is a path, and the scope becomes a
     filename; answering "allow all" on that prompt would land the grant in /tmp.

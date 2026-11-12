@@ -671,7 +671,7 @@ def test_merge_action_confirms_then_merges(tmp_path: pathlib.Path, monkeypatch: 
 
 
 def test_home_open_run_returns_its_dir(tmp_path: pathlib.Path) -> None:
-    """Enter on a hub row opens the run: the app exits returning that run directory."""
+    """Enter on a hub row opens the run: the app exits returning that session directory."""
     import asyncio
 
     from textual import widgets

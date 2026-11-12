@@ -152,7 +152,7 @@ def _cmd_watch(
     raw: bool = False,
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
-    """Follow a run directory read-only.
+    """Follow a session directory read-only.
 
     The default follows the run's conversation, the same render as `agent6 run`; `--raw`
     follows the event log, one line per event; `--tui` opens the full-screen dashboard.

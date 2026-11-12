@@ -16,7 +16,7 @@ Usage:
     screen: transcript (default: the conversation the app opens on)
             | dashboard (Ctrl+D toggles it up) | log
 
-    <session_dir> is any run directory holding a logs.jsonl, e.g.
+    <session_dir> is any session directory holding a logs.jsonl, e.g.
     $XDG_STATE_HOME/agent6/<repo-id>/sessions/runs/<id>. Pair with llm_proxy.py's
     replay mode to snapshot a deterministic, key-free run.
 """

@@ -129,7 +129,7 @@ def run_model_command(
 
     Args:
         argv: The command.
-        shells: The run's background roster; None without a run directory.
+        shells: The run's background roster; None without a session directory.
         checkin: Seconds until a running command is handed back; 0 disables the hand-back.
         interrupted: Whether the operator asked for an immediate stop.
         emit: The run's event sink, for `command.backgrounded`.
@@ -203,7 +203,7 @@ def read_background(
         The roster, with the output when an id was given.
 
     Raises:
-        ToolError: No run directory was wired, or the id is unknown.
+        ToolError: No session directory was wired, or the id is unknown.
     """
     args = schema.ReadBackgroundInput.model_validate(raw)
     shells = get_background()
@@ -239,7 +239,7 @@ def stop_background(
         The roster after the stop.
 
     Raises:
-        ToolError: No run directory was wired, or the id is unknown.
+        ToolError: No session directory was wired, or the id is unknown.
     """
     args = schema.StopBackgroundInput.model_validate(raw)
     shells = get_background()
