@@ -1,11 +1,13 @@
 """Exercise the container transport against a real Docker or Podman runtime, opt-in.
 
-`AGENT6_CONTAINER_TEST_RUNTIME` names the runtime argv as a JSON array; the test never adds
-sudo. It first attaches to this repository's running labelled dev container (a non-root user,
-a different workspace path) and inspects target evidence and copied logs. It then creates a
-disposable container from the same local image for the runtime-client loss and restart
-checks; only that container receives lifecycle commands. No matching dev container fails the
-test rather than substituting another image.
+`AGENT6_CONTAINER_TEST_RUNTIME` names the runtime argv as a JSON array (`'["docker"]'`,
+`'["sudo", "-n", "docker"]'`, `'["podman"]'`); the test never adds sudo. It first attaches to
+this repository's running labelled dev container (a non-root user, a different workspace path)
+and inspects target evidence and copied logs. It then creates a disposable container from the
+same local image for the runtime-client loss and restart checks; only that container receives
+lifecycle commands. No matching dev container fails the test rather than substituting another
+image. `AGENT6_CONTAINER_TEST_ROOT` names that container's host checkout when it differs from
+the test checkout.
 """
 
 from __future__ import annotations

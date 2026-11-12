@@ -145,8 +145,6 @@
   Certify on a quiet machine, with the tree untouched while the gate runs: contention produces false timing reds.
 - The `browser` tests drive Playwright's Chromium: `uv run playwright install chromium` once; without it they skip.
 - Sandbox tests need unprivileged userns: on Ubuntu 24.04-class machines `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`, as CI does.
-- The container runtime test is opt-in: `AGENT6_JAIL_BIN=<static agent6-jail> AGENT6_CONTAINER_TEST_RUNTIME='["sudo", "-n", "docker"]' uv run pytest -q -s tests/sandbox/test_container_runtime.py` (`'["podman"]'` on a rootless Podman host).
-  It attaches to this repository's running labelled dev container and fails when none runs; `AGENT6_CONTAINER_TEST_ROOT` names that container's host checkout when it differs from the test checkout.
 - Bench workspaces live on a real disk: tmpfs is RAM-backed and an OOM there kills the session scope.
 - One live single-instance smoke precedes every fleet launch, and any mechanism with two enforcement sites gets one even after unit-green: unit fixtures can pass vacuously.
 - Benchmarks: unmodified official scorers, dev/eval split registered before tuning, report split + n verbatim, replicate small effects before shipping them.
