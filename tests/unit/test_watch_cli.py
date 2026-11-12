@@ -78,7 +78,8 @@ def test_watch_run_json_snapshot(
         result = json.loads(capsys.readouterr().out)
         row = result[0] if isinstance(result, list) else result
         assert row["task"] == out["task"]
-        assert row["cost_usd"] == 0.25
+        spent = row["cost_usd"] if isinstance(result, list) else row["budget"]["session"]["usd"]
+        assert spent == 0.25
         assert "user_task" not in row and "task_clipped" not in row
     assert out["tool_calls"][0]["name"] == "grep"
 
