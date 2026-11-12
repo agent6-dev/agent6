@@ -3110,7 +3110,7 @@ Source: [`agent6.kinds.ConversationContract`](https://github.com/agent6-dev/agen
 | `kind` | `Literal['read_only', 'no_tools']` | `read_only` offers the navigation tools and `finish_session`; `no_tools` offers none and refuses every call. |
 | `system` | `str` | The system prompt, in place of the worker's assembled one. |
 | `opening` | `str` | The first user message, in place of the task block. |
-| `max_calls` | `int` | The provider attempts allowed, retries included; the ceiling ends the conversation `calls_exhausted` with the last response's text kept. |
+| `max_calls` | `int` | The provider attempts allowed, retries included; a last attempt that still asks for tools ends the conversation `calls_exhausted` with its text kept. |
 | `max_output_tokens` | `int` | One call's output cap. |
 | `temperature` | `float \| None` | The sampling temperature; None keeps the worker's. |
 | `review_binding` | `ReviewBinding \| None` | Parent-owned review provenance, or None for other conversations. |

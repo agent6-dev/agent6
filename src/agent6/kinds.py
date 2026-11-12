@@ -267,8 +267,8 @@ class ConversationContract:
             offers none and refuses every call.
         system: The system prompt, in place of the worker's assembled one.
         opening: The first user message, in place of the task block.
-        max_calls: The provider attempts allowed, retries included; the ceiling ends the
-            conversation `calls_exhausted` with the last response's text kept.
+        max_calls: The provider attempts allowed, retries included; a last attempt that still
+            asks for tools ends the conversation `calls_exhausted` with its text kept.
         max_output_tokens: One call's output cap.
         temperature: The sampling temperature; None keeps the worker's.
         review_binding: Parent-owned review provenance, or None for other conversations.

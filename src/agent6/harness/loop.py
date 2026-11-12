@@ -939,10 +939,11 @@ class Harness:
         *,
         turn: int,
     ) -> loop_snapshot.SessionResult | None:
-        """End a bounded conversation at its call ceiling, or on a response with no tool call.
+        """End a bounded conversation on a response with no tool call, or at its call ceiling.
 
-        The response's text is the deliverable either way; the tool calls of a response at
-        the ceiling are not executed, and the completion record names them.
+        The response's text is the deliverable either way. A response with no tool call is an
+        answer, on the last allowed call too; the tool calls of a response at the ceiling are
+        not executed, and the completion record names them.
 
         Args:
             state: The execution's state.
@@ -957,19 +958,6 @@ class Harness:
             return None
         self._contract_response = resp
         text = (resp.text or "").strip()
-        if self.caller.counter.attempts >= self.contract.max_calls:
-            if assistant.tool_uses:
-                names = ", ".join(tu.name for tu in assistant.tool_uses)
-                cause = (
-                    "this conversation has no tools"
-                    if self.contract.kind == "no_tools"
-                    else f"the call ceiling {self.contract.max_calls} was reached"
-                )
-                self._contract_diagnostics.append(f"not executed, {cause}: {names}")
-            self.log(f"LOOP: call ceiling {self.contract.max_calls} reached at turn {turn}")
-            return self.finish(
-                state, loop_snapshot.End("calls_exhausted", text, checkpoint=False), turn=turn
-            )
         if not assistant.tool_uses:
             self.log(f"LOOP: answered at turn {turn}")
             return self.finish(
@@ -978,6 +966,18 @@ class Harness:
                     "answered", text, completed=True, verdict="passed", checkpoint=False
                 ),
                 turn=turn,
+            )
+        if self.caller.counter.attempts >= self.contract.max_calls:
+            names = ", ".join(tu.name for tu in assistant.tool_uses)
+            cause = (
+                "this conversation has no tools"
+                if self.contract.kind == "no_tools"
+                else f"the call ceiling {self.contract.max_calls} was reached"
+            )
+            self._contract_diagnostics.append(f"not executed, {cause}: {names}")
+            self.log(f"LOOP: call ceiling {self.contract.max_calls} reached at turn {turn}")
+            return self.finish(
+                state, loop_snapshot.End("calls_exhausted", text, checkpoint=False), turn=turn
             )
         return None
 

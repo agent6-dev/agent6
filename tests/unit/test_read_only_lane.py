@@ -202,9 +202,27 @@ def test_retries_count_toward_the_ceiling(tmp_path: pathlib.Path) -> None:
     wf, _disp = _harness(repo, tmp_path / "leaf", provider, contract, max_calls_retry=3)
     result = wf.run("o")
     assert provider.call.call_count == 2
-    assert result.reason == "calls_exhausted" and result.summary == "after one retry"
+    assert result.reason == "answered" and result.summary == "after one retry"
     record = completion.read_completion(tmp_path / "leaf")
     assert record is not None and record.calls == 2
+
+
+def test_an_answer_on_the_last_allowed_call_is_an_answer(tmp_path: pathlib.Path) -> None:
+    """A one-call seat that answers must not read as cut at its ceiling."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = mock.MagicMock()
+    provider.call.side_effect = [_resp('{"verdict": "pass"}'), _resp("never")]
+    contract = kinds.ConversationContract(
+        kind="no_tools", system="s", opening="o", max_calls=1, max_output_tokens=100
+    )
+    wf, _disp = _harness(repo, tmp_path / "leaf", provider, contract)
+    result = wf.run("o")
+    assert provider.call.call_count == 1
+    assert result.reason == "answered" and result.completed
+    record = completion.read_completion(tmp_path / "leaf")
+    assert record is not None
+    assert record.stop_reason == "answered" and record.diagnostics == ()
 
 
 def test_the_read_only_bucket_is_a_real_discoverable_one(tmp_path: pathlib.Path) -> None:
