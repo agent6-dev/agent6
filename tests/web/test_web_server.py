@@ -236,7 +236,7 @@ def test_hub_lists_newest_first_and_each_row_carries_its_open_findings(
     assert by_id["run-block"]["open_findings"] == {"block": 1, "warn": 2, "nit": 0}
     assert by_id["run-block"]["merge_note"] == "open findings: 1 block, 2 warn"
     assert by_id["run-newest"]["open_findings"] == {"block": 0, "warn": 0, "nit": 0}
-    assert by_id["run-newest"]["merge_note"] == "" and by_id["run-newest"]["overlaps"] == []
+    assert by_id["run-newest"]["merge_note"] == "" and "overlaps" not in by_id["run-newest"]
     assert not {"review_queue", "queue_group", "lane_groups"} & set(by_id["run-block"])
 
 

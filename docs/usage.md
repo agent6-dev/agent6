@@ -217,6 +217,7 @@ State is snapshotted before each model call and checkpointed per turn.
 - a run whose workspace does not hold the merge (a `--worktree` run, a fork) continues on its own chain: after a resume, `sessions diff`, `sessions commits` and its next merge start from the landed tip
 - a run merged `--into` a branch other than the one it started on keeps its base, and merges into that branch again from its landed tip
 - `sessions merge` over a file you edited leaves your copy alone and prints two commands that merge your edit with what landed
+- a `sessions merge` that lands names the other ended, unmerged runs that changed some of the same paths (`unmerged runs that changed some of the same paths: <id> (src/a.py and 2 more)`); each one's own merge then meets what landed
 - a commit you made on the run's `agent6/<id>` branch refuses the resume, which names it: `agent6 sessions merge <id>` lands it with the run, or `resume --force` continues without it
 - a `sessions merge` that conflicts names `agent6 resume <id> --merge <branch>` for a run with its own worktree: the resume merges the branch into the run's work there, leaves each conflict's markers in the file for the run to resolve as its first task, and the next `sessions merge` lands cleanly
 - files you changed between executions follow `[git].dirty_tree` on resume, as uncommitted changes do at a run's start: `ask` asks, `stash` sets them aside (a change under `[sandbox].hide_paths` stays in place), `include` leaves them in place, named to the model before its first call, for the run's next commit to take ([Config](config.md#git))
@@ -351,11 +352,10 @@ agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
 Every listing row says what stands before a clean merge, derived from the journal on each read and never stored:
 
 - `open findings: 2 block, 1 warn`: the run's open findings by severity; `sessions merge` refuses on an open `block`, and `agent6 sessions findings <id>` lists them
-- `same paths as <id> and 3 more`: other ended, unmerged runs changed some of the same paths; land one, then resume the others on the new base
 
 The status beside the note carries the rest: what a waiting run waits on, the gate's word, `unmerged`, and the questions pending or the answers saved for the resume.
 Every listing orders sessions by last activity, newest first.
-`sessions list --json` carries the counts as `open_findings`, the runs and their shared paths as `overlaps`, and the rendered note as `merge_note` ([the row](formats.md#cli-json)).
+`sessions list --json` carries the counts as `open_findings` and the rendered note as `merge_note` ([the row](formats.md#cli-json)).
 
 ## Session receipts
 

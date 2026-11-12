@@ -12,7 +12,7 @@ import subprocess
 import pytest
 
 from agent6 import paths
-from agent6.ui.cli import common, sessions_cmds, sessions_show
+from agent6.ui.cli import common, main, sessions_cmds, sessions_show
 
 
 def _run(runs: pathlib.Path, session_id: str, *, winner: bool | None = None) -> None:
@@ -103,7 +103,6 @@ def test_runs_list_json_carries_the_row_facts(
         "worktree",
         "branch",
         "open_findings",
-        "overlaps",
         "merge_note",
     }
 
@@ -403,12 +402,12 @@ def test_runs_list_marks_a_branchless_chain_unmerged(
     assert "passed · unmerged" in row
 
 
-def test_unmerged_runs_over_one_path_are_flagged_on_the_listing(
+def test_a_merge_names_the_unmerged_runs_that_changed_the_same_paths(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Ended, unmerged runs whose commits changed the same path name each other on every hub.
+    """A landed run names the ended, unmerged runs over its paths; a listing names none.
 
-    A run's open findings read beside them, in the same words.
+    A listing flagged every such pair on every read, at one tree diff per unmerged run.
     """
     from agent6.vcs import git_ops, git_read
     from tests import review_helpers
@@ -452,6 +451,7 @@ def test_unmerged_runs_over_one_path_are_flagged_on_the_listing(
             "mode": "run",
             "user_task": session_id,
             "base_sha": base,
+            "base_branch": "main",
             "run_branch": branch,
         }
         (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
@@ -470,24 +470,26 @@ def test_unmerged_runs_over_one_path_are_flagged_on_the_listing(
     ended_run("run-far-CCCCCC", {"d.txt": "d\n"})
     assert sessions_cmds._cmd_list(as_json=True) == 0
     rows = {row["session_id"]: row for row in json.loads(capsys.readouterr().out)}
-    assert rows["run-one-AAAAAA"]["overlaps"] == [
-        {"session_id": "run-two-BBBBBB", "paths": ["b.txt"]}
-    ]
-    assert rows["run-one-AAAAAA"]["merge_note"] == "same paths as run-two-BBBBBB"
-    assert rows["run-two-BBBBBB"]["overlaps"] == [
-        {"session_id": "run-one-AAAAAA", "paths": ["b.txt"]}
-    ]
+    assert all("overlaps" not in row for row in rows.values())
+    assert rows["run-one-AAAAAA"]["merge_note"] == ""
     assert rows["run-two-BBBBBB"]["open_findings"] == {"block": 2, "warn": 0, "nit": 0}
-    assert rows["run-two-BBBBBB"]["merge_note"] == (
-        "open findings: 2 block · same paths as run-one-AAAAAA"
-    )
-    assert rows["run-far-CCCCCC"]["overlaps"] == [] and rows["run-far-CCCCCC"]["merge_note"] == ""
+    assert rows["run-two-BBBBBB"]["merge_note"] == "open findings: 2 block"
     assert sessions_cmds._cmd_list() == 0
     text = capsys.readouterr().out
-    assert re.search(r"passed · unmerged · same paths as run-two-BBBBBB\s+run-one-AAAAAA", text)
-    assert re.search(
-        r"unmerged · open findings: 2 block · same paths as run-one-AAAAAA\s+run-two-BBBBBB", text
-    )
+    assert re.search(r"passed · unmerged\s+run-one-AAAAAA", text), text
+    assert re.search(r"unmerged · open findings: 2 block\s+run-two-BBBBBB", text), text
+    assert "same paths" not in text
+
+    assert main(["sessions", "merge", "run-one-AAAAAA"]) == 0
+    merged = capsys.readouterr().out
+    assert (
+        "[agent6] unmerged runs that changed some of the same paths: run-two-BBBBBB (b.txt)\n"
+        in merged
+    ), merged
+    assert "run-far-CCCCCC" not in merged
+    # The last unmerged run over those paths has nobody left to name.
+    assert main(["sessions", "merge", "run-far-CCCCCC"]) == 0
+    assert "same paths" not in capsys.readouterr().out
 
 
 def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(

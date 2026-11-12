@@ -1587,8 +1587,7 @@ Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/b
 | `worktree` | `str \| None` | The linked worktree path, or null in the operator's checkout. |
 | `branch` | `str \| None` | The run's branch while it exists, or null. |
 | `open_findings` | `dict[str, int]` | The open grounded findings by severity: `block`, `warn`, `nit`. |
-| `overlaps` | `list[dict[str, Any]]` | The Overlap records: the other ended, unmerged runs that changed some of the same paths. |
-| `merge_note` | `str` | The rendered open findings and same-path runs; "" with neither. |
+| `merge_note` | `str` | The rendered open findings; "" with none open. |
 | `lanes` | `list[SummaryRow]` | Nested listing rows for this coordinator's lanes. |
 
 ### `sessions list --json` group fields
@@ -2651,17 +2650,6 @@ Source: [`agent6.ui.cli.ps_cmd._Row`](https://github.com/agent6-dev/agent6/blob/
 | `coordinator` | `str` | For a lane, the live coordinator row it nests under. |
 | `lanes` | `tuple[agent6.ui.cli.ps_cmd._Row, ...]` | The fan-out's live lanes, nested. |
 | `worktree` | `str \| None` | The linked worktree the run works in, None for a run in the checkout. |
-
-### Overlap
-
-**Support: public.** Another ended, unmerged session that changed some of the same paths.
-
-Source: [`agent6.viewmodel.listing.Overlap`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/listing.py).
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `session_id` | `str` | The other session. |
-| `paths` | `tuple[str, ...]` | The repo-relative paths both changed, sorted. |
 
 ### MergeReviewGuard
 

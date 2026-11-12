@@ -499,9 +499,7 @@ class MCPServer:
                 )
             return out
 
-        rows = listing.nested_rows(
-            (listing.summarize_session_dir(d) for d in dirs.values()), repo=self._root
-        )
+        rows = listing.nested_rows(listing.summarize_session_dir(d) for d in dirs.values())
         return {"sessions": [entry(row) for row in rows]}
 
 

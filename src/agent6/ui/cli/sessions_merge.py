@@ -12,9 +12,10 @@ import contextlib
 import dataclasses
 import pathlib
 import sys
+from collections.abc import Mapping
 from typing import Literal
 
-from agent6 import errors, paths
+from agent6 import errors, paths, terminal
 from agent6.app import fork_worktrees, merge, resume, workdirs
 from agent6.config import Config, ConfigError, layer
 from agent6.harness import subrun
@@ -308,7 +309,29 @@ def _cmd_merge(
     )
     if kept := merge.left_behind_line(plan.target, outcome):
         print(f"[agent6] {kept}")
+    if others := listing.same_path_runs(
+        cwd, plan.layout.session_id, plan.base_sha, plan.run_branch
+    ):
+        print(f"[agent6] {_same_paths_line(others)}")
     return 0
+
+
+def _same_paths_line(runs: Mapping[str, tuple[str, ...]]) -> str:
+    """Return the line naming the unmerged runs that changed paths this merge landed.
+
+    Args:
+        runs: Each run's id with the paths both changed.
+
+    Returns:
+        Four runs at most, each with its first shared path, then the count of the rest.
+    """
+    named = [
+        f"{run} ({terminal.printable_name(shared[0])}"
+        + (f" and {len(shared) - 1} more)" if len(shared) > 1 else ")")
+        for run, shared in list(runs.items())[:4]
+    ]
+    more = f", and {len(runs) - len(named)} more" if len(runs) > len(named) else ""
+    return "unmerged runs that changed some of the same paths: " + ", ".join(named) + more
 
 
 def _session_stamp(

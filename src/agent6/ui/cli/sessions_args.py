@@ -55,7 +55,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             " cost_usd, usd_partial, plan_observed_points,"
             " plan_cap, usage, model, model_from_flag, id_cell, unmerged, verification,"
             " winner, lane,"
-            " coordinator, worktree, open_findings, overlaps, merge_note, and nested lanes."
+            " coordinator, worktree, open_findings, merge_note, and nested lanes."
         ),
     )
     sessions_list.add_argument(

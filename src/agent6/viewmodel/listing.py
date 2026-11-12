@@ -10,10 +10,9 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
-import functools
 import pathlib
-from collections.abc import Callable, Container, Iterable, Mapping, Sequence
-from typing import Any, NotRequired, TypedDict
+from collections.abc import Container, Iterable, Mapping, Sequence
+from typing import NotRequired, TypedDict
 
 from agent6 import errors, kinds, paths
 from agent6.sessions import ipc, layout, process
@@ -99,19 +98,6 @@ def is_session_husk(session_dir: pathlib.Path) -> bool:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class Overlap:
-    """Another ended, unmerged session that changed some of the same paths.
-
-    Attributes:
-        session_id: The other session.
-        paths: The repo-relative paths both changed, sorted.
-    """
-
-    session_id: str
-    paths: tuple[str, ...]
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
 class SessionSummary:
     """One listing row: everything a hub or `sessions list` needs, uncolored.
 
@@ -146,8 +132,6 @@ class SessionSummary:
         base_sha: The commit the run started from, as the manifest recorded it; "" unknown.
         source_tip: The run's last diff checkpoint commit; "" before one.
         open_findings: The open grounded findings by severity, from the journal's review fold.
-        overlaps: The other ended, unmerged runs that changed some of the same paths;
-            landing one means resuming the others on the new base.
     """
 
     session_id: str
@@ -174,7 +158,6 @@ class SessionSummary:
     base_sha: str = ""
     source_tip: str = ""
     open_findings: review.SeverityCounts = dataclasses.field(default_factory=review.SeverityCounts)
-    overlaps: tuple[Overlap, ...] = ()
 
     @property
     def usage_cell(self) -> str:
@@ -198,20 +181,11 @@ class SessionSummary:
         """Return what stands before a clean merge, the words every listing shows.
 
         Returns:
-            `open findings: 2 block, 1 warn · same paths as <id> and 3 more`; "" with neither.
-            The note names one run; `overlaps` holds every run and its paths.
+            `open findings: 2 block, 1 warn`; "" with none open.
         """
-        notes: list[str] = []
         counts = dataclasses.asdict(self.open_findings)
-        if found := ", ".join(f"{n} {severity}" for severity, n in counts.items() if n):
-            notes.append(f"open findings: {found}")
-        if self.overlaps:
-            more = len(self.overlaps) - 1
-            notes.append(
-                f"same paths as {self.overlaps[0].session_id}"
-                + (f" and {more} more" if more else "")
-            )
-        return " · ".join(notes)
+        found = ", ".join(f"{n} {severity}" for severity, n in counts.items() if n)
+        return f"open findings: {found}" if found else ""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -227,15 +201,11 @@ class ListingRow:
         return max((self.summary.last_activity, *(lane.group_last_activity for lane in self.lanes)))
 
 
-def nested_rows(
-    summaries: Iterable[SessionSummary], *, repo: pathlib.Path | None = None
-) -> list[ListingRow]:
+def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
     """Nest each lane under the listed session that dispatched it, newest activity first.
 
     Args:
         summaries: The sessions to list.
-        repo: The repository whose history tells which paths each ended, unmerged run
-            changed; with it, two such runs that changed the same paths flag each other.
 
     Returns:
         The rows, every session appearing once: a lane whose coordinator is not listed
@@ -259,76 +229,50 @@ def nested_rows(
     # A coordinator chain that loops reaches no root: its sessions are rows.
     rows.extend(row(s) for s in items if s.session_id not in placed)
     rows.sort(key=lambda r: r.group_last_activity, reverse=True)
-    return rows if repo is None else flag_overlaps(rows, changed_paths(repo))
+    return rows
 
 
-def flag_overlaps(
-    rows: list[ListingRow], touched: Callable[[SessionSummary], frozenset[str]]
-) -> list[ListingRow]:
-    """Flag ended, unmerged sessions that changed some of the same paths, lanes included.
+def same_path_runs(
+    cwd: pathlib.Path, session_id: str, base: str, tip: str
+) -> dict[str, tuple[str, ...]]:
+    """Return the other ended, unmerged runs that changed paths a run changed.
 
-    Args:
-        rows: The nested listing rows.
-        touched: Returns the paths a session changed between its base and its tip.
-
-    Returns:
-        The rows, each such summary's `overlaps` naming the others.
-    """
-    waiting: dict[str, frozenset[str]] = {}
-
-    def collect(row: ListingRow) -> None:
-        s = row.summary
-        if s.unmerged and s.status in format.ENDED_WORDS:
-            waiting[s.session_id] = touched(s)
-        for lane in row.lanes:
-            collect(lane)
-
-    for row in rows:
-        collect(row)
-    if len(waiting) < 2:
-        return rows
-
-    def flagged(row: ListingRow) -> ListingRow:
-        s = row.summary
-        lanes = tuple(flagged(lane) for lane in row.lanes)
-        mine = waiting.get(s.session_id)
-        if mine is None:
-            return dataclasses.replace(row, lanes=lanes)
-        overlaps = tuple(
-            Overlap(other, tuple(sorted(mine & theirs)))
-            for other, theirs in waiting.items()
-            if other != s.session_id and mine & theirs
-        )
-        return ListingRow(dataclasses.replace(s, overlaps=overlaps), lanes)
-
-    return [flagged(row) for row in rows]
-
-
-def changed_paths(repo: pathlib.Path) -> Callable[[SessionSummary], frozenset[str]]:
-    """Return a reader of the paths a run changed, from its base to its last checkpoint.
+    A merge reports them: each one's own merge now meets what this run landed.
 
     Args:
-        repo: The repository holding the run's commits.
+        cwd: The repository.
+        session_id: The run, left out of the answer.
+        base: The commit it started from.
+        tip: Its tip.
 
     Returns:
-        The reader; a run without a recorded base or checkpoint changed no known path.
+        Each such run's id with the repo-relative paths both changed, sorted; newest
+        activity first. Costs one tree diff per ended, unmerged run.
     """
 
-    def touched(s: SessionSummary) -> frozenset[str]:
-        if not s.base_sha or not s.source_tip:
+    def changed(old: str, new: str) -> frozenset[str]:
+        try:
+            return frozenset(git_read.tree_diff_paths(cwd, old, new))
+        except errors.GitError:
             return frozenset()
-        return _paths_between(str(repo), s.base_sha, s.source_tip)
 
-    return touched
-
-
-@functools.lru_cache(maxsize=512)
-def _paths_between(repo: str, base: str, tip: str) -> frozenset[str]:
-    """Return the paths two commits differ in; two shas name immutable trees, so cached."""
-    try:
-        return frozenset(git_read.tree_diff_paths(pathlib.Path(repo), base, tip))
-    except errors.GitError:
-        return frozenset()
+    mine = changed(base, tip)
+    tips = git_read.run_ref_tips(cwd)
+    others = [
+        s
+        for d in session_dirs(paths.state_dir(cwd), layout.SESSION_BUCKETS)
+        if d.name != session_id
+        and (s := summarize_session_dir(d, branch_tips=tips)).unmerged
+        and s.status in format.ENDED_WORDS
+        and s.base_sha
+        and s.source_tip
+    ]
+    others.sort(key=lambda s: s.last_activity, reverse=True)
+    return {
+        s.session_id: tuple(sorted(shared))
+        for s in others
+        if (shared := mine & changed(s.base_sha, s.source_tip))
+    }
 
 
 def rows_for(
@@ -346,7 +290,7 @@ def rows_for(
     tips = git_read.run_ref_tips(cwd)
     dirs = session_dirs(paths.state_dir(cwd), buckets)
     winners = {d.name for d in dirs if comparison.is_winner(d)}
-    rows = nested_rows((summarize_session_dir(d, branch_tips=tips) for d in dirs), repo=cwd)
+    rows = nested_rows(summarize_session_dir(d, branch_tips=tips) for d in dirs)
     return rows, winners
 
 
@@ -424,7 +368,6 @@ class SummaryRow(TypedDict):
     worktree: str | None
     branch: str | None
     open_findings: dict[str, int]
-    overlaps: list[dict[str, Any]]
     merge_note: str
     lanes: list[SummaryRow]
     group_last_activity: NotRequired[float]
@@ -492,9 +435,7 @@ def summary_row(
         worktree: The linked worktree path, or null in the operator's checkout.
         branch: The run's branch while it exists, or null.
         open_findings: The open grounded findings by severity: `block`, `warn`, `nit`.
-        overlaps: The Overlap records: the other ended, unmerged runs that changed some of
-            the same paths.
-        merge_note: The rendered open findings and same-path runs; "" with neither.
+        merge_note: The rendered open findings; "" with none open.
 
         winner: Whether this lane won its comparison.
         lanes: Nested listing rows for this coordinator's lanes.
@@ -539,7 +480,6 @@ def summary_row(
         "worktree": s.worktree or None,
         "branch": s.branch or None,
         "open_findings": dataclasses.asdict(s.open_findings),
-        "overlaps": [dataclasses.asdict(o) for o in s.overlaps],
         "merge_note": s.merge_note(),
         "lanes": list(lanes),
     }

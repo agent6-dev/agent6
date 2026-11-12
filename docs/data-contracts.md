@@ -22,7 +22,7 @@ From 1.0, changes will be backwards compatible, and deprecations will carry a wa
 
 ## CLI listing rows
 
-[`agent6.viewmodel.listing`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/listing.py) &middot; mutable container + 3 frozen turn types
+[`agent6.viewmodel.listing`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/listing.py) &middot; mutable container + 2 frozen turn types
 
 Scan session dirs into the listing rows every front-end's hub shows.
 

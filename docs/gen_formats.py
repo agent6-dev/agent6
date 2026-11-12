@@ -453,7 +453,6 @@ MODELS = (
     ("ui.cli.ps_cmd", "_Row"),
     ("viewmodel.state_types", "SessionState"),
     ("viewmodel.machine_state", "MachineState"),
-    ("viewmodel.listing", "Overlap"),
     ("viewmodel.review", "MergeReviewGuard"),
     ("viewmodel.receipt", "ReceiptView"),
     ("viewmodel.lanes", "ChildView"),
