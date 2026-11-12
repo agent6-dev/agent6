@@ -122,7 +122,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             ),
         ),
         menubar.Menu("Config", (menubar.MenuItem("Open config", "open_config"),)),
-        menubar.Menu("Machines", (menubar.MenuItem("Open machines", "open_machines"),)),
+        menubar.Menu("State machines", (menubar.MenuItem("Open machines", "open_machines"),)),
         menubar.Menu(
             "View",
             (
@@ -149,7 +149,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         ("merge_selected", "Merge run"),
         ("delete_selected", "Delete run"),
         ("open_config", "Config"),
-        ("open_machines", "Machines"),
+        ("open_machines", "State machines"),
         ("open_files", "Files"),
         ("help", "Help"),
         ("quit", "Quit"),

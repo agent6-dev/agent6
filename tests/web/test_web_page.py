@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "043a717cf68ad508c9c4698d6fb7d515b535f3e3940281d1dfd93a1094be13d9"
+PAGE_SHA256 = "a47fb11c1a0691781d54e7d7d249d0ab9b333b1c229b373f985518b49d75e647"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -40,7 +40,7 @@ def test_navigation_bars_share_order_labels_and_inline_svg_icons() -> None:
         ("hub", "#/", "Sessions"),
         ("git", "#/git", "Git"),
         ("files", "#/files", "Files"),
-        ("machines", "#/machines", "Machines"),
+        ("machines", "#/machines", "State machines"),
         ("config", "#/config", "Config"),
     ]
     drawings: list[list[str]] = []
@@ -143,8 +143,6 @@ def test_the_plan_bar_meters_this_executions_points() -> None:
     client = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "const executionPt = run.plan_observed_points || 0;" in client
     assert "executionPt / planCap" in client
-
-
 
 
 def test_the_sessions_card_folds_a_fan_outs_lanes() -> None:
@@ -450,9 +448,11 @@ def test_the_empty_machines_card_says_what_the_tui_says() -> None:
     assert "'no machines yet'" in page.CLIENT_JS and "no machine instances" not in page.CLIENT_JS
 
 
-def test_the_hub_keeps_its_maintenance_actions_behind_one_control() -> None:
-    """The danger actions open from one "more…" disclosure, as the TUI's File menu holds them."""
-    assert "el('details', 'more')" in page.CLIENT_JS
+def test_the_hub_shows_its_maintenance_actions_in_one_toolbar() -> None:
+    """The danger actions sit in one toolbar above the list; no fold hides them."""
+    assert (
+        "el('div', 'toolbar')" in page.CLIENT_JS and "el('details', 'more')" not in page.CLIENT_JS
+    )
     for label in ("Prune merged runs", "Prune merged runs, squash-merged too", "Clear saved asks"):
         assert f"action('{label}'" in page.CLIENT_JS
     assert "also squash-merged branches" not in page.CLIENT_JS

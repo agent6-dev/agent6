@@ -147,8 +147,6 @@ def test_resume_composer_keeps_the_recorded_model(
     assert not errors
 
 
-
-
 @pytest.mark.parametrize("unreadable", [False, True])
 def test_unreviewed_run_names_the_absent_panel(
     port: int,
@@ -406,8 +404,6 @@ def test_removal_controls_reach_the_cli(
     page, errors = open_page(git_port)
     route = "#/" if asks else f"#/session/{session_id}"
     page.goto(f"http://127.0.0.1:{git_port}/{route}")
-    if asks:
-        page.locator("details.more > summary").click()  # the hub keeps maintenance behind it
     button = page.get_by_role("button", name="Clear saved asks" if asks else "Delete", exact=True)
     expect(button).to_be_enabled()
     page.once("dialog", lambda dialog: dialog.accept())

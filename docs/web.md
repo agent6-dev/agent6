@@ -63,7 +63,7 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
     - a run's row names its worktree and its branch while the branch exists; **Review** fills the composer with `/review <branch>`, and **Merge** lands the branch (`sessions merge`) when the run holds unmerged commits
     - the composer starts a run, plan or ask under a chosen preset and model (the model box shows what the config resolves; a pick overrides it); **worktree** starts the run in a new git worktree (`run --worktree`); **advanced** holds the plan to run from (`run --from`) and a spend cap (`--max-usd`)
     - **Run this plan** on a plan's view opens this composer with the plan chosen; Enter on an empty task runs the plan as written
-- **Machines page**: instances, `machine create` drafts, and buttons that run an authored machine file; the composer creates a new one
+- **State machines page**: instances, `machine create` drafts, and buttons that run an authored machine file; the composer creates a new one
 - **Session view** (live over SSE): the conversation, the same folded transcript the CLI and TUI render, with the turn in flight streaming underneath; a detail toggle cycles collapsed, expanded, hidden
     - the composer steers a live run or resumes an ended one under the preset and model picked above it, and takes the [steer directives](usage.md#follow-and-steer-a-run); Ctrl+Enter sends a live steer as `/now`, Ctrl-R searches past messages
     - Ctrl-K on any page opens the session switcher: live and recent sessions newest first, narrowed as you type by id, task, branch or worktree; each row names its checkout and the ref holding its commits; Enter opens the highlighted one, **Review code** and **Merge** act as the Sessions page's row buttons do; a draft typed in a composer waits for the way back
@@ -80,7 +80,7 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
 - **Files page**: the files at one revision; a symlink shows its target; it reads the repository `agent6 web` was started in and writes nothing
     - a markdown file opens rendered; **source** shows the text; **show ignored** lists the files every exclude rule hides, badged `I`
 
-Start a machine on the Machines page and watch the current state stream, answering its approvals and questions in place:
+Start a machine on the State machines page and watch the current state stream, answering its approvals and questions in place:
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/web-machine.webm" type="video/webm">

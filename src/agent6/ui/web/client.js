@@ -496,7 +496,7 @@ function createMachineDock() {
 // Headings separate groups only when the list contains more than one.
 function listCard(title, entries, empty, paint) {
   const card = el('div', 'card');
-  card.appendChild(el('h2', null, title));
+  if (title) card.appendChild(el('h2', null, title));
   const list = el('div', 'list');
   if (!entries.length) list.appendChild(el('div', 'empty', empty));
   for (const e of entries) {
@@ -514,8 +514,6 @@ function listCard(title, entries, empty, paint) {
 
 // The fan-outs whose lanes the operator expanded, kept across the hub's repaints.
 const expandedFanouts = new Set();
-// Whether the sessions card's "more…" maintenance menu is open, kept the same way.
-let moreOpen = false;
 
 // One session row; a fan-out's lanes (`r.lanes`, the server's nested rows)
 // fold under it behind a `lanes: N` line, and expand to the same rows indented.
@@ -600,15 +598,11 @@ function paintSession(r, it, g) {
 }
 
 function sessionsCard(sessions) {
-  const card = listCard('Sessions', sessions, 'no sessions yet', paintSession);
-  // Maintenance sits behind one control, the actions the TUI's File menu
-  // holds: the list is what the operator came for.
-  const more = el('details', 'more');
-  more.open = moreOpen; // kept across the hub's repaints, like the expanded fan-outs
-  more.ontoggle = () => { moreOpen = more.open; };
-  more.appendChild(el('summary', null, 'more…'));
-  const menu = el('div', 'menu');
-  const action = (label, run) => { const b = el('button', 'danger', label); b.onclick = run; menu.appendChild(b); };
+  // The page names itself in the top bar; the card is the list and its toolbar.
+  const card = listCard('', sessions, 'no sessions yet', paintSession);
+  // Maintenance, the actions the TUI's File menu holds, sits in one row above the list.
+  const toolbar = el('div', 'toolbar');
+  const action = (label, run) => { const b = el('button', 'mini danger', label); b.onclick = run; toolbar.appendChild(b); };
   // The CLI's --delete-squashed as its own entry: with the default squash
   // method every merged run's branch is unreachable, so a plain prune
   // reports them and deletes none.
@@ -624,13 +618,12 @@ function sessionsCard(sessions) {
     try { const d = await postJSON('/api/sessions/rm_asks', {}); toast(d.message || 'cleared'); route(); }
     catch (e) { toast(e.message, true); }
   });
-  more.appendChild(menu);
-  card.appendChild(more);
+  card.insertBefore(toolbar, card.firstChild);
   return card;
 }
 
 function machinesCard(machines) {
-  return listCard('Machines', machines, 'no machines yet', (m, it, g) => {
+  return listCard('Instances', machines, 'no machines yet', (m, it, g) => {
     it.onclick = () => location.hash = '#/machine/' + encodeURIComponent(m.name);
     g.appendChild(el('div', 'title', m.machine || m.name));
     g.appendChild(el('div', 'sub', `${m.name} · at ${esc(m.current || '?')} · ${esc(m.when)}`));
@@ -639,7 +632,7 @@ function machinesCard(machines) {
 }
 
 function draftsCard(drafts) {
-  return listCard('Machine drafts', drafts, '', (d, it, g) => {
+  return listCard('Drafts', drafts, '', (d, it, g) => {
     it.onclick = () => location.hash = '#/draft/' + encodeURIComponent(d.session_id);
     taskTitle(g, d.task_line || firstLine(d.task, 200) || d.session_id);
     g.appendChild(el('div', 'sub', `draft · ${esc(d.session_id)} · ${esc(d.when)}`));
@@ -667,11 +660,11 @@ function machineFilesCard(files) {
 }
 
 async function renderHub(focus, gen) {
-  setCrumb('');
+  const machinesTab = focus === 'machines';
+  setCrumb(machinesTab ? 'state machines' : 'sessions');
   const data = await getJSON('/api/hub');
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';
-  const machinesTab = focus === 'machines';
   // Full-width listing stack; the tab's composer docks at the bottom of the
   // viewport (new work on Sessions, create-machine on Machines).
   const build = (d) => {

@@ -55,8 +55,8 @@ header {
 header .brand { font-weight: 700; letter-spacing: .3px; }
 header .brand b { color: var(--accent); }
 header .spacer { flex: 1; }
-/* min-height keeps the header the same height with an empty crumb (hub,
-   config): without it the bar shrinks 21px and views jump on navigation. */
+/* min-height keeps the header the same height whatever the crumb holds:
+   without it the bar shrinks 21px and views jump on navigation. */
 header .crumb { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 21px; }
 button, .btn {
   font: inherit; color: var(--text); background: var(--surface2); border: 1px solid var(--border);
@@ -313,11 +313,11 @@ button.primary { background: var(--accent); color: #05121f; border-color: var(--
 button.danger:hover { border-color: var(--err); color: var(--err); }
 /* The sessions card's maintenance actions and the composer's advanced fold: one muted
    disclosure each, closed by default. */
-.more, .advanced { margin-top: 10px; }
-.more summary, .advanced summary { cursor: pointer; list-style: none; width: max-content; font-size: 12px; color: var(--muted); }
-.more summary::-webkit-details-marker, .advanced summary::-webkit-details-marker { display: none; }
-.more[open] summary, .advanced[open] summary { color: var(--text); }
-.more .menu { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.advanced { margin-top: 10px; }
+.advanced summary { cursor: pointer; list-style: none; width: max-content; font-size: 12px; color: var(--muted); }
+.advanced summary::-webkit-details-marker { display: none; }
+.advanced[open] summary { color: var(--text); }
 .prompt-box { background: var(--surface2); border-left: 3px solid var(--warn); padding: 12px; margin-bottom: 10px; }
 .prompt-box .q { margin-bottom: 8px; white-space: pre-wrap; }
 .prompt-box .cmd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; background: var(--surface); border: 1px solid var(--surface2); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; white-space: pre; overflow-x: auto; }

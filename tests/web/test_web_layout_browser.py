@@ -48,7 +48,7 @@ def test_navigation_icons_follow_bar_order_size_and_theme(
     page.goto(f"http://127.0.0.1:{port}/")
     bar = page.locator(".rail-nav" if width == 1280 else "nav.tabs")
     expect(bar).to_be_visible()
-    expect(bar.locator("a")).to_have_text(["Sessions", "Git", "Files", "Machines", "Config"])
+    expect(bar.locator("a")).to_have_text(["Sessions", "Git", "Files", "State machines", "Config"])
     for link in bar.locator("a").all():
         svg = link.locator("svg")
         expect(svg).to_be_visible()

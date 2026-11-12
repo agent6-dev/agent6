@@ -57,7 +57,7 @@ _NAV_ITEMS = (
     (
         "machines",
         "#/machines",
-        "Machines",
+        "State machines",
         '<circle cx="6.5" cy="7" r="2.5"/><circle cx="17.5" cy="7" r="2.5"/>'
         '<circle cx="12" cy="17.5" r="2.5"/><path d="M9 7h6"/>'
         '<path d="M8 9.2l2.8 5.9"/><path d="M16 9.2l-2.8 5.9"/>',
