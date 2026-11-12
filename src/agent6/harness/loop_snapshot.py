@@ -37,6 +37,7 @@ SessionEndReason = Literal[
     "tool_error_stuck",
     "verify_command_unexecutable",
     "setup_command_failed",
+    "sandbox_unavailable",
     "loop_guard_killed",
     "interactive_stop",
     "interrupted",
@@ -81,6 +82,8 @@ class SessionResult:
         verify_command_unexecutable: the operator's verify or metric command cannot run in the jail.
         setup_command_failed: a worktree's setup command failed before the first
             turn (the app layer).
+        sandbox_unavailable: the host refused the jail, the container or the isolation level
+            the run's commands need (the app layer).
         loop_guard_killed: an identical tool call repeated past the kill threshold.
         interactive_stop: the operator chose stop at the after-commit hook.
         steer_abort: the operator stopped the run, mid-call, at a turn boundary or while parked.

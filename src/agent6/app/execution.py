@@ -44,7 +44,7 @@ from agent6.harness import loop, loop_snapshot, operator_bridge, provider_call, 
 from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as review_gate
 from agent6.providers import TranscriptSink
-from agent6.sandbox import jail
+from agent6.sandbox import detect, jail
 from agent6.sessions import event_log, ipc, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -205,9 +205,14 @@ def _escape_reason(exc: BaseException) -> loop_snapshot.SessionEndReason:
 
     Returns:
         "interrupted" for Ctrl-C or a closed output pipe (`agent6 run ... | head`), the
-        operator's side going away; else "crashed".
+        operator's side going away; "sandbox_unavailable" for a jail, container or isolation
+        level the host refused; else "crashed".
     """
-    return "interrupted" if isinstance(exc, (KeyboardInterrupt, BrokenPipeError)) else "crashed"
+    if isinstance(exc, (KeyboardInterrupt, BrokenPipeError)):
+        return "interrupted"
+    if isinstance(exc, (jail.JailUnavailableError, detect.IsolationUnavailableError)):
+        return "sandbox_unavailable"
+    return "crashed"
 
 
 def _journal_escape(
@@ -398,7 +403,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
     except (KeyboardInterrupt, Exception) as exc:
         # A parked run whose start crashes here never ran: it stays parked with no session.stop.
         if stamps.parked_stamp(layout.session_dir) is not None:
-            reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
+            reporter.err(f"\n[agent6] {label} {_escape_reason(exc).replace('_', ' ')}")
         else:
             tree = _tree_left_before_the_loop(cwd, inputs, hidden)
             reason = _journal_escape(events, exc, execution_id=execution_id, turns=0, tree=tree)
@@ -714,7 +719,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 execution_id=wf.execution_id if wf else execution_id,
                 turns=wf.turns_reached if wf else 0,
             )
-        reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
+        reporter.err(f"\n[agent6] {label} {_escape_reason(exc).replace('_', ' ')}")
         raise
     finally:
 

@@ -206,6 +206,7 @@ Every end has one reason (`stop_reason` in `agent6 sessions show --json` and `se
 | `tool_error_stuck` | `failed · tool error stuck` | `1` |
 | `verify_command_unexecutable` | `failed · verify command unexecutable` | `1` |
 | `setup_command_failed` | `failed · setup command failed` | `1` |
+| `sandbox_unavailable` | `failed · sandbox unavailable` | `2` |
 | `loop_guard_killed` | `failed · loop guard killed` | `1` |
 | `interactive_stop` | `stopped` | `130` |
 | `interrupted` | `stopped` | `130`, `141` (closed output pipe) |

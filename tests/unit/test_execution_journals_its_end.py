@@ -1396,3 +1396,22 @@ def test_a_plan_under_auto_merge_prints_no_skipped_note(
         state_dir=state,
     )
     assert not [line for line in said if "auto_merge skipped:" in line], said
+
+
+def test_a_sandbox_that_cannot_be_prepared_is_not_a_crash(tmp_path: pathlib.Path) -> None:
+    """A container that could not hold the checkout read "failed · crashed" on every surface."""
+    import json
+
+    from agent6.sandbox import container, detect
+
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="sess-BOX")
+    layout.ensure()
+    events = event_log.EventSink(layout.logs_path)
+
+    for refusal in (
+        container.ContainerError("the container mounts the workspace elsewhere"),
+        detect.IsolationUnavailableError("full isolation needs bubblewrap"),
+    ):
+        reason = execution._journal_escape(events, refusal, execution_id="execution", turns=0)
+        ended = [json.loads(line) for line in layout.logs_path.read_text().splitlines()][-1]
+        assert reason == ended["reason"] == "sandbox_unavailable"
