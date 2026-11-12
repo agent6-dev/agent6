@@ -425,18 +425,14 @@ Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/
 
 <!-- config-table: machine -->
 
-### `[machine.notify]` (optional)
-
-Operator hook on every `machine.notify` and the terminal `machine.end`: an operator argv on the host with a minimal env (PATH/HOME/locale/desktop-bus + `AGENT6_MACHINE_ID/DIR/EVENT/STATE/MESSAGE/LEVEL`), never your full environment.
-Global/repo config only (a machine `[config]` overlay setting it is rejected).
-Fan out to ntfy/Pushover/email/Telegram yourself.
-
-<!-- config-table: machine.notify -->
-
 ## `[notify]` (optional)
 
-Runs after `run`/`resume` with the same minimal env plus `AGENT6_SESSION_ID/DIR/OK/VERIFIED/REASON`.
-`OK=1` means the agent stopped deliberately; `VERIFIED` is what the gate said; a hook that wants "green" reads the second.
+`on_event` is one operator argv on the host for every notification, with a minimal env (PATH/HOME/locale/desktop-bus), never your full environment.
+`AGENT6_NOTIFY_EVENT` names the event (`session.end`, `machine.notify`, `machine.end`), `AGENT6_NOTIFY_MESSAGE` carries the end reason or the machine's message, and `AGENT6_NOTIFY_LEVEL` reads `ok` or `failed` for an end and `info`, `warn` or `error` for a machine notify.
+A session adds `AGENT6_SESSION_ID/DIR/OK/VERIFIED/REASON`: `OK=1` means the agent stopped deliberately; `VERIFIED` is what the gate said; a hook that wants "green" reads the second.
+A machine adds `AGENT6_MACHINE_ID/DIR/STATE`.
+Global/repo config only (a machine `[config]` overlay setting `on_event` is rejected).
+Fan out to ntfy/Pushover/email/Telegram yourself.
 
 <!-- config-table: notify -->
 

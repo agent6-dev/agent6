@@ -101,7 +101,7 @@ graph TD
     n_finalize_auto_merge["finalize_auto_merge"]
     n_session_exit_code["session_exit_code"]
     n_print_session_end["print_session_end"]
-    n_fire_notify_hook["fire_notify_hook"]
+    n_session_end["session_end"]
     n_end_auto_stash["end_auto_stash"]
     n_run_task --> n_session_config
     n_session_config --> n_headless_check
@@ -118,8 +118,8 @@ graph TD
     n_wf_run --> n_finalize_auto_merge
     n_finalize_auto_merge --> n_session_exit_code
     n_session_exit_code --> n_print_session_end
-    n_print_session_end --> n_fire_notify_hook
-    n_fire_notify_hook --> n_end_auto_stash
+    n_print_session_end --> n_session_end
+    n_session_end --> n_end_auto_stash
 ```
 
 ## A run

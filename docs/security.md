@@ -725,7 +725,7 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
 - Scripts are committed, never fetched or generated at run time
     - the `.asm.toml` and `scripts/` are read-only in every jail during a run
 - Front-ends render `machine.notify` as an overlay, and `attach` / TUI call `notify-send` with fixed argv, so a model message is inert data.
-- The out-of-band hook `[machine.notify].on_event` runs an operator argv on the host with the minimal `hook_env` env plus `AGENT6_MACHINE_*`.
+- The out-of-band hook `[notify].on_event` runs an operator argv on the host with the minimal `hook_env` env plus `AGENT6_NOTIFY_*` and `AGENT6_MACHINE_*`.
 
 ### Container discovery boundary
 
@@ -852,8 +852,8 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
     - `completions_cmd.py`: runs nothing itself; its one `subprocess.run` is text inside the xonsh completer script it emits, which the operator's xonsh runs at tab time to ask `agent6` for candidates
     - `skills_cmds.py`: `git clone --depth 1 -- <url>` with fixed argv for `agent6 skills install` and `skills update`.
       The URL is operator-supplied and nothing fetched is executed
-- `app/finalize.py`: both operator notify hooks (`run_notify_hook`): `[notify].on_complete` at run end and `[machine.notify].on_event` from `machine run` (built by `app/machine/host_preflight.build_machine_notify_hook`).
-  Argv from config, env from `hook_env` (a minimal base plus `AGENT6_SESSION_*` or `AGENT6_MACHINE_*`, never the provider keys in the operator environment).
+- `app/notify_hook.py`: the operator notify hook (`run_notify_hook`): `[notify].on_event` at a session's end and, from `machine run`, on a machine's notify and end (built by `app/machine/host_preflight.build_machine_notify_hook`).
+  Argv from config, env from `hook_env` (a minimal base plus `AGENT6_NOTIFY_*` and `AGENT6_SESSION_*` or `AGENT6_MACHINE_*`, never the provider keys in the operator environment).
 - `app/machine/scriptcheck.py`: ruff and ty with fixed argv, reading generated scripts statically.
   Those scripts execute only via `run_in_jail`.
 - `app/machine/agent.py`: spawns each agent state as a fixed-argv `python -m agent6.ui.cli.machine_agent` subprocess whose request travels in a temp file.

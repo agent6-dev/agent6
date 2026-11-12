@@ -196,7 +196,7 @@ _RUN_LIFECYCLE_TIER = (
     "end_auto_stash",
     "finalize_auto_merge",
     "print_session_end",
-    "fire_notify_hook",
+    "session_end",
     "session_exit_code",
 )
 _DISPATCH_TIER = (

@@ -12,14 +12,13 @@ import contextlib
 import json
 import pathlib
 import shlex
-import subprocess
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Collection
 
 from agent6 import budget as agent6_budget
-from agent6 import child_env, errors, terminal
+from agent6 import errors, terminal
 from agent6.app import merge, role_providers
 from agent6.app import reporter as app_reporter
-from agent6.config import Config, NotifyConfig
+from agent6.config import Config
 from agent6.harness import advice, loop_snapshot
 from agent6.sessions import event_log, journal
 from agent6.sessions import layout as sessions_layout
@@ -996,92 +995,4 @@ def end_auto_stash(
         else "pre-run changes remain stashed while the run continues"
         " in the background, but the stash could not be located; check"
         " `git stash list`"
-    )
-
-
-def hook_env(**agent6_vars: str) -> dict[str, str]:
-    """Build the environment for an operator notify hook.
-
-    Args:
-        **agent6_vars: The `AGENT6_*` facts to add.
-
-    Returns:
-        The curated base environment plus those facts.
-    """
-    return child_env.curated_env(extra=agent6_vars)
-
-
-def run_notify_hook(
-    argv: Sequence[str],
-    env: dict[str, str],
-    *,
-    timeout_s: float,
-    label: str,
-    note: Callable[[str], None],
-) -> None:
-    """Run one operator notify hook on the host; a failure is noted, never fatal.
-
-    The argv is operator-controlled, never model output, so it runs outside the
-    jail. Its stdout is discarded: under `agent6 acp` the parent's stdout is the
-    protocol stream.
-
-    Args:
-        argv: The hook command.
-        env: Its environment.
-        timeout_s: How long to wait for it.
-        label: The config key named in a failure note.
-        note: Receives the failure note.
-    """
-    try:
-        res = subprocess.run(
-            list(argv),
-            stdout=subprocess.DEVNULL,
-            env=env,
-            timeout=timeout_s,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        note(f"{label} failed: {exc}")
-        return
-    if res.returncode != 0:
-        note(f"{label} exited {res.returncode}")
-
-
-def fire_notify_hook(
-    notify: NotifyConfig,
-    *,
-    session_id: str,
-    session_dir: pathlib.Path,
-    ok: bool,
-    reason: str,
-    verification: str,
-    reporter: app_reporter.Reporter,
-) -> None:
-    """Run the `[notify].on_complete` hook, when one is configured.
-
-    Args:
-        notify: The notify config.
-        session_id: The session's id.
-        session_dir: The session's directory.
-        ok: Whether the agent stopped deliberately.
-        reason: The end reason.
-        verification: What the gate said: passed, failed or not_applicable.
-        reporter: Receives a failure note.
-    """
-    if not notify.on_complete:
-        return
-    env = hook_env(
-        AGENT6_SESSION_ID=session_id,
-        # A hook that wants "green" reads VERIFIED: OK is true over a red verify too.
-        AGENT6_SESSION_OK="1" if ok else "0",
-        AGENT6_SESSION_VERIFIED=verification,
-        AGENT6_SESSION_REASON=reason,
-        AGENT6_SESSION_DIR=str(session_dir),
-    )
-    run_notify_hook(
-        notify.on_complete,
-        env,
-        timeout_s=notify.timeout_s,
-        label="notify.on_complete",
-        note=reporter.note,
     )

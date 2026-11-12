@@ -75,7 +75,7 @@ class LiveWorld:
             disables per-state logs.
         state_log_keep: How many per-state log dirs to keep (`[machine].state_log_keep`);
             0 keeps all.
-        notify_hook: The operator's `[machine.notify].on_event` argv, run on the host; None
+        notify_hook: The operator's `[notify].on_event` argv, run on the host; None
             for no hook (the front-ends still render the journaled events).
         data_dir: The machine's persistent scratch dir, `$AGENT6_MACHINE_DATA_DIR` to a tool,
             outside the workspace; where a tool keeps durable state.

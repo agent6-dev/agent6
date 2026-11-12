@@ -579,25 +579,18 @@ Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/
 | `state_log_keep` | `50` | per-state log dirs kept under `<instance>/states/`, watchable logs of each state's execution; full transition history in the journal regardless; `machine.state_log_keep = 0`: all logs |
 | `pass_env` | `[]` | operator environment variable names allowed in a machine `tool` state's own `pass_env`; startup refused for a state naming an unlisted variable; global/repo config or a `--config FILE` layer; machine `[config]` overlay refused; provider `api_key_env` variables never allowed |
 
-### `[machine.notify]` (optional)
+## `[notify]` (optional)
 
-Operator hook on every `machine.notify` and the terminal `machine.end`: an operator argv on the host with a minimal env (PATH/HOME/locale/desktop-bus + `AGENT6_MACHINE_ID/DIR/EVENT/STATE/MESSAGE/LEVEL`), never your full environment.
-Global/repo config only (a machine `[config]` overlay setting it is rejected).
+`on_event` is one operator argv on the host for every notification, with a minimal env (PATH/HOME/locale/desktop-bus), never your full environment.
+`AGENT6_NOTIFY_EVENT` names the event (`session.end`, `machine.notify`, `machine.end`), `AGENT6_NOTIFY_MESSAGE` carries the end reason or the machine's message, and `AGENT6_NOTIFY_LEVEL` reads `ok` or `failed` for an end and `info`, `warn` or `error` for a machine notify.
+A session adds `AGENT6_SESSION_ID/DIR/OK/VERIFIED/REASON`: `OK=1` means the agent stopped deliberately; `VERIFIED` is what the gate said; a hook that wants "green" reads the second.
+A machine adds `AGENT6_MACHINE_ID/DIR/STATE`.
+Global/repo config only (a machine `[config]` overlay setting `on_event` is rejected).
 Fan out to ntfy/Pushover/email/Telegram yourself.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `on_event` | `[]` | argv command on every machine notify event and at machine end, no shell; event in `AGENT6_MACHINE_*` variables; no hook when empty |
-| `timeout_s` | `30.0` | Seconds the hook may run before it is killed. |
-
-## `[notify]` (optional)
-
-Runs after `run`/`resume` with the same minimal env plus `AGENT6_SESSION_ID/DIR/OK/VERIFIED/REASON`.
-`OK=1` means the agent stopped deliberately; `VERIFIED` is what the gate said; a hook that wants "green" reads the second.
-
-| Field | Default | Meaning |
-|---|---|---|
-| `on_complete` | `[]` | argv command at run or resume end, no shell; environment with `AGENT6_SESSION_ID/DIR/OK/VERIFIED/REASON`; no hook when empty |
+| `on_event` | `[]` | argv command on every notification (a session's end, a machine's notify and end), no shell; the event in `AGENT6_NOTIFY_EVENT/MESSAGE/LEVEL`, the subject in `AGENT6_SESSION_*` or `AGENT6_MACHINE_*`; no hook when empty |
 | `timeout_s` | `30.0` | Seconds the hook may run before it is killed. |
 
 ## `[web]`

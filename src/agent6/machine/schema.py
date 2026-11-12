@@ -451,8 +451,7 @@ StateSpec = Annotated[
 # both refuse off this one set, and each leaf says why.
 PROTECTED_OVERLAY_TABLES: tuple[str, ...] = ("mcp", "presets", "providers", "telemetry")
 PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
-    "machine.notify": "the notify hook runs an operator argv on the host outside the jail",
-    "notify.on_complete": "the completion hook runs an operator argv on the host outside the jail",
+    "notify.on_event": "the notify hook runs an operator argv on the host outside the jail",
     "git.run_repo_hooks": (
         "honoring the repo's .git/hooks runs repo-controlled code on the host outside the jail"
     ),

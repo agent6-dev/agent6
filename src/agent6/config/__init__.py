@@ -53,7 +53,6 @@ from agent6.config.sandbox_config import (  # re-export
 )
 from agent6.config.surface_config import (  # re-export
     MachineConfig,
-    MachineNotifyConfig,
     NotifyConfig,
     ParallelConfig,
     TelemetryConfig,
@@ -83,7 +82,6 @@ __all__ = [
     "MCPConfig",
     "MCPServerEntry",
     "MachineConfig",
-    "MachineNotifyConfig",
     "MetricConfig",
     "ModelsConfig",
     "NotifyConfig",

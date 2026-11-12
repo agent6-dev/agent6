@@ -61,37 +61,6 @@ class SkillsConfig(pydantic.BaseModel):
     )
 
 
-class MachineNotifyConfig(pydantic.BaseModel):
-    """The `[machine.notify]` table: a hook run on each `machine.notify` and at `machine.end`.
-
-    The argv is operator-controlled, never carries LLM output, and runs on the host outside
-    the jail like `[notify].on_complete`; a failed hook is logged and leaves the exit code.
-    Its environment carries:
-
-    - `AGENT6_MACHINE_ID`: the machine id
-    - `AGENT6_MACHINE_DIR`: the absolute path of the instance dir
-    - `AGENT6_MACHINE_EVENT`: `notify` or `end`
-    - `AGENT6_MACHINE_STATE`: the state that emitted it
-    - `AGENT6_MACHINE_MESSAGE`: the notify message, or the end reason
-    - `AGENT6_MACHINE_LEVEL`: `info`, `warn` or `error` for notify; `ok` or `failed` for end
-    """
-
-    model_config = validation.MODEL_CONFIG
-
-    on_event: validation.Argv = pydantic.Field(
-        default=(),
-        description=(
-            "argv command on every machine notify event and at machine end, no shell; event in "
-            "`AGENT6_MACHINE_*` variables; no hook when empty"
-        ),
-    )
-    timeout_s: float = pydantic.Field(
-        gt=0.0,
-        default=30.0,
-        description="Seconds the hook may run before it is killed.",
-    )
-
-
 class MachineConfig(pydantic.BaseModel):
     """The `[machine]` table: the `agent6 machine run` runtime knobs."""
 
@@ -116,7 +85,6 @@ class MachineConfig(pydantic.BaseModel):
             "`machine.state_log_keep = 0`: all logs"
         ),
     )
-    notify: MachineNotifyConfig = pydantic.Field(default_factory=MachineNotifyConfig)
     pass_env: validation.StrTuple = pydantic.Field(
         default=(),
         description=(
@@ -360,27 +328,34 @@ class TelemetryConfig(pydantic.BaseModel):
 
 
 class NotifyConfig(pydantic.BaseModel):
-    """The `[notify]` table: a hook run after a run or resume ends.
+    """The `[notify]` table: one hook run on the host for every notification.
 
     The argv is operator-controlled, never carries LLM output, and runs outside the jail
     under `child_env.curated_env` (never a provider key); a failed hook is logged and leaves
     the exit code. Its environment carries:
 
-    - `AGENT6_SESSION_ID`: the session id under the per-repo state dir
-    - `AGENT6_SESSION_DIR`: the absolute path of the session dir
-    - `AGENT6_SESSION_OK`: `1` when the harness finished cleanly, else `0`
-    - `AGENT6_SESSION_REASON`: the end reason (`finish_session`, `budget_exhausted`, ...)
-    - `AGENT6_SESSION_VERIFIED`: the gate's verdict, `passed`, `failed`, `unverified` or
-      `not_applicable`; a hook wanting green reads this, not `OK`
+    - `AGENT6_NOTIFY_EVENT`: `session.end`, `machine.notify` or `machine.end`
+    - `AGENT6_NOTIFY_MESSAGE`: the end reason, or the machine's notify message
+    - `AGENT6_NOTIFY_LEVEL`: `ok` or `failed` for an end; `info`, `warn` or `error` for a
+      machine notify
+    - a session adds `AGENT6_SESSION_ID` (the session id under the per-repo state dir),
+      `AGENT6_SESSION_DIR` (the absolute path of the session dir), `AGENT6_SESSION_OK` (`1`
+      when the harness finished cleanly, else `0`), `AGENT6_SESSION_REASON` (the end reason:
+      `finish_session`, `budget_exhausted`, ...) and `AGENT6_SESSION_VERIFIED` (the gate's
+      verdict, `passed`, `failed`, `unverified` or `not_applicable`; a hook wanting green
+      reads this, not `OK`)
+    - a machine adds `AGENT6_MACHINE_ID`, `AGENT6_MACHINE_DIR` (the absolute path of the
+      instance dir) and `AGENT6_MACHINE_STATE` (the state that emitted the event)
     """
 
     model_config = validation.MODEL_CONFIG
 
-    on_complete: validation.Argv = pydantic.Field(
+    on_event: validation.Argv = pydantic.Field(
         default=(),
         description=(
-            "argv command at run or resume end, no shell; environment with "
-            "`AGENT6_SESSION_ID/DIR/OK/VERIFIED/REASON`; no hook when empty"
+            "argv command on every notification (a session's end, a machine's notify and end), "
+            "no shell; the event in `AGENT6_NOTIFY_EVENT/MESSAGE/LEVEL`, the subject in "
+            "`AGENT6_SESSION_*` or `AGENT6_MACHINE_*`; no hook when empty"
         ),
     )
     timeout_s: float = pydantic.Field(

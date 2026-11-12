@@ -478,7 +478,7 @@ reason = "done"
 Two channels render it; agent6 owns no push infrastructure:
 
 - device-present front-ends (`agent6 web`, the TUI watch screen, `agent6 attach`): an ephemeral notification
-- out-of-band: `[machine.notify].on_event` ([config.md](config.md#machinenotify-optional)), an operator argv on the host, outside the jail, on every `machine.notify` and `machine.end` (fan out to ntfy/Pushover/email/Telegram)
+- out-of-band: `[notify].on_event` ([config.md](config.md#notify-optional)), an operator argv on the host, outside the jail, on every `machine.notify` and `machine.end` (fan out to ntfy/Pushover/email/Telegram)
 
 ### Templating and list-splicing
 
@@ -602,7 +602,7 @@ Unset keys read straight through to the lower layers, so a machine only states w
 
 **Operator-only keys.** Refused in both tables, each a load-time error:
 
-- `providers.*`, `presets.*`, `mcp.*`, `telemetry.*`, a top-level `preset`, `budget.allow_plan_overage`, `git.run_repo_hooks`, `git.run_repo_drivers`, `machine.notify`, `machine.pass_env`, `notify.on_complete`, `workspace.base_dir`, `prompt.system_prompt_file`, `skills.extra_dirs`
+- `providers.*`, `presets.*`, `mcp.*`, `telemetry.*`, a top-level `preset`, `budget.allow_plan_overage`, `git.run_repo_hooks`, `git.run_repo_drivers`, `machine.pass_env`, `notify.on_event`, `workspace.base_dir`, `prompt.system_prompt_file`, `skills.extra_dirs`
     - endpoints, key-env names, and secrets live in the global/repo config and the secrets store; presets, MCP servers, host-argv hooks, host-side read and work dirs, and paid credits are operator decisions in the global/repo config
 - a state's table also refuses `machine.*`, `parallel.*`, `workspace.*` and `git.commit.*`, which are read once for the whole machine: set them in `[config]`
 

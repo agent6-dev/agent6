@@ -25,6 +25,7 @@ from agent6 import errors, kinds, paths
 from agent6.app import (
     conversation_state,
     finalize,
+    notify_hook,
     review_actions,
     review_directive,
     role_providers,
@@ -748,14 +749,14 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         reporter=reporter,
         hidden=hidden,
     )
-    finalize.fire_notify_hook(
+    notify_hook.session_end(
         cfg.notify,
         session_id=layout.session_id,
         session_dir=layout.session_dir,
         ok=result.completed,
         reason=result.reason,
         verification=result.verification,
-        reporter=reporter,
+        note=reporter.note,
     )
     return ExecutionEnd(
         finalize.session_exit_code(result, harness_gate=harness_gate, stranded=stranded)

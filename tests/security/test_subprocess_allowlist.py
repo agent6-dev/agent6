@@ -39,7 +39,7 @@ _PATTERN = re.compile(
 # completions_cmd.py matches inside a string literal only (the generated xonsh
 # completer, which runs in the operator's shell, not in agent6).
 ALLOWED = {
-    "app/finalize.py",
+    "app/notify_hook.py",
     "app/machine/scriptcheck.py",
     "app/machine/agent.py",
     "providers/claude_code_session.py",

@@ -13,7 +13,7 @@ import pathlib
 import sys
 from collections.abc import Callable, Mapping
 
-from agent6.app import finalize
+from agent6.app import notify_hook
 from agent6.config import Config
 from agent6.machine import StateSpec, ToolState
 
@@ -78,7 +78,7 @@ def build_machine_notify_hook(
 ) -> Callable[[str, str, str, str], None] | None:
     """Return the operator hook fired on `machine.notify` and `machine.end`, or None.
 
-    The argv is `[machine.notify].on_event`, the mirror of `[notify].on_complete`.
+    The argv is `[notify].on_event`, the one hook every notification runs.
 
     Args:
         cfg: The machine's resolved config.
@@ -89,25 +89,19 @@ def build_machine_notify_hook(
         The hook, called with the event (`notify` or `end`), the state, the message and the
         level; None when `on_event` is empty.
     """
-    notify = cfg.machine.notify
-    if not notify.on_event:
+    if not cfg.notify.on_event:
         return None
 
     def fire(kind: str, state: str, message: str, level: str) -> None:
-        env = finalize.hook_env(
+        notify_hook.fire(
+            cfg.notify,
+            f"machine.{kind}",
+            message=message,
+            level=level,
+            note=_stderr_note,
             AGENT6_MACHINE_ID=machine_id,
             AGENT6_MACHINE_DIR=str(root),
-            AGENT6_MACHINE_EVENT=kind,
             AGENT6_MACHINE_STATE=state,
-            AGENT6_MACHINE_MESSAGE=message,
-            AGENT6_MACHINE_LEVEL=level,
-        )
-        finalize.run_notify_hook(
-            notify.on_event,
-            env,
-            timeout_s=notify.timeout_s,
-            label="machine.notify hook",
-            note=_stderr_note,
         )
 
     return fire

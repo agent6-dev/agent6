@@ -789,7 +789,7 @@ def test_extra_body_rejects_nested_non_finite_floats(tmp_path: pathlib.Path, lit
 def test_argv_rejects_blank_element(tmp_path: pathlib.Path) -> None:
     for literal in (
         'verify_command = ["uv", " "]',
-        '[notify]\non_complete = ["notify-send", ""]',
+        '[notify]\non_event = ["notify-send", ""]',
     ):
         body = _VALID_TOML.replace('verify_command = ["true"]', literal)
         with pytest.raises(ConfigError, match="argv elements"):

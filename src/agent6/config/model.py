@@ -157,6 +157,45 @@ class Config(pydantic.BaseModel):
                     )
         return entries
 
+    @pydantic.field_validator("notify", mode="before")
+    @classmethod
+    def _refuse_old_notify_key(cls, table: Any) -> Any:
+        """Refuse the renamed hook key with the replacement line.
+
+        Args:
+            table: The raw `[notify]` table.
+
+        Returns:
+            The table unchanged.
+
+        Raises:
+            ValueError: The table holds `on_complete`.
+        """
+        if isinstance(table, dict) and "on_complete" in table:
+            replacement = io.format_toml_value(table["on_complete"])
+            raise ValueError(f"[notify] on_complete was renamed: on_event = {replacement}")
+        return table
+
+    @pydantic.field_validator("machine", mode="before")
+    @classmethod
+    def _refuse_moved_machine_notify(cls, table: Any) -> Any:
+        """Refuse the moved `[machine.notify]` table, naming its one replacement.
+
+        Args:
+            table: The raw `[machine]` table.
+
+        Returns:
+            The table unchanged.
+
+        Raises:
+            ValueError: The table holds `notify`.
+        """
+        if isinstance(table, dict) and "notify" in table:
+            raise ValueError(
+                "[machine.notify] moved: set [notify] on_event, the one hook for every notification"
+            )
+        return table
+
     @pydantic.field_validator("providers")
     @classmethod
     def _valid_provider_names(
