@@ -497,7 +497,7 @@ def test_seat_abstains_after_six_calls_without_a_verdict() -> None:
         dispatch=lambda n, i, origin=None: results.RawResult({"entries": []}),
         max_turns=6,
     )
-    assert v.error == "no verdict within 6 calls"
+    assert v.error == "no verdict within 6 turns"
     assert provider.calls == 6
 
 
@@ -527,7 +527,7 @@ def test_seat_skips_dispatch_on_final_turn() -> None:
         dispatch=dispatch,
         max_turns=3,
     )
-    assert v.error == "no verdict within 3 calls"
+    assert v.error == "no verdict within 3 turns"
     assert provider.calls == 3  # every model call still happens
     assert dispatched == ["find_references", "find_references"]  # rounds 1-2; final skipped
 

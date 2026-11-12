@@ -216,13 +216,13 @@ def test_a_panel_seat_is_evidence_of_its_panel_and_no_lane(tmp_path: pathlib.Pat
     parent = _session(state, "run-abc", usd=1.0)
     seat_id = "run-abc-rpanel-l1"
     runs_dir = _session(state, seat_id, coordinator="run-abc", lane=1, group="run-abc-rpanel")
-    seat_dir = state / "sessions" / "read_only" / seat_id
+    seat_dir = state / "sessions" / "reviewers" / seat_id
     seat_dir.parent.mkdir()
     runs_dir.rename(seat_dir)
     for name in ("manifest.json", "logs.jsonl"):
         text = (seat_dir / name).read_text(encoding="utf-8")
         (seat_dir / name).write_text(
-            text.replace('"mode": "run"', '"mode": "read_only"'), encoding="utf-8"
+            text.replace('"mode": "run"', '"mode": "reviewer"'), encoding="utf-8"
         )
     record = _record("run-abc-rpanel", [(seat_id, None, 0.25)])
     lane_dispatch.write_record(

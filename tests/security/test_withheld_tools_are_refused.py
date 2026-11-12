@@ -23,7 +23,7 @@ from agent6.sessions import ipc
 from agent6.tools import dispatch, mcp_client, operator_prompts, schema, tool_errors
 from tests.unit.test_mcp_client import _fake_server_argv  # pyright: ignore[reportPrivateUsage]
 
-Mode = Literal["run", "plan", "ask", "machine", "read_only"]
+Mode = Literal["run", "plan", "ask", "machine", "read_only", "reviewer"]
 
 # The guards' own vocabulary. A refusal in these words came from a gate; a
 # refusal in any other words (an argument that failed validation, a missing
@@ -88,10 +88,18 @@ def test_tools_withheld_by_a_bench_switch_are_refused(
 def test_tools_withheld_by_the_mode_are_refused(tmp_path: pathlib.Path) -> None:
     """`agent6 ask` edits nothing: true of the dispatcher, not only of the list it advertises.
 
-    It keeps `run_command`: read-only, approval-gated investigation is the mode's whole job.
+    It keeps `run_command` and its background commands: read-only, approval-gated
+    investigation is the mode's whole job.
     """
     d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="none", mode="ask")
-    _assert_withheld_are_refused(d, {"apply_edit", "apply_patch", "stop_background"}, mode="ask")
+    _assert_withheld_are_refused(d, {"apply_edit", "apply_patch"}, mode="ask")
+
+
+def test_a_reviewer_edits_nothing_and_dispatches_nothing(tmp_path: pathlib.Path) -> None:
+    """A reviewer's surface at the dispatcher: no edit tool, whatever its parent hands down."""
+    d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="none", mode="reviewer")
+    d.allowed_tools = ("apply_edit", "apply_patch", "read_file", "run_command")
+    _assert_withheld_are_refused(d, {"apply_edit", "apply_patch"}, mode="reviewer")
 
 
 def test_a_machine_state_reaches_neither_the_repo_nor_the_network(tmp_path: pathlib.Path) -> None:

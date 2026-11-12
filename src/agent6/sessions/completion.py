@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The completion record a `read_only` session leaves: the deliverable of a bounded conversation."""
+"""The completion record a `reviewer` session leaves: the deliverable of a bounded conversation."""
 
 from __future__ import annotations
 

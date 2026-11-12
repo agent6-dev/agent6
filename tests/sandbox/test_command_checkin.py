@@ -31,7 +31,7 @@ from agent6 import kinds
 from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.sandbox import jail, jail_session
-from agent6.tools import dispatch, tool_errors
+from agent6.tools import dispatch
 
 
 def _dispatcher(tmp_path: pathlib.Path, checkin: float) -> dispatch.ToolDispatcher:
@@ -210,12 +210,11 @@ def test_the_background_flag_replaced_the_second_tool(tmp_path: pathlib.Path) ->
         d.close()
 
 
-def test_a_read_only_mode_cannot_background(tmp_path: pathlib.Path) -> None:
-    """Only a session that edits owns a background command's lifetime.
-
-    Every other mode is a short read-only pass and would kill it at the end; derived from the
-    same tool set that withholds read_background there.
-    """
+@pytest.mark.parametrize("mode", ["ask", "plan", "reviewer"])
+def test_a_mode_that_runs_commands_owns_background_commands(
+    tmp_path: pathlib.Path, mode: kinds.SessionMode
+) -> None:
+    """Running a command and backgrounding one are one capability, in every mode that has it."""
     root = tmp_path / "repo"
     root.mkdir(exist_ok=True)
     session_dir = tmp_path / "session"
@@ -225,13 +224,16 @@ def test_a_read_only_mode_cannot_background(tmp_path: pathlib.Path) -> None:
         root=root,
         config=cfg,
         isolation="none",
-        mode="ask",
+        mode=mode,
         session_dir=session_dir,
         command_access=session_runtime.prepare_local_execution(cfg, root, "none"),
     )
     try:
-        with pytest.raises(tool_errors.ToolError, match="not available in ask mode"):
-            d.dispatch("run_command", {"argv": ["/bin/echo", "hi"], "background": True})
+        assert {"read_background", "stop_background"} <= set(d.available_tool_names())
+        started = d.dispatch("run_command", {"argv": ["/bin/echo", "hi"], "background": True})
+        handle = started.to_wire()["background_id"]
+        read = d.dispatch("read_background", {"id": handle, "wait_s": 10})
+        assert "hi" in json.dumps(read.to_wire())
     finally:
         d.close()
 
@@ -337,12 +339,8 @@ def test_a_command_runs_to_the_end_when_nobody_asked_to_stop(tmp_path: pathlib.P
         d.close()
 
 
-def test_a_plan_or_ask_command_runs_bounded_instead_of_handing_back(tmp_path: pathlib.Path) -> None:
-    """Where the hand-back is unusable the command runs bounded.
-
-    Plan and ask permit `run_command` but withhold `read_background` and `stop_background`,
-    so a hand-back there would leave the model a handle it could neither poll nor stop.
-    """
+def test_a_plan_command_is_handed_back_at_the_check_in(tmp_path: pathlib.Path) -> None:
+    """Plan and ask hold `read_background` and `stop_background`, so a long command hands back."""
     root = tmp_path / "repo"
     root.mkdir(exist_ok=True)
     session_dir = tmp_path / "session"
@@ -358,9 +356,13 @@ def test_a_plan_or_ask_command_runs_bounded_instead_of_handing_back(tmp_path: pa
         command_access=session_runtime.prepare_local_execution(cfg, root, "none"),
         mode="plan",
     )
-    out = _run(d, "sleep 1; echo done")
-    assert out.get("background_id") is None and not out.get("still_running"), out
-    assert out["returncode"] == 0 and "done" in out["stdout"]
+    try:
+        out = _run(d, "sleep 1; echo done")
+        assert out["still_running"] is True and out["returncode"] is None
+        read = d.dispatch("read_background", {"id": out["background_id"], "wait_s": 10})
+        assert "done" in json.dumps(read.to_wire())
+    finally:
+        d.close()
 
 
 _LEVELS = ["none", "partial", pytest.param("full", marks=pytest.mark.needs_namespaces)]

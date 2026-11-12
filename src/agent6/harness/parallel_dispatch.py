@@ -289,7 +289,7 @@ class ParallelDispatcher:
                 dataclasses.replace(
                     lane,
                     limits=lane_records.LaneLimits(
-                        max_turns=lane.contract.max_calls, deadline_at=min(deadlines)
+                        max_turns=lane.contract.max_turns, deadline_at=min(deadlines)
                     ),
                 )
             )

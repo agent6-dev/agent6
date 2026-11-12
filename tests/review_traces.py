@@ -64,6 +64,11 @@ def response(case: str, call: int) -> tuple[str, str, list[dict[str, Any]]]:
     return text, "length" if case == "truncated" else "tool_calls" if tools else "stop", tools
 
 
+def edits(body: dict[str, Any]) -> bool:
+    """Return whether a request offers an edit tool: a worker's does, a reviewer's never."""
+    return any(t.get("function", {}).get("name") == "apply_edit" for t in body.get("tools", []))
+
+
 @contextlib.contextmanager
 def server(case: str) -> Generator[tuple[str, list[dict[str, Any]]]]:
     calls: list[dict[str, Any]] = []
@@ -82,8 +87,8 @@ def server(case: str) -> Generator[tuple[str, list[dict[str, Any]]]]:
                 self.end_headers()
                 self.wfile.write(b'{"error":{"message":"scripted refusal"}}')
                 return
-            if case == "worker" and body.get("max_tokens", 4096) > 2000:
-                worker_calls = sum(c.get("max_tokens", 4096) > 2000 for c in calls)
+            if case == "worker" and edits(body):
+                worker_calls = sum(edits(c) for c in calls)
                 name, args = (
                     (
                         "apply_edit",

@@ -1925,7 +1925,7 @@ def test_a_journal_written_before_the_turn_rename_keeps_its_end_turn(
     assert session_log.scan_session_log(tmp_path / "logs.jsonl").turn == 7
 
 
-@pytest.mark.parametrize(("mode", "offered"), [("read_only", False), ("ask", True)])
+@pytest.mark.parametrize(("mode", "offered"), [("reviewer", False), ("ask", True)])
 def test_a_review_seats_record_offers_no_action(
     tmp_path: pathlib.Path, mode: str, offered: bool
 ) -> None:

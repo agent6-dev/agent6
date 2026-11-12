@@ -114,7 +114,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         config_paths: The `--config` files, which an `/undo` fork is stamped under.
         config_sources: The layer that supplied each config leaf.
         reporter: Receives every refusal and note.
-        contract: The bounded conversation a `read_only` session drives; None for every
+        contract: The bounded conversation a `reviewer` session drives; None for every
             other mode.
         opening: `run --parallel`'s spec and task: the run dispatches it in place of its
             first model call, joins the best-ranked lane and ends; None for a run that
@@ -124,10 +124,10 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         The process exit code.
 
     Raises:
-        ValueError: `read_only` without a contract, or a contract under another mode.
+        ValueError: `reviewer` without a contract, or a contract under another mode.
     """
-    if (mode == "read_only") != (contract is not None):
-        raise ValueError("mode 'read_only' is the one mode that drives a conversation contract")
+    if (mode == "reviewer") != (contract is not None):
+        raise ValueError("mode 'reviewer' is the one mode that drives a conversation contract")
     if operator_task is None:
         operator_task = task
     role = kinds.session_kind(mode).role

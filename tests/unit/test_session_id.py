@@ -145,11 +145,11 @@ def test_resolve_a_reviewed_session_prefix_despite_its_seats(tmp_path: pathlib.P
     parent = "green-canyon-NYACDZ"
     seats = [f"{parent}-rc81e8ace-l{n}" for n in (1, 2)]
     _bucket(tmp_path, parent, bucket="asks")
-    _bucket(tmp_path, *seats, bucket="read_only")
+    _bucket(tmp_path, *seats, bucket="reviewers")
     for query in ("green", "green-canyon", parent):
         resolved = id.resolve_session(tmp_path, query)
         assert (resolved.session_id, resolved.subdir) == (parent, "asks")
-    assert id.resolve_session(tmp_path, seats[0]).subdir == "read_only"
+    assert id.resolve_session(tmp_path, seats[0]).subdir == "reviewers"
     with pytest.raises(id.SessionIdError, match="ambiguous"):
         id.resolve_session(tmp_path, f"{parent}-r")
 

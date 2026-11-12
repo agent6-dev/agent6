@@ -71,7 +71,7 @@ def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
                 record = lane_dispatch.read_records(worker)[0]
                 assert record.state == "running" and len(calls) == 1
                 leaf = (
-                    layout.bucket_dir(paths.state_dir(repo), "read_only")
+                    layout.bucket_dir(paths.state_dir(repo), "reviewers")
                     / record.children[0].session_id
                 )
                 deadline = time.monotonic() + 5
@@ -99,7 +99,7 @@ def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
                     assert ancestor.snapshot().unmetered_tokens == usage.tokens
                     assert ancestor.estimate_usd()[0] == usage.usd
                     assert ancestor.snapshot().settled_lanes == frozenset({worker.name})
-                retained = layout.bucket_dir(paths.state_dir(repo), "read_only") / leaf.name
+                retained = layout.bucket_dir(paths.state_dir(repo), "reviewers") / leaf.name
                 assert receipt.read_receipt(retained, repo).session_id == leaf.name
             finally:
                 release.set()

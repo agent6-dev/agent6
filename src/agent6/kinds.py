@@ -30,9 +30,9 @@ EffortLevel = Literal["off", "low", "medium", "high", "xhigh", "max"]
 # The modes `agent6 resume` accepts; `session_kind` answers the wider "is this a known mode".
 ResumableMode = Literal["run", "plan", "ask"]
 # The modes `run_task` starts and the Harness drives; `machine` is driven by the machine agent.
-LoopMode = Literal["run", "plan", "ask", "read_only"]
+LoopMode = Literal["run", "plan", "ask", "read_only", "reviewer"]
 # Every session mode, the tool surface's vocabulary.
-SessionMode = Literal["run", "plan", "ask", "machine", "read_only"]
+SessionMode = Literal["run", "plan", "ask", "machine", "read_only", "reviewer"]
 # What the REPL's after-commit hook tells the loop to do next; `exit` stops with no prompt.
 AutoCommitDirective = Literal["continue", "stop", "undo", "exit"]
 
@@ -105,8 +105,8 @@ class SessionKind:
     Attributes:
         name: The mode string.
         role: The model role that drives it.
-        edits: May mutate the workspace in-process and own a background command.
-        runs_commands: May execute commands at all.
+        edits: May mutate the workspace in-process.
+        runs_commands: May execute commands, in the foreground or as background commands.
         clamps_commands: Forces approval even where config says "allow".
         resumable: `agent6 resume` can pick it up; a machine's states are driven by the
             machine agent instead.
@@ -164,8 +164,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
             resumable=False,
             bucket="machines",
         ),
-        # A bounded conversation under a `ConversationContract`: a lane the harness dispatches,
-        # or a machine `agent` state, which lives in its instance instead of the bucket.
+        # A machine `agent` state's reading loop; its record lives in the machine's instance.
         SessionKind(
             name="read_only",
             role="worker",
@@ -173,7 +172,18 @@ SESSION_KINDS: dict[str, SessionKind] = {
             runs_commands=False,
             clamps_commands=False,
             resumable=False,
-            bucket="read_only",
+            bucket="machines",
+        ),
+        # A child whose task is a review: it investigates under its parent's policy and
+        # answers with a verdict. It edits nothing and dispatches nothing.
+        SessionKind(
+            name="reviewer",
+            role="worker",
+            edits=False,
+            runs_commands=True,
+            clamps_commands=False,
+            resumable=False,
+            bucket="reviewers",
         ),
     )
 }
@@ -260,32 +270,30 @@ def bucket_mode(bucket: str) -> str:
 class ConversationContract:
     """Bound one conversation the Harness drives in place of a worker's.
 
-    The session it drives is `read_only`: a review seat. It investigates with the tools its
-    parent hands down and passes a judgement up; it makes no edit and dispatches no child.
+    The session it drives is a `reviewer`. It investigates with the tools its parent hands
+    down and passes a judgement up; it makes no edit and dispatches no child.
 
     Attributes:
         system: The system prompt, in place of the worker's assembled one.
         opening: The first user message, in place of the task block.
-        max_calls: The provider attempts allowed, retries included; a last attempt that still
-            asks for tools ends the conversation `calls_exhausted` with its text kept.
-        max_output_tokens: One call's output cap.
+        max_turns: The turns allowed; a last turn that still asks for tools ends the
+            conversation `max_turns` with its text kept and those tools not run.
         temperature: The sampling temperature; None keeps the worker's.
         review_binding: Parent-owned review provenance, or None for other conversations.
         allowed_tools: The tools the parent hands down: the ones its own model is offered
-            now, within what a contract may carry (`tools.schema.contract_tools`).
+            now, within the `reviewer` mode's surface.
     """
 
     system: str
     opening: str
-    max_calls: int
-    max_output_tokens: int
+    max_turns: int
     temperature: float | None = None
     review_binding: review_records.ReviewBinding | None = None
     allowed_tools: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.max_calls < 1 or self.max_output_tokens < 1:
-            raise ValueError("a conversation contract allows at least one call and one token")
+        if self.max_turns < 1:
+            raise ValueError("a conversation contract allows at least one turn")
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

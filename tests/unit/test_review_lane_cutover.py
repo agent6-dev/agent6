@@ -79,7 +79,7 @@ def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
         ]
 
     executor.lane_spawner = spawn
-    contract = kinds.ConversationContract("s", "o", 1, 1500)
+    contract = kinds.ConversationContract("s", "o", 1)
     requests = [lane_records.LaneTask(str(i), "reviewer", contract=contract) for i in range(5)]
     result = executor.dispatch_panel(
         requests,
@@ -96,7 +96,7 @@ def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
     assert deadlines == [1000 + window] * 2 + [1000 + 2 * window] * 2 + [1000 + 3 * window]
 
 
-def test_real_panel_runs_bound_read_only_sessions(short_repo: pathlib.Path) -> None:
+def test_real_panel_runs_bound_reviewer_sessions(short_repo: pathlib.Path) -> None:
     from agent6.harness.review import panel as review_panel
     from agent6.viewmodel import receipt
 
@@ -126,13 +126,14 @@ def test_real_panel_runs_bound_read_only_sessions(short_repo: pathlib.Path) -> N
         )
     assert result.n_abstain == 0 and result.per_seat[0].verdict == "pass"
     assert len(calls) == 3
-    assert all(c["max_tokens"] == 2000 for c in calls)
-    # The parent's list, within what a contract carries: no edit, no child, no finish tool.
+    # A reviewer's reply has the output limit every session's has.
+    assert {c["max_tokens"] for c in calls} == {16384}
+    # The parent's list, within the reviewer mode's surface: no edit, no child, no finish tool.
     names = {t["function"]["name"] for t in calls[0].get("tools", [])}
     assert names == {"read_file", "run_command"}
     assert "You may run commands" in calls[0]["messages"][0]["content"]
     child = receipt.read_receipt(directory, repo).children[0]
-    record = completion.read_completion(directory.parent.parent / "read_only" / child.session_id)
+    record = completion.read_completion(directory.parent.parent / "reviewers" / child.session_id)
     assert record is not None and record.review_binding is not None
     assert record.review_binding.panel_id == "test"
     assert result.per_seat[0].session_id == child.session_id
@@ -163,7 +164,7 @@ def test_failed_artifacts_keep_the_actual_diagnostic(
         lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
     ) -> list[lane_records.LaneResult]:
         sid = f"parent-{group}-l1"
-        seat_dir = subordinate_env.create_record(repo, sid, parent="parent", mode="read_only")
+        seat_dir = subordinate_env.create_record(repo, sid, parent="parent", mode="reviewer")
         contract = lanes[0].contract
         assert contract is not None
         if failure == "malformed":
@@ -248,7 +249,7 @@ def test_artifact_provenance_is_checked_before_parsing(wrong: str) -> None:
         session_id="seat-session",
         focus="security",
         model_route="p/base",
-        max_calls=1,
+        max_turns=1,
     )
     assert verdict.verdict == "abstain" and "binding" in (verdict.error or "")
 
@@ -285,7 +286,7 @@ def test_worker_child_schedules_its_panel_without_certifying_parent(
     panels = receipt.read_receipt(worker, repo).review.panels
     assert len(panels) == 1 and panels[0].completion == "complete"
     leaf = receipt.read_receipt(worker, repo).children[0]
-    leaf_dir = directory.parent.parent / "read_only" / leaf.session_id
+    leaf_dir = directory.parent.parent / "reviewers" / leaf.session_id
     rendered = receipt.render(receipt.read_receipt(worker, repo))
     assert f"Seat 1 (security): {leaf.session_id}" in rendered
     assert completion.read_completion(leaf_dir) is not None

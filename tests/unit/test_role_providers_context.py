@@ -145,7 +145,7 @@ def test_review_requests_belong_to_real_distinct_seat_sessions(
         )
         assert [s.verdict for s in result.per_seat] == ["pass", "pass"], result
         assert len(calls) == 2
-        child_dirs = [directory.parent.parent / "read_only" / s.session_id for s in result.per_seat]
+        child_dirs = [directory.parent.parent / "reviewers" / s.session_id for s in result.per_seat]
         requests = [r for child in child_dirs for r in _events(child, "provider.request")]
         logical = [r for child in child_dirs for r in _events(child, "model.call")]
         transcripts = [r for child in child_dirs for r in _transcripts(child)]

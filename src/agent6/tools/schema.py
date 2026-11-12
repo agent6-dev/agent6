@@ -665,6 +665,9 @@ ASK_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (Agent6DocsInput,)
 # A machine `agent` state: navigation plus `finish_session`, whose `result` carries the output.
 MACHINE_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (FinishSessionInput,)
 
+# A reviewer answers with its verdict: no control tool, and a skill it may read.
+REVIEWER_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (UseSkillInput,)
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ModeTools:
@@ -692,6 +695,7 @@ _EXTRA_TOOLS: dict[str, tuple[type[_ToolInput], ...]] = {
     "ask": ASK_EXTRA_TOOLS,
     "machine": MACHINE_EXTRA_TOOLS,
     "read_only": MACHINE_EXTRA_TOOLS,
+    "reviewer": REVIEWER_EXTRA_TOOLS,
 }
 
 
@@ -699,45 +703,17 @@ _EXTRA_TOOLS: dict[str, tuple[type[_ToolInput], ...]] = {
 def mode_tools(mode: str) -> ModeTools:
     """Return the tool surface of a mode, derived from its `SessionKind`."""
     kind = kinds.session_kind(mode)
-    return _surface(
-        _EXTRA_TOOLS.get(mode, LOOP_EXTRA_TOOLS),
-        edits=kind.edits,
-        runs_commands=kind.runs_commands,
-    )
-
-
-@functools.cache
-def contract_tools() -> ModeTools:
-    """Return what a `ConversationContract` may carry: a parent's tools for investigating.
-
-    A review seat never edits, owns a background command, keeps a task list or dispatches a
-    child.
-
-    Returns:
-        The reading tools, `run_command`, `run_verify_command`, `fetch`, `read_session` and
-        `use_skill`; the parent's own list narrows them to what it is offered now.
-    """
-    return _surface((UseSkillInput,), edits=False, runs_commands=True)
-
-
-def _surface(
-    extras: tuple[type[_ToolInput], ...], *, edits: bool, runs_commands: bool
-) -> ModeTools:
-    """Return the surface of a session that may or may not edit and run commands."""
+    extras = _EXTRA_TOOLS.get(mode, LOOP_EXTRA_TOOLS)
     blocked: set[str] = set()
-    if not edits:
+    if not kind.edits:
         blocked = {ApplyEditInput.TOOL_NAME, ApplyPatchInput.TOOL_NAME}
-    if not runs_commands:
+    if not kind.runs_commands:
         # A machine state answers about its input: neither this project's history nor the network.
         blocked |= {
             RunVerifyInput.TOOL_NAME,
             RunCommandInput.TOOL_NAME,
             ReadSessionInput.TOOL_NAME,
             FetchInput.TOOL_NAME,
-        }
-    if not edits:
-        # Only a session that edits owns a background command's lifetime.
-        blocked |= {
             ReadBackgroundInput.TOOL_NAME,
             StopBackgroundInput.TOOL_NAME,
         }

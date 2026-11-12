@@ -363,14 +363,14 @@ def test_remove_asks_removes_their_review_refs(
 
 
 def _seat(state: pathlib.Path, seat_id: str, parent: str) -> pathlib.Path:
-    seat = state / "sessions" / "read_only" / seat_id
+    seat = state / "sessions" / "reviewers" / seat_id
     seat.mkdir(parents=True)
     (seat / "manifest.json").write_text(
         json.dumps(
             {
                 "version": 2,
                 "session_id": seat_id,
-                "mode": "read_only",
+                "mode": "reviewer",
                 "user_task": "Review: security",
                 "parallel": {"group": f"{parent}-rpanel", "lane": 1, "coordinator": parent},
             }

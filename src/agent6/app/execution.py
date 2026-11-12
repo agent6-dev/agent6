@@ -97,7 +97,7 @@ class ExecutionInputs:
         worker_lock_fd: The lifecycle's held session writer lock, shared with auto-merge.
         base_rules: A review session's base-tree AGENTS.md, in place of the checkout's.
         review_target: A review session's comparison and its diff, for the panel.
-        contract: The bounded conversation a `read_only` session drives; None for a worker's.
+        contract: The bounded conversation a `reviewer` session drives; None for a worker's.
         opening: `run --parallel`'s spec and task: the dispatch a fresh run makes in place of
             its first model call, joined by rank; None for a run that opens with the model.
     """

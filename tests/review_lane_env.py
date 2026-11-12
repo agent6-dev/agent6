@@ -112,10 +112,10 @@ def run_panel(
                     id(seats[request.contract.review_binding.seat_index])
                 ]
                 sid = f"parent-{group}-l{index}"
-                child = directory.parent.parent / "read_only" / sid
+                child = directory.parent.parent / "reviewers" / sid
                 child.mkdir(parents=True)
                 dispatcher = tools_dispatch.ToolDispatcher(
-                    root=repo, config=cfg, isolation="none", mode="read_only", session_dir=child
+                    root=repo, config=cfg, isolation="none", mode="reviewer", session_dir=child
                 )
                 if dispatch is not None:
                     dispatcher.dispatch = dispatch  # type: ignore[method-assign]
@@ -129,7 +129,7 @@ def run_panel(
                     resume_state_path=child / "loop_state.json",
                     bridge=operator_bridge.OperatorBridge(),
                     call=provider_call.CallSettings(retry_count=0),
-                    mode="read_only",
+                    mode="reviewer",
                     contract=request.contract,
                     media_input=capabilities
                     or (
@@ -153,7 +153,7 @@ def run_panel(
                     harness.events.subscribe(media_event)
                 harness.run(request.task)
                 return lane_records.LaneResult(
-                    lane_records.LaneSpec(index, sid, repo, request.settings, mode="read_only"),
+                    lane_records.LaneSpec(index, sid, repo, request.settings, mode="reviewer"),
                     child,
                     "",
                     True,

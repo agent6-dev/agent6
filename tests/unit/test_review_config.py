@@ -82,7 +82,7 @@ def test_configured_call_budget_reaches_the_seat(
     assert rc == 1, captured.err
     assert seat.calls == 2
     (verdict,) = aggregate.call_args.args[0]
-    assert verdict.error == "no verdict within 2 calls"
+    assert verdict.error == "no verdict within 2 turns"
     assert "at most 2 replies" in seat_call.call_args_list[0].kwargs["system"]
     assert "x = 2" in json.dumps(seat_call.call_args_list[1].kwargs["messages"])
     session = paths.state_dir(repo) / "sessions" / "runs" / "review-TURNS1"

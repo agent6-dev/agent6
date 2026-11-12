@@ -485,7 +485,7 @@ class HarnessConfig(pydantic.BaseModel):
             "or kill, command still running; response: `returncode: null`, `still_running: "
             "true`, `background_id`; model options: wait with `read_background`, stop the job "
             "or carry on; `harness.command_checkin_s = 0`: hand-back disabled, command killed "
-            "at 600 s; also killed at 600 s without background tools (such as in `ask`)"
+            "at 600 s"
         ),
     )
     standing_patience: int = pydantic.Field(
@@ -708,8 +708,8 @@ class ReviewConfig(pydantic.BaseModel):
         ge=1,
         default=20,
         description=(
-            "model calls a review seat may make, calls that ask for tools included; no verdict "
-            "within the cap: abstention, reported by the panel"
+            "turns a review seat may take, turns that ask for tools included; no verdict "
+            "within the limit: abstention, reported by the panel"
         ),
     )
 

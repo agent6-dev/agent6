@@ -77,7 +77,6 @@ def _roster(shells: background.BackgroundShells) -> tuple[str, ...]:
 def start_detached(
     argv: tuple[str, ...],
     *,
-    mode: kinds.SessionMode,
     get_background: Callable[[], background.BackgroundShells],
     access: JailAccess,
 ) -> results.ExecResult:
@@ -85,8 +84,6 @@ def start_detached(
 
     Args:
         argv: The command.
-        mode: The session's mode; only a session that edits owns a background command's
-            lifetime, derived from the same tool set that withholds read_background elsewhere.
         get_background: Returns the run's background roster.
         access: The resolved command policy and session.
 
@@ -94,13 +91,8 @@ def start_detached(
         The hand-back, with no output yet.
 
     Raises:
-        ToolError: The mode cannot read a hand-back, or the command could not start.
+        ToolError: The command could not start.
     """
-    if schema.ReadBackgroundInput.TOOL_NAME not in schema.mode_tools(mode).permitted:
-        raise tool_errors.ToolError(
-            f"background commands are not available in {mode} mode:"
-            " nothing there could read or stop one before the run ends"
-        )
     shells = get_background()
     try:
         view = shells.start(
@@ -124,7 +116,6 @@ def start_detached(
 def run_model_command(
     argv: tuple[str, ...],
     *,
-    mode: kinds.SessionMode,
     shells: background.BackgroundShells | None,
     checkin: float,
     interrupted: Callable[[], bool],
@@ -133,12 +124,11 @@ def run_model_command(
 ) -> results.ExecResult:
     """Run a model command; check-ins hand it back and an immediate stop ends it.
 
-    The check-in needs a background roster to hand the running command to and a mode whose
-    tools can read the hand-back; otherwise this is a bounded run with its timeout.
+    The check-in needs a background roster to hand the running command to; otherwise this is
+    a bounded run with its timeout.
 
     Args:
         argv: The command.
-        mode: The session's mode.
         shells: The run's background roster; None without a run directory.
         checkin: Seconds until a running command is handed back; 0 disables the hand-back.
         interrupted: Whether the operator asked for an immediate stop.
@@ -151,11 +141,7 @@ def run_model_command(
     Raises:
         ToolError: The jail is unavailable or the operator's stop could not end the command.
     """
-    if (
-        shells is None
-        or checkin <= 0
-        or schema.ReadBackgroundInput.TOOL_NAME not in schema.mode_tools(mode).permitted
-    ):
+    if shells is None or checkin <= 0:
         return run_argv_in_jail(
             argv,
             label="run_command",

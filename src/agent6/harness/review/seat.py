@@ -142,7 +142,7 @@ def verdict_from_completion(
     session_id: str,
     focus: str,
     model_route: str,
-    max_calls: int,
+    max_turns: int,
     error: str | None = None,
 ) -> review_records.ReviewVerdict:
     """Validate provenance before parsing any model text.
@@ -153,7 +153,7 @@ def verdict_from_completion(
         session_id: The child assigned by the parent dispatcher.
         focus: The parent's seat focus.
         model_route: The parent's resolved route.
-        max_calls: The request's call ceiling.
+        max_turns: The request's turn limit.
         error: A dispatch, timeout or artifact-read failure.
 
     Returns:
@@ -164,9 +164,7 @@ def verdict_from_completion(
             error = "missing completion artifact"
         elif record.review_binding != binding or record.session_id != session_id:
             error = "completion binding does not match the parent panel, seat, target or session"
-        elif record.calls > max_calls:
-            error = "completion exceeded its bound call allowance"
-        elif record.stop_reason not in ("answered", "calls_exhausted"):
+        elif record.stop_reason not in ("answered", "max_turns"):
             error = "; ".join(record.diagnostics) or record.text or record.stop_reason
     if error is not None:
         return review_records.ReviewVerdict(
@@ -176,7 +174,7 @@ def verdict_from_completion(
     obj = llm_json.extract_json(record.text, prefer=("verdict", "findings"))
     if obj is None or (record.asked_for_tools and not ({"verdict", "findings"} & obj.keys())):
         error = (
-            f"no verdict within {max_calls} calls"
+            f"no verdict within {max_turns} turns"
             if record.asked_for_tools
             else no_verdict_error(record)
         )

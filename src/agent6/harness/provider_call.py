@@ -317,7 +317,6 @@ class ProviderCaller:
         should_interrupt: Whether an operator steer is pending.
         log: The run's text logger.
         emit: The run's event emitter.
-        max_calls: The attempts allowed in all, retries included; 0 for no ceiling.
         counter: The attempts made so far, shared by every call of the execution.
     """
 
@@ -330,7 +329,6 @@ class ProviderCaller:
     should_interrupt: Callable[[], bool]
     log: Callable[[str], None]
     emit: Callable[..., None]
-    max_calls: int = 0
     counter: CallCounter = dataclasses.field(default_factory=CallCounter)
 
     def call(
@@ -366,12 +364,6 @@ class ProviderCaller:
             ProviderInterrupted: An operator steer.
         """
         attempts = max(1, self.retry_count + 1)
-        if self.max_calls:
-            # The ceiling counts attempts: a retry cannot stretch it.
-            remaining = self.max_calls - self.counter.attempts
-            if remaining < 1:
-                raise ProviderError(f"call ceiling {self.max_calls} reached", fatal=True)
-            attempts = min(attempts, remaining)
         attempt = 1
         # One logical call: its retries share the call id, each attempt with its own request id.
         context = request_headers.RequestContext.initiated_by(

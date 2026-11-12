@@ -60,7 +60,7 @@ def test_empty_id_never_picks_a_review_seat(tmp_path: pathlib.Path) -> None:
     repo.mkdir()
     state = paths.state_dir(repo)
     _session_dir(state, "runs", "the-run", log_mtime=1000.0)
-    seat = _session_dir(state, "read_only", "the-run-rpanel-l1", log_mtime=2000.0)
+    seat = _session_dir(state, "reviewers", "the-run-rpanel-l1", log_mtime=2000.0)
     (seat / "transcripts").mkdir()
     (state / "sessions" / "runs" / "the-run" / "transcripts").mkdir()
 
@@ -70,7 +70,7 @@ def test_empty_id_never_picks_a_review_seat(tmp_path: pathlib.Path) -> None:
     assert held is not None and held.session_id == "the-run"
     # Its id still resolves it.
     named = common.resolve_or_newest_layout(repo, "the-run-rpanel-l1")
-    assert named is not None and named.subdir == "read_only"
+    assert named is not None and named.subdir == "reviewers"
 
 
 def test_empty_id_with_no_runs_returns_none(tmp_path: pathlib.Path) -> None:

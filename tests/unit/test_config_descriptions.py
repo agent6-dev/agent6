@@ -29,7 +29,7 @@ _ROOT = pathlib.Path(__file__).resolve().parents[2]
         (
             harness_config.HarnessConfig,
             "command_checkin_s",
-            ("hand-back disabled, command killed at 600 s", "without background tools"),
+            ("hand-back disabled, command killed at 600 s",),
         ),
         (
             harness_config.RoleModel,

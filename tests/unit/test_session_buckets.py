@@ -17,15 +17,17 @@ def test_a_bucket_is_named_by_its_kind() -> None:
 
     A record cannot disagree with where its sessions actually go.
     """
-    modes = ("run", "plan", "ask", "machine", "read_only")
+    modes = ("run", "plan", "ask", "machine", "reviewer")
     assert [kinds.session_bucket(name) for name in modes] == [
         "runs",
         "plans",
         "asks",
         "machines",
-        "read_only",
+        "reviewers",
     ]
     assert [kinds.bucket_mode(kinds.session_bucket(name)) for name in modes] == list(modes)
+    # A machine `agent` state's reading loop keeps its record in the machine's instance.
+    assert kinds.session_bucket("read_only") == "machines"
 
 
 def test_an_unknown_mode_has_no_bucket() -> None:

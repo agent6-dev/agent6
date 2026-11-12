@@ -141,7 +141,7 @@ class Harness:
         mode: The mode; `plan` uses the planning prompt and tool list, never auto-commits,
             and writes `plan_markdown` to `plan_output_path` on finish_planning.
         plan_output_path: Where a plan is written; required when `mode="plan"`.
-        contract: The bounded conversation a `read_only` session drives in place of a
+        contract: The bounded conversation a `reviewer` session drives in place of a
             worker's: its own system prompt and opening, a call ceiling, no gates, no
             advisors, no compaction; None for the worker's execution.
         opening: The dispatch a fresh run makes in place of its first model call, joined by
@@ -326,7 +326,7 @@ class Harness:
         """
         self.dispatcher.allowed_tools = contract.allowed_tools
         self.log(
-            f"LOOP: contract max_calls={contract.max_calls}"
+            f"LOOP: contract max_turns={contract.max_turns}"
             f" tools={','.join(contract.allowed_tools) or 'none'}"
         )
         conversation = loop_conversation.Conversation()
@@ -690,8 +690,10 @@ class Harness:
         # The turn the `parallel` tool dispatches for, set before its calls run.
         self._tool_turn = (conversation, state, ctx.turn)
         self._emit_budget(ctx.turn)
+        # A restart keeps the first message, which is a contract's opening.
+        restarted = self.compactor.compact(conversation, state, prefix_chars=prefix_chars)
         if self.contract is None:
-            if self.compactor.compact(conversation, state, prefix_chars=prefix_chars):
+            if restarted:
                 # A tier-2 restart wiped the focus banner and the plan block; both go back below.
                 state.focus.surfaced_task_id = None
                 state.plan_injected = ""
@@ -946,10 +948,10 @@ class Harness:
         *,
         turn: int,
     ) -> loop_snapshot.SessionResult | None:
-        """End a bounded conversation on a response with no tool call, or at its call ceiling.
+        """End a bounded conversation on a response with no tool call, or at its turn limit.
 
         The response's text is the deliverable either way. A response with no tool call is an
-        answer, on the last allowed call too; the tool calls of a response at the ceiling are
+        answer, on the last allowed turn too; the tool calls of a response at the limit are
         not executed, and the completion record names them.
 
         Args:
@@ -974,14 +976,14 @@ class Harness:
                 ),
                 turn=turn,
             )
-        if self.caller.counter.attempts >= self.contract.max_calls:
+        if turn >= self.contract.max_turns:
             names = ", ".join(tu.name for tu in assistant.tool_uses)
             self._contract_diagnostics.append(
-                f"not executed, the call ceiling {self.contract.max_calls} was reached: {names}"
+                f"not executed, the turn limit {self.contract.max_turns} was reached: {names}"
             )
-            self.log(f"LOOP: call ceiling {self.contract.max_calls} reached at turn {turn}")
+            self.log(f"LOOP: max_turns={self.contract.max_turns} reached")
             return self.finish(
-                state, loop_snapshot.End("calls_exhausted", text, checkpoint=False), turn=turn
+                state, loop_snapshot.End("max_turns", text, checkpoint=False), turn=turn
             )
         return None
 
@@ -998,8 +1000,6 @@ class Harness:
         Returns:
             The cap in tokens.
         """
-        if self.contract is not None:
-            return self.contract.max_output_tokens
         if (
             self.metrics.active
             and state.quiet.went_quiet_nudges_used < _STARVATION_BACKOFF_AFTER_QUIETS
@@ -2027,7 +2027,6 @@ class Harness:
                 if contract is not None and contract.temperature is not None
                 else self.call.temperature
             ),
-            max_calls=contract.max_calls if contract is not None else 0,
             should_abort=self.bridge.should_abort,
             should_interrupt=self.bridge.should_interrupt,
             log=self.log,

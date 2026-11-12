@@ -727,7 +727,6 @@ _DONE_LABELS = {
     "detached": "failed · detached",
     "plan_unreadable": "failed · plan unreadable",
     "max_turns": "failed · max turns",
-    "calls_exhausted": "failed · calls exhausted",
     "ask_repl_empty": "failed · ask repl empty",
     "gate_stale": "finished · gate stale",
     "gate_red_at_base": "finished · gate red at base",

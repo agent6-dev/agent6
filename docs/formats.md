@@ -2558,7 +2558,7 @@ Source: [`agent6.app.lane_launch.LaneLaunch`](https://github.com/agent6-dev/agen
 | `gate_source` | `Literal['', 'configured', 'inferred', 'adopted']` | Where the verify gate in the snapshot came from; "" for none. |
 | `operator_task` | `str \| None` | The task's words before composition; None when they are the task. |
 | `limits` | `LaneLimits \| None` | The turn cap and deadline the lane runs under; None for the config's own. |
-| `contract` | `ConversationContract \| None` | The bounded conversation a `read_only` lane drives; None for a run lane. |
+| `contract` | `ConversationContract \| None` | The bounded conversation a `reviewer` lane drives; None for a run lane. |
 
 ### CompletionRecord
 
@@ -3105,11 +3105,10 @@ Source: [`agent6.kinds.ConversationContract`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `system` | `str` | The system prompt, in place of the worker's assembled one. |
 | `opening` | `str` | The first user message, in place of the task block. |
-| `max_calls` | `int` | The provider attempts allowed, retries included; a last attempt that still asks for tools ends the conversation `calls_exhausted` with its text kept. |
-| `max_output_tokens` | `int` | One call's output cap. |
+| `max_turns` | `int` | The turns allowed; a last turn that still asks for tools ends the conversation `max_turns` with its text kept and those tools not run. |
 | `temperature` | `float \| None` | The sampling temperature; None keeps the worker's. |
 | `review_binding` | `ReviewBinding \| None` | Parent-owned review provenance, or None for other conversations. |
-| `allowed_tools` | `tuple[str, ...]` | The tools the parent hands down: the ones its own model is offered now, within what a contract may carry (`tools.schema.contract_tools`). |
+| `allowed_tools` | `tuple[str, ...]` | The tools the parent hands down: the ones its own model is offered now, within the `reviewer` mode's surface. |
 
 ### ReviewBinding
 

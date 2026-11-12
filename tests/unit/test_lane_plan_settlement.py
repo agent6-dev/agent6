@@ -18,7 +18,7 @@ def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
     """A worker's latest account reading cannot hide a panel provider's high-water mark."""
     state = paths.state_dir(tmp_path)
     worker = layout.bucket_dir(state, "runs") / "parent-p1-l1"
-    leaf = layout.bucket_dir(state, "read_only") / "parent-p1-l1-rpanel-l1"
+    leaf = layout.bucket_dir(state, "reviewers") / "parent-p1-l1-rpanel-l1"
     for directory, provider, parent in ((worker, "a", "parent"), (leaf, "b", worker.name)):
         directory.mkdir(parents=True)
         (directory / "manifest.json").write_text(
@@ -26,7 +26,7 @@ def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
                 {
                     "version": 2,
                     "session_id": directory.name,
-                    "mode": "run" if directory == worker else "read_only",
+                    "mode": "run" if directory == worker else "reviewer",
                     "models": {"driver": {"provider": provider, "model": "base"}},
                     "parallel": {"coordinator": parent, "group": "g", "lane": 1},
                 }

@@ -117,7 +117,7 @@ def main() -> int:
     )
     sandbox = session_setup.SandboxOverrides(auto_approve=launch.auto_approve)
     # A contract makes the lane a bounded read-only conversation; without one it is a run.
-    mode: kinds.LoopMode = "read_only" if launch.contract is not None else "run"
+    mode: kinds.LoopMode = "reviewer" if launch.contract is not None else "run"
     try:
         effective = session_setup.load_session_config(
             launch.worktree,

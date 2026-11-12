@@ -630,7 +630,7 @@ def recover_lanes(
         if not matches:
             continue
         lane_dir = matches[0].session_dir
-        mode = "read_only" if matches[0].subdir == "read_only" else "run"
+        mode = "reviewer" if matches[0].subdir == "reviewers" else "run"
         spec = lane_records.LaneSpec(
             lane, session_id, worktree_root / f"lane-{lane}", None, mode=mode
         )
@@ -907,7 +907,7 @@ def build_lane_spawner(
                 session_id=f"{group_id}-l{i}",
                 worktree=worktree_root / f"lane-{i}",
                 settings=chosen,
-                mode="read_only" if lane.contract is not None else "run",
+                mode="reviewer" if lane.contract is not None else "run",
             )
             for i, (chosen, lane) in enumerate(zip(settings, lanes, strict=True), start=1)
         ]

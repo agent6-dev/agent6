@@ -196,9 +196,9 @@ def manifest_header(
     dispatches = lanes.dispatches_of(session_dir)
     if dispatches:
         header["dispatches"] = [dataclasses.asdict(view) for view in dispatches]
-    # A bounded read-only conversation's record is read, never acted on.
+    # A reviewer's record is read, never acted on.
     header["session_actions"] = dict.fromkeys(
-        ("compact", "fork", "merge", "resume", "review"), m.mode != "read_only"
+        ("compact", "fork", "merge", "resume", "review"), m.mode != "reviewer"
     )
     header["git_control"] = m.git_control
     header["base_sha"] = m.base_sha

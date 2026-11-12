@@ -105,7 +105,7 @@ class SessionSummary:
 
     Attributes:
         session_id: The session's id.
-        mode: "run", "plan", "ask", "read_only" or "?".
+        mode: "run", "plan", "ask", "reviewer" or "?".
         task_label: The original task and latest continuation, before display clipping.
         status: The status word (created, starting, running, waiting, stale, passed,
             answered, planned, finished, stopped, undone, failed).
@@ -306,9 +306,9 @@ def is_seat_record(summary: SessionSummary) -> bool:
         summary: The session.
 
     Returns:
-        True for a dispatched session of the `read_only` kind.
+        True for a dispatched session of the `reviewer` kind.
     """
-    return bool(summary.coordinator) and summary.mode == "read_only"
+    return bool(summary.coordinator) and summary.mode == "reviewer"
 
 
 def _lane_order(lane: SessionSummary) -> tuple[int, str]:

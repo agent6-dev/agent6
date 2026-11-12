@@ -131,15 +131,14 @@ def run_panel(
             panel_id, block_on, False, (), (), 0, 0, skipped_reason=ctx.rules.reason
         )
     requests: list[lane_records.LaneTask] = []
-    carried = tools_schema.contract_tools().names
+    carried = tools_schema.mode_tools("reviewer").names
     handed = tuple(name for name in tools if name in carried)
     commands = tools_schema.RunCommandInput.TOOL_NAME in handed
     for i, seat in enumerate(seats):
         contract = kinds.ConversationContract(
             system=review.panel_prompt(seat.focus, max_turns=max_turns, commands=commands),
             opening=review_seat.build_user_message(dataclasses.replace(ctx, focus=seat.focus)),
-            max_calls=max_turns,
-            max_output_tokens=2000,
+            max_turns=max_turns,
             temperature=seat.temperature,
             review_binding=review_records.ReviewBinding(panel_id, i, target),
             allowed_tools=handed,
@@ -166,13 +165,13 @@ def run_panel(
             try:
                 state_dir = layout.layout_of(executor.session_dir).state_dir
                 artifact = completion.read_completion(
-                    layout.bucket_dir(state_dir, kinds.session_bucket("read_only")) / sid
+                    layout.bucket_dir(state_dir, kinds.session_bucket("reviewer")) / sid
                 )
             except completion.CompletionError as exc:
                 error = str(exc)
-        # Only the call ceiling can leave usable evidence after an execution failure.
+        # Only the turn limit can leave usable evidence after an execution failure.
         if joined is not None and joined.status == "failed":
-            ceiling = artifact is not None and artifact.stop_reason == "calls_exhausted"
+            ceiling = artifact is not None and artifact.stop_reason == "max_turns"
             if not ceiling or "deadline" in joined.detail:
                 diagnostic = (
                     "; ".join(artifact.diagnostics)
@@ -189,7 +188,7 @@ def run_panel(
                 session_id=sid,
                 focus=seat.focus,
                 model_route=seat.model,
-                max_calls=request.contract.max_calls,
+                max_turns=request.contract.max_turns,
                 error=error,
             )
         )

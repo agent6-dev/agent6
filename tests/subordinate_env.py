@@ -156,8 +156,7 @@ def run_panel_worker(url: str) -> None:
                 contract=kinds.ConversationContract(
                     system="s",
                     opening="o",
-                    max_calls=2,
-                    max_output_tokens=100,
+                    max_turns=2,
                 ),
             )
         ],

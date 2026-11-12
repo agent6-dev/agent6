@@ -443,7 +443,7 @@ Placement and setup of the worktrees agent6 makes: lane and machine-state clones
 | `settled_stop_after` | `12` | consecutive turns with no edit, commit or memory write and an unchanged tree before a plain run ends after a green verify or an editing step; verify runs and waits on a live background command neutral; streak reset by progress or operator steer; default 12, measured; `harness.settled_stop_after = -1`: stop disabled, nudge at three idle turns retained |
 | `stagnation_notice_after_s` | `300.0` | wall-clock seconds without the run's own edit or verify before one notice (recall spirals: few calls, long reasoning); `harness.stagnation_notice_after_s = 0`: disabled; clock from the first turn after the start gate, excluding operator wait time |
 | `memory_advisory` | `true` | one notice per run at the first red-to-green verify with no repo-memory write, inviting a durable repo fact; cost about two turns on a short fix; `harness.memory_advisory = false`: no notice, memory still readable and writable by the model |
-| `command_checkin_s` | `900.0` | seconds before the model's `run_command` returns as a background job; no timeout or kill, command still running; response: `returncode: null`, `still_running: true`, `background_id`; model options: wait with `read_background`, stop the job or carry on; `harness.command_checkin_s = 0`: hand-back disabled, command killed at 600 s; also killed at 600 s without background tools (such as in `ask`) |
+| `command_checkin_s` | `900.0` | seconds before the model's `run_command` returns as a background job; no timeout or kill, command still running; response: `returncode: null`, `still_running: true`, `background_id`; model options: wait with `read_background`, stop the job or carry on; `harness.command_checkin_s = 0`: hand-back disabled, command killed at 600 s |
 | `standing_patience` | `-1` | consecutive fruitless standing-goal re-entries (no executed tool call) before soft ends are honoured; `harness.standing_patience = -1`: no end from fruitless rounds alone, only budget, turn cap or operator stop; `harness.standing_patience = 0`: end on the first fruitless round; `harness.standing_patience = N`: escalating nudges for N fruitless re-entries, then soft ends honoured; streak reset by a round landing work |
 | `metric` | none | optional score beside the pass/fail gate (benchmark, size or count); run after every committed edit, trend shown to the model; unset: `run_metric_command` still listed, calls refused with `harness.metric` named |
 
@@ -506,7 +506,7 @@ Headless surfaces without a dispatcher answer "not available".
 | `min_remaining_budget_fraction` | `0.25` | remaining-budget fraction below which the panel is skipped and the finish accepted; `review.min_remaining_budget_fraction = 0.25`: no panel in the last quarter |
 | `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `model`, `temperature` and `effort`; every omitted field inherits the resolved `[models.reviewer]`, `model` pinned or not; `model` is a provider/model route; empty roster: one `security` seat unless `review.when = "never"` |
 | `concurrency` | `1` | simultaneous panel seats, at most `harness.parallel.max_lanes`; a longer roster runs in batches, in roster order; `review.concurrency = 1`: one after another |
-| `max_turns` | `20` | model calls a review seat may make, calls that ask for tools included; no verdict within the cap: abstention, reported by the panel |
+| `max_turns` | `20` | turns a review seat may take, turns that ask for tools included; no verdict within the limit: abstention, reported by the panel |
 
 The [TUI](terminal.md#configuration) and [web](web.md#pages) config pages edit the ordered roster with **Add reviewer…** and positional removal.
 Each edit writes the whole list to the global or repo config, including `[]` after the last removal.
@@ -651,7 +651,7 @@ The [`--secret` target](#creating-and-inspecting) writes and removes them; `[tel
 
 agent6 as an MCP client; for the other direction (`agent6 mcp serve`, agent6 as a server) see [Editor integration](acp.md#as-an-mcp-server).
 
-MCP servers, spawned (`command`) or connected (`url`); tools appear as `mcp__<name>__<tool>` in run mode only (plan, ask, machine and read_only sessions never offer them: agent6 cannot classify an external tool as read-only).
+MCP servers, spawned (`command`) or connected (`url`); tools appear as `mcp__<name>__<tool>` in run mode only (plan, ask, machine and reviewer sessions never offer them: agent6 cannot classify an external tool as read-only).
 A spawned server runs as a jailed child by default (its own `[mcp.servers.<name>.sandbox]` policy; `unconfined = true` opts out) with a curated env (never your provider keys; `pass_env` adds named vars); a `url` server is a process you run and confine yourself.
 The model chooses the arguments, so each call is approved like a command (`approve`); audit each server like a `run_command` allow-list.
 

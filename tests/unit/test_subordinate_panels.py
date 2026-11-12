@@ -83,8 +83,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         contract = kinds.ConversationContract(
             system="Review only.",
             opening="Read this tree.",
-            max_calls=2,
-            max_output_tokens=1000,
+            max_turns=2,
         )
         request = lane_records.LaneTask(
             "review",
@@ -107,7 +106,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         panel_tokens = 2 if panel_cost is None else 0
         assert child.usage is not None and child.usage.tokens == panel_tokens
         assert worker.available().tokens == share.tokens - 5 - panel_tokens
-        leaf = layout.bucket_dir(paths.state_dir(repo), "read_only") / child.session_id
+        leaf = layout.bucket_dir(paths.state_dir(repo), "reviewers") / child.session_id
         assert completion.read_completion(leaf) is not None
         assert len(calls) == 1 and "parallel" not in json.dumps(calls[0].get("tools", []))
         emitted = [
@@ -138,7 +137,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
             cfg=cfg,
         )
         assert not clone.exists()
-        retained = layout.bucket_dir(paths.state_dir(repo), "read_only") / child.session_id
+        retained = layout.bucket_dir(paths.state_dir(repo), "reviewers") / child.session_id
         assert completion.read_completion(retained) is not None
         assert receipt.read_receipt(retained, repo).session_id == child.session_id
         assert (
@@ -181,8 +180,7 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
         contract = kinds.ConversationContract(
             system="s",
             opening="o",
-            max_calls=2,
-            max_output_tokens=100,
+            max_turns=2,
         )
         original_emit = executor.emit
 
@@ -324,11 +322,9 @@ def test_review_leaf_and_unproven_subrun_have_no_dispatch_authority(
     clone = short_repo / "worker"
     cfg = subordinate_env.config(tool=True)
     path, launch = subordinate_env.launch_worker(repo, clone, cfg, monkeypatch)
-    contract = kinds.ConversationContract(
-        system="s", opening="o", max_calls=1, max_output_tokens=100
-    )
+    contract = kinds.ConversationContract(system="s", opening="o", max_turns=1)
     lane_launch.write(path.parent, launch.model_copy(update={"contract": contract}))
-    for mode in ("run", "read_only"):
+    for mode in ("run", "reviewer"):
         assert (
             lanes.build_coordinator_spawner(
                 cfg,
@@ -341,7 +337,7 @@ def test_review_leaf_and_unproven_subrun_have_no_dispatch_authority(
             )
             is None
         )
-    disp = dispatch.ToolDispatcher(root=clone, config=cfg, isolation="none", mode="read_only")
+    disp = dispatch.ToolDispatcher(root=clone, config=cfg, isolation="none", mode="reviewer")
     with pytest.raises(tool_errors.ToolError, match="not available"):
         disp.dispatch("parallel", {"task": "recurse"})
     monkeypatch.delenv(lane_launch.ENV)
@@ -370,7 +366,7 @@ def test_import_retains_descendant_records_receipts_and_target_objects(
     subrun.clone_worktree(repo, clone)
     worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
     leaf = subordinate_env.create_record(
-        repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="read_only"
+        repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="reviewer"
     )
     evidence = completion.CompletionRecord(
         text="review evidence",
@@ -409,7 +405,7 @@ def test_import_retains_descendant_records_receipts_and_target_objects(
     )
     imported = parallel_results.import_lane(res, repo, None)
     shutil.rmtree(clone)
-    dest = layout.bucket_dir(paths.state_dir(repo), "read_only") / leaf.name
+    dest = layout.bucket_dir(paths.state_dir(repo), "reviewers") / leaf.name
     assert dest.is_dir() and not dest.is_symlink()
     assert completion.read_completion(dest) == evidence
     assert json.loads((dest / "objects" / "evidence.json").read_text()) == {"evidence": "retained"}
@@ -436,7 +432,7 @@ def test_cleanup_keeps_a_live_descendant_even_when_all_commits_are_reachable(
     subrun.clone_worktree(repo, clone)
     worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
     leaf = subordinate_env.create_record(
-        repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="read_only"
+        repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="reviewer"
     )
     process.write_worker_pid(leaf, os.getpid())
     kept: list[str] = []
@@ -526,7 +522,7 @@ def test_stop_follows_clone_state_and_readonly_bucket_and_leaves_the_worker_unse
     subrun.clone_worktree(repo, clone)
     worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
     leaf = subordinate_env.create_record(
-        repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="read_only"
+        repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="reviewer"
     )
     ancestor = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
     lane_dispatch.write_record(

@@ -289,16 +289,6 @@ class ToolDispatcher:
         """Return whether `[harness.metric]` gives `run_metric_command` anything to run."""
         return self._config.harness.metric is not None
 
-    def surface(self) -> schema.ModeTools:
-        """Return the tools this session may ever be offered.
-
-        Returns:
-            What a contract may carry when a parent handed down a list, else the mode's own.
-        """
-        if self.allowed_tools is not None:
-            return schema.contract_tools()
-        return schema.mode_tools(self._mode)
-
     def tool_is_withheld(self, name: str) -> bool:
         """Return whether the model is denied the tool, extras included."""
         return (
@@ -479,7 +469,7 @@ class ToolDispatcher:
             return self.run_verify()  # records the denied attempt as evidence, then refuses
         if (refusal := self._tool_refusal(name)) is not None:
             raise tool_errors.ToolError(refusal)
-        if name not in self.surface().permitted:
+        if name not in schema.mode_tools(self._mode).permitted:
             # The backstop: a hallucinated name must not mutate the repo from a read-only mode.
             raise tool_errors.ToolError(f"not available in {self._mode} mode")
         return self._run_handler(name, raw_input)
@@ -887,13 +877,11 @@ class ToolDispatcher:
         if args.background:
             return command_tools.start_detached(
                 args.argv,
-                mode=self._mode,
                 get_background=self._background,
                 access=self._jail_access("run_command"),
             )
         return command_tools.run_model_command(
             args.argv,
-            mode=self._mode,
             shells=self._shells,
             checkin=self._config.harness.command_checkin_s,
             interrupted=self._operator_wants_out_now,

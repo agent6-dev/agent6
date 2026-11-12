@@ -60,7 +60,7 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
         gate_source: Where the verify gate in the snapshot came from; "" for none.
         operator_task: The task's words before composition; None when they are the task.
         limits: The turn cap and deadline the lane runs under; None for the config's own.
-        contract: The bounded conversation a `read_only` lane drives; None for a run lane.
+        contract: The bounded conversation a `reviewer` lane drives; None for a run lane.
     """
 
     worktree: pathlib.Path
