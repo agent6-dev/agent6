@@ -509,6 +509,29 @@ def test_separate_job_and_environment_observations_replay(saved: layout.SessionL
     assert "ownership unproved; run stop by hand" in text
 
 
+def test_the_receipt_keeps_the_lease_and_how_long_the_start_took(
+    saved: layout.SessionLayout,
+) -> None:
+    events = event_log.EventSink(saved.logs_path)
+    events.emit(
+        journal.EnvironmentAcquired(
+            execution_id="e",
+            lifecycle_ref="k",
+            role="owner",
+            reason="started by this run; owned",
+            started=True,
+            start_s=61.7,
+        )
+    )
+    view = receipt.read_receipt(saved.session_dir, pathlib.Path.cwd())
+    text = receipt.render(view)
+    assert (
+        "Container acquired as owner (started by this run; owned); execution: e; "
+        "started by this run in 62s"
+    ) in text
+    assert receipt.environment_dict(view)["acquisitions"][0]["lifecycle_ref"] == "k"
+
+
 @pytest.mark.parametrize("resumed", [False, True], indirect=True, ids=["mirrored", "stale-mirror"])
 def test_console_run_and_resume_show_their_own_environment(
     resumed: layout.SessionLayout, capsys: pytest.CaptureFixture[str]

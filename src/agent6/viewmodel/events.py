@@ -451,6 +451,27 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 plan_cap=_cap(raw.get("plan_cap")),
                 account=_account_reading(raw),
             )
+        case "environment.starting":
+            return journal.EnvironmentStarting(
+                execution_id=raw.get("execution_id"),
+                command=_strings(raw.get("command", []) or []),
+            )
+        case "environment.acquired":
+            return journal.EnvironmentAcquired(
+                execution_id=raw.get("execution_id"),
+                lifecycle_ref=_text(raw, "lifecycle_ref"),
+                role=_text(raw, "role"),
+                reason=_text(raw, "reason"),
+                started=bool(raw.get("started", False)),
+                start_s=_cap(raw.get("start_s")),
+            )
+        case "execution.environment":
+            return journal.ExecutionEnvironment(
+                execution_id=raw.get("execution_id"),
+                target_id=raw.get("target_id"),
+                outcome=_text(raw, "outcome"),
+                reason=_text(raw, "reason"),
+            )
         case "approval.prompt":
             return journal.ApprovalPrompt(
                 id=_text(raw, "id"),

@@ -163,6 +163,35 @@ class DiffUpdated(Event):
     patch: str = pydantic.Field(description="The commit's patch, capped at 8000 bytes.")
 
 
+class EnvironmentAcquired(Event):
+    """The run holds its container: as the owner whose start made it appear, or as a borrower."""
+
+    TYPE: ClassVar[str] = "environment.acquired"
+    execution_id: str | None = pydantic.Field(default=None, description="Execution identifier.")
+    lifecycle_ref: str = pydantic.Field(
+        description="The lease key, the one the target's lifecycle_ref names."
+    )
+    role: str = pydantic.Field(description="owner or borrower.")
+    reason: str = pydantic.Field(
+        description="Why the run holds that role, in the operator's words."
+    )
+    started: bool = pydantic.Field(
+        description="Whether this run's start command made the container appear."
+    )
+    start_s: float | None = pydantic.Field(
+        default=None,
+        description="How long the start command took in seconds; null when none ran.",
+    )
+
+
+class EnvironmentStarting(Event):
+    """The run's `[container].start` command is running; a container follows, or the run refuses."""
+
+    TYPE: ClassVar[str] = "environment.starting"
+    execution_id: str | None = pydantic.Field(default=None, description="Execution identifier.")
+    command: Sequence[Any] = pydantic.Field(description="The start command's argv.")
+
+
 class ExecutionEnvironment(Event):
     """An environment lifecycle observation, independent of job settlement."""
 
@@ -1753,6 +1782,8 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "budget.update": BudgetUpdate,
     "command.backgrounded": CommandBackgrounded,
     "diff.updated": DiffUpdated,
+    "environment.acquired": EnvironmentAcquired,
+    "environment.starting": EnvironmentStarting,
     "execution.environment": ExecutionEnvironment,
     "execution.jobs": ExecutionJobs,
     "execution.target": ExecutionTarget,

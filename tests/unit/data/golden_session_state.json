@@ -88,6 +88,7 @@
     "rule_sources": [],
     "rules_complete": null
   },
+  "environment": null,
   "budget": {
     "session": {
       "usd": 0.004841036,

@@ -220,6 +220,30 @@ class BudgetView:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class EnvironmentView:
+    """The run's container as the journal tells it: a start in progress, then the lease held.
+
+    Attributes:
+        execution_id: The execution that started or acquired it; the lease rows precede
+            `session.start`, so the start keeps a view bound to its own execution.
+        starting: The start command running, () when none runs.
+        role: owner or borrower; "" before the run holds the container.
+        reason: Why the run holds that role.
+        started: This run's start command made the container appear.
+        start_s: How long the start took; None when none ran.
+        outcome: The lifecycle's end (left_running, stopped, unknown); "" while the run holds it.
+    """
+
+    execution_id: str | None = None
+    starting: tuple[str, ...] = ()
+    role: str = ""
+    reason: str = ""
+    started: bool = False
+    start_s: float | None = None
+    outcome: str = ""
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class Lifecycle:
     """Where a session stands, as every fold reads it.
 
@@ -243,6 +267,7 @@ class Lifecycle:
         unattended_questions: This execution's questions answered empty because nobody was
             attached.
         pins: The operator's pinned instructions in force, most recent last.
+        environment: The container this execution holds; None outside one.
     """
 
     started: bool = False
@@ -265,6 +290,7 @@ class Lifecycle:
     verify_timeout_s: float = 0.0
     unattended_questions: int = 0
     pins: tuple[str, ...] = ()
+    environment: EnvironmentView | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -445,6 +471,7 @@ class SessionState:
         last_verify: The last verify gate run.
         review: Durable panel evidence and finding history across executions.
         targets: Validated target history and the current execution binding.
+        environment: The container this execution holds, its start and its end; None outside one.
         budget: The spend.
         approvals: Every approval asked this execution, answered or not.
         questions: Every question prompt asked this execution, answered or not.
@@ -491,6 +518,7 @@ class SessionState:
     tool_calls: tuple[ToolCallView, ...] = ()
     last_verify: VerifyView | None = None
     review: review.ReviewView = dataclasses.field(default_factory=review.ReviewView)
+    environment: EnvironmentView | None = None
     targets: evidence.ExecutionTargets = dataclasses.field(
         default_factory=evidence.ExecutionTargets
     )

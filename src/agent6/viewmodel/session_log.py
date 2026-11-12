@@ -13,6 +13,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from agent6 import budget, evidence, kinds, terminal
+from agent6.sessions import journal
 from agent6.viewmodel import events, format, review, session_core, session_status, state_types
 
 
@@ -87,6 +88,8 @@ class LogScan:
         setups: Setup results with their recorded execution and target references.
         jobs: Job-settlement observations, separate from environment lifecycle.
         environments: Environment lifecycle observations, absent in historical journals.
+        acquisitions: The container leases the run's executions held, in observation order.
+        environment: The container the current execution holds; None outside one.
     """
 
     saw_start: bool = False
@@ -146,6 +149,8 @@ class LogScan:
     setups: tuple[evidence.SetupEvidence, ...] = ()
     jobs: tuple[evidence.JobsObservation, ...] = ()
     environments: tuple[evidence.EnvironmentObservation, ...] = ()
+    acquisitions: tuple[evidence.AcquisitionObservation, ...] = ()
+    environment: state_types.EnvironmentView | None = None
 
     def gate_word(self) -> str:
         """Return `verification`, with `timed_out` for a red that is the gate running out its limit.
@@ -288,6 +293,37 @@ def current_target(logs: pathlib.Path) -> evidence.ExecutionTargetEvidence | Non
         elif ev.get("execution_id") != stamp.execution_id:
             break  # an earlier execution's boundary: its stamps are its own
     return stamp
+
+
+def current_environment(logs: pathlib.Path) -> state_types.EnvironmentView | None:
+    """Return the container the current execution holds, from the journal's tail.
+
+    The same answer as `scan_session_log(logs).environment`: the last lease row binds the
+    current execution unless another execution's boundary follows it.
+
+    Args:
+        logs: The journal path.
+
+    Returns:
+        The view, None before the execution acquires or starts a container.
+    """
+    outcome = ""
+    later_executions: set[object] = set()
+    for ev in events_backward(logs):
+        kind = ev.get("type")
+        if kind in ("session.start", "session.resume", "session.stop"):
+            later_executions.add(ev.get("execution_id"))
+            continue
+        if kind not in ("environment.acquired", "environment.starting", "execution.environment"):
+            continue
+        record = events.parse_event(ev)
+        if isinstance(record, journal.ExecutionEnvironment):
+            outcome = outcome or record.outcome
+        elif isinstance(record, journal.EnvironmentAcquired | journal.EnvironmentStarting):
+            if later_executions - {record.execution_id}:
+                return None
+            return session_core.held_environment(record, outcome)
+    return None
 
 
 def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915  # one branch per event type
@@ -459,6 +495,8 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         setups=tuple(observations.setups),
         jobs=tuple(observations.jobs),
         environments=tuple(observations.environments),
+        acquisitions=tuple(observations.acquisitions),
+        environment=life.environment,
         final_verify_id=None if evidence_notes else final_verify_id,
         end_ep=end_ep,
         evidence_notes=tuple(evidence_notes)

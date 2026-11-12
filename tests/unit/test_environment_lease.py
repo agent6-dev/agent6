@@ -8,13 +8,16 @@ import json
 import os
 import pathlib
 import sys
+from unittest import mock
 
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import environment_lease
+from agent6.app import environment_lease, session_runtime
+from agent6.app import reporter as app_reporter
+from agent6.config import Config
 from agent6.sandbox import container
-from agent6.sessions import layout, process
+from agent6.sessions import journal, layout, process
 
 _ID = "a" * 64
 _OTHER = "b" * 64
@@ -165,6 +168,60 @@ def test_an_owned_start_with_no_stop_leaves_the_container_running(
     assert (fake.markers / _ID).exists()
     after = environment_lease.read_lease(state_dir, held.ref)
     assert after is not None and after.owner is not None  # a resume may still stop it
+
+
+def test_the_start_is_announced_before_it_runs_and_timed(
+    fake: Fake, workspace: pathlib.Path, state_dir: pathlib.Path
+) -> None:
+    """`on_start` sees the command while no container exists; the owner keeps the start's length."""
+    seen: list[tuple[tuple[str, ...], bool]] = []
+    options = fake.options(start=_start(fake))
+
+    def on_start(argv: tuple[str, ...]) -> None:
+        seen.append((argv, (fake.markers / _ID).exists()))
+
+    held = environment_lease.acquire(
+        state_dir, workspace, options, session_id="r1", execution_id="e1", on_start=on_start
+    )
+    assert seen == [(options.start, False)]
+    assert held.started and held.start_s is not None and held.start_s >= 0.0
+    borrowed = environment_lease.acquire(
+        state_dir, workspace, options, session_id="r2", execution_id="e1", on_start=on_start
+    )
+    assert len(seen) == 1
+    assert borrowed.role == "borrower" and not borrowed.started and borrowed.start_s is None
+
+
+def test_a_prepared_run_journals_its_start_and_its_lease(
+    fake: Fake, workspace: pathlib.Path, state_dir: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`environment.starting` precedes the start and `environment.acquired` names the lease held."""
+    options = fake.options(start=_start(fake))
+    rows: list[journal.Event] = []
+    notes: list[str] = []
+    for name in ("exposures", "check_checkout", "check_hidden_paths"):
+        monkeypatch.setattr(container, name, mock.Mock(return_value=()))
+    monkeypatch.setattr(container, "prepare", mock.Mock())
+    session_runtime.prepare_container_execution(
+        Config(),
+        workspace,
+        options,
+        state_dir=state_dir,
+        session_id="r1",
+        execution_id="e1",
+        reporter=app_reporter.Reporter(out=notes.append, err=notes.append),
+        emit=rows.append,
+    )
+    starting, acquired = rows
+    assert isinstance(starting, journal.EnvironmentStarting)
+    assert tuple(starting.command) == options.start and starting.execution_id == "e1"
+    assert isinstance(acquired, journal.EnvironmentAcquired)
+    assert acquired.role == "owner" and acquired.started and acquired.start_s is not None
+    assert acquired.lifecycle_ref == environment_lease.lease_key(
+        environment_lease.selector(workspace, options)
+    )
+    assert notes[0].endswith(f"container: starting: {options.start[0]}")
+    assert notes[1].endswith("container: started by this run; owned")
 
 
 def test_the_owner_stops_what_it_started(

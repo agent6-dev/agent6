@@ -119,7 +119,9 @@ class RunHeader(widgets.Static):
         task = markup.escape(
             tui.task_label().line(max_chars=120).replace("\n", "\n" + " " * len(lead))
         )
-        launch = policy.session_policy(tui.session_dir, targets=ds.targets)
+        launch = policy.session_policy(
+            tui.session_dir, targets=ds.targets, environment=ds.environment
+        )
         header = text.Text.from_markup(
             "  ".join(segments) + "\n"
             f"role: {markup.escape(role_line)} · task: {task}"

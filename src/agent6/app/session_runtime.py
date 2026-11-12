@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import pathlib
+import shlex
 import shutil
 from collections.abc import Callable
 
@@ -33,7 +34,7 @@ from agent6.graph import curator as graph_curator
 from agent6.harness import compaction_elision, review_gate
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox import container, detect, jail, jail_session
-from agent6.sessions import event_log
+from agent6.sessions import event_log, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import command_tools, dispatch, mcp_client, operator_prompts, target_policy
 from agent6.tools import policy as tools_policy
@@ -452,6 +453,7 @@ def prepare_container_execution(
     worktree_git_dir: pathlib.Path | None = None,
     controls: tuple[kinds.EffectiveControl, ...] = (),
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
+    emit: Callable[[journal.Event], None] | None = None,
 ) -> command_tools.JailAccess:
     """Acquire the container, check the checkout and the hidden paths, and prepare the transport.
 
@@ -469,6 +471,8 @@ def prepare_container_execution(
         worktree_git_dir: The checkout's repository git dir, when it is a linked worktree.
         controls: Effective controls the caller resolved.
         reporter: Receives the ownership line and what the container exposes.
+        emit: Journals the start command as it begins and the lease the run holds; None
+            journals nothing.
 
     Returns:
         The prepared access, whose lifecycle hook releases the lease at close.
@@ -479,10 +483,33 @@ def prepare_container_execution(
         environment_lease.LeaseError: The lease record is malformed.
         OSError: The host side of the mapping proof failed.
     """
+
+    def on_start(argv: tuple[str, ...]) -> None:
+        # Said before it runs: a start can take a minute, and nothing else shows it.
+        reporter.note(f"container: starting: {shlex.join(argv)}")
+        if emit is not None:
+            emit(journal.EnvironmentStarting(execution_id=execution_id, command=list(argv)))
+
     acquired = environment_lease.acquire(
-        state_dir, root, options, session_id=session_id, execution_id=execution_id
+        state_dir,
+        root,
+        options,
+        session_id=session_id,
+        execution_id=execution_id,
+        on_start=on_start,
     )
     reporter.note(f"container: {acquired.reason}")
+    if emit is not None:
+        emit(
+            journal.EnvironmentAcquired(
+                execution_id=execution_id,
+                lifecycle_ref=acquired.ref,
+                role=acquired.role,
+                reason=acquired.reason,
+                started=acquired.started,
+                start_s=acquired.start_s,
+            )
+        )
     for line in container.exposures(acquired.discovery):
         reporter.warn(f"the container exposes a {line}")
     settle = functools.partial(

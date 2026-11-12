@@ -19,7 +19,8 @@ import hashlib
 import json
 import os
 import pathlib
-from collections.abc import Generator
+import time
+from collections.abc import Callable, Generator
 from typing import Literal
 
 import pydantic
@@ -90,12 +91,16 @@ class Acquisition:
         role: Owner when this run started the environment, else borrower.
         reason: Why the run holds that role, in the operator's words.
         discovery: The selected environment, as discovered after any start.
+        started: This run's start command made the container appear.
+        start_s: How long the start command took; None when none ran.
     """
 
     ref: str
     role: LeaseRole
     reason: str
     discovery: container.ContainerDiscovery
+    started: bool = False
+    start_s: float | None = None
 
 
 def selector(host_root: pathlib.Path, options: container.ContainerOptions) -> tuple[str, ...]:
@@ -186,6 +191,25 @@ def _alive(state_dir: pathlib.Path, session_id: str) -> bool:
     return found is not None and process.worker_is_alive(found.session_dir)
 
 
+def _run_start(
+    options: container.ContainerOptions, on_start: Callable[[tuple[str, ...]], None] | None
+) -> float:
+    """Run the operator's start command, saying so first.
+
+    Args:
+        options: The container options whose `start` runs.
+        on_start: Told the command before it runs; None tells nobody.
+
+    Returns:
+        How long the start took in seconds.
+    """
+    if on_start is not None:
+        on_start(options.start)
+    began = time.monotonic()
+    container.run_lifecycle(options.start, what="container.start")
+    return time.monotonic() - began
+
+
 def _with_borrower(lease: Lease, session_id: str, execution_id: str) -> Lease:
     others = tuple(b for b in lease.borrowers if b.session_id != session_id)
     joined = Borrower(session_id=session_id, execution_id=execution_id, since=_now())
@@ -199,6 +223,7 @@ def acquire(
     *,
     session_id: str,
     execution_id: str,
+    on_start: Callable[[tuple[str, ...]], None] | None = None,
 ) -> Acquisition:
     """Select the environment, starting it when the operator gave a start command and none runs.
 
@@ -213,6 +238,7 @@ def acquire(
         options: The operator's selection, start and stop commands included.
         session_id: The acquiring session.
         execution_id: Its current execution.
+        on_start: Told the start command just before it runs; None tells nobody.
 
     Returns:
         The acquisition, with the discovery to prepare the transport from.
@@ -225,13 +251,14 @@ def acquire(
     """
     before: Literal["absent", "running", "unknown"] = "unknown" if options.exec else "running"
     started = False
+    start_s: float | None = None
     try:
         discovery = container.discover(host_root, options)
     except container.ContainerNotFoundError:
         if not options.start:
             raise
         before = "absent"
-        container.run_lifecycle(options.start, what="container.start")
+        start_s = _run_start(options, on_start)
         started = True
         try:
             discovery = container.discover(host_root, options)
@@ -241,7 +268,7 @@ def acquire(
             ) from exc
     if options.exec and options.start:
         # Presence behind an opaque prefix cannot be observed, so a start proves nothing.
-        container.run_lifecycle(options.start, what="container.start")
+        start_s = _run_start(options, on_start)
     selection = selector(host_root, options)
     key = lease_key(selection)
     found_id = discovery.target.container_id
@@ -268,14 +295,18 @@ def acquire(
                 }
             )
             cell[0] = lease
-            return Acquisition(key, "owner", "started by this run; owned", discovery)
+            return Acquisition(
+                key, "owner", "started by this run; owned", discovery, started=True, start_s=start_s
+            )
         if owner is not None and owner.session_id == session_id:
             if owner.container_id == found_id and found_id is not None:
                 lease = lease.model_copy(
                     update={"owner": owner.model_copy(update={"execution_id": execution_id})}
                 )
                 cell[0] = lease
-                return Acquisition(key, "owner", f"owned since {owner.acquired}", discovery)
+                return Acquisition(
+                    key, "owner", f"owned since {owner.acquired}", discovery, start_s=start_s
+                )
             reason = (
                 "ownership lost: the container was replaced"
                 f" ({owner.container_id or 'unknown'} to {found_id or 'unknown'})"
@@ -297,7 +328,7 @@ def acquire(
         else:
             reason = "attached; already running before this run"
         cell[0] = _with_borrower(lease, session_id, execution_id)
-        return Acquisition(key, "borrower", reason, discovery)
+        return Acquisition(key, "borrower", reason, discovery, start_s=start_s)
 
 
 def release(

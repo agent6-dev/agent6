@@ -98,6 +98,26 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
         },
     ],
     "ungated": [_START, {**_END_PASSED, "verification": "not_applicable"}],
+    "container": [
+        _START,
+        {"ts": "2026-07-14T10:00:10+00:00", "type": "environment.starting", "command": ["up"]},
+        {
+            "ts": "2026-07-14T10:00:40+00:00",
+            "type": "environment.acquired",
+            "lifecycle_ref": "k",
+            "role": "owner",
+            "reason": "started by this run; owned",
+            "started": True,
+            "start_s": 30.0,
+        },
+        {
+            "ts": "2026-07-14T10:01:00+00:00",
+            "type": "execution.environment",
+            "outcome": "stopped",
+            "reason": "owned; stopped",
+        },
+        _END_PASSED,
+    ],
     "resumed": [
         _START,
         {
@@ -197,6 +217,7 @@ def _shared_facts(
         "pins": scan.pins,
         "blocked": scan.operator_blocked,
         "unattended": scan.unattended_questions,
+        "environment": scan.environment,
     }
     viewer: dict[str, Any] = {
         "task": state.task_label.task,
@@ -222,6 +243,7 @@ def _shared_facts(
         "pins": state.pins,
         "blocked": any(not p.answered for p in (*state.approvals, *state.questions)),
         "unattended": state.unattended_questions,
+        "environment": state.environment,
     }
     life, usage = state.core.lifecycle, state.core.budget
     core: dict[str, Any] = {
@@ -248,6 +270,7 @@ def _shared_facts(
         ),
         "pins": life.pins,
         "unattended": life.unattended_questions,
+        "environment": life.environment,
     }
     return listing, viewer, core
 

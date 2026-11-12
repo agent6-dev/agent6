@@ -146,7 +146,29 @@ class EnvironmentObservation:
     reason: str = ""
 
 
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class AcquisitionObservation:
+    """Record the container lease an execution acquired, as the lifecycle said it.
+
+    Attributes:
+        execution_id: The acquiring execution, or None when unrecorded.
+        lifecycle_ref: The lease key, the target's `lifecycle_ref`.
+        role: `owner` when this run's start made the container appear, else `borrower`.
+        reason: Why the run holds that role.
+        started: This run's start command made the container appear.
+        start_s: How long the start took in seconds; None when none ran.
+    """
+
+    execution_id: str | None = None
+    lifecycle_ref: str
+    role: str
+    reason: str = ""
+    started: bool = False
+    start_s: float | None = None
+
+
 TARGET = pydantic.TypeAdapter(ExecutionTargetEvidence)
+ACQUISITION = pydantic.TypeAdapter(AcquisitionObservation)
 SETUP = pydantic.TypeAdapter(SetupEvidence)
 JOBS = pydantic.TypeAdapter(JobsObservation)
 ENVIRONMENT = pydantic.TypeAdapter(EnvironmentObservation)
@@ -211,6 +233,7 @@ class ExecutionObservations:
     setups: list[SetupEvidence] = dataclasses.field(default_factory=list)
     jobs: list[JobsObservation] = dataclasses.field(default_factory=list)
     environments: list[EnvironmentObservation] = dataclasses.field(default_factory=list)
+    acquisitions: list[AcquisitionObservation] = dataclasses.field(default_factory=list)
 
     def observe(self, event: Mapping[str, Any]) -> None:
         """Validate one observation and retain its explicit identities.
@@ -233,6 +256,8 @@ class ExecutionObservations:
                 self.jobs.append(JOBS.validate_python(event))
             case "execution.environment":
                 self.environments.append(ENVIRONMENT.validate_python(event))
+            case "environment.acquired":
+                self.acquisitions.append(ACQUISITION.validate_python(event))
             case _:
                 pass
 

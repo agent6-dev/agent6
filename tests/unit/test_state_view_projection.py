@@ -24,6 +24,7 @@ def test_every_state_field_has_an_explicit_wire_classification() -> None:
         "started",
         "undone_to",
         "review",
+        "environment",
         "compact_gists_live",
         "compact_elided",
         "latest_diff",

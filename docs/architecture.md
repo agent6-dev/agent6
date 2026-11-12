@@ -342,6 +342,8 @@ The key names the selection: the manual exec prefix, or the workspace's discover
 A replacement of a discovered container keeps the key, so the lease sees the swap.
 
 `acquire` discovers the container; when none runs and the operator set a start command, it runs that command (fixed argv, no shell, 120 seconds, bounded output, the curated environment) and discovers again.
+It says the start before running it: a `container: starting:` line and an `environment.starting` row.
+The lease the run holds is journaled as `environment.acquired`, with the role, the reason and how long the start took; the policy row and the receipt show it.
 The run owns the environment only when its own start made one container appear; the lease records what was observed before and after, never an assumed creation.
 A container already running, an opaque exec prefix (whose presence nothing can observe), an ambiguous result and a replacement of an owned container all leave the run a borrower, with the reason recorded.
 A resumed owner keeps ownership of the same container and loses it to a replacement.

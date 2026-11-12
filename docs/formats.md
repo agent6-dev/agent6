@@ -134,6 +134,28 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `sha` | `str` | The commit identifier, possibly abbreviated. |
 | `patch` | `str` | The commit's patch, capped at 8000 bytes. |
 
+### environment.acquired
+
+**Support: public.** The run holds its container: as the owner whose start made it appear, or as a borrower.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str, optional` | Execution identifier. |
+| `lifecycle_ref` | `str` | The lease key, the one the target's lifecycle_ref names. |
+| `role` | `str` | owner or borrower. |
+| `reason` | `str` | Why the run holds that role, in the operator's words. |
+| `started` | `bool` | Whether this run's start command made the container appear. |
+| `start_s` | `float, optional` | How long the start command took in seconds; null when none ran. |
+
+### environment.starting
+
+**Support: public.** The run's `[container].start` command is running; a container follows, or the run refuses.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str, optional` | Execution identifier. |
+| `command` | `list` | The start command's argv. |
+
 ### execution.environment
 
 **Support: public.** An environment lifecycle observation, independent of job settlement.
@@ -1678,6 +1700,7 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `tool_calls` | `tuple[ToolCallView, ...]` | The bounded tool-call history, most recent last. |
 | `last_verify` | `VerifyView \| None` | The last verify gate run. |
 | `review` | `JSON` | The shared review evidence with computed merge facts. |
+| `environment` | `EnvironmentView \| None` | The container this execution holds, its start and its end; None outside one. |
 | `budget` | `BudgetView` | The spend. |
 | `approvals` | `tuple[ApprovalPrompt, ...]` | Every approval asked this execution, answered or not. |
 | `questions` | `tuple[QuestionPrompt, ...]` | Every question prompt asked this execution, answered or not. |
@@ -2625,6 +2648,7 @@ Source: [`agent6.viewmodel.receipt.ReceiptView`](https://github.com/agent6-dev/a
 | `setups` | `tuple[SetupEvidence, ...]` | Every recorded setup result. |
 | `jobs` | `tuple[JobsObservation, ...]` | Job-settlement observations. |
 | `environments` | `tuple[EnvironmentObservation, ...]` | Environment lifecycle observations. |
+| `acquisitions` | `tuple[AcquisitionObservation, ...]` | The container leases the run's executions acquired. |
 
 ### FindingAction
 
@@ -3198,6 +3222,22 @@ Source: [`agent6.viewmodel.review.ReviewView`](https://github.com/agent6-dev/age
 | `comparison` | `ReviewTarget \| None` | The target used to determine freshness, or null. |
 | `event_ids` | `tuple[str, ...]` | The durable event identifiers already folded. |
 
+### EnvironmentView
+
+**Support: public.** The run's container as the journal tells it: a start in progress, then the lease held.
+
+Source: [`agent6.viewmodel.state_types.EnvironmentView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str \| None` | The execution that started or acquired it; the lease rows precede `session.start`, so the start keeps a view bound to its own execution. |
+| `starting` | `tuple[str, ...]` | The start command running, () when none runs. |
+| `role` | `str` | owner or borrower; "" before the run holds the container. |
+| `reason` | `str` | Why the run holds that role. |
+| `started` | `bool` | This run's start command made the container appear. |
+| `start_s` | `float \| None` | How long the start took; None when none ran. |
+| `outcome` | `str` | The lifecycle's end (left_running, stopped, unknown); "" while the run holds it. |
+
 ### ExecutionTargets
 
 **Support: public.** Fold immutable target history and its current execution binding.
@@ -3429,6 +3469,21 @@ Source: [`agent6.evidence.EnvironmentObservation`](https://github.com/agent6-dev
 | `outcome` | `Literal['left_running', 'stopped', 'unknown', 'not_applicable']` | The observed lifecycle state; not_applicable means the host is not managed. |
 | `reason` | `str` | The observation's explanation, not an authorization to stop anything. |
 
+### AcquisitionObservation
+
+**Support: public.** Record the container lease an execution acquired, as the lifecycle said it.
+
+Source: [`agent6.evidence.AcquisitionObservation`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/evidence.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str \| None` | The acquiring execution, or None when unrecorded. |
+| `lifecycle_ref` | `str` | The lease key, the target's `lifecycle_ref`. |
+| `role` | `str` | `owner` when this run's start made the container appear, else `borrower`. |
+| `reason` | `str` | Why the run holds that role. |
+| `started` | `bool` | This run's start command made the container appear. |
+| `start_s` | `float \| None` | How long the start took in seconds; None when none ran. |
+
 ### FindingResolution
 
 **Support: public.** Record the operator's conclusion without inferring verification success.
@@ -3521,6 +3576,7 @@ Source: [`agent6.viewmodel.state_types.Lifecycle`](https://github.com/agent6-dev
 | `verify_timeout_s` | `float` | The limit that verify ran out, 0.0 when it ended on its own. |
 | `unattended_questions` | `int` | This execution's questions answered empty because nobody was attached. |
 | `pins` | `tuple[str, ...]` | The operator's pinned instructions in force, most recent last. |
+| `environment` | `EnvironmentView \| None` | The container this execution holds; None outside one. |
 
 ### PanelView
 

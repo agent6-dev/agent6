@@ -14,7 +14,7 @@ import shlex
 
 from agent6 import evidence, kinds
 from agent6.sessions import layout, manifest
-from agent6.viewmodel import format, session_log
+from agent6.viewmodel import format, session_log, state_types
 
 
 def model_lines(m: manifest.SessionManifest) -> tuple[str, ...]:
@@ -136,13 +136,18 @@ def short_form(isolation: str, network: str, run_commands: str) -> str:
 
 
 def session_policy(
-    session_dir: pathlib.Path, *, targets: evidence.ExecutionTargets | None = None
+    session_dir: pathlib.Path,
+    *,
+    targets: evidence.ExecutionTargets | None = None,
+    environment: state_types.EnvironmentView | None = None,
 ) -> SessionPolicy:
     """Fold a session's manifest and journal into its policy facts.
 
     Args:
         session_dir: The session's state dir.
         targets: A live view's target fold; None reads the journal's tail.
+        environment: A live view's container; None reads the journal's tail when `targets` is
+            None too.
 
     Returns:
         The policy, all-empty when the manifest cannot be read.
@@ -151,16 +156,35 @@ def session_policy(
         m = manifest.read_manifest(session_dir)
     except manifest.ManifestError:
         m = None
-    target = (
-        targets.current
-        if targets is not None
-        else session_log.current_target(session_dir / layout.LOGS_NAME)
-    )
-    return manifest_policy(m, target=target)
+    logs = session_dir / layout.LOGS_NAME
+    target = targets.current if targets is not None else session_log.current_target(logs)
+    if targets is None and environment is None:
+        environment = session_log.current_environment(logs)
+    return manifest_policy(m, target=target, environment=environment)
+
+
+def environment_lines(view: state_types.EnvironmentView | None) -> tuple[str, ...]:
+    """Return the container line the policy row shows, () outside a container."""
+    if view is None:
+        return ()
+    if not view.role:
+        if not view.starting:
+            return ()
+        return (f"Container: starting ({shlex.join(view.starting)})",)
+    line = f"Container: {view.role} ({view.reason})"
+    if view.started and view.start_s is not None:
+        line += f"; started by this run in {view.start_s:.0f}s"
+    ends = {"left_running": "left running", "stopped": "stopped", "unknown": "lifecycle unknown"}
+    if view.outcome in ends:
+        line += f"; {ends[view.outcome]}"
+    return (line,)
 
 
 def manifest_policy(
-    m: manifest.SessionManifest | None, *, target: evidence.ExecutionTargetEvidence | None = None
+    m: manifest.SessionManifest | None,
+    *,
+    target: evidence.ExecutionTargetEvidence | None = None,
+    environment: state_types.EnvironmentView | None = None,
 ) -> SessionPolicy:
     """Return recorded launch policy with the journal's current target, never the mirror's last."""
     if m is None:
@@ -177,6 +201,7 @@ def manifest_policy(
         mode=m.mode,
         models=model_lines(m) if m.models.driver and m.models.driver.effort_source else (),
         environment=(
-            evidence.target_lines(target.target_id, target.target) if target is not None else ()
+            *(evidence.target_lines(target.target_id, target.target) if target is not None else ()),
+            *environment_lines(environment),
         ),
     )

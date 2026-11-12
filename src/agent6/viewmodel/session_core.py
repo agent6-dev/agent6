@@ -21,6 +21,9 @@ from agent6.viewmodel import events, session_status, state_types
 _CORE_TYPES = frozenset(
     {
         "budget.update",
+        "environment.acquired",
+        "environment.starting",
+        "execution.environment",
         "loop.pin.added",
         "loop.pin.restored",
         "question.answer",
@@ -126,6 +129,14 @@ def apply(  # noqa: PLR0911, PLR0912  # one branch per family
             )
         case journal.LoopPinRestored(pins=pins):
             return dataclasses.replace(core, lifecycle=dataclasses.replace(life, pins=tuple(pins)))
+        case journal.EnvironmentStarting() | journal.EnvironmentAcquired():
+            view = held_environment(event)
+            return dataclasses.replace(core, lifecycle=dataclasses.replace(life, environment=view))
+        case journal.ExecutionEnvironment(outcome=outcome):
+            view = dataclasses.replace(
+                life.environment or state_types.EnvironmentView(), outcome=outcome
+            )
+            return dataclasses.replace(core, lifecycle=dataclasses.replace(life, environment=view))
         case journal.BudgetUpdate():
             return dataclasses.replace(core, budget=_usage(core.budget, event, raw))
         case _:
@@ -155,6 +166,40 @@ def _begun(
         last_verify_rc=None,
         verify_timeout_s=0.0,
         unattended_questions=0,
+        # The lease rows precede the start: a view bound to this execution stays.
+        environment=(
+            life.environment
+            if life.environment is not None and life.environment.execution_id == execution_id
+            else None
+        ),
+    )
+
+
+def held_environment(
+    row: journal.EnvironmentStarting | journal.EnvironmentAcquired, outcome: str = ""
+) -> state_types.EnvironmentView:
+    """Return the container view a lease row describes.
+
+    Args:
+        row: The start in progress, or the lease the run holds.
+        outcome: The lifecycle's end when already known.
+
+    Returns:
+        The view both folds show.
+    """
+    if isinstance(row, journal.EnvironmentStarting):
+        return state_types.EnvironmentView(
+            execution_id=row.execution_id,
+            starting=tuple(str(c) for c in row.command),
+            outcome=outcome,
+        )
+    return state_types.EnvironmentView(
+        execution_id=row.execution_id,
+        role=row.role,
+        reason=row.reason,
+        started=row.started,
+        start_s=row.start_s,
+        outcome=outcome,
     )
 
 

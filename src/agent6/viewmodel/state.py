@@ -360,6 +360,7 @@ def _mirror(
         unattended_questions=life.unattended_questions,
         undone_to=life.undone_to,
         pins=life.pins,
+        environment=life.environment,
         budget=core.budget,
     )
 

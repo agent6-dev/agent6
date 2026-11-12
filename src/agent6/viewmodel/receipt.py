@@ -138,6 +138,7 @@ class ReceiptView:
         setups: Every recorded setup result.
         jobs: Job-settlement observations.
         environments: Environment lifecycle observations.
+        acquisitions: The container leases the run's executions acquired.
     """
 
     session_id: str
@@ -154,6 +155,7 @@ class ReceiptView:
     setups: tuple[evidence.SetupEvidence, ...] = ()
     jobs: tuple[evidence.JobsObservation, ...] = ()
     environments: tuple[evidence.EnvironmentObservation, ...] = ()
+    acquisitions: tuple[evidence.AcquisitionObservation, ...] = ()
 
 
 def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
@@ -198,6 +200,7 @@ def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
         fold.setups,
         fold.jobs,
         fold.environments,
+        fold.acquisitions,
     )
 
 
@@ -301,6 +304,9 @@ def environment_dict(view: ReceiptView | session_log.LogScan) -> dict[str, Any]:
         "environments": [
             evidence.ENVIRONMENT.dump_python(v, mode="json") for v in view.environments
         ],
+        "acquisitions": [
+            evidence.ACQUISITION.dump_python(v, mode="json") for v in view.acquisitions
+        ],
         "text": environment_summary(view),
     }
 
@@ -320,6 +326,14 @@ def environment_summary(view: ReceiptView | session_log.LogScan) -> str:
         lines.append(f"Execution: {stamp.execution_id or 'unknown'}")
     if not view.targets:
         lines.append("Environment: unknown")
+    for held in view.acquisitions:
+        line = (
+            f"Container acquired as {held.role} ({held.reason}); "
+            f"execution: {held.execution_id or 'unknown'}"
+        )
+        if held.started and held.start_s is not None:
+            line += f"; started by this run in {held.start_s:.0f}s"
+        lines.append(line)
     for setup in view.setups:
         lines.append(
             f"Setup: {shlex.join(setup.cmd)}; "

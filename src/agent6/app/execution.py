@@ -356,6 +356,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 worktree_git_dir=inputs.worktree_git_dir,
                 controls=target_policy.container_controls(cfg),
                 reporter=reporter,
+                emit=events.emit,
             )
         else:
             access = session_runtime.prepare_local_execution(
