@@ -96,6 +96,8 @@ def lane_note(j: lane_records.LaneJoin) -> str:
         return f"{j.session_id} made no changes{stopped}"
     if j.status == "conflict":
         return f"{j.session_id} conflicted; merge manually"
+    if j.status == "outranked":
+        return f"{j.session_id} ranked {j.detail}; not joined"
     return f"{j.session_id} failed: {j.detail}"
 
 
@@ -125,6 +127,11 @@ def summary_text(group: str, lanes: list[lane_records.LaneJoin]) -> str:
                 f"  - {j.session_id} ({j.branch}): CONFLICT -- branch imported but the merge"
                 f" conflicted. It exists locally for the operator (`git merge {j.branch}`);"
                 " continue without it."
+            )
+        elif j.status == "outranked":
+            lines.append(
+                f"  - {j.session_id} ({j.branch}): ranked {j.detail}; not joined, the branch"
+                " holds its work."
             )
         else:
             lines.append(f"  - {j.session_id} ({j.branch}): FAILED -- {j.detail}; nothing joined.")

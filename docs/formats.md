@@ -2593,7 +2593,8 @@ Source: [`agent6.sessions.lane_dispatch.DispatchRecord`](https://github.com/agen
 | `version` | `int` | The record's shape; a newer one refuses the read. |
 | `identity` | `str` | The dispatch's id, the group id `<coordinator>-p<n>`. |
 | `source` | `Literal['operator', 'model', 'panel']` | Who asked. |
-| `join_policy` | `Literal['merge', 'record_only']` | Ordered work merge or harness-owned record-only import. |
+| `join_policy` | `Literal['merge', 'record_only', 'rank']` | Ordered work merge, harness-owned record-only import, or the best-ranked lane alone. |
+| `ranking` | `RankRecord \| None` | A rank join's order; None before it ranked and under the other policies. |
 | `owner` | `str` | The execution that made it. |
 | `turn` | `int` | The turn it was dispatched after. |
 | `base` | `str` | The chain tip the lanes were cut from. |
@@ -3125,6 +3126,18 @@ Source: [`agent6.review_records.ReviewBinding`](https://github.com/agent6-dev/ag
 | `panel_id` | `str` | The parent-assigned panel identity. |
 | `seat_index` | `int` | The zero-based roster position. |
 | `target` | `ReviewTarget` | The exact retained comparison. |
+
+### RankRecord
+
+**Support: public.** The order a rank join landed by, written before the first join so no resume ranks twice.
+
+Source: [`agent6.sessions.lane_dispatch.RankRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lane_dispatch.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `order` | `tuple[str, ...]` | The ranked lanes' session ids, best first; empty when no lane had a result. |
+| `ranked_by` | `Literal['judge', 'mechanical']` | `judge` or `mechanical`. |
+| `rationale` | `str` | The judges' words; "" for the mechanical order. |
 
 ### SegmentRecord
 
@@ -3713,7 +3726,7 @@ Source: [`agent6.sessions.lane_dispatch.JoinRecord`](https://github.com/agent6-d
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `branch` | `str` | The lane's branch. |
-| `status` | `Literal['joined', 'no_changes', 'conflict', 'failed']` | The join's outcome. |
+| `status` | `Literal['joined', 'no_changes', 'conflict', 'failed', 'outranked']` | The join's outcome. |
 | `sha` | `str` | The merge commit, "" when none. |
 | `detail` | `str` | The failure's reason, or what stopped a lane whose work still joined; "" when neither. |
 | `target_before` | `str` | The chain tip before the join. |

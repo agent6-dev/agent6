@@ -544,5 +544,5 @@ def test_a_fresh_dispatch_records_every_boundary(tmp_path: pathlib.Path) -> None
     assert budget.estimate_usd()[0] == pytest.approx(1.0)
     assert budget.available().usd == pytest.approx(9.0)
     stored = json.loads(lane_dispatch.record_path(session_dir, "run-abc-p1").read_text())
-    assert stored["version"] == 4
+    assert stored["version"] == 5
     assert stored["join_policy"] == "merge"

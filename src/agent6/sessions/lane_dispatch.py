@@ -17,7 +17,7 @@ import pydantic
 
 from agent6 import lane_records, portable
 
-RECORD_VERSION = 4
+RECORD_VERSION = 5
 DIR_NAME = "dispatch"
 DispatchState = Literal["prepared", "running", "settling", "joining", "complete"]
 
@@ -77,6 +77,20 @@ class UsageRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     tokens: int = 0
 
 
+class RankRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
+    """The order a rank join landed by, written before the first join so no resume ranks twice.
+
+    Attributes:
+        order: The ranked lanes' session ids, best first; empty when no lane had a result.
+        ranked_by: `judge` or `mechanical`.
+        rationale: The judges' words; "" for the mechanical order.
+    """
+
+    order: tuple[str, ...]
+    ranked_by: Literal["judge", "mechanical"] = "mechanical"
+    rationale: str = ""
+
+
 class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     """One lane of the dispatch.
 
@@ -113,7 +127,9 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         version: The record's shape; a newer one refuses the read.
         identity: The dispatch's id, the group id `<coordinator>-p<n>`.
         source: Who asked.
-        join_policy: Ordered work merge or harness-owned record-only import.
+        join_policy: Ordered work merge, harness-owned record-only import, or the
+            best-ranked lane alone.
+        ranking: A rank join's order; None before it ranked and under the other policies.
         owner: The execution that made it.
         turn: The turn it was dispatched after.
         base: The chain tip the lanes were cut from.
@@ -128,7 +144,8 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     version: int = RECORD_VERSION
     identity: str
     source: lane_records.DispatchSource
-    join_policy: Literal["merge", "record_only"] = "merge"
+    join_policy: lane_records.JoinPolicy = "merge"
+    ranking: RankRecord | None = None
     owner: str
     turn: int
     base: str

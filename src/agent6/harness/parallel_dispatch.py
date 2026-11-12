@@ -4,7 +4,8 @@
 
 `ParallelDispatcher` owns the policy: when to cut lanes, the DAG stamps, the events, the
 injected group spawner. `parallel_join` projects lane results into ordered merges, DAG
-stamps and summaries; record-only panel batches share the executor without merging.
+stamps and summaries; record-only panel batches share the executor without merging, and a
+rank join lands the one lane its injected ranker puts first.
 """
 
 from __future__ import annotations
@@ -72,6 +73,7 @@ class ParallelDispatcher:
         budget: The run's meter; None without one.
         session_dir: Where the dispatch records live; None for a harness without a run dir.
         lane_recoverer: Finds an interrupted dispatch's lanes on resume; None when none can.
+        ranker: Orders a rank join's lanes; None where no dispatch joins by rank.
         authority: Work and harness-panel permissions from the application.
         clock: The wall clock.
     """
@@ -89,6 +91,7 @@ class ParallelDispatcher:
     budget: agent6_budget.BudgetTracker | None = None
     session_dir: pathlib.Path | None = None
     lane_recoverer: lane_records.LaneRecoverer | None = None
+    ranker: lane_records.LaneRanker | None = None
     authority: lane_records.DispatchAuthority = dataclasses.field(
         default_factory=lane_records.DispatchAuthority
     )
@@ -103,16 +106,18 @@ class ParallelDispatcher:
         *,
         source: lane_records.DispatchSource = "operator",
         limits: lane_records.LaneLimits | None = None,
+        join: lane_records.JoinPolicy = "merge",
     ) -> lane_records.DispatchResult:
         """Dispatch a sibling group at the steer boundary and return what it did.
 
         Reserves the parent's allowance for the lanes, writes the dispatch record before any
         launch, clones the coordinator's committed HEAD into one lane per expanded lane, runs
         them through the spawner, settles their usage and joins each branch back in dispatch
-        order, advancing the record at each boundary. Runs synchronously: no provider call
-        happens while the group is in flight. Never ends the run: an unavailable spawner, a
-        bad spec, a dirty tree, an unwritable record, a spawner fault, a failed lane or a
-        join conflict each come back as the result for the caller to deliver.
+        order (under `rank`, the best-ranked lane alone), advancing the record at each
+        boundary. Runs synchronously: no provider call happens while the group is in flight.
+        Never ends the run: an unavailable spawner, a bad spec, a dirty tree, an unwritable
+        record, a spawner fault, a failed lane or a join conflict each come back as the
+        result for the caller to deliver.
 
         Args:
             conversation: The run's conversation, snapshotted before the group blocks.
@@ -121,6 +126,7 @@ class ParallelDispatcher:
             segments: The directive's segments, one DAG node each.
             source: Who asked: the operator's steer, the model's tool call or a panel.
             limits: The turn cap and deadline every lane runs under; None for the config's.
+            join: How the lanes land: each merged in order, or the best-ranked one alone.
 
         Returns:
             The result; `dispatched` False names a refusal before any clone.
@@ -129,6 +135,8 @@ class ParallelDispatcher:
             return self.refusal(
                 "work dispatch is unavailable in a subordinate run; nothing dispatched."
             )
+        if join == "rank" and self.ranker is None:
+            return self.refusal("this execution has no ranker for a rank join; nothing dispatched.")
         if self.lane_spawner is None:
             return self.refusal(
                 "parallel dispatch is not available in this front-end; continuing normally."
@@ -178,6 +186,7 @@ class ParallelDispatcher:
         record = lane_dispatch.DispatchRecord(
             identity=identity,
             source=source,
+            join_policy=join,
             owner=self.execution_id,
             turn=turn,
             base=self.chain.tip() or "",
@@ -411,7 +420,7 @@ class ParallelDispatcher:
         failures = [
             p
             for p, j in zip(payload, joins, strict=True)
-            if j.status not in ("joined", "no_changes")
+            if j.status not in ("joined", "no_changes", "outranked")
         ]
         if failures:
             self.emit(journal.ParallelFailed(group=record.identity, lanes=failures))
@@ -472,6 +481,8 @@ class ParallelDispatcher:
     ) -> lane_dispatch.DispatchRecord:
         """Join each lane not yet joined, in lane order, recording each join as it lands.
 
+        A rank join ranks first, once, and joins the lane ranked first alone.
+
         Args:
             record: The dispatch's record.
             by_id: The lanes' results by session id.
@@ -481,6 +492,9 @@ class ParallelDispatcher:
         """
         record = record.advanced("joining")
         self.write(record)
+        if record.join_policy == "rank" and record.ranking is None:
+            record = self.ranked(record, by_id)
+        order = record.ranking.order if record.ranking is not None else ()
         for child in record.children:
             if child.join is not None:
                 continue
@@ -494,6 +508,10 @@ class ParallelDispatcher:
                     "",
                     (res.error or res.stopped_by) if res is not None else "no imported record",
                 )
+            elif child.session_id in order[1:] and res is not None:
+                # Its branch stays imported: the operator can still merge it by hand.
+                place = f"{order.index(child.session_id) + 1} of {len(order)}"
+                join = lane_records.LaneJoin(child.session_id, res.branch, "outranked", "", place)
             else:
                 join = self.join_child(child, res)
             record = record.with_child(
@@ -512,6 +530,45 @@ class ParallelDispatcher:
                 )
             )
             self.write(record)
+        return record
+
+    def ranked(
+        self,
+        record: lane_dispatch.DispatchRecord,
+        by_id: dict[str, lane_records.LaneResult],
+    ) -> lane_dispatch.DispatchRecord:
+        """Rank a rank join's lanes and write the order before any join.
+
+        Args:
+            record: The dispatch's record.
+            by_id: The lanes' results by session id.
+
+        Returns:
+            The record with its ranking: the lanes that ended with a result, best first.
+        """
+        assert self.ranker is not None
+        rankable = [
+            res
+            for child in record.children
+            if (res := by_id.get(child.session_id)) is not None and res.ok
+        ]
+        ranking = (
+            self.ranker(rankable, base=record.base) if rankable else lane_records.Ranking(order=())
+        )
+        ids = [res.spec.session_id for res in rankable]
+        # Every rankable lane has a place, whatever the ranker returned.
+        order = [rid for rid in dict.fromkeys(ranking.order) if rid in ids]
+        order += [rid for rid in ids if rid not in order]
+        record = record.model_copy(
+            update={
+                "ranking": lane_dispatch.RankRecord(
+                    order=tuple(order), ranked_by=ranking.ranked_by, rationale=ranking.rationale
+                )
+            }
+        )
+        # The judges' spend is on the meter now.
+        self.emit_budget(record.turn)
+        self.write(record)
         return record
 
     def join_child(

@@ -18,8 +18,11 @@ from agent6 import budget, kinds
 
 # Who asked for a dispatch: the operator's steer, the model's tool call, or a review panel.
 DispatchSource = Literal["operator", "model", "panel"]
+# How a dispatch lands its lanes: each merged in order, none (a panel's records), or the
+# best-ranked one alone.
+JoinPolicy = Literal["merge", "record_only", "rank"]
 # How one lane's work joined the coordinator's chain.
-JoinStatus = Literal["joined", "no_changes", "conflict", "failed"]
+JoinStatus = Literal["joined", "no_changes", "conflict", "failed", "outranked"]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -187,6 +190,29 @@ class GroupLaneSpawner(Protocol):
         ...
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class Ranking:
+    """The order a rank join lands by.
+
+    Attributes:
+        order: The ranked lanes' session ids, best first.
+        ranked_by: `judge` when a judge's ranking ordered them, else `mechanical`.
+        rationale: The judges' words; "" for the mechanical order.
+    """
+
+    order: tuple[str, ...]
+    ranked_by: Literal["judge", "mechanical"] = "mechanical"
+    rationale: str = ""
+
+
+class LaneRanker(Protocol):
+    """Rank a dispatch's finished lanes, best first."""
+
+    def __call__(self, results: Sequence[LaneResult], *, base: str) -> Ranking:
+        """Return the order of the lanes that ended with a result, cut from the commit `base`."""
+        ...
+
+
 class LaneRecoverer(Protocol):
     """Find an interrupted group's lanes, stop what still runs and import what finished."""
 
@@ -204,10 +230,11 @@ class LaneJoin:
         branch: The lane's branch.
         status: `joined` (merged, `sha` set), `no_changes` (ended with a result and no commit
             beyond its base; nothing to merge), `conflict` (imported, the merge conflicted,
-            the ref exists locally) or `failed` (no result or nothing importable).
+            the ref exists locally), `failed` (no result or nothing importable) or
+            `outranked` (a rank join landed another lane; the branch holds this one's work).
         sha: The merge commit, or "".
-        detail: The failure's reason; for a lane that joined or had nothing to join, what
-            stopped it when its coordinator did; else "".
+        detail: The failure's reason; an outranked lane's place (`2 of 3`); for a lane that
+            joined or had nothing to join, what stopped it when its coordinator did; else "".
         report: What the lane said at its end, its finish summary; "" when it gave none.
     """
 
