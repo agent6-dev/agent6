@@ -134,6 +134,26 @@ function descriptionNode(points) {
   return frag;
 }
 
+// Mount an Add dialog: its Add and Cancel row, then the overlay. Escape, Cancel and a click on
+// the backdrop close it and hand the focus back to what opened it.
+function mountAddDialog(back, box, opener) {
+  const row = el('div', 'form-row');
+  const add = el('button', 'primary', 'Add'), cancel = el('button', null, 'Cancel');
+  row.appendChild(add); row.appendChild(cancel); box.appendChild(row);
+  back.appendChild(box); document.body.appendChild(back);
+  const close = () => {
+    if (!back.isConnected) return;
+    activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey);
+    if (opener && opener.isConnected) opener.focus({preventScroll: true});
+  };
+  activeOverlayClose = close;
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  document.addEventListener('keydown', onKey);
+  cancel.onclick = close;
+  back.onclick = (e) => { if (e.target === back) close(); };
+  return { add, close };
+}
+
 // A blank field writes nothing, preserving an existing entry's value.
 function addEntry(table, refresh) {
   const back = el('div', 'overlay');
@@ -179,20 +199,7 @@ function addEntry(table, refresh) {
   const repoCb = el('input'); repoCb.type = 'checkbox';
   repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
   box.appendChild(repoRow);
-  const row = el('div', 'form-row');
-  const add = el('button', 'primary', 'Add'), cancel = el('button', null, 'Cancel');
-  row.appendChild(add); row.appendChild(cancel); box.appendChild(row);
-  back.appendChild(box); document.body.appendChild(back);
-  const close = () => {
-    if (!back.isConnected) return;
-    activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey);
-    if (opener && opener.isConnected) opener.focus({preventScroll: true});
-  };
-  activeOverlayClose = close;
-  function onKey(e) { if (e.key === 'Escape') close(); }
-  document.addEventListener('keydown', onKey);
-  cancel.onclick = close;
-  back.onclick = (e) => { if (e.target === back) close(); };
+  const { add, close } = mountAddDialog(back, box, opener);
   name.focus();
   add.onclick = async () => {
     add.disabled = true;
@@ -222,20 +229,7 @@ function addPreset(onAdded) {
   const repoCb = el('input'); repoCb.type = 'checkbox';
   repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'create in this repo\'s config (not the global config)'));
   box.appendChild(repoRow);
-  const row = el('div', 'form-row');
-  const add = el('button', 'primary', 'Add'), cancel = el('button', null, 'Cancel');
-  row.appendChild(add); row.appendChild(cancel); box.appendChild(row);
-  back.appendChild(box); document.body.appendChild(back);
-  const close = () => {
-    if (!back.isConnected) return;
-    activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey);
-    if (opener && opener.isConnected) opener.focus({preventScroll: true});
-  };
-  activeOverlayClose = close;
-  function onKey(e) { if (e.key === 'Escape') close(); }
-  document.addEventListener('keydown', onKey);
-  cancel.onclick = close;
-  back.onclick = (e) => { if (e.target === back) close(); };
+  const { add, close } = mountAddDialog(back, box, opener);
   const submit = async () => {
     add.disabled = true;
     try {
@@ -273,19 +267,7 @@ async function addReviewer(refresh) {
   const repo = el('input'); repo.type = 'checkbox'; repo.id = 'reviewer-repo';
   repoRow.appendChild(repo); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
   box.appendChild(repoRow);
-  const row = el('div', 'form-row'), add = el('button', 'primary', 'Add'), cancel = el('button', null, 'Cancel');
-  row.appendChild(add); row.appendChild(cancel); box.appendChild(row);
-  back.appendChild(box); document.body.appendChild(back);
-  const close = () => {
-    if (!back.isConnected) return;
-    activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey);
-    if (opener && opener.isConnected) opener.focus({preventScroll: true});
-  };
-  activeOverlayClose = close;
-  function onKey(e) { if (e.key === 'Escape') close(); }
-  document.addEventListener('keydown', onKey);
-  cancel.onclick = close;
-  back.onclick = e => { if (e.target === back) close(); };
+  const { add, close } = mountAddDialog(back, box, opener);
   fields.focus.focus();
   add.onclick = async () => {
     add.disabled = true;
