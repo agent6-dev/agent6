@@ -210,9 +210,10 @@ def test_a_conflicting_landing_is_resolved_by_a_resume_that_merges_the_branch_in
     assert cli_main(["resume", "land-MERGEIN", "--merge", "main"]) == 0
     seen = prov.seen
     out = capfd.readouterr().err
-    assert "merged main into the run's work" in out and "conflict markers left in a.py" in out
+    assert "merged main into the run's work" in out and "conflicts left in a.py" in out
     first = seen[0]
-    assert "main was merged into this run's work" in first and "markers in: a.py" in first
+    assert "main was merged into this run's work" in first and "left in: a.py" in first
+    assert "CONFLICT (content): Merge conflict in a.py" in first
     chain = git_read.chain_ref_for("land-MERGEIN")
     log = _git(repo, "rev-list", "--parents", chain).splitlines()
     merge_commit = next(line for line in log if len(line.split()) == 3)

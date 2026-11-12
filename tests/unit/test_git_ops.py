@@ -1652,9 +1652,74 @@ def test_chain_merge_with_markers_commits_the_conflict_for_the_run_to_resolve(
     assert parents[1:] == [s1, lane]
     text = (tmp_path / "b.txt").read_text(encoding="utf-8")
     assert "<<<<<<<" in text and "ours" in text and "theirs" in text and ">>>>>>>" in text
+    assert len(merged.notes) == 1 and merged.notes[0].startswith("CONFLICT (add/add)")
+    assert "b.txt" in merged.notes[0]
     # The chain now holds the lane: merging it again is nothing new.
     again = git_ops.chain_merge_with_markers(tmp_path, lane, "again", ref="refs/agent6/t6")
     assert not again.merged and again.sha == merged.sha and again.conflicts == ()
+
+
+def test_a_chain_merge_moves_no_ref_when_the_worktree_cannot_follow(
+    tmp_path: pathlib.Path,
+) -> None:
+    """An uncommitted edit in a file the merge changes refuses the merge and leaves both refs."""
+    _init_repo(tmp_path)
+    head0 = _rev(tmp_path, "HEAD")
+    (tmp_path / "b.txt").write_text("ours\n", encoding="utf-8")
+    s1 = git_ops.chain_commit(
+        tmp_path, "agent6 turn 1", ref="refs/agent6/t7", fallback_parent=head0, also_branch="run"
+    )
+    assert s1 is not None
+    lane = _lane_commit(tmp_path, head0, "README.md", "hi\nlane\n")
+    (tmp_path / "README.md").write_text("hi\nuncommitted\n", encoding="utf-8")
+    with pytest.raises(errors.GitError):
+        git_ops.chain_merge_with_markers(
+            tmp_path, lane, "merge lane", ref="refs/agent6/t7", also_branch="run"
+        )
+    assert _rev(tmp_path, "refs/agent6/t7") == s1 and _rev(tmp_path, "run") == s1
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "hi\nuncommitted\n"
+    with pytest.raises(errors.GitError):
+        git_ops.chain_merge(tmp_path, lane, "merge lane", ref="refs/agent6/t7", also_branch="run")
+    assert _rev(tmp_path, "refs/agent6/t7") == s1
+
+
+def test_a_modify_delete_conflict_is_kept_with_its_note(tmp_path: pathlib.Path) -> None:
+    """Git keeps one side of a modify/delete; the merge says so instead of promising markers."""
+    _init_repo(tmp_path)
+    head0 = _rev(tmp_path, "HEAD")
+    (tmp_path / "README.md").write_text("hi\nours\n", encoding="utf-8")
+    s1 = git_ops.chain_commit(
+        tmp_path, "agent6 turn 1", ref="refs/agent6/t8", fallback_parent=head0
+    )
+    assert s1 is not None
+    env = dict(os.environ, GIT_INDEX_FILE=str(tmp_path / ".git" / "del-index"))
+    subprocess.run(["git", "-C", str(tmp_path), "read-tree", head0], env=env, check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "update-index", "--force-remove", "README.md"],
+        env=env,
+        check=True,
+    )
+    tree = subprocess.run(
+        ["git", "-C", str(tmp_path), "write-tree"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    deleted = subprocess.run(
+        ["git", "-C", str(tmp_path), "commit-tree", tree, "-p", head0, "-m", "delete"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    merged = git_ops.chain_merge_with_markers(tmp_path, deleted, "merge", ref="refs/agent6/t8")
+    assert merged.conflicts == ("README.md",)
+    assert len(merged.notes) == 1 and merged.notes[0].startswith("CONFLICT (modify/delete)")
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "hi\nours\n"
+    assert (
+        git_ops.chain_merge(tmp_path, deleted, "merge", ref="refs/agent6/t9", fallback_parent=s1)
+        is None
+    )
 
 
 def test_chain_commit_keeps_tracked_but_ignored_files(tmp_path: pathlib.Path) -> None:

@@ -193,9 +193,12 @@ def merged_in_notice(merged: git_ops.ChainMerge) -> str:
     if not merged.conflicts:
         return f"{head} No conflicts. Check the merged result against the task before finishing."
     shown = ", ".join(terminal.printable_name(p) for p in merged.conflicts)
+    notes = "".join(f"\n  {terminal.printable_name(n)}" for n in merged.notes)
     return (
-        f"{head} Conflicts were left as markers in: {shown}. Resolve each one keeping both"
-        " intents, remove every marker, and keep the verify command green before finishing."
+        f"{head} Conflicts were left in: {shown}. A text conflict carries both sides between"
+        f" markers; a binary or a modify/delete keeps one side, the other at {merged.branch}."
+        f" Git's notes:{notes}\nResolve each one keeping both intents, remove every marker, and"
+        " keep the verify command green before finishing."
     )
 
 

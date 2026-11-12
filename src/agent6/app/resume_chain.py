@@ -171,8 +171,8 @@ def merged_in_line(merged: git_ops.ChainMerge) -> str:
         return f"merged {merged.branch} into the run's work ({merged.sha[:12]}); no conflicts"
     shown = ", ".join(terminal.printable_name(p) for p in merged.conflicts)
     return (
-        f"merged {merged.branch} into the run's work ({merged.sha[:12]}); conflict markers"
-        f" left in {shown} for the run to resolve"
+        f"merged {merged.branch} into the run's work ({merged.sha[:12]}); conflicts left in"
+        f" {shown} for the run to resolve"
     )
 
 

@@ -497,13 +497,16 @@ class ChainMerge:
         sha: The chain's tip after the merge: the merge commit, or the unchanged tip when the
             chain already held the rev.
         merged: Whether a merge commit was made.
-        conflicts: The paths whose files carry conflict markers for the run to resolve.
+        conflicts: The paths git could not merge; a text conflict carries both sides between
+            markers, a binary or a modify/delete keeps one side.
+        notes: Git's `CONFLICT (...)` lines, one per conflict, naming its kind.
     """
 
     branch: str
     sha: str
     merged: bool
     conflicts: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
 
 
 def chain_merge(
@@ -562,8 +565,9 @@ def chain_merge_with_markers(
     """Merge a rev into the chain, committing a conflict's markers for the run to resolve.
 
     The merge commit's tree is what `git merge` would leave in a worktree: the clean merge
-    where it merges, both sides between markers where it does not. The worktree follows it,
-    so the resumed run's first task is the markers.
+    where it merges, both sides between markers where it does not (one side for a binary or
+    a modify/delete, named in the notes). The worktree follows it, so the resumed run's first
+    task is the conflicts.
 
     Args:
         path: The repository.
@@ -579,7 +583,7 @@ def chain_merge_with_markers(
 
     Raises:
         GitError: The ref does not exist and no fallback parent was given, or the worktree
-            differs from the chain tip.
+            holds an edit in a file the merge changes (nothing moves then).
     """
     merged = _chain_merge(
         path,
@@ -632,17 +636,17 @@ def _chain_merge(
     ).stdout.strip()
     if git_read.is_ancestor(path, theirs, ours):
         return ChainMerge(merge_rev, ours, merged=False)
-    conflicts: tuple[str, ...] = ()
+    merged = MergedTree("", False)
     if git_read.is_ancestor(path, ours, theirs):
         sha = theirs
     else:
-        tree, conflicts = _merge_tree(path, ours, theirs, merge_base=None, keep_conflicts=True)
-        if conflicts and not keep_conflicts:
+        merged = _merge_tree(path, ours, theirs, merge_base=None)
+        if merged.conflicted and not keep_conflicts:
             return None
         sha = git_command.run(
             path,
             "commit-tree",
-            tree,
+            merged.tree,
             "-p",
             ours,
             "-p",
@@ -651,10 +655,12 @@ def _chain_merge(
             _full_message(message, None, identity),
             env_extra=_identity_env(identity),
         ).stdout.strip()
-    git_command.run(path, "update-ref", ref, sha)
+    # The worktree first: a file it cannot move (an edit the run never committed) refuses
+    # here and leaves the refs where they were; the new commit dangles until they move.
     sync_worktree(path, ours, sha)
+    git_command.run(path, "update-ref", ref, sha)
     _advance_run_branch(path, also_branch, sha, expected=ours)
-    return ChainMerge(merge_rev, sha, merged=True, conflicts=conflicts)
+    return ChainMerge(merge_rev, sha, merged=True, conflicts=merged.paths, notes=merged.notes)
 
 
 def chain_continue_from(
@@ -782,14 +788,25 @@ def fetch_branch(path: pathlib.Path, remote_path: pathlib.Path, refspec: str) ->
     git_command.run(path, "fetch", str(remote_path), refspec)
 
 
-def _merge_tree(
-    path: pathlib.Path,
-    ours: str,
-    theirs: str,
-    merge_base: str | None,
-    *,
-    keep_conflicts: bool = False,
-) -> tuple[str, tuple[str, ...]]:
+@dataclasses.dataclass(frozen=True, slots=True)
+class MergedTree:
+    """What `git merge-tree` wrote for two commits.
+
+    Attributes:
+        tree: The merged tree's oid; a conflicted tree holds both sides between markers
+            where git could, one side where it could not (a binary, a modify/delete).
+        conflicted: Git's own verdict, whatever the path list says.
+        paths: The conflicted paths git listed.
+        notes: Git's `CONFLICT (...)` lines, one per conflict, naming its kind.
+    """
+
+    tree: str
+    conflicted: bool
+    paths: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
+
+
+def _merge_tree(path: pathlib.Path, ours: str, theirs: str, merge_base: str | None) -> MergedTree:
     """Merge two commits into a tree without touching the worktree.
 
     Args:
@@ -797,12 +814,9 @@ def _merge_tree(
         ours: The first parent.
         theirs: The commit merged in.
         merge_base: The base to use instead of the one git would find.
-        keep_conflicts: Return the conflicted tree's oid (markers in its blobs) with the
-            paths, in place of "".
 
     Returns:
-        The merged tree's oid and no paths, or the conflicted paths with "" (or the
-        conflicted tree's oid when kept).
+        The tree, and the conflict's paths and notes when git reported one.
 
     Raises:
         GitError: The merge failed outright; on an unsupported git, the error says so.
@@ -811,18 +825,20 @@ def _merge_tree(
     args = ("merge-tree", "--write-tree", "--name-only", *base, ours, theirs)
     res = git_command.run(path, *args, check=False)
     lines = res.stdout.splitlines()
-    if res.returncode == 1:
+    if res.returncode == 1 and lines:
         # The tree oid, the conflicted paths, a blank line, then git's messages.
         paths: list[str] = []
-        for line in lines[1:]:
+        rest = iter(lines[1:])
+        for line in rest:
             if not line.strip():
                 break
             paths.append(line)
-        return (lines[0].strip() if keep_conflicts else ""), tuple(paths)
+        notes = tuple(line.strip() for line in rest if line.startswith("CONFLICT"))
+        return MergedTree(lines[0].strip(), True, tuple(paths), notes)
     if res.returncode != 0 or not lines:
         error = git_command.failure(args, res.returncode, res.stdout, res.stderr)
         raise error
-    return lines[0].strip(), ()
+    return MergedTree(lines[0].strip(), False)
 
 
 def plumb_merge(
@@ -921,9 +937,10 @@ def merge_commit(
     if git_read.is_ancestor(path, ours, theirs):
         tree = git_read.tree_sha(path, theirs)
     else:
-        tree, conflicts = _merge_tree(path, ours, theirs, merge_base)
-        if conflicts:
-            return MergeResult("", True, conflicts)
+        merged = _merge_tree(path, ours, theirs, merge_base)
+        if merged.conflicted:
+            return MergeResult("", True, merged.paths)
+        tree = merged.tree
     if tree == git_read.tree_sha(path, ours):
         return MergeResult(ours, False, ())  # content-identical: nothing to land
     text = message
