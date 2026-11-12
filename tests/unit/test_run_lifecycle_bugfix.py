@@ -52,7 +52,7 @@ base_url = "http://127.0.0.1:1"
 api_key_env = "PROBE_KEY"
 
 [review]
-trigger = "off"
+when = "never"
 """
 
 
@@ -256,7 +256,7 @@ def test_a_parked_resume_with_no_provider_key_refuses_cleanly(
         '[sandbox]\nisolation = "none"\nrun_commands = "deny"\n'
         '[models.default]\nmodel = "anth/claude-sonnet-4-5"\n'
         '[providers.anth]\nbackend = "anthropic"\napi_key_env = "ANTH_KEY_UNSET"\n'
-        '[review]\ntrigger = "off"\n',
+        '[review]\nwhen = "never"\n',
         encoding="utf-8",
     )
     sd = paths.state_dir(repo) / "sessions" / "runs" / "pin-PARK02"
@@ -375,7 +375,7 @@ def test_a_plan_budget_stop_uses_one_label_and_prints_its_reason_once(
         '[sandbox]\nisolation = "none"\nrun_commands = "deny"\n'
         '[models.default]\nmodel = "chatgpt/gpt-6-astra"\n'
         '[providers.chatgpt]\nbackend = "chatgpt"\n'
-        '[review]\ntrigger = "off"\n'
+        '[review]\nwhen = "never"\n'
         "[harness]\nverify_infer = false\n",
         encoding="utf-8",
     )

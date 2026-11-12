@@ -1797,7 +1797,7 @@ def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: pathlib.Path) 
     """
     gdir = paths.global_config_dir()
     (gdir / "config.toml").write_text(
-        'preset = "fast"\n' + _GLOBAL + '\n[presets.fast.review]\ntrigger = "off"\n',
+        'preset = "fast"\n' + _GLOBAL + '\n[presets.fast.review]\nwhen = "never"\n',
         encoding="utf-8",
     )
 
@@ -1810,7 +1810,7 @@ def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: pathlib.Path) 
             setting = next(
                 s
                 for s in config_view.build_config_view(layer.load_effective(repo, ())).settings
-                if s.key == "review.trigger"
+                if s.key == "review.when"
             )
             assert setting.source == "preset" and setting.modified
             screen._current_setting = lambda: setting  # type: ignore[method-assign]
@@ -1829,7 +1829,7 @@ def test_reset_on_a_flag_sourced_setting_names_the_flag_layer(
 ) -> None:
     """A leaf a `--config FILE` layer set is not a preset leaf: Reset names the layer."""
     overlay = tmp_path / "overlay.toml"
-    overlay.write_text('[review]\ntrigger = "off"\n', encoding="utf-8")
+    overlay.write_text('[review]\nwhen = "never"\n', encoding="utf-8")
 
     async def scenario() -> None:
         app = _Host(repo, (overlay,))
@@ -1842,7 +1842,7 @@ def test_reset_on_a_flag_sourced_setting_names_the_flag_layer(
                 for s in config_view.build_config_view(
                     layer.load_effective(repo, (overlay,))
                 ).settings
-                if s.key == "review.trigger"
+                if s.key == "review.when"
             )
             assert setting.source == f"flag ({overlay})" and setting.modified
             screen._current_setting = lambda: setting  # type: ignore[method-assign]

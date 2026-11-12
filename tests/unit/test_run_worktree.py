@@ -75,7 +75,7 @@ base_url = "http://127.0.0.1:1"
 api_key_env = "PROBE_KEY"
 
 [review]
-trigger = "off"
+when = "never"
 """
 
 

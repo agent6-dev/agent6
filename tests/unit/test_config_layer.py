@@ -571,14 +571,14 @@ def test_repeated_flag_layers_land_in_order(repo: pathlib.Path, tmp_path: pathli
 
 
 def test_overlay_is_highest_layer(repo: pathlib.Path) -> None:
-    overlay = {"sandbox": {"run_commands": "deny"}, "review": {"trigger": "periodic"}}
+    overlay = {"sandbox": {"run_commands": "deny"}, "review": {"when": "periodic"}}
     eff = layer.load_effective_with_overlay(repo, overlay)
     # Overlay beats the repo value.
     assert eff.config.sandbox.run_commands == "deny"
     assert eff.sources["sandbox.run_commands"] == "machine"
     # Overlay sets a brand-new value.
-    assert eff.config.review.trigger == "periodic"
-    assert eff.sources["review.trigger"] == "machine"
+    assert eff.config.review.when == "periodic"
+    assert eff.sources["review.when"] == "machine"
     # Lower layers still read through where the overlay is silent.
     assert eff.config.harness.verify_command == ("pytest", "-q")
 
@@ -642,14 +642,12 @@ def test_fix_finds_a_stale_value_masked_by_the_selected_preset(
     repo: pathlib.Path,
 ) -> None:
     global_path = repo.parent / "g" / "agent6" / "config.toml"
-    global_path.write_text(
-        'preset = "no_review"\n\n[review]\ntrigger = "banana"\n', encoding="utf-8"
-    )
+    global_path.write_text('preset = "no_review"\n\n[review]\nwhen = "banana"\n', encoding="utf-8")
 
     diagnosis = layer.find_invalid_entries(repo)
 
     assert [(entry.leaf, entry.layer, entry.path) for entry in diagnosis.removable] == [
-        ("review.trigger", "global", global_path)
+        ("review.when", "global", global_path)
     ]
 
 

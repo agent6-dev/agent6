@@ -64,7 +64,7 @@ extra_headers = { "HTTP-Referer" = "https://github.com/agent6-dev/agent6", "X-Ti
 REVIEW_LINES=""
 if [ -n "${AGENT6_SB_REVIEWERS:-}" ]; then
   REVIEW_LINES="[review]
-trigger = \"before_finish\"
+when = \"finish\"
 block_on = \"${AGENT6_SB_REVIEW_BLOCK_ON:-model_quorum}\"
 min_blocking_models = ${AGENT6_SB_REVIEW_MIN_BLOCKING_MODELS:-2}
 scope = \"diff\"

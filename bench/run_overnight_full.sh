@@ -35,7 +35,7 @@ for model in "${MODELS[@]}"; do
   (
     AGENT6_REALWORLD_MODEL="$model" \
     AGENT6_REALWORLD_OPENROUTER=1 \
-    AGENT6_REALWORLD_CRITIC=off \
+    AGENT6_REALWORLD_CRITIC=never \
     AGENT6_FORCE_STREAM=1 \
     BENCH_ROOT="$rwdir" \
       bash "$REPO/bench/realworld/run_realworld.sh" \

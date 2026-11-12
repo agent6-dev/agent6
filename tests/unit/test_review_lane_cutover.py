@@ -260,9 +260,7 @@ def test_worker_child_schedules_its_panel_without_certifying_parent(
     directory = subordinate_env.create_record(repo, "parent")
     with review_traces.server("worker", "diff") as (url, calls):
         cfg = subordinate_env.config(url)
-        cfg = cfg.model_copy(
-            update={"review": cfg.review.model_copy(update={"trigger": "before_finish"})}
-        )
+        cfg = cfg.model_copy(update={"review": cfg.review.model_copy(update={"when": "finish"})})
         executor = subordinate_env.dispatcher(
             repo,
             directory,
@@ -362,7 +360,7 @@ isolation = "none"
 protect_git = "off"
 run_commands = "deny"
 [review]
-trigger = "on_verify_fail"
+when = "verify_fail"
 [prompt]
 decompose = "off"
 [harness]

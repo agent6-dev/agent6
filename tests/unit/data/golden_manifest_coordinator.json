@@ -1,5 +1,5 @@
 {
-  "version": 11,
+  "version": 12,
   "agent6_version": "",
   "session_id": "fan",
   "mode": "run",
@@ -19,7 +19,7 @@
     "driver_from_flag": false
   },
   "harness": {
-    "review_trigger": "",
+    "review_when": "",
     "preset": "none",
     "gate": {
       "command": [],

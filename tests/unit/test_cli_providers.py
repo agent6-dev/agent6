@@ -125,9 +125,7 @@ def test_role_builders_stamp_seats_and_review_resolution_stays_pure() -> None:
             default=RoleModel(provider="o", model="m"),
             reviewer=RoleModel(provider="o", model="m"),
         ),
-        review=ReviewConfig(
-            trigger="on_verify_fail", reviewers=(ReviewerConfig(focus="security"),)
-        ),
+        review=ReviewConfig(when="verify_fail", reviewers=(ReviewerConfig(focus="security"),)),
     )
 
     sink = mock.MagicMock()

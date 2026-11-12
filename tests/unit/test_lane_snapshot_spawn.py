@@ -51,7 +51,7 @@ def test_detached_lane_loads_snapshot_and_records_notes(
             "models": {"default": {"model": "p/base", "effort": "high", "temperature": 0.7}},
             "sandbox": {"isolation": "none", "protect_git": "off", "run_commands": "deny"},
             "harness": {"verify_when": "never", "max_turns": 3},
-            "review": {"trigger": "off"},
+            "review": {"when": "never"},
         }
     )
     cfg = cfg.model_copy(

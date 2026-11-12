@@ -33,7 +33,7 @@ backend = "openai"
 base_url = "http://127.0.0.1:1"
 api_key_env = "PROBE_KEY"
 [review]
-trigger = "off"
+when = "never"
 """
 
 
@@ -165,9 +165,7 @@ def test_the_panel_sits_on_the_reviewed_branch_and_records_its_findings(
 
     config_path = repo.parent / "config" / "agent6" / "config.toml"
     config_path.write_text(
-        config_path.read_text(encoding="utf-8").replace(
-            'trigger = "off"', 'trigger = "before_finish"'
-        ),
+        config_path.read_text(encoding="utf-8").replace('when = "never"', 'when = "finish"'),
         encoding="utf-8",
     )
 

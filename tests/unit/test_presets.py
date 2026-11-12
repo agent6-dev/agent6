@@ -33,7 +33,7 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pat
 def test_preset_via_preset_field_expands_review_knobs(repo: pathlib.Path) -> None:
     _write_repo_config(repo, 'preset = "review"\n')
     cfg = layer.load_effective(repo).config
-    assert cfg.review.trigger == "before_finish"
+    assert cfg.review.when == "finish"
     assert [entry.focus for entry in cfg.review.reviewers] == ["security", "correctness", "tests"]
     assert cfg.review.block_on == "any"
     assert cfg.review.concurrency == 3  # seats run in parallel, not in series
@@ -60,11 +60,10 @@ def test_repo_selected_preset_beats_same_layer_setting(repo: pathlib.Path) -> No
 def test_custom_user_preset(repo: pathlib.Path) -> None:
     _write_repo_config(
         repo,
-        'preset = "myteam"\n\n[presets.myteam.review]\n'
-        'trigger = "before_finish"\nconcurrency = 2\n',
+        'preset = "myteam"\n\n[presets.myteam.review]\nwhen = "finish"\nconcurrency = 2\n',
     )
     cfg = layer.load_effective(repo).config
-    assert cfg.review.concurrency == 2 and cfg.review.trigger == "before_finish"
+    assert cfg.review.concurrency == 2 and cfg.review.when == "finish"
 
 
 def test_only_a_flag_selected_preset_is_replayed_on_resume(repo: pathlib.Path) -> None:
@@ -94,11 +93,10 @@ def test_user_preset_replaces_the_builtin(repo: pathlib.Path) -> None:
     """A user preset replaces a same-named built-in instead of merging with it."""
     _write_repo_config(
         repo,
-        'preset = "review"\n\n[presets.review]\nreview = { trigger = "before_finish",'
-        " concurrency = 4 }\n",
+        'preset = "review"\n\n[presets.review]\nreview = { when = "finish", concurrency = 4 }\n',
     )
     cfg = layer.load_effective(repo).config
-    assert cfg.review.trigger == "before_finish"
+    assert cfg.review.when == "finish"
     assert cfg.review.concurrency == 4
     assert cfg.review.block_on == "none"
 
@@ -124,7 +122,7 @@ def test_no_preset_is_plain_defaults(repo: pathlib.Path) -> None:
     _write_repo_config(repo, "[review]\n")
     cfg = layer.load_effective(repo).config
     assert cfg.preset == "none"
-    assert cfg.review.trigger == "off" and cfg.review.concurrency == 1
+    assert cfg.review.when == "never" and cfg.review.concurrency == 1
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +155,7 @@ def test_repo_none_stops_the_global_preset(repo: pathlib.Path, global_config: pa
     effective = layer.load_effective(repo)
     assert effective.config.preset == "none"
     assert effective.sources["preset"] == "repo"
-    assert effective.config.review.trigger == "off"
+    assert effective.config.review.when == "never"
     assert effective.config.review.concurrency == 2
     assert all(source.name != "preset" for source in effective.layers)
 
@@ -168,7 +166,7 @@ def test_flag_none_stops_the_repo_preset(repo: pathlib.Path) -> None:
     effective = layer.load_effective(repo, preset="none")
     assert effective.config.preset == "none"
     assert effective.sources["preset"] == "flag"
-    assert effective.config.review.trigger == "off"
+    assert effective.config.review.when == "never"
 
 
 @pytest.mark.parametrize("selected", [False, True])
@@ -232,7 +230,7 @@ def test_no_stacking_only_most_specific_preset_applies(
     # Different presets at global (sets field X) and repo (sets field Y): only
     # the REPO preset applies; X falls back to its DEFAULT (no stacking).
     global_config.write_text(
-        'preset = "g"\n\n[presets.g.review]\ntrigger = "before_finish"\n',
+        'preset = "g"\n\n[presets.g.review]\nwhen = "finish"\n',
         encoding="utf-8",
     )
     _write_repo_config(
@@ -241,7 +239,7 @@ def test_no_stacking_only_most_specific_preset_applies(
     )
     cfg = layer.load_effective(repo).config
     assert cfg.review.concurrency == 5  # the repo preset applies
-    assert cfg.review.trigger == "off"  # the global preset does NOT stack (default)
+    assert cfg.review.when == "never"  # the global preset does NOT stack (default)
 
 
 def test_no_preset_anywhere_is_plain_config(
@@ -250,7 +248,7 @@ def test_no_preset_anywhere_is_plain_config(
     # Regression: with no preset selected anywhere, the result is identical to
     # plain config (the global/repo layers merge normally, preset is a no-op).
     global_config.write_text("[review]\nconcurrency = 4\n", encoding="utf-8")
-    _write_repo_config(repo, '[review]\ntrigger = "before_finish"\n')
+    _write_repo_config(repo, '[review]\nwhen = "finish"\n')
     cfg = layer.load_effective(repo).config
     assert cfg.review.concurrency == 4  # from global config
-    assert cfg.review.trigger == "before_finish"  # from repo config
+    assert cfg.review.when == "finish"  # from repo config

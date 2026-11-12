@@ -163,7 +163,7 @@ def test_selected_finding_shows_its_own_panels_rules(
             panel_id="later",
             execution_id="execution",
             turn=2,
-            trigger="before_finish",
+            trigger="finish",
             target=start["target"],
             seats=[],
             rule_sources=[],

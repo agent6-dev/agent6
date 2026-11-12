@@ -116,7 +116,7 @@ class HarnessStamp(pydantic.BaseModel):
     """The in-loop strategy the run started with, so `resume` re-applies it.
 
     Attributes:
-        review_trigger: `[review].trigger` at launch.
+        review_when: `[review].when` at launch.
         preset: The preset in force at launch.
         gate: The pinned gate, its source and this execution's availability.
         preset_from_flag: The preset came from `--preset` rather than a config file.
@@ -124,7 +124,7 @@ class HarnessStamp(pydantic.BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    review_trigger: str = ""
+    review_when: str = ""
     preset: str = "none"
     gate: GateStamp = GateStamp(availability="pending")
     preset_from_flag: bool = False
@@ -297,7 +297,7 @@ class ComparisonStamp(pydantic.BaseModel):
 
 
 # Every stamp-rewrite re-stamps it, so the on-disk claim matches the shape on disk.
-MANIFEST_VERSION = 11
+MANIFEST_VERSION = 12
 MANIFEST_NAME = "manifest.json"
 
 

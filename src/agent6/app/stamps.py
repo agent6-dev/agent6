@@ -79,7 +79,7 @@ def _models_brief(
 
     reviewer = cfg.models.resolve("reviewer")
     seats: dict[str, manifest.ModelBrief] = {}
-    if cfg.review.trigger != "off":
+    if cfg.review.when != "never":
         roster = cfg.review.reviewers or (ReviewerConfig(focus="security"),)
         for index, entry in enumerate(roster, 1):
             source = (
@@ -195,7 +195,7 @@ def write_session_manifest(
         git_control=cfg.git.control,
         models=_models_brief(cfg, mode, driver_from_flag, config_sources or {}),
         harness=manifest.HarnessStamp(
-            review_trigger=cfg.review.trigger,
+            review_when=cfg.review.when,
             preset=effective_preset,
             preset_from_flag=preset_from_flag,
             gate=gate,

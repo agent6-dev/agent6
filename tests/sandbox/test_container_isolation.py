@@ -27,7 +27,7 @@ def test_a_prepared_container_run_settles_its_lease_through_the_dispatcher(
         {
             "sandbox": {"isolation": "container", "run_commands": "allow"},
             "container": {"exec": list(target.discovery.exec)},
-            "review": {"trigger": "off"},
+            "review": {"when": "never"},
         }
     )
     state_dir = paths.state_dir(root)

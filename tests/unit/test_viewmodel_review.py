@@ -35,7 +35,7 @@ def _panel(
             panel_id=panel_id,
             execution_id="exec",
             turn=1,
-            trigger="before_finish",
+            trigger="finish",
             target=_target(),
             findings=[review_records.FindingObservation("f1", panel_id, finding, (0, 1))]
             if findings
@@ -60,7 +60,7 @@ def _reused(panel_id: str = "p2", reused: str = "p1") -> dict[str, Any]:
         "panel_id": panel_id,
         "execution_id": "exec",
         "turn": 2,
-        "trigger": "before_finish",
+        "trigger": "finish",
         "reused_panel_id": reused,
         "target": dataclasses.asdict(_target()),
         "findings": 1,

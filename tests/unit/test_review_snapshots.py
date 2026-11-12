@@ -129,7 +129,7 @@ def test_a_panel_over_unchanged_trees_is_reused_not_sat_again(tmp_path: pathlib.
     assert "leak" not in again.text  # a finding reaches the worker once
     assert len([row for row in rows if row["type"] == "loop.review.start"]) == 1
     # An end on the same trees: a fresh panel's repeat would neither reject nor inject.
-    ended = reviewer.critique(state, trigger="before_finish", turn=3)
+    ended = reviewer.critique(state, trigger="finish", turn=3)
     assert ended is not None and ended.satisfied and provider.call.call_count == 1
     assert len([row for row in rows if row["type"] == "loop.review.reused"]) == 2
     # A changed tree sits a new panel.
@@ -246,7 +246,7 @@ def test_session_panel_retains_cloneable_bytes_without_checkpointing(
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.last_ok = False
     state.verify.last_tail = "test failed on reviewed bytes"
-    assert reviewer.critique(state, trigger="verify_failed", turn=1) is not None
+    assert reviewer.critique(state, trigger="verify_fail", turn=1) is not None
     panel = state.review_panels[0]
     target = panel.target
     assert target.snapshot_commit

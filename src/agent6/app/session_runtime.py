@@ -263,7 +263,7 @@ def build_session_providers(
         conversations=conversations,
     )
     # The panel is the in-loop review: a trigger with no seats builds one seat on the reviewer.
-    review_seats = role_providers.resolve_review_seats(cfg) if cfg.review.trigger != "off" else []
+    review_seats = role_providers.resolve_review_seats(cfg) if cfg.review.when != "never" else []
     return SessionProviders(
         budget=budget,
         rm_role=rm_role,

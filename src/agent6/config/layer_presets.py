@@ -23,11 +23,11 @@ BUILTIN_PRESET_NOTES: dict[str, str] = {
 
 BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
     "no_review": {
-        "review": {"trigger": "off"},
+        "review": {"when": "never"},
     },
     "review": {
         "review": {
-            "trigger": "before_finish",
+            "when": "finish",
             # The seats share one model, so a model quorum above one is unreachable.
             "block_on": "any",
             "reviewers": [{"focus": "security"}, {"focus": "correctness"}, {"focus": "tests"}],
@@ -36,7 +36,7 @@ BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
     },
     "deep_review": {
         "review": {
-            "trigger": "before_finish",
+            "when": "finish",
             "block_on": "any",
             "scope": "repo",
             "reviewers": [

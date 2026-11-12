@@ -59,7 +59,7 @@ def _config(base_url: str) -> Config:
             "models": {"default": {"model": "p/base"}},
             "sandbox": {"isolation": "none", "protect_git": "off", "run_commands": "ask"},
             "harness": {"verify_when": "never", "max_turns": 3},
-            "review": {"trigger": "off"},
+            "review": {"when": "never"},
         }
     )
 

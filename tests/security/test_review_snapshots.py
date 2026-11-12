@@ -117,7 +117,7 @@ def test_in_loop_subdirectory_panel_uses_repository_relative_evidence(
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
 
-    result = reviewer.critique(state, trigger="before_finish", turn=1)
+    result = reviewer.critique(state, trigger="finish", turn=1)
 
     assert result is not None and not result.satisfied
     rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
@@ -295,7 +295,7 @@ def test_panel_classifies_immutable_bytes_before_its_single_record(
         emit=sink.emit,
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
-    result = reviewer.critique(state, trigger="before_finish", turn=1)
+    result = reviewer.critique(state, trigger="finish", turn=1)
     assert result is not None and not result.satisfied
     panels = [row for row in rows if row["type"] == "loop.review.panel"]
     assert len(panels) == 1

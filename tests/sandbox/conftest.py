@@ -133,7 +133,7 @@ def assert_execution_receipt(session: jail_session.JailSession) -> str:
                 "max_turns": 3,
             },
             "prompt": {"decompose": "off"},
-            "review": {"trigger": "off"},
+            "review": {"when": "never"},
         }
     )
     saved = layout.SessionLayout(paths.state_dir(target.host_root), "container-receipt")

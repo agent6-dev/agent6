@@ -326,7 +326,7 @@ Define your own with a `[presets.<name>]` table (a partial config); a built-in's
 preset = "myteam"
 
 [presets.myteam.review]
-trigger = "before_finish"
+when = "finish"
 block_on = "any"
 reviewers = [
   { focus = "security", model = "anthropic/claude-opus-4-8" },
@@ -366,7 +366,7 @@ Different focuses or effort levels on one route still count as one blocking mode
 
 ```toml
 [review]
-trigger = "before_finish"
+when = "finish"
 scope = "diff"
 repo_max_turns = 20
 interval_turns = 10

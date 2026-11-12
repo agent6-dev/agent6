@@ -596,7 +596,7 @@ verify_command = ["uv", "run", "pytest", "-q"]
 max_usd = 50.0
 
 [states.review.config.review]       # this state only
-trigger = "on_verify_fail"
+when = "verify_fail"
 ```
 
 Unset keys read straight through to the lower layers, so a machine only states what it wants to change.

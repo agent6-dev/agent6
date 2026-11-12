@@ -52,7 +52,7 @@ def reviewed_session(cwd: pathlib.Path) -> layout.SessionLayout:
         panel_id="panel",
         execution_id="execution",
         turn=1,
-        trigger="before_finish",
+        trigger="finish",
         target=target,
         findings=findings,
         injected_finding_ids=("f1", "f2"),
@@ -147,7 +147,7 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
             panel_id="panel",
             execution_id="execution",
             turn=1,
-            trigger="before_finish",
+            trigger="finish",
             target=dataclasses.asdict(target),
             seats=[],
             rules_complete=True,
@@ -166,7 +166,7 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
             panel_id="panel",
             execution_id="execution",
             turn=1,
-            trigger="before_finish",
+            trigger="finish",
             target=dataclasses.asdict(target),
             findings=pydantic.TypeAdapter(
                 tuple[review_records.FindingObservation, ...]

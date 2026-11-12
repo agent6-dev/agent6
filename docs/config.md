@@ -411,9 +411,9 @@ The TUI and web config pages edit the selected preset in place: with `preset` se
 
 | Preset | For | Sets |
 |---|---|---|
-| `no_review` | turns off the review panel | `review.trigger = "off"` |
-| `review` | three review seats that can block the finish | `review.trigger = "before_finish"`, `review.block_on = "any"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }]`, `review.concurrency = 3` |
-| `deep_review` | five repo-scope review seats that can block the finish | `review.trigger = "before_finish"`, `review.block_on = "any"`, `review.scope = "repo"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }, { focus = "edge-cases" }, { focus = "over-engineering" }]`, `review.concurrency = 5` |
+| `no_review` | turns off the review panel | `review.when = "never"` |
+| `review` | three review seats that can block the finish | `review.when = "finish"`, `review.block_on = "any"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }]`, `review.concurrency = 3` |
+| `deep_review` | five repo-scope review seats that can block the finish | `review.when = "finish"`, `review.block_on = "any"`, `review.scope = "repo"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }, { focus = "edge-cases" }, { focus = "over-engineering" }]`, `review.concurrency = 5` |
 
 Define your own with a `[presets.<name>]` table (a partial config); a built-in's name replaces that built-in wholesale:
 
@@ -421,7 +421,7 @@ Define your own with a `[presets.<name>]` table (a partial config); a built-in's
 preset = "myteam"
 
 [presets.myteam.review]
-trigger = "before_finish"
+when = "finish"
 block_on = "any"
 reviewers = [
   { focus = "security", model = "anthropic/claude-opus-4-8" },
@@ -466,13 +466,13 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 
 | Field | Default | Meaning |
 |---|---|---|
-| `trigger` | `"off"` | In-loop panel over the diff so far, with findings sent to the model; only finish-time review can gate finish; periodic review uses `review.interval_turns`; without `review.reviewers`, one seat uses `[models.reviewer]`; each seat runs as a read-only lane with its own session.<ul><li><code>off</code>: Do not run in-loop review</li><li><code>on_verify_fail</code>: Review after each failed verification</li><li><code>before_finish</code>: Review when model requests finish</li><li><code>periodic</code>: Review every configured interval of turns</li></ul> |
-| `interval_turns` | `10` | Turns between panels when `trigger = "periodic"`. |
-| `block_on` | `"none"` | Effect of panel blocking verdicts; quorum uses `review.min_blocking_models` distinct provider/model routes; abstentions do not block; gating applies only to finish-time review; other triggers are advisory.<ul><li><code>none</code>: Treat blocking verdicts as guidance</li><li><code>any</code>: One blocking seat rejects finish</li><li><code>model_quorum</code>: Require configured number of distinct blocking model routes</li><li><code>all</code>: Require every seat to block</li></ul> |
+| `when` | `"never"` | In-loop panel over the diff so far, with findings sent to the model; only finish-time review can gate finish; periodic review uses `review.interval_turns`; without `review.reviewers`, one seat uses `[models.reviewer]`; each seat runs as a read-only lane with its own session.<ul><li><code>never</code>: Do not run in-loop review</li><li><code>verify_fail</code>: Review after each failed verification</li><li><code>finish</code>: Review when model requests finish</li><li><code>periodic</code>: Review every configured interval of turns</li></ul> |
+| `interval_turns` | `10` | Turns between panels when `when = "periodic"`. |
+| `block_on` | `"none"` | Effect of panel blocking verdicts; quorum uses `review.min_blocking_models` distinct provider/model routes; abstentions do not block; gating applies only to finish-time review; panels at other moments are advisory.<ul><li><code>none</code>: Treat blocking verdicts as guidance</li><li><code>any</code>: One blocking seat rejects finish</li><li><code>model_quorum</code>: Require configured number of distinct blocking model routes</li><li><code>all</code>: Require every seat to block</li></ul> |
 | `min_blocking_models` | `2` | distinct provider/model routes required to block with `review.block_on = "model_quorum"`; two seats on one route counted once, even with different focus or effort |
 | `max_review_rejections` | `4` | ends rejectable by a gating panel per run (`finish_session`, silent finish, settled or plateau stop); count preserved across resumes, never reset; at the cap: panels and findings retained, every end accepted, no indefinite panel stall |
 | `min_remaining_budget_fraction` | `0.25` | remaining-budget fraction below which the panel is skipped and the finish accepted; `review.min_remaining_budget_fraction = 0.25`: no panel in the last quarter |
-| `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `model`, `temperature` and `effort`; every omitted field inherits the resolved `[models.reviewer]`, `model` pinned or not; `model` is a provider/model route; empty roster: one `security` seat when `review.trigger` is on |
+| `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `model`, `temperature` and `effort`; every omitted field inherits the resolved `[models.reviewer]`, `model` pinned or not; `model` is a provider/model route; empty roster: one `security` seat unless `review.when = "never"` |
 | `concurrency` | `1` | simultaneous panel seats, at most `parallel.max_lanes`; a longer roster runs in batches, in roster order; `review.concurrency = 1`: one after another |
 | `scope` | `"diff"` | How much a review seat reads; a diff seat makes one call without tools; a repo seat reads the reviewed snapshot with read-only tools over several calls, never the working tree as it changes later.<ul><li><code>diff</code>: One review call over diff, task and verification</li><li><code>repo</code>: Read-only tool review of surrounding repository</li></ul> |
 | `repo_max_turns` | `20` | provider-call cap for a `review.scope = "repo"` seat, tool calls included; no verdict within the cap: abstention, reported by the panel |
@@ -497,7 +497,7 @@ Different focuses or effort levels on one route still count as one blocking mode
 
 ```toml
 [review]
-trigger = "before_finish"
+when = "finish"
 scope = "diff"
 repo_max_turns = 20
 interval_turns = 10

@@ -36,7 +36,7 @@ def _session(
             },
             "models": {"default": {"model": "work/shared"}},
             "review": {
-                "trigger": "before_finish",
+                "when": "finish",
                 "scope": scope,
                 "reviewers": [{"focus": "security"}, {"focus": "security"}],
             },

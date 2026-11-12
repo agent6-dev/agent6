@@ -1,7 +1,7 @@
 # Adversarial review panel: validation
 
 agent6 runs reviewer subagents over a diff and aggregates their verdicts through the in-loop `[review]` config.
-The `review` preset enables a three-seat `before_finish` panel.
+The `review` preset enables a three-seat `finish` panel.
 The configuration reference documents its triggers, roster and blocking rules.
 `agent6 ask "/review <range>"` is a separate markdown review, not a structured panel.
 
@@ -40,7 +40,7 @@ concurrent seats run in about 2 minutes.
 
 ### In-loop veto, full run
 
-A `read_doc(name)` task with a path-traversal trap (`before_finish`, 3 seats,
+A `read_doc(name)` task with a path-traversal trap (`finish`, 3 seats,
 veto). The worker's naive `open("files/" + name)` was blocked by all 3 seats. Its
 first fix (an abspath check) still let symlink traversal through, and security
 blocked again. It switched to `os.path.realpath` and the panel passed. Three

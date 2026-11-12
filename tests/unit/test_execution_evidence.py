@@ -63,7 +63,7 @@ def _tools(
                 "command_checkin_s": 0,
                 "max_turns": 2,
             },
-            "review": {"trigger": "off"},
+            "review": {"when": "never"},
         }
     )
     return session_runtime.build_session_tools(
@@ -198,7 +198,7 @@ def resumed(
                 "command_checkin_s": 0,
                 "max_turns": 6,
             },
-            "review": {"trigger": "off"},
+            "review": {"when": "never"},
         }
     )
     responses = iter(

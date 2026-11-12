@@ -50,7 +50,7 @@ def test_configured_repo_call_budget_reaches_the_seat(
     config = tmp_path / "review.toml"
     config.write_text(
         '[review]\nrepo_max_turns = 2\nscope = "repo"\n'
-        'trigger = "periodic"\ninterval_turns = 1\n'
+        'when = "periodic"\ninterval_turns = 1\n'
         "[harness]\nmax_turns = 1\nverify_infer = false\n"
         '[prompt]\ndecompose = "off"\n',
         encoding="utf-8",
@@ -268,7 +268,7 @@ def test_trigger_on_with_no_reviewers_builds_the_one_seat_roster() -> None:
                 "default": {"model": "o/m"},
                 "reviewer": {"model": "o/rm"},
             },
-            "review": {"trigger": "before_finish"},
+            "review": {"when": "finish"},
         }
     )
     seats = role_providers.resolve_review_seats(cfg)

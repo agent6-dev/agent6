@@ -285,7 +285,7 @@ def test_a_real_lane_ends_by_its_deadline(short_repo: pathlib.Path, tmp_path: pa
                 "models": {"default": {"model": "p/base"}},
                 "sandbox": {"isolation": "none", "protect_git": "off", "run_commands": "allow"},
                 "harness": {"verify_when": "never", "max_turns": 50},
-                "review": {"trigger": "off"},
+                "review": {"when": "never"},
             }
         )
         into = lane_launch.launch_dir(paths.state_dir(short_repo), "deadline")

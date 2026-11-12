@@ -109,7 +109,7 @@ def dispatch_authority(
     return lane_records.DispatchAuthority(
         work=worker and not subordinate,
         panels=(worker or (not subordinate and mode in ("ask", "plan")))
-        and cfg.review.trigger != "off",
+        and cfg.review.when != "never",
         deadline_at=deadline,
     )
 

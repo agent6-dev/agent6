@@ -78,7 +78,7 @@ def _worker_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pat
         '[harness]\nverify_when = "never"\nverify_infer = false\n'
         '[models.default]\nmodel = "p/m"\n'
         '[providers.p]\nbackend = "openai"\nbase_url = "http://127.0.0.1:1"\n'
-        'api_key_env = "STOP_TEST_KEY"\n[review]\ntrigger = "off"\n',
+        'api_key_env = "STOP_TEST_KEY"\n[review]\nwhen = "never"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("STOP_TEST_KEY", "test-key")

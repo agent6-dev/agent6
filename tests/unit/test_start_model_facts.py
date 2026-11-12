@@ -189,7 +189,7 @@ def test_resume_records_inheritance_and_each_review_seat(
                 "reviewer": {"effort": "xhigh"},
             },
             "review": {
-                "trigger": "before_finish",
+                "when": "finish",
                 "reviewers": [
                     {"focus": "security"},
                     {"focus": "bugs", "effort": "off"},
@@ -250,7 +250,7 @@ def test_start_uses_the_provider_effort_rule(
                 }
             },
             "models": {"default": {"model": f"p/{model}"}},
-            "review": {"trigger": "off"},
+            "review": {"when": "never"},
         }
     )
     stamps.stamp_execution(recorded_run, cfg, "run", "full")

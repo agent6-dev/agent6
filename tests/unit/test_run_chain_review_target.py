@@ -35,7 +35,7 @@ def test_a_model_controlled_run_is_reviewed_from_its_base_to_the_checkout(
 ) -> None:
     """Without a chain the model's commits are the record: the target spans base to HEAD.
 
-    `review_target` returned None, so a `before_finish` panel skipped with `no_target`.
+    `review_target` returned None, so a `finish` panel skipped with `no_target`.
     """
     repo, base = _repo(tmp_path)
     chain = run_chain.RunChain(repo, ref=None, fallback_parent=base, base_sha=base)

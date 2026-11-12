@@ -163,7 +163,7 @@ def test_cli_settles_only_unrelated_commands_beside_a_live_job(
         '[sandbox]\nisolation = "none"\nrun_commands = "allow"\n'
         '[models.default]\nmodel = "p/m"\n[models.worker]\nmodel = "p/m"\n'
         '[providers.p]\nbackend = "openai"\nbase_url = "http://127.0.0.1:1"\n'
-        'api_key_env = "PROBE_KEY"\n[review]\ntrigger = "off"\n'
+        'api_key_env = "PROBE_KEY"\n[review]\nwhen = "never"\n'
         '[harness]\nverify_command = ["true"]\nverify_at_start = false\nverify_when = "never"\n'
         'settled_stop_after = 3\n[git]\ncontrol = "model"\n',
         encoding="utf-8",

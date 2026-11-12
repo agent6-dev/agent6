@@ -356,15 +356,13 @@ def _machine_file(tmp_path: pathlib.Path) -> pathlib.Path:
 def test_machine_overlay_set_and_get(iso: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     mf = _machine_file(iso)
     # A non-security knob is fine in a machine overlay (review tuning).
-    assert (
-        _run(["config", "set", "review.trigger", "on_verify_fail", "--machine-file", str(mf)]) == 0
-    )
+    assert _run(["config", "set", "review.when", "verify_fail", "--machine-file", str(mf)]) == 0
     data = tomllib.loads(mf.read_text(encoding="utf-8"))
-    assert data["config"] == {"review": {"trigger": "on_verify_fail"}}  # type: ignore[comparison-overlap]
+    assert data["config"] == {"review": {"when": "verify_fail"}}  # type: ignore[comparison-overlap]
     # The original machine tables survive the edit.
     assert data["machine"]["name"] == "demo"  # type: ignore[index]
     capsys.readouterr()
-    assert _run(["config", "get", "review.trigger", "--machine-file", str(mf)]) == 0
+    assert _run(["config", "get", "review.when", "--machine-file", str(mf)]) == 0
     assert "[machine]" in capsys.readouterr().out
 
 
@@ -373,15 +371,13 @@ def test_config_show_reads_through_a_machine_overlay(
 ) -> None:
     """`config show` takes --machine-file like every other config verb."""
     mf = _machine_file(iso)
-    assert (
-        _run(["config", "set", "review.trigger", "on_verify_fail", "--machine-file", str(mf)]) == 0
-    )
+    assert _run(["config", "set", "review.when", "verify_fail", "--machine-file", str(mf)]) == 0
     capsys.readouterr()
     assert _run(["config", "show", "--machine-file", str(mf)]) == 0
-    row = next(line for line in capsys.readouterr().out.splitlines() if "review.trigger" in line)
-    assert "on_verify_fail" in row and "machine" in row, row
-    assert _run(["config", "show", "review.trigger", "--machine-file", str(mf)]) == 0
-    assert "on_verify_fail" in capsys.readouterr().out
+    row = next(line for line in capsys.readouterr().out.splitlines() if "review.when" in line)
+    assert "verify_fail" in row and "machine" in row, row
+    assert _run(["config", "show", "review.when", "--machine-file", str(mf)]) == 0
+    assert "verify_fail" in capsys.readouterr().out
     assert _refuse(["config", "show", "--machine-file", str(iso / "missing.asm.toml")]) == 2
 
 
@@ -418,9 +414,7 @@ def test_machine_overlay_write_leaves_a_widening_the_file_already_held(
     mf = _machine_file(iso)
     with mf.open("a", encoding="utf-8") as f:
         f.write('\n[config.sandbox]\nprotect_git = "off"\n')
-    assert (
-        _run(["config", "set", "review.trigger", "on_verify_fail", "--machine-file", str(mf)]) == 0
-    )
+    assert _run(["config", "set", "review.when", "verify_fail", "--machine-file", str(mf)]) == 0
     assert _run(["config", "set", "sandbox.run_commands", "deny", "--machine-file", str(mf)]) == 0
     assert _run(["config", "set", "sandbox.run_commands", "allow", "--machine-file", str(mf)]) == 2
     err = capsys.readouterr().err
@@ -812,7 +806,7 @@ def test_fill_keeps_the_preset_selector_and_does_not_bake_its_effects(iso: pathl
     # The fill keeps the default; the preset applies on load.
     from agent6.config import Config
 
-    assert review["trigger"] == Config().review.trigger
+    assert review["when"] == Config().review.when
 
 
 def test_fill_keeps_authored_preset_bodies(iso: pathlib.Path) -> None:

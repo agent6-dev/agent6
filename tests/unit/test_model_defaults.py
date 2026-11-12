@@ -229,7 +229,7 @@ def test_helper_jobs_do_not_use_the_reviewer_route(
                 "helper": {"model": "p/help"},
                 "reviewer": {"model": "p/review"},
             },
-            "review": {"trigger": "off"},
+            "review": {"when": "never"},
         }
     )
     sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")

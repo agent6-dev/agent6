@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """In-loop review-panel wiring.
 
-The panel fires at before_finish, grounds against the run diff, and gates the finish only under a
+The panel fires at the finish, grounds against the run diff, and gates the finish only under a
 gating block_on (no network).
 """
 
@@ -162,7 +162,7 @@ def test_panel_blocks_finish_under_veto_then_accepts() -> None:
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
+            reviewers=[_seat(seat_provider)], block_on="any", when="finish"
         ),
         base_sha="b",
     )
@@ -202,7 +202,7 @@ def test_panels_count_and_inject_each_finding_once(
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
+            reviewers=[_seat(seat_provider)], block_on="any", when="finish"
         ),
         base_sha="b",
         resume_state_path=snapshot,
@@ -286,7 +286,7 @@ def test_resumes_match_findings_by_the_cited_git_blob(tmp_path: pathlib.Path) ->
             provider=worker,
             dispatcher=_disp(),
             review=review_gate.ReviewSettings(
-                reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
+                reviewers=[_seat(seat_provider)], block_on="any", when="finish"
             ),
             resume_state_path=snapshot,
             events=events,
@@ -357,7 +357,7 @@ def test_second_panel_prompt_names_prior_finding() -> None:
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
+            reviewers=[_seat(seat_provider)], block_on="any", when="finish"
         ),
         base_sha="b",
     )
@@ -386,7 +386,7 @@ def test_a_finish_retried_on_unchanged_trees_reuses_the_panel(
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
+            reviewers=[_seat(seat_provider)], block_on="any", when="finish"
         ),
         base_sha="b",
         events=events,
@@ -411,10 +411,10 @@ def test_a_finish_retried_on_unchanged_trees_reuses_the_panel(
     assert len(feedback) == 1 and "hardcoded key" in feedback[0]
 
 
-@pytest.mark.parametrize("trigger", ["periodic", "on_verify_fail"])
+@pytest.mark.parametrize("trigger", ["periodic", "verify_fail"])
 @pytest.mark.usefixtures("immutable_target")
 def test_observe_only_panels_do_not_repeat_findings(
-    trigger: Literal["periodic", "on_verify_fail"],
+    trigger: Literal["periodic", "verify_fail"],
 ) -> None:
     """Advisory panels carry their injected findings to the next seat call."""
     worker = mock.MagicMock()
@@ -435,7 +435,7 @@ def test_observe_only_panels_do_not_repeat_findings(
         provider=worker,
         dispatcher=dispatcher,
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], trigger=trigger, interval_turns=1
+            reviewers=[_seat(seat_provider)], when=trigger, interval_turns=1
         ),
         base_sha="b",
     )
@@ -468,7 +468,7 @@ def test_panel_skipped_when_budget_fraction_low() -> None:
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
+            reviewers=[_seat(seat_provider)], block_on="any", when="finish"
         ),
         base_sha="b",
     )  # min_remaining_budget_fraction defaults to 0.25
@@ -489,7 +489,7 @@ def test_panel_advisory_does_not_block_finish() -> None:
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="none", trigger="before_finish"
+            reviewers=[_seat(seat_provider)], block_on="none", when="finish"
         ),
         base_sha="b",
     )
@@ -512,7 +512,7 @@ def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
+            reviewers=[_seat(seat_provider)], block_on="any", when="finish"
         ),
         base_sha="b",
     )
@@ -550,7 +550,7 @@ def test_the_configured_cap_counts_rejected_finishes(cap: int) -> None:
         review=review_gate.ReviewSettings(
             reviewers=[_seat(seat_provider)],
             block_on="any",
-            trigger="before_finish",
+            when="finish",
             max_review_rejections=cap,
         ),
         base_sha="b",
@@ -635,7 +635,7 @@ def test_findings_the_notice_cut_are_not_remembered_as_injected(
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
+            reviewers=[_seat(seat_provider)], block_on="any", when="finish"
         ),
         base_sha="b",
     )
@@ -703,7 +703,7 @@ def test_panel_risk_round_trips_into_the_receipt(tmp_path: pathlib.Path, repeat:
         review=review_gate.ReviewSettings(
             reviewers=[_seat(seat_provider, model="provider/model")],
             block_on="none",
-            trigger="before_finish",
+            when="finish",
         ),
     )
     harness.chain.commit("add key")

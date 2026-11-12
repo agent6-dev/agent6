@@ -363,7 +363,7 @@ def _seed_source_run(
                 "base_branch": "main",
                 "run_branch": f"agent6/{session_id}",
                 "harness": {
-                    "review_trigger": "off",
+                    "review_when": "off",
                     "preset": preset,
                     # A flag-selected preset the fork replays; False for a config-selected one.
                     "preset_from_flag": (

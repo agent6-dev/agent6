@@ -1,5 +1,5 @@
 {
-  "version": 11,
+  "version": 12,
   "agent6_version": "0.1.0",
   "session_id": "r-lane02",
   "mode": "run",
@@ -24,7 +24,7 @@
     "driver_from_flag": false
   },
   "harness": {
-    "review_trigger": "on",
+    "review_when": "on",
     "preset": "none",
     "gate": {
       "command": [],

@@ -1180,7 +1180,7 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
                 "run_commands": "allow",
             },
             "harness": {"verify_infer": False},
-            "review": {"trigger": "off"},
+            "review": {"when": "never"},
             "workspace": {"setup_command": ["sh", "-c", command]},
         }
     )
@@ -4103,7 +4103,7 @@ def test_model_parallel_import_keeps_lane_commits(
                 "run_commands": "allow",
             },
             "harness": {"verify_infer": False},
-            "review": {"trigger": "off"},
+            "review": {"when": "never"},
             "workspace": {"base_dir": str(tmp_path / "clones")},
         }
     )

@@ -3183,7 +3183,7 @@ Source: [`agent6.sessions.manifest.HarnessStamp`](https://github.com/agent6-dev/
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `review_trigger` | `str` | `[review].trigger` at launch. |
+| `review_when` | `str` | `[review].when` at launch. |
 | `preset` | `str` | The preset in force at launch. |
 | `gate` | `GateStamp` | The pinned gate, its source and this execution's availability. |
 | `preset_from_flag` | `bool` | The preset came from `--preset` rather than a config file. |

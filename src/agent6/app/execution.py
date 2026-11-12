@@ -599,7 +599,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             contract=inputs.contract,
             plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
             review=review_gate.ReviewSettings(
-                trigger=cfg.review.trigger,
+                when=cfg.review.when,
                 interval_turns=cfg.review.interval_turns,
                 reviewers=session.review_seats,
                 block_on=cfg.review.block_on,

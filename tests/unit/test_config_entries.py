@@ -404,7 +404,7 @@ def test_a_write_under_a_built_in_preset_keeps_the_built_ins_values(tmp_path: pa
     assert write.set_config_value(tmp_path, "presets.review.sandbox.network", "host") is None
     saved = io.read_toml_file(paths.global_config_path())["presets"]["review"]
     assert saved["sandbox"] == {"network": "host"}
-    assert saved["review"]["trigger"] == "before_finish"
+    assert saved["review"]["when"] == "finish"
     assert saved["review"]["reviewers"] == [
         {"focus": "security"},
         {"focus": "correctness"},

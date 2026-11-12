@@ -437,7 +437,7 @@ def test_earlier_findings_whose_tree_is_gone_match_nothing(repo: pathlib.Path) -
         panel_id="p",
         execution_id="e",
         turn=1,
-        trigger="on_verify_fail",
+        trigger="verify_fail",
         target=gone,
         findings=(review_records.FindingObservation("f1", "panel", finding, (0,)),),
         injected_finding_ids=("f1",),

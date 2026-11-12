@@ -37,7 +37,7 @@ def _panel_rows(
         panel_id="p",
         execution_id="e",
         turn=1,
-        trigger="before_finish",
+        trigger="finish",
         target=target,
         findings=tuple(observations),
         injected_finding_ids=(),

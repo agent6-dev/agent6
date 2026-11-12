@@ -6,7 +6,7 @@ The panel itself (grounding, block_on modes, dedup) is pinned in
 test_review_panel.py; here the LOOP's plumbing is the unit, a NEEDS-WORK
 verdict revokes finish_session and injects the findings, the rejection cap
 disarms the gate, trigger "off" never runs a panel, and the periodic /
-on_verify_fail triggers fire only on their schedule. The panel is stubbed at
+`verify_fail` panels fire only on their schedule. The panel is stubbed at
 the `Reviewer.critique` seam.
 """
 
@@ -178,7 +178,7 @@ def test_before_finish_panel_revokes_finish_and_injects_findings() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=review_gate.ReviewSettings(trigger="before_finish", reviewers=[mock.MagicMock()]),
+        review=review_gate.ReviewSettings(when="finish", reviewers=[mock.MagicMock()]),
     )
     with mock.patch.object(review_gate.Reviewer, "critique", panel):
         conversation = loop_conversation.Conversation.from_wire(_MSGS)
@@ -213,7 +213,7 @@ def test_before_finish_panel_satisfied_accepts_finish() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=review_gate.ReviewSettings(trigger="before_finish", reviewers=[mock.MagicMock()]),
+        review=review_gate.ReviewSettings(when="finish", reviewers=[mock.MagicMock()]),
     )
     with mock.patch.object(review_gate.Reviewer, "critique", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -249,7 +249,7 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
         provider=worker,
         dispatcher=dispatcher,
         review=review_gate.ReviewSettings(
-            trigger="before_finish", max_review_rejections=2, reviewers=[mock.MagicMock()]
+            when="finish", max_review_rejections=2, reviewers=[mock.MagicMock()]
         ),
     )
     with mock.patch.object(review_gate.Reviewer, "critique", panel):
@@ -277,7 +277,7 @@ def test_trigger_off_never_runs_a_panel() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=review_gate.ReviewSettings(trigger="off", reviewers=[mock.MagicMock()]),
+        review=review_gate.ReviewSettings(when="never", reviewers=[mock.MagicMock()]),
     )
     with mock.patch.object(review_gate.Reviewer, "critique", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -324,7 +324,7 @@ def test_silent_finish_panel_revokes_and_continues() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=review_gate.ReviewSettings(trigger="before_finish", reviewers=[mock.MagicMock()]),
+        review=review_gate.ReviewSettings(when="finish", reviewers=[mock.MagicMock()]),
     )
     with mock.patch.object(review_gate.Reviewer, "critique", panel):
         conversation = loop_conversation.Conversation.from_wire(_MSGS)
@@ -359,7 +359,7 @@ def _exec(returncode: int, stderr: str = "") -> results.ExecResult:
 
 
 def test_periodic_panel_fires_every_n_turns() -> None:
-    """`review_trigger=periodic` with `review_period=2` runs the panel on turns 2 and 4 only.
+    """`review_when=periodic` with `review_period=2` runs the panel on turns 2 and 4 only.
 
     The turn-5 finish_session is not gated under periodic.
     """
@@ -380,7 +380,7 @@ def test_periodic_panel_fires_every_n_turns() -> None:
         provider=worker,
         dispatcher=dispatcher,
         review=review_gate.ReviewSettings(
-            trigger="periodic", interval_turns=2, reviewers=[mock.MagicMock()]
+            when="periodic", interval_turns=2, reviewers=[mock.MagicMock()]
         ),
     )
     # Each verify pass commits real progress (the normal success path), so the
@@ -418,7 +418,7 @@ def test_periodic_panel_injects_text_into_next_user_msg() -> None:
         provider=worker,
         dispatcher=dispatcher,
         review=review_gate.ReviewSettings(
-            trigger="periodic", interval_turns=1, reviewers=[mock.MagicMock()]
+            when="periodic", interval_turns=1, reviewers=[mock.MagicMock()]
         ),
     )
     conversation = loop_conversation.Conversation.from_wire(_MSGS)
@@ -438,7 +438,7 @@ def test_periodic_panel_injects_text_into_next_user_msg() -> None:
 
 
 def test_on_verify_fail_panel_fires_only_on_nonzero_exit() -> None:
-    """`review_trigger=on_verify_fail` runs the panel only where run_verify_command exited non-zero.
+    """`review.when = "verify_fail"` runs the panel only where run_verify_command exited non-zero.
 
     Passing verifies never fire it.
     """
@@ -462,7 +462,7 @@ def test_on_verify_fail_panel_fires_only_on_nonzero_exit() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=review_gate.ReviewSettings(trigger="on_verify_fail", reviewers=[mock.MagicMock()]),
+        review=review_gate.ReviewSettings(when="verify_fail", reviewers=[mock.MagicMock()]),
     )
     conversation = loop_conversation.Conversation.from_wire(_MSGS)
     with mock.patch.object(review_gate.Reviewer, "critique", panel):
@@ -483,7 +483,7 @@ def test_on_verify_fail_panel_fires_only_on_nonzero_exit() -> None:
 
 
 def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
-    """A turn with no run_verify_command call never consults the panel under on_verify_fail.
+    """A turn with no run_verify_command call never consults the panel under `verify_fail`.
 
     There is no failure signal.
     """
@@ -501,7 +501,7 @@ def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=review_gate.ReviewSettings(trigger="on_verify_fail", reviewers=[mock.MagicMock()]),
+        review=review_gate.ReviewSettings(when="verify_fail", reviewers=[mock.MagicMock()]),
     )
     with mock.patch.object(review_gate.Reviewer, "critique", panel):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -548,9 +548,7 @@ def test_a_settled_end_is_reviewed_like_a_finish() -> None:
     before-finish panel judges that end too: a rejection hands the findings to the model and
     restarts the idle count, an approval lets the end stand.
     """
-    wf = _wf(
-        review=review_gate.ReviewSettings(trigger="before_finish", reviewers=[mock.MagicMock()])
-    )
+    wf = _wf(review=review_gate.ReviewSettings(when="finish", reviewers=[mock.MagicMock()]))
     wf.mode = "run"
     wf.config.harness.metric = None
     panel = _PanelScript(
@@ -587,7 +585,7 @@ def test_a_periodic_finding_on_a_settling_turn_is_delivered_once() -> None:
     """
     wf = _wf(
         review=review_gate.ReviewSettings(
-            trigger="periodic", interval_turns=1, reviewers=[mock.MagicMock()]
+            when="periodic", interval_turns=1, reviewers=[mock.MagicMock()]
         )
     )
     wf.mode = "run"
@@ -614,9 +612,7 @@ def test_a_rejected_plateau_end_is_named_as_one() -> None:
 
     The metric plateau's wording names the plateau, not a settled end.
     """
-    wf = _wf(
-        review=review_gate.ReviewSettings(trigger="before_finish", reviewers=[mock.MagicMock()])
-    )
+    wf = _wf(review=review_gate.ReviewSettings(when="finish", reviewers=[mock.MagicMock()]))
     wf.mode = "run"
     panel = _PanelScript(
         [review_gate.CritiqueResult(text="* the gain is unmeasured", satisfied=False)]
@@ -761,7 +757,7 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     wf = _wf(
         config=cfg,
         dispatcher=dispatcher,
-        review=review_gate.ReviewSettings(trigger="before_finish", reviewers=[mock.MagicMock()]),
+        review=review_gate.ReviewSettings(when="finish", reviewers=[mock.MagicMock()]),
     )
     wf.mode = "run"
     state = loop_state.LoopState(original_task="t", tool_calls=0)
@@ -823,7 +819,7 @@ def test_before_finish_panel_reviews_a_model_controlled_run(tmp_path: pathlib.Pa
         base_sha=base,
         provider=worker,
         dispatcher=dispatcher,
-        review=review_gate.ReviewSettings(trigger="before_finish", reviewers=[mock.MagicMock()]),
+        review=review_gate.ReviewSettings(when="finish", reviewers=[mock.MagicMock()]),
         events=event_log.EventSink(log),
     )
     with mock.patch.object(review_gate.Reviewer, "critique", panel):
@@ -894,7 +890,7 @@ def _target_reviewer(
 
     monkeypatch.setattr(review_gate.review_history, "observations", observations)
     return review_gate.Reviewer(
-        settings=review_gate.ReviewSettings(trigger="before_finish", reviewers=[seat]),
+        settings=review_gate.ReviewSettings(when="finish", reviewers=[seat]),
         chain=mock.MagicMock(root=tmp_path),
         hide=(),
         executor=mock.MagicMock,

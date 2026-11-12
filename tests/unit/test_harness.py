@@ -9319,7 +9319,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
         dispatcher=DispatcherStub(),
         max_turns=10,
         review=review_gate.ReviewSettings(
-            trigger="before_finish",
+            when="finish",
             reviewers=[object()],  # pyright: ignore[reportArgumentType]
         ),
     )
@@ -9348,7 +9348,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
             original_task="t",
         )
     assert result.reason == "metric_plateau"
-    assert panels == ["before_finish"]
+    assert panels == ["finish"]
 
 
 def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pathlib.Path) -> None:

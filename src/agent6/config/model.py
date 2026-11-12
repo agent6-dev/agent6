@@ -735,6 +735,19 @@ _MISSING_BACKEND = (
 )
 
 
+# A key an earlier release accepted, and what to write instead.
+_REPLACED_KEYS = {
+    "context": "rename the context table to [compaction]; keep its keys and values",
+    "harness.verify_settled_stop_after": (
+        "unknown config key; use harness.settled_stop_after with the same value"
+    ),
+    "prompt.revise_prompt": "removed config key; delete prompt.revise_prompt",
+    "review.trigger": (
+        'renamed config key; use review.when ("never", "verify_fail", "finish" or "periodic")'
+    ),
+}
+
+
 def _format_validation_error(
     err: pydantic.ValidationError,
     source: str,
@@ -756,12 +769,8 @@ def _format_validation_error(
         msg = issue["msg"]
         if issue["type"] == "union_tag_not_found" and loc.startswith("providers."):
             msg = _MISSING_BACKEND
-        elif issue["type"] == "extra_forbidden" and loc == "context":
-            msg = "rename the context table to [compaction]; keep its keys and values"
-        elif issue["type"] == "extra_forbidden" and loc == "harness.verify_settled_stop_after":
-            msg = "unknown config key; use harness.settled_stop_after with the same value"
-        elif issue["type"] == "extra_forbidden" and loc == "prompt.revise_prompt":
-            msg = "removed config key; delete prompt.revise_prompt"
+        elif issue["type"] == "extra_forbidden" and loc in _REPLACED_KEYS:
+            msg = _REPLACED_KEYS[loc]
         lines.append(f"  - {loc}: {msg} (type={issue['type']})")
         if locate is not None and (where := locate(loc, issue["type"])):
             lines.append(where)

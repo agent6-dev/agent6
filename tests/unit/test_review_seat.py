@@ -347,7 +347,7 @@ def _cfg_with_reviewers(reviewers: tuple[dict[str, str], ...]) -> Any:
                 "default": {"model": "anthropic/default-model"},
                 "reviewer": {"model": "anthropic/reviewer-default"},
             },
-            "review": {"trigger": "before_finish", "reviewers": list(reviewers)},
+            "review": {"when": "finish", "reviewers": list(reviewers)},
         }
     )
 

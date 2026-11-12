@@ -86,7 +86,7 @@ def prepare(
         f"[models.default]\nmodel = {json.dumps(model)}\n{effort_line}"
         f'temperature = {temperature}\n[sandbox]\nrun_commands = "deny"\n'
         "[harness]\nverify_infer = false\n"
-        '[review]\ntrigger = "before_finish"\nblock_on = "any"\nscope = "diff"\nconcurrency = 3\n'
+        '[review]\nwhen = "finish"\nblock_on = "any"\nscope = "diff"\nconcurrency = 3\n'
         + "".join(
             f"[[review.reviewers]]\nfocus = {json.dumps(focus)}\nmodel = {json.dumps(model)}\n"
             f"{effort_line}temperature = {temperature}\n"

@@ -555,7 +555,7 @@ def test_config_set_accepts_a_profiles_write(
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    rc = main(["config", "set", "presets.mine.review.trigger", "before_finish"])
+    rc = main(["config", "set", "presets.mine.review.when", "finish"])
     assert rc == 0
     text = paths.global_config_path().read_text(encoding="utf-8")
     assert "[presets.mine.review]" in text
@@ -731,8 +731,7 @@ def test_config_fix_drops_an_invalid_unselected_preset_leaf(
     path = paths.global_config_path()
     path.parent.mkdir(parents=True)
     path.write_text(
-        '[presets.good.review]\ntrigger = "before_finish"\n'
-        '[presets.bad.sandbox]\nnetwork = "banana"\n',
+        '[presets.good.review]\nwhen = "finish"\n[presets.bad.sandbox]\nnetwork = "banana"\n',
         encoding="utf-8",
     )
 
@@ -741,7 +740,7 @@ def test_config_fix_drops_an_invalid_unselected_preset_leaf(
     assert "presets.bad.sandbox.network" in out
     text = path.read_text(encoding="utf-8")
     assert "banana" not in text
-    assert '[presets.good.review]\ntrigger = "before_finish"' in text
+    assert '[presets.good.review]\nwhen = "finish"' in text
 
 
 def test_config_fix_drops_an_invalid_preset_leaf_masked_by_the_repo(

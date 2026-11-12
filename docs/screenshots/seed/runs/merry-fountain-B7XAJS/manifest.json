@@ -21,7 +21,7 @@
     "driver_from_flag": false
   },
   "harness": {
-    "review_trigger": "before_finish",
+    "review_when": "finish",
     "preset": "none",
     "gate": {
       "command": [

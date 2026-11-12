@@ -158,7 +158,7 @@ def test_write_manifest_bytes_fresh(tmp_path: pathlib.Path) -> None:
             driver=sessions_manifest.ModelBrief(provider="anthropic", model="claude-x"),
             reviewer=sessions_manifest.ModelBrief(provider="anthropic", model="claude-y"),
         ),
-        harness=sessions_manifest.HarnessStamp(review_trigger="off", preset="strict"),
+        harness=sessions_manifest.HarnessStamp(review_when="off", preset="strict"),
     )
     path = tmp_path / "manifest.json"
     stamps.write_manifest(path, m)
@@ -185,7 +185,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: pathlib.Path) -> None:
         models=sessions_manifest.ModelsBrief(
             driver=sessions_manifest.ModelBrief(provider="openai", model="gpt-z")
         ),
-        harness=sessions_manifest.HarnessStamp(review_trigger="on", preset="none"),
+        harness=sessions_manifest.HarnessStamp(review_when="on", preset="none"),
         parent_session_id="r-parent",
         forked_from_turn=7,
         forked_from_sha="2" * 40,
@@ -555,13 +555,13 @@ def test_a_version_3_manifest_keeps_its_stamp_under_the_old_key(tmp_path: pathli
                 "version": 3,
                 "session_id": "old-run-AAAAAA",
                 "mode": "run",
-                "workflow": {"review_trigger": "off", "preset": "strict", "preset_from_flag": True},
+                "workflow": {"review_when": "off", "preset": "strict", "preset_from_flag": True},
             }
         ),
         encoding="utf-8",
     )
     stamp = sessions_manifest.read_manifest(tmp_path).harness
-    assert (stamp.review_trigger, stamp.preset, stamp.replay_preset) == ("off", "strict", "strict")
+    assert (stamp.review_when, stamp.preset, stamp.replay_preset) == ("off", "strict", "strict")
 
 
 def test_write_manifest_bytes_coordinator(tmp_path: pathlib.Path) -> None:

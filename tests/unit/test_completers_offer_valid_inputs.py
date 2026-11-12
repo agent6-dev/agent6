@@ -312,7 +312,7 @@ def test_config_key_completion_reads_user_presets_from_the_typed_config(
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
     explicit = tmp_path / "explicit.toml"
-    explicit.write_text('[presets.team.review]\ntrigger = "before_finish"\n', encoding="utf-8")
+    explicit.write_text('[presets.team.review]\nwhen = "finish"\n', encoding="utf-8")
 
     later = tmp_path / "later.toml"
     later.write_text("[presets.later.review]\ninterval_turns = 9\n", encoding="utf-8")
@@ -323,7 +323,7 @@ def test_config_key_completion_reads_user_presets_from_the_typed_config(
         action=object(),
     )
 
-    assert "presets.team.review.trigger" in offered
+    assert "presets.team.review.when" in offered
     assert "presets.later.review.interval_turns" in offered
 
 

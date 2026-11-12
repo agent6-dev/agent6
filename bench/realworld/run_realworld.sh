@@ -67,10 +67,10 @@ branch_per_run = true
 verify_command = $verify_cmd_json
 
 [review]
-# Optional critic-in-loop. Set AGENT6_REALWORLD_CRITIC=before_finish (or
-# on_verify_fail / periodic) to evaluate critic modes against the
-# premature-finish task variants. Default: "off".
-trigger = "${AGENT6_REALWORLD_CRITIC:-off}"
+# Optional critic-in-loop. Set AGENT6_REALWORLD_CRITIC=finish (or
+# verify_fail / periodic) to evaluate critic modes against the
+# premature-finish task variants. Default: "never".
+when = "${AGENT6_REALWORLD_CRITIC:-never}"
 
 ${metric_block}
 

@@ -857,7 +857,7 @@ def test_a_models_own_timed_out_gate_gets_the_scoped_followup(
     assert turn.verify_just_passed is True  # the scoped green stands
     assert "not a full-suite pass" in turn.tool_results[-1].text
     # One verdict per turn, as on the harness path: the 124 is not noted as a
-    # fail beside the scoped green (an on_verify_fail panel and the memory
+    # fail beside the scoped green (a `verify_fail` panel and the memory
     # flip nudge key on those flags).
     assert turn.verify_just_failed is False
     assert turn.verify_flipped_green is False

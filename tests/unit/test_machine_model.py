@@ -855,14 +855,14 @@ def test_machine_config_overlay_parses(tmp_path: pathlib.Path) -> None:
         VALID_MACHINE
         + """
 [config.review]
-trigger = "on_verify_fail"
+when = "verify_fail"
 
 [config.budget]
 max_tokens_fallback = 50000
 """
     )
     spec = semantics.load_machine(_write(tmp_path, body))
-    assert spec.config["review"]["trigger"] == "on_verify_fail"
+    assert spec.config["review"]["when"] == "verify_fail"
     assert spec.config["budget"]["max_tokens_fallback"] == 50000
 
 

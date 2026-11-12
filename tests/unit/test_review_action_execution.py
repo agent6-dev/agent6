@@ -34,7 +34,7 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
         '[harness]\nverify_when = "never"\nverify_infer = false\n'
         '[models.default]\nmodel = "p/m"\n'
         '[providers.p]\nbackend = "openai"\nbase_url = "http://127.0.0.1:1"\n'
-        'api_key_env = "REVIEW_TEST_KEY"\n[review]\ntrigger = "off"\n'
+        'api_key_env = "REVIEW_TEST_KEY"\n[review]\nwhen = "never"\n'
     )
     monkeypatch.setenv("REVIEW_TEST_KEY", "test-key")
     calls: list[dict[str, Any]] = []

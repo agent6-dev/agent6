@@ -72,7 +72,7 @@ class ReviewSettings:
     The findings return to the model on the next user message whatever the blocking rule.
 
     Attributes:
-        trigger: When the panel sits: after a verify failure, before a finish, or periodically.
+        when: When the panel sits: after a verify failure, at a finish, or periodically.
         interval_turns: The turns between periodic panels.
         reviewers: The resolved seats.
         block_on: `none` advises; `any`, `all` and `model_quorum` can reject an end.
@@ -84,7 +84,7 @@ class ReviewSettings:
         repo_max_turns: The provider calls each repo-scope seat may make, tools included.
     """
 
-    trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = "off"
+    when: Literal["never", "verify_fail", "finish", "periodic"] = "never"
     interval_turns: int = 10
     reviewers: Sequence[ReviewSeat] = ()
     block_on: review_panel.ReviewBlockOn = "none"
@@ -352,16 +352,12 @@ class Reviewer:
             state: The execution's state.
             turn: The turn, which receives the findings text.
         """
-        if (
-            self.settings.trigger == "on_verify_fail"
-            and turn.verify_just_failed
-            and self.available()
-        ):
-            critique = self.critique(state, trigger="verify_failed", turn=turn.number)
+        if self.settings.when == "verify_fail" and turn.verify_just_failed and self.available():
+            critique = self.critique(state, trigger="verify_fail", turn=turn.number)
             if critique is not None:
                 turn.review_text = critique.text
         elif (
-            self.settings.trigger == "periodic"
+            self.settings.when == "periodic"
             and self.available()
             and turn.number % max(1, self.settings.interval_turns) == 0
         ):
@@ -392,9 +388,9 @@ class Reviewer:
     def _judge_end(
         self, state: loop_state.LoopState, turn: loop_state.TurnState, *, ending: str
     ) -> bool:
-        if not (self.settings.trigger == "before_finish" and self.available()):
+        if not (self.settings.when == "finish" and self.available()):
             return False
-        critique = self.critique(state, trigger="before_finish", turn=turn.number)
+        critique = self.critique(state, trigger="finish", turn=turn.number)
         if critique is None:
             return False
         if not critique.satisfied:
@@ -517,7 +513,7 @@ class Reviewer:
         target, diff = reviewable
         # Only the before-finish panel gates.
         block_on: review_panel.ReviewBlockOn = (
-            self.settings.block_on if trigger == "before_finish" else "none"
+            self.settings.block_on if trigger == "finish" else "none"
         )
         return self._sit(
             state, identity, target, diff, block_on=block_on, turn=turn, trigger=trigger
@@ -701,5 +697,5 @@ class Reviewer:
         return CritiqueResult(
             text=text,
             satisfied=not effective_blocked,
-            capped=result.blocked and disarmed and trigger == "before_finish",
+            capped=result.blocked and disarmed and trigger == "finish",
         )

@@ -126,9 +126,9 @@ def test_remove_toml_leaf_top_level_key_never_touches_a_table_member(
 ) -> None:
     # A [review] section owning `trigger` must not lose it to a bare-key remove.
     path = tmp_path / "c.toml"
-    path.write_text('[review]\ntrigger = "off"\n')
+    path.write_text('[review]\nwhen = "never"\n')
     assert io.remove_toml_leaf(path, "trigger") is False
-    assert tomllib.loads(path.read_text()) == {"review": {"trigger": "off"}}
+    assert tomllib.loads(path.read_text()) == {"review": {"when": "never"}}
 
 
 def test_upsert_toml_leaf_refuses_a_leaf_under_an_array_of_tables(tmp_path: pathlib.Path) -> None:
@@ -287,13 +287,13 @@ def test_remove_toml_table_survives_a_bracketed_multiline_interior(tmp_path: pat
     """
     path = tmp_path / "c.toml"
     path.write_text(
-        '[cli]\nhelp = """\nUsage:\n[options]\n"""\nenabled = true\n[review]\ntrigger = "off"\n',
+        '[cli]\nhelp = """\nUsage:\n[options]\n"""\nenabled = true\n[review]\nwhen = "never"\n',
         encoding="utf-8",
     )
     assert io.remove_toml_table(path, "cli") is True
     data = tomllib.loads(path.read_text(encoding="utf-8"))  # must still parse
     assert "cli" not in data  # header, the multi-line help, and enabled all gone
-    assert data == {"review": {"trigger": "off"}}
+    assert data == {"review": {"when": "never"}}
 
 
 def test_format_toml_value_round_trips_through_parse_cli_value() -> None:
@@ -482,10 +482,10 @@ def test_drop_top_region_key_skips_a_multiline_value_bracket_line(tmp_path: path
         'note = """\n[not a header]\n"""\nprofile = "old"\n',
         encoding="utf-8",
     )
-    io.upsert_toml_leaf(p, "profile.review.trigger", "off")  # forces [profile] surgery
+    io.upsert_toml_leaf(p, "profile.review.when", "never")  # forces [profile] surgery
     parsed = tomllib.loads(p.read_text(encoding="utf-8"))
     assert parsed["note"] == "[not a header]\n", "the top-level string was corrupted"
-    assert parsed["profile"]["review"]["trigger"] == "off"
+    assert parsed["profile"]["review"]["when"] == "never"
 
 
 def test_remove_toml_table_drops_an_array_of_tables_subtable(tmp_path: pathlib.Path) -> None:

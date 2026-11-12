@@ -566,21 +566,21 @@ class PromptConfig(pydantic.BaseModel):
 
 
 class ReviewConfig(pydantic.BaseModel):
-    """The `[review]` table: the in-loop review panel and its trigger."""
+    """The `[review]` table: the in-loop review panel and when it sits."""
 
     model_config = validation.MODEL_CONFIG
 
     # The findings reach the model as a user message on its next turn.
-    trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = pydantic.Field(
+    when: Literal["never", "verify_fail", "finish", "periodic"] = pydantic.Field(
         json_schema_extra={
             "choice_meanings": {
-                "off": "Do not run in-loop review",
-                "on_verify_fail": "Review after each failed verification",
-                "before_finish": "Review when model requests finish",
+                "never": "Do not run in-loop review",
+                "verify_fail": "Review after each failed verification",
+                "finish": "Review when model requests finish",
                 "periodic": "Review every configured interval of turns",
             }
         },
-        default="off",
+        default="never",
         description=(
             "In-loop panel over the diff so far, with findings sent to the model; only "
             "finish-time review can gate finish; periodic review uses "
@@ -591,7 +591,7 @@ class ReviewConfig(pydantic.BaseModel):
     interval_turns: int = pydantic.Field(
         ge=1,
         default=10,
-        description='Turns between panels when `trigger = "periodic"`.',
+        description='Turns between panels when `when = "periodic"`.',
     )
     block_on: Literal["none", "any", "model_quorum", "all"] = pydantic.Field(
         json_schema_extra={
@@ -606,7 +606,7 @@ class ReviewConfig(pydantic.BaseModel):
         description=(
             "Effect of panel blocking verdicts; quorum uses `review.min_blocking_models` "
             "distinct provider/model routes; abstentions do not block; gating applies only to "
-            "finish-time review; other triggers are advisory."
+            "finish-time review; panels at other moments are advisory."
         ),
     )
     min_blocking_models: int = pydantic.Field(
@@ -645,7 +645,7 @@ class ReviewConfig(pydantic.BaseModel):
             "ordered panel roster of tables with `focus` and optional `model`, "
             "`temperature` and `effort`; every omitted field inherits the resolved "
             "`[models.reviewer]`, `model` pinned or not; `model` is a provider/model route; "
-            "empty roster: one `security` seat when `review.trigger` is on"
+            'empty roster: one `security` seat unless `review.when = "never"`'
         ),
     )
     concurrency: int = pydantic.Field(
