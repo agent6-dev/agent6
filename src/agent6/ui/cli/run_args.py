@@ -142,7 +142,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help=(
             f"Apply a built-in strategy preset ({'/'.join(layer_presets.BUILTIN_PRESETS)})"
             " or a custom"
-            " presets.NAME. This overrides any `preset` selected in a config file and values"
+            " presets.NAME. This overrides any agent6.preset selected in a config file and values"
             " from the global and per-repository configs. Values from --config FILE and other"
             " command flags still win. Use none to select no preset."
         ),

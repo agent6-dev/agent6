@@ -24,26 +24,21 @@ from agent6.config import io, layer_data, layer_presets, validation
 from agent6.config import model as config_model
 
 # The display order every surface shares (`config show`, `config fill`, the TUI and the web):
-# top-level scalars first (a TOML paste needs them before any table), then `providers` and
-# `models`, then the rest by name, the version stamp last. Leaves inside a section sort by name.
-FIRST_SECTIONS = ("providers", "models")
-LAST_SECTION = "agent6"
+# `agent6`, `providers` and `models`, then the rest by name. Leaves inside a section sort by name.
+FIRST_SECTIONS = ("agent6", "providers", "models")
 
 
-def section_order(scalars: Iterable[str], tables: Iterable[str]) -> list[str]:
+def section_order(sections: Iterable[str]) -> list[str]:
     """Return the config sections in the shared display order.
 
     Args:
-        scalars: The top-level scalar keys.
-        tables: The section tables.
+        sections: The top-level tables.
 
     Returns:
-        The scalars by name, the first sections, the rest by name, the version stamp last.
+        The first sections, then the rest by name.
     """
-    present = set(tables)
-    rest = sorted(t for t in present if t not in FIRST_SECTIONS and t != LAST_SECTION)
-    last = [LAST_SECTION] if LAST_SECTION in present else []
-    return [*sorted(scalars), *(t for t in FIRST_SECTIONS if t in present), *rest, *last]
+    present = set(sections)
+    return [*(s for s in FIRST_SECTIONS if s in present), *sorted(present - set(FIRST_SECTIONS))]
 
 
 def load_effective(
@@ -555,7 +550,7 @@ def materialize(
         keep_presets_from: A file whose own `[presets.*]` tables the document carries; no
             `Config` holds them, and a fill rewriting the operator's file would otherwise
             delete definitions it cannot see.
-        keep_preset_selector: Keep the top-level `preset`. A `--config FILE` layer refuses
+        keep_preset_selector: Keep `agent6.preset`. A `--config FILE` layer refuses
             one (a lane's snapshot drops it); the global config `config fill` writes keeps
             it, or the fill would deselect the preset and freeze the current values.
 
@@ -582,7 +577,8 @@ def materialize(
             return out
 
         data = select_leaves(data)
-    data = data if keep_preset_selector else {k: v for k, v in data.items() if k != "preset"}
+    if not keep_preset_selector:
+        data.get("agent6", {}).pop("preset", None)
     lines: list[str] = [
         "# agent6 effective config."
         if explicit_leaves is not None
@@ -590,16 +586,7 @@ def materialize(
         "# Every value below is explicit; edit freely.",
         "",
     ]
-    tables = [k for k, v in data.items() if isinstance(v, dict) or _is_table_array(v)]
-    ordered = section_order((k for k in data if k not in tables), tables)
-    # A top-level scalar (`preset`) must precede every `[section]` in TOML.
-    for section in ordered:
-        value = data[section]
-        if value is not None and not isinstance(value, dict) and not _is_table_array(value):
-            lines.append(f"{section} = {io.format_toml_value(value)}")
-    if lines[-1] != "":
-        lines.append("")
-    for section in ordered:
+    for section in section_order(data):
         value = data[section]
         if isinstance(value, dict):
             if not value:

@@ -601,10 +601,10 @@ def state_overlay(cfg: Config, isolation: kinds.IsolationLevel) -> StateOverlay:
         isolation: The isolation level the engine validated for the state.
 
     Returns:
-        The whole config except `preset`, with the isolation level.
+        The whole config except `agent6.preset`, with the isolation level.
     """
     overlay = cfg.model_dump(mode="json")
-    overlay.pop("preset", None)  # an overlay cannot select a preset
+    overlay["agent6"].pop("preset", None)  # an overlay cannot select a preset
     return StateOverlay(overlay, isolation)
 
 

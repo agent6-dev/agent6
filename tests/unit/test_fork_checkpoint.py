@@ -576,7 +576,7 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
     """A config-selected preset re-resolves on fork; only a flag-selected one is pinned by name."""
     paths.global_config_dir().mkdir(parents=True, exist_ok=True)
     (paths.global_config_dir() / "config.toml").write_text(
-        'preset = "no_review"\n', encoding="utf-8"
+        '[agent6]\npreset = "no_review"\n', encoding="utf-8"
     )
     repo = tmp_path / "repo"
     head = _git_repo(repo)

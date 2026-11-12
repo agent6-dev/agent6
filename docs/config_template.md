@@ -58,6 +58,40 @@ It can be empty or absent when the global config supplies a provider and model.
 
 <!-- config-table: agent6 -->
 
+### Presets
+
+A preset fills many settings at once.
+`agent6 config presets` lists them; select with `--preset <name>`, `agent6 config set agent6.preset <name>` (`--repo`), or the preset picker of the TUI and web new-task composers.
+A preset overrides config at the layer that selected it (most-specific source wins, presets never stack); a more-specific config layer, `--config FILE`, or an individual flag still beats it.
+A `--config FILE` or machine overlay cannot select one.
+
+The default `agent6.preset = "none"` selects no preset.
+Set `agent6.preset = "none"` in the repo config to stop lookup before a global preset, or pass `--preset none` to override both layers.
+This keeps the layers' own settings; it does not reset them to defaults.
+An empty string is refused.
+The name `none` is reserved, so `[presets.none]` is refused.
+The TUI and web config pages edit the selected preset in place: with `agent6.preset` set to a name, a save, an unset or an entry change writes `[presets.<name>]` in the chosen layer; with `agent6.preset = "none"`, the global and repo config.
+**Preset…** opens the `agent6.preset` setting, **Add preset…** creates a table and selects it, and **Remove preset** removes the selected table and resets `agent6.preset`.
+
+<!-- presets-table -->
+
+Define your own with a `[presets.<name>]` table (a partial config); a built-in's name replaces that built-in wholesale:
+
+```toml
+[agent6]
+preset = "myteam"
+
+[presets.myteam.review]
+when = "finish"
+block_on = "any"
+reviewers = [
+  { focus = "security", model = "anthropic/claude-opus-4-8" },
+  { focus = "correctness", model = "openrouter/moonshotai/kimi-k2", effort = "high" },
+]
+```
+
+The first write under a built-in's name (`agent6 config set presets.review.sandbox.network host`, or a page edit with `agent6.preset = "review"`) copies the built-in's values into the table first, so the rest of it stays.
+
 ## `[providers.<name>]`
 
 One backend per block; `<name>` is referenced from `[models.<role>]`.
@@ -300,43 +334,6 @@ See [Git](security.md#7-git) for where `sandbox.protect_git` enforces `git.contr
 Placement and setup of the worktrees agent6 makes: lane and machine-state clones, fork and `run --worktree` linked worktrees.
 
 <!-- config-table: git.worktree -->
-
-## `preset` (top-level)
-
-<!-- config-table: preset -->
-
-### Presets
-
-A preset fills many settings at once.
-`agent6 config presets` lists them; select with `--preset <name>`, `agent6 config set preset <name>` (`--repo`), or the preset picker of the TUI and web new-task composers.
-A preset overrides config at the layer that selected it (most-specific source wins, presets never stack); a more-specific config layer, `--config FILE`, or an individual flag still beats it.
-A `--config FILE` or machine overlay cannot select one.
-
-The default `preset = "none"` selects no preset.
-Set `preset = "none"` in the repo config to stop lookup before a global preset, or pass `--preset none` to override both layers.
-This keeps the layers' own settings; it does not reset them to defaults.
-An empty string is refused.
-The name `none` is reserved, so `[presets.none]` is refused.
-The TUI and web config pages edit the selected preset in place: with `preset` set to a name, a save, an unset or an entry change writes `[presets.<name>]` in the chosen layer; with `preset = "none"`, the global and repo config.
-**Preset…** opens the `preset` setting, **Add preset…** creates a table and selects it, and **Remove preset** removes the selected table and resets `preset`.
-
-<!-- presets-table -->
-
-Define your own with a `[presets.<name>]` table (a partial config); a built-in's name replaces that built-in wholesale:
-
-```toml
-preset = "myteam"
-
-[presets.myteam.review]
-when = "finish"
-block_on = "any"
-reviewers = [
-  { focus = "security", model = "anthropic/claude-opus-4-8" },
-  { focus = "correctness", model = "openrouter/moonshotai/kimi-k2", effort = "high" },
-]
-```
-
-The first write under a built-in's name (`agent6 config set presets.review.sandbox.network host`, or a page edit with `preset = "review"`) copies the built-in's values into the table first, so the rest of it stays.
 
 ## `[harness]`
 

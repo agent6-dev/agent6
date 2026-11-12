@@ -58,10 +58,10 @@ def test_preset_refusal_names_only_commands_that_accept_the_flag(
     """A refused machine or explicit preset points to config, not a nonexistent machine flag."""
     with pytest.raises(ConfigError) as exc:
         if source == "machine":
-            layer.load_effective_with_overlay(tmp_path, {"preset": "demo"})
+            layer.load_effective_with_overlay(tmp_path, {"agent6": {"preset": "demo"}})
         else:
             config = tmp_path / "operator.toml"
-            config.write_text('preset = "demo"\n', encoding="utf-8")
+            config.write_text('[agent6]\npreset = "demo"\n', encoding="utf-8")
             layer.load_effective(tmp_path, (config,))
     assert "set it in the global or repo config" in str(exc.value)
     assert "pass `--preset` to run, resume or plan" in str(exc.value)

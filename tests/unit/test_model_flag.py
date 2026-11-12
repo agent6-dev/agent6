@@ -115,7 +115,9 @@ def test_a_hubs_picker_follows_the_preset_and_lists_every_route(
         "openrouter/moonshotai/kimi-k2.6",
     ]
     assert choices.default_preset(repo, ()) == "none"
-    config.write_text('preset = "fast"\n' + config.read_text(encoding="utf-8"), encoding="utf-8")
+    config.write_text(
+        '[agent6]\npreset = "fast"\n' + config.read_text(encoding="utf-8"), encoding="utf-8"
+    )
     assert choices.default_preset(repo, ()) == "fast"
     config.write_text("[models.worker]\nprovider = 1\n", encoding="utf-8")
     assert choices.default_route(repo, (), "run", "") == ""

@@ -40,6 +40,7 @@ ORDER = [
 
 DEMO_CONFIG = """\
 # Demo config used only to render the docs screenshots; no secrets here.
+[agent6]
 preset = "none"
 
 [sandbox]

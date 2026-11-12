@@ -280,7 +280,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
 
     @property
     def _selected_preset(self) -> str:
-        """The preset the page edits: the effective `preset`, "" for `none`."""
+        """The preset the page edits: the effective `agent6.preset`, "" for `none`."""
         return write.selected_preset(self._eff) if self._eff is not None else ""
 
     def _rebuild_view(self) -> None:
@@ -572,9 +572,9 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self.dismiss(None)
 
     def action_choose_preset(self) -> None:
-        """Open the `preset` setting: the page shows and edits the selected preset."""
+        """Open the `agent6.preset` setting: the page shows and edits the selected preset."""
         if self._view is not None:
-            self._edit(next(s for s in self._view.settings if s.key == "preset"))
+            self._edit(next(s for s in self._view.settings if s.key == "agent6.preset"))
 
     def action_add_preset(self) -> None:
         """Create an empty preset table and select it; the page then shows it."""
@@ -583,7 +583,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         )
 
     def action_remove_preset(self) -> None:
-        """Remove the selected preset's table from both layers and reset `preset`, on confirm."""
+        """Remove the selected preset's table from both layers and reset the selector."""
         name = self._selected_preset
         if not name:
             self.notify("No preset is selected (preset = none).", severity="warning")

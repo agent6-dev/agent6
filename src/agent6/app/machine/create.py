@@ -231,7 +231,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     # The complete effective config as the overlay: omitting values equal to built-in defaults
     # loses an explicit repo reset when the workspace reloads the operator's global layer.
     overlay = cfg.model_dump(mode="json")
-    overlay.pop("preset", None)  # the overlay layer forbids a preset
+    overlay["agent6"].pop("preset", None)  # the overlay layer forbids a preset
     # The execution writes files and nothing else; agent6 runs the validators itself.
     overlay["sandbox"] = {
         **overlay.get("sandbox", {}),

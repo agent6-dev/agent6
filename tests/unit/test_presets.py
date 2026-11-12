@@ -31,7 +31,7 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pat
 
 
 def test_preset_via_preset_field_expands_review_knobs(repo: pathlib.Path) -> None:
-    _write_repo_config(repo, 'preset = "review"\n')
+    _write_repo_config(repo, '[agent6]\npreset = "review"\n')
     cfg = layer.load_effective(repo).config
     assert cfg.review.when == "finish"
     assert [entry.focus for entry in cfg.review.reviewers] == ["security", "correctness", "tests"]
@@ -40,7 +40,7 @@ def test_preset_via_preset_field_expands_review_knobs(repo: pathlib.Path) -> Non
 
 
 def test_preset_via_flag_overrides_field(repo: pathlib.Path) -> None:
-    _write_repo_config(repo, 'preset = "no_review"\n')
+    _write_repo_config(repo, '[agent6]\npreset = "no_review"\n')
     cfg = layer.load_effective(repo, preset="deep_review").config  # flag wins over the field
     assert len(cfg.review.reviewers) == 5
     assert cfg.review.scope == "repo"
@@ -51,7 +51,7 @@ def test_preset_via_flag_overrides_field(repo: pathlib.Path) -> None:
 def test_repo_selected_preset_beats_same_layer_setting(repo: pathlib.Path) -> None:
     # The preset selected by the repo's top-level `preset` is injected ABOVE the
     # repo config, so it OVERRIDES a conflicting value set in the SAME repo config.
-    _write_repo_config(repo, 'preset = "review"\n\n[review]\nblock_on = "none"\n')
+    _write_repo_config(repo, '[agent6]\npreset = "review"\n\n[review]\nblock_on = "none"\n')
     cfg = layer.load_effective(repo).config
     assert cfg.review.block_on == "any"  # repo-selected preset wins
     assert [entry.focus for entry in cfg.review.reviewers] == ["security", "correctness", "tests"]
@@ -60,7 +60,7 @@ def test_repo_selected_preset_beats_same_layer_setting(repo: pathlib.Path) -> No
 def test_custom_user_preset(repo: pathlib.Path) -> None:
     _write_repo_config(
         repo,
-        'preset = "myteam"\n\n[presets.myteam.review]\nwhen = "finish"\nconcurrency = 2\n',
+        '[agent6]\npreset = "myteam"\n[presets.myteam.review]\nwhen = "finish"\nconcurrency = 2\n',
     )
     cfg = layer.load_effective(repo).config
     assert cfg.review.concurrency == 2 and cfg.review.when == "finish"
@@ -82,7 +82,7 @@ def test_only_a_flag_selected_preset_is_replayed_on_resume(repo: pathlib.Path) -
 
     # Why it matters: the SAME files resolve differently when the name arrives
     # as a flag, which is exactly what the old replay did.
-    _write_repo_config(repo, f'preset = "t"\n\n[review]\nconcurrency = 3\n\n{_PROFILE_T}')
+    _write_repo_config(repo, f'[agent6]\npreset = "t"\n\n[review]\nconcurrency = 3\n\n{_PROFILE_T}')
     assert layer.load_effective(repo).config.review.concurrency == 5  # repo-selected preset wins
     _write_repo_config(repo, f"[review]\nconcurrency = 3\n\n{_PROFILE_T}")
     assert layer.load_effective(repo).config.review.concurrency == 3  # no selection: config wins
@@ -93,7 +93,8 @@ def test_user_preset_replaces_the_builtin(repo: pathlib.Path) -> None:
     """A user preset replaces a same-named built-in instead of merging with it."""
     _write_repo_config(
         repo,
-        'preset = "review"\n\n[presets.review]\nreview = { when = "finish", concurrency = 4 }\n',
+        '[agent6]\npreset = "review"\n'
+        '[presets.review]\nreview = { when = "finish", concurrency = 4 }\n',
     )
     cfg = layer.load_effective(repo).config
     assert cfg.review.when == "finish"
@@ -102,18 +103,18 @@ def test_user_preset_replaces_the_builtin(repo: pathlib.Path) -> None:
 
 
 def test_unknown_preset_errors(repo: pathlib.Path) -> None:
-    _write_repo_config(repo, 'preset = "nope"\n')
+    _write_repo_config(repo, '[agent6]\npreset = "nope"\n')
     with pytest.raises(ConfigError, match="unknown preset"):
         layer.load_effective(repo)
 
 
 def test_preset_table_instead_of_string_is_clear_error(repo: pathlib.Path) -> None:
-    """A `[preset]` table instead of a string is a clear error.
+    """An `[agent6.preset]` table instead of a string is a clear error.
 
-    A mistyped `config set preset.porifle x` fails as "preset must be a string", never str()-coerced
-    into `unknown preset "{'porifle': 'review'}"`.
+    A mistyped `config set agent6.preset.porifle x` fails as "must be a preset name string",
+    never str()-coerced into `unknown preset "{'porifle': 'review'}"`.
     """
-    _write_repo_config(repo, '[preset]\nporifle = "review"\n')
+    _write_repo_config(repo, '[agent6.preset]\nporifle = "review"\n')
     with pytest.raises(ConfigError, match="must be a preset name string"):
         layer.load_effective(repo)
 
@@ -121,7 +122,7 @@ def test_preset_table_instead_of_string_is_clear_error(repo: pathlib.Path) -> No
 def test_no_preset_is_plain_defaults(repo: pathlib.Path) -> None:
     _write_repo_config(repo, "[review]\n")
     cfg = layer.load_effective(repo).config
-    assert cfg.preset == "none"
+    assert cfg.agent6.preset == "none"
     assert cfg.review.when == "never" and cfg.review.concurrency == 1
 
 
@@ -150,11 +151,13 @@ def global_config(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pa
 
 def test_repo_none_stops_the_global_preset(repo: pathlib.Path, global_config: pathlib.Path) -> None:
     """A repo can turn off a global preset without erasing the global config's own settings."""
-    global_config.write_text('preset = "review"\n[review]\nconcurrency = 2\n', encoding="utf-8")
-    _write_repo_config(repo, 'preset = "none"\n')
+    global_config.write_text(
+        '[agent6]\npreset = "review"\n[review]\nconcurrency = 2\n', encoding="utf-8"
+    )
+    _write_repo_config(repo, '[agent6]\npreset = "none"\n')
     effective = layer.load_effective(repo)
-    assert effective.config.preset == "none"
-    assert effective.sources["preset"] == "repo"
+    assert effective.config.agent6.preset == "none"
+    assert effective.sources["agent6.preset"] == "repo"
     assert effective.config.review.when == "never"
     assert effective.config.review.concurrency == 2
     assert all(source.name != "preset" for source in effective.layers)
@@ -162,17 +165,17 @@ def test_repo_none_stops_the_global_preset(repo: pathlib.Path, global_config: pa
 
 def test_flag_none_stops_the_repo_preset(repo: pathlib.Path) -> None:
     """An explicit no-preset flag overrides a repo selection and records its source."""
-    _write_repo_config(repo, 'preset = "review"\n')
+    _write_repo_config(repo, '[agent6]\npreset = "review"\n')
     effective = layer.load_effective(repo, preset="none")
-    assert effective.config.preset == "none"
-    assert effective.sources["preset"] == "flag"
+    assert effective.config.agent6.preset == "none"
+    assert effective.sources["agent6.preset"] == "flag"
     assert effective.config.review.when == "never"
 
 
 @pytest.mark.parametrize("selected", [False, True])
 def test_none_is_reserved_even_when_unselected(repo: pathlib.Path, selected: bool) -> None:
     """A user definition cannot turn the no-preset selector into an override."""
-    selector = 'preset = "none"\n' if selected else ""
+    selector = '[agent6]\npreset = "none"\n' if selected else ""
     _write_repo_config(repo, selector + "[presets.none]\n")
     with pytest.raises(ConfigError, match=r"none.*reserved"):
         layer.load_effective(repo)
@@ -180,7 +183,7 @@ def test_none_is_reserved_even_when_unselected(repo: pathlib.Path, selected: boo
 
 def test_empty_preset_names_none_as_the_replacement(repo: pathlib.Path) -> None:
     """An empty selector is refused instead of falling through to a lower layer."""
-    _write_repo_config(repo, 'preset = ""\n')
+    _write_repo_config(repo, '[agent6]\npreset = ""\n')
     with pytest.raises(ConfigError, match=r"empty.*none"):
         layer.load_effective(repo)
 
@@ -190,7 +193,7 @@ def test_global_selected_preset_loses_to_repo_config(
 ) -> None:
     # Preset selected by GLOBAL top-level `preset` sits between global and repo
     # config, so a conflicting value in REPO config (more specific) wins.
-    global_config.write_text(f'preset = "t"\n\n{_PROFILE_T}', encoding="utf-8")
+    global_config.write_text(f'[agent6]\npreset = "t"\n\n{_PROFILE_T}', encoding="utf-8")
     _write_repo_config(repo, "[review]\nconcurrency = 3\n")
     cfg = layer.load_effective(repo).config
     assert cfg.review.concurrency == 3  # repo config beats global-selected preset
@@ -199,7 +202,7 @@ def test_global_selected_preset_loses_to_repo_config(
 def test_repo_selected_preset_beats_same_repo_config(repo: pathlib.Path) -> None:
     # Preset selected by REPO top-level `preset` sits ABOVE the repo config, so
     # a conflicting value in the SAME repo config loses to the preset.
-    _write_repo_config(repo, f'preset = "t"\n\n[review]\nconcurrency = 3\n\n{_PROFILE_T}')
+    _write_repo_config(repo, f'[agent6]\npreset = "t"\n\n[review]\nconcurrency = 3\n\n{_PROFILE_T}')
     cfg = layer.load_effective(repo).config
     assert cfg.review.concurrency == 5  # repo-selected preset wins
 
@@ -230,12 +233,12 @@ def test_no_stacking_only_most_specific_preset_applies(
     # Different presets at global (sets field X) and repo (sets field Y): only
     # the REPO preset applies; X falls back to its DEFAULT (no stacking).
     global_config.write_text(
-        'preset = "g"\n\n[presets.g.review]\nwhen = "finish"\n',
+        '[agent6]\npreset = "g"\n\n[presets.g.review]\nwhen = "finish"\n',
         encoding="utf-8",
     )
     _write_repo_config(
         repo,
-        'preset = "r"\n\n[presets.r.review]\nconcurrency = 5\n',
+        '[agent6]\npreset = "r"\n\n[presets.r.review]\nconcurrency = 5\n',
     )
     cfg = layer.load_effective(repo).config
     assert cfg.review.concurrency == 5  # the repo preset applies

@@ -168,7 +168,7 @@ def test_snapshot_discards_preset_models_but_keeps_other_preset_values(
     global_path = paths.global_config_path()
     global_path.parent.mkdir(parents=True, exist_ok=True)
     global_path.write_text(
-        'preset = "custom"\n[presets.custom.models.worker]\neffort = "max"\n'
+        '[agent6]\npreset = "custom"\n[presets.custom.models.worker]\neffort = "max"\n'
         '[presets.custom.sandbox]\nprotect_git = "off"\n'
     )
     written = workdirs.write_lane_config(

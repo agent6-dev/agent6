@@ -257,9 +257,9 @@ def _configured_choices(eff: layer_data.EffectiveConfig, leaf: str) -> tuple[str
         leaf: The dotted leaf path.
 
     Returns:
-        The preset names for `preset`, else None.
+        The preset names for `agent6.preset`, else None.
     """
-    if leaf == "preset":
+    if leaf == "agent6.preset":
         return eff.presets or tuple(layer_presets.preset_names(eff.layers))
     return None
 
@@ -284,8 +284,7 @@ def build_config_view(
     by_section: dict[str, list[str]] = {}
     for leaf in leaves:
         by_section.setdefault(io.split_key(leaf)[0], []).append(leaf)
-    scalars = [s for s in by_section if all("." not in leaf for leaf in by_section[s])]
-    ordered = config_layer.section_order(scalars, (s for s in by_section if s not in scalars))
+    ordered = config_layer.section_order(by_section)
 
     settings: list[ConfigSetting] = []
     for section in ordered:

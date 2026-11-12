@@ -76,7 +76,7 @@ It removes from the highest layer holding the entry, and accepts only global or 
 Values from lower layers may become visible.
 The edit popup of an entry's row offers the same Add and Remove for its table.
 
-**Preset…** (`p`) opens the `preset` setting: the rows show the config under the selected preset, and a save, an unset or an entry change writes `[presets.<name>]` in the chosen layer; **Add preset…** (`P`) creates a table and selects it; **Remove preset** removes the selected table and resets `preset` ([Presets](config.md#presets)).
+**Preset…** (`p`) opens the `agent6.preset` setting: the rows show the config under the selected preset, and a save, an unset or an entry change writes `[presets.<name>]` in the chosen layer; **Add preset…** (`P`) creates a table and selects it; **Remove preset** removes the selected table and resets `preset` ([Presets](config.md#presets)).
 With `none` picked, edits go to the global and repo config; entries are edited only then.
 
 ![The config page](screenshots/out/03-config.png)

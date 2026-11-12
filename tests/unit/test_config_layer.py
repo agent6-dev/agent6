@@ -627,7 +627,9 @@ def test_fix_finds_a_stale_value_masked_by_the_selected_preset(
     repo: pathlib.Path,
 ) -> None:
     global_path = repo.parent / "g" / "agent6" / "config.toml"
-    global_path.write_text('preset = "no_review"\n\n[review]\nwhen = "banana"\n', encoding="utf-8")
+    global_path.write_text(
+        '[agent6]\npreset = "no_review"\n\n[review]\nwhen = "banana"\n', encoding="utf-8"
+    )
 
     diagnosis = layer.find_invalid_entries(repo)
 
@@ -771,7 +773,7 @@ def test_profile_key_is_rejected_in_flag_and_machine_layers(
     Neither layer can select a preset.
     """
     explicit = tmp_path / "ci.toml"
-    explicit.write_text('preset = "review"\n', encoding="utf-8")
+    explicit.write_text('[agent6]\npreset = "review"\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="preset"):
         layer.load_effective(repo, (explicit,))
     with pytest.raises(ConfigError, match="preset"):

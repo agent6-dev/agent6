@@ -202,7 +202,7 @@ def preset_catalog(
 
 
 def own_preset(layer: layer_data.Layer) -> str:
-    """Return a layer's own raw top-level `preset`, or "".
+    """Return a layer's own `agent6.preset`, or "".
 
     Args:
         layer: The layer.
@@ -213,15 +213,15 @@ def own_preset(layer: layer_data.Layer) -> str:
     Raises:
         ConfigError: The value is empty or not a string.
     """
-    raw = layer.data.get("preset")
+    raw = layer_data.own_selector(layer.data)
     if raw is None:
         return ""
     if not isinstance(raw, str):
-        shape = "a [preset] table" if isinstance(raw, dict) else f"a {type(raw).__name__}"
+        shape = "a table" if isinstance(raw, dict) else f"a {type(raw).__name__}"
         raise validation.ConfigError(
-            f"top-level `preset` in the {layer.name} config must be a preset name"
-            f' string (e.g. preset = "review"), got {shape};'
-            f" set it with `agent6 config set preset <name>`."
+            f"`agent6.preset` in the {layer.name} config must be a preset name"
+            f' string (e.g. agent6.preset = "review"), got {shape};'
+            f" set it with `agent6 config set agent6.preset <name>`."
         )
     return config_model.preset_name(raw)
 
@@ -234,11 +234,11 @@ def select_preset(cleaned: list[layer_data.Layer], preset_override: str) -> tupl
         preset_override: The `--preset` flag, or "".
 
     Returns:
-        `(name, source)`: the flag, else the repo layer's own `preset`, else the global
+        `(name, source)`: the flag, else the repo layer's own `agent6.preset`, else the global
         layer's, else `("none", "default")`.
 
     Raises:
-        ConfigError: A layer's `preset` is not a string.
+        ConfigError: A layer's `agent6.preset` is not a string.
     """
     if preset_override:
         return preset_override, "flag"
@@ -331,7 +331,7 @@ def apply_preset(layers: list[layer_data.Layer], preset_override: str) -> list[l
     name, source = select_preset(cleaned, preset_override)
     overrides = resolve_preset(name, user_presets)
     if source == "flag":
-        cleaned.append(layer_data.Layer("flag", None, {"preset": name}))
+        cleaned.append(layer_data.Layer("flag", None, {"agent6": {"preset": name}}))
     if not overrides:
         return cleaned
     return insert_preset(cleaned, layer_data.Layer("preset", None, overrides), source)

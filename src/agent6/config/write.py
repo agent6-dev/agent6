@@ -1000,8 +1000,8 @@ def remove_entry(
 def preset_key(preset: str, key: str) -> str:
     """Return the key an edit under the selected preset writes: `presets.<name>.<key>`.
 
-    The selector and the preset tables never nest: `preset` and `presets.*` are written as
-    given.
+    The `[agent6]` table, which holds the selector, and the preset tables never nest:
+    `agent6.*` and `presets.*` are written as given.
 
     Args:
         preset: The selected preset; "" writes the key itself.
@@ -1011,13 +1011,13 @@ def preset_key(preset: str, key: str) -> str:
         The key to write.
     """
     parts = io.split_key(key)
-    if not preset or parts[0] in ("preset", "presets"):
+    if not preset or parts[0] in ("agent6", "presets"):
         return key
     return io.render_key(("presets", preset, *parts))
 
 
 def selected_preset(eff: layer_data.EffectiveConfig) -> str:
-    """Return the preset the config pages edit: the effective `preset`, "" for `none`.
+    """Return the preset the config pages edit: the effective `agent6.preset`, "" for `none`.
 
     Args:
         eff: The effective config a page shows.
@@ -1026,7 +1026,8 @@ def selected_preset(eff: layer_data.EffectiveConfig) -> str:
         The preset whose `[presets.<name>]` table a page write lands in, or "" for the
         global and repo config themselves.
     """
-    return "" if eff.config.preset == "none" else eff.config.preset
+    name = eff.config.agent6.preset
+    return "" if name == "none" else name
 
 
 def preset_layer(repo_root: pathlib.Path, name: str) -> bool | None:
@@ -1050,7 +1051,7 @@ def preset_layer(repo_root: pathlib.Path, name: str) -> bool | None:
 def add_preset(repo_root: pathlib.Path, name: str, *, to_repo: bool = False) -> str | None:
     """Create an empty `[presets.<name>]` table in the chosen layer and select it there.
 
-    An existing table is kept; `preset = "<name>"` is written either way.
+    An existing table is kept; `agent6.preset = "<name>"` is written either way.
 
     Args:
         repo_root: The repo.
@@ -1073,11 +1074,11 @@ def add_preset(repo_root: pathlib.Path, name: str, *, to_repo: bool = False) -> 
         err = set_config_table(repo_root, io.render_key(("presets", name)), {}, to_repo=to_repo)
         if err:
             return err
-    return set_config_value(repo_root, "preset", io.format_toml_value(name), to_repo=to_repo)
+    return set_config_value(repo_root, "agent6.preset", io.format_toml_value(name), to_repo=to_repo)
 
 
 def remove_preset(repo_root: pathlib.Path, name: str) -> UnsetResult:
-    """Remove `[presets.<name>]` from both config layers and unset every `preset` naming it.
+    """Remove `[presets.<name>]` from both layers and unset every `agent6.preset` naming it.
 
     The selectors go first, so no layer is left selecting a table that is gone; a selected
     built-in, which has no table, is deselected the same way.
@@ -1092,8 +1093,8 @@ def remove_preset(repo_root: pathlib.Path, name: str) -> UnsetResult:
     removed = False
     for to_repo in (True, False):
         target = _write_target(repo_root, to_repo=to_repo)
-        if target.is_file() and io.read_toml_file(target).get("preset") == name:
-            reset = unset_config_value(repo_root, "preset", to_repo=to_repo)
+        if target.is_file() and layer_data.own_selector(io.read_toml_file(target)) == name:
+            reset = unset_config_value(repo_root, "agent6.preset", to_repo=to_repo)
             if reset.error:
                 return reset
             removed = removed or reset.removed

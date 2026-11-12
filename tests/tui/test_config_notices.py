@@ -74,7 +74,7 @@ def test_config_write_notices_name_a_shadowing_layer(
                 f'[{prefix}review]\nreviewers = [{{ focus = "mask" }}]\n'
             )
             if source == "preset":
-                target.write_text('preset = "mask"\n' + initial + overlay)
+                target.write_text('[agent6]\npreset = "mask"\n' + initial + overlay)
             else:
                 higher.parent.mkdir(parents=True, exist_ok=True)
                 higher.write_text(overlay)
@@ -113,7 +113,7 @@ def test_config_write_notices_name_a_shadowing_layer(
                 modal.action_add()
             await pilot.pause()
             assert target.read_text() != (
-                'preset = "mask"\n' + initial + overlay if source == "preset" else initial
+                '[agent6]\npreset = "mask"\n' + initial + overlay if source == "preset" else initial
             )
             assert io.read_toml_file(target)
             notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]

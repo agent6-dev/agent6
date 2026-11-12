@@ -334,11 +334,11 @@ def test_entry_of(key: str, expected: tuple[str, str] | None) -> None:
 def test_preset_key_prefixes_the_table_only_under_a_preset() -> None:
     """An edit under the selected preset writes `presets.<name>.<key>`; none writes the key.
 
-    The selector and the preset tables never nest under the selected preset.
+    The `[agent6]` table and the preset tables never nest under the selected preset.
     """
     assert write.preset_key("fast", "sandbox.run_commands") == "presets.fast.sandbox.run_commands"
     assert write.preset_key("", "sandbox.run_commands") == "sandbox.run_commands"
-    assert write.preset_key("fast", "preset") == "preset"
+    assert write.preset_key("fast", "agent6.preset") == "agent6.preset"
     assert (
         write.preset_key("fast", "presets.slow.sandbox.network") == "presets.slow.sandbox.network"
     )
@@ -348,11 +348,11 @@ def test_preset_key_prefixes_the_table_only_under_a_preset() -> None:
 def test_add_preset_creates_a_table_and_selects_it(
     tmp_path: pathlib.Path, *, to_repo: bool
 ) -> None:
-    """Add preset writes `[presets.<name>]` once and `preset`; Remove preset drops both."""
+    """Add preset writes `[presets.<name>]` once and the selector; Remove preset drops both."""
     assert write.add_preset(tmp_path, "fast", to_repo=to_repo) is None
     target = paths.repo_config_path(tmp_path) if to_repo else paths.global_config_path()
     assert "[presets.fast]" in target.read_text(encoding="utf-8")
-    assert io.read_toml_file(target)["preset"] == "fast"
+    assert io.read_toml_file(target)["agent6"]["preset"] == "fast"
     assert write.preset_layer(tmp_path, "fast") is to_repo
     assert (
         write.set_config_value(tmp_path, "presets.fast.sandbox.network", "host", to_repo=to_repo)
@@ -367,13 +367,13 @@ def test_add_preset_creates_a_table_and_selects_it(
     )
     assert write.remove_preset(tmp_path, "fast").removed is True
     saved = io.read_toml_file(target)
-    assert "presets" not in saved and "preset" not in saved
+    assert "presets" not in saved and "agent6" not in saved
     assert write.preset_layer(tmp_path, "fast") is None
     assert write.remove_preset(tmp_path, "fast").removed is False
     # A selected built-in has no table: Remove preset still resets the selector.
-    assert write.set_config_value(tmp_path, "preset", "review", to_repo=to_repo) is None
+    assert write.set_config_value(tmp_path, "agent6.preset", "review", to_repo=to_repo) is None
     assert write.remove_preset(tmp_path, "review").removed is True
-    assert "preset" not in io.read_toml_file(target)
+    assert "agent6" not in io.read_toml_file(target)
 
 
 def test_entries_and_reviewers_land_under_the_selected_preset(tmp_path: pathlib.Path) -> None:
@@ -414,6 +414,6 @@ def test_a_write_under_a_built_in_preset_keeps_the_built_ins_values(tmp_path: pa
     assert write.set_config_value(tmp_path, "presets.review.review.concurrency", "2") is None
     saved = io.read_toml_file(paths.global_config_path())["presets"]["review"]
     assert saved["review"]["concurrency"] == 2 and saved["sandbox"] == {"network": "host"}
-    assert write.set_config_value(tmp_path, "preset", "review") is None
+    assert write.set_config_value(tmp_path, "agent6.preset", "review") is None
     eff = layer.load_effective(tmp_path)
     assert eff.config.sandbox.network == "host" and len(eff.config.review.reviewers) == 3

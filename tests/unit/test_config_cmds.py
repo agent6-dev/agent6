@@ -52,7 +52,7 @@ def test_profile_value_completer_offers_profile_names(
     (gdir / "agent6" / "config.toml").write_text("[presets.myteam.review]\npanel_size = 2\n")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
     monkeypatch.chdir(tmp_path)
-    args = argparse.Namespace(key="preset")
+    args = argparse.Namespace(key="agent6.preset")
     out = cli_completers._complete_config_values("", args)  # pyright: ignore[reportPrivateUsage]
     assert "review" in out and "myteam" in out
     assert cli_completers._complete_config_values("re", args) == ["review"]  # pyright: ignore[reportPrivateUsage]
@@ -72,8 +72,9 @@ def test_config_key_completer_offers_user_profile_paths(
     out = cli_completers._complete_config_keys("presets.")  # pyright: ignore[reportPrivateUsage]
     assert any(k.startswith("presets.myteam.review.") for k in out)
     assert not any(k.startswith("presets.review") for k in out)
-    # the top-level `preset` leaf itself is offered alongside presets.*
-    assert "preset" in cli_completers._complete_config_keys("preset")  # pyright: ignore[reportPrivateUsage]
+    # the selector is offered under its own table, never inside a preset
+    assert "agent6.preset" in cli_completers._complete_config_keys("agent6.")  # pyright: ignore[reportPrivateUsage]
+    assert not any(".agent6." in k for k in out)
     # a bare TAB (empty prefix) is not flooded with the generated paths
     assert not any(
         k.startswith("presets.")

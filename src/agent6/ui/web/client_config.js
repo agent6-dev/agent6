@@ -35,12 +35,12 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
       filtering: document.activeElement === filter,
     }));
   };
-  // Preset… opens the `preset` row's editor; the rows are the config under the selected preset.
+  // Preset… opens the `agent6.preset` row's editor; the rows are the config under the selected preset.
   const presetBtn = el('button', null, 'Preset…');
   presetBtn.title = selected
     ? 'preset: ' + selected + '; saves write [presets.' + selected + ']'
     : 'preset: none; saves write the global and repo config';
-  presetBtn.onclick = () => editConfig('preset', data.preset, registry.tables, refresh, data);
+  presetBtn.onclick = () => editConfig('agent6.preset', data['agent6.preset'], registry.tables, refresh, data);
   bar.appendChild(presetBtn);
   const addPresetBtn = el('button', null, 'Add preset…');
   addPresetBtn.onclick = () => addPreset(refresh);
@@ -112,9 +112,9 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
   else if (focused) focused[1].focus({preventScroll: true});
   if (state.y !== undefined) window.scrollTo(state.x, state.y);
 }
-// The preset the page edits, read off the payload's `preset` row; '' for none.
+// The preset the page edits, read off the payload's `agent6.preset` row; '' for none.
 function selectedPreset(data) {
-  const value = data.preset && data.preset.value;
+  const value = data['agent6.preset'] && data['agent6.preset'].value;
   return value && value !== 'none' ? String(value) : '';
 }
 // A leaf's description is the docs table cell: markdown-lite. Backtick spans
@@ -372,8 +372,8 @@ function configCombobox(current) {
 
 function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   const cur = s.input;
-  // The selector itself is never nested under the preset it names.
-  const preset = key === 'preset' ? '' : selectedPreset(data);
+  // The [agent6] table, which holds the selector, is never nested under a preset.
+  const preset = key.startsWith('agent6.') ? '' : selectedPreset(data);
   const back = el('div', 'overlay');
   const opener = document.activeElement;
   const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';

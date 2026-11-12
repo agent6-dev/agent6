@@ -86,7 +86,7 @@ _ROOT = pathlib.Path(__file__).resolve().parents[2]
         ),
         (model_roles.ModelsConfig, "planner", ("plan resumes",)),
         (
-            model.Config,
+            model.Agent6Section,
             "preset",
             ("`resume --preset`: from that resume on, recorded for later resumes",),
         ),

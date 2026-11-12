@@ -60,6 +60,45 @@ It can be empty or absent when the global config supplies a provider and model.
 | Field | Default | Meaning |
 |---|---|---|
 | `config_version` | `1` | Config schema version; only `1` is accepted. |
+| `preset` | `"none"` | selected preset; `agent6.preset = "none"`: no preset, stop preset lookup; `"no_review"`: panel off; `"review"`: three seats able to block the finish; `"deep_review"`: five repo-scope seats able to block the finish; custom preset: `[presets.<name>]`; overrides at the selecting layer; `--preset`: per run; `resume --preset`: from that resume on, recorded for later resumes; empty string refused |
+
+### Presets
+
+A preset fills many settings at once.
+`agent6 config presets` lists them; select with `--preset <name>`, `agent6 config set agent6.preset <name>` (`--repo`), or the preset picker of the TUI and web new-task composers.
+A preset overrides config at the layer that selected it (most-specific source wins, presets never stack); a more-specific config layer, `--config FILE`, or an individual flag still beats it.
+A `--config FILE` or machine overlay cannot select one.
+
+The default `agent6.preset = "none"` selects no preset.
+Set `agent6.preset = "none"` in the repo config to stop lookup before a global preset, or pass `--preset none` to override both layers.
+This keeps the layers' own settings; it does not reset them to defaults.
+An empty string is refused.
+The name `none` is reserved, so `[presets.none]` is refused.
+The TUI and web config pages edit the selected preset in place: with `agent6.preset` set to a name, a save, an unset or an entry change writes `[presets.<name>]` in the chosen layer; with `agent6.preset = "none"`, the global and repo config.
+**Preset…** opens the `agent6.preset` setting, **Add preset…** creates a table and selects it, and **Remove preset** removes the selected table and resets `agent6.preset`.
+
+| Preset | For | Sets |
+|---|---|---|
+| `no_review` | turns off the review panel | `review.when = "never"` |
+| `review` | three review seats that can block the finish | `review.when = "finish"`, `review.block_on = "any"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }]`, `review.concurrency = 3` |
+| `deep_review` | five repo-scope review seats that can block the finish | `review.when = "finish"`, `review.block_on = "any"`, `review.scope = "repo"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }, { focus = "edge-cases" }, { focus = "over-engineering" }]`, `review.concurrency = 5` |
+
+Define your own with a `[presets.<name>]` table (a partial config); a built-in's name replaces that built-in wholesale:
+
+```toml
+[agent6]
+preset = "myteam"
+
+[presets.myteam.review]
+when = "finish"
+block_on = "any"
+reviewers = [
+  { focus = "security", model = "anthropic/claude-opus-4-8" },
+  { focus = "correctness", model = "openrouter/moonshotai/kimi-k2", effort = "high" },
+]
+```
+
+The first write under a built-in's name (`agent6 config set presets.review.sandbox.network host`, or a page edit with `agent6.preset = "review"`) copies the built-in's values into the table first, so the rest of it stays.
 
 ## `[providers.<name>]`
 
@@ -391,49 +430,6 @@ Placement and setup of the worktrees agent6 makes: lane and machine-state clones
 |---|---|---|
 | `base_dir` | `""` | base directory for the worktrees agent6 makes, grouped by repository: lane and machine-state clones, fork and `run --worktree` linked worktrees; empty: `<cache_dir>/worktrees`; lane clone removed after work import; fork and `run --worktree` worktrees removed by `sessions prune` once merged or holding no work |
 | `setup_command` | `[]` | environment-setup command for a new worktree as argv, no shell (pipeline form: `["sh", "-c", "a && b"]`); `run --worktree` and fork worktrees, lane and machine-state clones: tracked files only, no untracked `.venv` or `node_modules`; command run once in each worktree before the first turn, under the run's command sandbox (same isolation, network and grants); nonzero exit or 600-second timeout: session ended before any turn; unset: AGENTS.md `## Setup command` fenced block, parsed like `## Verify command`, command printed; no configured or inferred command: nothing run |
-
-## `preset` (top-level)
-
-| Field | Default | Meaning |
-|---|---|---|
-| `preset` | `"none"` | selected preset; `preset = "none"`: no preset, stop preset lookup; `preset = "no_review"`: panel off; `preset = "review"`: three seats able to block the finish; `preset = "deep_review"`: five repo-scope seats able to block the finish; custom preset: `[presets.<name>]`; overrides at the selecting layer; `--preset`: per run; `resume --preset`: from that resume on, recorded for later resumes; empty string refused |
-
-### Presets
-
-A preset fills many settings at once.
-`agent6 config presets` lists them; select with `--preset <name>`, `agent6 config set preset <name>` (`--repo`), or the preset picker of the TUI and web new-task composers.
-A preset overrides config at the layer that selected it (most-specific source wins, presets never stack); a more-specific config layer, `--config FILE`, or an individual flag still beats it.
-A `--config FILE` or machine overlay cannot select one.
-
-The default `preset = "none"` selects no preset.
-Set `preset = "none"` in the repo config to stop lookup before a global preset, or pass `--preset none` to override both layers.
-This keeps the layers' own settings; it does not reset them to defaults.
-An empty string is refused.
-The name `none` is reserved, so `[presets.none]` is refused.
-The TUI and web config pages edit the selected preset in place: with `preset` set to a name, a save, an unset or an entry change writes `[presets.<name>]` in the chosen layer; with `preset = "none"`, the global and repo config.
-**Preset…** opens the `preset` setting, **Add preset…** creates a table and selects it, and **Remove preset** removes the selected table and resets `preset`.
-
-| Preset | For | Sets |
-|---|---|---|
-| `no_review` | turns off the review panel | `review.when = "never"` |
-| `review` | three review seats that can block the finish | `review.when = "finish"`, `review.block_on = "any"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }]`, `review.concurrency = 3` |
-| `deep_review` | five repo-scope review seats that can block the finish | `review.when = "finish"`, `review.block_on = "any"`, `review.scope = "repo"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }, { focus = "edge-cases" }, { focus = "over-engineering" }]`, `review.concurrency = 5` |
-
-Define your own with a `[presets.<name>]` table (a partial config); a built-in's name replaces that built-in wholesale:
-
-```toml
-preset = "myteam"
-
-[presets.myteam.review]
-when = "finish"
-block_on = "any"
-reviewers = [
-  { focus = "security", model = "anthropic/claude-opus-4-8" },
-  { focus = "correctness", model = "openrouter/moonshotai/kimi-k2", effort = "high" },
-]
-```
-
-The first write under a built-in's name (`agent6 config set presets.review.sandbox.network host`, or a page edit with `preset = "review"`) copies the built-in's values into the table first, so the rest of it stays.
 
 ## `[harness]`
 

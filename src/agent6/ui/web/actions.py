@@ -675,7 +675,7 @@ def add_preset(cwd: pathlib.Path, name: str, *, repo: bool = False) -> tuple[boo
 
 
 def remove_preset(cwd: pathlib.Path, name: str) -> tuple[bool, str]:
-    """Remove a `[presets.<name>]` table from the global and repo config and reset `preset`.
+    """Remove a `[presets.<name>]` table from both config layers and reset `agent6.preset`.
 
     Args:
         cwd: The repository.

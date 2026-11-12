@@ -478,7 +478,7 @@ def machine_reasoning_snapshot(
 
 
 def selected_preset(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()) -> str:
-    """Return the preset the config page edits: the effective `preset`, "" for `none`.
+    """Return the preset the config page edits: the effective `agent6.preset`, "" for `none`.
 
     Args:
         cwd: The repository.
@@ -556,10 +556,10 @@ def config_suggestions(
         provider: The model editor's unsaved provider choice, restricted to configured names.
 
     Returns:
-        The preset names for `preset`; for any other key, what `config_value_choices`
+        The preset names for `agent6.preset`; for any other key, what `config_value_choices`
         offers, or [] on a config error.
     """
-    if key == "preset":
+    if key == "agent6.preset":
         return layer_presets.available_preset_names(cwd, config_paths)
     try:
         eff = layer.load_effective(cwd, config_paths)

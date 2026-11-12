@@ -168,7 +168,7 @@ def _cmd_config_presets(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
             print(f"  {key} = {config_view.format_value(val)}")
     print(
         "\nSelect per run with --preset <name>;"
-        " persist with `agent6 config set preset <name>` (--repo for this repo)."
+        " persist with `agent6 config set agent6.preset <name>` (--repo for this repo)."
     )
     return 0
 

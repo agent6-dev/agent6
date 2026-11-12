@@ -336,7 +336,7 @@ def stamp_execution(
     m = manifest.read_manifest(session_dir)
     harness = m.harness
     if not harness.preset_from_flag:
-        harness = harness.model_copy(update={"preset": cfg.preset})
+        harness = harness.model_copy(update={"preset": cfg.agent6.preset})
     write_manifest(
         session_dir / manifest.MANIFEST_NAME,
         m.model_copy(

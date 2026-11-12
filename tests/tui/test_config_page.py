@@ -522,9 +522,13 @@ def test_none_preset_prefill_saves_back_unchanged(repo: pathlib.Path) -> None:
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, config_page.ConfigScreen)
-            table = screen.query_one("#tbl-preset", widgets.DataTable)
+            table = screen.query_one("#tbl-agent6", widgets.DataTable)
             table.focus()
-            table.move_cursor(row=0)
+            table.move_cursor(
+                row=next(
+                    i for i in range(table.row_count) if str(table.get_row_at(i)[0]) == "preset"
+                )
+            )
             await pilot.pause()
             screen.action_edit()
             await pilot.pause()
@@ -533,7 +537,7 @@ def test_none_preset_prefill_saves_back_unchanged(repo: pathlib.Path) -> None:
             assert modal.query_one("#edit-value", forms.ChoiceField).value == "none"
             modal.action_save()
             await pilot.pause()
-            assert layer.load_effective(repo).config.preset == "none"
+            assert layer.load_effective(repo).config.agent6.preset == "none"
 
     asyncio.run(scenario())
 
@@ -1068,7 +1072,7 @@ def test_filter_down_stops_on_a_collapsed_first_section(repo: pathlib.Path) -> N
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, config_page.ConfigScreen)
-            first = screen.query_one("#sec-preset", widgets.Collapsible)
+            first = screen.query_one("#sec-agent6", widgets.Collapsible)
             first.collapsed = True
             screen.action_search()
             await pilot.pause()
@@ -1749,7 +1753,7 @@ def test_up_off_first_setting_reveals_top_header_then_filter(repo: pathlib.Path)
                 await pilot.press("up")
                 await pilot.pause()
                 f = screen.focused
-                if isinstance(f, CollapsibleTitle) and getattr(f.parent, "id", "") == "sec-preset":
+                if isinstance(f, CollapsibleTitle) and getattr(f.parent, "id", "") == "sec-agent6":
                     header = f
                     break
             assert header is not None, "never reached the first header going up"
@@ -1797,7 +1801,7 @@ def test_reset_on_a_profile_sourced_setting_tells_the_truth(repo: pathlib.Path) 
     """
     gdir = paths.global_config_dir()
     (gdir / "config.toml").write_text(
-        'preset = "fast"\n' + _GLOBAL + '\n[presets.fast.review]\nwhen = "never"\n',
+        '[agent6]\npreset = "fast"\n' + _GLOBAL + '\n[presets.fast.review]\nwhen = "never"\n',
         encoding="utf-8",
     )
 
@@ -2051,7 +2055,7 @@ def test_the_page_shows_and_edits_the_selected_preset(repo: pathlib.Path) -> Non
             picker.action_save()
             await pilot.pause()
             assert app.screen is screen
-            assert io.read_toml_file(cfg)["preset"] == "fast"
+            assert io.read_toml_file(cfg)["agent6"] == {"preset": "fast"}
             assert value_of(screen, "sandbox", "run_commands") == '"deny"'
             status = str(screen.query_one("#status", widgets.Static).render())
             assert "preset fast" in status
@@ -2079,7 +2083,7 @@ def test_the_page_shows_and_edits_the_selected_preset(repo: pathlib.Path) -> Non
             await pilot.press("y")
             await pilot.pause()
             saved = io.read_toml_file(cfg)
-            assert "presets" not in saved and "preset" not in saved
+            assert "presets" not in saved and "agent6" not in saved
             assert value_of(screen, "sandbox", "run_commands") == '"allow"'
 
     asyncio.run(scenario())

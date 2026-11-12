@@ -102,7 +102,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         initial_steer: An operator follow-up queued for the loop's first boundary,
             seeded after the stale-state clear so it survives it.
         pins: The pinned paths.
-        preset_stamp: `(name, from_flag)` to stamp in place of deriving from `preset`,
+        preset_stamp: `(name, from_flag)` to stamp in place of deriving from `agent6.preset`,
             so a parked resume replays the original submission's precedence.
         model: The `--model` value that set the driving role.
         explicit_leaves: The config leaves the operator wrote, as dotted paths; a
@@ -409,7 +409,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 if lane_gate_source
                 else None
             ),
-            effective_preset=(preset_stamp[0] if preset_stamp else (preset or cfg.preset)),
+            effective_preset=(preset_stamp[0] if preset_stamp else (preset or cfg.agent6.preset)),
             preset_from_flag=(preset_stamp[1] if preset_stamp else bool(preset)),
             driver_from_flag=bool(model),
             isolation=isolation,

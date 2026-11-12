@@ -1785,8 +1785,8 @@ def test_config_page_edits_the_selected_preset(server: tuple[web_server.WebServe
     cfg.write_text('[presets.fast.sandbox]\nrun_commands = "deny"\n')
     plain = json.loads(_get(port, "/api/config")[1])
     assert plain["sandbox.run_commands"]["value"] == "ask"
-    assert {"none", "fast", "review"} <= set(plain["preset"]["choices"])
-    status, _ = _post(port, "/api/config", {"key": "preset", "value": '"fast"'})
+    assert {"none", "fast", "review"} <= set(plain["agent6.preset"]["choices"])
+    status, _ = _post(port, "/api/config", {"key": "agent6.preset", "value": '"fast"'})
     assert status == 200
     under = json.loads(_get(port, "/api/config")[1])
     assert (under["sandbox.run_commands"]["value"], under["sandbox.run_commands"]["source"]) == (
@@ -1812,11 +1812,11 @@ def test_config_page_edits_the_selected_preset(server: tuple[web_server.WebServe
     assert "network" not in io.read_toml_file(cfg)["presets"]["fast"]["sandbox"]
     status, answer = _post(port, "/api/config/preset", {"name": "slow"})
     assert status == 200 and "selected" in str(answer["message"])
-    assert io.read_toml_file(cfg)["preset"] == "slow"
+    assert io.read_toml_file(cfg)["agent6"] == {"preset": "slow"}
     status, _ = _post(port, "/api/config/preset/remove", {"name": "slow"})
     assert status == 200
     saved = io.read_toml_file(cfg)
-    assert "slow" not in saved.get("presets", {}) and "preset" not in saved
+    assert "slow" not in saved.get("presets", {}) and "agent6" not in saved
     status, answer = _post(port, "/api/config/preset", {"name": "none"})
     assert status != 200 and "reserved" in str(answer.get("error", answer))
 
@@ -2692,7 +2692,7 @@ def test_config_writes_report_shadowing_layers(
     )
     if source == "preset":
         target.write_text(
-            'preset = "mask"\n'
+            '[agent6]\npreset = "mask"\n'
             + initial
             + overlay.replace("[", "[presets.mask.", 1).replace("\n[", "\n[presets.mask.")
         )
@@ -2711,7 +2711,7 @@ def test_config_writes_report_shadowing_layers(
         saved = io.read_toml_file(target)
         assert "overrides" not in str(data["message"])
         assert saved["presets"]["mask"] != tomllib.loads(overlay)
-        assert {k: v for k, v in saved.items() if k not in ("preset", "presets")} == tomllib.loads(
+        assert {k: v for k, v in saved.items() if k not in ("agent6", "presets")} == tomllib.loads(
             initial
         )
         return

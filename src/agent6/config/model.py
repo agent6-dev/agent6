@@ -58,6 +58,18 @@ class Agent6Section(pydantic.BaseModel):
         default=1,
         description="Config schema version; only `1` is accepted.",
     )
+    # The injection order and stacking rules live in config.layer_presets.apply_preset.
+    preset: Annotated[str, pydantic.AfterValidator(preset_name)] = pydantic.Field(
+        default="none",
+        description=(
+            'selected preset; `agent6.preset = "none"`: no preset, stop preset lookup; '
+            '`"no_review"`: panel off; `"review"`: three seats able to block the finish; '
+            '`"deep_review"`: five repo-scope seats able to block the finish; custom preset: '
+            "`[presets.<name>]`; overrides at the selecting layer; `--preset`: per run; "
+            "`resume --preset`: from that resume on, recorded for later resumes; empty string "
+            "refused"
+        ),
+    )
 
 
 class Config(pydantic.BaseModel):
@@ -111,18 +123,6 @@ class Config(pydantic.BaseModel):
     web: surface_config.WebConfig = pydantic.Field(default_factory=surface_config.WebConfig)
     telemetry: surface_config.TelemetryConfig = pydantic.Field(
         default_factory=surface_config.TelemetryConfig
-    )
-    # The injection order and stacking rules live in config.layer_presets.apply_preset.
-    preset: Annotated[str, pydantic.AfterValidator(preset_name)] = pydantic.Field(
-        default="none",
-        description=(
-            'selected preset; `preset = "none"`: no preset, stop preset lookup; `preset = '
-            '"no_review"`: panel off; `preset = "review"`: three seats able to block the '
-            'finish; `preset = "deep_review"`: five repo-scope seats able to block the finish; '
-            "custom preset: `[presets.<name>]`; overrides at the selecting layer; `--preset`: "
-            "per run; `resume --preset`: from that resume on, recorded for later resumes; "
-            "empty string refused"
-        ),
     )
 
     @pydantic.field_validator("providers", mode="before")
@@ -741,6 +741,7 @@ _REPLACED_KEYS = {
     "harness.verify_timeout_s": "moved config key; use harness.verify.timeout_s",
     "harness.verify_when": "moved config key; use harness.verify.when",
     "parallel": "moved config table; use [harness.parallel]",
+    "preset": "moved config key; use agent6.preset",
     "prompt": "moved config table; use [harness.prompt]",
     "machine.snapshot_keep": "renamed config key; use machine.keep_snapshots",
     "machine.state_log_keep": "renamed config key; use machine.keep_state_logs",

@@ -428,7 +428,9 @@ def test_a_execution_restamps_a_config_selected_preset(tmp_path: pathlib.Path) -
         },
     )
 
-    stamps.stamp_execution(tmp_path, Config(preset="new-config"), "run", "full")
+    stamps.stamp_execution(
+        tmp_path, Config.model_validate({"agent6": {"preset": "new-config"}}), "run", "full"
+    )
 
     harness = sessions_manifest.read_manifest(tmp_path).harness
     assert harness.preset == "new-config"

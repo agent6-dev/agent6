@@ -597,14 +597,14 @@ def test_config_suggestions_providers_and_models(
     monkeypatch.setattr(models_cache, "list_models", _fake_list)
     payload = model.config_payload(tmp_path)
     assert "models.worker.provider" not in payload
-    assert payload["preset"]["choices"] == ["deep_review", "no_review", "none", "review"]
+    assert payload["agent6.preset"]["choices"] == ["deep_review", "no_review", "none", "review"]
     assert model.config_suggestions(tmp_path, "models.worker.provider") == []
     assert model.config_suggestions(tmp_path, "models.worker.model") == [
         "openrouter/kimi",
         "openrouter/qwen3",
     ]
     assert seen["provider"] == "openrouter"
-    assert model.config_suggestions(tmp_path, "preset") == [
+    assert model.config_suggestions(tmp_path, "agent6.preset") == [
         "deep_review",
         "no_review",
         "none",

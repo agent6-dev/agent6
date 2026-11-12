@@ -203,57 +203,57 @@ def test_empty_preset_flag_names_none(
 def test_set_top_level_profile_and_get(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert _run(["config", "set", "preset", "review"]) == 0
-    assert _global_toml(iso)["preset"] == "review"
+    assert _run(["config", "set", "agent6.preset", "review"]) == 0
+    assert _global_toml(iso)["agent6"] == {"preset": "review"}
     capsys.readouterr()
-    assert _run(["config", "get", "preset"]) == 0
+    assert _run(["config", "get", "agent6.preset"]) == 0
     out = capsys.readouterr().out
-    assert 'preset = "review"' in out
+    assert 'agent6.preset = "review"' in out
     assert "[global]" in out
 
 
 def test_set_unknown_profile_name_reverts(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert _run(["config", "set", "preset", "review"]) == 0
-    assert _run(["config", "set", "preset", "porifle"]) == 2
+    assert _run(["config", "set", "agent6.preset", "review"]) == 0
+    assert _run(["config", "set", "agent6.preset", "porifle"]) == 2
     assert "unknown preset" in capsys.readouterr().err
-    assert _global_toml(iso)["preset"] == "review"  # rolled back to the prior value
+    assert _global_toml(iso)["agent6"] == {"preset": "review"}  # rolled back to the prior value
 
 
 def test_unset_top_level_profile(iso: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    _run(["config", "set", "preset", "no_review"])
-    assert _run(["config", "unset", "preset"]) == 0
-    assert "preset" not in _global_toml(iso)
+    _run(["config", "set", "agent6.preset", "no_review"])
+    assert _run(["config", "unset", "agent6.preset"]) == 0
+    assert "agent6" not in _global_toml(iso)
     capsys.readouterr()
-    _run(["config", "get", "preset"])
+    _run(["config", "get", "agent6.preset"])
     assert "[default]" in capsys.readouterr().out
 
 
 def test_set_profile_heals_a_profile_table_typo(iso: pathlib.Path) -> None:
-    # A leftover `[preset]` table breaks the config; `config set preset <name>` heals it.
+    # A leftover `[agent6.preset]` table breaks the config; `config set agent6.preset` heals it.
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (iso / "g" / "agent6" / "config.toml").write_text(
-        '[preset]\nporifle = "review"\n', encoding="utf-8"
+        '[agent6.preset]\nporifle = "review"\n', encoding="utf-8"
     )
-    assert _run(["config", "set", "preset", "review"]) == 0
-    assert _global_toml(iso) == {"preset": "review"}
+    assert _run(["config", "set", "agent6.preset", "review"]) == 0
+    assert _global_toml(iso) == {"agent6": {"preset": "review"}}
 
 
-def test_set_profile_table_typo_reports_profile_error(
+def test_a_key_under_the_selector_is_refused_before_anything_is_written(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `config set preset.porifle x` fails with the preset-must-be-a-string message and rolls back.
-    assert _run(["config", "set", "preset", "review"]) == 0
-    assert _run(["config", "set", "preset.porifle", "x"]) == 2
-    assert "must be a preset name string" in capsys.readouterr().err
-    assert _global_toml(iso) == {"preset": "review"}
+    """`config set agent6.preset.porifle x` names the selector it cannot nest a key under."""
+    assert _run(["config", "set", "agent6.preset", "review"]) == 0
+    assert _refuse(["config", "set", "agent6.preset.porifle", "x"]) == 2
+    assert "lives inside agent6.preset" in capsys.readouterr().err
+    assert _global_toml(iso) == {"agent6": {"preset": "review"}}
 
 
 def test_set_profile_repo_targets_repo_config(iso: pathlib.Path) -> None:
-    assert _run(["config", "set", "preset", "no_review", "--repo"]) == 0
+    assert _run(["config", "set", "agent6.preset", "no_review", "--repo"]) == 0
     repo_cfg = (paths.state_dir(iso) / "config.toml").read_text(encoding="utf-8")
-    assert 'preset = "no_review"' in repo_cfg
+    assert '[agent6]\npreset = "no_review"' in repo_cfg
     assert not (iso / "g" / "agent6" / "config.toml").is_file()
 
 
@@ -263,7 +263,7 @@ def test_set_profile_machine_file_is_refused(
     # A machine [config] overlay cannot smuggle a preset selection; the write is rolled back.
     mf = tmp_path / "m.asm.toml"
     mf.write_text("[config]\n", encoding="utf-8")
-    assert _run(["config", "set", "preset", "review", "--machine-file", str(mf)]) == 2
+    assert _run(["config", "set", "agent6.preset", "review", "--machine-file", str(mf)]) == 2
     assert "preset" in capsys.readouterr().err
     assert "preset" not in mf.read_text(encoding="utf-8").replace("[config]", "")
 
@@ -276,7 +276,8 @@ def test_config_profiles_lists_builtins_and_user(
 ) -> None:
     (iso / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (iso / "g" / "agent6" / "config.toml").write_text(
-        'preset = "review"\n\n[presets.myteam.review]\nconcurrency = 2\n', encoding="utf-8"
+        '[agent6]\npreset = "review"\n\n[presets.myteam.review]\nconcurrency = 2\n',
+        encoding="utf-8",
     )
     assert _run(["config", "presets"]) == 0
     out = capsys.readouterr().out
@@ -790,7 +791,7 @@ def test_fill_never_bakes_the_repo_layer_into_the_global_config(iso: pathlib.Pat
     """Fill writes the global file from defaults plus global, never this repo's overrides."""
     assert _run(["config", "set", "--repo", "sandbox.memory_limit_mib", "4321"]) == 0
     filled = _fill_and_read(iso)
-    assert filled["preset"] == "none"
+    assert filled["agent6"] == {"config_version": 1, "preset": "none"}
     sandbox = filled["sandbox"]
     assert isinstance(sandbox, dict)
     assert sandbox["memory_limit_mib"] != 4321, "the repo layer leaked into the global config"
@@ -798,9 +799,9 @@ def test_fill_never_bakes_the_repo_layer_into_the_global_config(iso: pathlib.Pat
 
 def test_fill_keeps_the_preset_selector_and_does_not_bake_its_effects(iso: pathlib.Path) -> None:
     """Fill keeps a selected preset selected and does not bake its effects."""
-    assert _run(["config", "set", "preset", "no_review"]) == 0
+    assert _run(["config", "set", "agent6.preset", "no_review"]) == 0
     filled = _fill_and_read(iso)
-    assert filled.get("preset") == "no_review", "the selector was dropped"
+    assert filled["agent6"] == {"config_version": 1, "preset": "no_review"}, "the selector went"
     review = filled["review"]
     assert isinstance(review, dict)
     # The fill keeps the default; the preset applies on load.
@@ -903,7 +904,7 @@ def test_config_fix_reports_an_entry_it_cannot_auto_remove(
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
-    gpath.write_text('preset = "nope"\n', encoding="utf-8")
+    gpath.write_text('[agent6]\npreset = "nope"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     assert main(["config", "fix"]) == 2

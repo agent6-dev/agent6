@@ -361,7 +361,7 @@ def _plan_fork(
         user_task=sm.user_task,
         mode=src_mode,
         # A flag-selected preset replays its name; a config-selected one re-derives.
-        preset=sm.harness.replay_preset or cfg.preset,
+        preset=sm.harness.replay_preset or cfg.agent6.preset,
         preset_from_flag=sm.harness.preset_from_flag,
         driver_from_flag=sm.models.driver_from_flag,
         cfg=cfg,

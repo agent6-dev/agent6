@@ -227,7 +227,7 @@ def _complete_config_keys(
 
     Args:
         prefix: The typed prefix; from `preset` on, the user's `presets.<name>.<leaf>`
-            paths are offered too.
+            paths are offered too, without the `[agent6]` table's keys.
         settable: Offer the enum keys and the preset paths, which `config get` rejects.
         sections: Offer section prefixes too, for `config show`.
         **kw: argcomplete's keyword arguments.
@@ -271,7 +271,7 @@ def _complete_config_keys(
             for i in range(1, len(parts))
         }
     if settable and prefix.startswith("preset"):
-        pool = {k for k in keys if k != "preset"}
+        pool = {k for k in keys if io.split_key(k)[0] != "agent6"}
         keys |= {
             io.render_key(("presets", name, *io.split_key(k)))
             for name in _user_preset_names(explicit)

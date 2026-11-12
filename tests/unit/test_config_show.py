@@ -48,19 +48,6 @@ def test_config_show_uses_compaction_keys(
     assert "[compaction]" in capsys.readouterr().out
 
 
-def test_a_top_level_scalar_is_not_dressed_as_a_table(tmp_path: pathlib.Path) -> None:
-    """`preset` is a bare top-level key, not a `[preset]` table.
-
-    `config fill` emits top-level scalars the same way.
-    """
-    out = config_view.render_show(layer.load_effective(tmp_path, preset="no_review"))
-
-    assert "[preset]" not in out, "a scalar rendered as a TOML table header"
-    assert "preset" in out, "the setting itself must still be shown"
-    # It belongs above the tables, exactly where TOML requires it.
-    assert out.index("preset") < out.index("["), "a top-level scalar must precede every section"
-
-
 def test_config_presets_reads_the_explicit_config_file(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -101,7 +88,7 @@ def test_config_fill_keeps_the_presets_the_file_defines(
     (cfg_home / "agent6").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
     (cfg_home / "agent6" / "config.toml").write_text(
-        'preset = "myfast"\n\n[presets.myfast.sandbox]\nrun_commands = "allow"\n',
+        '[agent6]\npreset = "myfast"\n\n[presets.myfast.sandbox]\nrun_commands = "allow"\n',
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
@@ -242,7 +229,7 @@ def test_an_empty_string_default_renders_a_visible_token(tmp_path: pathlib.Path)
         line for line in rows if line.split()[:1] == ["harness.prompt.system_prompt_file"]
     )
     assert '""' in prompt, prompt
-    preset = next(line for line in rows if line.split()[:1] == ["preset"])
+    preset = next(line for line in rows if line.split()[:1] == ["agent6.preset"])
     assert preset.split()[1:] == ['"none"', "default"]
 
 
@@ -496,10 +483,10 @@ def test_the_view_marks_the_model_picker_for_every_role(tmp_path: pathlib.Path) 
     )
 
 
-def test_the_shared_order_puts_scalars_then_first_tables_then_names_then_the_stamp() -> None:
+def test_the_shared_order_puts_the_first_tables_then_the_rest_by_name() -> None:
     """`config show`, `config fill`, the TUI and the web read one order from `section_order`."""
-    order = layer.section_order(["preset"], ["web", "agent6", "models", "providers", "budget"])
-    assert order == ["preset", "providers", "models", "budget", "web", "agent6"]
+    order = layer.section_order(["web", "agent6", "models", "providers", "budget"])
+    assert order == ["agent6", "providers", "models", "budget", "web"]
 
 
 def test_the_view_orders_sections_and_leaves_by_the_shared_rule(tmp_path: pathlib.Path) -> None:
@@ -510,9 +497,8 @@ def test_the_view_orders_sections_and_leaves_by_the_shared_rule(tmp_path: pathli
         '[models.worker]\nmodel = "openrouter/moonshotai/kimi-k2.6"\n',
     )
     view = config_view.build_config_view(eff)
-    assert view.sections[:3] == ("preset", "providers", "models")
-    assert view.sections[-1] == "agent6"
-    rest = list(view.sections[3:-1])
+    assert view.sections[:3] == ("agent6", "providers", "models")
+    rest = list(view.sections[3:])
     assert rest == sorted(rest)
     models = [s.key for s in view.settings if s.section == "models"]
     assert models == sorted(models) and models[0] == "models.default"

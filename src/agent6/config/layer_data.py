@@ -8,7 +8,7 @@ import dataclasses
 import pathlib
 import tomllib
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import pydantic
 
@@ -92,8 +92,21 @@ def read_toml(path: pathlib.Path) -> dict[str, Any]:
         raise validation.ConfigError(f"Config file cannot be read ({path}): {exc}") from exc
 
 
+def own_selector(data: dict[str, Any]) -> object:
+    """Return a raw config table's own `agent6.preset`, or None when it sets none.
+
+    Args:
+        data: The raw table.
+
+    Returns:
+        The value as written, of whatever type.
+    """
+    table = data.get("agent6")
+    return cast("dict[str, Any]", table).get("preset") if isinstance(table, dict) else None
+
+
 def forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
-    """Refuse a top-level `preset` key in a layer that cannot select one.
+    """Refuse `agent6.preset` in a layer that cannot select a preset.
 
     Only the global and repo configs and `--preset` select one; merged in from elsewhere the
     key would show as effective while never applying, and honoring it would let a machine
@@ -104,11 +117,11 @@ def forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
         data: The layer's raw table.
 
     Raises:
-        ConfigError: The table holds a top-level `preset`.
+        ConfigError: The table holds `agent6.preset`.
     """
-    if "preset" in data:
+    if own_selector(data) is not None:
         raise validation.ConfigError(
-            f"top-level `preset` selects a config preset only from the global/repo"
+            f"`agent6.preset` selects a config preset only from the global/repo"
             f" config or the --preset flag, not the {layer_name} config; set it in the global"
             " or repo config (or pass `--preset` to run, resume or plan)."
         )
@@ -129,7 +142,7 @@ def discover_layers(
 
     Raises:
         ConfigError: A file is unreadable or invalid, a file in `explicit_paths` is
-            missing, or one carries a top-level `preset`.
+            missing, or one carries `agent6.preset`.
     """
     layers: list[Layer] = []
     gpath = paths.global_config_path()
