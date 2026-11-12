@@ -547,7 +547,10 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                     exclude=untracked_at_start | hidden,
                 )
                 if included is not None:
-                    stamps.stamp_includes(layout.session_dir, included)
+                    current = sessions_manifest.read_manifest(layout.session_dir)
+                    stamps.write_manifest(
+                        layout.manifest_path, current.model_copy(update={"includes": included})
+                    )
 
         def _gate(
             cfg: Config, budget: agent6_budget.BudgetTracker, available: Callable[[str], bool]

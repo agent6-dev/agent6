@@ -382,14 +382,6 @@ def track_execution_targets(
     events.subscribe(record)
 
 
-def stamp_workspace_set_up(session_dir: pathlib.Path) -> None:
-    """Record that the session's own worktree or clone ran its setup command."""
-    m = manifest.read_manifest(session_dir)
-    write_manifest(
-        session_dir / manifest.MANIFEST_NAME, m.model_copy(update={"workspace_set_up": True})
-    )
-
-
 def stamp_preset(session_dir: pathlib.Path, name: str) -> None:
     """Record the preset `--preset` set on a resume; a later resume without the flag replays it."""
     m = manifest.read_manifest(session_dir)
@@ -409,12 +401,6 @@ def stamp_model(session_dir: pathlib.Path, route: kinds.ModelRoute) -> None:
     write_manifest(session_dir / manifest.MANIFEST_NAME, m.model_copy(update={"models": models}))
 
 
-def stamp_budget(session_dir: pathlib.Path, budget: manifest.BudgetStamp) -> None:
-    """Record the caps in force after a resume's `--max-*` flags; a later resume replays them."""
-    m = manifest.read_manifest(session_dir)
-    write_manifest(session_dir / manifest.MANIFEST_NAME, m.model_copy(update={"budget": budget}))
-
-
 def stamp_continued_from(session_dir: pathlib.Path, sha: str, branch: str) -> None:
     """Move the run's base to the commit its chain continues from after its work landed.
 
@@ -431,20 +417,6 @@ def stamp_continued_from(session_dir: pathlib.Path, sha: str, branch: str) -> No
     write_manifest(
         session_dir / manifest.MANIFEST_NAME,
         m.model_copy(update={"base_sha": sha, "base_branch": branch, "merged": merged}),
-    )
-
-
-def stamp_base(session_dir: pathlib.Path, sha: str) -> None:
-    """Move the run's base to the commit its unlanded work starts at; its chain stays."""
-    m = manifest.read_manifest(session_dir)
-    write_manifest(session_dir / manifest.MANIFEST_NAME, m.model_copy(update={"base_sha": sha}))
-
-
-def stamp_includes(session_dir: pathlib.Path, included: manifest.IncludedRun) -> None:
-    """Record the unmerged run whose work this run started on and carries in its commits."""
-    m = manifest.read_manifest(session_dir)
-    write_manifest(
-        session_dir / manifest.MANIFEST_NAME, m.model_copy(update={"includes": included})
     )
 
 

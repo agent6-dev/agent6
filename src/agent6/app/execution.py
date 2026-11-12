@@ -452,7 +452,10 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             unready = prepared.problem
             if prepared.ran:
                 try:
-                    stamps.stamp_workspace_set_up(layout.session_dir)
+                    current = sessions_manifest.read_manifest(layout.session_dir)
+                    stamps.write_manifest(
+                        layout.manifest_path, current.model_copy(update={"workspace_set_up": True})
+                    )
                 except (sessions_manifest.ManifestError, OSError) as exc:
                     reporter.note(f"could not record that this workspace is set up: {exc}")
                 if mode == "run":

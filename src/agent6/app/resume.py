@@ -704,7 +704,11 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             )
         elif mode == "run" and (moved := resume_chain.unlanded_base(cwd, layout, manifest)):
             resume_base_sha = moved
-            stamps.stamp_base(layout.session_dir, moved)
+            # The run's base moves to where its unlanded work starts; its chain stays.
+            current = sessions_manifest.read_manifest(layout.session_dir)
+            stamps.write_manifest(
+                layout.manifest_path, current.model_copy(update={"base_sha": moved})
+            )
             reporter.note(
                 f"this run's earlier work landed on {manifest.base_branch}; its diff and"
                 f" next merge start at {moved[:12]}"
@@ -725,7 +729,12 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         if (flagged := session_setup.flag_route(cfg, mode, model)) is not None:
             stamps.stamp_model(layout.session_dir, flagged)
         if budget_overrides.stamp() != manifest.budget:
-            stamps.stamp_budget(layout.session_dir, budget_overrides.stamp())
+            # Re-read: the stamps above rewrote the file. A later resume replays these caps.
+            current = sessions_manifest.read_manifest(layout.session_dir)
+            stamps.write_manifest(
+                layout.manifest_path,
+                current.model_copy(update={"budget": budget_overrides.stamp()}),
+            )
         if caps := budget_overrides.argv():
             reporter.note(f"budget caps in force from this run's flags: {' '.join(caps)}")
         if steer.strip() and manifest.parent_session_id:
