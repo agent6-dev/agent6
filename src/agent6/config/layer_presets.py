@@ -8,7 +8,7 @@ import contextlib
 import dataclasses
 import pathlib
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, cast
 
 from agent6.config import layer_data, validation
 from agent6.config import model as config_model
@@ -65,7 +65,8 @@ def resolve_preset(name: str, user_presets: dict[str, Any]) -> dict[str, Any]:
         The nested config dict; {} for "none".
 
     Raises:
-        ConfigError: The name is unknown, or the user table is not a table.
+        ConfigError: The name is unknown, or the user table is not a table or holds a
+            selector.
     """
     config_model.preset_name(name)
     if name == "none":
@@ -75,6 +76,11 @@ def resolve_preset(name: str, user_presets: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(prof, dict):
             raise validation.ConfigError(
                 f"[presets.{name}] must be a table, got {type(prof).__name__}"
+            )
+        if layer_data.own_selector(cast("dict[str, Any]", prof)) is not None:
+            raise validation.ConfigError(
+                f"[presets.{name}] sets agent6.preset, and a preset cannot name another"
+                f" preset; delete the key under [presets.{name}.agent6]."
             )
         return prof
     if name in BUILTIN_PRESETS:

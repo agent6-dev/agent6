@@ -108,6 +108,16 @@ def test_unknown_preset_errors(repo: pathlib.Path) -> None:
         layer.load_effective(repo)
 
 
+def test_a_preset_cannot_select_a_preset(repo: pathlib.Path) -> None:
+    """A selector inside a preset body showed as effective while it selected nothing."""
+    _write_repo_config(
+        repo,
+        '[agent6]\npreset = "outer"\n[presets.outer.agent6]\npreset = "review"\n',
+    )
+    with pytest.raises(ConfigError, match=r"\[presets\.outer\] sets agent6\.preset"):
+        layer.load_effective(repo)
+
+
 def test_preset_table_instead_of_string_is_clear_error(repo: pathlib.Path) -> None:
     """An `[agent6.preset]` table instead of a string is a clear error.
 
