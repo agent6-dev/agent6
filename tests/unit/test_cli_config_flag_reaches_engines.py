@@ -14,12 +14,13 @@ from typing import Any
 import pytest
 
 from agent6 import paths
+from agent6.app import merge_plan
+from agent6.app import reporter as app_reporter
 from agent6.app.session import setup as session_setup
-from agent6.config import layer
+from agent6.config import ConfigError, layer
 from agent6.sandbox import jail
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
-from agent6.ui.cli import sessions_cmds, sessions_merge
 from agent6.vcs.git import read as git_read
 
 
@@ -30,7 +31,7 @@ def test_merge_planner_passes_the_explicit_config_path(
 
     def fake_load(cwd: pathlib.Path, explicit: tuple[pathlib.Path, ...]) -> Any:
         seen.append(explicit)
-        raise sessions_merge.ConfigError("stop here")
+        raise ConfigError("stop here")
 
     monkeypatch.setattr(layer, "load_effective", fake_load)
 
@@ -52,18 +53,24 @@ def test_merge_planner_passes_the_explicit_config_path(
         base_sha = "0" * 40
         run_branch = "agent6/x"
         merged = None
-
-    def _resolved(cwd: pathlib.Path, sid: str) -> Any:
-        return (layout, _Manifest())
+        fanout = None
+        git_control = "agent6"
 
     def _exists(cwd: pathlib.Path, b: str) -> bool:
         return True
 
-    monkeypatch.setattr(sessions_cmds, "_resolve_session_manifest", _resolved)
     monkeypatch.setattr(git_read, "branch_exists", _exists)
     explicit = tmp_path / "special.toml"
-    rc = sessions_merge._plan_merge(  # pyright: ignore[reportPrivateUsage]
-        tmp_path, "sid", None, None, config_paths=(explicit,)
+    said: list[str] = []
+    # The stand-ins carry only what the planner reads before the load.
+    rc = merge_plan.plan_merge(
+        tmp_path,
+        layout,  # type: ignore[arg-type]
+        _Manifest(),  # type: ignore[arg-type]
+        None,
+        None,
+        config_paths=(explicit,),
+        reporter=app_reporter.Reporter(out=said.append, err=said.append),
     )
     assert rc == 2  # the stubbed ConfigError surfaced as the exit path
     assert seen == [(explicit,)]
@@ -76,7 +83,6 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
 
     Budget and run_commands apply.
     """
-    from agent6.config import ConfigError as _ConfigError
     from agent6.ui.acp import runner as acp_runner
     from agent6.ui.acp import session as acp_session
 
@@ -85,7 +91,7 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
 
     def fake_load(cwd: pathlib.Path, explicit: tuple[pathlib.Path, ...] = (), **_kw: Any) -> Any:
         seen.append(explicit)
-        raise _ConfigError("stop here")
+        raise ConfigError("stop here")
 
     monkeypatch.setattr(session_setup, "load_session_config", fake_load)
 

@@ -70,7 +70,6 @@ def test_no_new_site_builds_a_layout_without_naming_its_bucket() -> None:
     allowed = {
         # `sessions diff|merge|commits` with no id means the most recent run.
         "ui/cli/sessions_cmds.py",
-        "ui/cli/sessions_merge.py",
         # The owner of this directory's layout passes the bucket it read off the path.
         "sessions/layout.py",
         # The sandbox table shows the shell-log path for a sample id; it reads no session.

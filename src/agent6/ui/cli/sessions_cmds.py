@@ -8,16 +8,15 @@
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import json
 import pathlib
 import shutil
 import subprocess
 import sys
 
-from agent6 import errors, kinds, portable
+from agent6 import errors, portable
 from agent6 import paths as agent6_paths
-from agent6.app import fork_worktrees, resume
+from agent6.app import fork_worktrees, merge_plan, resume
 from agent6.sessions import id, lineage, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -25,7 +24,7 @@ from agent6.ui.cli import common, steer_tty
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import policy as git_policy
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import format, newest_session_dir, session_dirs, summarize_session_dir, wire
+from agent6.viewmodel import format, newest_session_dir, session_dirs, summarize_session_dir
 from agent6.viewmodel import listing as viewmodel_listing
 from agent6.viewmodel.session import status as session_status
 
@@ -143,7 +142,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         return res
     _layout, manifest = res
 
-    ref = _commits_ref(cwd, manifest)
+    ref = merge_plan.commits_ref(cwd, manifest)
     if not ref.head_ref:
         print(f"[agent6] {ref.reason}.")
         return 0
@@ -249,56 +248,6 @@ def _dirty_worktree_note(cwd: pathlib.Path, run_branch: object) -> str:
     )
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
-class _CommitsRef:
-    """Where a session's commits end, for `base_sha..head_ref`.
-
-    Attributes:
-        head_ref: The run branch, the hidden chain ref for a run with branch_per_run off,
-            or "" when the session made no commits.
-        reason: Why there is no ref; "" exactly when `head_ref` is one, so the branch verbs
-            refuse on it while diff reads `head_ref`.
-    """
-
-    head_ref: str
-    reason: str
-
-
-def _commits_ref(cwd: pathlib.Path, manifest: sessions_manifest.SessionManifest) -> _CommitsRef:
-    """Return where the run's commits end.
-
-    Args:
-        cwd: The repo.
-        manifest: The run's manifest.
-
-    Returns:
-        The run branch while it covers the chain, else the chain ref; else the manifest's
-        branch name while no chain exists (the verbs read its absence themselves: pruned,
-        never cut, or a lane's branch still in its clone); else the reason the run has no
-        commits.
-    """
-    if ref := wire.commits_ref(manifest, cwd):
-        return _CommitsRef(head_ref=ref, reason="")
-    if (
-        manifest.run_branch
-        and git_read.chain_tip(cwd, git_read.chain_ref_for(manifest.session_id)) is None
-    ):
-        return _CommitsRef(head_ref=manifest.run_branch, reason="")
-    if manifest.parked_task:
-        # A parked run never started, so `base..HEAD` is the run it was parked behind.
-        return _CommitsRef(
-            head_ref="", reason="this run was parked before it started, so it made no commits"
-        )
-    kind = kinds.SESSION_KINDS.get(manifest.mode)
-    if kind is not None and not kind.edits:
-        article = "an" if manifest.mode[:1] in "aeiou" else "a"
-        return _CommitsRef(
-            head_ref="",
-            reason=f"{article} {manifest.mode} does not write to the repo, so it made no commits",
-        )
-    return _CommitsRef(head_ref="", reason="this run recorded no commits")
-
-
 def _resolve_session_manifest(
     cwd: pathlib.Path,
     session_id: str,
@@ -349,15 +298,7 @@ def _resolve_session_manifest(
     except sessions_manifest.ManifestError as exc:
         common.error(f"could not read manifest: {exc}")
         return 2
-    # A fan-out commits nothing: its lanes hold the work.
-    refusal = (
-        f"{target_id} is a fan-out; its lanes hold the commits"
-        f" (`agent6 sessions show {target_id}` lists them)"
-        if manifest.fanout is not None
-        else None
-        if allow_model
-        else sessions_manifest.model_git_refusal(manifest, "sessions")
-    )
+    refusal = merge_plan.chain_refusal(manifest, allow_model=allow_model)
     if refusal is not None:
         common.refuse(f"{refusal}")
         return 2
@@ -429,7 +370,7 @@ def _cmd_commits(*, session_id: str) -> int:
     if isinstance(res, int):
         return res
     _layout, manifest = res
-    ref = _commits_ref(cwd, manifest)
+    ref = merge_plan.commits_ref(cwd, manifest)
     if not ref.head_ref:
         common.error(f"this session has no branch to list commits from ({ref.reason}).")
         return 2

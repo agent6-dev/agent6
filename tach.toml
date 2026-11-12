@@ -160,7 +160,6 @@ depends_on = [
   "agent6.ui.telemetry",
   "agent6.ui.tui",
   "agent6.ui.web",
-  "agent6.vcs.commit_message",
   "agent6.vcs.git.ops",
   "agent6.vcs.git.policy",
   "agent6.vcs.git.read",
