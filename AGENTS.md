@@ -20,7 +20,8 @@
   One decision has one owner every surface reads; duplicated code is cheaper than an abstraction with one caller.
 - **Least surprise.** A command does the expected thing.
   Config writes land in the global config unless `--repo` or `--machine-file FILE` redirects them; set-valued config merges last-overlay-wins.
-- **Consistency.** Learning one command teaches its siblings: positional core args, `--repo`/`--machine-file` target flags, completion over every valid input.
+- **Consistency.** One mental model per concept, the same everywhere, so behaviour is predictable.
+  Learning one command teaches its siblings: positional core args, `--repo`/`--machine-file` target flags, completion over every valid input.
 - **The explanation is the test.** Explain a change in a sentence before writing it; a paragraph of conditions means the shape is wrong.
 - **Explicit.** Defaults are real values `agent6 config show` prints with their origin; behaviour follows visible state; errors are loud.
 - **Surfaces tell the truth.** A failed run reads failed, a dead pane reads dead, a truncated answer reads truncated, an error keeps its reason.
