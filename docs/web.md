@@ -65,6 +65,7 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
     - **Run this plan** on a plan's view opens this composer with the plan chosen; Enter on an empty task runs the plan as written
 - **State machines page**: instances, `machine create` drafts, and buttons that run an authored machine file; the composer creates a new one
 - **Session view** (live over SSE): the conversation, the same folded transcript the CLI and TUI render, with the turn in flight streaming underneath; a detail toggle cycles collapsed, expanded, hidden
+    - **Lanes**: every lane the session dispatched (a `run --parallel` fan-out's or a run's `/parallel` groups), each a link to its own view, with its model, status, usage and how it joined; the card follows lanes that appear while the run waits
     - the composer steers a live run or resumes an ended one under the preset and model picked above it, and takes the [steer directives](usage.md#follow-and-steer-a-run); Ctrl+Enter sends a live steer as `/now`, Ctrl-R searches past messages
     - **?** outside a field lists the keyboard shortcuts; **Ctrl-Shift-P**, or `>` typed into Ctrl-K's box, opens the command palette: the pages, the switcher, the theme, new work and the controls the current page shows, each by name
     - Ctrl-K on any page opens the session switcher: live and recent sessions newest first, narrowed as you type by id, task, branch or worktree; each row names its checkout and the ref holding its commits; Enter opens the highlighted one, **Review code** and **Merge** act as the Sessions page's row buttons do; a draft typed in a composer waits for the way back
@@ -89,7 +90,7 @@ Start a machine on the State machines page and watch the current state stream, a
 
 ## Receipts
 
-The Findings card's **Receipt** button opens Testing, Review, Risk and How to revert from the [recorded session evidence](usage.md#session-receipts).
+The Findings card's **Receipt** button opens Testing, Review, Risk, Lanes and How to revert from the [recorded session evidence](usage.md#session-receipts); each lane named links to its own view.
 **Ask a run to revert** fills the Sessions page's new-work composer with a proposed task; it does not submit the task or run a git command.
 `GET /api/session/<id>/receipt` returns the same derived receipt as JSON.
 

@@ -37,6 +37,7 @@ from agent6.viewmodel import (
     transcript,
     wire,
 )
+from agent6.viewmodel import lanes as vm_lanes
 
 
 def _fmt_dur(seconds: float | None) -> str:
@@ -88,14 +89,16 @@ def _print_parallel_compare(
         print(f"  judge: {rationale}")
 
 
-def _fanout_lanes(
-    layout: sessions_layout.SessionLayout,
-    manifest: sessions_manifest.SessionManifest,
-    tips: Mapping[str, str],
-) -> list[SessionSummary]:
-    """Return a coordinator's lanes with their unmerged marks; empty for any other session."""
-    if manifest.fanout is None:
-        return []
+def _lanes(layout: sessions_layout.SessionLayout, tips: Mapping[str, str]) -> list[SessionSummary]:
+    """Return the session's lanes by lineage with their unmerged marks.
+
+    Args:
+        layout: The session's layout.
+        tips: The branch-tips snapshot.
+
+    Returns:
+        The lanes in lane order; empty for a session without any.
+    """
     return listing.lanes_of(layout.state_dir, layout.session_id, branch_tips=tips)
 
 
@@ -119,18 +122,27 @@ def _lane_manifests(
     return manifests
 
 
-def _print_fanout(
+def _print_lanes(
     manifest: sessions_manifest.SessionManifest,
     lanes: list[SessionSummary],
     lane_manifests: Mapping[str, sessions_manifest.SessionManifest],
+    outcomes: Mapping[str, str],
 ) -> None:
-    """Print a coordinator's fan-out line and one line per lane: place, id, status, cost."""
-    if manifest.fanout is None:
-        return
-    print(
-        f"fan-out:    {format.lane_count(manifest.fanout.lanes)} (--parallel "
-        f"{manifest.fanout.spec})"
-    )
+    """Print the fan-out line for a fan-out, the lane count otherwise, then one line per lane.
+
+    Args:
+        manifest: The session's manifest.
+        lanes: Its lanes by lineage.
+        lane_manifests: Each readable lane manifest, for its compare stamp.
+        outcomes: How each recorded lane joined, by session id.
+    """
+    if manifest.fanout is not None:
+        print(
+            f"fan-out:    {format.lane_count(manifest.fanout.lanes)} (--parallel "
+            f"{manifest.fanout.spec})"
+        )
+    elif lanes:
+        print(f"lanes:      {len(lanes)}")
     idents = {
         lane.session_id: lane.id_cell(winner=_won(lane_manifests.get(lane.session_id)))
         for lane in lanes
@@ -145,9 +157,31 @@ def _print_fanout(
         label = format.listing_status_label(
             lane.mode, lane.status, lane.detail, unmerged=lane.unmerged
         )
-        print(
-            f"  {place:<10} {idents[lane.session_id]:<{width}}  {model}  {label}  {cost}".rstrip()
-        )
+        outcome = outcomes.get(lane.session_id, "")
+        joined = f"  {outcome}" if outcome else ""
+        ident = idents[lane.session_id]
+        print(f"  {place:<10} {ident:<{width}}  {model}  {label}  {cost}{joined}".rstrip())
+
+
+def lane_outcomes(session_dir: pathlib.Path) -> dict[str, str]:
+    """Return each recorded lane's join as one phrase, by session id.
+
+    Args:
+        session_dir: The session's dir.
+
+    Returns:
+        `joined at <sha>`, `no changes` or `<outcome>: <detail>` per lane; empty without records.
+    """
+    phrases: dict[str, str] = {}
+    for child in vm_lanes.children_of(session_dir):
+        if child.outcome == "joined":
+            phrases[child.session_id] = f"joined at {child.join_sha[:12]}"
+        elif child.outcome == "no_changes":
+            phrases[child.session_id] = "no changes"
+        elif child.outcome:
+            detail = f": {child.error}" if child.error else ""
+            phrases[child.session_id] = f"{child.outcome}{detail}"
+    return phrases
 
 
 def _status_state(
@@ -464,7 +498,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     changes = _changes(target.name, manifest, undone=scan.finished and scan.stop_reason == "undone")
     tips = git_read.run_ref_tips(pathlib.Path.cwd())
     summary = summarize_session_dir(target, branch_tips=tips)
-    lanes = _fanout_lanes(layout, manifest, tips)
+    lanes = _lanes(layout, tips)
     lane_manifests = _lane_manifests(layout.state_dir, lanes)
     status, status_cell, status_detail = _status_state(
         summary,
@@ -556,7 +590,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         print(prefix + task.replace("\n", "\n" + " " * 12))
     _print_lineage(manifest)
     _print_parallel_compare(manifest, target)
-    _print_fanout(manifest, lanes, lane_manifests)
+    _print_lanes(manifest, lanes, lane_manifests, lane_outcomes(target))
     print(
         f"model:      {model}{' (from --model)' if model_from_flag else ''}\n"
         f"preset:     {manifest.harness.preset or '-'}"

@@ -40,6 +40,7 @@ The composer takes the [steer directives](usage.md#follow-and-steer-a-run).
 ## Run dashboard
 
 `Ctrl+D` toggles the dashboard: task graph beside live reasoning, tool calls with results, event log and latest commit diff side by side.
+A session that dispatched lanes shows them in a table (id, model, status, usage), refreshed every second while the session lives, a lane that appears later included; Enter on a row opens that lane.
 
 ![The run dashboard](screenshots/out/02-run-dashboard.png)
 

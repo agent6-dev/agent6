@@ -618,3 +618,81 @@ def test_status_json_keeps_comparison_on_its_owner(
     }
     assert main(["sessions", "show", "fan-l2"]) == 0
     assert "judge: covers the edge case" in capsys.readouterr().out
+
+
+@pytest.fixture
+def ordinary_parent(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """A run that used `/parallel` once: no fan-out stamp, two lanes by lineage, one record."""
+    from agent6.sessions import lane_dispatch
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _session(repo, "co", {})
+    for lane in (1, 2):
+        _session(
+            repo,
+            f"co-p1-l{lane}",
+            {
+                "models": {"driver": {"provider": "openai", "model": f"lane-{lane}"}},
+                "parallel": {"group": "co-p1", "lane": lane, "coordinator": "co"},
+            },
+        )
+    parent = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="co")
+    lane_dispatch.write_record(
+        parent.session_dir,
+        lane_dispatch.DispatchRecord(
+            identity="co-p1",
+            source="operator",
+            owner="exec-1",
+            turn=2,
+            base="a" * 40,
+            segments=(lane_dispatch.SegmentRecord(task="audit", spec="2", lanes=2),),
+            children=(
+                lane_dispatch.ChildRecord(
+                    session_id="co-p1-l1",
+                    lane=1,
+                    task="audit",
+                    join=lane_dispatch.JoinRecord(
+                        branch="agent6/co-p1-l1", status="joined", sha="b" * 40
+                    ),
+                    usage=lane_dispatch.UsageRecord(usd=0.5),
+                    settled=True,
+                ),
+                lane_dispatch.ChildRecord(
+                    session_id="co-p1-l2",
+                    lane=2,
+                    task="audit",
+                    join=lane_dispatch.JoinRecord(branch="agent6/co-p1-l2", status="no_changes"),
+                    usage=lane_dispatch.UsageRecord(usd=0.25),
+                    settled=True,
+                ),
+            ),
+            state="complete",
+            message="[parallel] group co-p1 complete",
+            delivered=True,
+        ),
+        now=1.0,
+    )
+    return repo
+
+
+def test_show_on_an_ordinary_parent_lists_its_lanes_with_their_joins(
+    ordinary_parent: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `/parallel` run is no fan-out: no fan-out line, its lanes listed with their outcomes."""
+    assert main(["sessions", "show", "co"]) == 0
+    out = capsys.readouterr().out
+    assert "fan-out:" not in out
+    assert "lanes:      2" in out
+    assert "lane 1" in out and "co-p1-l1" in out and "openai/lane-1" in out
+    assert "joined at bbbbbbbbbbbb" in out
+    assert "lane 2" in out and "no changes" in out
+
+
+def test_show_on_a_lane_of_an_ordinary_parent_names_it(
+    ordinary_parent: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["sessions", "show", "co-p1-l1"]) == 0
+    assert "lane of:    co (lane 1 of group co-p1)" in capsys.readouterr().out

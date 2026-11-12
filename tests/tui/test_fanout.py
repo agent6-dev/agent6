@@ -38,3 +38,72 @@ async def _scenario(fan_out: pathlib.Path) -> None:
         table.focus()
         await pilot.press("enter")
     assert tui.return_value == app.TuiExit(open_next=lane.session_dir)
+
+
+ordinary_parent = test_sessions_show_fanout.ordinary_parent
+
+
+def test_dashboard_shows_a_lane_that_appears_after_the_view_opens(
+    tmp_path: pathlib.Path, monkeypatch: object
+) -> None:
+    asyncio.run(_ordinary_scenario(tmp_path))
+
+
+async def _ordinary_scenario(tmp_path: pathlib.Path) -> None:
+    """An ordinary live run has no lanes at mount; its first lane appears while it waits."""
+    import json
+    import os
+
+    from agent6.sessions import process
+
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True, exist_ok=True)
+    os.environ["XDG_STATE_HOME"] = str(tmp_path / "state")
+    os.chdir(repo)
+    state = paths.state_dir(repo)
+    parent = layout.SessionLayout(state_dir=state, session_id="solo")
+    parent.ensure()
+    parent.manifest_path.write_text(
+        json.dumps({"version": 3, "session_id": "solo", "mode": "run"}), encoding="utf-8"
+    )
+    parent.logs_path.write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
+        encoding="utf-8",
+    )
+    process.write_worker_pid(parent.session_dir, os.getpid())  # live, silent
+    tui = app.Agent6TUI(parent.session_dir)
+    async with tui.run_test(size=(140, 45)) as pilot:
+        tui.action_toggle_dashboard()
+        await pilot.pause()
+        table = tui.screen.query_one("#lanes", widgets.DataTable)
+        assert not table.display
+        lane = layout.SessionLayout(state_dir=state, session_id="solo-p1-l1")
+        lane.ensure()
+        lane.manifest_path.write_text(
+            json.dumps(
+                {
+                    "version": 3,
+                    "session_id": "solo-p1-l1",
+                    "mode": "run",
+                    "models": {"driver": {"provider": "openai", "model": "lane-1"}},
+                    "parallel": {"group": "solo-p1", "lane": 1, "coordinator": "solo"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        lane.logs_path.write_text(
+            json.dumps({"type": "session.start", "mode": "run", "user_task": "audit"}) + "\n",
+            encoding="utf-8",
+        )
+        await pilot.pause(1.3)
+        assert table.display and table.row_count == 1
+        assert table.border_title == "lanes: 1"
+        assert str(table.get_row_at(0)[1]) == "openai/lane-1"
+        with lane.logs_path.open("a") as log:
+            log.write('{"type":"budget.update","usd_total":0.75}\n')
+            log.write('{"type":"session.stop","reason":"finish_session"}\n')
+        await pilot.pause(1.3)
+        assert str(table.get_row_at(0)[3]) == "$0.75"
+        table.focus()
+        await pilot.press("enter")
+    assert tui.return_value == app.TuiExit(open_next=lane.session_dir)

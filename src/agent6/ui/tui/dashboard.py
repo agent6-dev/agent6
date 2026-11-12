@@ -43,7 +43,7 @@ from agent6.ui.tui import (
     theme,
 )
 from agent6.ui.tui import prompts as tui_prompts
-from agent6.viewmodel import SessionState, ToolCallView, format, listing, state, tail, wire
+from agent6.viewmodel import SessionState, ToolCallView, format, state, tail, wire
 
 if TYPE_CHECKING:
     from agent6.ui.tui import app as tui_app
@@ -307,11 +307,9 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
 
     def on_mount(self) -> None:
         """Set the tool columns, hide the diff for an ask or a plan, paint and focus the bar."""
-        lanes = self.query_one("#lanes", textual_widgets.DataTable)
-        lanes.display = listing.is_fanout(self._tui.session_dir)
-        if lanes.display:
-            self._render_lanes()
-            self.set_interval(1.0, self._render_lanes)
+        # Every run may dispatch lanes; the table shows once one exists, however it came.
+        self._render_lanes()
+        self.set_interval(1.0, self._render_lanes)
         self.query_one("#tools", textual_widgets.DataTable).add_columns(
             "tool", "args", "ok", "summary"
         )
@@ -458,13 +456,21 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         self.render_state()
 
     def _render_lanes(self) -> None:
-        """Refresh the coordinator lanes even after its own log stops changing."""
+        """Refresh the session's lanes even while its own log is silent.
+
+        The rows come from the lanes by lineage, a `run --parallel` coordinator's heading
+        from its fan-out stamp, an ordinary run's from the count.
+        """
         header = wire.manifest_header(self._tui.session_dir, repo=pathlib.Path.cwd())
         lanes = self.query_one("#lanes", textual_widgets.DataTable)
-        lanes.display = "fanout" in header
+        rows = header.get("lanes", [])
+        lanes.display = bool(rows)
         if lanes.display:
-            rows = header["lanes"]
-            lanes.border_title = f"fan-out: {format.lane_count(header['fanout']['lanes'])}"
+            lanes.border_title = (
+                f"fan-out: {format.lane_count(header['fanout']['lanes'])}"
+                if "fanout" in header
+                else f"lanes: {len(rows)}"
+            )
             if not lanes.columns:
                 lanes.add_columns("id (Enter opens)", "model", "status", "usage")
             cursor = lanes.cursor_coordinate

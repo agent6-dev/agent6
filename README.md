@@ -76,7 +76,7 @@ Other commands:
 | `agent6 attach <id>` | follow a live session |
 | `agent6 steer <id> "instruction"` | direct the next steps |
 | `agent6 sessions findings <id>` | list a session's review findings |
-| `agent6 sessions receipt <id>` | print the recorded tests, execution environments, review outcome and how to revert |
+| `agent6 sessions receipt <id>` | print the recorded tests, execution environments, review outcome, the lanes it dispatched and how to revert |
 | `agent6 stop <id> --after-turn` | stop after the current turn |
 | `agent6 resume <id>` | continue an interrupted run |
 | `agent6 fork <id> --at-turn 7` | fork a coding run from an earlier turn into a separate worktree |

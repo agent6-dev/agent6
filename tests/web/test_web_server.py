@@ -2295,6 +2295,59 @@ def test_idle_session_frames_only_follow_changed_state(
         assert frames[-1][1]["shells"] == ["[bg1] exited 2: sleep 60"]
 
 
+def test_an_ordinary_live_parents_first_lane_reaches_the_stream_during_silence(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run with no lanes at open gains one while its log is silent; the next frame shows it."""
+    from agent6.ui.web import sse
+
+    monkeypatch.setattr(sse, "HEARTBEAT_S", 0.05)
+    _make_run(tmp_path, "solo", [{"type": "session.start", "ts": time.time()}])
+    d = paths.state_dir(tmp_path) / "sessions" / "runs" / "solo"
+    (d / "manifest.json").write_text(
+        json.dumps({"version": 3, "session_id": "solo", "mode": "run"}), encoding="utf-8"
+    )
+    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    heartbeat = 0
+    frames: list[dict[str, Any]] = []
+
+    def send(payload: Any) -> bool:
+        frames.append(cast(dict[str, Any], payload))
+        return True
+
+    def ping() -> bool:
+        nonlocal heartbeat
+        heartbeat += 1
+        if heartbeat == 1:
+            _make_run(
+                tmp_path,
+                "solo-p1-l1",
+                [{"type": "session.start", "ts": time.time(), "user_task": "audit"}],
+            )
+            (d.parent / "solo-p1-l1" / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "version": 3,
+                        "session_id": "solo-p1-l1",
+                        "mode": "run",
+                        "parallel": {"group": "solo-p1", "lane": 1, "coordinator": "solo"},
+                        "models": {"driver": {"provider": "openai", "model": "lane-1"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+        return heartbeat < 4
+
+    sse.stream_session(sse.SseChannel(send=send, ping=ping), d, repo=tmp_path)
+
+    assert "lanes" not in frames[0] and "fanout" not in frames[0]
+    with_lane = next(f for f in frames if f.get("lanes"))
+    assert [row["session_id"] for row in with_lane["lanes"]] == ["solo-p1-l1"]
+    assert with_lane["lanes"][0]["model"] == "openai/lane-1"
+    assert "fanout" not in with_lane
+    assert with_lane["session_actions"]["fork"] is True
+
+
 def test_shell_cleanup_after_end_reaches_the_open_stream(
     server: tuple[web_server.WebServer, int],
     tmp_path: pathlib.Path,

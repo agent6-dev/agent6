@@ -121,7 +121,7 @@ async function renderRun(id, opts, gen) {
     cards._plan_btn = planBtn;
   }
   app.appendChild(actions);
-  const lanes = mk("lanes", "Fan-out", "", app);
+  const lanes = mk("lanes", "Lanes", "", app);
   delete lanes.parentElement.dataset.w;
   lanes.parentElement.style.display = "none";
 
@@ -397,23 +397,40 @@ function paintDetails(cards, s, asOf) {
   if (asOf) for (const c of [cards.budget, cards.tasks]) c.prepend(el('div', 'sub muted', `as of turn ${asOf.turn} · ${String(asOf.sha).slice(0, 7)}`));
 }
 
+// One phrase per recorded lane: how it joined, from the session's dispatch records.
+function laneOutcomes(dispatches) {
+  const out = {};
+  for (const d of dispatches) {
+    for (const c of d.children || []) {
+      if (c.outcome === 'joined') out[c.session_id] = `joined at ${String(c.join_sha).slice(0, 12)}`;
+      else if (c.outcome === 'no_changes') out[c.session_id] = 'no changes';
+      else if (c.outcome) out[c.session_id] = c.error ? `${c.outcome}: ${c.error}` : c.outcome;
+    }
+  }
+  return out;
+}
+
 function paintRun(cards, s) {
   if (cards.lanes) {
-    cards.lanes.parentElement.style.display = s.fanout ? "" : "none";
+    // Rows come from the session's lanes by lineage; only a true fan-out is headed as one.
+    const lanes = s.lanes || [];
+    cards.lanes.parentElement.style.display = lanes.length ? "" : "none";
     cards.lanes.replaceChildren();
-    if (s.fanout) {
-      cards.lanes.previousSibling.textContent = `fan-out: ${s.fanout.lanes} lanes`;
+    if (lanes.length) {
+      cards.lanes.previousSibling.textContent = s.fanout ? `fan-out: ${s.fanout.lanes} lanes` : `lanes: ${lanes.length}`;
+      const outcomes = laneOutcomes(s.dispatches || []);
       const table = el('table');
       const head = el('tr');
-      for (const label of ['id', 'model', 'status', 'usage']) head.appendChild(el('th', null, label));
+      for (const label of ['id', 'model', 'status', 'usage', 'join']) head.appendChild(el('th', null, label));
       table.appendChild(head);
-      for (const lane of s.lanes || []) {
+      for (const lane of lanes) {
         const row = el('tr');
         const cell = el('td');
         const link = el('a', null, lane.session_id);
         link.href = '#/session/' + encodeURIComponent(lane.session_id);
         cell.appendChild(link); row.appendChild(cell);
         for (const key of ['model', 'label', 'usage']) row.appendChild(el('td', null, lane[key]));
+        row.appendChild(el('td', null, outcomes[lane.session_id] || ''));
         table.appendChild(row);
       }
       cards.lanes.appendChild(table);

@@ -270,6 +270,15 @@ function focusFinding(host, finding_id) {
 function drawReceipt(host, receipt) {
   host.innerHTML = '';
   host.appendChild(el('pre', null, receipt.text));
+  // Each lane the receipt names opens through the session navigation.
+  for (const child of receipt.children || []) {
+    const line = el('div', 'sub');
+    const link = el('a', null, child.session_id);
+    link.href = '#/session/' + encodeURIComponent(child.session_id);
+    line.appendChild(el('span', null, `lane ${child.lane} `));
+    line.appendChild(link);
+    host.appendChild(line);
+  }
   for (const v of receipt.verifications) {
     for (const stream of ['stdout', 'stderr']) {
       const output = el('details'); host.appendChild(output);
