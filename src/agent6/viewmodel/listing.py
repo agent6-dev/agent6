@@ -194,24 +194,23 @@ class SessionSummary:
             return f"{cell} ({missing})" if missing else f"{cell} {format.WORKTREE_MARK}"
         return cell
 
-    def merge_note(self, *, paths: bool = False) -> str:
+    def merge_note(self) -> str:
         """Return what stands before a clean merge, the words every listing shows.
 
-        Args:
-            paths: Name the shared paths after each overlapping run.
-
         Returns:
-            `open findings: 2 block, 1 warn · same paths as <id>, <id>`; "" with neither.
+            `open findings: 2 block, 1 warn · same paths as <id> and 3 more`; "" with neither.
+            The note names one run; `overlaps` holds every run and its paths.
         """
         notes: list[str] = []
         counts = dataclasses.asdict(self.open_findings)
         if found := ", ".join(f"{n} {severity}" for severity, n in counts.items() if n):
             notes.append(f"open findings: {found}")
-        if self.overlaps and paths:
-            runs = (f"{o.session_id} ({', '.join(o.paths)})" for o in self.overlaps)
-            notes.append("same paths as " + "; ".join(runs))
-        elif self.overlaps:
-            notes.append("same paths as " + ", ".join(o.session_id for o in self.overlaps))
+        if self.overlaps:
+            more = len(self.overlaps) - 1
+            notes.append(
+                f"same paths as {self.overlaps[0].session_id}"
+                + (f" and {more} more" if more else "")
+            )
         return " · ".join(notes)
 
 
@@ -541,7 +540,7 @@ def summary_row(
         "branch": s.branch or None,
         "open_findings": dataclasses.asdict(s.open_findings),
         "overlaps": [dataclasses.asdict(o) for o in s.overlaps],
-        "merge_note": s.merge_note(paths=True),
+        "merge_note": s.merge_note(),
         "lanes": list(lanes),
     }
 

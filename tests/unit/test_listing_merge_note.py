@@ -71,14 +71,14 @@ def test_ended_unmerged_runs_that_changed_the_same_paths_flag_each_other() -> No
     assert lane.summary.overlaps == (listing.Overlap("one", ("src/a.py",)),)
     assert by_id["live"].summary.overlaps == () and by_id["landed"].summary.overlaps == ()
 
-    assert by_id["one"].summary.merge_note() == "same paths as two, lane-1"
+    assert by_id["one"].summary.merge_note() == "same paths as two and 1 more"
     assert by_id["two"].summary.merge_note() == "open findings: 1 block · same paths as one"
     wire = json.loads(json.dumps(listing.row_json(by_id["one"], winners=set())))
     assert wire["overlaps"] == [
         {"session_id": "two", "paths": ["src/b.py"]},
         {"session_id": "lane-1", "paths": ["src/a.py"]},
     ]
-    assert wire["merge_note"] == "same paths as two (src/b.py); lane-1 (src/a.py)"
+    assert wire["merge_note"] == "same paths as two and 1 more"
 
 
 def test_a_row_counts_its_open_findings_from_the_journal(tmp_path: pathlib.Path) -> None:
@@ -93,9 +93,7 @@ def test_a_row_counts_its_open_findings_from_the_journal(tmp_path: pathlib.Path)
     (session_dir / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     summary = listing.summarize_session_dir(session_dir)
     assert summary.open_findings == review.SeverityCounts(block=2, warn=1)
-    assert (
-        summary.merge_note() == summary.merge_note(paths=True) == "open findings: 2 block, 1 warn"
-    )
+    assert summary.merge_note() == "open findings: 2 block, 1 warn"
     row = listing.summary_row(summary)
     assert row["open_findings"] == {"block": 2, "warn": 1, "nit": 0}
     assert row["merge_note"] == "open findings: 2 block, 1 warn" and row["overlaps"] == []

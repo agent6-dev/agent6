@@ -350,7 +350,7 @@ agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
 Every listing row says what stands before a clean merge, derived from the journal on each read and never stored:
 
 - `open findings: 2 block, 1 warn`: the run's open findings by severity; `sessions merge` refuses on an open `block`, and `agent6 sessions findings <id>` lists them
-- `same paths as <id>`: another ended, unmerged run changed some of the same paths; land one, then resume the other on the new base
+- `same paths as <id> and 3 more`: other ended, unmerged runs changed some of the same paths; land one, then resume the others on the new base
 
 The status beside the note carries the rest: what a waiting run waits on, the gate's word, `unmerged`, and the questions pending or the answers saved for the resume.
 Every listing orders sessions by last activity, newest first.

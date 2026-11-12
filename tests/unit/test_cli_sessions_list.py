@@ -473,13 +473,13 @@ def test_unmerged_runs_over_one_path_are_flagged_on_the_listing(
     assert rows["run-one-AAAAAA"]["overlaps"] == [
         {"session_id": "run-two-BBBBBB", "paths": ["b.txt"]}
     ]
-    assert rows["run-one-AAAAAA"]["merge_note"] == "same paths as run-two-BBBBBB (b.txt)"
+    assert rows["run-one-AAAAAA"]["merge_note"] == "same paths as run-two-BBBBBB"
     assert rows["run-two-BBBBBB"]["overlaps"] == [
         {"session_id": "run-one-AAAAAA", "paths": ["b.txt"]}
     ]
     assert rows["run-two-BBBBBB"]["open_findings"] == {"block": 2, "warn": 0, "nit": 0}
     assert rows["run-two-BBBBBB"]["merge_note"] == (
-        "open findings: 2 block · same paths as run-one-AAAAAA (b.txt)"
+        "open findings: 2 block · same paths as run-one-AAAAAA"
     )
     assert rows["run-far-CCCCCC"]["overlaps"] == [] and rows["run-far-CCCCCC"]["merge_note"] == ""
     assert sessions_cmds._cmd_list() == 0
