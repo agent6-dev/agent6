@@ -228,6 +228,49 @@ def _read_route(
     return parsed.provider, parsed.model
 
 
+def offer_default_model(
+    config_paths: tuple[pathlib.Path, ...], provider: str, *, to_repo: bool = False
+) -> None:
+    """Offer the model picker for `models.default` right after a provider connects.
+
+    A configured default is named instead; off a terminal, or when the pick is skipped or
+    refused, the `agent6 model default` command is printed and the credentials stay.
+
+    Args:
+        config_paths: The `--config` files in command-line order, if any.
+        provider: The provider that just connected.
+        to_repo: Write the route to the repo config instead of the global one.
+    """
+    hint = (
+        f"Next: `agent6 model default {provider}/<model>` to set the required default,"
+        " then `agent6 config show`."
+    )
+    try:
+        configured = layer.load_effective(
+            pathlib.Path.cwd(), config_paths
+        ).config.models.configured()
+    except ConfigError:
+        print(hint)
+        return
+    if (route := configured.get("default")) is not None:
+        print(
+            f"Default model: {route.provider}/{route.model}"
+            f" (`agent6 model default {provider}/<model>` changes it)."
+        )
+        return
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        print(hint)
+        return
+    print(f"No default model yet; pick one for {provider} (Enter skips).")
+    picked = _prompt_for_model(config_paths, provider)
+    if not picked:
+        print(hint)
+        return
+    _cmd_model(
+        config_paths, role="default", route=f"{provider}/{picked}", effort="", to_repo=to_repo
+    )
+
+
 def _cmd_model(
     config_paths: tuple[pathlib.Path, ...],
     *,

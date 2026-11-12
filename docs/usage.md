@@ -21,6 +21,7 @@ agent6 model                         # the role assignments
 
 The key lands in `~/.config/agent6/secrets.toml` (mode `0600`), shared across every repository.
 `connect` prompts locally and executes nothing a remote returns.
+On a terminal it ends by offering the default model when none is set, so `agent6 model default` is the second command only off a terminal or when you skip the pick.
 `agent6 connect --status [NAME]` lists the configured providers' local credential state and a free live check, with the account and access-token expiry for bound sign-ins.
 It refreshes and spends nothing and exits 0 even for a refusal.
 

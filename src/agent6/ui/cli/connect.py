@@ -34,7 +34,7 @@ from agent6.providers import (
     provider_types,
     request_headers,
 )
-from agent6.ui.cli import common, connect_oauth, connect_status
+from agent6.ui.cli import common, connect_oauth, connect_status, model
 
 
 def _prompt_api_key(name: str) -> str:
@@ -668,8 +668,5 @@ def _cmd_connect(
     if rc == 0:
         rc = _credential_step(name, backend, flow or "auto", verify is not False)
     if rc == 0:
-        print(
-            "Next: `agent6 model default "
-            f"{name}/<model>` to set the required default, then `agent6 config show`."
-        )
+        model.offer_default_model(config_paths, name, to_repo=to_repo)
     return rc

@@ -1562,3 +1562,67 @@ def test_a_number_outside_the_model_list_is_refused(
     assert main(["--config", str(cfg), "model", "worker", "anthropic"]) == 2
     err = capsys.readouterr().err
     assert err.count("ERROR") == 1 and "no model 7" in err
+
+
+def _connect_terminal(
+    monkeypatch: pytest.MonkeyPatch, lines: str, models: list[str] | None = None
+) -> None:
+    """Make both channels a terminal and feed the key and the pick."""
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdin", io.StringIO(lines))
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+    def _models(*_a: object, **_k: object) -> list[str]:
+        return list(models or [])
+
+    monkeypatch.setattr(modelmod, "_models_for", _models)
+
+
+def test_connect_offers_the_default_model_on_a_terminal(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Setup is two commands: the picker `agent6 model default` runs comes up after the key."""
+    _connect_terminal(monkeypatch, "sk-ant-FAKE\n2\n", ["claude-a", "claude-b"])
+    assert main(["connect", "anthropic"]) == 0
+    out = capsys.readouterr().out
+    assert "No default model yet" in out and "Set [models.default] = anthropic/claude-b" in out
+    configured = tomllib.loads(paths.global_config_path().read_text())
+    assert configured["models"] == {"default": {"model": "anthropic/claude-b"}}
+
+
+def test_connect_keeps_the_credentials_when_the_pick_is_skipped(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Enter at the pick leaves no default and prints the command; the key stays stored."""
+    _connect_terminal(monkeypatch, "sk-ant-FAKE\n\n", ["claude-a"])
+    assert main(["connect", "anthropic"]) == 0
+    assert "agent6 model default anthropic/<model>" in capsys.readouterr().out
+    assert secret_store.resolve_api_key("anthropic", None) == "sk-ant-FAKE"
+    assert "models" not in tomllib.loads(paths.global_config_path().read_text())
+
+
+def test_connect_names_a_configured_default_instead_of_prompting(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A default already set is reported, never replaced by a prompt."""
+    cfg = paths.global_config_path()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text('[models.default]\nmodel = "anthropic/claude-x"\n')
+    _connect_terminal(monkeypatch, "sk-ant-FAKE\n", ["claude-a"])
+    assert main(["connect", "anthropic"]) == 0
+    out = capsys.readouterr().out
+    assert "Default model: anthropic/claude-x" in out and "No default model yet" not in out
+    assert tomllib.loads(cfg.read_text())["models"] == {"default": {"model": "anthropic/claude-x"}}
+
+
+def test_connect_repo_writes_the_picked_default_to_the_repo_config(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """`--repo` carries through to the picked default, as it does to the provider block."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    _connect_terminal(monkeypatch, "sk-ant-FAKE\n1\n", ["claude-a"])
+    assert main(["connect", "--repo", "anthropic"]) == 0
+    repo_cfg = tomllib.loads(paths.repo_config_path(tmp_path).read_text())
+    assert repo_cfg["models"] == {"default": {"model": "anthropic/claude-a"}}
+    global_cfg = paths.global_config_path()
+    assert not global_cfg.exists() or "models" not in tomllib.loads(global_cfg.read_text())
