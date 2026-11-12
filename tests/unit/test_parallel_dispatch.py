@@ -313,6 +313,32 @@ def test_summary_text_gives_each_lanes_finish_summary() -> None:
     ]
 
 
+def test_summary_text_says_what_stopped_a_lane_that_still_joined() -> None:
+    """A lane its run stopped at the budget or its deadline is not said to have finished.
+
+    Its join read "finished with no changes to join." beside a run that had just ended it.
+    """
+    text = parallel_join.summary_text(
+        "p1",
+        [
+            dataclasses.replace(_join("no_changes", "a"), detail="stopped at the run's budget"),
+            dataclasses.replace(
+                _join("joined", "b", sha="abc123def4567"), detail="ended at its deadline"
+            ),
+        ],
+    )
+    assert "  - a (agent6/a): stopped at the run's budget with no changes to join." in text
+    # A segment whose only lane was stopped before changing anything did not pass.
+    stopped = dataclasses.replace(_join("no_changes", "a"), detail="stopped at the run's budget")
+    assert parallel_join.segment_stamp([stopped]) == (
+        "failed",
+        "a made no changes (stopped at the run's budget)",
+        "",
+    )
+    assert "  - b (agent6/b): joined at abc123def456 (ended at its deadline)" in text
+    assert "finished" not in text
+
+
 def test_summary_hands_a_conflicted_lane_to_the_operator() -> None:
     """The summary hands a conflicted lane to the operator.
 
@@ -384,6 +410,23 @@ def test_a_lanes_result_carries_its_finish_summary(tmp_path: pathlib.Path) -> No
     _ended_lane(done, reason="finish_session", verification="not_applicable")
     res = lanes.recorded_result(spec, "", done, lane_records.Imported(done), origin=tmp_path)
     assert res.ok and res.report == "The suite passes: 3 tests, exit 0."
+
+    # A lane its coordinator stopped keeps its result and says what stopped it.
+    halted = tmp_path / "halted"
+    _ended_lane(halted, reason="steer_abort", verification="unverified")
+    res = lanes.recorded_result(
+        spec,
+        "",
+        halted,
+        lane_records.Imported(halted),
+        origin=tmp_path,
+        stopped_by="stopped at the run's budget",
+    )
+    assert res.ok and res.stopped_by == "stopped at the run's budget"
+    join = parallel_join.join_lane_result(
+        tmp_path, res, ref="", fallback_parent=None, identity=None, also_branch=None
+    )
+    assert (join.status, join.detail) == ("no_changes", "stopped at the run's budget")
 
     cut = tmp_path / "cut"
     _ended_lane(cut, reason="max_turns", verification="unverified")

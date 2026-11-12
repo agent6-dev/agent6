@@ -145,6 +145,8 @@ class LaneResult:
             came back.
         report: What the lane said at its end, its finish summary; "" when it ended another
             way.
+        stopped_by: What ended the lane when its coordinator stopped it (its deadline, the
+            run's budget); "" when it ended by itself or by the operator.
     """
 
     spec: LaneSpec
@@ -158,6 +160,7 @@ class LaneResult:
     pid: int = 0
     usage: budget.UsageSettlement | None = None
     report: str = ""
+    stopped_by: str = ""
 
 
 class LaneSpawner(Protocol):
@@ -203,7 +206,8 @@ class LaneJoin:
             beyond its base; nothing to merge), `conflict` (imported, the merge conflicted,
             the ref exists locally) or `failed` (no result or nothing importable).
         sha: The merge commit, or "".
-        detail: The failure's reason, or "".
+        detail: The failure's reason; for a lane that joined or had nothing to join, what
+            stopped it when its coordinator did; else "".
         report: What the lane said at its end, its finish summary; "" when it gave none.
     """
 

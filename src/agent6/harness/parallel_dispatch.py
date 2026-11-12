@@ -492,7 +492,7 @@ class ParallelDispatcher:
                     "",
                     "no_changes" if res is not None and res.ok else "failed",
                     "",
-                    res.error if res is not None else "no imported record",
+                    (res.error or res.stopped_by) if res is not None else "no imported record",
                 )
             else:
                 join = self.join_child(child, res)
@@ -540,7 +540,11 @@ class ParallelDispatcher:
             # Merged before the record advanced: recorded now, never merged twice.
             sha = git_read.merge_commit_for(self.chain.root, ref, res.imported_tip)
             return lane_records.LaneJoin(
-                res.spec.session_id, res.branch, "joined", sha or (self.chain.tip() or ""), ""
+                res.spec.session_id,
+                res.branch,
+                "joined",
+                sha or (self.chain.tip() or ""),
+                res.stopped_by,
             )
         return parallel_join.join_lane_result(
             self.chain.root,

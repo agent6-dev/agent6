@@ -155,6 +155,7 @@ Task text keeps its internal whitespace and newlines, including later `--` token
 
 When the lanes return, each joins the run's chain in dispatch order and one notice names every outcome: `joined at <sha>`, `finished with no changes to join` (the lane ended with a result and committed nothing), `CONFLICT` (the merge is left for the operator) or `FAILED` with the reason.
 Under a lane's line the notice gives the summary the lane finished with (`summary: ...`), so a lane sent to find something out answers its parent without a commit.
+A lane the run ended at its deadline or at its budget says so on its line (`stopped at the run's budget with no changes to join`, `joined at <sha> (ended at its deadline)`), and a task whose lanes were all ended before changing anything is marked failed.
 
 ### The parallel tool
 

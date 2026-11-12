@@ -552,6 +552,7 @@ def recorded_result(
         report=fold_session(
             tail_events(dest / sessions_layout.LOGS_NAME, follow=False)
         ).finish_summary,
+        stopped_by=stopped_by,
     )
 
 

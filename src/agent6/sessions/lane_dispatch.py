@@ -49,7 +49,8 @@ class JoinRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         branch: The lane's branch.
         status: The join's outcome.
         sha: The merge commit, "" when none.
-        detail: The failure's reason, "" when none.
+        detail: The failure's reason, or what stopped a lane whose work still joined; "" when
+            neither.
         target_before: The chain tip before the join.
         target_after: The chain tip after it; equal to `target_before` when nothing merged.
     """

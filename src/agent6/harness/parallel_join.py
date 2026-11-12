@@ -48,7 +48,7 @@ def join_lane_result(
     if not res.ok:
         return lane_records.LaneJoin(rid, res.branch, "failed", "", res.error)
     if not res.has_commits:
-        return lane_records.LaneJoin(rid, res.branch, "no_changes", "", "")
+        return lane_records.LaneJoin(rid, res.branch, "no_changes", "", res.stopped_by)
     try:
         sha = git_ops.chain_merge(
             root,
@@ -63,15 +63,15 @@ def join_lane_result(
         return lane_records.LaneJoin(rid, res.branch, "failed", "", str(exc))
     if sha is None:
         return lane_records.LaneJoin(rid, res.branch, "conflict", "", "merge conflict")
-    return lane_records.LaneJoin(rid, res.branch, "joined", sha, "")
+    return lane_records.LaneJoin(rid, res.branch, "joined", sha, res.stopped_by)
 
 
 def segment_stamp(lanes: list[lane_records.LaneJoin]) -> tuple[graph_models.NodeStatus, str, str]:
     """Reduce one segment's lane joins to its DAG stamp.
 
-    A segment passes when any lane joined or ended with no changes, recording the last
+    A segment passes when any lane joined or finished with no changes, recording the last
     joined sha (none for no changes); the note names every lane. A conflict counts as not
-    joined.
+    joined, and so does a lane its coordinator stopped before it changed anything.
 
     Args:
         lanes: The segment's joins.
@@ -81,17 +81,18 @@ def segment_stamp(lanes: list[lane_records.LaneJoin]) -> tuple[graph_models.Node
     """
     joined = [j for j in lanes if j.status == "joined"]
     note = "; ".join(lane_note(j) for j in lanes)
-    if joined or any(j.status == "no_changes" for j in lanes):
+    if joined or any(j.status == "no_changes" and not j.detail for j in lanes):
         return "passed", note, joined[-1].sha if joined else ""
     return "failed", note, ""
 
 
 def lane_note(j: lane_records.LaneJoin) -> str:
     """Return one lane's outcome as a DAG note line."""
+    stopped = f" ({j.detail})" if j.detail else ""
     if j.status == "joined":
-        return f"{j.session_id} joined at {j.sha[:12]}"
+        return f"{j.session_id} joined at {j.sha[:12]}{stopped}"
     if j.status == "no_changes":
-        return f"{j.session_id} made no changes"
+        return f"{j.session_id} made no changes{stopped}"
     if j.status == "conflict":
         return f"{j.session_id} conflicted; merge manually"
     return f"{j.session_id} failed: {j.detail}"
@@ -111,9 +112,12 @@ def summary_text(group: str, lanes: list[lane_records.LaneJoin]) -> str:
     lines = [f"[parallel] group {group} complete ({len(lanes)} lane(s)):"]
     for j in lanes:
         if j.status == "joined":
-            lines.append(f"  - {j.session_id} ({j.branch}): joined at {j.sha[:12]}")
+            stopped = f" ({j.detail})" if j.detail else ""
+            lines.append(f"  - {j.session_id} ({j.branch}): joined at {j.sha[:12]}{stopped}")
         elif j.status == "no_changes":
-            lines.append(f"  - {j.session_id} ({j.branch}): finished with no changes to join.")
+            # A lane its coordinator stopped did not finish: the line says what stopped it.
+            ended = j.detail or "finished"
+            lines.append(f"  - {j.session_id} ({j.branch}): {ended} with no changes to join.")
         elif j.status == "conflict":
             # Git is agent6's in this run and `.git` is read-only in the jail: the operator merges.
             lines.append(
