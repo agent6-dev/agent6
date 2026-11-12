@@ -226,7 +226,7 @@ Every end has one reason (`stop_reason` in `agent6 sessions show --json` and `se
   - `finish_session` reads `passed · not committed` over a green gate and `finished · not committed` with no gate
   - `silent_finish`, `metric_plateau`, `verify_settled` and `settled` also add `· not committed` to their status
 - `verify_settled` and `settled` are the harness's own stop for a run whose turns stopped changing the tree: the worker called no `finish_session`, and `agent6 resume ID` continues it
-  - `harness.settled_stop_after` sets the idle-turn limit (default 12); `0` disables the stop but keeps the nudge
+  - `harness.settled_stop_after` sets the idle-turn limit (default 12); `-1` disables the stop but keeps the nudge
 
 ## Telemetry export
 
