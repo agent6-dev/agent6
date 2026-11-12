@@ -228,11 +228,6 @@ def _dispatch_run_task(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
         common.error("-i needs a TTY in the foreground process group; drop -i for a headless run.")
         return 2
     parallel = getattr(args, "parallel", "")
-    if parallel and (args.interactive or args.tui):
-        common.error(
-            "--parallel cannot combine with -i or --tui (each lane runs headless and detached)."
-        )
-        return 2
     if parallel and args.standing:
         common.error("--parallel cannot combine with --standing (the lanes take no standing goal).")
         return 2
@@ -308,8 +303,8 @@ def _dispatch_run_task(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
         pins=tuple(args.pins),
         model=getattr(args, "model", ""),
     )
-    # A fan-out ends in its compare summary and the TUI owns its screen; neither prompts.
-    if getattr(args, "parallel", "") or args.tui:
+    # The TUI owns its screen: no prompt follows it.
+    if args.tui:
         return rc
     return _prompt_for_the_next_input(args, rc, session_id)
 

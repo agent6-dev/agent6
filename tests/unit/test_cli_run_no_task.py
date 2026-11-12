@@ -173,3 +173,22 @@ def test_parallel_refuses_a_standing_goal(
     rc = main(["run", "--parallel", "2", "--standing", "keep tests green", "task"])
     assert rc == 2
     assert "--standing" in capsys.readouterr().err
+
+
+def test_parallel_takes_the_tui_like_any_run(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--parallel --tui` was refused while a fan-out had no session of its own to show."""
+    from agent6.ui.cli import run as run_mod
+
+    monkeypatch.chdir(tmp_path)
+    seen: list[tuple[object, object]] = []
+
+    def fake_run(*_a: object, **kw: object) -> int:
+        seen.append((kw.get("parallel_spec"), kw.get("tui")))
+        return 0
+
+    monkeypatch.setattr(run_mod, "_cmd_run", fake_run)
+
+    assert main(["run", "--parallel", "2", "--tui", "task"]) == 0
+    assert seen == [("2", True)]
