@@ -19,7 +19,7 @@ from agent6 import errors, kinds, paths
 from agent6.sessions import ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
-from agent6.viewmodel import comparison, events, format, review_queue, session_log, session_status
+from agent6.viewmodel import comparison, events, format, review, session_log, session_status
 
 
 def session_mtime(session_dir: pathlib.Path) -> float:
@@ -99,6 +99,19 @@ def is_session_husk(session_dir: pathlib.Path) -> bool:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class Overlap:
+    """Another ended, unmerged session that changed some of the same paths.
+
+    Attributes:
+        session_id: The other session.
+        paths: The repo-relative paths both changed, sorted.
+    """
+
+    session_id: str
+    paths: tuple[str, ...]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class SessionSummary:
     """One listing row: everything a hub or `sessions list` needs, uncolored.
 
@@ -130,8 +143,11 @@ class SessionSummary:
         worktree_missing: The refusal when the recorded worktree is absent in this home.
         branch: The run's branch while the caller's branch-tips snapshot holds it; "" without
             a snapshot, a branch or a commit on it.
-        review_queue: Where the session sits in the review queue, derived from its journal.
         base_sha: The commit the run started from, as the manifest recorded it; "" unknown.
+        source_tip: The run's last diff checkpoint commit; "" before one.
+        open_findings: The open grounded findings by severity, from the journal's review fold.
+        overlaps: The other ended, unmerged runs that changed some of the same paths;
+            landing one means resuming the others on the new base.
     """
 
     session_id: str
@@ -156,9 +172,9 @@ class SessionSummary:
     worktree_missing: str = ""
     branch: str = ""
     base_sha: str = ""
-    review_queue: review_queue.ReviewQueueEntry = dataclasses.field(
-        default_factory=review_queue.ReviewQueueEntry
-    )
+    source_tip: str = ""
+    open_findings: review.SeverityCounts = dataclasses.field(default_factory=review.SeverityCounts)
+    overlaps: tuple[Overlap, ...] = ()
 
     @property
     def usage_cell(self) -> str:
@@ -177,6 +193,26 @@ class SessionSummary:
             missing = self.worktree_missing
             return f"{cell} ({missing})" if missing else f"{cell} {format.WORKTREE_MARK}"
         return cell
+
+    def merge_note(self, *, paths: bool = False) -> str:
+        """Return what stands before a clean merge, the words every listing shows.
+
+        Args:
+            paths: Name the shared paths after each overlapping run.
+
+        Returns:
+            `open findings: 2 block, 1 warn · same paths as <id>, <id>`; "" with neither.
+        """
+        notes: list[str] = []
+        counts = dataclasses.asdict(self.open_findings)
+        if found := ", ".join(f"{n} {severity}" for severity, n in counts.items() if n):
+            notes.append(f"open findings: {found}")
+        if self.overlaps and paths:
+            runs = (f"{o.session_id} ({', '.join(o.paths)})" for o in self.overlaps)
+            notes.append("same paths as " + "; ".join(runs))
+        elif self.overlaps:
+            notes.append("same paths as " + ", ".join(o.session_id for o in self.overlaps))
+        return " · ".join(notes)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -199,8 +235,8 @@ def nested_rows(
 
     Args:
         summaries: The sessions to list.
-        repo: The repository whose history tells which paths each awaiting-merge run changed;
-            with it, two such runs that changed the same paths flag each other.
+        repo: The repository whose history tells which paths each ended, unmerged run
+            changed; with it, two such runs that changed the same paths flag each other.
 
     Returns:
         The rows, every session appearing once: a lane whose coordinator is not listed
@@ -230,20 +266,20 @@ def nested_rows(
 def flag_overlaps(
     rows: list[ListingRow], touched: Callable[[SessionSummary], frozenset[str]]
 ) -> list[ListingRow]:
-    """Flag awaiting-merge sessions that changed some of the same paths, lanes included.
+    """Flag ended, unmerged sessions that changed some of the same paths, lanes included.
 
     Args:
         rows: The nested listing rows.
         touched: Returns the paths a session changed between its base and its tip.
 
     Returns:
-        The rows, each awaiting-merge summary's `review_queue.overlaps` naming the others.
+        The rows, each such summary's `overlaps` naming the others.
     """
     waiting: dict[str, frozenset[str]] = {}
 
     def collect(row: ListingRow) -> None:
         s = row.summary
-        if s.review_queue.group == "awaiting_merge":
+        if s.unmerged and s.status in format.ENDED_WORDS:
             waiting[s.session_id] = touched(s)
         for lane in row.lanes:
             collect(lane)
@@ -260,12 +296,11 @@ def flag_overlaps(
         if mine is None:
             return dataclasses.replace(row, lanes=lanes)
         overlaps = tuple(
-            review_queue.Overlap(other, tuple(sorted(mine & theirs)))
+            Overlap(other, tuple(sorted(mine & theirs)))
             for other, theirs in waiting.items()
             if other != s.session_id and mine & theirs
         )
-        queue = dataclasses.replace(s.review_queue, overlaps=overlaps)
-        return ListingRow(dataclasses.replace(s, review_queue=queue), lanes)
+        return ListingRow(dataclasses.replace(s, overlaps=overlaps), lanes)
 
     return [flagged(row) for row in rows]
 
@@ -281,10 +316,9 @@ def changed_paths(repo: pathlib.Path) -> Callable[[SessionSummary], frozenset[st
     """
 
     def touched(s: SessionSummary) -> frozenset[str]:
-        tip = s.review_queue.source_tip
-        if not s.base_sha or not tip:
+        if not s.base_sha or not s.source_tip:
             return frozenset()
-        return _paths_between(str(repo), s.base_sha, tip)
+        return _paths_between(str(repo), s.base_sha, s.source_tip)
 
     return touched
 
@@ -296,32 +330,6 @@ def _paths_between(repo: str, base: str, tip: str) -> frozenset[str]:
         return frozenset(git_read.tree_diff_paths(pathlib.Path(repo), base, tip))
     except errors.GitError:
         return frozenset()
-
-
-def row_group(row: ListingRow) -> review_queue.Group:
-    """Return the row's queue group: its own or a lane's, whichever comes first in the queue.
-
-    A fan-out container sits in the other group itself, so its lanes' work places it; a
-    coordinator never inherits a lane's verification, only its place in the queue.
-
-    Args:
-        row: The listing row.
-
-    Returns:
-        The earliest group among the row and its lanes.
-    """
-    groups: list[review_queue.Group] = [row.summary.review_queue.group]
-    groups.extend(row_group(lane) for lane in row.lanes)
-    return min(groups, key=review_queue.GROUPS.index)
-
-
-def lane_groups(row: ListingRow) -> dict[str, int]:
-    """Return how many of the row's lanes sit in each queue group, the empty groups left out."""
-    counts: dict[str, int] = {}
-    for lane in row.lanes:
-        group = row_group(lane)
-        counts[group] = counts.get(group, 0) + 1
-    return {group: counts[group] for group in review_queue.GROUPS if group in counts}
 
 
 def rows_for(
@@ -416,11 +424,11 @@ class SummaryRow(TypedDict):
     coordinator: str
     worktree: str | None
     branch: str | None
-    review_queue: dict[str, Any]
+    open_findings: dict[str, int]
+    overlaps: list[dict[str, Any]]
+    merge_note: str
     lanes: list[SummaryRow]
     group_last_activity: NotRequired[float]
-    queue_group: NotRequired[str]
-    lane_groups: NotRequired[dict[str, int]]
 
 
 def row_json(row: ListingRow, *, winners: Container[str]) -> SummaryRow:
@@ -429,16 +437,13 @@ def row_json(row: ListingRow, *, winners: Container[str]) -> SummaryRow:
     Attributes:
         group_last_activity: The group's latest activity time in epoch seconds.
         when: The rendered group activity time.
-        queue_group: The group's review-queue placement.
-        lane_groups: The number of lanes in each review-queue group.
 
     Args:
         row: The row.
         winners: The ids of the fan-out compare winners.
 
     Returns:
-        The `summary_row` dict with group activity and a rendered `when`,
-        `queue_group` the row's place in the review queue and `lane_groups` its lanes' places.
+        The `summary_row` dict with group activity and a rendered `when`.
     """
     out = summary_row(
         row.summary,
@@ -448,8 +453,6 @@ def row_json(row: ListingRow, *, winners: Container[str]) -> SummaryRow:
     if row.lanes:
         out["group_last_activity"] = row.group_last_activity
     out["when"] = format.format_when(row.group_last_activity) if row.group_last_activity else ""
-    out["queue_group"] = row_group(row)
-    out["lane_groups"] = lane_groups(row)
     return out
 
 
@@ -489,7 +492,10 @@ def summary_row(
         coordinator: The session that dispatched this lane.
         worktree: The linked worktree path, or null in the operator's checkout.
         branch: The run's branch while it exists, or null.
-        review_queue: The ReviewQueueEntry for this session.
+        open_findings: The open grounded findings by severity: `block`, `warn`, `nit`.
+        overlaps: The Overlap records: the other ended, unmerged runs that changed some of
+            the same paths.
+        merge_note: The rendered open findings and same-path runs; "" with neither.
 
         winner: Whether this lane won its comparison.
         lanes: Nested listing rows for this coordinator's lanes.
@@ -531,7 +537,9 @@ def summary_row(
         "coordinator": s.coordinator,
         "worktree": s.worktree or None,
         "branch": s.branch or None,
-        "review_queue": review_queue.as_dict(s.review_queue),
+        "open_findings": dataclasses.asdict(s.open_findings),
+        "overlaps": [dataclasses.asdict(o) for o in s.overlaps],
+        "merge_note": s.merge_note(paths=True),
         "lanes": list(lanes),
     }
 
@@ -821,23 +829,6 @@ def summarize_session_dir(
         if branch_tips is not None and manifest is not None
         else False
     )
-    tip_matches: bool | None = None
-    if branch_tips is not None and manifest is not None and scan.source_tip:
-        tips = _run_tips(manifest, branch_tips)
-        tip_matches = tips == {scan.source_tip} if tips else None
-    queue = review_queue.classify(
-        scan,
-        review_queue.QueueFacts(
-            status=word,
-            mode=mode,
-            unmerged=has_unmerged,
-            merged=manifest is not None and manifest.merged is not None,
-            alive=process.worker_is_alive(session_dir),
-            fanout=manifest is not None and manifest.fanout is not None,
-            tip_matches=tip_matches,
-            saved_answers=len(ipc.saved_question_answers(session_dir)),
-        ),
-    )
     return SessionSummary(
         session_id=session_dir.name,
         mode=mode,
@@ -861,5 +852,6 @@ def summarize_session_dir(
         worktree_missing=sessions_manifest.worktree_blocker(manifest.worktree) if manifest else "",
         branch=existing_branch(manifest, branch_tips),
         base_sha=manifest.base_sha if manifest is not None else "",
-        review_queue=queue,
+        source_tip=scan.source_tip or "",
+        open_findings=scan.review.open_counts,
     )

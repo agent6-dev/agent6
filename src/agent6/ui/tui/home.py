@@ -50,7 +50,6 @@ from agent6.viewmodel import (
     SessionSummary,
     format,
     is_winner,
-    review_queue,
     session_dirs,
     session_status,
     summarize_session_dir,
@@ -117,7 +116,7 @@ def _status_cell(summary: SessionSummary, *, narrow: bool = False) -> text.Text:
     label = format.listing_status_label(
         summary.mode, summary.status, reason, unmerged=summary.unmerged
     )
-    note = review_queue.overlap_note(summary.review_queue)
+    note = summary.merge_note()
     if note and not narrow:
         label += f" · {note}"
     return text.Text(label, style=theme.status_style(summary.status))

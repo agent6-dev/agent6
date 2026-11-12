@@ -119,7 +119,7 @@ def test_hub_and_findings_tour(tour_page: Page, tmp_path: pathlib.Path) -> None:
 
     page = tour_page
     reviewed = page.locator(".item").filter(has_text="merry-fountain-B7XAJS")
-    expect(reviewed).to_contain_text("2 warn open")
+    expect(reviewed).to_contain_text("open findings: 2 warn")
     expect(reviewed).to_contain_text("passed · unmerged")
     _stop(page, tmp_path, "01-hub")
     reviewed.click()

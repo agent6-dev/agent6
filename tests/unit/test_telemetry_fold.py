@@ -12,7 +12,7 @@ from typing import Any
 from agent6 import review_records
 from agent6.harness import review_panel
 from agent6.viewmodel import telemetry, telemetry_metrics, telemetry_records
-from tests.unit import test_review_queue as queue_tests
+from tests import review_helpers
 
 _T0 = datetime.datetime(2026, 10, 25, 10, 0, tzinfo=datetime.UTC)
 
@@ -23,7 +23,7 @@ def _ts(seconds: float) -> str:
 
 def _journal() -> list[dict[str, Any]]:
     """One execution: a model call, a gated tool, a red gate, a blocking panel, an end."""
-    start, panel = queue_tests._panel_rows(block=1)  # pyright: ignore[reportPrivateUsage]
+    start, panel = review_helpers.panel_rows(block=1)
     return [
         {
             "type": "session.start",
@@ -307,7 +307,7 @@ def test_significant_events_become_log_records_on_their_spans() -> None:
 
 def test_what_follows_an_end_still_folds_against_it() -> None:
     """The settled budget reading, the stranded notice and a disposition land after session.stop."""
-    start, panel = queue_tests._panel_rows(block=1)  # pyright: ignore[reportPrivateUsage]
+    start, panel = review_helpers.panel_rows(block=1)
     rows = [
         *_journal(),
         {"type": "budget.update", "ts": _ts(61), "usd_total": 0.40, "plan_observed_points": 5},

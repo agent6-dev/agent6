@@ -345,22 +345,16 @@ agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
 - Fix retries read the journal, not the launch confirmation from the initiating response.
   Without a recorded submission or failure, a retry reports `delivery unknown` and never launches or sends the instruction again.
 
-## A session's review state
+## A row's merge note
 
-Every listing row carries its review state, derived from its journal on each read and never stored:
+Every listing row says what stands before a clean merge, derived from the journal on each read and never stored:
 
-- **needs answer**: questions the model asked during an execution that nobody has answered, on a running run or an ended one; the row counts the question sets and dates from the oldest; `agent6 answer <id>` answers them, and a set whose answer is saved on disk waits for the run's next turn or its resume
-- **blocked**: open `block` findings; the row names their count and dates from the oldest one's first panel
-- **unverified**: an ended run whose final tree the gate did not certify whole (no verify, a red or timed-out gate, a pass over selected paths only, a pass with no verification evidence, edits after the last green)
-- **awaiting merge**: a clean run waiting for a merge: no open findings, a complete and current panel with no abstained seat, a whole-tree pass whose evidence certifies the end tree, unmerged work with its chain and branch at the recorded checkpoint, no live worker, not stranded or undone
-    - two awaiting-merge runs that changed the same paths flag each other (`same paths as <id> (<paths>)`): land one, then resume the other on the new base
-- **other**: the rest, with its reason: open warnings or nits, an unreviewed, skipped, stale, incomplete, inconclusive or freeform review, a seat that abstained, a review still running, legacy counts, unreadable evidence, a live or unfinished run's status, a fan-out, a merged run, commits on the run
+- `open findings: 2 block, 1 warn`: the run's open findings by severity; `sessions merge` refuses on an open `block`, and `agent6 sessions findings <id>` lists them
+- `same paths as <id>`: another ended, unmerged run changed some of the same paths; land one, then resume the other on the new base
 
-A fan-out coordinator takes its lanes' earliest state and shows their counts without inheriting a lane's verification.
-Lifecycle status stays apart: a running session with an open block reads running and blocked, and a failed run reads failed.
-
+The status beside the note carries the rest: what a waiting run waits on, the gate's word, `unmerged`, and the questions pending or the answers saved for the resume.
 Every listing orders sessions by last activity, newest first.
-The web hub shows the state as a pill on the row; `sessions list --json` includes the [structured review state](formats.md#reviewqueueentry) and [lane groups](formats.md#cli-json).
+`sessions list --json` carries the counts as `open_findings`, the runs and their shared paths as `overlaps`, and the rendered note as `merge_note` ([the row](formats.md#cli-json)).
 
 ## Session receipts
 

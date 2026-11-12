@@ -26,7 +26,6 @@ from agent6.vcs import git_ops, git_policy, git_read
 from agent6.viewmodel import (
     format,
     newest_session_dir,
-    review_queue,
     session_dirs,
     session_status,
     summarize_session_dir,
@@ -72,7 +71,7 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
         """Return a row's cells with the id cell as given."""
         s = row.summary
         label = format.listing_status_label(s.mode, s.status, s.detail, unmerged=s.unmerged)
-        note = review_queue.overlap_note(s.review_queue)
+        note = s.merge_note()
         styled, plain = common.styled_status(
             s.status, s.detail, color=color, label=f"{label} · {note}" if note else label
         )

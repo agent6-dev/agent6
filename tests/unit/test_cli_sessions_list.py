@@ -102,9 +102,9 @@ def test_runs_list_json_carries_the_row_facts(
         "coordinator",
         "worktree",
         "branch",
-        "review_queue",
-        "queue_group",
-        "lane_groups",
+        "open_findings",
+        "overlaps",
+        "merge_note",
     }
 
 
@@ -403,12 +403,15 @@ def test_runs_list_marks_a_branchless_chain_unmerged(
     assert "passed · unmerged" in row
 
 
-def test_two_clean_runs_over_one_path_are_flagged_on_the_listing(
+def test_unmerged_runs_over_one_path_are_flagged_on_the_listing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Awaiting-merge runs whose commits changed the same path name each other on every hub."""
+    """Ended, unmerged runs whose commits changed the same path name each other on every hub.
+
+    A run's open findings read beside them, in the same words.
+    """
     from agent6.vcs import git_ops, git_read
-    from tests.unit import test_review_queue as queue_tests
+    from tests import review_helpers
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -428,7 +431,7 @@ def test_two_clean_runs_over_one_path_are_flagged_on_the_listing(
     git("commit", "-qm", "init")
     base = git("rev-parse", "HEAD")
 
-    def clean_run(session_id: str, files: dict[str, str]) -> None:
+    def ended_run(session_id: str, files: dict[str, str], *, block: int = 0) -> None:
         branch = f"agent6/{session_id}"
         for name, body in files.items():
             (repo / name).write_text(body, encoding="utf-8")
@@ -453,100 +456,38 @@ def test_two_clean_runs_over_one_path_are_flagged_on_the_listing(
         }
         (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         rows = [
-            queue_tests._START,
-            *queue_tests._verify_rows(),
+            review_helpers.START,
+            *review_helpers.verify_rows(),
             {"type": "diff.updated", "sha": sha},
-            *queue_tests._panel_rows(),
-            queue_tests._END,
+            *review_helpers.panel_rows(block=block),
+            review_helpers.END,
         ]
         (d / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
 
     git("checkout", "-q", "--detach")
-    clean_run("run-one-AAAAAA", {"b.txt": "one\n", "c.txt": "c\n"})
-    clean_run("run-two-BBBBBB", {"b.txt": "two\n"})
-    clean_run("run-far-CCCCCC", {"d.txt": "d\n"})
+    ended_run("run-one-AAAAAA", {"b.txt": "one\n", "c.txt": "c\n"})
+    ended_run("run-two-BBBBBB", {"b.txt": "two\n"}, block=2)
+    ended_run("run-far-CCCCCC", {"d.txt": "d\n"})
     assert sessions_cmds._cmd_list(as_json=True) == 0
     rows = {row["session_id"]: row for row in json.loads(capsys.readouterr().out)}
-    assert {k: row["queue_group"] for k, row in rows.items()} == dict.fromkeys(
-        rows, "awaiting_merge"
-    )
-    assert rows["run-one-AAAAAA"]["review_queue"]["overlaps"] == [
+    assert rows["run-one-AAAAAA"]["overlaps"] == [
         {"session_id": "run-two-BBBBBB", "paths": ["b.txt"]}
     ]
-    assert rows["run-two-BBBBBB"]["review_queue"]["overlaps"] == [
+    assert rows["run-one-AAAAAA"]["merge_note"] == "same paths as run-two-BBBBBB (b.txt)"
+    assert rows["run-two-BBBBBB"]["overlaps"] == [
         {"session_id": "run-one-AAAAAA", "paths": ["b.txt"]}
     ]
-    assert rows["run-far-CCCCCC"]["review_queue"]["overlaps"] == []
+    assert rows["run-two-BBBBBB"]["open_findings"] == {"block": 2, "warn": 0, "nit": 0}
+    assert rows["run-two-BBBBBB"]["merge_note"] == (
+        "open findings: 2 block · same paths as run-one-AAAAAA (b.txt)"
+    )
+    assert rows["run-far-CCCCCC"]["overlaps"] == [] and rows["run-far-CCCCCC"]["merge_note"] == ""
     assert sessions_cmds._cmd_list() == 0
     text = capsys.readouterr().out
     assert re.search(r"passed · unmerged · same paths as run-two-BBBBBB\s+run-one-AAAAAA", text)
-
-
-def test_a_clean_run_awaits_a_merge_until_one_of_its_refs_moves(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A commit on the run branch after the run reads as commits after the run, chain or not."""
-    from agent6.vcs import git_ops, git_read
-    from tests.unit import test_review_queue as queue_tests
-
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    monkeypatch.chdir(repo)
-
-    def git(*args: str) -> str:
-        return subprocess.run(
-            ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
-        ).stdout.strip()
-
-    git("init", "-q", "-b", "main")
-    git("config", "user.email", "t@t")
-    git("config", "user.name", "t")
-    (repo / "a.txt").write_text("a\n", encoding="utf-8")
-    git("add", "-A")
-    git("commit", "-qm", "init")
-    base = git("rev-parse", "HEAD")
-    session_id = "clean-run-AAAAAA"
-    branch = f"agent6/{session_id}"
-    (repo / "b.txt").write_text("b\n", encoding="utf-8")
-    sha = git_ops.chain_commit(
-        repo,
-        "agent6 turn 1: work",
-        ref=git_read.chain_ref_for(session_id),
-        fallback_parent=base,
-        also_branch=branch,
+    assert re.search(
+        r"unmerged · open findings: 2 block · same paths as run-one-AAAAAA\s+run-two-BBBBBB", text
     )
-    assert sha
-    d = common._runs_dir(repo) / session_id
-    d.mkdir(parents=True)
-    manifest = {
-        "version": 2,
-        "session_id": session_id,
-        "mode": "run",
-        "user_task": "t",
-        "base_sha": base,
-        "run_branch": branch,
-    }
-    (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    rows = [
-        queue_tests._START,
-        *queue_tests._verify_rows(),
-        {"type": "diff.updated", "sha": sha},
-        *queue_tests._panel_rows(),
-        queue_tests._END,
-    ]
-    (d / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
-
-    def queue() -> tuple[str, str]:
-        assert sessions_cmds._cmd_list(as_json=True) == 0
-        (row,) = json.loads(capsys.readouterr().out)
-        return row["queue_group"], row["review_queue"]["reason"]
-
-    assert queue() == ("awaiting_merge", "verified and reviewed, unmerged")
-    tree = git("rev-parse", f"{branch}^{{tree}}")
-    more = git("commit-tree", tree, "-p", branch, "-m", "the operator's own commit")
-    git("update-ref", f"refs/heads/{branch}", more)
-    assert queue() == ("other", "commits after the run")
 
 
 def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(

@@ -4,6 +4,7 @@ import dataclasses
 import pathlib
 import shutil
 import subprocess
+from typing import Any
 
 import pydantic
 
@@ -190,3 +191,88 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
         )
     )
     return saved
+
+
+def panel_rows(
+    *, block: int = 0, warn: int = 0, abstain: int = 0, head: str = "ht"
+) -> list[dict[str, Any]]:
+    """Return a complete panel's start and completion rows with the given open findings."""
+    target = review_records.ReviewTarget("b", "bt", "h", head, "h", (), "revisions")
+    observations = []
+    for index, severity in enumerate(["block"] * block + ["warn"] * warn):
+        finding = review_records.Finding(
+            category="correctness",
+            severity=severity,  # type: ignore[arg-type]
+            title=f"f{index}",
+            location=review_records.ReviewLocation(
+                path="a.py", side="head", start_line=1, end_line=1
+            ),
+        )
+        observations.append(review_records.FindingObservation(f"f{index}", "p", finding, (0,)))
+    record = review_records.ReviewPanel(
+        panel_id="p",
+        execution_id="e",
+        turn=1,
+        trigger="finish",
+        target=target,
+        findings=tuple(observations),
+        injected_finding_ids=(),
+        block_on="any",
+        raw_blocked=block > 0,
+        blocked=block > 0,
+        disarmed=False,
+        n_block=block,
+        n_abstain=abstain,
+        completion="complete",
+    )
+    return [
+        {
+            "type": "review.start",
+            "ts": "2026-10-25T10:00:00+00:00",
+            "panel_id": "p",
+            "execution_id": "e",
+            "target": dataclasses.asdict(target),
+            "seats": [],
+        },
+        {
+            "type": "review.panel",
+            "ts": "2026-10-25T10:00:05+00:00",
+            **record.model_dump(mode="json"),
+        },
+    ]
+
+
+def verify_rows(
+    *, exit_code: int = 0, scoped: bool = False, tree: str = "ht"
+) -> list[dict[str, Any]]:
+    """Return a verification attempt that observed `tree` on both sides."""
+    return [
+        {"type": "verify.start", "verify_id": "v", "command": ["pytest"], "tree_before": tree},
+        {
+            "type": "verify.end",
+            "verify_id": "v",
+            "command": ["pytest"],
+            "exit_code": exit_code,
+            "tree_before": tree,
+            "tree_after": tree,
+            "scoped": scoped,
+            "timeout_s": 5.0 if exit_code == 124 else 0.0,
+            "timed_out": exit_code == 124,
+        },
+    ]
+
+
+START: dict[str, Any] = {
+    "type": "session.start",
+    "ts": "2026-10-25T09:00:00+00:00",
+    "mode": "run",
+    "user_task": "t",
+}
+END: dict[str, Any] = {
+    "type": "session.stop",
+    "ts": "2026-10-25T11:00:00+00:00",
+    "reason": "finish_session",
+    "verification": "passed",
+    "tree": "ht",
+    "final_verify_id": "v",
+}

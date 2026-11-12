@@ -206,21 +206,17 @@ def test_hub_lists_runs(server: tuple[web_server.WebServer, int], tmp_path: path
     assert by_id["run-b"]["task"] == "task b"
 
 
-def test_hub_lists_newest_first_and_each_row_carries_its_review_state(
+def test_hub_lists_newest_first_and_each_row_carries_its_open_findings(
     server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
-    """`/api/hub` orders by last activity; a row's review state and reason ride along."""
-    from tests.unit import test_review_queue as queue_tests
+    """`/api/hub` orders by last activity; a row's open findings and their note ride along."""
+    from tests import review_helpers
 
     _srv, port = server
     blocked: list[dict[str, object]] = [
-        queue_tests._START,
-        *queue_tests._panel_rows(block=1),
-        queue_tests._END,
-    ]
-    unverified: list[dict[str, object]] = [
-        queue_tests._START,
-        {**queue_tests._END, "verification": "unverified", "final_verify_id": None},
+        review_helpers.START,
+        *review_helpers.panel_rows(block=1, warn=2),
+        review_helpers.END,
     ]
     newest: list[dict[str, object]] = [
         {
@@ -231,19 +227,17 @@ def test_hub_lists_newest_first_and_each_row_carries_its_review_state(
         }
     ]
     _make_run(tmp_path, "run-block", blocked)
-    _make_run(tmp_path, "run-unverified", unverified)
     _make_run(tmp_path, "run-newest", newest)
     status, body, _ = _get(port, "/api/hub")
     assert status == 200
     rows = json.loads(body)["sessions"]
-    assert rows[0]["session_id"] == "run-newest"
-    assert {(r["session_id"], r["queue_group"]) for r in rows} == {
-        ("run-block", "blocked"),
-        ("run-unverified", "unverified"),
-        ("run-newest", "other"),
-    }
+    assert [r["session_id"] for r in rows] == ["run-newest", "run-block"]
     by_id = {r["session_id"]: r for r in rows}
-    assert by_id["run-block"]["review_queue"]["reason"] == "1 open block finding"
+    assert by_id["run-block"]["open_findings"] == {"block": 1, "warn": 2, "nit": 0}
+    assert by_id["run-block"]["merge_note"] == "open findings: 1 block, 2 warn"
+    assert by_id["run-newest"]["open_findings"] == {"block": 0, "warn": 0, "nit": 0}
+    assert by_id["run-newest"]["merge_note"] == "" and by_id["run-newest"]["overlaps"] == []
+    assert not {"review_queue", "queue_group", "lane_groups"} & set(by_id["run-block"])
 
 
 def test_machine_snapshot_matches_watch_json(

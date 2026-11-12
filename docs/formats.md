@@ -1585,7 +1585,9 @@ Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/b
 | `coordinator` | `str` | The session that dispatched this lane. |
 | `worktree` | `str \| None` | The linked worktree path, or null in the operator's checkout. |
 | `branch` | `str \| None` | The run's branch while it exists, or null. |
-| `review_queue` | `dict[str, Any]` | The ReviewQueueEntry for this session. |
+| `open_findings` | `dict[str, int]` | The open grounded findings by severity: `block`, `warn`, `nit`. |
+| `overlaps` | `list[dict[str, Any]]` | The Overlap records: the other ended, unmerged runs that changed some of the same paths. |
+| `merge_note` | `str` | The rendered open findings and same-path runs; "" with neither. |
 | `lanes` | `list[SummaryRow]` | Nested listing rows for this coordinator's lanes. |
 
 ### `sessions list --json` group fields
@@ -1597,8 +1599,6 @@ Source: [`viewmodel.listing.row_json`](https://github.com/agent6-dev/agent6/blob
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `when` | `str` | The rendered group activity time. |
-| `queue_group` | `str` | The group's review-queue placement. |
-| `lane_groups` | `dict[str, int]` | The number of lanes in each review-queue group. |
 | `group_last_activity` | `float` | The group's latest activity time in epoch seconds. |
 
 ### `sessions show --json`
@@ -2651,25 +2651,16 @@ Source: [`agent6.ui.cli.ps_cmd._Row`](https://github.com/agent6-dev/agent6/blob/
 | `lanes` | `tuple[agent6.ui.cli.ps_cmd._Row, ...]` | The fan-out's live lanes, nested. |
 | `worktree` | `str \| None` | The linked worktree the run works in, None for a run in the checkout. |
 
-### ReviewQueueEntry
+### Overlap
 
-**Support: public.** Where a session sits in the review queue.
+**Support: public.** Another ended, unmerged session that changed some of the same paths.
 
-Source: [`agent6.viewmodel.review_queue.ReviewQueueEntry`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/review_queue.py).
+Source: [`agent6.viewmodel.listing.Overlap`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/listing.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `group` | `Literal['needs_answer', 'blocked', 'unverified', 'awaiting_merge', 'other']` | The queue group. |
-| `reason` | `str` | The words beside the group: the open block count, the gate word, the review state, or what else keeps the session off the clean list. |
-| `open_blocks` | `int` | Open grounded block findings. |
-| `open_warnings` | `int` | Open grounded warn findings. |
-| `open_nits` | `int` | Open grounded nit findings. |
-| `review_state` | `str` | The latest panel's state against the session's end tree: unreadable, legacy, unreviewed, running, incomplete, skipped, inconclusive, freeform, abstained, stale or complete. |
-| `verification_state` | `str` | The gate word for the final tree (passed, failed, timed_out, unverified, not_applicable), "passed scoped" for a pass over selected paths only, "passed, no evidence" for an end whose pass left no verification record. |
-| `oldest_open_at` | `float \| None` | When the pending work began, as epoch seconds: the oldest unanswered question's ask, the oldest open block's first observation, else the run's end; None when nothing is pending. |
-| `source_tip` | `str \| None` | The run's last diff checkpoint commit. |
-| `merge_allowed` | `bool` | Whether the open-block merge guard lets this session merge. |
-| `overlaps` | `tuple[Overlap, ...]` | The other awaiting-merge sessions that changed some of the same paths; landing one means resuming the others on the new base. |
+| `session_id` | `str` | The other session. |
+| `paths` | `tuple[str, ...]` | The repo-relative paths both changed, sorted. |
 
 ### MergeReviewGuard
 
@@ -3556,17 +3547,6 @@ Source: [`agent6.viewmodel.machine_state.NotificationView`](https://github.com/a
 | `state` | `str` | The state that emitted the notification. |
 | `message` | `str` | The notification text. |
 | `level` | `str` | The notification's presentation level. |
-
-### Overlap
-
-**Support: public.** Another awaiting-merge session that changed some of the same paths.
-
-Source: [`agent6.viewmodel.review_queue.Overlap`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/review_queue.py).
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `session_id` | `str` | The other session. |
-| `paths` | `tuple[str, ...]` | The repo-relative paths both changed, sorted. |
 
 ### VerificationEvidence
 

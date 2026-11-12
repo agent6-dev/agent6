@@ -393,7 +393,7 @@ def status_label(status: str, reason: str = "") -> str:
 _MODE_IMPLIED: dict[str, str] = {"planned": "plan", "answered": "ask"}
 
 # An unmerged mark means something only once the run is over.
-_ENDED_WORDS = frozenset({"passed", "failed", "finished", "stopped", "undone"})
+ENDED_WORDS = frozenset({"passed", "failed", "finished", "stopped", "undone"})
 
 
 def lane_count(n: int) -> str:
@@ -424,7 +424,7 @@ def listing_status_label(
     label = status_label(status, reason)
     if mode not in ("run", "?", "") and _MODE_IMPLIED.get(status) != mode:
         label = f"{mode} · {label}"
-    if unmerged and status in _ENDED_WORDS:
+    if unmerged and status in ENDED_WORDS:
         label = f"{label} · unmerged"
     return label
 

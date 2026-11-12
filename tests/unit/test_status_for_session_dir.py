@@ -471,10 +471,7 @@ def test_a_saved_answer_reads_as_saved_not_pending(tmp_path: pathlib.Path) -> No
         word, reason = session_status.status_for_session_dir(d, facts)
         assert word != "waiting" and reason.endswith("1 answer saved for the resume")
         assert "pending" not in reason
-    queue = listing.summarize_session_dir(d).review_queue
-    assert queue.group != "needs_answer" and queue.reason.endswith(
-        "1 answer saved; the resume delivers it"
-    )
+    assert listing.summarize_session_dir(d).detail.endswith("1 answer saved for the resume")
 
 
 def test_pending_steer_is_visible_until_consumed(tmp_path: pathlib.Path) -> None:

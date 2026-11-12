@@ -541,10 +541,6 @@ function taskTitle(parent, taskLine) {
   if (continued) parent.appendChild(el('div', 'continued', continued));
 }
 
-// A row's review state: the server's `queue_group`, its pill label and level.
-const QUEUE_LABEL = { needs_answer: 'Needs answer', blocked: 'Blocked', unverified: 'Unverified', awaiting_merge: 'Awaiting merge', other: 'Other' };
-const QUEUE_LEVEL = { needs_answer: 'warn', blocked: 'error', unverified: 'warn', awaiting_merge: 'ok' };
-
 function paintSession(r, it, g) {
   it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.session_id);
   taskTitle(g, r.task_line || firstLine(r.task, 200) || '(no task)');
@@ -554,16 +550,9 @@ function paintSession(r, it, g) {
   // Where the run works and the branch holding its commits, when it has them.
   const where = [r.worktree && 'worktree ' + r.worktree, r.branch && 'branch ' + r.branch].filter(Boolean).join(' · ');
   if (where) g.appendChild(el('div', 'sub', where));
-  // The queue's reason beside the row, and a fan-out's lanes by group: recorded facts, no re-review.
-  const q = r.review_queue || {};
-  const laneGroups = Object.entries(r.lane_groups || {}).map(([k, n]) => `${n} ${QUEUE_LABEL[k].toLowerCase()}`).join(', ');
-  const review = [q.reason, laneGroups && `lane queue groups: ${laneGroups}`].filter(Boolean).join(' · ');
-  if (review) g.appendChild(el('div', 'sub review-queue', review));
-  // Two awaiting-merge runs that changed the same paths: land one, resume the other on the new base.
-  const overlaps = (q.overlaps || []).map(o => `${o.session_id} (${(o.paths || []).join(', ')})`).join(' · ');
-  if (overlaps) g.appendChild(el('div', 'sub review-queue', 'same paths as ' + overlaps));
+  // The server's merge note, rendered once for every hub.
+  if (r.merge_note) g.appendChild(el('div', 'sub', r.merge_note));
   it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
-  if (QUEUE_LEVEL[r.queue_group]) it.appendChild(pill(QUEUE_LEVEL[r.queue_group], QUEUE_LABEL[r.queue_group]));
   // Review fills the new-work composer with `/review <branch>`; Merge lands the branch
   // through `sessions merge`. Both need a finished run whose branch exists; Merge also
   // needs commits no merge stamped. A fan-out has no branch of its own.

@@ -59,7 +59,7 @@ agent6 web --secret 'a phrase of your own'        # the flag wins over the varia
 Buttons do what the matching CLI command does, and prompts are answered inline on every page that shows a run.
 A question the model queued, or an ended run's, keeps its box: the answer reaches the run at its next turn, or at its resume.
 
-- **Sessions page**: every session (mode, status, last activity, usage), newest activity first, a fan-out's lanes folded under its row, each row carrying its [review state](usage.md#a-sessions-review-state) and reason
+- **Sessions page**: every session (mode, status, last activity, usage), newest activity first, a fan-out's lanes folded under its row, each row carrying its [merge note](usage.md#a-rows-merge-note)
     - a run's row names its worktree and its branch while the branch exists; **Review** fills the composer with `/review <branch>`, and **Merge** lands the branch (`sessions merge`) when the run holds unmerged commits
     - the composer starts a run, plan or ask under a chosen preset and model (the model box shows what the config resolves; a pick overrides it); **worktree** starts the run in a new git worktree (`run --worktree`); **advanced** holds the plan to run from (`run --from`) and a spend cap (`--max-usd`)
     - **Run this plan** on a plan's view opens this composer with the plan chosen; Enter on an empty task runs the plan as written
