@@ -429,8 +429,8 @@ The verify command is the success gate.
 ## Carry your state with the workspace
 
 Run `agent6 pack` before syncing a checkout to a devcontainer, remote-ssh host or new location.
-It copies this home's state into `<project root>/.agent6/` and adds `.agent6/` to the project's `.gitignore` if that line is missing.
-Before copying, it asks git whether `.agent6/pack.json` is ignored and refuses if it is not or if any `.agent6` path is tracked.
+It copies this home's state into `<project root>/.agent6/` and keeps it out of git through the repository's own exclude file (`.git/info/exclude`), unless git already ignores it; the project's `.gitignore` is never written.
+Before copying, it asks git whether `.agent6/pack.json` is ignored and refuses if it is not (a `.gitignore` rule such as `!.agent6/` outranks the exclude file) or if any `.agent6` path is tracked.
 Home keeps its copies.
 Run `agent6 unpack` in the destination checkout to move the pack into that home's global directories and the state directory keyed to the new project root.
 It deletes `.agent6/` after a successful import.
@@ -489,7 +489,7 @@ Commands that resolve the project root refuse with exit 2 if `.agent6/pack.json`
 For a devcontainer or remote-ssh round trip:
 
 1. Run `agent6 pack` here.
-2. Sync the workspace, including the hidden, gitignored `.agent6/` directory.
+2. Sync the workspace, including the hidden `.agent6/` directory, which git ignores.
 3. After the sync, run `agent6 unpack` here as well, which removes your own pack.
 4. Run `agent6 unpack` there and work.
 5. Run `agent6 pack` there and sync the workspace back, then run `agent6 unpack` there to remove its own pack.

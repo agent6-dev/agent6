@@ -5,12 +5,14 @@ from __future__ import annotations
 import pathlib
 
 from agent6 import errors, pack, paths
-from agent6.ui.cli import init_wizard
-from agent6.vcs import git_read
+from agent6.vcs import git_ops, git_read
 
 
 def cmd_pack(*, repo_config: bool = False) -> int:
-    """Write a workspace pack and gitignore it.
+    """Write a workspace pack, kept out of git by the repository's own exclude file.
+
+    A project's `.gitignore` is shared with people who do not use agent6, so it is never
+    written: `.agent6/` goes into `.git/info/exclude` unless git already ignores it.
 
     Args:
         repo_config: Fold global settings into repo config and omit global config and UI files.
@@ -19,23 +21,23 @@ def cmd_pack(*, repo_config: bool = False) -> int:
         Zero after writing the pack.
 
     Raises:
-        PackError: The directory is not a git checkout; `.agent6` is tracked, not ignored, or
-            holds another origin's pack or an unreadable manifest; a run, exec or machine of the
-            checkout is live; a path is a link or special file; or a file cannot be read or
-            written.
+        PackError: The directory is not a git checkout; `.agent6` is tracked, un-ignored by a
+            rule, or holds another origin's pack or an unreadable manifest; a run, exec or
+            machine of the checkout is live; a path is a link or special file; or a file cannot
+            be read or written.
         GitError: Git cannot inspect the repository.
     """
     root = paths.project_root(pathlib.Path.cwd(), allow_pack=True)
     if not (root / ".git").exists():
         raise errors.PackError(f"{root} is not a git checkout; a pack carries a checkout's state")
-    try:
-        ignore = root / ".gitignore"
-        text = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
-        if ".agent6/" not in {line.strip() for line in text.splitlines()}:
-            print(init_wizard.append_gitignore(root, [".agent6/"]))
-            paths.chown_to_real_user(ignore)
-    except (OSError, UnicodeDecodeError) as exc:
-        raise errors.PackError(f"{root / '.gitignore'}: {exc}") from exc
+    if not git_read.pack_is_ignored(root):
+        try:
+            excluded = git_ops.exclude_locally(root, ".agent6/")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise errors.PackError(f"{root / '.git/info/exclude'}: {exc}") from exc
+        if excluded is not None:
+            paths.chown_to_real_user(excluded)
+            print(f"Excluded .agent6/ in {excluded}; .gitignore is untouched.")
     if refusal := git_read.pack_exclusion_error(root):
         raise errors.PackError(refusal)
     manifest = pack.pack(

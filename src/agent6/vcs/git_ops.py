@@ -126,6 +126,32 @@ def _drop_by_sha(path: pathlib.Path, sha: str) -> None:
         )
 
 
+def exclude_locally(path: pathlib.Path, pattern: str) -> pathlib.Path | None:
+    """Add an ignore pattern to the repository's own exclude file, which no commit carries.
+
+    agent6 keeps its own paths out of git here, never in a `.gitignore` the project shares.
+
+    Args:
+        path: The repository.
+        pattern: The pattern, one line.
+
+    Returns:
+        The exclude file when the line was added; None when it already held the pattern.
+
+    Raises:
+        OSError: The file cannot be read or written.
+    """
+    listed = git_command.run(path, "rev-parse", "--git-path", "info/exclude").stdout.strip()
+    target = path / listed  # an absolute answer stands by itself
+    text = target.read_text(encoding="utf-8") if target.exists() else ""
+    if pattern in {line.strip() for line in text.splitlines()}:
+        return None
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as out:
+        out.write(("" if not text or text.endswith("\n") else "\n") + pattern + "\n")
+    return target
+
+
 def delete_branch_if_merged(path: pathlib.Path, branch: str) -> bool:
     """Delete the branch with the safe delete, which git refuses unless it is reachable-merged.
 

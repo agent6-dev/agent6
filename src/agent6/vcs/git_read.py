@@ -111,24 +111,41 @@ def pack_exclusion_error(path: pathlib.Path) -> str | None:
         path: The project root.
 
     Returns:
-        The refusal with the gitignore or tracking correction, or None.
+        The refusal with the tracking or ignore-rule correction, or None.
 
     Raises:
         GitError: Git cannot inspect the repository.
     """
     if git_command.run(path, "ls-files", "-z", "--", ".agent6").stdout:
         return f"{path / '.agent6'}: tracked paths must be removed from git's index before packing."
+    if not pack_is_ignored(path):
+        return (
+            f"{path / '.agent6/pack.json'} is not ignored: a rule un-ignores it (such as"
+            " !.agent6/ in a .gitignore). `git check-ignore -v --no-index .agent6/pack.json`"
+            " names the rule; remove it to pack."
+        )
+    return None
+
+
+def pack_is_ignored(path: pathlib.Path) -> bool:
+    """Return whether git would ignore a workspace pack's manifest.
+
+    Args:
+        path: The project root.
+
+    Returns:
+        Git's decision over every ignore source: `.gitignore` files, the repository's own
+        exclude file and the user's global one.
+
+    Raises:
+        GitError: Git cannot inspect the repository.
+    """
     args = ("check-ignore", "-q", "--", ".agent6/pack.json")
     result = git_command.run(path, *args, check=False)
     if result.returncode not in (0, 1):
         error = git_command.failure(args, result.returncode, result.stdout, result.stderr)
         raise error
-    if not result.ok:
-        return (
-            f"{path / '.agent6/pack.json'} is not ignored. Fix the .agent6/ line in "
-            f"{path / '.gitignore'} so no later negation (such as !.agent6/) overrides it."
-        )
-    return None
+    return result.ok
 
 
 def toplevel(path: pathlib.Path) -> pathlib.Path | None:

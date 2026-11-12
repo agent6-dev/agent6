@@ -21,18 +21,29 @@ def _invoke(argv: list[str]) -> int:
 def test_pack_and_unpack_cli(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Pack keeps `.agent6/` out of git through the repository's own exclude file.
+
+    It appended the line to the project's `.gitignore`, a file shared with everyone on the
+    project, whether or not they use agent6.
+    """
     monkeypatch.chdir(tmp_path)
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     (tmp_path / ".gitignore").write_text("kept")
+    exclude = tmp_path / ".git" / "info" / "exclude"
     state = paths.state_dir(tmp_path)
     state.mkdir(parents=True)
     (state / "note").write_text("note")
     assert _invoke(["pack"]) == 0
-    assert ".agent6/" in (tmp_path / ".gitignore").read_text().splitlines()
-    assert (tmp_path / ".gitignore").read_text().startswith("kept\n")
-    assert ".gitignore" in capsys.readouterr().out
+    assert (tmp_path / ".gitignore").read_text() == "kept"
+    assert ".agent6/" in exclude.read_text().splitlines()
+    assert f"Excluded .agent6/ in {exclude}; .gitignore is untouched." in capsys.readouterr().out
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], check=True, capture_output=True, text=True
+    ).stdout
+    assert ".agent6" not in status
     assert _invoke(["pack"]) == 0
-    assert (tmp_path / ".gitignore").read_text().count(".agent6/") == 1
+    assert exclude.read_text().count(".agent6/") == 1
+    assert "Excluded" not in capsys.readouterr().out
     (state / "note").unlink()
     assert _invoke(["unpack"]) == 0
     out = capsys.readouterr().out
@@ -42,10 +53,26 @@ def test_pack_and_unpack_cli(
     assert not (tmp_path / ".agent6").exists()
 
 
+def test_pack_writes_no_exclude_line_where_the_project_already_ignores_it(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text(".agent6/\n")
+    exclude = tmp_path / ".git" / "info" / "exclude"
+    before = exclude.read_text() if exclude.exists() else ""
+    assert _invoke(["pack"]) == 0
+    assert (exclude.read_text() if exclude.exists() else "") == before
+    assert "Excluded" not in capsys.readouterr().out
+
+
 def test_pack_refuses_negated_ignore_rule(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An ignore entry overridden by a negation must not let pack publish credentials."""
+    """An ignore entry overridden by a negation must not let pack publish credentials.
+
+    The project's rule outranks the exclude file, and pack does not edit the project's file.
+    """
     monkeypatch.chdir(tmp_path)
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     (tmp_path / ".gitignore").write_text(".agent6/\n!.agent6/\n")
@@ -53,7 +80,9 @@ def test_pack_refuses_negated_ignore_rule(
     paths.secrets_path().write_text("private")
     assert _invoke(["pack"]) == 2
     err = capsys.readouterr().err
-    assert ".gitignore" in err and ".agent6/" in err and "ignored" in err
+    assert "is not ignored: a rule un-ignores it" in err and "!.agent6/ in a .gitignore" in err
+    assert "git check-ignore -v --no-index .agent6/pack.json" in err
+    assert (tmp_path / ".gitignore").read_text() == ".agent6/\n!.agent6/\n"
     assert not (tmp_path / ".agent6").exists()
 
 
