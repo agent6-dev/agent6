@@ -82,6 +82,10 @@ _SYMBOL_TOOL_ARMS: dict[str, frozenset[str]] = {
 }
 
 
+# The loop's lane dispatcher as the tool sees it: the validated arguments and the call's origin.
+type ParallelHandler = Callable[[dict[str, Any], kinds.ToolCallOrigin | None], results.ToolResult]
+
+
 def _in_container(target: kinds.ExecutionTarget | None) -> bool:
     """Return whether commands run inside a container, unconfined there by design."""
     return target is not None and target.transport == "container"
@@ -180,6 +184,8 @@ class ToolDispatcher:
         )
         self._command_access = command_access
         self._session_dir = session_dir
+        # The loop installs its lane dispatcher here; None where no dispatch can happen.
+        self.parallel_handler: ParallelHandler | None = None
         if (
             command_access is not None
             and command_access.session.startup_stderr
@@ -216,6 +222,7 @@ class ToolDispatcher:
             schema.FinishPlanningInput.TOOL_NAME: control_tools.finish_planning,
             schema.AskUserInput.TOOL_NAME: self._ask_user,
             schema.ListFindingsInput.TOOL_NAME: self._list_findings,
+            schema.ParallelInput.TOOL_NAME: self._parallel,
             schema.DagAddTaskInput.TOOL_NAME: lambda raw: dag_tools.add_task(
                 self._curator, self._run_root_node_id, raw
             ),
@@ -289,8 +296,29 @@ class ToolDispatcher:
             name == schema.RunVerifyInput.TOOL_NAME and self.verify_withheld
         )
 
+    @property
+    def config(self) -> Config:
+        """The run's config, as the tool list reads it."""
+        return self._config
+
+    def parallel_available(self) -> bool:
+        """Return whether the model is offered the `parallel` tool: both gates open, run mode."""
+        return self._mode == "run" and self._tool_refusal(schema.ParallelInput.TOOL_NAME) is None
+
+    def _parallel_refusal(self) -> str | None:
+        """Return why the `parallel` tool is withheld: the knob, the depth, the dispatcher."""
+        if not self._config.parallel.tool:
+            return "not available (parallel.tool is off)"
+        if os.environ.get("AGENT6_SUBRUN"):
+            return "not available inside a lane (parallel dispatch is depth 1)"
+        if self.parallel_handler is None:
+            return "not available (no lane dispatcher in this front-end)"
+        return None
+
     def _tool_refusal(self, name: str) -> str | None:
         """Return why a built-in tool is withheld right now, or None when it is offered."""
+        if name == schema.ParallelInput.TOOL_NAME and (why := self._parallel_refusal()):
+            return why
         if self.tool_is_withheld(name):
             if name == schema.RunVerifyInput.TOOL_NAME and self.verify_withheld:
                 return "not available (verify gate withheld for the rest of the run after denial)"
@@ -375,6 +403,7 @@ class ToolDispatcher:
         self._emit(journal.ToolCall(name=name, args_preview=preview, **identity))
         outer = self._gating_call_id()
         self._gating.call_id = cid
+        self._gating.origin = origin
         try:
             result = self._dispatch_inner(name, raw_input)
         except tool_errors.ToolError as exc:
@@ -1016,6 +1045,24 @@ class ToolDispatcher:
         return dataclasses.replace(
             listed, findings=tuple(f for f in listed.findings if f.status == "open")
         )
+
+    def _parallel(self, raw: dict[str, Any]) -> results.ToolResult:
+        """Dispatch lanes through the loop's handler, the call's identity beside the request.
+
+        Args:
+            raw: The model's arguments.
+
+        Returns:
+            The handler's result.
+
+        Raises:
+            ToolError: No handler is installed; the gates refused earlier otherwise.
+        """
+        request = schema.ParallelInput.model_validate(raw)
+        if self.parallel_handler is None:
+            raise tool_errors.ToolError("not available (no lane dispatcher in this front-end)")
+        origin = getattr(self._gating, "origin", None)
+        return self.parallel_handler(request.model_dump(), origin)
 
     def _ask_user(self, raw: dict[str, Any]) -> results.ToolResult:
         """Return the operator's answers to the model's questions, counting the wait as theirs."""

@@ -155,6 +155,15 @@ Task text keeps its internal whitespace and newlines, including later `--` token
 
 When the lanes return, each joins the run's chain in dispatch order and one notice names every outcome: `joined at <sha>`, `finished with no changes to join` (the lane ended with a result and committed nothing), `CONFLICT` (the merge is left for the operator) or `FAILED` with the reason.
 
+### The parallel tool
+
+With `parallel.tool = true` ([parallel](config.md#parallel)), a run's model is offered the `parallel` tool: `task` (required) and `spec` (the same grammar as `--parallel`, empty for one default lane).
+The call dispatches through the `/parallel` path: a checkpoint, fresh clones of the committed tree, the lanes joined back in dispatch order, the run's remaining budget reserved and each lane's share its caps; the result returns as the tool's answer, naming each lane's join.
+Each lane is an ordinary run with the same tools as the parent: it may edit its clone, and its commits land on the parent's chain when it joins; a lane runs under 200 turns, 30 minutes and its share.
+The tool's description names every role's resolved model, effort and temperature and the configured providers, so the model can pick a selector such as `reviewer`.
+The tool is offered only in run mode, never inside a lane (dispatch is depth one) and never in a front-end without a lane dispatcher; a call that slips past the list is refused with the reason.
+The knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel.
+
 A fan-out group has no model loop: steer one of its lanes instead.
 `agent6 stop ID` on a session with live lanes stops the lanes too, by the lineage their manifests record, and still does when the session itself has already ended.
 A run interrupted while its lanes ran finishes that dispatch first when resumed: lanes still running are stopped, finished ones are imported and joined once, their spend is settled once, and the model hears the group's outcome before its first call.

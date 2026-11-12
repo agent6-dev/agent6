@@ -68,6 +68,10 @@ class _StubDispatcher:
     defaults filter no tools and withhold nothing.
     """
 
+    def parallel_available(self) -> bool:
+        """A stub offers the model no `parallel` tool."""
+        return False
+
     session_id = ""  # the tool set reads the run's id; a bare double has none
 
     operator_wait_s: float = 0.0  # the time waited on the operator, which the guards subtract

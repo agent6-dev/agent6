@@ -74,6 +74,16 @@
     }
   },
   {
+    "name": "parallel",
+    "required": [
+      "task"
+    ],
+    "properties": {
+      "spec": "string",
+      "task": "string"
+    }
+  },
+  {
     "name": "run_metric_command",
     "required": [],
     "properties": {}

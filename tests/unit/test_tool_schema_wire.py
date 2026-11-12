@@ -201,6 +201,9 @@ def test_wire_schema_strips_schema_titles_but_keeps_a_field_named_title() -> Non
         def skills_available(self) -> bool:
             return False
 
+        def parallel_available(self) -> bool:
+            return False
+
         def mcp_descriptors(self) -> tuple[object, ...]:
             return ()
 

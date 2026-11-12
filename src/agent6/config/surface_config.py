@@ -369,9 +369,21 @@ class NotifyConfig(pydantic.BaseModel):
 
 
 class ParallelConfig(pydantic.BaseModel):
-    """The `[parallel]` table: the lane limit for a `--parallel` fan-out."""
+    """The `[parallel]` table: the lane limit for a fan-out and the model's `parallel` tool."""
 
     model_config = validation.MODEL_CONFIG
+
+    tool: bool = pydantic.Field(
+        default=False,
+        description=(
+            "offer a run's model the `parallel` tool, which dispatches a task to isolated "
+            "lanes (fresh clones of the committed tree, each an ordinary run that may edit) "
+            "and joins their commits back in order; each lane runs under 200 turns, 30 minutes "
+            "and a share of the run's remaining budget; `parallel.tool = false`: no run is "
+            "offered it; neither value changes `run --parallel`, the `/parallel` steer or the "
+            "review panel"
+        ),
+    )
 
     # `le` bounds the cap itself, or a huge max_lanes re-opens the allocation parse_spec refuses.
     # Static, not CPU-derived: lanes are I/O-bound and the same config must load on every box.

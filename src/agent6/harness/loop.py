@@ -16,6 +16,7 @@ import functools
 import itertools
 import json
 import pathlib
+import time
 import uuid
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Literal
@@ -23,7 +24,16 @@ from typing import TYPE_CHECKING, Any, Literal
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, kinds, media, review_records, task_text, terminal
+from agent6 import (
+    directive,
+    errors,
+    kinds,
+    lane_records,
+    media,
+    review_records,
+    task_text,
+    terminal,
+)
 from agent6.config import Config
 from agent6.context import memory as agent6_memory
 from agent6.context import skills
@@ -72,6 +82,7 @@ from agent6.providers import (
 )
 from agent6.sessions import journal, process
 from agent6.tools import dispatch, operator_prompts, schema, tool_errors
+from agent6.tools import results as tools_results
 from agent6.vcs import git_ops
 
 # Bytes a repeated tool result must exceed before the dedupe stub replaces it.
@@ -179,6 +190,14 @@ class Harness:
     snapshot_write_failed: bool = dataclasses.field(default=False, init=False)
     turns_reached: int = dataclasses.field(default=0, init=False)
     _execution_started: bool = dataclasses.field(default=False, init=False)
+    # The turn whose tools are running, for the `parallel` tool's dispatch.
+    _tool_turn: tuple[loop_conversation.Conversation, loop_state.LoopState, int] | None = (
+        dataclasses.field(default=None, init=False)
+    )
+
+    def __post_init__(self) -> None:
+        """Install the loop-owned tool handlers on the dispatcher."""
+        self.dispatcher.parallel_handler = self._parallel_tool
 
     # ---- run / resume entry --------------------------------------------------
 
@@ -577,6 +596,8 @@ class Harness:
         Returns:
             The wire the model call sends, or the parked end when plan.md cannot be read.
         """
+        # The turn the `parallel` tool dispatches for, set before its calls run.
+        self._tool_turn = (conversation, state, ctx.turn)
         self._emit_budget(ctx.turn)
         if self.compactor.compact(conversation, state, prefix_chars=prefix_chars):
             # A tier-2 restart wiped the focus banner and the plan block; both go back below.
@@ -1712,6 +1733,52 @@ class Harness:
             log=self.log,
             emit=self.emit,
             emit_graph_snapshot=self._emit_graph_snapshot,
+        )
+
+    def _parallel_tool(
+        self, raw: dict[str, Any], origin: kinds.ToolCallOrigin | None
+    ) -> tools_results.ToolResult:
+        """Dispatch lanes for the model's `parallel` call through the steer's own path.
+
+        The lanes run under the model-lane ceilings and the run's reserved allowance; the
+        dispatch is recorded with the model as its source and its result is the tool's
+        answer, never a steer notice.
+
+        Args:
+            raw: The validated arguments.
+            origin: The model call the tool call answers; None outside a turn.
+
+        Returns:
+            The dispatch's group, message and joins.
+
+        Raises:
+            ToolError: No turn is in progress.
+        """
+        del origin  # the record's identity is the group id the dispatcher allocates
+        if self._tool_turn is None:
+            raise tool_errors.ToolError("not available: no turn in progress")
+        conversation, state, turn = self._tool_turn
+        request = schema.ParallelInput.model_validate(raw)
+        limits = lane_records.LaneLimits(
+            max_turns=parallel_dispatch.MODEL_LANE_MAX_TURNS,
+            deadline_at=time.time() + parallel_dispatch.MODEL_LANE_DEADLINE_S,
+        )
+        result = self.parallel.dispatch(
+            conversation,
+            turn,
+            state,
+            [directive.Segment(task=request.task, spec=request.spec)],
+            source="model",
+            limits=limits,
+        )
+        self.parallel.record_delivery(result)
+        return tools_results.RawResult(
+            {
+                "group": result.group,
+                "dispatched": result.dispatched,
+                "message": result.message,
+                "lanes": [dataclasses.asdict(join) for join in result.lanes],
+            }
         )
 
     @functools.cached_property

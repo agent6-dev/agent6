@@ -304,6 +304,29 @@ class ReadSessionInput(_ToolInput):
     max_chars: int = pydantic.Field(default=20_000, ge=500, le=200_000)
 
 
+class ParallelInput(_ToolInput):
+    """The `parallel` tool's arguments."""
+
+    TOOL_NAME: ClassVar[str] = "parallel"
+    # The toolset replaces this with the run's resolved roles and providers.
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Run a task in isolated lanes (fresh clones of the committed tree) and join their"
+        " commits back in order; blocks until they return. `spec` is a lane count or a"
+        " comma-separated list of selectors: a role name brings its model, effort and"
+        " temperature, `[provider/]model` runs with the worker's."
+    )
+
+    task: str = pydantic.Field(min_length=1, max_length=20_000)
+    spec: str = pydantic.Field(default="", max_length=200)
+
+    @pydantic.field_validator("task")
+    @classmethod
+    def _nonblank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("task is blank")
+        return value
+
+
 class ListFindingsInput(_ToolInput):
     """The `list_findings` tool's arguments."""
 
@@ -616,6 +639,8 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     FinishSessionInput,
     AskUserInput,
     ListFindingsInput,
+    # Offered only under `[parallel].tool` in a run that has a lane dispatcher.
+    ParallelInput,
     DagAddTaskInput,
     DagUpdateTaskInput,
     DagListTasksInput,

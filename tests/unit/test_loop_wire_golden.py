@@ -35,6 +35,10 @@ class _StubDispatcher:
     The loop rebuilds its tool list every turn; the defaults filter no tools and withhold nothing.
     """
 
+    def parallel_available(self) -> bool:
+        """A stub offers the model no `parallel` tool."""
+        return False
+
     operator_wait_s: float = 0.0  # the time waited on the operator, which the guards subtract
 
     dag_available = True

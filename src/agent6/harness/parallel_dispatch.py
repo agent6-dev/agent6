@@ -28,6 +28,10 @@ from agent6.vcs import git_ops, git_read
 if TYPE_CHECKING:
     from agent6.harness import loop_conversation, loop_state
 
+# The ceilings of a lane the model dispatches: a smaller configured cap wins, unlimited cannot.
+MODEL_LANE_MAX_TURNS = 200
+MODEL_LANE_DEADLINE_S = 1800.0
+
 
 def segment_lanes(
     seg: directive.Segment, pins: Sequence[str] = (), *, limit: int
@@ -329,6 +333,7 @@ class ParallelDispatcher:
         segments: list[directive.Segment],
         *,
         source: lane_records.DispatchSource = "operator",
+        limits: lane_records.LaneLimits | None = None,
     ) -> lane_records.DispatchResult:
         """Dispatch a sibling group at the steer boundary and return what it did.
 
@@ -346,6 +351,7 @@ class ParallelDispatcher:
             state: The loop state.
             segments: The directive's segments, one DAG node each.
             source: Who asked: the operator's steer, the model's tool call or a panel.
+            limits: The turn cap and deadline every lane runs under; None for the config's.
 
         Returns:
             The result; `dispatched` False names a refusal before any clone.
@@ -393,7 +399,9 @@ class ParallelDispatcher:
                 return self.refusal(f"the budget is exhausted ({exc}); nothing dispatched.")
         lanes = [
             dataclasses.replace(
-                lane, allowance=grant.share_of(child) if grant is not None else None
+                lane,
+                allowance=grant.share_of(child) if grant is not None else None,
+                limits=limits,
             )
             for lane, child in zip(lanes, children, strict=True)
         ]
@@ -725,6 +733,14 @@ class ParallelDispatcher:
             result: The dispatch's result, or a refusal.
         """
         conversation.notice(result.message)
+        self.record_delivery(result)
+
+    def record_delivery(self, result: lane_records.DispatchResult) -> None:
+        """Mark the dispatch's record delivered, whatever surface carried its result.
+
+        Args:
+            result: The dispatch's result, or a refusal, which has no record.
+        """
         if not result.dispatched or self.session_dir is None:
             return
         path = lane_dispatch.record_path(self.session_dir, result.group)

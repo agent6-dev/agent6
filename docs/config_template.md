@@ -460,6 +460,7 @@ Lane limit for `run --parallel N|selector,...`.
 Each lane is a disposable clone running its own `agent6/<id>` branch; lanes are imported and ranked, nothing merges for you.
 `--max-usd` is per lane (the total is printed before spawning); `--auto-approve` forwards to every lane.
 A live run dispatches lanes the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
+`parallel.tool = true` offers a run's model the `parallel` tool, which dispatches a task through the same path ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.
 A lane never fans out; headless surfaces without a dispatcher answer "not available".
 
 <!-- config-table: parallel -->

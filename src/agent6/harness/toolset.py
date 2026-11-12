@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from agent6 import kinds
+from agent6.config import Config
 from agent6.harness import review_seat
 from agent6.providers import ToolDefinition
 from agent6.tools import dispatch as tools_dispatch
@@ -71,9 +72,13 @@ def tool_definitions(
             and not dispatcher.skills_available()
         ):
             continue  # no skills: the tool could only error
+        if cls is tools_schema.ParallelInput and not dispatcher.parallel_available():
+            continue  # off by config, a subordinate run or no lane dispatcher
         description = cls.TOOL_DESCRIPTION
         if cls is tools_schema.ListFindingsInput and dispatcher.session_id:
             description = description.replace("<session_id>", dispatcher.session_id)
+        if cls is tools_schema.ParallelInput:
+            description = parallel_description(dispatcher.config)
         out.append(
             ToolDefinition(
                 name=cls.TOOL_NAME,
@@ -94,6 +99,55 @@ def tool_definitions(
                 )
             )
     return out
+
+
+def parallel_description(cfg: Config) -> str:
+    """Return the `parallel` tool's description with the run's resolved roles and providers.
+
+    Args:
+        cfg: The run's config.
+
+    Returns:
+        The contract, the spec grammar, every role's route, effort and temperature with where
+        an inherited value comes from, the provider names (never their settings), the lane
+        ceilings, and that a lane edits like any run.
+    """
+    roles: list[str] = []
+    for role in kinds.MODEL_ROLES:
+        resolved = cfg.models.resolve(role)
+        if resolved is None:
+            continue
+        effort = resolved.effort if resolved.effort is not None else "the backend's default"
+        temperature = (
+            f"{resolved.temperature:g}"
+            if resolved.temperature is not None
+            else "the provider's default"
+        )
+        inherited = [
+            field
+            for field in ("model", "effort", "temperature")
+            if role != "default" and cfg.models.source_role(role, field) != role
+        ]
+        if role != "default" and len(inherited) == 3:
+            origin = " (as default)"
+        elif inherited:
+            origin = f" ({' and '.join(inherited)} from default)"
+        else:
+            origin = ""
+        roles.append(
+            f"{role}: {resolved.provider}/{resolved.model}, effort {effort},"
+            f" temperature {temperature}{origin}"
+        )
+    providers = ", ".join(sorted(cfg.providers)) or "none"
+    return (
+        tools_schema.ParallelInput.TOOL_DESCRIPTION
+        + " Roles: "
+        + "; ".join(roles)
+        + f". Configured providers: {providers}. Each lane is an ordinary run that may edit,"
+        " under"
+        " 200 turns, 30 minutes and a share of this run's budget; the result names each"
+        " lane's join, and `read_session` reads a lane's answer."
+    )
 
 
 def build_readonly_review_tools(
