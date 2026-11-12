@@ -26,6 +26,7 @@ A Markdown file opens rendered, and `s` shows its source.
 ## Conversation
 
 Opening a run lands on its conversation: the task, the model's reasoning and every tool call, following live.
+`Esc` or `Ctrl+K` returns to the hub, the TUI's session switcher.
 The composer takes the [steer directives](usage.md#follow-and-steer-a-run).
 
 - `Ctrl+C` copies the selection, or the whole transcript when nothing is selected

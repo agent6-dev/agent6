@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "5fc7102533ce9e29ca7ba5870d51cd8a87eebdf534729e83ac16c5be2a5ad7f6"
+PAGE_SHA256 = "76b000d0e6779a4f756489fb252b9252dddc98a49dd8ac3824ec44e2032c5dc3"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -190,6 +190,26 @@ def test_a_session_row_shows_its_mode() -> None:
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
     paint = client[client.index("function paintSession") : client.index("function sessionsCard")]
     assert "esc(r.mode)" in paint
+
+
+def test_ctrl_k_opens_the_session_switcher_and_drafts_wait_in_the_composer() -> None:
+    """Ctrl-K lists the hub's rows with checkout and ref; a composer draft survives a switch."""
+    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
+    switcher = client[
+        client.index("async function openSwitcher") : client.index("function makeComposer")
+    ]
+    assert "getJSON('/api/hub?sort=activity')" in switcher
+    assert "'worktree ' + r.worktree : 'this checkout'" in switcher
+    assert "'ref ' + r.branch" in switcher
+    assert "handToNewWork({ task: '/review ' + r.branch })" in switcher
+    assert "'/merge', {}" in switcher
+    assert "e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey)" in switcher
+    composer = client[client.index("function makeComposer") :]
+    assert "const draftKey = 'a6-draft-' + id;" in composer
+    assert "ta.value = recall(draftKey, '');" in composer
+    assert composer.count("ta.value = '';") == 1  # inside clearDraft: every clear forgets too
+    dock = client[client.index("function newWorkDock") : client.index("// The create-machine")]
+    assert "recall('a6-draft-new', '')" in dock and "forget('a6-draft-new')" in dock
 
 
 def test_a_run_row_names_its_checkout_and_offers_review_and_merge() -> None:

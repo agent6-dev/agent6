@@ -79,6 +79,7 @@ function saveToken(login) { loginToken = login.token; remember(TOKEN_KEY, loginT
 // Per-viewer conveniences (a view, a diff mode) kept in this browser; the page works without storage.
 function recall(key, fallback) { try { return localStorage.getItem(key) ?? fallback; } catch (_) { return fallback; } }
 function remember(key, value) { try { localStorage.setItem(key, value); } catch (_) {} }
+function forget(key) { try { localStorage.removeItem(key); } catch (_) {} }
 // A 401 is the server asking for its secret: every API call brings up the sign-in form.
 function signedOut(r) {
   if (r.status === 401) {
@@ -389,7 +390,9 @@ function newWorkDock(presets, presetDefault, sessions) {
   const row = el('div', 'row');
   const pending = window.pendingNewWork || {}; delete window.pendingNewWork;
   const task = el('textarea', 'field'); task.placeholder = 'task / question…';
-  task.value = pending.task || '';
+  // A typed draft survives a switch to a session and back (this browser only).
+  task.value = pending.task || recall('a6-draft-new', '');
+  task.oninput = () => { if (task.value) remember('a6-draft-new', task.value); else forget('a6-draft-new'); };
   const mode = el('select', 'field');
   for (const m of ['run', 'plan', 'ask']) { const o = el('option', null, m); o.value = m; mode.appendChild(o); }
   const worktree = el('input'); worktree.type = 'checkbox';
@@ -448,7 +451,7 @@ function newWorkDock(presets, presetDefault, sessions) {
         seed_from: mode.value === 'run' ? seed.value : '',
         max_usd: cap.value.trim() ? Number(cap.value) : null,
       });
-      if (d.session_id) location.hash = '#/session/' + encodeURIComponent(d.session_id);
+      if (d.session_id) { forget('a6-draft-new'); location.hash = '#/session/' + encodeURIComponent(d.session_id); }
     } catch (e) { toast(e.message, true); go.disabled = false; }
   };
   go.onclick = start;
@@ -465,7 +468,7 @@ function newWorkDock(presets, presetDefault, sessions) {
   root.appendChild(advanced);
   root.appendChild(row);
   root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask (a run from a plan needs no task) · Shift+Enter newline · '
-    + '/parallel [SPEC --] TASK fans out lanes (SPEC: count or models; repeat to queue more)'));
+    + '/parallel [SPEC --] TASK fans out lanes (SPEC: count or models; repeat to queue more) · Ctrl-K switches sessions'));
   return root;
 }
 
@@ -1062,6 +1065,86 @@ function openHistorySearch(entries, onPick) {
   render();
 }
 
+// Ctrl-K anywhere: switch to another session. The hub's rows in activity order,
+// lanes included, narrowed by what is typed against the id, mode, status, task,
+// branch and worktree. A row names where the run works and the ref holding its
+// commits; Enter opens the highlighted one, and Review code and Merge act as the
+// Sessions page's row buttons do. A draft typed in a composer waits for the way back.
+async function openSwitcher() {
+  if (activeOverlayClose) return; // one dialog at a time
+  let data;
+  try { data = await getJSON('/api/hub?sort=activity'); } catch (e) { toast(e.message, true); return; }
+  const rows = [];
+  const flatten = (r) => { rows.push(r); for (const lane of (r.lanes || [])) flatten(lane); };
+  for (const r of (data.sessions || [])) flatten(r);
+  const back = el('div', 'overlay');
+  const box = el('div', 'card'); box.style.width = 'min(760px, 92vw)';
+  box.appendChild(el('h2', null, 'switch session'));
+  const field = el('input', 'field'); field.placeholder = 'type to narrow: id, task, branch, worktree…';
+  box.appendChild(field);
+  const list = el('div', 'hs-list');
+  box.appendChild(list);
+  const close = () => { activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey); };
+  const open = (r) => { close(); location.hash = '#/session/' + encodeURIComponent(r.session_id); };
+  const haystack = (r) => [r.session_id, r.mode, r.label || r.status, r.task_line || r.task || '', r.branch || '', r.worktree || ''].join(' ').toLowerCase();
+  let items = [], active = 0;
+  const render = () => {
+    const q = field.value.toLowerCase().trim();
+    const all = rows.filter(r => !q || haystack(r).includes(q));
+    items = all.slice(0, 12);
+    if (active >= items.length) active = Math.max(0, items.length - 1);
+    list.textContent = '';
+    items.forEach((r, i) => {
+      const o = el('div', 'ac-item' + (i === active ? ' on' : ''));
+      const head = el('div', 'row');
+      head.appendChild(pill(r.level, r.label || r.status));
+      head.appendChild(el('span', null, r.session_id + ' · ' + r.mode + ' · ' + (r.task_line || r.task || '').split('\n')[0].slice(0, 80)));
+      o.appendChild(head);
+      const where = [r.worktree ? 'worktree ' + r.worktree : 'this checkout', r.branch && 'ref ' + r.branch, r.when].filter(Boolean).join(' · ');
+      o.appendChild(el('div', 'muted', where));
+      const live = ['running', 'starting', 'waiting'].includes(r.status);
+      if (r.branch && !live) {
+        const acts = el('div', 'row');
+        const review = el('button', 'mini', 'Review code');
+        review.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); close(); handToNewWork({ task: '/review ' + r.branch }); location.hash = '#/'; route(); };
+        acts.appendChild(review);
+        if (r.unmerged) {
+          const merge = el('button', 'mini', 'Merge');
+          merge.onmousedown = async (e) => {
+            e.preventDefault(); e.stopPropagation();
+            if (!confirm('Merge run ' + r.session_id + '? Runs `agent6 sessions merge` to land its branch on its base with your git.merge_method; the checkout never moves.')) return;
+            close();
+            try { const d = await postJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge', {}); toast(d.message || 'merged'); route(); }
+            catch (err) { toast(err.message, true); }
+          };
+          acts.appendChild(merge);
+        }
+        o.appendChild(acts);
+      }
+      o.onmousedown = (e) => { e.preventDefault(); open(r); };
+      list.appendChild(o);
+    });
+    if (!items.length) list.appendChild(el('div', 'more-note', rows.length ? '(no match)' : '(no sessions yet)'));
+    else if (all.length > items.length) list.appendChild(el('div', 'more-note', '… ' + (all.length - items.length) + ' more (type to narrow)'));
+  };
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { active = (active + 1) % items.length; render(); } }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { active = (active - 1 + items.length) % items.length; render(); } }
+    else if (e.key === 'Enter') { e.preventDefault(); if (items.length) open(items[active]); }
+  }
+  activeOverlayClose = close; // navigating away dismisses it
+  document.addEventListener('keydown', onKey);
+  back.onclick = (e) => { if (e.target === back) close(); };
+  field.oninput = () => { active = 0; render(); };
+  back.appendChild(box); document.body.appendChild(back);
+  field.focus();
+  render();
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) { e.preventDefault(); openSwitcher(); }
+});
+
 // The composer bar under a run's conversation. On a live run Enter sends the
 // text as a steer (injected at the run's next safe boundary); on a finished
 // run Enter resumes the run with the text as the follow-up instruction (empty
@@ -1072,6 +1155,12 @@ function openHistorySearch(entries, onPick) {
 function makeComposer(id) {
   const root = el('div', 'composer');
   const ta = el('textarea', 'field');
+  // A typed draft survives a switch to another session and back (this browser only);
+  // a sent or discarded line forgets it.
+  const draftKey = 'a6-draft-' + id;
+  ta.value = recall(draftKey, '');
+  ta.oninput = () => { if (ta.value) remember(draftKey, ta.value); else forget(draftKey); };
+  const clearDraft = () => { ta.value = ''; forget(draftKey); };
   const hint = el('div', 'hint');
   // The preset and the model the next execution continues under (`agent6 resume
   // --preset`, `--model`): both change only between executions, so the row shows
@@ -1126,13 +1215,13 @@ function makeComposer(id) {
     if (busy) { hint.textContent = 'resuming…'; return; }
     if (finished && needsWork) {
       ta.placeholder = 'what should it do next…';
-      hint.textContent = 'Enter resumes it with your instruction · Shift+Enter newline · Ctrl-R past messages';
+      hint.textContent = 'Enter resumes it with your instruction · Shift+Enter newline · Ctrl-R past messages · Ctrl-K switch session';
     } else if (finished) {
       ta.placeholder = 'continue this session…';
-      hint.textContent = 'Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline · Ctrl-R past messages';
+      hint.textContent = 'Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline · Ctrl-R past messages · Ctrl-K switch session';
     } else {
       ta.placeholder = 'steer this session… (/pin pins an instruction, /compact [focus] compacts)';
-      hint.textContent = 'Enter sends the instruction at the session’s next safe boundary · Ctrl+Enter sends it now · Shift+Enter newline · Ctrl-R past messages';
+      hint.textContent = 'Enter sends the instruction at the session’s next safe boundary · Ctrl+Enter sends it now · Shift+Enter newline · Ctrl-R past messages · Ctrl-K switch session';
     }
   };
   const resume = async (text) => {
@@ -1151,7 +1240,7 @@ function makeComposer(id) {
         await new Promise(r => setTimeout(r, 1000));
         if (!root.isConnected) return; // navigated away
         let s; try { s = await getJSON('/api/session/' + encodeURIComponent(id)); } catch (_) { continue; }
-        if (s && s.live === true) { ta.value = ''; route(); return; }
+        if (s && s.live === true) { clearDraft(); route(); return; }
       }
       toast('the resume has not started yet; check `agent6 sessions`', true);
     } catch (e) { toast(e.message, true); }
@@ -1188,14 +1277,14 @@ function makeComposer(id) {
       // Typed, so no confirm; the stop `agent6 stop` does.
       if (finished) { toast('nothing to stop: the session is not live', true); return; }
       postJSON('/api/session/' + encodeURIComponent(id) + '/stop', {})
-        .then(d => { toast(d.message || 'stopped'); ta.value = ''; })
+        .then(d => { toast(d.message || 'stopped'); clearDraft(); })
         .catch(err => toast(err.message, true));
       return;
     }
     if (text === '/restate') {
       // Local and free: rendered from the journal, nothing reaches the model.
       getJSON('/api/session/' + encodeURIComponent(id) + '/restate')
-        .then(d => { openRestate(d.text || ''); ta.value = ''; })
+        .then(d => { openRestate(d.text || ''); clearDraft(); })
         .catch(err => toast(err.message, true));
       return;
     }
@@ -1203,7 +1292,7 @@ function makeComposer(id) {
       // The view is the Background shells card: bring it up (the phone menu
       // picks it; the desktop page opens the drawer and scrolls to it), and
       // say so when there is nothing to show, as the CLI and TUI do.
-      ta.value = '';
+      clearDraft();
       const card = document.querySelector('[data-w="shells"]');
       if (!card || card.style.display === 'none') { toast('no background commands this run'); return; }
       const drawer = document.querySelector('.drawer');
@@ -1225,7 +1314,7 @@ function makeComposer(id) {
       // the session.undone the loop emits. A finished run forks right here.
       if (!finished) {
         postJSON('/api/session/' + encodeURIComponent(id) + '/steer', { text })
-          .then(() => { toast('undo requested; applies at the next step'); ta.value = ''; })
+          .then(() => { toast('undo requested; applies at the next step'); clearDraft(); })
           .catch(err => toast(err.message, true));
         return;
       }
@@ -1243,7 +1332,7 @@ function makeComposer(id) {
       // The server decides what the text was: `/compact [focus]` is an
       // out-of-band request, not a steer, and it says so.
       postJSON('/api/session/' + encodeURIComponent(id) + '/steer', { text })
-        .then(r => { toast((r && r.message) || 'steer sent'); ta.value = ''; })
+        .then(r => { toast((r && r.message) || 'steer sent'); clearDraft(); })
         .catch(err => toast(err.message, true));
     } else {
       resume(text);
@@ -1254,6 +1343,7 @@ function makeComposer(id) {
   root.quote = (note) => {
     const typed = ta.value.replace(/\s+$/, '');
     ta.value = (typed ? typed + '\n\n' : '') + note;
+    ta.oninput();
     ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
   };
   // `live` is the dir-aware truth (a parked or stale run is not live even

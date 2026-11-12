@@ -158,9 +158,10 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "help": "question_mark",
         "command_palette": "ctrl+p",
     },
-    # The run views carry no bare letters: the composer has the keyboard.
+    # The run views carry no bare letters: the composer has the keyboard. Ctrl+K returns to
+    # the hub, the session switcher, as the web's Ctrl-K opens its switcher.
     "conversation": {
-        "close": "escape",
+        "close": "escape,ctrl+k",
         "quit_hub": "ctrl+q",
         "history_search": "ctrl+r",
         "cycle_detail": "ctrl+t",
@@ -174,7 +175,7 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "command_palette": "ctrl+p",
     },
     "dashboard": {
-        "to_hub": "escape",
+        "to_hub": "escape,ctrl+k",
         "quit_hub": "ctrl+q",
         "history_search": "ctrl+r",
         "view_findings": "ctrl+f",

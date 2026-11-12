@@ -632,6 +632,9 @@ def test_back_and_quit_exit_codes(tmp_path: pathlib.Path) -> None:
     assert (
         asyncio.run(press(True, "ctrl+d", "escape")) == tui_app.TuiExit()
     )  # dashboard Esc -> the hub
+    # Ctrl+K is the switcher key both views share with the web: back to the hub.
+    assert asyncio.run(press(True, "ctrl+k")) == tui_app.TuiExit()
+    assert asyncio.run(press(True, "ctrl+d", "ctrl+k")) == tui_app.TuiExit()
     assert asyncio.run(press(True, "ctrl+q")) == tui_app.TuiExit(quit_hub=True)  # only Ctrl+Q quits
     assert asyncio.run(press(False, "escape")) == tui_app.TuiExit()  # standalone: just close
     assert asyncio.run(press(False, "ctrl+q")) == tui_app.TuiExit()  # standalone: just close
