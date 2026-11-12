@@ -10,9 +10,9 @@ viewer in any language mirrors `SessionState` and `MachineState` field for field
 
 from __future__ import annotations
 
-from agent6.viewmodel.comparison import is_winner, session_compare  # noqa: ICN003  # re-export
-from agent6.viewmodel.events import event_epoch  # noqa: ICN003  # re-export
-from agent6.viewmodel.listing import (  # noqa: ICN003  # re-export
+from agent6.viewmodel.comparison import is_winner, session_compare  # re-export
+from agent6.viewmodel.events import event_epoch  # re-export
+from agent6.viewmodel.listing import (  # re-export
     SessionSummary,
     is_session_husk,
     newest_session_dir,
@@ -22,8 +22,8 @@ from agent6.viewmodel.listing import (  # noqa: ICN003  # re-export
     summarize_session_dir,
     summary_row,
 )
-from agent6.viewmodel.log_line import format_log_line  # noqa: ICN003  # re-export
-from agent6.viewmodel.machine_state import (  # noqa: ICN003  # re-export
+from agent6.viewmodel.log_line import format_log_line  # re-export
+from agent6.viewmodel.machine_state import (  # re-export
     InstanceProbes,
     MachineState,
     MachineSummary,
@@ -42,12 +42,12 @@ from agent6.viewmodel.machine_state import (  # noqa: ICN003  # re-export
     summarize_machine_dir,
     verb_answer,
 )
-from agent6.viewmodel.policy import session_policy  # noqa: ICN003  # re-export
-from agent6.viewmodel.session_log import (  # noqa: ICN003  # re-export
+from agent6.viewmodel.policy import session_policy  # re-export
+from agent6.viewmodel.session_log import (  # re-export
     LogScan,
     scan_session_log,
 )
-from agent6.viewmodel.session_status import (  # noqa: ICN003  # re-export
+from agent6.viewmodel.session_status import (  # re-export
     LIVE_STATUS_WORDS,
     StatusFacts,
     died_without_end,
@@ -56,7 +56,7 @@ from agent6.viewmodel.session_status import (  # noqa: ICN003  # re-export
     status_word,
     task_snippet,
 )
-from agent6.viewmodel.state import (  # noqa: ICN003  # re-export
+from agent6.viewmodel.state import (  # re-export
     MAX_LOG_TAIL,
     apply_event,
     fold_session,
@@ -66,7 +66,7 @@ from agent6.viewmodel.state import (  # noqa: ICN003  # re-export
     pending_questions,
     task_tree_views,
 )
-from agent6.viewmodel.state_types import (  # noqa: ICN003  # re-export
+from agent6.viewmodel.state_types import (  # re-export
     ApprovalPrompt,
     BudgetView,
     Question,
@@ -78,21 +78,21 @@ from agent6.viewmodel.state_types import (  # noqa: ICN003  # re-export
     ToolCallView,
     approval_parts,
 )
-from agent6.viewmodel.state_view import (  # noqa: ICN003  # re-export
+from agent6.viewmodel.state_view import (  # re-export
     context_fill,
     session_state_as_dict,
     status_facts,
 )
-from agent6.viewmodel.tail import LogTail, tail_events, tail_lines  # noqa: ICN003  # re-export
-from agent6.viewmodel.transcript import (  # noqa: ICN003  # re-export
+from agent6.viewmodel.tail import LogTail, tail_events, tail_lines  # re-export
+from agent6.viewmodel.transcript import (  # re-export
     TranscriptFold,
     fold_transcript,
     operator_inputs,
     restate,
     worker_models,
 )
-from agent6.viewmodel.transcript_items import TranscriptItem  # noqa: ICN003  # re-export
-from agent6.viewmodel.wire import (  # noqa: ICN003  # re-export
+from agent6.viewmodel.transcript_items import TranscriptItem  # re-export
+from agent6.viewmodel.wire import (  # re-export
     UnknownCommitError,
     existing_run_branch,
     machine_snapshot,

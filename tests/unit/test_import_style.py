@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The module-style import rule's list is the tree.
+"""The module-style import rule, read from the tree.
 
-`banned-from` names every leaf module of agent6, so `from agent6.pkg.module import name` is refused
-everywhere; a module added without its entry would slip through.
+`from agent6.pkg.module import name` is refused everywhere: a leaf module's members are reached
+as `module.name`. A package's `__init__.py` re-exports names from its modules with a trailing
+`# re-export`; `pyproject.toml`'s `banned-from` carries the same rule for external modules.
 """
 
 from __future__ import annotations
@@ -30,9 +31,31 @@ def _leaf_modules() -> set[str]:
     }
 
 
-def test_every_leaf_module_is_listed_and_nothing_else_of_agent6() -> None:
-    listed = {m for m in _banned_from() if m.startswith("agent6.")}
-    assert listed == _leaf_modules()
+def test_no_name_is_imported_from_a_leaf_module() -> None:
+    """A member import from an agent6 leaf module is refused unless the line says `# re-export`.
+
+    The 392-entry `banned-from` list that once pinned this went stale with every module added
+    or moved; the tree is the list.
+    """
+    leaves = _leaf_modules()
+    violations: list[str] = []
+    for root in ("src", "tests"):
+        for path in sorted((_ROOT / root).rglob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            lines = source.splitlines()
+            for node in ast.walk(ast.parse(source)):
+                if not isinstance(node, ast.ImportFrom) or node.level or not node.module:
+                    continue
+                if node.module in leaves and "# re-export" not in lines[node.lineno - 1]:
+                    names = ", ".join(alias.name for alias in node.names)
+                    where = f"{path.relative_to(_ROOT)}:{node.lineno}"
+                    violations.append(f"{where}: from {node.module} import {names}")
+    assert not violations, "\n".join(violations)
+
+
+def test_the_external_list_holds_no_agent6_module() -> None:
+    """The tree rule above owns agent6's modules; the list names only external ones."""
+    assert not [m for m in _banned_from() if m.startswith("agent6")]
 
 
 def test_the_list_is_sorted_and_keeps_the_typing_exceptions() -> None:

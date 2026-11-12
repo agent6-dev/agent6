@@ -27,7 +27,7 @@ import httpx2
 from agent6 import errors, paths
 from agent6.config import ConfigError, io, layer, write
 from agent6.context import skills as agent6_skills
-from agent6.context.skills import Skill, resolve_states  # noqa: ICN003  # re-export
+from agent6.context.skills import Skill, resolve_states  # re-export
 from agent6.tools import http_body
 from agent6.ui.cli import common, steer_menu
 from agent6.vcs import git_policy

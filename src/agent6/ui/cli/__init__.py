@@ -8,6 +8,6 @@ console script and the tests enter through `main` and `cli_main`.
 
 from __future__ import annotations
 
-from agent6.ui.cli.entry import cli_main, main  # noqa: ICN003  # re-export
+from agent6.ui.cli.entry import cli_main, main  # re-export
 
 __all__ = ["cli_main", "main"]

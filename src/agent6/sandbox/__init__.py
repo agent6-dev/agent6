@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 
-from agent6.sandbox.jail import JailUnavailableError, namespaces_work, run_in_jail  # noqa: ICN003  # re-export
-from agent6.sandbox.landlock import LandlockError, landlock_abi  # noqa: ICN003  # re-export
+from agent6.sandbox.jail import JailUnavailableError, namespaces_work, run_in_jail  # re-export
+from agent6.sandbox.landlock import LandlockError, landlock_abi  # re-export
 
 __all__ = [
     "JailUnavailableError",

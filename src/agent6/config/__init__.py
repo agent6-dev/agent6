@@ -9,9 +9,9 @@ layering are imported from `agent6.config.io` and `agent6.config.layer`.
 from __future__ import annotations
 
 from agent6.config import validation
-from agent6.config.container_config import ContainerConfig  # noqa: ICN003  # re-export
-from agent6.config.git_config import GitCommitConfig, GitConfig  # noqa: ICN003  # re-export
-from agent6.config.harness_config import (  # noqa: ICN003  # re-export
+from agent6.config.container_config import ContainerConfig  # re-export
+from agent6.config.git_config import GitCommitConfig, GitConfig  # re-export
+from agent6.config.harness_config import (  # re-export
     BudgetConfig,
     CompactionConfig,
     EffortLevel,
@@ -23,16 +23,16 @@ from agent6.config.harness_config import (  # noqa: ICN003  # re-export
     ReviewScope,
     RoleModel,
 )
-from agent6.config.header_config import HeaderTemplate  # noqa: ICN003  # re-export
-from agent6.config.model import (  # noqa: ICN003  # re-export
+from agent6.config.header_config import HeaderTemplate  # re-export
+from agent6.config.model import (  # re-export
     Agent6Section,
     Config,
     load_config,
     validate_config,
 )
-from agent6.config.model_roles import ModelsConfig  # noqa: ICN003  # re-export
-from agent6.config.oauth_config import OAuthConfig, OAuthExchangeConfig  # noqa: ICN003  # re-export
-from agent6.config.provider_config import (  # noqa: ICN003  # re-export
+from agent6.config.model_roles import ModelsConfig  # re-export
+from agent6.config.oauth_config import OAuthConfig, OAuthExchangeConfig  # re-export
+from agent6.config.provider_config import (  # re-export
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
     ClaudeCodeProviderEntry,
@@ -43,7 +43,7 @@ from agent6.config.provider_config import (  # noqa: ICN003  # re-export
     provider_name_refusal,
     validate_base_url,
 )
-from agent6.config.sandbox_config import (  # noqa: ICN003  # re-export
+from agent6.config.sandbox_config import (  # re-export
     MCPConfig,
     MCPServerEntry,
     SandboxConfig,
@@ -51,7 +51,7 @@ from agent6.config.sandbox_config import (  # noqa: ICN003  # re-export
     is_loopback_url,
     mcp_server_name_refusal,
 )
-from agent6.config.surface_config import (  # noqa: ICN003  # re-export
+from agent6.config.surface_config import (  # re-export
     MachineConfig,
     MachineNotifyConfig,
     NotifyConfig,
@@ -61,7 +61,7 @@ from agent6.config.surface_config import (  # noqa: ICN003  # re-export
     WorkspaceConfig,
     is_loopback_host,
 )
-from agent6.kinds import RoleName  # noqa: ICN003  # re-export
+from agent6.kinds import RoleName  # re-export
 
 ConfigError = validation.ConfigError
 

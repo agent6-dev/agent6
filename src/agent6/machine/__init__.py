@@ -9,8 +9,8 @@ and offline replay. An `agent` state runs an agent6 loop through an injected run
 
 from __future__ import annotations
 
-from agent6.machine.authoring import build_authoring_prompt  # noqa: ICN003  # re-export
-from agent6.machine.contracts import (  # noqa: ICN003  # re-export
+from agent6.machine.authoring import build_authoring_prompt  # re-export
+from agent6.machine.contracts import (  # re-export
     AgentExecResult,
     AgentRequest,
     EngineError,
@@ -19,10 +19,10 @@ from agent6.machine.contracts import (  # noqa: ICN003  # re-export
     WaitWake,
     World,
 )
-from agent6.machine.dryrun import BranchCheck, DryRunReport, StateCheck, dry_run  # noqa: ICN003  # re-export
-from agent6.machine.engine import drive  # noqa: ICN003  # re-export
-from agent6.machine.graph import render_dot, render_mermaid  # noqa: ICN003  # re-export
-from agent6.machine.journal import (  # noqa: ICN003  # re-export
+from agent6.machine.dryrun import BranchCheck, DryRunReport, StateCheck, dry_run  # re-export
+from agent6.machine.engine import drive  # re-export
+from agent6.machine.graph import render_dot, render_mermaid  # re-export
+from agent6.machine.journal import (  # re-export
     AgentFact,
     AttemptSpend,
     JournalError,
@@ -43,8 +43,8 @@ from agent6.machine.journal import (  # noqa: ICN003  # re-export
     write_source,
     write_stop_request,
 )
-from agent6.machine.live_world import LiveWorld, ToolPolicyFactory  # noqa: ICN003  # re-export
-from agent6.machine.schema import (  # noqa: ICN003  # re-export
+from agent6.machine.live_world import LiveWorld, ToolPolicyFactory  # re-export
+from agent6.machine.schema import (  # re-export
     PROTECTED_OVERLAY_LEAVES,
     PROTECTED_OVERLAY_TABLES,
     AgentState,
@@ -56,13 +56,13 @@ from agent6.machine.schema import (  # noqa: ICN003  # re-export
     protected_overlay_error,
     protected_overlay_key_error,
 )
-from agent6.machine.semantics import (  # noqa: ICN003  # re-export
+from agent6.machine.semantics import (  # re-export
     fixture_problems,
     load_machine,
     validate_record_payload,
     validate_semantics,
 )
-from agent6.prompts.machine import MACHINE_AUTHOR_GUIDE  # noqa: ICN003  # re-export
+from agent6.prompts.machine import MACHINE_AUTHOR_GUIDE  # re-export
 
 __all__ = [
     "MACHINE_AUTHOR_GUIDE",

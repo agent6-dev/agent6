@@ -14,7 +14,7 @@ doing the model's filesystem work.
 
 from __future__ import annotations
 
-from agent6.ui.acp.runner import serve_acp  # noqa: ICN003  # re-export
-from agent6.ui.acp.server import ACPServer  # noqa: ICN003  # re-export
+from agent6.ui.acp.runner import serve_acp  # re-export
+from agent6.ui.acp.server import ACPServer  # re-export
 
 __all__ = ["ACPServer", "serve_acp"]

@@ -9,20 +9,24 @@ and spawns the per-`agent`-state runner.
 
 from __future__ import annotations
 
-from agent6.app.machine.bundle import MachineFileSummary, summarize_machine_file, validate_bundle  # noqa: ICN003  # re-export
-from agent6.app.machine.crash_spend import book_crashed_attempt  # noqa: ICN003  # re-export
-from agent6.app.machine.host_preflight import (  # noqa: ICN003  # re-export
+from agent6.app.machine.bundle import (  # re-export
+    MachineFileSummary,
+    summarize_machine_file,
+    validate_bundle,
+)
+from agent6.app.machine.crash_spend import book_crashed_attempt  # re-export
+from agent6.app.machine.host_preflight import (  # re-export
     build_machine_notify_hook,
     machine_pass_env_refusal,
     machine_protect_paths,
 )
-from agent6.app.machine.scriptcheck import (  # noqa: ICN003  # re-export
+from agent6.app.machine.scriptcheck import (  # re-export
     OfflineTestOutcome,
     available_tools,
     lint_and_typecheck,
     run_offline_tests,
 )
-from agent6.app.machine.state_configs import (  # noqa: ICN003  # re-export
+from agent6.app.machine.state_configs import (  # re-export
     MachineConfigs,
     SandboxWidenedError,
     StateConfig,
