@@ -1740,12 +1740,15 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
             assert "operator's stop ended the command before it finished" in result.summary()
             assert "stopped" in str(read["shells"]) and "running" not in str(read["shells"])
             assert command_result["stopped_by_operator"] is True
+            assert command_result["exit_code"] == -15 and "background_id" not in command_result
             assert command_result["summary"] == result.summary()
             assert not any(e["type"] == "command.backgrounded" for e in events)
         else:
             assert "stopped_by_operator" not in out
             assert out["returncode"] is None and out["still_running"] is True
             assert out["background_id"] == "bg1"
+            assert command_result["background_id"] == "bg1"
+            assert command_result["exit_code"] is None
             assert "running" in str(read["shells"])
             assert any(e["type"] == "command.backgrounded" for e in events)
         assert command_result["stdout_tail"] == "starting\n"
@@ -1816,12 +1819,12 @@ def test_an_operator_stop_that_fails_stays_reachable_for_teardown(
     assert "stopped" in str(roster) and "stop failed" not in str(roster)
 
 
-def test_run_command_result_carries_output_tails(
+def test_run_command_result_carries_its_outcome_as_data(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     build_dispatcher: Callable[..., dispatch.ToolDispatcher],
 ) -> None:
-    """Execution tools' tool.result events carry capped output tails; others stay summary-only."""
+    """A command's tool.result carries its exit code, timing and cut tails; others their summary."""
     import json
 
     from agent6.sessions import event_log
@@ -1851,11 +1854,16 @@ def test_run_command_result_carries_output_tails(
         if e["type"] == "tool.result"
     ]
     run = next(e for e in results if e["name"] == "run_command")
-    assert run["ok"] is True
+    assert run["ok"] is True  # the handler returned; the command's failure is its exit code
+    assert run["exit_code"] == 1 and run["duration_s"] == 0.1
+    assert run["timed_out"] is False and run["exec_failed"] is False
+    assert "background_id" not in run and "stopped_by_operator" not in run
     assert run["stdout_tail"].startswith("OUT-X") and len(run["stdout_tail"]) == 2000
     assert run["stderr_tail"].startswith("ERR-Y") and len(run["stderr_tail"]) == 2000
+    assert run["stdout_truncated"] is True and run["stderr_truncated"] is True
     read = next(e for e in results if e["name"] == "read_file")
     assert "stdout_tail" not in read and "stderr_tail" not in read  # non-exec
+    assert "exit_code" not in read and "duration_s" not in read
     # read_file carries its own excerpt instead: a head preview + the true
     # line count, so a transcript can show what was read.
     assert read["head_tail"] == "hi"

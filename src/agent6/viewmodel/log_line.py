@@ -43,11 +43,6 @@ def _render_arg_value(key: str, value: Any) -> str:
     return value if isinstance(value, str) else repr(value)
 
 
-def _as_dict(value: Any) -> dict[str, Any]:
-    """Return an untrusted event field as a dict, empty for any other type."""
-    return value if isinstance(value, dict) else {}
-
-
 def _as_list(value: Any) -> list[Any]:
     """Return an untrusted event field as a list, empty for any other type."""
     return list(value) if isinstance(value, (list, tuple)) else []
@@ -107,7 +102,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
         case "loop.auto_commit":
             salient = f"{str(event.get('sha', ''))[:12]} {event.get('subject', '')}".strip()
         case "tool.call":
-            salient = f"{event.get('name', '')}({render_args(_as_dict(event.get('args')))})"
+            salient = f"{event.get('name', '')}({render_args(events.call_args(event))})"
         case "tool.result":
             summ = events.readable_summary(event.get("summary", ""))
             salient = f"{event.get('name', '')} ok={event.get('ok')} {summ}"

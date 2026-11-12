@@ -103,12 +103,12 @@ def test_emit_reprs_non_serializable_fields(tmp_path: pathlib.Path) -> None:
     bad.self_ref = bad  # type: ignore[attr-defined]
     sink.emit(
         journal.ToolCall(
-            name="example", args={"x": 1, "p": tmp_path / "a", "weird": bad}, call_id=1
+            name="example", args_preview={"x": 1, "p": tmp_path / "a", "weird": bad}, call_id=1
         )
     )
     lines = _read_lines(tmp_path / "logs.jsonl")
     assert len(lines) == 1
-    args = lines[0]["args"]
+    args = lines[0]["args_preview"]
     assert isinstance(args, dict)
     assert args["x"] == 1
     p_value = args["p"]
@@ -165,7 +165,7 @@ def test_delta_events_flush_but_do_not_fsync(
     sink.emit(journal.RoleTextDelta(role="worker", text="answer"))
     assert synced == []  # no fsync for the deltas
 
-    sink.emit(journal.ToolCall(name="read_file", args={}, call_id=1))
+    sink.emit(journal.ToolCall(name="read_file", args_preview={}, call_id=1))
     assert len(synced) == 1  # a durable event fsyncs
 
     # all three are on disk regardless (flush, not fsync, makes them readable)
@@ -185,7 +185,9 @@ def test_emit_survives_lone_surrogate(tmp_path: pathlib.Path) -> None:
 
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     sink.emit(journal.LoopNote(text="caf\udce9"))
-    sink.emit(journal.ToolCall(name="finish_session", args={"summary": "done \ud83d"}, call_id=1))
+    sink.emit(
+        journal.ToolCall(name="finish_session", args_preview={"summary": "done \ud83d"}, call_id=1)
+    )
     lines = [
         json.loads(line)
         for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines()

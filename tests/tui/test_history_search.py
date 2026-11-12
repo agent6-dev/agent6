@@ -75,7 +75,7 @@ def test_ctrl_r_with_no_recorded_messages_opens_nothing(tmp_path: pathlib.Path) 
     run = tmp_path / "run"
     run.mkdir()
     (run / "logs.jsonl").write_text(
-        json.dumps({"type": "tool.call", "name": "read_file", "args": {}}) + "\n",
+        json.dumps({"type": "tool.call", "name": "read_file", "args_preview": {}}) + "\n",
         encoding="utf-8",
     )
 

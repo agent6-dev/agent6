@@ -14,6 +14,7 @@ from collections.abc import Callable, Mapping
 from typing import Any, ClassVar, Literal
 
 from agent6 import evidence
+from agent6.viewmodel import events as viewmodel_events
 from agent6.viewmodel import review, telemetry_machine, telemetry_metrics, telemetry_records
 
 Capture = Literal["metadata", "content"]
@@ -266,8 +267,8 @@ class TelemetryFold:
         fields: dict[str, telemetry_records.AttributeValue] = {
             "agent6.tool": str(event.get("name", ""))
         }
-        if self.capture == "content" and "args" in event:
-            fields["agent6.tool.args"] = telemetry_records.excerpt(event["args"])
+        if self.capture == "content" and (args := viewmodel_events.call_args(event)):
+            fields["agent6.tool.args"] = telemetry_records.excerpt(args)
         span_id = telemetry_records.hex_id(f"{execution.trace_id}:tool:{key}", 16)
         execution.tools[key] = telemetry_records.OpenSpan(
             span_id, execution.parent(), telemetry_records.SPAN_TOOL, step.now, attributes=fields
@@ -286,6 +287,8 @@ class TelemetryFold:
         if span is None:
             return
         span.attributes["agent6.ok"] = ok
+        if (code := telemetry_records.as_int(event.get("exit_code"))) is not None:
+            span.attributes["agent6.tool.exit_code"] = code
         step.spans.append(execution.end(span, step.now, "ok" if ok else "error"))
 
     # --- verification ------------------------------------------------------------

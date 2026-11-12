@@ -391,7 +391,9 @@ def test_discrete_log_line_renders_tool_events_only() -> None:
 
     # A tool call renders compactly; a thinking delta is not a discrete line.
     assert machmod._discrete_log_line({"type": "role.effort_delta", "text": "hm"}) is None
-    line = machmod._discrete_log_line({"type": "tool.call", "name": "grep", "args": {"q": "x"}})
+    line = machmod._discrete_log_line(
+        {"type": "tool.call", "name": "grep", "args_preview": {"q": "x"}}
+    )
     assert line is not None and "grep" in line.plain
     # The verdict goes through tool_result_ok, never bool(): "False" is not a green tick.
     bad = machmod._discrete_log_line({"type": "tool.result", "ok": "False", "summary": "boom"})
@@ -633,11 +635,13 @@ def test_watch_screen_tolerates_torn_utf8_state_log(tmp_path: pathlib.Path) -> N
     state = instance / "states" / "0000-route"
     state.mkdir(parents=True)
     (instance / "journal.jsonl").write_text("", encoding="utf-8")
-    full = json.dumps({"type": "tool.call", "name": "café", "args": {}}, ensure_ascii=False)
+    full = json.dumps({"type": "tool.call", "name": "café", "args_preview": {}}, ensure_ascii=False)
     raw = full.encode("utf-8")
     cut = raw.rindex(b"\xc3\xa9") + 1  # keep only the first byte of the é sequence
     (state / "logs.jsonl").write_bytes(
-        json.dumps({"type": "tool.call", "name": "grep", "args": {}}).encode() + b"\n" + raw[:cut]
+        json.dumps({"type": "tool.call", "name": "grep", "args_preview": {}}).encode()
+        + b"\n"
+        + raw[:cut]
     )
 
     class _WatchHost(textual_app.App[None]):

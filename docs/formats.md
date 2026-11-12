@@ -1325,7 +1325,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | `str` | Tool or skill name. |
-| `args` | `object` | Tool argument preview, or the skill invocation's argument text. |
+| `args_preview` | `object` | The arguments with long values clipped, or a skill's argument text. |
 | `call_id` | `int, optional` | The tool call correlated with this event; null in a journal written before ids. |
 
 ### tool.result
@@ -1335,12 +1335,19 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | `str` | Tool or skill name. |
-| `ok` | `bool` | Whether the operation succeeded. |
+| `ok` | `bool` | Whether the handler returned a result; a command's failure is its exit_code. |
 | `summary` | `str` | The result or outcome in words. |
 | `call_id` | `int, optional` | The tool call correlated with this event; null in a journal written before ids. |
+| `exit_code` | `int, optional` | A command's exit code; null while it runs in the background or when unknown. |
+| `duration_s` | `float, optional` | A command's wall-clock seconds until the result. |
+| `timed_out` | `bool, optional` | Whether the runner ended the command at its deadline. |
+| `exec_failed` | `bool, optional` | Whether the command could not be started. |
+| `background_id` | `str, optional` | The background job the command continues as, when handed back. |
 | `paths` | `list, optional` | Affected repository-relative paths. |
 | `stdout_tail` | `str, optional` | Capped standard-output tail. |
 | `stderr_tail` | `str, optional` | Capped standard-error tail. |
+| `stdout_truncated` | `bool, optional` | Whether stdout_tail is a cut of the output; null when its end is unknown. |
+| `stderr_truncated` | `bool, optional` | Whether stderr_tail is a cut of the output; null when its end is unknown. |
 | `stopped_by_operator` | `bool, optional` | Whether an immediate operator stop ended the command. |
 | `attachment` | `object, optional` | Attachment metadata without its binary content. |
 | `head_tail` | `str, optional` | A read preview or attachment summary. |

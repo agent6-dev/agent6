@@ -151,7 +151,9 @@ def test_every_tool_item_has_complete_expanded_arguments() -> None:
         ("run_verify_command", {}),
     ):
         for settled in (False, True):
-            events: list[dict[str, object]] = [{"type": "tool.call", "name": name, "args": args}]
+            events: list[dict[str, object]] = [
+                {"type": "tool.call", "name": name, "args_preview": args}
+            ]
             if settled:
                 events.append({"type": "tool.result", "name": name, "ok": True, "summary": "ok"})
             (item,) = model.conversation_items(events)
@@ -172,7 +174,7 @@ def test_conversation_payload_folds_the_event_log(tmp_path: pathlib.Path) -> Non
         "r2",
         [
             {"type": "session.start", "user_task": "x"},
-            {"type": "tool.call", "name": "apply_edit", "args": {"path": "a.py"}},
+            {"type": "tool.call", "name": "apply_edit", "args_preview": {"path": "a.py"}},
             {"type": "tool.result", "name": "apply_edit", "ok": False, "summary": dump},
         ],
     )
@@ -865,7 +867,7 @@ def test_the_states_that_offer_resume_are_not_live(tmp_path: pathlib.Path) -> No
 
 def test_conversation_payload_carries_an_in_flight_call(tmp_path: pathlib.Path) -> None:
     """A call the fold reports in flight shows as running until its result replaces it."""
-    call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
+    call = {"type": "tool.call", "name": "run_command", "args_preview": {"argv": ["sleep", "60"]}}
     d = _run(tmp_path, "r3", [{"type": "session.start", "user_task": "x"}, {**call, "call_id": 1}])
     # a live worker: the call is in flight
     process.write_worker_pid(d, os.getpid())
@@ -884,7 +886,7 @@ def test_conversation_payload_carries_an_in_flight_call(tmp_path: pathlib.Path) 
 
 def test_a_dead_workers_open_call_reads_dead_not_running(tmp_path: pathlib.Path) -> None:
     """The payload probes the worker and settles a call it left open; /restate agrees."""
-    call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
+    call = {"type": "tool.call", "name": "run_command", "args_preview": {"argv": ["sleep", "60"]}}
     d = _run(tmp_path, "r4", [{"type": "session.start", "user_task": "x"}, {**call, "call_id": 1}])
     (d / "worker.pid").write_text("4194304", encoding="utf-8")  # past pid_max: gone
     (headline, item) = model.conversation_payload(d)["items"]

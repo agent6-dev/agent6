@@ -810,7 +810,9 @@ def test_cancelled_permission_replies_are_ignored_over_stdio(
                 execution_id="execution",
             )
         )
-        events.emit(journal.ToolCall(name="run_command", args={"argv": ["true"]}, call_id=1))
+        events.emit(
+            journal.ToolCall(name="run_command", args_preview={"argv": ["true"]}, call_id=1)
+        )
         answers.append(prompts.approve("Allow true?", scope="command", call_id=1))
         events.emit(journal.ToolResult(name="run_command", ok=False, summary="denied", call_id=1))
         events.emit(
@@ -1197,7 +1199,7 @@ def test_a_gated_call_reads_pending_on_the_wire(
                 execution_id="execution",
             )
         )
-        events.emit(journal.ToolCall(name="run_command", args={"argv": ["ls"]}, call_id=1))
+        events.emit(journal.ToolCall(name="run_command", args_preview={"argv": ["ls"]}, call_id=1))
         approved = prompts.approve("Allow run_command: ls", scope="command", call_id=1)
         events.emit(journal.ToolResult(name="run_command", ok=approved, summary="ok", call_id=1))
         events.emit(
@@ -1316,7 +1318,7 @@ def test_a_tool_call_id_is_unique_across_a_runs_executions(
                 execution_id="execution",
             )
         )
-        events.emit(journal.ToolCall(name="run_command", args={"argv": ["ls"]}, call_id=1))
+        events.emit(journal.ToolCall(name="run_command", args_preview={"argv": ["ls"]}, call_id=1))
         events.emit(journal.ToolResult(name="run_command", ok=False, summary="no", call_id=1))
         events.emit(
             journal.SessionStop(
@@ -1342,7 +1344,7 @@ def test_a_tool_call_id_is_unique_across_a_runs_executions(
                 execution_id="resumed",
             )
         )
-        events.emit(journal.ToolCall(name="run_command", args={"argv": ["ls"]}, call_id=1))
+        events.emit(journal.ToolCall(name="run_command", args_preview={"argv": ["ls"]}, call_id=1))
         events.emit(journal.ToolResult(name="run_command", ok=True, summary="ok", call_id=1))
         events.emit(
             journal.SessionStop(
@@ -1399,7 +1401,7 @@ def test_a_late_tail_keeps_its_own_execution(tmp_path: pathlib.Path) -> None:
     tail.start()
     session.execution = 2  # the next execution began while this tail still reads
     event_log.EventSink(log).emit(
-        journal.ToolCall(name="run_command", args={"argv": ["ls"]}, call_id=1)
+        journal.ToolCall(name="run_command", args_preview={"argv": ["ls"]}, call_id=1)
     )
     for _ in range(100):
         if sent:
@@ -1470,7 +1472,7 @@ def test_a_dead_workers_open_tool_call_is_settled(tmp_path: pathlib.Path) -> Non
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
     log = tmp_path / "logs.jsonl"
     event_log.EventSink(log).emit(
-        journal.ToolCall(name="run_command", args={"argv": ["false"]}, call_id=1)
+        journal.ToolCall(name="run_command", args_preview={"argv": ["false"]}, call_id=1)
     )
 
     bridge._stream(  # pyright: ignore[reportPrivateUsage]
@@ -1737,8 +1739,8 @@ def test_a_request_names_the_call_it_gates_not_the_newest(
                 execution_id="execution",
             )
         )
-        events.emit(journal.ToolCall(name="run_command", args={"argv": ["ls"]}, call_id=1))
-        events.emit(journal.ToolCall(name="read_file", args={"path": "x"}, call_id=2))
+        events.emit(journal.ToolCall(name="run_command", args_preview={"argv": ["ls"]}, call_id=1))
+        events.emit(journal.ToolCall(name="read_file", args_preview={"path": "x"}, call_id=2))
         approved = prompts.approve("Allow run_command: ls", scope="command", call_id=1)
         events.emit(journal.ToolResult(name="read_file", ok=True, summary="ok", call_id=2))
         events.emit(journal.ToolResult(name="run_command", ok=approved, summary="ok", call_id=1))
@@ -1850,8 +1852,8 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: pathli
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", execution=1)
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
-    events.emit(journal.ToolCall(name="run_command", args={"argv": ["ls"]}, call_id=1))
-    events.emit(journal.ToolCall(name="run_command", args={"argv": ["true"]}, call_id=2))
+    events.emit(journal.ToolCall(name="run_command", args_preview={"argv": ["ls"]}, call_id=1))
+    events.emit(journal.ToolCall(name="run_command", args_preview={"argv": ["true"]}, call_id=2))
     order = runner.ProseOrder(server, "s", log)
     said: list[str] = []
     reporter = runner.forwarding_reporter(server, "s", said, order=order)
@@ -2008,7 +2010,7 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathli
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", execution=1)
     log = tmp_path / "logs.jsonl"
     sink = event_log.EventSink(log)
-    sink.emit(journal.ToolCall(name="apply_edit", args={"path": "src/x.py"}, call_id=1))
+    sink.emit(journal.ToolCall(name="apply_edit", args_preview={"path": "src/x.py"}, call_id=1))
     sink.emit(
         journal.ToolResult(
             name="apply_edit",
@@ -2199,7 +2201,12 @@ def test_a_streamed_final_answer_is_not_sent_again_as_the_end_summary(
         # The finish comes a call later, with no text of its own; the summary is the last text.
         {"type": "role.call", "role": "worker"},
         {"type": "role.result", "role": "worker", "text": ""},
-        {"type": "tool.call", "name": "finish_session", "args": {"summary": "ok"}, "call_id": 1},
+        {
+            "type": "tool.call",
+            "name": "finish_session",
+            "args_preview": {"summary": "ok"},
+            "call_id": 1,
+        },
         {"type": "tool.result", "name": "finish_session", "ok": True, "call_id": 1},
         {
             "type": "session.stop",

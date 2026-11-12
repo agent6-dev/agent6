@@ -96,7 +96,7 @@ def test_a_tool_is_a_call_and_then_an_outcome() -> None:
 
     An editor that only saw the finished pair could not show a long verify in progress.
     """
-    call = {"type": "tool.call", "name": "run_verify_command", "args": {}, "call_id": 1}
+    call = {"type": "tool.call", "name": "run_verify_command", "args_preview": {}, "call_id": 1}
     result = {"type": "tool.result", "name": "run_verify_command", "ok": True, "call_id": 1}
     updates = updates_for_events([call, result], acp_session_id="s")
     assert _kinds(updates) == ["tool_call", "tool_call_update"]
@@ -128,7 +128,7 @@ def test_journaled_tool_paths_reach_the_editor_as_absolute_locations() -> None:
         {
             "type": "tool.call",
             "name": "apply_edit",
-            "args": {"path": "src/agent6/ui/acp/updates.py"},
+            "args_preview": {"path": "src/agent6/ui/acp/updates.py"},
             "call_id": 1,
         }
     )
@@ -156,7 +156,12 @@ def test_journaled_tool_paths_reach_the_editor_as_absolute_locations() -> None:
 
 def test_an_approval_wait_reads_pending_then_in_progress() -> None:
     """A call awaiting approval reads `pending`, updating the call already announced."""
-    call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1}
+    call = {
+        "type": "tool.call",
+        "name": "run_command",
+        "args_preview": {"argv": ["ls"]},
+        "call_id": 1,
+    }
     prompt = {
         "type": "approval.prompt",
         "id": "approval-1",
@@ -326,9 +331,19 @@ def test_two_identical_tool_calls_do_not_share_an_id() -> None:
     red run vanished from view.
     """
     events: list[dict[str, Any]] = [
-        {"type": "tool.call", "name": "run_command", "args": {"argv": ["pytest"]}, "call_id": 1},
+        {
+            "type": "tool.call",
+            "name": "run_command",
+            "args_preview": {"argv": ["pytest"]},
+            "call_id": 1,
+        },
         {"type": "tool.result", "name": "run_command", "call_id": 1, "ok": False},
-        {"type": "tool.call", "name": "run_command", "args": {"argv": ["pytest"]}, "call_id": 2},
+        {
+            "type": "tool.call",
+            "name": "run_command",
+            "args_preview": {"argv": ["pytest"]},
+            "call_id": 2,
+        },
         {"type": "tool.result", "name": "run_command", "call_id": 2, "ok": True},
     ]
     ids = {
@@ -454,7 +469,12 @@ def test_a_whitespace_delta_reaches_the_editor() -> None:
 
 def test_a_tool_call_carries_the_tools_name() -> None:
     """An editor keys icons and filters on `name`; the title is one invocation's words."""
-    call = {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}, "call_id": 1}
+    call = {
+        "type": "tool.call",
+        "name": "read_file",
+        "args_preview": {"path": "a.py"},
+        "call_id": 1,
+    }
     (announced,) = updates_for_events([call], acp_session_id="s")
     assert announced["params"]["update"]["name"] == "read_file"
 

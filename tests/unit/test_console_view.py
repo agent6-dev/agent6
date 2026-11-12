@@ -27,7 +27,7 @@ def test_reasoning_tool_call_and_result_all_render() -> None:
             {"type": "role.call", "role": "worker"},
             {"type": "role.thinking_delta", "role": "worker", "text": "let me read the file"},
             {"type": "role.result", "role": "worker"},
-            {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+            {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ]
@@ -66,7 +66,7 @@ def test_whitespace_only_text_prints_no_empty_block() -> None:
             {"type": "role.call", "role": "worker"},
             {"type": "role.text_delta", "role": "worker", "text": "  \n "},
             {"type": "role.result", "role": "worker"},
-            {"type": "tool.call", "name": "apply_edit", "args": {}},
+            {"type": "tool.call", "name": "apply_edit", "args_preview": {}},
             {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "ok"},
         ]
     )
@@ -78,7 +78,7 @@ def test_whitespace_only_text_prints_no_empty_block() -> None:
 def test_failed_tool_shows_its_output_tail() -> None:
     out = _render(
         [
-            {"type": "tool.call", "name": "run_command", "args": {"command": "ls /nope"}},
+            {"type": "tool.call", "name": "run_command", "args_preview": {"command": "ls /nope"}},
             {
                 "type": "tool.result",
                 "name": "run_command",
@@ -259,7 +259,7 @@ def test_cli_heartbeat_spins_during_a_long_tool_run() -> None:
         view.feed({"type": "role.call", "role": "worker", "model": "m"})
         view.feed({"type": "role.result", "role": "worker"})  # turn done...
         # ...now a tool.call starts a long jail command (no result yet).
-        view.feed({"type": "tool.call", "name": "run_verify_command", "args": {}})
+        view.feed({"type": "tool.call", "name": "run_verify_command", "args_preview": {}})
         time.sleep(_STALL_WAIT_S)
         assert "working…" in out.getvalue()  # spins through the command, not frozen
     finally:
@@ -303,7 +303,7 @@ def test_pause_suspends_the_heartbeat_spinner() -> None:
     out = _FakeTTY()
     view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
-        view.feed({"type": "tool.call", "name": "ask_user", "args": {}})
+        view.feed({"type": "tool.call", "name": "ask_user", "args_preview": {}})
         time.sleep(_STALL_WAIT_S)  # a tool is in flight + output silent: spinner up
         assert "working…" in out.getvalue()
         with view.pause():
@@ -326,7 +326,7 @@ def test_replayed_history_does_not_reset_the_idle_timer() -> None:
     try:
         wedged_at = time.time() - 2400
         view.feed({"type": "role.call", "role": "worker", "model": "m", "ts": wedged_at - 1})
-        view.feed({"type": "tool.call", "name": "run_command", "args": {}, "ts": wedged_at})
+        view.feed({"type": "tool.call", "name": "run_command", "args_preview": {}, "ts": wedged_at})
         idle = time.monotonic() - view._last_output_at  # pyright: ignore[reportPrivateUsage]
         assert idle >= 2399, f"replay reset the idle timer to {idle:.1f}s"
         # A ts-less (live, foreign) event keeps the arrival behaviour.
@@ -389,7 +389,7 @@ def test_the_receipt_reads_the_mode_from_the_shared_task_headline() -> None:
     out = _render(
         [
             {"type": "session.start", "mode": "ask", "user_task": "why?"},
-            {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
+            {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
             {"type": "session.stop", "reason": "answered", "verification": "unverified"},
         ]
@@ -405,7 +405,7 @@ def test_the_cli_prints_a_tool_once_when_it_settles() -> None:
     """The CLI prints a tool once when it settles, head and result together."""
     out = _render(
         [
-            {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+            {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
         ]
     )

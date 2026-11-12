@@ -19,7 +19,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import common, steer_tty
 from agent6.vcs import git_policy, git_read
-from agent6.viewmodel import newest_session_dir, session_log
+from agent6.viewmodel import events, newest_session_dir, session_log
 
 
 def summarize_session_log(logs_path: pathlib.Path) -> str:
@@ -63,7 +63,7 @@ def fmt_run_event(e: dict[str, Any]) -> str:
     """Return a one-line summary of a log event for the seed digest."""
     t = str(e.get("type", ""))
     if t == "tool.call":
-        return f"tool.call {e.get('name', '')} {str(e.get('args', ''))[:80]}".rstrip()
+        return f"tool.call {e.get('name', '')} {str(events.call_args(e) or '')[:80]}".rstrip()
     if t == "verify.end":
         label = evidence.result_label(e.get("exit_code"), evidence.outcome(e), joiner="=")
         reason = f": {e['reason']}" if e.get("reason") else ""

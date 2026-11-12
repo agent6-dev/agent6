@@ -35,7 +35,7 @@ def test_expanded_tool_args_are_uncapped_and_keep_nested_values() -> None:
         "questions": [{"question": "First?", "options": ["yes", "no"]}, {"question": words}],
     }
     state = viewmodel_state.fold_session(
-        [{"type": "tool.call", "name": "apply_edit", "args": args}]
+        [{"type": "tool.call", "name": "apply_edit", "args_preview": args}]
     )
     call = state.tool_calls[0]
     assert words in call.args_full
@@ -297,7 +297,7 @@ def test_graph_update_guards_cycles() -> None:
 def test_tool_call_then_result_pairs_up() -> None:
     s = viewmodel_state.apply_event(
         viewmodel_state.initial_state(),
-        {"type": "tool.call", "name": "read_file", "args": {"path": "foo.py"}},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "foo.py"}},
     )
     assert len(s.tool_calls) == 1
     assert s.tool_calls[0].name == "read_file"
@@ -317,7 +317,7 @@ def test_apply_edit_args_render_the_edit_kinds_not_a_dict_repr() -> None:
         {
             "type": "tool.call",
             "name": "apply_edit",
-            "args": {
+            "args_preview": {
                 "path": "calc.py",
                 "edits": [
                     {"kind": "replace", "old_string": "a", "new_string": "b"},
@@ -335,7 +335,7 @@ def test_dict_valued_tool_summary_renders_as_json_not_python_repr() -> None:
     # A malformed dict summary must not leak `{'unexpected': ...}` (single-quoted
     # Python repr) into the tool table or the log tail.
     s = viewmodel_state.apply_event(
-        viewmodel_state.initial_state(), {"type": "tool.call", "name": "weird", "args": {}}
+        viewmodel_state.initial_state(), {"type": "tool.call", "name": "weird", "args_preview": {}}
     )
     s = viewmodel_state.apply_event(
         s, {"type": "tool.result", "name": "weird", "ok": True, "summary": {"unexpected": 1}}
@@ -349,7 +349,8 @@ def test_dict_valued_tool_summary_renders_as_json_not_python_repr() -> None:
 
 def test_tool_result_with_mismatched_name_does_not_overwrite() -> None:
     s = viewmodel_state.apply_event(
-        viewmodel_state.initial_state(), {"type": "tool.call", "name": "read_file", "args": {}}
+        viewmodel_state.initial_state(),
+        {"type": "tool.call", "name": "read_file", "args_preview": {}},
     )
     s = viewmodel_state.apply_event(
         s, {"type": "tool.result", "name": "other", "ok": True, "summary": "x"}
@@ -507,7 +508,9 @@ def test_unknown_event_type_still_appends_to_log() -> None:
 def test_tool_history_is_bounded() -> None:
     s = viewmodel_state.initial_state()
     for i in range(200):
-        s = viewmodel_state.apply_event(s, {"type": "tool.call", "name": f"t{i}", "args": {}})
+        s = viewmodel_state.apply_event(
+            s, {"type": "tool.call", "name": f"t{i}", "args_preview": {}}
+        )
     assert len(s.tool_calls) == 50  # _MAX_TOOL_HISTORY
 
 
@@ -521,7 +524,7 @@ def test_full_run_trace_replay() -> None:
         {"type": "session.start", "user_task": "do thing"},
         {"type": "graph.update", "nodes": tasks, "cursor": "two"},
         {"type": "role.call", "role": "worker", "model": "gpt-5"},
-        {"type": "tool.call", "name": "apply_patch", "args": {"path": "x.py"}},
+        {"type": "tool.call", "name": "apply_patch", "args_preview": {"path": "x.py"}},
         {"type": "tool.result", "name": "apply_patch", "ok": True, "summary": "applied=1"},
         {"type": "role.result", "role": "worker", "tokens_in": 50, "tokens_out": 100},
         {
@@ -579,7 +582,7 @@ def test_run_state_as_dict_is_json_serializable() -> None:
     state = viewmodel_state.fold_session(
         [
             {"type": "session.start", "user_task": "t"},
-            {"type": "tool.call", "name": "grep", "args": {"q": "x"}},
+            {"type": "tool.call", "name": "grep", "args_preview": {"q": "x"}},
         ]
     )
     d = session_state_as_dict(state)
@@ -831,10 +834,12 @@ def test_concurrent_same_name_results_pair_by_call_id() -> None:
     """
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(
-        s, {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}, "call_id": 1}
+        s,
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}, "call_id": 1},
     )
     s = viewmodel_state.apply_event(
-        s, {"type": "tool.call", "name": "read_file", "args": {"path": "b.py"}, "call_id": 2}
+        s,
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "b.py"}, "call_id": 2},
     )
     s = viewmodel_state.apply_event(
         s, {"type": "tool.result", "name": "read_file", "ok": True, "summary": "sa", "call_id": 1}
@@ -851,10 +856,11 @@ def test_interleaved_result_for_an_earlier_call_pairs_by_call_id() -> None:
     """Call A, call B, result A lands on A while B stays open."""
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(
-        s, {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}, "call_id": 1}
+        s,
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}, "call_id": 1},
     )
     s = viewmodel_state.apply_event(
-        s, {"type": "tool.call", "name": "grep", "args": {"pattern": "x"}, "call_id": 2}
+        s, {"type": "tool.call", "name": "grep", "args_preview": {"pattern": "x"}, "call_id": 2}
     )
     s = viewmodel_state.apply_event(
         s, {"type": "tool.result", "name": "read_file", "ok": True, "summary": "sa", "call_id": 1}
@@ -871,14 +877,14 @@ def test_tool_count_is_the_executions_dispatched_calls() -> None:
     )
     for i in range(60):
         s = viewmodel_state.apply_event(
-            s, {"type": "tool.call", "name": "read_file", "args": {"path": f"{i}.py"}}
+            s, {"type": "tool.call", "name": "read_file", "args_preview": {"path": f"{i}.py"}}
         )
     s = viewmodel_state.apply_event(
-        s, {"type": "tool.call", "name": "finish_session", "args": {"summary": "done"}}
+        s, {"type": "tool.call", "name": "finish_session", "args_preview": {"summary": "done"}}
     )
     assert (s.tool_count, len(s.tool_calls)) == (60, 50)
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
-    s = viewmodel_state.apply_event(s, {"type": "tool.call", "name": "grep", "args": {}})
+    s = viewmodel_state.apply_event(s, {"type": "tool.call", "name": "grep", "args_preview": {}})
     assert s.tool_count == 1
 
 
@@ -983,8 +989,8 @@ def test_pins_restored_event_replaces_not_appends() -> None:
 _WRONG_SHAPE_EVENTS: list[dict[str, Any]] = [
     {"type": "graph.update", "nodes": [1]},
     {"type": "graph.update", "nodes": 7},
-    {"type": "tool.call", "name": "x", "args": [1]},
-    {"type": "tool.call", "name": "x", "args": "not-a-dict"},
+    {"type": "tool.call", "name": "x", "args_preview": [1]},
+    {"type": "tool.call", "name": "x", "args_preview": "not-a-dict"},
     {"type": "question.prompt", "questions": {"question": "q"}},
     {"type": "question.answer", "id": "q1", "answers": 5},
     {"type": "loop.compact.dropped", "n": 1, "calls": 5},

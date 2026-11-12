@@ -82,8 +82,8 @@ _READ_HEAD_LINES = 6
 _READ_HEAD_CHARS = 300
 
 
-def output_tails(name: str, result: results.ToolResult) -> dict[str, Any]:
-    """Return the excerpts a tool's result carries into its tool.result event, else {}.
+def tool_result_fields(name: str, result: results.ToolResult) -> dict[str, Any]:
+    """Return what a tool's result adds to its tool.result event, else {}.
 
     The written paths let a resume tell the run's own untracked files from the operator's.
 
@@ -92,22 +92,16 @@ def output_tails(name: str, result: results.ToolResult) -> dict[str, Any]:
         result: The tool's result.
 
     Returns:
-        The output tails of run_command and run_metric_command, read_file's head preview and
-        line count, or the paths an edit or patch wrote.
+        A command's outcome, read_file's head preview and line count, or the paths an edit or
+        patch wrote.
     """
     if isinstance(result, results.EditResult):
         return {"paths": [result.path]}
     if isinstance(result, results.PatchResult):
         written = [p for p, _ in result.files] or [result.path]
         return {"paths": [p for p in written if p not in result.deleted]}
-    if isinstance(result, results.ExecResult | results.MetricResult) and name in _EXEC_OUTPUT_TOOLS:
-        tails: dict[str, Any] = {
-            "stdout_tail": result.stdout[-_TOOL_OUTPUT_TAIL:],
-            "stderr_tail": result.stderr[-_TOOL_OUTPUT_TAIL:],
-        }
-        if isinstance(result, results.ExecResult) and result.stopped_by_operator:
-            tails["stopped_by_operator"] = True
-        return tails
+    if isinstance(result, results.ExecResult | results.MetricResult):
+        return command_outcome(name, result)
     if result.attachment is not None:
         return {"attachment": result.attachment.metadata(), "head_tail": result.summary()}
     if isinstance(result, results.ReadFileResult):
@@ -117,6 +111,44 @@ def output_tails(name: str, result: results.ToolResult) -> dict[str, Any]:
             "lines_total": result.lines_total,
         }
     return {}
+
+
+def command_outcome(name: str, result: results.ExecResult | results.MetricResult) -> dict[str, Any]:
+    """Return a command's outcome as the tool.result event carries it.
+
+    Args:
+        name: The tool's name.
+        result: The command's result.
+
+    Returns:
+        The exit code, duration, deadline and start failure; the background handle and the
+        operator's stop when set; for run_command and run_metric_command both output tails,
+        each marked when it is a cut.
+    """
+    fields: dict[str, Any] = {
+        "exit_code": result.returncode,
+        "duration_s": result.duration_s,
+        "timed_out": result.timed_out,
+        "exec_failed": result.exec_failed,
+    }
+    if isinstance(result, results.ExecResult):
+        if result.background_id:
+            fields["background_id"] = result.background_id
+        if result.stopped_by_operator:
+            fields["stopped_by_operator"] = True
+    if name in _EXEC_OUTPUT_TOOLS:
+        fields.update(
+            stdout_tail=result.stdout[-_TOOL_OUTPUT_TAIL:],
+            stderr_tail=result.stderr[-_TOOL_OUTPUT_TAIL:],
+            stdout_truncated=tail_truncated(result.stdout, result.stdout_truncated),
+            stderr_truncated=tail_truncated(result.stderr, result.stderr_truncated),
+        )
+    return fields
+
+
+def tail_truncated(text: str, capture_truncated: bool | None) -> bool | None:
+    """Return whether a journaled tail is a cut; None when the capture's end is unknown."""
+    return True if len(text) > _TOOL_OUTPUT_TAIL else capture_truncated
 
 
 def clip_tail(text: str, limit: int = 20_000) -> str:

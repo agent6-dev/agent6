@@ -1415,8 +1415,8 @@ class ToolCall(Event):
 
     TYPE: ClassVar[str] = "tool.call"
     name: str = pydantic.Field(description="Tool or skill name.")
-    args: dict[str, Any] = pydantic.Field(
-        description="Tool argument preview, or the skill invocation's argument text.",
+    args_preview: dict[str, Any] = pydantic.Field(
+        description="The arguments with long values clipped, or a skill's argument text.",
     )
     call_id: int | None = pydantic.Field(
         default=None,
@@ -1431,13 +1431,35 @@ class ToolResult(Event):
 
     TYPE: ClassVar[str] = "tool.result"
     name: str = pydantic.Field(description="Tool or skill name.")
-    ok: bool = pydantic.Field(description="Whether the operation succeeded.")
+    ok: bool = pydantic.Field(
+        description="Whether the handler returned a result; a command's failure is its exit_code.",
+    )
     summary: str = pydantic.Field(description="The result or outcome in words.")
     call_id: int | None = pydantic.Field(
         default=None,
         description=(
             "The tool call correlated with this event; null in a journal written before ids."
         ),
+    )
+    exit_code: int | None = pydantic.Field(
+        default=None,
+        description="A command's exit code; null while it runs in the background or when unknown.",
+    )
+    duration_s: float | None = pydantic.Field(
+        default=None,
+        description="A command's wall-clock seconds until the result.",
+    )
+    timed_out: bool | None = pydantic.Field(
+        default=None,
+        description="Whether the runner ended the command at its deadline.",
+    )
+    exec_failed: bool | None = pydantic.Field(
+        default=None,
+        description="Whether the command could not be started.",
+    )
+    background_id: str | None = pydantic.Field(
+        default=None,
+        description="The background job the command continues as, when handed back.",
     )
     paths: Sequence[Any] | None = pydantic.Field(
         default=None,
@@ -1450,6 +1472,14 @@ class ToolResult(Event):
     stderr_tail: str | None = pydantic.Field(
         default=None,
         description="Capped standard-error tail.",
+    )
+    stdout_truncated: bool | None = pydantic.Field(
+        default=None,
+        description="Whether stdout_tail is a cut of the output; null when its end is unknown.",
+    )
+    stderr_truncated: bool | None = pydantic.Field(
+        default=None,
+        description="Whether stderr_tail is a cut of the output; null when its end is unknown.",
     )
     stopped_by_operator: bool | None = pydantic.Field(
         default=None,

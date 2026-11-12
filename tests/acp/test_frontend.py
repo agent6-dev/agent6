@@ -298,8 +298,8 @@ def test_a_request_names_the_call_the_prompt_carries(tmp_path: pathlib.Path) -> 
     )
     prompts = _prompts(front, tmp_path)
     events = event_log.EventSink(tmp_path / "logs.jsonl")
-    events.emit(journal.ToolCall(name="run_command", args={"argv": ["ls"]}, call_id=1))
-    events.emit(journal.ToolCall(name="read_file", args={"path": "x"}, call_id=2))
+    events.emit(journal.ToolCall(name="run_command", args_preview={"argv": ["ls"]}, call_id=1))
+    events.emit(journal.ToolCall(name="read_file", args_preview={"path": "x"}, call_id=2))
     assert prompts.approve("Allow run_command: ls", scope="command", call_id=1) is True
     assert prompts.ask(
         (schema.UserQuestion(question="Theme?", options=("dark", "light")),), call_id=1

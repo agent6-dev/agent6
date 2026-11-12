@@ -244,10 +244,8 @@ class TranscriptFold:
             out = self._flush_message()
             name = str(event.get("name", ""))
             if name in viewmodel_events.FINISH_TOOLS:
-                args = event.get("args")
-                self._finish = (
-                    str(args.get("summary", "")).strip() if isinstance(args, dict) else ""
-                )
+                args = viewmodel_events.call_args(event)
+                self._finish = str(args.get("summary", "")).strip()
             else:
                 self._tools += 1
             out.extend(self._calls.start_tool(event))

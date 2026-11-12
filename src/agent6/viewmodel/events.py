@@ -14,6 +14,7 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from agent6 import evidence, kinds
@@ -166,6 +167,30 @@ def _seat_index(raw: dict[str, Any]) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def call_args(raw: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a tool.call row's argument preview; an older journal keys it `args`."""
+    args = raw.get("args_preview", raw.get("args"))
+    return args if isinstance(args, dict) else {}  # pyright: ignore[reportUnknownVariableType]
+
+
+_OUTCOME_KEYS = (
+    "exit_code",
+    "duration_s",
+    "timed_out",
+    "exec_failed",
+    "background_id",
+    "paths",
+    "stdout_tail",
+    "stderr_tail",
+    "stdout_truncated",
+    "stderr_truncated",
+    "stopped_by_operator",
+    "attachment",
+    "head_tail",
+    "lines_total",
+)
+
+
 def _call_id(raw: dict[str, Any]) -> int | None:
     """Return the event's `call_id` when it is an int, else None."""
     cid = raw.get("call_id")
@@ -265,12 +290,9 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
         case "role.thinking_delta":
             return journal.RoleThinkingDelta(role=_text(raw, "role"), text=_text(raw, "text"))
         case "tool.call":
-            args = raw.get("args")
+            # The call happened even with garbled args, and the preview is display-only downstream.
             return journal.ToolCall(
-                name=_text(raw, "name"),
-                # The call happened even with garbled args, and args is display-only downstream.
-                args=args if isinstance(args, dict) else {},
-                call_id=_call_id(raw),
+                name=_text(raw, "name"), args_preview=call_args(raw), call_id=_call_id(raw)
             )
         case "tool.result":
             return journal.ToolResult(
@@ -278,6 +300,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 ok=tool_result_ok(raw.get("ok")),
                 summary=readable_summary(raw.get("summary", "")),
                 call_id=_call_id(raw),
+                **{key: raw[key] for key in _OUTCOME_KEYS if key in raw},
             )
         case "verify.start":
             return journal.VerifyStart(

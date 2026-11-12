@@ -446,6 +446,8 @@ class MetricResult(ToolResult):
     score: float | None
     timeout_s: float = 0.0
     timed_out: bool = False
+    stdout_truncated: bool | None = None
+    stderr_truncated: bool | None = None
 
     @classmethod
     def from_exec(cls, res: ExecResult, score: float | None) -> MetricResult:
@@ -472,6 +474,8 @@ class MetricResult(ToolResult):
             score=score,
             timeout_s=res.timeout_s,
             timed_out=res.timed_out,
+            stdout_truncated=res.stdout_truncated,
+            stderr_truncated=res.stderr_truncated,
         )
 
     def to_wire(self) -> dict[str, Any]:

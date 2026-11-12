@@ -83,8 +83,7 @@ class PendingItems:
             the done line's.
         """
         name = str(event.get("name", ""))
-        raw_args = event.get("args")
-        args = raw_args if isinstance(raw_args, dict) else {}
+        args = viewmodel_events.call_args(event)
         if name in viewmodel_events.FINISH_TOOLS:
             return []
         key = _pending_key(event, name)

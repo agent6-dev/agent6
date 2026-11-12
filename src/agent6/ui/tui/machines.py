@@ -93,7 +93,7 @@ def _discrete_log_line(evt: dict[str, object], *, in_flight: bool = False) -> ri
             f"  → {evt.get('role', '')}/{evt.get('model', '')}{mark}", style="cyan"
         )
     if t == "tool.call":
-        args = json.dumps(evt.get("args", {}), default=str)
+        args = json.dumps(viewmodel_events.call_args(evt), default=str)
         if len(args) > 80:
             args = args[:77] + "…"
         return rich_text.Text(f"  ⚙ {evt.get('name', '')} {args}", style="yellow")

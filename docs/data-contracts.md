@@ -229,7 +229,7 @@ Read logs.jsonl rows into the journal's records, with the coercions old run dirs
 Public fields: [Formats](formats.md#journal).
 
 - **Written by:** viewmodel/events
-- **Read by:** harness/review_session, ui/cli/{console_render, machine_cmds, plan_watch, repl}, ui/tui/machines, viewmodel/{__init__, listing, log_line, review, session_log, state, state_view, transcript, transcript_items, transcript_text}
+- **Read by:** harness/review_session, ui/cli/{ask, console_render, machine_cmds, plan_watch, repl}, ui/tui/machines, viewmodel/{__init__, listing, log_line, review, session_log, state, state_view, telemetry, transcript, transcript_items, transcript_text}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (7 test files exercise it)
 
 ## MachineSpec

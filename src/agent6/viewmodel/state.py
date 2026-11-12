@@ -231,7 +231,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 ),
             )
 
-        case journal.ToolCall(name=name, args=raw_args, call_id=cid):
+        case journal.ToolCall(name=name, args_preview=raw_args, call_id=cid):
             tc = state_types.ToolCallView(
                 name=name,
                 args_preview=log_line.render_args(raw_args),

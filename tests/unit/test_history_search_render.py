@@ -517,7 +517,7 @@ def test_a_line_that_is_not_utf8_still_parses_from_its_bytes() -> None:
     """Rg's base64 `bytes` line decodes with U+FFFD, keeping the hit's kind and snippet."""
     event = (
         b'{"type": "tool.call", "ts": "2026-09-02T09:15:30+00:00", "name": "run_command",'
-        b' "args": {"argv": ["grep", "caf\xe9 NEEDLE"]}}'
+        b' "args_preview": {"argv": ["grep", "caf\xe9 NEEDLE"]}}'
     )
     start = event.index(b"NEEDLE")
     rec = {

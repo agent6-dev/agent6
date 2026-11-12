@@ -1020,7 +1020,7 @@ def _write_finish_log(tmp_path: pathlib.Path, session_id: str, *, stop_reason: s
     )
     events = [
         {"type": "session.start", "mode": "run"},
-        {"type": "tool.call", "name": "finish_session", "args": {"summary": summary}},
+        {"type": "tool.call", "name": "finish_session", "args_preview": {"summary": summary}},
         {"type": "session.stop", "reason": stop_reason, "verification": "passed"},
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
@@ -1232,7 +1232,11 @@ def test_model_squash_uses_the_whole_run(
         events.extend(
             [
                 {"type": event_type, "user_task": task},
-                {"type": "tool.call", "name": "finish_session", "args": {"summary": summary}},
+                {
+                    "type": "tool.call",
+                    "name": "finish_session",
+                    "args_preview": {"summary": summary},
+                },
                 {"type": "session.stop", "reason": reason, "verification": "passed"},
             ]
         )

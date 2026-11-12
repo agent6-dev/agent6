@@ -852,7 +852,8 @@ def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs
     # No session.stop: the worker was killed while the turn's command ran.
     layout.logs_path.write_text(
         '{"type": "session.start", "mode": "run", "user_task": "t"}\n'
-        '{"type": "tool.call", "name": "run_command", "args": {"argv": ["sh", "gen.sh"]}}\n',
+        '{"type": "tool.call", "name": "run_command", "args_preview": {"argv": ["sh", "gen.sh"]}}'
+        "\n",
         encoding="utf-8",
     )
     snapshot = loop_snapshot.SessionSnapshot(

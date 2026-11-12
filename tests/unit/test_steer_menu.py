@@ -111,7 +111,7 @@ def test_pause_menu_slash_commands(
                         }
                     },
                 },
-                {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+                {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
                 {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
             )
         ),

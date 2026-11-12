@@ -43,7 +43,7 @@ def test_logscreen_renders_structural_events(tmp_path: pathlib.Path) -> None:
             "user_task": "do x",
             "ts": "2026-06-22T01:02:03.4Z",
         },
-        {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}, "ts": "t"},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}, "ts": "t"},
         {"type": "verify.end", "exit_code": 0, "duration_s": 1.2, "ts": "t"},
         {"type": "session.stop", "verification": "passed", "ts": "t"},
     ]
@@ -92,7 +92,7 @@ def test_logscreen_skips_the_loop_mirrors_like_the_dashboard_tail(tmp_path: path
         logs,
         [
             {"type": "loop.tool.call", "turn": 1, "ts": "t"},
-            {"type": "tool.call", "name": "read_file", "args": {"path": "a"}, "ts": "t"},
+            {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a"}, "ts": "t"},
             {"type": "loop.budget", "turn": 1, "ts": "t"},
             {"type": "budget.update", "input_total": 1, "output_total": 2, "ts": "t"},
         ],
@@ -146,5 +146,7 @@ def test_logscreen_empty_log(tmp_path: pathlib.Path) -> None:
 
 
 def test_format_log_line_is_public_and_compact() -> None:
-    line = log_line.format_log_line({"type": "tool.call", "name": "grep", "args": {}, "ts": "t"})
+    line = log_line.format_log_line(
+        {"type": "tool.call", "name": "grep", "args_preview": {}, "ts": "t"}
+    )
     assert "tool.call" in line and "grep" in line

@@ -166,7 +166,7 @@ def test_run_snapshot_matches_watch_json(
         "willing-glen-001",
         [
             {"type": "session.start", "user_task": "demo"},
-            {"type": "tool.call", "name": "grep", "args": {"q": "x"}},
+            {"type": "tool.call", "name": "grep", "args_preview": {"q": "x"}},
             {"type": "tool.result", "name": "grep", "ok": True, "summary": "1 hit"},
         ],
     )
@@ -514,7 +514,7 @@ def test_run_conversation_endpoint(
         "run-c",
         [
             {"type": "session.start", "mode": "run", "user_task": "task c"},
-            {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+            {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
@@ -1215,7 +1215,7 @@ def test_sse_run_catchup_folds_history_into_few_frames(
     _srv, port = server
     events: list[dict[str, object]] = [{"type": "session.start", "user_task": "big"}]
     for i in range(150):
-        events.append({"type": "tool.call", "name": f"t{i}", "args": {}})
+        events.append({"type": "tool.call", "name": f"t{i}", "args_preview": {}})
         events.append({"type": "tool.result", "name": f"t{i}", "ok": True, "summary": "ok"})
     events.append({"type": "session.stop", "verification": "passed"})
     _make_run(tmp_path, "big-run", events)

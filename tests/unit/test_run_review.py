@@ -36,9 +36,9 @@ _EVENTS: list[dict[str, Any]] = [
         "user_task": "fix the parser",
     },
     {"type": "role.result", "role": "worker", "text": "Reading the parser."},
-    {"type": "tool.call", "name": "read_file", "args": {"path": "src/p.py"}, "call_id": 1},
+    {"type": "tool.call", "name": "read_file", "args_preview": {"path": "src/p.py"}, "call_id": 1},
     {"type": "tool.result", "name": "read_file", "ok": True, "summary": "40 bytes", "call_id": 1},
-    {"type": "tool.call", "name": "run_command", "args": {"cmd": "pytest"}, "call_id": 2},
+    {"type": "tool.call", "name": "run_command", "args_preview": {"cmd": "pytest"}, "call_id": 2},
     {
         "type": "tool.result",
         "name": "run_command",

@@ -61,7 +61,7 @@ def _mk(
 
 
 _START: dict[str, object] = {"type": "session.start", "mode": "run", "user_task": "t"}
-_TOOL: dict[str, object] = {"type": "tool.call", "name": "grep", "args": {}}
+_TOOL: dict[str, object] = {"type": "tool.call", "name": "grep", "args_preview": {}}
 _APPROVAL: dict[str, object] = {"type": "approval.prompt", "id": "approval-1", "prompt": "ok?"}
 _QUESTION: dict[str, object] = {
     "type": "question.prompt",

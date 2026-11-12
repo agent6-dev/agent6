@@ -235,7 +235,12 @@ def test_load_replays_the_recorded_conversation_before_answering(tmp_path: pathl
         {"type": "role.text_delta", "text": "I will "},
         {"type": "role.text_delta", "text": "inspect it."},
         {"type": "role.result", "role": "worker", "text": "I will inspect it."},
-        {"type": "tool.call", "call_id": 1, "name": "read_file", "args": {"path": "parser.py"}},
+        {
+            "type": "tool.call",
+            "call_id": 1,
+            "name": "read_file",
+            "args_preview": {"path": "parser.py"},
+        },
         {
             "type": "tool.result",
             "call_id": 1,
@@ -316,7 +321,12 @@ def test_loaded_executions_keep_distinct_tools_and_resume_the_same_run(
     """Replayed call ids cannot collide across executions or with the next prompt's calls."""
     cwd = _repo(tmp_path)
     d = _record(cwd, "quiet-run-AAAAAA", "first", mtime=time.time())
-    call = {"type": "tool.call", "name": "run_command", "call_id": 1, "args": {"argv": ["pwd"]}}
+    call = {
+        "type": "tool.call",
+        "name": "run_command",
+        "call_id": 1,
+        "args_preview": {"argv": ["pwd"]},
+    }
     rows = [
         {"type": "session.start", "mode": "run", "user_task": "first"},
         call,

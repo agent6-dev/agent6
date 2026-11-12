@@ -381,9 +381,9 @@ def test_every_tool_expands_to_whole_arguments(
     words = "script " * 900 + "LAST SCRIPT BYTE"
     rows = [
         {"type": "session.start", "mode": "run", "user_task": "Show commands"},
-        {"type": "tool.call", "name": "run_command", "args": {"argv": ["sh", "-c", words]}},
+        {"type": "tool.call", "name": "run_command", "args_preview": {"argv": ["sh", "-c", words]}},
         {"type": "tool.result", "name": "run_command", "ok": True, "summary": "exit 0"},
-        {"type": "tool.call", "name": "run_verify_command", "args": {}},
+        {"type": "tool.call", "name": "run_verify_command", "args_preview": {}},
         {"type": "tool.result", "name": "run_verify_command", "ok": True, "summary": "exit 0"},
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]

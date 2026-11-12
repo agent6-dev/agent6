@@ -51,7 +51,7 @@ def _make_run(tmp_path: pathlib.Path) -> str:
         "\n".join(
             [
                 json.dumps({"type": "session.start", "user_task": "make x equal 2"}),
-                json.dumps({"type": "tool.call", "name": "apply_edit", "args": "m.py"}),
+                json.dumps({"type": "tool.call", "name": "apply_edit", "args_preview": "m.py"}),
                 json.dumps({"type": "verify.end", "exit_code": 0}),
                 json.dumps({"type": "session.stop", "reason": "finish_session", "turns": 3}),
             ]

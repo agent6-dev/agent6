@@ -61,7 +61,7 @@ def test_watch_run_json_snapshot(
         [
             {"type": "session.start", "mode": "run", "user_task": "demo\n" + "words " * 900},
             {"type": "budget.update", "usd_total": 0.25},
-            {"type": "tool.call", "name": "grep", "args": {"q": "x"}},
+            {"type": "tool.call", "name": "grep", "args_preview": {"q": "x"}},
         ],
     )
     assert main(["attach", "willing-glen-001", "--json"]) == 0
@@ -334,7 +334,7 @@ def test_attach_to_a_crashed_run_ends_readonly_with_a_truthful_line(
         "dead-run",
         [
             {"type": "session.start", "user_task": "t"},
-            {"type": "tool.call", "name": "run_command", "args": {}},
+            {"type": "tool.call", "name": "run_command", "args_preview": {}},
             {"type": "approval.prompt", "id": "approval-1", "prompt": "run?"},
         ],
     )
@@ -436,7 +436,7 @@ def test_attach_to_a_run_whose_pid_file_is_gone_does_not_follow_forever(
         "vanished-run",
         [
             {"type": "session.start", "user_task": "t"},
-            {"type": "tool.call", "name": "run_command", "args": {}},
+            {"type": "tool.call", "name": "run_command", "args_preview": {}},
         ],
     )
     monkeypatch.chdir(tmp_path)

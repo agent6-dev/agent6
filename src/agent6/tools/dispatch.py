@@ -363,7 +363,7 @@ class ToolDispatcher:
         preview = result_format.truncate_args(raw_input, max_value_chars=max_chars)
         # Concurrent review seats interleave events, and name-based pairing cross-stamps calls.
         cid = next(self._call_seq)
-        self._emit(journal.ToolCall(name=name, args=preview, call_id=cid))
+        self._emit(journal.ToolCall(name=name, args_preview=preview, call_id=cid))
         outer = self._gating_call_id()
         self._gating.call_id = cid
         try:
@@ -393,7 +393,7 @@ class ToolDispatcher:
                 ok=True,
                 summary=result.summary(),
                 call_id=cid,
-                **result_format.output_tails(name, result),
+                **result_format.tool_result_fields(name, result),
             )
         )
         return result
@@ -746,9 +746,11 @@ class ToolDispatcher:
             stdout_tail=res.stdout[-2000:],
             stderr_tail="" if res.exec_failed else res.stderr[-2000:],
             reason=res.stderr if res.exec_failed else "",
-            stdout_truncated=True if len(res.stdout) > 2000 else res.stdout_truncated,
+            stdout_truncated=result_format.tail_truncated(res.stdout, res.stdout_truncated),
             stderr_truncated=(
-                False if res.exec_failed else len(res.stderr) > 2000 or res.stderr_truncated
+                False
+                if res.exec_failed
+                else result_format.tail_truncated(res.stderr, res.stderr_truncated)
             ),
         )
         self.last_verification = record

@@ -79,5 +79,19 @@ def test_coercion_matches_the_folds_historical_defaults() -> None:
     assert isinstance(stop, journal.SessionStop) and ev.verification_word(stop.verification) is None
     assert isinstance(ev.parse_event({"type": "verify.end", "exit_code": "x"}), ev.RawEvent)
     # A tool call without an id reads None, so the fold matches its result by name.
-    call = ev.parse_event({"type": "tool.call", "name": "read_file", "args": {}})
+    call = ev.parse_event({"type": "tool.call", "name": "read_file", "args_preview": {}})
     assert isinstance(call, journal.ToolCall) and call.call_id is None
+    # A journal written before the rename keys the preview `args`.
+    old = ev.parse_event({"type": "tool.call", "name": "read_file", "args": {"path": "a"}})
+    assert isinstance(old, journal.ToolCall) and old.args_preview == {"path": "a"}
+    # A command's outcome rides along; a row without one leaves the fields unset.
+    done = ev.parse_event(
+        {
+            "type": "tool.result",
+            "name": "run_command",
+            "ok": True,
+            "summary": "exit=1",
+            "exit_code": 1,
+        }
+    )
+    assert isinstance(done, journal.ToolResult) and done.exit_code == 1 and done.duration_s is None

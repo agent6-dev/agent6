@@ -12,7 +12,7 @@ def _read(path: str) -> list[dict[str, object]]:
         {"type": "role.call", "role": "worker"},
         {"type": "role.thinking_delta", "text": "let me look"},
         {"type": "role.result"},
-        {"type": "tool.call", "name": "read_file", "args": {"path": path}},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": path}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
     ]
 
@@ -25,7 +25,7 @@ def test_memory_tool_paths_keep_the_filename_on_every_surface() -> None:
     path = str(paths.state_base() / ("long-repo-id-" * 10) / "memory/calculator-validation.md")
     args = {"path": path, "new_string": "A fact."}
     events = [
-        {"type": "tool.call", "name": "apply_edit", "args": args},
+        {"type": "tool.call", "name": "apply_edit", "args_preview": args},
         {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "created"},
     ]
     label = "repo memory/calculator-validation.md"
@@ -96,7 +96,11 @@ def test_done_line_says_why_a_stopped_run_ended() -> None:
     """A stop carries its journaled summary, never an earlier finish call's success prose."""
     items = fold_transcript(
         [
-            {"type": "tool.call", "name": "finish_session", "args": {"summary": "not finished"}},
+            {
+                "type": "tool.call",
+                "name": "finish_session",
+                "args_preview": {"summary": "not finished"},
+            },
             {
                 "type": "session.stop",
                 "reason": "steer_abort",
@@ -121,7 +125,7 @@ def test_tool_only_turn_has_no_empty_text_item() -> None:
 def test_verify_badge_replaces_the_tool_item() -> None:
     """A model verify call ends as one verify item carrying the gate's badge, not a tool item."""
     events = [
-        {"type": "tool.call", "name": "run_verify_command", "args": {}},
+        {"type": "tool.call", "name": "run_verify_command", "args_preview": {}},
         {"type": "verify.start", "cmd": ["pytest"]},
         {"type": "verify.end", "exit_code": 0, "duration_s": 0.2},
         {"type": "tool.result", "name": "run_verify_command", "ok": True, "summary": "exit=0"},
@@ -133,7 +137,7 @@ def test_verify_badge_replaces_the_tool_item() -> None:
 
 def test_finish_tool_becomes_the_verdict_not_a_step() -> None:
     events = [
-        {"type": "tool.call", "name": "finish_session", "args": {"summary": "all green"}},
+        {"type": "tool.call", "name": "finish_session", "args_preview": {"summary": "all green"}},
         {"type": "tool.result", "name": "finish_session", "ok": True, "summary": "finish_session"},
         {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
     ]
@@ -150,7 +154,11 @@ def test_a_plans_finish_summary_pairs_with_its_done_line() -> None:
     Every surface showed a bare "done" for plans.
     """
     events = [
-        {"type": "tool.call", "name": "finish_planning", "args": {"summary": "Plan seeded."}},
+        {
+            "type": "tool.call",
+            "name": "finish_planning",
+            "args_preview": {"summary": "Plan seeded."},
+        },
         {"type": "tool.result", "name": "finish_planning", "ok": True, "summary": "ok"},
         {"type": "session.stop", "verification": "passed", "reason": "finish_planning"},
     ]
@@ -160,7 +168,7 @@ def test_a_plans_finish_summary_pairs_with_its_done_line() -> None:
 
 def test_failed_tool_keeps_a_tail() -> None:
     events = [
-        {"type": "tool.call", "name": "run_command", "args": {"command": "ls /nope"}},
+        {"type": "tool.call", "name": "run_command", "args_preview": {"command": "ls /nope"}},
         {
             "type": "tool.result",
             "name": "run_command",
@@ -177,7 +185,7 @@ def test_tool_output_ansi_is_stripped_from_the_fold() -> None:
     # The fold is plain data for non-terminal surfaces (web/saved transcripts):
     # colored tool output must not leak escape sequences as literal text.
     events = [
-        {"type": "tool.call", "name": "run_command", "args": {"command": "pytest"}},
+        {"type": "tool.call", "name": "run_command", "args_preview": {"command": "pytest"}},
         {
             "type": "tool.result",
             "name": "run_command",
@@ -305,8 +313,8 @@ def test_interleaved_tool_calls_pair_by_name() -> None:
     # across tools; each result must pair with its own call by name, not with the
     # next pending call by position.
     events = [
-        {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
-        {"type": "tool.call", "name": "grep", "args": {"pattern": "def"}},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
+        {"type": "tool.call", "name": "grep", "args_preview": {"pattern": "def"}},
         {"type": "tool.result", "name": "grep", "ok": False, "summary": "no match"},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
     ]
@@ -322,8 +330,8 @@ def test_same_name_concurrent_calls_pair_by_call_id() -> None:
     # call_id (stamped per dispatch) pairs each result with its own call, even
     # out of call order.
     events = [
-        {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}, "call_id": 1},
-        {"type": "tool.call", "name": "read_file", "args": {"path": "b.py"}, "call_id": 2},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}, "call_id": 1},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "b.py"}, "call_id": 2},
         {
             "type": "tool.result",
             "name": "read_file",
@@ -491,9 +499,9 @@ def test_restate_compacts_since_the_last_operator_input() -> None:
         {"type": "role.call", "role": "worker"},
         {"type": "role.text_delta", "text": "on it"},
         {"type": "role.result"},
-        {"type": "tool.call", "name": "read_file", "args": {"path": "parser.py"}},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "parser.py"}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
-        {"type": "tool.call", "name": "apply_edit", "args": {"path": "parser.py"}},
+        {"type": "tool.call", "name": "apply_edit", "args_preview": {"path": "parser.py"}},
         {"type": "tool.result", "name": "apply_edit", "ok": False, "summary": "no match"},
     ]
     text = restate(events)
@@ -515,7 +523,7 @@ def test_done_item_is_a_receipt_when_the_journal_carries_the_pieces() -> None:
     """
     events = [
         {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "user_task": "t"},
-        {"type": "tool.call", "name": "apply_edit", "args": {"path": "a.py"}},
+        {"type": "tool.call", "name": "apply_edit", "args_preview": {"path": "a.py"}},
         {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "ok"},
         {"type": "budget.update", "usd_total": 0.0112},
         {
@@ -524,7 +532,7 @@ def test_done_item_is_a_receipt_when_the_journal_carries_the_pieces() -> None:
             "subject": "fix median for even length",
         },
         {"type": "diff.updated", "sha": "abc123", "patch": "+x\n-y\n"},
-        {"type": "tool.call", "name": "finish_session", "args": {"summary": "Fixed."}},
+        {"type": "tool.call", "name": "finish_session", "args_preview": {"summary": "Fixed."}},
         {
             "type": "session.stop",
             "ts": "2026-08-09T20:00:45+00:00",
@@ -554,7 +562,7 @@ def test_the_receipt_spells_dollars_the_way_every_other_surface_does() -> None:
 
 def test_done_item_degrades_to_counts_on_a_journal_without_receipt_fields() -> None:
     events = [
-        {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a"}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
@@ -568,7 +576,7 @@ def test_tool_items_carry_bounded_previews() -> None:
     An old journal without the fields folds to no tail.
     """
     events = [
-        {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
         {
             "type": "tool.result",
             "name": "read_file",
@@ -580,7 +588,7 @@ def test_tool_items_carry_bounded_previews() -> None:
         {
             "type": "tool.call",
             "name": "apply_edit",
-            "args": {
+            "args_preview": {
                 "path": "a.py",
                 "edits": [
                     {"old_string": "return 1", "new_string": "return 2"},
@@ -589,7 +597,7 @@ def test_tool_items_carry_bounded_previews() -> None:
             },
         },
         {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "ok"},
-        {"type": "tool.call", "name": "read_file", "args": {"path": "old.py"}},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "old.py"}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
     ]
     tools = [it for it in fold_transcript(events) if it.kind == "tool"]
@@ -604,7 +612,7 @@ def test_edit_preview_shows_the_changed_lines_only() -> None:
         {
             "type": "tool.call",
             "name": "apply_edit",
-            "args": {
+            "args_preview": {
                 "path": "calc.py",
                 "edits": [
                     {
@@ -638,7 +646,7 @@ def test_an_asks_receipt_carries_no_commit_count() -> None:
     """
     ask = [
         {"type": "session.start", "mode": "ask", "user_task": "why?"},
-        {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a"}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
         {"type": "session.stop", "reason": "answered", "verification": "unverified"},
     ]
@@ -725,7 +733,7 @@ def test_a_resumed_executions_receipt_is_its_own() -> None:
     """
     events = [
         {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "user_task": "t"},
-        {"type": "tool.call", "name": "apply_edit", "args": {"path": "a.py"}},
+        {"type": "tool.call", "name": "apply_edit", "args_preview": {"path": "a.py"}},
         {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "ok"},
         {"type": "loop.auto_commit", "sha": "abc123", "subject": "first"},
         {"type": "diff.updated", "sha": "abc123", "patch": "+x\n"},
@@ -733,7 +741,7 @@ def test_a_resumed_executions_receipt_is_its_own() -> None:
         {"type": "session.stop", "ts": "2026-08-09T20:00:45+00:00", "reason": "stopped"},
         {"type": "session.resume", "ts": "2026-08-09T20:10:00+00:00", "user_task": "t"},
         {"type": "budget.update", "usd_total": 0.002},
-        {"type": "tool.call", "name": "finish_session", "args": {"summary": "Done."}},
+        {"type": "tool.call", "name": "finish_session", "args_preview": {"summary": "Done."}},
         {
             "type": "session.stop",
             "ts": "2026-08-09T20:10:03+00:00",
@@ -779,7 +787,7 @@ def test_a_tool_call_is_in_flight_until_its_result_settles_it() -> None:
     """
     from agent6.viewmodel import transcript
 
-    call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
+    call = {"type": "tool.call", "name": "run_command", "args_preview": {"argv": ["sleep", "60"]}}
     result = {"type": "tool.result", "name": "run_command", "ok": True, "summary": "exit 0"}
     fold = transcript.TranscriptFold()
     (pending,) = fold.feed({**call, "call_id": 7})
@@ -801,7 +809,12 @@ def test_an_approval_prompt_marks_the_call_it_gates_as_awaiting() -> None:
     """
     from agent6.viewmodel import transcript
 
-    call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1}
+    call = {
+        "type": "tool.call",
+        "name": "run_command",
+        "args_preview": {"argv": ["ls"]},
+        "call_id": 1,
+    }
     prompt = {
         "type": "approval.prompt",
         "id": "approval-1",
@@ -829,8 +842,13 @@ def test_a_prompt_marks_the_call_it_names_not_the_newest_in_flight() -> None:
     """
     from agent6.viewmodel import transcript
 
-    gated = {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1}
-    newest = {"type": "tool.call", "name": "read_file", "args": {"path": "x"}, "call_id": 2}
+    gated = {
+        "type": "tool.call",
+        "name": "run_command",
+        "args_preview": {"argv": ["ls"]},
+        "call_id": 1,
+    }
+    newest = {"type": "tool.call", "name": "read_file", "args_preview": {"path": "x"}, "call_id": 2}
     prompt = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow", "call_id": 1}
     answer = {"type": "approval.answer", "id": "approval-1", "approved": True}
     fold = transcript.TranscriptFold()
@@ -855,7 +873,7 @@ def test_a_question_prompt_marks_the_ask_user_call_as_awaiting() -> None:
     call = {
         "type": "tool.call",
         "name": "ask_user",
-        "args": {"questions": ["which?"]},
+        "args_preview": {"questions": ["which?"]},
         "call_id": 1,
     }
     prompt = {
@@ -882,7 +900,7 @@ def test_a_dead_workers_open_call_settles_for_a_reader_that_knows() -> None:
     """A worker killed without a session.stop leaves its last call open; the prober settles it."""
     events = [
         {"type": "session.start", "user_task": "x"},
-        {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}},
+        {"type": "tool.call", "name": "run_command", "args_preview": {"argv": ["sleep", "60"]}},
     ]
     (_headline, item) = fold_transcript(events)
     assert item.ok is None
@@ -897,8 +915,8 @@ def test_a_dead_workers_open_call_settles_for_a_reader_that_knows() -> None:
 def test_a_second_id_less_call_under_one_name_supersedes_the_first() -> None:
     """A journal with no call ids pairs by name without orphaning a repeated name in flight."""
     events = [
-        {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
-        {"type": "tool.call", "name": "read_file", "args": {"path": "b.py"}},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "b.py"}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "b bytes"},
     ]
     assert [(i.arg, i.ok, i.detail) for i in fold_transcript(events)] == [
@@ -909,7 +927,7 @@ def test_a_second_id_less_call_under_one_name_supersedes_the_first() -> None:
 
 def test_a_execution_boundary_settles_a_call_that_never_returned() -> None:
     """A call still open at session.stop or the next execution's start settles as not returned."""
-    call = {"type": "tool.call", "name": "run_verify_command", "args": {}, "call_id": 3}
+    call = {"type": "tool.call", "name": "run_verify_command", "args_preview": {}, "call_id": 3}
     items = fold_transcript([call, {"type": "session.stop", "reason": "crashed"}])
     assert [i.kind for i in items] == ["tool", "done"]
     assert items[0].ok is False and items[0].call_id == "3" and "no result" in items[0].detail
@@ -920,7 +938,7 @@ def test_a_execution_boundary_settles_a_call_that_never_returned() -> None:
 def test_restate_names_a_call_still_running() -> None:
     events = [
         {"type": "session.start", "user_task": "wait a bit"},
-        {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}},
+        {"type": "tool.call", "name": "run_command", "args_preview": {"argv": ["sleep", "60"]}},
     ]
     assert "[running] run_command sleep 60" in restate(events)
 
@@ -1026,7 +1044,7 @@ def test_the_end_label_reads_the_gate_the_model_ran_and_a_stranded_finish() -> N
     items = fold_transcript(
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "tool.call", "name": "run_verify_command", "args": {}, "call_id": 1},
+            {"type": "tool.call", "name": "run_verify_command", "args_preview": {}, "call_id": 1},
             {
                 "type": "verify.end",
                 "exit_code": 124,
@@ -1070,7 +1088,7 @@ def test_a_queued_question_and_its_late_answer_read_as_markers() -> None:
     call = {
         "type": "tool.call",
         "name": "ask_user",
-        "args": {"questions": ["which?"]},
+        "args_preview": {"questions": ["which?"]},
         "call_id": 1,
     }
     queued = {
@@ -1109,10 +1127,10 @@ def test_media_result_renders_metadata_on_shared_and_acp_surfaces() -> None:
     from agent6.viewmodel import transcript_style
 
     result = results.ReadMediaResult(kinds.MediaAttachment(b"x" * 2048, "image/png", "page.png"))
-    tails = result_format.output_tails("read_file", result)
+    tails = result_format.tool_result_fields("read_file", result)
     assert tails["attachment"] == result.attachment.metadata()
     events = [
-        {"type": "tool.call", "name": "read_file", "args": {"path": "page.png"}},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "page.png"}},
         {
             "type": "tool.result",
             "name": "read_file",

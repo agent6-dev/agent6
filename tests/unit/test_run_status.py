@@ -184,7 +184,7 @@ def test_status_waiting_when_blocked_on_an_operator_answer(
     ("last", "detail"),
     [
         ({"type": "verify.start", "cmd": ["pytest"], "timeout_s": 1800}, "verify command running"),
-        ({"type": "tool.call", "name": "run_command", "args": {}}, "tool call running"),
+        ({"type": "tool.call", "name": "run_command", "args_preview": {}}, "tool call running"),
         ({"type": "role.call", "role": "worker"}, "provider call in flight"),
         ({"type": "role.text_delta", "role": "worker", "text": "x"}, "provider call in flight"),
         ({"type": "loop.auto_commit"}, "long step"),

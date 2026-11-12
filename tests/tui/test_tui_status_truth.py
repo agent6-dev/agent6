@@ -211,7 +211,11 @@ def test_a_finished_plans_deliverable_is_in_the_stream_pane(tmp_path: pathlib.Pa
     )
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "plan", "user_task": "lay it out"},
-        {"type": "tool.call", "name": "finish_planning", "args": {"summary": "Plan seeded."}},
+        {
+            "type": "tool.call",
+            "name": "finish_planning",
+            "args_preview": {"summary": "Plan seeded."},
+        },
         {"type": "tool.result", "name": "finish_planning", "ok": True, "summary": "ok"},
         {"type": "session.stop", "reason": "finish_planning", "verification": "passed"},
     ]
@@ -247,7 +251,7 @@ def test_a_failed_finish_attempt_is_not_the_runs_end_story(tmp_path: pathlib.Pat
         {
             "type": "tool.call",
             "name": "finish_session",
-            "args": {"summary": "Everything passed."},
+            "args_preview": {"summary": "Everything passed."},
         },
         {
             "type": "tool.result",
@@ -657,7 +661,11 @@ def test_a_dead_workers_open_call_settles_into_the_scrollback(tmp_path: pathlib.
     with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(
             json.dumps(
-                {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
+                {
+                    "type": "tool.call",
+                    "name": "run_command",
+                    "args_preview": {"argv": ["sleep", "60"]},
+                }
             )
             + "\n"
         )
@@ -901,7 +909,7 @@ def test_a_finished_log_is_folded_before_the_first_paint(
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
         {"type": "role.call", "role": "worker", "model": "last-model", "provider": "p"},
         {"type": "role.result", "role": "worker", "ok": True, "text": "done"},
-        {"type": "tool.call", "name": "finish_session", "args": {"summary": "All done."}},
+        {"type": "tool.call", "name": "finish_session", "args_preview": {"summary": "All done."}},
         {"type": "tool.result", "name": "finish_session", "ok": True, "summary": "ok"},
         {"type": "session.stop", "reason": "finish_session", "turns": 1, "verification": "passed"},
     ]
@@ -965,7 +973,7 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
         {
             "type": "tool.call",
             "name": "finish_session",
-            "args": {"summary": "First execution done."},
+            "args_preview": {"summary": "First execution done."},
         },
         {"type": "tool.result", "name": "finish_session", "ok": True, "summary": "ok"},
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},

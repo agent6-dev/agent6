@@ -59,7 +59,7 @@ def _journal() -> list[dict[str, Any]]:
             "type": "tool.call",
             "ts": _ts(3),
             "name": "run_command",
-            "args": {"argv": ["rm", "-rf", "build"]},
+            "args_preview": {"argv": ["rm", "-rf", "build"]},
             "call_id": 1,
         },
         {"type": "approval.prompt", "ts": _ts(3), "id": "a1", "prompt": "Run rm?", "call_id": 1},
@@ -69,8 +69,9 @@ def _journal() -> list[dict[str, Any]]:
             "ts": _ts(10),
             "name": "run_command",
             "ok": True,
-            "summary": "rc=0",
+            "summary": "exit=0 in 0.1s",
             "call_id": 1,
+            "exit_code": 0,
         },
         {"type": "verify.start", "ts": _ts(10), "verify_id": "v1", "cmd": ["pytest"]},
         {
@@ -252,6 +253,7 @@ def test_content_capture_adds_only_the_capped_excerpts() -> None:
         and task.endswith("…")
     )
     assert "rm" in str(_attr(named[telemetry_records.SPAN_TOOL], "agent6.tool.args"))
+    assert _attr(named[telemetry_records.SPAN_TOOL], "agent6.tool.exit_code") == 0
     assert _attr(named[telemetry_records.SPAN_VERIFY], "agent6.verify.cmd") == "pytest"
 
 

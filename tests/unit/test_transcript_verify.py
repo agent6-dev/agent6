@@ -12,7 +12,7 @@ def attempt(*, model: bool = False, verify_id: str = "v1") -> list[dict[str, Any
     call = {"call_id": 7} if model else {}
     rows: list[dict[str, Any]] = []
     if model:
-        rows.append({"type": "tool.call", "name": "run_verify_command", "args": {}, **call})
+        rows.append({"type": "tool.call", "name": "run_verify_command", "args_preview": {}, **call})
     rows.extend(
         [
             {

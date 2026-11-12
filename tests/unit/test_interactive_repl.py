@@ -375,7 +375,12 @@ def test_watch_shows_audit_events_not_streaming_fragments(
     layout.session_dir.mkdir(parents=True)
     events: list[dict[str, object]] = [
         {"type": "session.start", "ts": "2026-01-01T00:00:00Z", "user_task": "t"},
-        {"type": "tool.call", "ts": "2026-01-01T00:00:01Z", "name": "read_file", "args": {}},
+        {
+            "type": "tool.call",
+            "ts": "2026-01-01T00:00:01Z",
+            "name": "read_file",
+            "args_preview": {},
+        },
         {"type": "loop.tool.call", "ts": "2026-01-01T00:00:01Z", "name": "read_file"},
         *(
             {"type": "role.thinking_delta", "ts": "2026-01-01T00:00:02Z", "text": f"w{i}"}

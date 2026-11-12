@@ -40,7 +40,7 @@ _EVENTS: list[dict[str, object]] = [
     {"type": "role.thinking_delta", "role": "worker", "text": "thinking hard here\nsecond thought"},
     {"type": "role.text_delta", "role": "worker", "text": "on it"},
     {"type": "role.result", "role": "worker"},
-    {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
+    {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a"}},
     {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
     {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
 ]
@@ -147,7 +147,7 @@ def test_an_unrendered_finish_call_with_bad_args_does_not_crash_the_screen(
     """A corrupt finish call's non-object args do not take down the conversation screen."""
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "do X"},
-        {"type": "tool.call", "name": "finish_session", "args": "not an object"},
+        {"type": "tool.call", "name": "finish_session", "args_preview": "not an object"},
         {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
     ]
 
@@ -310,7 +310,7 @@ def test_follow_survives_the_live_pane_growing(tmp_path: pathlib.Path) -> None:
     events: list[dict[str, object]] = [{"type": "session.start", "user_task": "x"}]
     for i in range(20):  # overflow a short viewport
         more: list[dict[str, object]] = [
-            {"type": "tool.call", "name": "read_file", "args": {"path": f"f{i}"}},
+            {"type": "tool.call", "name": "read_file", "args_preview": {"path": f"f{i}"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": f"{i} bytes"},
         ]
         events += more
@@ -345,7 +345,7 @@ def test_detail_cycle_keeps_the_top_block_anchored(tmp_path: pathlib.Path) -> No
     # Expanding a big block above the viewport keeps the block at the top of the viewport in place.
     events: list[dict[str, object]] = [{"type": "session.start", "user_task": "x"}]
     big: list[dict[str, object]] = [
-        {"type": "tool.call", "name": "apply_edit", "args": {"path": "b"}},
+        {"type": "tool.call", "name": "apply_edit", "args_preview": {"path": "b"}},
         {
             "type": "tool.result",
             "name": "apply_edit",
@@ -356,7 +356,7 @@ def test_detail_cycle_keeps_the_top_block_anchored(tmp_path: pathlib.Path) -> No
     events += big
     for i in range(15):
         row: list[dict[str, object]] = [
-            {"type": "tool.call", "name": "grep", "args": {"pattern": f"m{i}"}},
+            {"type": "tool.call", "name": "grep", "args_preview": {"pattern": f"m{i}"}},
             {"type": "tool.result", "name": "grep", "ok": True, "summary": f"{i} hits"},
         ]
         events += row
@@ -580,7 +580,7 @@ def test_an_in_flight_tool_call_shows_in_the_live_pane_then_settles(tmp_path: pa
     """
     run = tmp_path / "run"
     logs = run / "logs.jsonl"
-    call = {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}}
+    call = {"type": "tool.call", "name": "run_command", "args_preview": {"argv": ["sleep", "60"]}}
 
     async def scenario() -> None:
         app = _hosted(run, [_EVENTS[0], {**call, "call_id": 1}], live=True)
@@ -646,7 +646,12 @@ def test_the_live_pane_says_awaiting_approval_under_an_open_prompt(tmp_path: pat
     """
     events: list[dict[str, object]] = [
         _EVENTS[0],
-        {"type": "tool.call", "name": "run_command", "args": {"argv": ["ls"]}, "call_id": 1},
+        {
+            "type": "tool.call",
+            "name": "run_command",
+            "args_preview": {"argv": ["ls"]},
+            "call_id": 1,
+        },
         {"type": "approval.prompt", "id": "ap1", "prompt": "Allow run_command: ls", "call_id": 1},
     ]
 

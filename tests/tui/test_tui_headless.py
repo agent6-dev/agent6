@@ -1461,14 +1461,14 @@ def test_task_filter_scopes_tools_log_and_diff(tmp_path: pathlib.Path) -> None:
             "nodes": _nodes({"t1": "in_progress", "t2": "pending"}),
             "cursor": "t1",
         },
-        {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
         {"type": "diff.updated", "sha": "aaa", "patch": "diff --git a/a.py b/a.py\n+one"},
         {
             "type": "graph.update",
             "nodes": _nodes({"t1": "passed", "t2": "in_progress"}),
             "cursor": "t2",
         },
-        {"type": "tool.call", "name": "apply_edit", "args": {"path": "b.py"}},
+        {"type": "tool.call", "name": "apply_edit", "args_preview": {"path": "b.py"}},
         {"type": "diff.updated", "sha": "bbb", "patch": "diff --git a/b.py b/b.py\n+two"},
     ]
     (tmp_path / "logs.jsonl").write_text(
@@ -1708,7 +1708,7 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: pathlib.Path) -> 
     append(
         [
             {"type": "session.start", "session_id": "live-02", "mode": "run", "user_task": "t"},
-            {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+            {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
         ]
     )
@@ -1728,7 +1728,7 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: pathlib.Path) -> 
             # The background process appends a new turn AFTER we attached.
             append(
                 [
-                    {"type": "tool.call", "name": "apply_edit", "args": {"path": "a.py"}},
+                    {"type": "tool.call", "name": "apply_edit", "args_preview": {"path": "a.py"}},
                     {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "applied"},
                 ]
             )
@@ -1824,7 +1824,7 @@ def test_the_hidden_detail_level_says_what_it_hides(tmp_path: pathlib.Path) -> N
     events = [
         {"type": "session.start", "mode": "run", "user_task": "look"},
         {"type": "role.thinking_delta", "text": "let me look"},
-        {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "40 lines"},
     ]
     (tmp_path / "logs.jsonl").write_text(
