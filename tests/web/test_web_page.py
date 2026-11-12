@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "37ddfa882e8948bc7aedf7a609943e8bca0573931495680e9ccb8d2d897abd16"
+PAGE_SHA256 = "3241b744eb1477928079dba4db51bd01d3c06fa02bd7de6beb7b7c6a4f3b3015"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -485,3 +485,10 @@ def test_every_global_key_is_listed_and_handled_from_one_table() -> None:
     assert client.count("\n  openPicker({") == 2  # the switcher and the palette call it
     assert "prefix: { key: '>', open: (rest) => openPalette(rest) }" in client
     assert "function openKeys()" in client and "el('table', 'keys')" in client
+
+
+def test_the_session_pages_merge_confirms_as_a_row_does() -> None:
+    """The session page merged on one click while a Sessions row asked first."""
+    run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
+    handler = run[run.index("mergeBtn.onclick") : run.index("cards._merge_btn = mergeBtn")]
+    assert "if (!await confirmMerge(r)) return;" in handler and "await postMerge(r);" in handler

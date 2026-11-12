@@ -58,11 +58,9 @@ async function renderRun(id, opts, gen) {
     compactBtn.onclick = post('compact', 'compaction requested');
     const mergeBtn = el('button', null, 'Merge'); // no glyph: U+2443 was tofu in common fonts
     mergeBtn.onclick = async () => {
-      try {
-        const d = await postJSON('/api/session/' + encodeURIComponent(id) + '/merge', {});
-        toast(d.message || 'merged');
-        paintRun(cards, await getJSON(base)); // the state and branch rows agree with the toast now
-      } catch (e) { toast(e.message, true); }
+      const r = { session_id: id };
+      if (!await confirmMerge(r)) return;
+      await postMerge(r); // routes again, so the state and branch rows agree with the toast
     };
     cards._merge_btn = mergeBtn; // paintRun gates it on the run actually having a branch
     const rmBtn = el('button', 'danger', 'Delete');
