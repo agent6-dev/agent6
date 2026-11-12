@@ -17,7 +17,6 @@ import pytest
 from agent6 import budget, directive, kinds, lane_records, paths
 from agent6.app import (
     lane_launch,
-    lane_watch,
     lanes,
     parallel_results,
     stop,
@@ -55,7 +54,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
     with lane_env.scripted_provider(cost_usd=panel_cost) as (url, calls):
         cfg = subordinate_env.config(url)
         _path, launch = subordinate_env.launch_worker(repo, clone, cfg, monkeypatch)
-        worker_dir = subordinate_env.create_record(clone, launch.session_id, parent="parent")
+        worker_dir = subordinate_env.create_record(repo, launch.session_id, parent="parent")
         parent = budget.BudgetTracker(max_usd=8, max_tokens_fallback=1000, max_plan_points=20)
         share = parent.available()  # the worker starts under all its parent has left
         worker = budget.BudgetTracker(
@@ -109,7 +108,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         panel_tokens = 2 if panel_cost is None else 0
         assert child.usage is not None and child.usage.tokens == panel_tokens
         assert worker.available().tokens == share.tokens - 5 - panel_tokens
-        leaf = layout.bucket_dir(paths.state_dir(clone), "read_only") / child.session_id
+        leaf = layout.bucket_dir(paths.state_dir(repo), "read_only") / child.session_id
         assert completion.read_completion(leaf) is not None
         assert len(calls) == 1 and "parallel" not in json.dumps(calls[0].get("tools", []))
         emitted = [
@@ -128,12 +127,12 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
                 spec, worker_dir, git_read.run_branch_for(worker_dir.name), True, ""
             ),
             repo,
-            paths.state_dir(repo),
             None,
         )
         workdirs.cleanup(
             [spec],
             origin=repo,
+            record_state=paths.state_dir(repo),
             workdir_root=short_repo,
             base=short_repo,
             launch_dir=lane_launch.launch_dir(paths.state_dir(repo), "parent-p1"),
@@ -177,7 +176,7 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
     with lane_env.scripted_provider() as (url, calls):
         cfg = subordinate_env.config(url)
         _path, launch = subordinate_env.launch_worker(repo, clone, cfg, monkeypatch)
-        worker_dir = subordinate_env.create_record(clone, launch.session_id, parent="parent")
+        worker_dir = subordinate_env.create_record(repo, launch.session_id, parent="parent")
         meter = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
         executor = subordinate_env.dispatcher(clone, worker_dir, cfg, meter)
         contract = kinds.ConversationContract(
@@ -249,7 +248,7 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
         )
         recovered = subordinate_env.dispatcher(clone, worker_dir, cfg, recovered_budget)
         recovered.lane_recoverer = lanes.build_lane_recoverer(
-            cfg, clone, paths.state_dir(clone), mode="run"
+            cfg, clone, paths.state_dir(repo), mode="run"
         )
         state = loop_state.LoopState(original_task="worker", tool_calls=0)
         conversation = loop_conversation.Conversation()
@@ -291,7 +290,7 @@ def test_subordinate_bootstrap_refuses_model_and_steer_parallel_even_with_flag_o
     ) as (url, calls):
         cfg = subordinate_env.config(url, tool=True)
         _path, launch = subordinate_env.launch_worker(repo, clone, cfg, monkeypatch)
-        worker_dir = layout.bucket_dir(paths.state_dir(clone), "runs") / launch.session_id
+        worker_dir = layout.bucket_dir(paths.state_dir(repo), "runs") / launch.session_id
         env = {**os.environ, "AGENT6_ALLOW_ROOT": "1", "AGENT6_STREAM_TO_LOG": "1"}
         proc = subprocess.run(
             lane_launch.bootstrap_argv(),
@@ -303,7 +302,7 @@ def test_subordinate_bootstrap_refuses_model_and_steer_parallel_even_with_flag_o
             check=False,
         )
     assert proc.returncode == 0, proc.stderr
-    worker_dir = layout.bucket_dir(paths.state_dir(clone), "runs") / launch.session_id
+    worker_dir = layout.bucket_dir(paths.state_dir(repo), "runs") / launch.session_id
     rows = [json.loads(line) for line in (worker_dir / "logs.jsonl").read_text().splitlines()]
     refusal = next(
         r for r in rows if r.get("type") == "tool.result" and r.get("name") == "parallel"
@@ -371,9 +370,9 @@ def test_import_retains_descendant_records_receipts_and_target_objects(
     subordinate_env.create_record(repo, "parent")
     clone = short_repo / "worker"
     subrun.clone_workspace(repo, clone)
-    worker = subordinate_env.create_record(clone, "parent-p1-l1", parent="parent")
+    worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
     leaf = subordinate_env.create_record(
-        clone, "parent-p1-l1-r1-l1", parent=worker.name, mode="read_only"
+        repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="read_only"
     )
     evidence = completion.CompletionRecord(
         text="review evidence",
@@ -410,9 +409,7 @@ def test_import_retains_descendant_records_receipts_and_target_objects(
         True,
         "",
     )
-    lane_watch.symlink_lane(paths.state_dir(repo), res)
-    imported = parallel_results.import_lane(res, repo, paths.state_dir(repo), None)
-    shutil.rmtree(paths.state_dir(clone))
+    imported = parallel_results.import_lane(res, repo, None)
     shutil.rmtree(clone)
     dest = layout.bucket_dir(paths.state_dir(repo), "read_only") / leaf.name
     assert dest.is_dir() and not dest.is_symlink()
@@ -439,15 +436,16 @@ def test_cleanup_keeps_a_live_descendant_even_when_all_commits_are_reachable(
     subordinate_env.init_repo(repo)
     clone = short_repo / "worker"
     subrun.clone_workspace(repo, clone)
-    worker = subordinate_env.create_record(clone, "parent-p1-l1", parent="parent")
+    worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
     leaf = subordinate_env.create_record(
-        clone, "parent-p1-l1-r1-l1", parent=worker.name, mode="read_only"
+        repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="read_only"
     )
     process.write_worker_pid(leaf, os.getpid())
     kept: list[str] = []
     workdirs.cleanup(
         [lane_records.LaneSpec(1, worker.name, clone, None)],
         origin=repo,
+        record_state=paths.state_dir(repo),
         workdir_root=short_repo,
         base=short_repo,
         launch_dir=lane_launch.launch_dir(paths.state_dir(repo), "parent-p1"),
@@ -528,14 +526,10 @@ def test_stop_follows_clone_state_and_readonly_bucket_and_leaves_the_worker_unse
     parent = subordinate_env.create_record(repo, "parent")
     clone = short_repo / "worker"
     subrun.clone_workspace(repo, clone)
-    worker = subordinate_env.create_record(clone, "parent-p1-l1", parent="parent")
+    worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
     leaf = subordinate_env.create_record(
-        clone, "parent-p1-l1-r1-l1", parent=worker.name, mode="read_only"
+        repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="read_only"
     )
-    res = lane_records.LaneResult(
-        lane_records.LaneSpec(1, worker.name, clone, None), worker, "", True, ""
-    )
-    lane_watch.symlink_lane(paths.state_dir(repo), res)
     ancestor = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
     lane_dispatch.write_record(
         worker,

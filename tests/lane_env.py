@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from agent6 import paths
 from agent6.app import lane_launch
 from agent6.sessions import manifest
 
@@ -107,6 +108,7 @@ def mark_lane(
     gate_source: manifest.GateSource = "",
     notes: tuple[str, ...] = (),
     operator_task: str | None = None,
+    record_state: pathlib.Path | None = None,
 ) -> pathlib.Path:
     """Write a lane launch file under `where` and set `AGENT6_LANE` and `AGENT6_SUBRUN`.
 
@@ -120,6 +122,7 @@ def mark_lane(
         gate_source: The gate's origin.
         notes: The snapshot's loss notes.
         operator_task: The operator's task before composition.
+        record_state: Where the lane's record goes; the lane's own state when None.
 
     Returns:
         The launch file's path.
@@ -128,6 +131,7 @@ def mark_lane(
         where,
         lane_launch.LaneLaunch(
             workdir=where / f"lane-{lane}",
+            record_state=record_state or paths.state_dir(where / f"lane-{lane}"),
             session_id=f"{group}-l{lane}",
             task="task",
             config=config if config is not None else where / f"lane-{lane}-config.toml",

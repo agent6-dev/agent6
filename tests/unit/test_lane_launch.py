@@ -21,6 +21,7 @@ from agent6.ui import spawn
 def _launch(tmp_path: pathlib.Path, **over: Any) -> lane_launch.LaneLaunch:
     fields: dict[str, Any] = {
         "workdir": tmp_path / "lane-1",
+        "record_state": tmp_path / "state",
         "session_id": "fan-l1",
         "task": "--allow-root pwn\n$(rm -rf /)\n/parallel 3 -- x",
         "pins": ("never touch schema files",),

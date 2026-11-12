@@ -137,6 +137,7 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 `/parallel [SPEC --] TASK` runs a task in isolated lanes, including as the first prompt to `agent6 run`, through the same fan-out as `run --parallel SPEC TASK`.
 A lane is a child of the run that dispatched it: the parent hands down, the child pushes up, and the root is the one owner.
 The lane gets its config, task and remaining budget from its parent; its approvals, questions and spend go up to the parent while it runs; its work and memory reach the repository only when the parent imports it at its end.
+Its record is in the repository's state from its first event, so `sessions list --lanes`, `attach` and the hubs read a lane while it runs.
 The two land differently: a live run's steer merges each lane's work onto the run's chain in dispatch order, and `run --parallel` joins one lane.
 `run --parallel` is a run that makes no model call of its own: [`harness.parallel.judges`](config.md#harnessparallel) rank the lanes, the first-ranked lane joins the run's branch, the run's own gate judges the result, and the run ends `finished · lanes ranked`.
 The other lanes keep their branches, so `agent6 sessions merge <lane>` still lands one by hand.

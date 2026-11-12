@@ -164,8 +164,7 @@ _READ_AT = 1_800_000_000.0
 class _FakeSpawner:
     """A synchronous stand-in for the bridge spawner.
 
-    Clone, commit on the lane branch, and fabricate a finished run dir. Records what it observed so
-    a test can assert the orchestrator's symlink-then-replace behavior.
+    Clone, commit on the lane branch, and fabricate a finished run dir in the origin's state.
     """
 
     def __init__(
@@ -227,7 +226,8 @@ class _FakeSpawner:
             )
             _git(spec.workdir, "add", "-A")
             _git(spec.workdir, "commit", "-q", "-m", f"lane {spec.lane} work")
-        session_dir = self.state_root / f"lane{spec.lane}" / "sessions" / "runs" / spec.session_id
+        # A lane's record is in the origin's state from its first event.
+        session_dir = self.origin_state / "sessions" / "runs" / spec.session_id
         _write_fake_run(
             session_dir,
             task,
@@ -302,7 +302,7 @@ def _run_lanes(
             cfg=cfg,
             explicit_leaves=frozenset(),
             origin=origin,
-            origin_state=paths.state_dir(origin),
+            record_state=paths.state_dir(origin),
             group=group,
             coordinator=group,
             runtime=runtime,
@@ -576,6 +576,7 @@ def test_bridge_spawner_keeps_the_task_out_of_the_argv(
         explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
+        record_state=paths.state_dir(origin),
         max_usd=2.0,
         fanout_id="fan",
         runtime=dataclasses.replace(runtime, spawn=fake_spawn),
@@ -614,7 +615,9 @@ def test_a_lane_is_seeded_with_the_repos_memory(
         settings=None,
     )
     app_lanes.bridge_spawner(
-        spec, "task", explicit_leaves=frozenset(), cfg=cfg, origin=origin, max_usd=None,
+        spec, "task", explicit_leaves=frozenset(), cfg=cfg, origin=origin,
+        record_state=paths.state_dir(origin),
+        max_usd=None,
         fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         coordinator="co",
     )  # fmt: skip
@@ -650,7 +653,9 @@ def test_bridge_spawner_launch_carries_auto_approve_when_set(
         settings=None,
     )
     app_lanes.bridge_spawner(
-        spec, "do it", cfg=cfg, origin=origin, max_usd=None, auto_approve=True,
+        spec, "do it", cfg=cfg, origin=origin,
+        record_state=paths.state_dir(origin),
+        max_usd=None, auto_approve=True,
         explicit_leaves=frozenset(),
         fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         coordinator="co",
@@ -680,7 +685,9 @@ def test_bridge_spawner_launch_omits_auto_approve_by_default(
         settings=None,
     )
     app_lanes.bridge_spawner(
-        spec, "do it", explicit_leaves=frozenset(), cfg=cfg, origin=origin, max_usd=None,
+        spec, "do it", explicit_leaves=frozenset(), cfg=cfg, origin=origin,
+        record_state=paths.state_dir(origin),
+        max_usd=None,
         fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         coordinator="co",
     )  # fmt: skip
@@ -724,7 +731,7 @@ def test_run_lane_to_completion_forwards_auto_approve_and_pins_to_the_default_sp
         explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
-        origin_state=tmp_path / "ostate",
+        record_state=tmp_path / "ostate",
         group="p1",
         coordinator="co",
         runtime=runtime,
@@ -838,7 +845,9 @@ def test_lane_setup_output_survives_import_and_a_failed_one_reaches_the_operator
                 lane_errors.getvalue() + lane_output.getvalue()
             )
             assert (cwd / ".setup-count").read_text(encoding="utf-8").splitlines() == ["ran"]
-            (session_dir,) = (paths.state_dir(cwd) / "sessions" / "runs").iterdir()
+            launch = _launch_of(env)
+            session_dir = launch.record_state / "sessions" / "runs" / launch.session_id
+            assert session_dir.is_dir()
         return session_dir, 1, ""
 
     lanes = _specs(tmp_path, cfg, "setup-fan", "2")
@@ -954,7 +963,7 @@ def test_compare_stamp_records_judge_rationale_truncated(
             judge_cost_partial=True,
         ),
         winner="fan-l1",
-        origin_state=origin_state,
+        record_state=origin_state,
         coordinator_dir=coordinator_dir,
         group="fan",
     )
@@ -1124,7 +1133,7 @@ def test_a_stamp_that_cannot_be_written_is_noted_and_the_others_still_land(
         ],
         compare.RankOutcome(("fan-l1", "fan-l2"), "", "mechanical"),
         winner="fan-l1",
-        origin_state=origin_state,
+        record_state=origin_state,
         coordinator_dir=coordinator_dir,
         group="fan",
     )
@@ -1186,7 +1195,7 @@ def test_await_waits_for_worker_pid_to_clear(
 def test_cleanup_preserves_unimported_lane(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
-    """A lane whose import is refused keeps its clone, run state and live symlink.
+    """A lane whose import is refused keeps its clone; its record stays where it was.
 
     The clone holds the only copy of its branch; the refusal names it. Imported lanes are still
     cleaned up.
@@ -1208,50 +1217,17 @@ def test_cleanup_preserves_unimported_lane(
     )
 
     assert [res.ok for res in results] == [False, True]  # lane 2 still imported
-    # Lane 1 kept: clone (with its branch), fabricated run state, live symlink.
+    # Lane 1 kept: its clone with its branch, and its record.
     assert lanes[0].workdir.is_dir()
     assert git_read.branch_exists(lanes[0].workdir, "agent6/fan-l1")
-    assert (tmp_path / "lane-state" / "lane1" / "sessions" / "runs" / "fan-l1").is_dir()
-    assert (origin_state / "sessions" / "runs" / "fan-l1").is_symlink()
-    # Lane 2 imported and cleaned: real dir in origin state, clone gone.
+    assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
+    # Lane 2 imported and cleaned: its record stays, its clone is gone.
     assert (origin_state / "sessions" / "runs" / "fan-l2").is_dir()
-    assert not (origin_state / "sessions" / "runs" / "fan-l2").is_symlink()
     assert not lanes[1].workdir.exists()
     # A clone's jail home goes with the clone and stays with a kept one.
     assert homes[0].is_dir() and not homes[1].exists()
     # The refusal names the kept clone so the operator can act on it.
     assert str(lanes[0].workdir) in results[0].error
-
-
-def test_await_uses_real_run_dir_not_symlink(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    runtime: app_lanes.LaneRuntime,
-) -> None:
-    """The symlink is a view for the hub, not the source of truth.
-
-    With symlink creation failing entirely, the lane is still awaited on its REAL run dir (its true
-    status is observed, not '?') and imported.
-    """
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "fan", "1")
-    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
-
-    def _no_symlink(*_a: object, **_k: object) -> None:
-        return None
-
-    monkeypatch.setattr(lane_watch, "symlink_lane", _no_symlink)
-
-    (result,) = _run_lanes(
-        "t", lanes, cfg=cfg, origin=origin, runtime=runtime, group="fan", spawner=spawner
-    )
-
-    # The lane's real terminal status was observed (not the missing link's).
-    assert result.ok
-    assert git_read.branch_exists(origin, "agent6/fan-l1")
-    assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
 
 
 # ---------------------------------------------------------------------------
@@ -1266,10 +1242,10 @@ def test_run_lane_to_completion_imports_and_stamps(
     runtime: app_lanes.LaneRuntime,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """One lane runs end to end: spawn, live symlink, await, import and the lineage stamp.
+    """One lane runs end to end: spawn, await, import and the lineage stamp.
 
-    The live symlink into the origin's runs/ is visible while the lane runs, so a hub can see and
-    answer it, and is replaced by the real dir after import.
+    The lane's record is a real dir in the origin's runs/ while it runs, so a hub can see and
+    answer it, and nothing moves at the import.
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -1282,14 +1258,13 @@ def test_run_lane_to_completion_imports_and_stamps(
     )
     memory.add(paths.state_dir(spec.workdir), "lane-fact", "The flaky test is test_clock.")
 
-    # The await polls summarize_session_dir; observe the origin link state then -- it
-    # must be a live symlink while the lane is still running.
-    link = origin_state / "sessions" / "runs" / "co-p1-l1"
+    # The await polls summarize_session_dir; the lane's record is in the origin's state then.
+    record = origin_state / "sessions" / "runs" / "co-p1-l1"
     real_summarize = app_lanes.summarize_session_dir
     seen: dict[str, bool] = {}
 
     def observe(session_dir: pathlib.Path) -> object:
-        seen.setdefault("symlink_during_life", link.is_symlink())
+        seen.setdefault("record_during_life", record.is_dir() and not record.is_symlink())
         return real_summarize(session_dir)
 
     monkeypatch.setattr(app_lanes, "summarize_session_dir", observe)
@@ -1301,7 +1276,7 @@ def test_run_lane_to_completion_imports_and_stamps(
         explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
-        origin_state=origin_state,
+        record_state=origin_state,
         group="p1",
         coordinator="co",
         runtime=runtime,
@@ -1310,15 +1285,14 @@ def test_run_lane_to_completion_imports_and_stamps(
     )
 
     assert res.ok
-    assert seen["symlink_during_life"] is True  # a hub could see + answer the lane
+    assert seen["record_during_life"] is True  # a hub could see + answer the lane
     assert git_read.branch_exists(origin, "agent6/co-p1-l1")
     # The lane's memory came back before its state dir went (the coordinator
     # path cleaned up with no carry at all).
     assert "The flaky test is test_clock." in memory.show(origin_state, "lane-fact")
     assert "lane 1: memory 1 carried" in capsys.readouterr().err
     imported = origin_state / "sessions" / "runs" / "co-p1-l1"
-    assert imported.is_dir() and not imported.is_symlink()  # replaced by the real dir
-    assert res.session_dir == imported
+    assert imported.is_dir() and res.session_dir == imported
     manifest = json.loads((imported / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["parallel"] == {"group": "p1", "lane": 1, "coordinator": "p1"}
 
@@ -1350,7 +1324,7 @@ def test_run_lane_to_completion_records_what_the_import_landed(
         explicit_leaves=frozenset(),
         cfg=Config(),
         origin=origin,
-        origin_state=origin_state,
+        record_state=origin_state,
         group="p1",
         coordinator="co",
         runtime=runtime,
@@ -1390,7 +1364,7 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
         explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
-        origin_state=origin_state,
+        record_state=origin_state,
         group="p1",
         coordinator="co",
         runtime=runtime,
@@ -1428,7 +1402,7 @@ def test_a_failed_lane_never_joins_the_coordinator(
         explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
-        origin_state=origin_state,
+        record_state=origin_state,
         group="pf",
         coordinator="co",
         runtime=runtime,
@@ -1468,7 +1442,7 @@ def test_a_crashed_lane_never_joins_the_coordinator(
         explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
-        origin_state=origin_state,
+        record_state=origin_state,
         group="ps",
         coordinator="co",
         runtime=runtime,
@@ -1532,20 +1506,12 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
         lane_repo: pathlib.Path,
         branch: str,
         lane_session_dir: pathlib.Path,
-        origin_state: pathlib.Path,
         *,
         model_control: bool = False,
-        mode: str,
     ) -> lane_records.Imported:
         held.append(lock.locked())
         return real_import_run(
-            origin,
-            lane_repo,
-            branch,
-            lane_session_dir,
-            origin_state,
-            model_control=model_control,
-            mode=mode,
+            origin, lane_repo, branch, lane_session_dir, model_control=model_control
         )
 
     monkeypatch.setattr(subrun, "import_run", observe)
@@ -1561,7 +1527,7 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
         explicit_leaves=frozenset(),
         cfg=Config(),
         origin=origin,
-        origin_state=origin_state,
+        record_state=origin_state,
         group="p1",
         coordinator="co",
         runtime=runtime,
@@ -1581,7 +1547,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     Otherwise every `/parallel` group leaks a full repo clone, a state dir and a lane config per
     lane. Clones sit at `<base>/<repo>/<coordinator>/<group>/lane-N`: every emptied level up to and
     including the per-repo dir goes, the base above it stays. Only the imported (ok=True) lane is
-    cleaned; a failed import keeps its clone and its live symlink.
+    cleaned; a failed import keeps its clone.
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -1599,7 +1565,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
         explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
-        origin_state=origin_state,
+        record_state=origin_state,
         group="p9",
         coordinator="co",
         runtime=runtime,
@@ -1629,7 +1595,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
         explicit_leaves=frozenset(),
         cfg=cfg,
         origin=origin,
-        origin_state=origin_state,
+        record_state=origin_state,
         group="p8",
         coordinator="co",
         runtime=runtime,
@@ -1638,7 +1604,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     )
     assert not res2.ok
     assert spec2.workdir.exists()  # unimported lane retains its workspace
-    assert (origin_state / "sessions" / "runs" / "co-p8-l1").is_symlink()  # and its live view
+    assert (origin_state / "sessions" / "runs" / "co-p8-l1").is_dir()  # and its record
 
 
 def test_build_lane_spawner_builds_specs_and_preserves_order(
@@ -1886,7 +1852,7 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
         explicit_leaves=frozenset(),
         cfg=Config(),
         origin=origin,
-        origin_state=tmp_path / "ostate",
+        record_state=tmp_path / "ostate",
         group="p1",
         coordinator="co",
         runtime=runtime,
@@ -2034,7 +2000,9 @@ def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
             settings=None,
         )
         result = app_lanes.bridge_spawner(
-            spec, "do it", cfg=Config(), origin=origin, max_usd=None, lane_away=away,
+            spec, "do it", cfg=Config(), origin=origin,
+            record_state=paths.state_dir(origin),
+            max_usd=None, lane_away=away,
             explicit_leaves=frozenset(),
             fanout_id="fan", coordinator="co",
             runtime=dataclasses.replace(runtime, spawn=fake_spawn),
@@ -2074,7 +2042,9 @@ def test_lane_is_self_describing_from_birth(
         settings=None,
     )
     app_lanes.bridge_spawner(
-        spec, "do it", explicit_leaves=frozenset(), cfg=Config(), origin=origin, max_usd=None,
+        spec, "do it", explicit_leaves=frozenset(), cfg=Config(), origin=origin,
+        record_state=paths.state_dir(origin),
+        max_usd=None,
         fanout_id="fan", coordinator="co", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         gate_source="inferred",
     )  # fmt: skip
@@ -2160,7 +2130,7 @@ def test_lane_sampling_notes_survive_import_and_reach_both_reports(
             worker = effective.config.models.resolve("worker")
             assert worker is not None and worker.effort is None and worker.temperature == 0.0
             layout = sessions_layout.SessionLayout(
-                state_dir=paths.state_dir(cwd), session_id=spec.session_id
+                state_dir=_launch_of(env).record_state, session_id=spec.session_id
             )
             layout.ensure()
             stamps.write_session_manifest(
@@ -2199,6 +2169,7 @@ def test_lane_sampling_notes_survive_import_and_reach_both_reports(
         cfg=cfg,
         explicit_leaves=frozenset(),
         origin=origin,
+        record_state=paths.state_dir(origin),
         max_usd=None,
         fanout_id="notes",
         coordinator="notes",
@@ -2207,10 +2178,9 @@ def test_lane_sampling_notes_survive_import_and_reach_both_reports(
     assert result.ok, result.error
     landed = app_lanes.land_lane(
         result,
-        parallel_results.import_lane(result, origin, paths.state_dir(origin), None),
+        parallel_results.import_lane(result, origin, None),
         cfg=cfg,
         origin=origin,
-        origin_state=paths.state_dir(origin),
         group="notes",
         reporter=reporter.STDIO_REPORTER,
     )
@@ -2309,6 +2279,7 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
             cfg=cfg,
             explicit_leaves=frozenset(),
             origin=origin,
+            record_state=paths.state_dir(origin),
             max_usd=None,
             fanout_id="failed11",
             coordinator="failed11",
@@ -2358,7 +2329,8 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
     # No session dir yet: a lane between its clone and its first write looks
     # like one that never started, and a prune in that window must not win.
     assert workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
-    session = paths.state_dir(lane) / "sessions" / "runs" / "fan-starting-l1"
+    # The lane's record is in the origin's state, named for its group and number.
+    session = paths.state_dir(origin) / "sessions" / "runs" / "fan-starting-l1"
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text("", encoding="utf-8")  # a record, not a husk
     process.write_worker_pid(session, os.getpid())
@@ -2373,8 +2345,7 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
     # A lane that died in preflight leaves a husk (a session dir with no
     # record and no worker): ended, so its clone goes too.
     subrun.clone_workspace(origin, lane)
-    husk = paths.state_dir(lane) / "sessions" / "runs" / "fan-starting-l2"
-    husk.mkdir(parents=True)
+    (session / "logs.jsonl").unlink()
     assert workdirs.sweep_fanout_clones(origin, cfg) == (1, 0)
 
 
@@ -2494,7 +2465,7 @@ def test_a_plain_stop_escalates_to_now_when_the_operator_stops_again(
         explicit_leaves=frozenset(),
         cfg=Config(),
         origin=origin,
-        origin_state=tmp_path / "ostate",
+        record_state=tmp_path / "ostate",
         group="p1",
         coordinator="co",
         runtime=runtime,
@@ -2558,8 +2529,7 @@ def test_model_parallel_import_keeps_lane_commits(
     class Provider:
         def call(self, **_kw: Any) -> ProviderResponse:
             cwd = pathlib.Path.cwd()
-            (session,) = (paths.state_dir(cwd) / "sessions" / "runs").iterdir()
-            name = session.name
+            name = _launch_of(dict(os.environ)).session_id
             if name not in tips:
                 if head_kind == "detached":
                     _git(cwd, "checkout", "--detach")
@@ -2606,7 +2576,8 @@ def test_model_parallel_import_keeps_lane_commits(
             child.setenv("AGENT6_DETACHED_AWAY", "wait")
             assert argv == lane_launch.bootstrap_argv()
             assert lane_agent.main() == 0
-            (session,) = (paths.state_dir(cwd) / "sessions" / "runs").iterdir()
+            launch = _launch_of(kw["env"])
+            session = launch.record_state / "sessions" / "runs" / launch.session_id
         return session, 1, ""
 
     def no_judge(*_a: Any, **_kw: Any) -> Any:
@@ -2674,6 +2645,7 @@ def test_cleanup_keeps_unreachable_model_head(
     workdirs.cleanup(
         [spec],
         origin=origin,
+        record_state=paths.state_dir(origin),
         workdir_root=spec.workdir.parent,
         base=spec.workdir.parent,
         launch_dir=spec.workdir.parent / "launch",

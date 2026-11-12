@@ -1444,8 +1444,9 @@ def test_merge_adopts_an_orphaned_fanout_lane(
     _git(clone, "add", "-A")
     _git(clone, "commit", "-q", "-m", "agent6 turn 1: work")
 
-    # The lane's session dir in its bucket plus the origin's live-view symlink, lineage stamped.
-    lane_state = tmp_path / "lane-state" / "sessions" / "runs" / "fan-l1"
+    # The lane's session dir in the origin's state, lineage stamped.
+    origin_runs = paths.state_dir(tmp_path) / "sessions" / "runs"
+    lane_state = origin_runs / "fan-l1"
     lane_state.mkdir(parents=True)
     (lane_state / "manifest.json").write_text(
         json.dumps(
@@ -1469,15 +1470,11 @@ def test_merge_adopts_an_orphaned_fanout_lane(
         + "\n",
         encoding="utf-8",
     )
-    origin_runs = paths.state_dir(tmp_path) / "sessions" / "runs"
-    origin_runs.mkdir(parents=True)
-    (origin_runs / "fan-l1").symlink_to(lane_state)
 
     assert main(["sessions", "merge", "fan-l1", "--method", "squash"]) == 0
     out = capsys.readouterr().out
     assert "imported orphaned lane branch agent6/fan-l1" in out
     assert (tmp_path / "work.txt").read_text(encoding="utf-8") == "lane work\n"
-    assert not (origin_runs / "fan-l1").is_symlink()  # the real dir replaced it
 
     # Every lane commit is now in the origin: prune sweeps the fan-out dir.
     assert main(["sessions", "prune", "--delete-squashed"]) == 0

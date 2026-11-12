@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from agent6 import lane_records
+from agent6 import lane_records, paths
 from agent6.app import lane_launch, lane_watch
 from agent6.app import lanes as app_lanes
 from agent6.config import Config
@@ -85,6 +85,7 @@ def test_apply_limits_clamps_the_config_and_leaves_the_rest(tmp_path: pathlib.Pa
 def test_a_launch_round_trips_its_limits(tmp_path: pathlib.Path) -> None:
     launch = lane_launch.LaneLaunch(
         workdir=tmp_path / "lane-1",
+        record_state=tmp_path / "state",
         session_id="fan-l1",
         task="t",
         config=tmp_path / "launch" / "lane-1-config.toml",
@@ -195,7 +196,7 @@ def test_a_lane_past_its_deadline_is_stopped_and_reported_failed(
         explicit_leaves=frozenset(),
         cfg=Config(),
         origin=tmp_path,
-        origin_state=tmp_path / "origin-state",
+        record_state=tmp_path / "origin-state",
         group="fan",
         coordinator="co",
         runtime=parallel.lane_runtime(),
@@ -236,7 +237,7 @@ def test_a_lane_is_stopped_once_the_runs_budget_is_spent(
         explicit_leaves=frozenset(),
         cfg=Config(),
         origin=tmp_path,
-        origin_state=tmp_path / "origin-state",
+        record_state=tmp_path / "origin-state",
         group="fan",
         coordinator="co",
         runtime=parallel.lane_runtime(),
@@ -269,7 +270,7 @@ def test_a_lane_that_never_reported_is_killed_not_left_running(
         explicit_leaves=frozenset(),
         cfg=Config(),
         origin=tmp_path,
-        origin_state=tmp_path / "origin-state",
+        record_state=tmp_path / "origin-state",
         group="fan",
         coordinator="co",
         runtime=parallel.lane_runtime(),
@@ -300,7 +301,6 @@ def test_arm_deadline_writes_the_stop_at_the_deadline(tmp_path: pathlib.Path) ->
 
 def test_a_real_lane_ends_by_its_deadline(short_repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
     """A lane whose model keeps running commands ends at its deadline, not as a success."""
-    from agent6 import paths
     from agent6.app import workdirs
     from agent6.viewmodel.session import log as session_log
     from tests import lane_env
@@ -343,6 +343,7 @@ def test_a_real_lane_ends_by_its_deadline(short_repo: pathlib.Path, tmp_path: pa
             into,
             lane_launch.LaneLaunch(
                 workdir=clone,
+                record_state=paths.state_dir(clone),
                 session_id="deadline-l1",
                 task="keep running",
                 config=config.path,

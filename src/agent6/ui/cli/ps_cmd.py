@@ -109,7 +109,6 @@ class _Live:
 def _live_rows() -> _Live:
     """Return every live session and machine instance under the state base, one row each."""
     base = paths.state_base()
-    # Keyed on the real dir: a lane is linked under its coordinator's repo too, and the link wins.
     rows_by_dir: dict[pathlib.Path, _Row] = {}
     summaries_by_dir: dict[pathlib.Path, listing.SessionSummary] = {}
     rows: list[_Row] = []
@@ -124,11 +123,7 @@ def _live_rows() -> _Live:
                     continue
                 for sdir in sorted(bucket_path.iterdir()):
                     real = sdir.resolve()
-                    if (
-                        not sdir.is_dir()
-                        or not process.worker_is_alive(sdir)
-                        or (real in rows_by_dir and not sdir.is_symlink())
-                    ):
+                    if not sdir.is_dir() or not process.worker_is_alive(sdir):
                         continue
                     summary = listing.summarize_session_dir(sdir)
                     summaries_by_dir[real] = summary

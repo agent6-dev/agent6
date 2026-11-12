@@ -147,10 +147,10 @@ def adopt_orphan_lane(
     layout: sessions_layout.SessionLayout,
     manifest: sessions_manifest.SessionManifest,
 ) -> str | None:
-    """Import an orphaned fan-out lane so an ordinary merge can land it.
+    """Import an orphaned lane's branch so an ordinary merge can land it.
 
-    A coordinator death leaves a finished lane's branch only in its clone, with
-    the origin still holding the live-view symlink.
+    A coordinator death leaves a finished lane's branch only in its clone; its record is
+    in the origin's state already.
 
     Args:
         origin: The repository.
@@ -162,28 +162,19 @@ def adopt_orphan_lane(
         The note to print, or None when the session is not an orphaned lane.
 
     Raises:
-        SubrunError: The import failed; the symlink is restored.
+        SubrunError: The import failed.
     """
     if (
         not manifest.run_branch
         or manifest.parallel is None
         or git_read.branch_exists(origin, manifest.run_branch)
-        or not layout.session_dir.is_symlink()
     ):
         return None
     lineage = manifest.parallel
     clone = subordinate_workdir_root(cfg, origin, lineage.group) / f"lane-{lineage.lane}"
     if not (clone / ".git").exists() or not git_read.branch_exists(clone, manifest.run_branch):
         return None
-    real = layout.session_dir.resolve()
-    layout.session_dir.unlink()
-    try:
-        subrun.import_run(
-            origin, clone, manifest.run_branch, real, layout.state_dir, mode=manifest.mode
-        )
-    except subrun.SubrunError:
-        layout.session_dir.symlink_to(real)
-        raise
+    subrun.import_run(origin, clone, manifest.run_branch, layout.session_dir)
     return f"imported orphaned lane branch {manifest.run_branch} from {clone}"
 
 
@@ -215,34 +206,50 @@ def recorded_merged(origin: pathlib.Path, clone: pathlib.Path, tip: str) -> bool
     return False
 
 
-def clone_sessions(clone: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    """Find a clone's records and descendants, including links into child clones.
+def lane_sessions(record_state: pathlib.Path, session_id: str) -> tuple[pathlib.Path, ...]:
+    """Find a lane's record and its descendants' records.
 
     Args:
-        clone: The worker checkout.
+        record_state: The state dir the lane's record lives under.
+        session_id: The lane's session id.
 
     Returns:
-        Session paths, each resolved record once.
+        The lane's session dir and its descendants'; empty when the lane wrote none.
     """
-    found: dict[pathlib.Path, pathlib.Path] = {}
-    for bucket in sessions_layout.HUB_BUCKETS:
-        for record in sessions_layout.bucket_dir(paths.state_dir(clone), bucket).glob("*"):
-            if record.is_dir():
-                for child in (record, *lineage.descendants_of(record)):
-                    found[child.resolve()] = child
-    return tuple(found.values())
+    matches = sessions_layout.session_matches(record_state, session_id)
+    if not matches:
+        return ()
+    lane = matches[0].session_dir
+    return (lane, *lineage.descendants_of(lane))
 
 
-def lane_keep_reason(clone: pathlib.Path) -> str:
+def clone_sessions(record_state: pathlib.Path, clone: pathlib.Path) -> tuple[pathlib.Path, ...]:
+    """Find the records of the lane a swept clone belongs to.
+
+    A group's clones sit at `<group>/lane-<n>`, and the lane's session id is `<group>-l<n>`.
+
+    Args:
+        record_state: The state dir the group's records live under.
+        clone: The lane's clone.
+
+    Returns:
+        The lane's session dir and its descendants'; empty when the lane wrote none.
+    """
+    lane_id = f"{clone.parent.name}-l{clone.name.removeprefix('lane-')}"
+    return lane_sessions(record_state, lane_id)
+
+
+def lane_keep_reason(record_state: pathlib.Path, clone: pathlib.Path) -> str:
     """Return why a live lane or an unconfirmed startup keeps the clone, else "".
 
     Args:
+        record_state: The state dir the lane's record lives under.
         clone: The lane's clone.
 
     Returns:
         The keep reason; a spawn timeout can leave a live child with no session record.
     """
-    dirs = clone_sessions(clone)
+    dirs = clone_sessions(record_state, clone)
     if not dirs:
         return (
             "no lane session record, so a lane may still be starting; once none is, remove it"
@@ -293,7 +300,9 @@ def sweep_fanout_clones(  # noqa: PLR0912  # one refusal per retained clone cond
             continue
         why = ""
         for clone in clones:
-            if not machine_id and any(process.worker_is_alive(d) for d in clone_sessions(clone)):
+            if not machine_id and any(
+                process.worker_is_alive(d) for d in clone_sessions(paths.state_dir(origin), clone)
+            ):
                 why = "live lane or descendant; stop it before pruning"
                 break
             try:
@@ -304,7 +313,7 @@ def sweep_fanout_clones(  # noqa: PLR0912  # one refusal per retained clone cond
                     why = (
                         "no machine chain ref; review this clone before removing it"
                         if machine_id
-                        else lane_keep_reason(clone)
+                        else lane_keep_reason(paths.state_dir(origin), clone)
                     )
                     if why:
                         break
@@ -380,13 +389,14 @@ def cleanup(
     imported: list[lane_records.LaneSpec],
     *,
     origin: pathlib.Path,
+    record_state: pathlib.Path,
     workdir_root: pathlib.Path,
     base: pathlib.Path,
     launch_dir: pathlib.Path,
     cfg: Config,
     note_keep: Callable[[pathlib.Path, str], None] = lambda _path, _why: None,
 ) -> None:
-    """Tear down the clone, state dir, jail home and launch files of each imported lane.
+    """Tear down the clone, its own state dir, jail home and launch files of each imported lane.
 
     Best-effort. Every level from the group dir up to the per-repo base is removed once
     empty, never the dir above it; the group's launch dir goes the same way.
@@ -394,6 +404,7 @@ def cleanup(
     Args:
         imported: The lanes whose import landed.
         origin: The repository that must reach every clone tip.
+        record_state: The state dir the lanes' records live under, which stay.
         note_keep: Receives the kept clone and reason.
         workdir_root: The group dir.
         base: The per-repo base dir.
@@ -401,14 +412,9 @@ def cleanup(
         cfg: The run's config.
     """
     for spec in imported:
-        records = clone_sessions(spec.workdir)
+        records = lane_sessions(record_state, spec.session_id)
         if any(process.worker_is_alive(record) for record in records):
             note_keep(spec.workdir, "live descendant; stop it before cleanup")
-            continue
-        if any(
-            record.resolve().is_relative_to(paths.state_dir(spec.workdir)) for record in records
-        ):
-            note_keep(spec.workdir, "session records not imported; retain their clone")
             continue
         try:
             tips = git_read.commit_tips(spec.workdir)

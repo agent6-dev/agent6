@@ -176,10 +176,8 @@ def plan_merge(  # noqa: PLR0911
         reporter.refuse(refusal)
         return 2
     ref = commits_ref(cwd, manifest)
-    if (
-        (stamp := resume.covering_stamp(cwd, manifest)) is not None
-        and not layout.session_dir.is_symlink()
-        and (not ref.head_ref or git_read.chain_tip(cwd, ref.head_ref) is None)
+    if (stamp := resume.covering_stamp(cwd, manifest)) is not None and (
+        not ref.head_ref or git_read.chain_tip(cwd, ref.head_ref) is None
     ):
         already = "already " if stamp.commit else ""
         reporter.out(f"[agent6] {already}{stamp.landed()} (run refs were pruned).")

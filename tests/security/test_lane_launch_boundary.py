@@ -80,6 +80,7 @@ def _launch_files(
     )
     launch = lane_launch.LaneLaunch(
         workdir=spec.workdir,
+        record_state=paths.state_dir(spec.workdir),
         session_id=spec.session_id,
         task=TASK,
         pins=PINS,

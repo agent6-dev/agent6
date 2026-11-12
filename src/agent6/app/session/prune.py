@@ -36,7 +36,7 @@ def prune_artifacts(
     failed = False
     for bucket in layout.SESSION_BUCKETS:
         for session_dir in sorted(layout.bucket_dir(state_dir, bucket).glob("*")):
-            if not session_dir.is_dir() or session_dir.is_symlink():
+            if not session_dir.is_dir():
                 continue
             fd = lock.acquire_single_writer(session_dir)
             if fd is None:

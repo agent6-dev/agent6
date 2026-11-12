@@ -153,7 +153,13 @@ def _lane_snapshot(
         explicit_leaves=effective.explicit_leaves,
         into=spec.workdir.parent / "launch",
     ).path
-    lane_env.mark_lane(monkeypatch, snapshot.parent, config=snapshot, gate_source=gate_source)
+    lane_env.mark_lane(
+        monkeypatch,
+        snapshot.parent,
+        config=snapshot,
+        gate_source=gate_source,
+        record_state=paths.state_dir(repo),
+    )
     return snapshot
 
 
@@ -544,12 +550,13 @@ def test_a_budget_stopped_lane_continues_with_the_fork_command_its_record_names(
                 coordinator="capped-fan",
                 group="capped-fan",
                 lane=spec.lane,
+                record_state=state,
             )
             argv = ["run", "--config", str(snapshot), "--session-id", spec.session_id]
             assert cli_main([*argv, "--max-tokens-fallback", "1", task]) == 3, (
                 output.getvalue() + errors.getvalue()
             )
-        session_dir = paths.state_dir(spec.workdir) / "sessions" / "runs" / spec.session_id
+        session_dir = state / "sessions" / "runs" / spec.session_id
         return lane_records.LaneResult(spec, session_dir, f"agent6/{spec.session_id}", True, "")
 
     result = app_lanes.run_lane_to_completion(
@@ -558,7 +565,7 @@ def test_a_budget_stopped_lane_continues_with_the_fork_command_its_record_names(
         cfg=cfg,
         explicit_leaves=frozenset(),
         origin=repo,
-        origin_state=state,
+        record_state=state,
         group="capped-fan",
         coordinator="capped-fan",
         runtime=parallel_cmd.lane_runtime(),

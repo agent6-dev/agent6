@@ -582,12 +582,13 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 lane_authority=lane_launch.dispatch_authority(
                     cfg, mode=mode, session_id=inputs.session_id, root=cwd
                 ),
-                # Subordinate workers retain only harness-panel authority.
+                # Subordinate workers retain only harness-panel authority. Every child's
+                # record goes where this session's does: the root repository's state.
                 lane_spawner=frontend.build_coordinator_spawner(
                     cfg,
                     inputs.explicit_leaves,
                     cwd,
-                    state_dir,
+                    layout.state_dir,
                     mode,
                     inputs.session_id,
                     inputs.budget_overrides.max_usd
@@ -599,12 +600,12 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     child_watch.ChildWatch(inputs.prompts, layout.session_dir, budget, events.emit),
                 ),
                 lane_recoverer=app_lanes.build_lane_recoverer(
-                    cfg, cwd, state_dir, mode=mode, reporter=reporter
+                    cfg, cwd, layout.state_dir, mode=mode, reporter=reporter
                 ),
                 lane_ranker=app_lanes.build_lane_ranker(
                     cfg,
                     cwd,
-                    state_dir,
+                    layout.state_dir,
                     coordinator_dir=layout.session_dir,
                     base_sha=inputs.base_sha,
                     build_provider=frontend.build_judge_provider,

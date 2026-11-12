@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Watch started lanes until they land, and say what they wait on.
 
-The single-lane await and drain behind `run_lane_to_completion`, and the live symlink a
-lane gets under the origin's runs dir.
+The single-lane await and drain behind `run_lane_to_completion`, and where a lane's record
+lives.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from agent6 import kinds, lane_records, paths
+from agent6 import kinds, lane_records
 from agent6.app import stop
 from agent6.sandbox import jail
 from agent6.sessions import layout, process
@@ -162,35 +162,15 @@ def drain_lane(
     return False
 
 
-def lane_link(origin_state: pathlib.Path, session_id: str, *, mode: str) -> pathlib.Path:
-    """Return where a lane's live symlink sits: the origin's bucket for the lane's mode.
+def lane_dir(record_state: pathlib.Path, session_id: str, *, mode: str) -> pathlib.Path:
+    """Return a lane's session dir: the bucket for its mode under the state its records live in.
 
     Args:
-        origin_state: The origin's state dir.
+        record_state: The state dir of the repository whose run dispatched the lane.
         session_id: The lane's session id.
         mode: The lane's session mode.
 
     Returns:
-        The lane's dir under the origin's state.
+        The lane's dir.
     """
-    return layout.bucket_dir(origin_state, kinds.session_bucket(mode)) / session_id
-
-
-def symlink_lane(origin_state: pathlib.Path, res: lane_records.LaneResult) -> None:
-    """Symlink a lane's clone-side session dir into the origin's bucket so the hub shows it live.
-
-    The import replaces the link with the real dir.
-
-    Args:
-        origin_state: The origin's state dir.
-        res: The started lane.
-    """
-    link = lane_link(origin_state, res.spec.session_id, mode=res.spec.mode)
-    paths.mkdir_for_real_user(link.parent)
-    with contextlib.suppress(FileNotFoundError):
-        link.unlink()
-    with contextlib.suppress(OSError):
-        link.symlink_to(res.session_dir)
-
-
-# The two prompt/answer event pairs a lane can block on.
+    return layout.bucket_dir(record_state, kinds.session_bucket(mode)) / session_id

@@ -223,17 +223,20 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         return 2
 
     state = paths.state_dir(repo)
+    # A lane's record goes under the state of the repository that dispatched it, so its
+    # listings read the lane from its first event; its memory and rulings stay with its clone.
+    record = stamps.lane_record_state() or state
     bucket = kinds.session_bucket(mode)
     # Same-bucket reuse is the resume or park flow below; another bucket's id is a collision.
-    if session_id and (held := id.session_id_bucket(state, session_id)) not in (None, bucket):
+    if session_id and (held := id.session_id_bucket(record, session_id)) not in (None, bucket):
         reporter.error(
             f"--session-id {session_id!r} already names a session under {held}/;"
             " ids are unique across every bucket. Pick another id."
         )
         return 2
-    effective_session_id = session_id or id.unused_session_id(state, bucket)
+    effective_session_id = session_id or id.unused_session_id(record, bucket)
     layout = sessions_layout.SessionLayout(
-        state_dir=state,
+        state_dir=record,
         session_id=effective_session_id,
         subdir=bucket,
     )

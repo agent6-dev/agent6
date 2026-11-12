@@ -64,7 +64,7 @@ def stamp_compare_outcomes(
     outcome: app_compare.RankOutcome,
     *,
     winner: str,
-    origin_state: pathlib.Path,
+    record_state: pathlib.Path,
     coordinator_dir: pathlib.Path,
     group: str,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
@@ -75,7 +75,7 @@ def stamp_compare_outcomes(
         candidates: The ranked lanes.
         outcome: The ranking.
         winner: The lane the ranking crowns (`ranked_winner`), or "".
-        origin_state: The origin's state dir.
+        record_state: The state dir the run's and its lanes' records live under.
         coordinator_dir: The manifest owner for the group's ranking and judge spend.
         group: The comparison group id.
         reporter: Receives a note per stamp failure; the others still land.
@@ -97,7 +97,7 @@ def stamp_compare_outcomes(
             rank=rank_pos, of=of, winner=session_id == winner, group=group
         )
         # A judged fan-out ranks run lanes.
-        err = stamp(lane_watch.lane_link(origin_state, session_id, mode="run"), placement=placement)
+        err = stamp(lane_watch.lane_dir(record_state, session_id, mode="run"), placement=placement)
         if err is not None:
             reporter.note(f"lane [{session_id}]: imported, but the placement stamp failed: {err}")
 
@@ -180,54 +180,32 @@ def carry_back(
 
 
 def import_lane(
-    res: lane_records.LaneResult,
-    origin: pathlib.Path,
-    origin_state: pathlib.Path,
-    lock: threading.Lock | None,
+    res: lane_records.LaneResult, origin: pathlib.Path, lock: threading.Lock | None
 ) -> lane_records.Imported:
-    """Land a finished lane's session dir in the origin.
-
-    The live symlink drops so the real dir can take its place, and comes back
-    when the import refuses.
+    """Land a finished lane's work in the origin; its record is there from its first event.
 
     Args:
         res: The lane's result.
         origin: The repository.
-        origin_state: The origin's state dir.
         lock: Serializes the import across a group, when one is shared.
 
     Returns:
-        The imported dir and the ref the work landed in.
+        The lane's dir and the ref the work landed in.
 
     Raises:
         SubrunError: The import failed; nothing moved.
     """
-    link = lane_watch.lane_link(origin_state, res.spec.session_id, mode=res.spec.mode)
-    had_link = link.is_symlink()
-    with contextlib.suppress(FileNotFoundError):
-        link.unlink()
-    try:
-        with lock if lock is not None else contextlib.nullcontext():
-            manifest = sessions_manifest.read_manifest(res.session_dir)
-            model_control = manifest.git_control == "model"
-            branch = git_read.status(res.spec.workdir).branch if model_control else ""
-            free_branch = branch and branch != "HEAD" and not git_read.branch_exists(origin, branch)
-            imported = subrun.import_run(
-                origin,
-                res.spec.workdir,
-                res.branch,
-                res.session_dir,
-                origin_state,
-                model_control=model_control,
-                mode=res.spec.mode,
+    with lock if lock is not None else contextlib.nullcontext():
+        manifest = sessions_manifest.read_manifest(res.session_dir)
+        model_control = manifest.git_control == "model"
+        branch = git_read.status(res.spec.workdir).branch if model_control else ""
+        free_branch = branch and branch != "HEAD" and not git_read.branch_exists(origin, branch)
+        imported = subrun.import_run(
+            origin, res.spec.workdir, res.branch, res.session_dir, model_control=model_control
+        )
+        if free_branch:
+            stamps.write_manifest(
+                imported.session_dir / sessions_manifest.MANIFEST_NAME,
+                manifest.model_copy(update={"run_branch": branch}),
             )
-            if free_branch:
-                stamps.write_manifest(
-                    imported.session_dir / sessions_manifest.MANIFEST_NAME,
-                    manifest.model_copy(update={"run_branch": branch}),
-                )
-            return imported
-    except subrun.SubrunError:
-        if had_link:
-            lane_watch.symlink_lane(origin_state, res)
-        raise
+        return imported

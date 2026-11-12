@@ -67,7 +67,8 @@ def test_detached_lane_loads_snapshot_and_records_notes(
         workdir=tmp_path / "lane-1",
         settings=kinds.ModelSettings(kinds.ModelRoute("p", "local-reasoning")),
     )
-    session_dir = paths.state_dir(spec.workdir) / "sessions" / "runs" / spec.session_id
+    # The lane's record is in the dispatching repository's state from its first event.
+    session_dir = paths.state_dir(short_repo) / "sessions" / "runs" / spec.session_id
     try:
         result = lanes.bridge_spawner(
             spec,
@@ -77,6 +78,7 @@ def test_detached_lane_loads_snapshot_and_records_notes(
                 {"sandbox.isolation", "sandbox.protect_git", "sandbox.run_commands"}
             ),
             origin=short_repo,
+            record_state=paths.state_dir(short_repo),
             max_usd=None,
             fanout_id="detached",
             coordinator="detached",

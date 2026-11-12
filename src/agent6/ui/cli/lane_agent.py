@@ -18,7 +18,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from agent6 import kinds, paths
+from agent6 import kinds
 from agent6.app import lane_launch, preflight, stop
 from agent6.app import run as app_run
 from agent6.app.session import setup as session_setup
@@ -131,9 +131,7 @@ def main() -> int:
         return 2
     cfg = lane_launch.apply_limits(effective.config, launch.limits)
     if launch.limits is not None and launch.limits.deadline_at is not None:
-        bucket = sessions_layout.bucket_dir(
-            paths.state_dir(launch.workdir), kinds.session_bucket(mode)
-        )
+        bucket = sessions_layout.bucket_dir(launch.record_state, kinds.session_bucket(mode))
         arm_deadline(bucket / launch.session_id, launch.limits.deadline_at)
     return app_run.run_task(
         cfg,

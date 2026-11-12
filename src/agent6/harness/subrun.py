@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Clone a lane's workspace and import its finished branch and run dir.
+"""Clone a lane's workspace and import its finished branch.
 
 Git plumbing over `agent6.vcs.git.ops`, with no model, UI or process spawning; `app.lanes`
 drives a `LaneSpawner` over it.
@@ -9,10 +9,9 @@ drives a `LaneSpawner` over it.
 from __future__ import annotations
 
 import pathlib
-import shutil
 
-from agent6 import errors, kinds, lane_records, paths
-from agent6.sessions import layout, lineage, process
+from agent6 import errors, lane_records
+from agent6.sessions import lineage, process
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 
@@ -42,43 +41,32 @@ def import_run(
     lane_repo: pathlib.Path,
     branch: str,
     lane_session_dir: pathlib.Path,
-    origin_state: pathlib.Path,
     *,
     model_control: bool = False,
-    mode: str,
 ) -> lane_records.Imported:
-    """Land a finished lane's branch in the origin and move its session dir under its state.
+    """Land a finished lane's branch in the origin; its record is there already.
 
     A model-controlled lane lands HEAD on its chain ref and keeps a free branch name.
-    A harness-controlled lane without a branch imports only its record.
+    A harness-controlled lane without a branch lands nothing.
 
     Args:
         origin: The coordinator's repo.
         lane_repo: The lane's workspace clone.
         branch: The lane's branch.
-        lane_session_dir: The lane's run dir.
-        origin_state: The origin's state dir.
+        lane_session_dir: The lane's run dir, under the origin's state.
         model_control: Import HEAD instead of a harness-owned branch.
-        mode: The lane's session mode, which names its bucket.
 
     Returns:
-        The imported run dir and the ref the work landed in, with its tip; a lane that
-        committed nothing imports its record alone.
+        The run dir and the ref the work landed in, with its tip; a lane that committed
+        nothing lands no ref.
 
     Raises:
-        SubrunError: When the branch or session dir already exists in the origin, the fetch
-            fails, or the mode names no bucket.
+        SubrunError: When the branch already exists in the origin, a descendant is still
+            running, or a fetch fails.
     """
     if not model_control and git_read.branch_exists(origin, branch):
         raise SubrunError(f"branch {branch!r} already exists in {origin}")
-    try:
-        bucket = kinds.session_bucket(mode)
-    except kinds.UnknownSessionKindError as exc:
-        raise SubrunError(str(exc)) from exc
-    dest_session_dir = layout.bucket_dir(origin_state, bucket) / lane_session_dir.name
-    if dest_session_dir.exists():
-        raise SubrunError(f"session dir already exists: {dest_session_dir}")
-    import_descendants(origin, lane_repo, lane_session_dir, origin_state)
+    fetch_retained_refs(origin, lane_repo, lane_session_dir)
     ref = tip = ""
     if model_control:
         try:
@@ -96,32 +84,27 @@ def import_run(
         except errors.GitError as exc:
             raise SubrunError(f"fetch {branch!r} from {lane_repo} failed: {exc}") from exc
         ref, tip = branch, git_read.branch_tip_sha(origin, branch) or ""
-    paths.mkdir_for_real_user(dest_session_dir.parent)
-    shutil.move(str(lane_session_dir), str(dest_session_dir))
-    return lane_records.Imported(dest_session_dir, ref, tip)
+    return lane_records.Imported(lane_session_dir, ref, tip)
 
 
-def import_descendants(
-    origin: pathlib.Path,
-    lane_repo: pathlib.Path,
-    lane_session_dir: pathlib.Path,
-    origin_state: pathlib.Path,
+def fetch_retained_refs(
+    origin: pathlib.Path, lane_repo: pathlib.Path, lane_session_dir: pathlib.Path
 ) -> None:
-    """Retain descendant records and session-owned target refs before a worker clone goes.
+    """Fetch a lane's and its descendants' session-owned refs before the lane's clone goes.
+
+    Hidden target refs keep evidence reachable after the clone and its object store go.
 
     Args:
         origin: The receiving repository.
-        lane_repo: The worker clone, holding retained targets.
-        lane_session_dir: The worker's record.
-        origin_state: The receiving state directory.
+        lane_repo: The lane's clone, holding the retained targets.
+        lane_session_dir: The lane's record.
 
     Raises:
-        SubrunError: A descendant is live, its destination is occupied or a target fetch fails.
+        SubrunError: A descendant is live or a fetch fails.
     """
     descendants = lineage.descendants_of(lane_session_dir)
     if any(process.worker_is_alive(child) for child in descendants):
         raise SubrunError("a descendant is still running; its worker clone must be retained")
-    # Hidden target refs keep evidence reachable after the clone and its object store go.
     try:
         for session in (lane_session_dir, *descendants):
             for retained in git_read.session_refs(lane_repo, session.name):
@@ -130,16 +113,3 @@ def import_descendants(
         raise SubrunError(
             f"import retained session targets from {lane_repo} failed: {exc}"
         ) from exc
-    for child in descendants:
-        dest = layout.bucket_dir(origin_state, child.parent.name) / child.name
-        source = child.resolve()
-        if dest.resolve() == source:
-            continue
-        if dest.exists() and not dest.is_symlink():
-            raise SubrunError(f"descendant session dir already exists: {dest}")
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if dest.is_symlink():
-            dest.unlink()
-        shutil.move(str(source), str(dest))
-        # Keep clone-side discovery valid until the whole import and cleanup finish.
-        source.symlink_to(dest, target_is_directory=True)

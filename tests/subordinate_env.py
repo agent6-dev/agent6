@@ -87,6 +87,7 @@ def launch_worker(
     config = workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset(), into=into)
     launch = lane_launch.LaneLaunch(
         workdir=clone,
+        record_state=paths.state_dir(repo),
         session_id=sid,
         task="worker",
         config=config.path,
@@ -108,7 +109,8 @@ def dispatcher(
     spawner = lanes.build_coordinator_spawner(
         cfg,
         repo,
-        paths.state_dir(repo),
+        # A session's children keep their records where its own is.
+        layout.layout_of(session_dir).state_dir,
         explicit_leaves=frozenset(),
         mode="run",
         session_id=session_dir.name,
@@ -142,7 +144,7 @@ def run_panel_worker(url: str) -> None:
     """Run the internal panel seam in a worker process with real private launch provenance."""
     launch = lane_launch.read()
     assert launch is not None
-    directory = layout.bucket_dir(paths.state_dir(launch.workdir), "runs") / launch.session_id
+    directory = layout.bucket_dir(launch.record_state, "runs") / launch.session_id
     process.write_worker_pid(directory, os.getpid())
     meter = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
     executor = dispatcher(launch.workdir, directory, config(url), meter)

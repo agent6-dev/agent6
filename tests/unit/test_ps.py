@@ -257,34 +257,6 @@ def test_ps_folds_a_live_lane_under_its_live_coordinator(
     assert [ln["id"] for ln in rows["fan"]["lanes"]] == ["fan-l1"]
 
 
-def test_ps_nests_a_lane_under_its_coordinator_whatever_the_scan_order(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A live lane is seen twice: in its clone's own state dir and through the origin's symlink.
-
-    Keyed on the repo id, the nesting held only when the origin's entry happened to be scanned last;
-    the origin's view wins and the lane nests under its coordinator regardless, its lanes in lane
-    order.
-    """
-    base = tmp_path / "state"
-    monkeypatch.setenv("XDG_STATE_HOME", str(base))
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    origin = base / "agent6" / "aaa-origin-000000" / "sessions" / "runs"
-    clone = base / "agent6" / "zzz-clone-000000" / "sessions" / "runs"
-    _live(origin / "fan", {"mode": "run"})
-    for lane in (2, 1):
-        _live(
-            clone / f"fan-l{lane}",
-            {"mode": "run", "parallel": {"group": "fan", "lane": lane, "coordinator": "fan"}},
-        )
-        (origin / f"fan-l{lane}").symlink_to(clone / f"fan-l{lane}", target_is_directory=True)
-
-    assert ps_cmd.cmd_ps(as_json=True) == 0
-    (row,) = json.loads(capsys.readouterr().out)
-    assert row["id"] == "fan" and [ln["id"] for ln in row["lanes"]] == ["fan-l1", "fan-l2"]
-    assert {ln["repo_id"] for ln in row["lanes"]} == {"aaa-origin-000000"}
-
-
 def test_ps_names_the_worktree_a_run_works_in(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

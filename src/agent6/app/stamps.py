@@ -213,6 +213,19 @@ def write_session_manifest(
     write_manifest(layout.manifest_path, m)
 
 
+def lane_record_state() -> pathlib.Path | None:
+    """Return the state dir this lane's record lives under, or None outside a lane.
+
+    Returns:
+        The state dir of the repository whose run dispatched the lane.
+
+    Raises:
+        ConfigError: The lane's envelope is missing or malformed.
+    """
+    envelope = lane_launch.read()
+    return envelope.record_state if envelope is not None else None
+
+
 def lane_gate_source() -> manifest.GateSource:
     """Return the origin of the gate a lane's config carries, or "" outside a lane.
 

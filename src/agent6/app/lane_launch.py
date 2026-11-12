@@ -41,6 +41,8 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
 
     Attributes:
         workdir: The lane's clone, the run's cwd.
+        record_state: The state dir of the repository that dispatched the lane, where the
+            lane's record lives from its first event.
         session_id: The lane's session id.
         task: The task text, exactly as the lane's manifest records it.
         pins: The coordinator's pins, out of band of the task.
@@ -62,6 +64,7 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     """
 
     workdir: pathlib.Path
+    record_state: pathlib.Path
     session_id: str = pydantic.Field(min_length=1)
     task: str = pydantic.Field(min_length=1)
     pins: tuple[str, ...] = ()

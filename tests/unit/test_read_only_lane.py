@@ -230,7 +230,7 @@ def test_the_read_only_bucket_is_a_real_discoverable_one(tmp_path: pathlib.Path)
     assert "read_only" in layout.SESSION_BUCKETS and "read_only" in layout.HUB_BUCKETS
     assert "read_only" not in kinds.OPERATOR_MODES
     state = tmp_path / "state"
-    link = lane_watch.lane_link(state, "co-p1-l1", mode="read_only")
+    link = lane_watch.lane_dir(state, "co-p1-l1", mode="read_only")
     assert link == state / "sessions" / "read_only" / "co-p1-l1"
     assert lane_records.LaneSpec(1, "x", tmp_path, None).mode == "run"
 
@@ -288,6 +288,7 @@ def test_a_real_read_only_lane_cannot_write_run_or_start_anything(
             into,
             lane_launch.LaneLaunch(
                 workdir=clone,
+                record_state=paths.state_dir(clone),
                 session_id="leaf-l1",
                 task="review",
                 config=config.path,

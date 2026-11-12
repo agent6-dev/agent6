@@ -115,6 +115,7 @@ def bridge_spawner(
     cfg: Config,
     explicit_leaves: frozenset[str],
     origin: pathlib.Path,
+    record_state: pathlib.Path,
     max_usd: float | None,
     auto_approve: bool = False,
     lane_away: ipc.AwayMode = "wait",
@@ -140,6 +141,7 @@ def bridge_spawner(
         cfg: The origin's effective config.
         explicit_leaves: The dotted leaves the origin's config layers set.
         origin: The repository.
+        record_state: The state dir the lane's record goes under: its dispatcher's.
         max_usd: The lane's spend cap.
         auto_approve: The fan-out's own `--auto-approve`, forwarded.
         lane_away: The lane's away-mode: "wait" parks a question for `agent6 attach`,
@@ -179,6 +181,7 @@ def bridge_spawner(
             private,
             lane_launch.LaneLaunch(
                 workdir=spec.workdir,
+                record_state=record_state,
                 session_id=spec.session_id,
                 task=task,
                 pins=tuple(pins),
@@ -201,15 +204,13 @@ def bridge_spawner(
         return lane_records.LaneResult(
             spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
         )
-    lane_state = paths.state_dir(spec.workdir)
     # The clone's state dir is empty; the origin's memory and rulings are seeded into it.
-    memory.seed_store(paths.state_dir(origin), lane_state)
-    lane_bucket = sessions_layout.bucket_dir(lane_state, kinds.session_bucket(spec.mode))
+    memory.seed_store(paths.state_dir(origin), paths.state_dir(spec.workdir))
+    # The lane's record lives in the origin's state from its first event.
+    lane_dir = lane_watch.lane_dir(record_state, spec.session_id, mode=spec.mode)
 
     def list_dirs() -> list[pathlib.Path]:
-        if not lane_bucket.is_dir():
-            return []
-        return [p for p in lane_bucket.iterdir() if p.is_dir()]
+        return [lane_dir] if lane_dir.is_dir() else []
 
     # Subordinate models cannot dispatch work; only the harness may schedule panel leaves.
     markers = {
@@ -227,7 +228,7 @@ def bridge_spawner(
     if session_dir is None:
         return lane_records.LaneResult(
             spec=spec,
-            session_dir=lane_bucket / spec.session_id,
+            session_dir=lane_dir,
             branch=branch,
             ok=False,
             error=err,
@@ -246,7 +247,7 @@ def run_lane_to_completion(
     cfg: Config,
     explicit_leaves: frozenset[str],
     origin: pathlib.Path,
-    origin_state: pathlib.Path,
+    record_state: pathlib.Path,
     group: str,
     coordinator: str,
     runtime: LaneRuntime,
@@ -284,7 +285,7 @@ def run_lane_to_completion(
         cfg: The origin's effective config.
         explicit_leaves: The dotted leaves the origin's config layers set.
         origin: The repository.
-        origin_state: The origin's state dir.
+        record_state: The state dir the run's and its lanes' records live under.
         group: The group the lane belongs to.
         coordinator: The session every listing nests the lane under.
         runtime: The front-end's primitives.
@@ -323,6 +324,7 @@ def run_lane_to_completion(
             pins=pins,
             cfg=cfg,
             origin=origin,
+            record_state=record_state,
             max_usd=max_usd,
             auto_approve=auto_approve,
             lane_away=lane_away,
@@ -343,8 +345,6 @@ def run_lane_to_completion(
         if how != "gone":
             res = dataclasses.replace(res, error=f"{res.error}; its process {how}")
         return res
-    # The live symlink lets a hub answer the lane's prompts while it runs.
-    lane_watch.symlink_lane(origin_state, res)
     deadline_at = limits.deadline_at if limits is not None else None
     overdue = over_budget = False
     label = f"{'seat' if contract is not None else 'lane'} {spec.lane} {spec.session_id}"
@@ -395,7 +395,7 @@ def run_lane_to_completion(
                 pid=res.pid,
             )
     try:
-        imported = parallel_results.import_lane(res, origin, origin_state, import_lock)
+        imported = parallel_results.import_lane(res, origin, import_lock)
     except subrun.SubrunError as exc:
         # The clone holds the only copy of the lane's work: say where it is.
         return lane_records.LaneResult(
@@ -410,7 +410,6 @@ def run_lane_to_completion(
         imported,
         cfg=cfg,
         origin=origin,
-        origin_state=origin_state,
         group=group,
         reporter=reporter,
         stopped_by=_stopped_by(overdue=overdue, over_budget=over_budget),
@@ -430,7 +429,6 @@ def land_lane(
     *,
     cfg: Config,
     origin: pathlib.Path,
-    origin_state: pathlib.Path,
     group: str,
     reporter: app_reporter.Reporter,
     stopped_by: str = "",
@@ -442,7 +440,6 @@ def land_lane(
         imported: What the import landed.
         cfg: The origin's effective config.
         origin: The repository.
-        origin_state: The origin's state dir.
         group: The group the lane belongs to.
         reporter: Receives the notes.
         stopped_by: What ended the lane when the coordinator stopped it, "" otherwise.
@@ -451,9 +448,11 @@ def land_lane(
         The lane's result over the imported dir, its usage read from its record.
     """
     dest = imported.session_dir
+    # The dispatcher's own state takes the memory back and holds the launch files.
+    own_state = paths.state_dir(origin)
     parallel_results.carry_back(
         paths.state_dir(res.spec.workdir),
-        origin_state,
+        own_state,
         dest,
         lane=res.spec.lane,
         reporter=reporter,
@@ -463,9 +462,10 @@ def land_lane(
         [res.spec],
         origin=origin,
         note_keep=lambda path, why: reporter.note(f"kept {path}: {why}"),
+        record_state=sessions_layout.layout_of(dest).state_dir,
         workdir_root=res.spec.workdir.parent,
         base=workdirs.workdir_base(cfg, origin),
-        launch_dir=lane_launch.launch_dir(origin_state, group),
+        launch_dir=lane_launch.launch_dir(own_state, group),
         cfg=cfg,
     )
     result = recorded_result(
@@ -603,21 +603,21 @@ def recover_lanes(
     *,
     cfg: Config,
     origin: pathlib.Path,
-    origin_state: pathlib.Path,
+    record_state: pathlib.Path,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> list[lane_records.LaneResult]:
     """Return an interrupted group's lanes: the live stopped, the finished imported.
 
-    A lane with no session dir under the origin never started. A live one is stopped as
-    `agent6 stop` stops a run and waited for. One whose record is still only in its clone
-    (the live symlink) is imported; one already imported is read as it stands.
+    A lane with no session dir never started. A live one is stopped as `agent6 stop` stops
+    a run and waited for. One whose clone is still on disk is imported and landed; one
+    already landed is read as it stands.
 
     Args:
         group: The group id.
         children: The lanes' session ids, in lane order.
         cfg: The origin's effective config.
         origin: The repository.
-        origin_state: The origin's state dir.
+        record_state: The state dir the run's and its lanes' records live under.
         reporter: Receives the notes.
 
     Returns:
@@ -626,7 +626,7 @@ def recover_lanes(
     workdir_root = workdirs.subordinate_workdir_root(cfg, origin, group)
     results: list[lane_records.LaneResult] = []
     for lane, session_id in enumerate(children, start=1):
-        matches = sessions_layout.session_matches(origin_state, session_id)
+        matches = sessions_layout.session_matches(record_state, session_id)
         if not matches:
             continue
         lane_dir = matches[0].session_dir
@@ -638,11 +638,10 @@ def recover_lanes(
         if session_is_live(lane_dir):
             outcome = stop.stop_session(lane_dir, wait_s=lane_watch.STOP_GRACE_S)
             reporter.note(f"lane {lane} [{session_id}]: {outcome.message}")
-        if lane_dir.is_symlink():
-            real = lane_dir.resolve()
-            res = lane_records.LaneResult(spec, real, branch, True, "")
+        if (spec.workdir / ".git").exists():
+            res = lane_records.LaneResult(spec, lane_dir, branch, True, "")
             try:
-                imported = parallel_results.import_lane(res, origin, origin_state, None)
+                imported = parallel_results.import_lane(res, origin, None)
             except subrun.SubrunError as exc:
                 results.append(dataclasses.replace(res, ok=False, error=str(exc)))
                 continue
@@ -652,7 +651,6 @@ def recover_lanes(
                     imported,
                     cfg=cfg,
                     origin=origin,
-                    origin_state=origin_state,
                     group=group,
                     reporter=reporter,
                 )
@@ -668,7 +666,7 @@ def recover_lanes(
 def build_lane_recoverer(
     cfg: Config,
     origin: pathlib.Path,
-    origin_state: pathlib.Path,
+    record_state: pathlib.Path,
     *,
     mode: str,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
@@ -678,7 +676,7 @@ def build_lane_recoverer(
     Args:
         cfg: The run's config.
         origin: The repository.
-        origin_state: The origin's state dir.
+        record_state: The state dir the run's and its lanes' records live under.
         mode: The session mode; only a run dispatches.
         reporter: Receives the notes.
 
@@ -690,7 +688,7 @@ def build_lane_recoverer(
 
     def recover(group: str, children: Sequence[str]) -> list[lane_records.LaneResult]:
         return recover_lanes(
-            group, children, cfg=cfg, origin=origin, origin_state=origin_state, reporter=reporter
+            group, children, cfg=cfg, origin=origin, record_state=record_state, reporter=reporter
         )
 
     return recover
@@ -719,7 +717,7 @@ def lane_has_commits(session_dir: pathlib.Path, imported: lane_records.Imported)
 def build_lane_ranker(
     cfg: Config,
     origin: pathlib.Path,
-    origin_state: pathlib.Path,
+    record_state: pathlib.Path,
     *,
     coordinator_dir: pathlib.Path,
     base_sha: str,
@@ -737,7 +735,7 @@ def build_lane_ranker(
     Args:
         cfg: The coordinator's config.
         origin: The repository.
-        origin_state: The origin's state dir.
+        record_state: The state dir the run's and its lanes' records live under.
         coordinator_dir: The coordinator's session dir, which holds the judges' transcripts.
         base_sha: The commit the lanes were cut from when the dispatch names none.
         build_provider: Builds the reviewer provider a judge sits in.
@@ -783,7 +781,7 @@ def build_lane_ranker(
             candidates,
             outcome,
             winner=winner,
-            origin_state=origin_state,
+            record_state=record_state,
             coordinator_dir=coordinator_dir,
             group=group,
             reporter=reporter,
@@ -835,7 +833,7 @@ def build_lane_ranker(
 def build_lane_spawner(
     cfg: Config,
     origin: pathlib.Path,
-    origin_state: pathlib.Path,
+    record_state: pathlib.Path,
     *,
     explicit_leaves: frozenset[str],
     coordinator_session_id: str,
@@ -856,7 +854,7 @@ def build_lane_spawner(
     Args:
         cfg: The coordinator's config.
         origin: The repository.
-        origin_state: The origin's state dir.
+        record_state: The state dir the run's and its lanes' records live under.
         explicit_leaves: The dotted leaves the coordinator's config layers set.
         coordinator_session_id: The coordinator's session id.
         coordinator_mode: The coordinator's session bucket owner.
@@ -913,10 +911,10 @@ def build_lane_spawner(
             )
             for i, (chosen, lane) in enumerate(zip(settings, lanes, strict=True), start=1)
         ]
-        paths.mkdir_for_real_user(sessions_layout.bucket_dir(origin_state, "runs"))
+        paths.mkdir_for_real_user(sessions_layout.bucket_dir(record_state, "runs"))
         import_lock = threading.Lock()
         coord_dir = (
-            sessions_layout.bucket_dir(origin_state, kinds.session_bucket(coordinator_mode))
+            sessions_layout.bucket_dir(record_state, kinds.session_bucket(coordinator_mode))
             / coordinator_session_id
         )
         hard_stop = threading.Event()
@@ -957,7 +955,7 @@ def build_lane_spawner(
                 gate_source=gate_source,
                 explicit_leaves=explicit_leaves,
                 origin=origin,
-                origin_state=origin_state,
+                record_state=record_state,
                 group=group_id,
                 coordinator=coordinator_session_id,
                 runtime=runtime,
@@ -1005,7 +1003,7 @@ def build_lane_spawner(
 def build_coordinator_spawner(
     cfg: Config,
     origin: pathlib.Path,
-    origin_state: pathlib.Path,
+    record_state: pathlib.Path,
     *,
     explicit_leaves: frozenset[str],
     mode: str,
@@ -1024,7 +1022,7 @@ def build_coordinator_spawner(
     Args:
         cfg: The run's config.
         origin: The repository.
-        origin_state: The origin's state dir.
+        record_state: The state dir the run's and its lanes' records live under.
         explicit_leaves: The dotted leaves the run's config layers set.
         mode: The session mode.
         session_id: The run's session id.
@@ -1044,7 +1042,7 @@ def build_coordinator_spawner(
     return build_lane_spawner(
         cfg,
         origin,
-        origin_state,
+        record_state,
         explicit_leaves=explicit_leaves,
         coordinator_session_id=session_id,
         coordinator_mode=mode,

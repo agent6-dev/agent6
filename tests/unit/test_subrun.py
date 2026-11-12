@@ -56,7 +56,8 @@ def test_clone_workspace_raises_subrun_error_on_failure(tmp_path: pathlib.Path) 
         subrun.clone_workspace(origin, dest)
 
 
-def test_import_run_lands_branch_and_moves_run_dir(tmp_path: pathlib.Path) -> None:
+def test_import_run_lands_the_branch_and_leaves_the_record_in_place(tmp_path: pathlib.Path) -> None:
+    """The lane's record is in the origin's state from its first event: the import moves none."""
     origin = tmp_path / "origin"
     _init_repo(origin)
     lane_repo = tmp_path / "lane-1"
@@ -68,21 +69,16 @@ def test_import_run_lands_branch_and_moves_run_dir(tmp_path: pathlib.Path) -> No
     _git(lane_repo, "add", "-A")
     _git(lane_repo, "commit", "-q", "-m", "lane change")
 
-    lane_session_dir = tmp_path / "lane-state" / "sessions" / "runs" / "01ABC"
+    lane_session_dir = tmp_path / "origin-state" / "sessions" / "runs" / "01ABC"
     lane_session_dir.mkdir(parents=True)
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
-    origin_state = tmp_path / "origin-state"
 
-    result = subrun.import_run(
-        origin, lane_repo, branch, lane_session_dir, origin_state, mode="run"
-    )
-    imported = result.session_dir
+    result = subrun.import_run(origin, lane_repo, branch, lane_session_dir)
 
-    assert imported == origin_state / "sessions" / "runs" / "01ABC"
+    assert result.session_dir == lane_session_dir
     assert result.ref == branch
     assert result.tip == git_read.branch_tip_sha(origin, branch)
-    assert (imported / "manifest.json").read_text(encoding="utf-8") == "{}\n"
-    assert not lane_session_dir.exists()
+    assert (lane_session_dir / "manifest.json").read_text(encoding="utf-8") == "{}\n"
     assert git_read.branch_exists(origin, branch)
 
 
@@ -100,9 +96,7 @@ def test_import_run_lands_a_lane_that_never_committed(tmp_path: pathlib.Path) ->
     lane_session_dir.mkdir(parents=True)
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
 
-    result = subrun.import_run(
-        origin, lane_repo, "agent6/lane-1", lane_session_dir, tmp_path / "origin-state", mode="run"
-    )
+    result = subrun.import_run(origin, lane_repo, "agent6/lane-1", lane_session_dir)
 
     assert (result.session_dir / "manifest.json").is_file()
     assert (result.ref, result.tip) == ("", "")
@@ -130,15 +124,7 @@ def test_import_run_under_model_control_lands_the_hidden_chain_ref(
     lane_session_dir.mkdir(parents=True)
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
 
-    result = subrun.import_run(
-        origin,
-        lane_repo,
-        "",
-        lane_session_dir,
-        tmp_path / "origin-state",
-        model_control=True,
-        mode="run",
-    )
+    result = subrun.import_run(origin, lane_repo, "", lane_session_dir, model_control=True)
 
     chain = git_read.chain_ref_for("01MC")
     assert (result.ref, result.tip) == (chain, head)
@@ -161,34 +147,6 @@ def test_import_run_refuses_existing_branch(tmp_path: pathlib.Path) -> None:
     lane_session_dir = tmp_path / "lane-state" / "sessions" / "runs" / "01ABC"
     lane_session_dir.mkdir(parents=True)
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
-    origin_state = tmp_path / "origin-state"
 
     with pytest.raises(subrun.SubrunError):
-        subrun.import_run(origin, lane_repo, branch, lane_session_dir, origin_state, mode="run")
-    # Refused before moving anything.
-    assert lane_session_dir.exists()
-    assert not (origin_state / "sessions" / "runs" / "01ABC").exists()
-
-
-def test_import_run_refuses_existing_run_dir(tmp_path: pathlib.Path) -> None:
-    origin = tmp_path / "origin"
-    _init_repo(origin)
-    lane_repo = tmp_path / "lane-1"
-    subrun.clone_workspace(origin, lane_repo)
-    branch = "agent6/lane-1"
-    git_ops.create_branch(lane_repo, branch)
-    (lane_repo / "feature.txt").write_text("new stuff\n", encoding="utf-8")
-    _git(lane_repo, "add", "-A")
-    _git(lane_repo, "commit", "-q", "-m", "lane change")
-
-    lane_session_dir = tmp_path / "lane-state" / "sessions" / "runs" / "01ABC"
-    lane_session_dir.mkdir(parents=True)
-    (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
-    origin_state = tmp_path / "origin-state"
-    (origin_state / "sessions" / "runs" / "01ABC").mkdir(parents=True)  # already imported
-
-    with pytest.raises(subrun.SubrunError):
-        subrun.import_run(origin, lane_repo, branch, lane_session_dir, origin_state, mode="run")
-    # Refused before fetching or moving anything.
-    assert not git_read.branch_exists(origin, branch)
-    assert lane_session_dir.exists()
+        subrun.import_run(origin, lane_repo, branch, lane_session_dir)

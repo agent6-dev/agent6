@@ -11,28 +11,27 @@ from agent6.sessions import layout, manifest
 
 
 def children_of(session_dir: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    """Find direct children in both the visible state and a live clone's resolved state.
+    """Find the sessions a session dispatched: every record lives in one repository's state.
 
     Args:
-        session_dir: A session directory or its live link in an ancestor repository.
+        session_dir: The dispatching session's directory.
 
     Returns:
-        Actual child paths across every session bucket, including ended children.
+        The children's dirs across every session bucket, in name order, ended ones included.
     """
-    states = {layout.layout_of(p).state_dir for p in (session_dir, session_dir.resolve())}
+    state = layout.layout_of(session_dir).state_dir
     found: dict[str, pathlib.Path] = {}
-    for state in sorted(states):
-        for bucket in layout.SESSION_BUCKETS:
-            directory = layout.bucket_dir(state, bucket)
-            if not directory.is_dir():
+    for bucket in layout.SESSION_BUCKETS:
+        directory = layout.bucket_dir(state, bucket)
+        if not directory.is_dir():
+            continue
+        for child in sorted(directory.iterdir()):
+            try:
+                saved = manifest.read_manifest(child)
+            except manifest.ManifestError:
                 continue
-            for child in sorted(directory.iterdir()):
-                try:
-                    saved = manifest.read_manifest(child)
-                except manifest.ManifestError:
-                    continue
-                if saved.parallel is not None and saved.parallel.coordinator == session_dir.name:
-                    found[child.name] = child
+            if saved.parallel is not None and saved.parallel.coordinator == session_dir.name:
+                found[child.name] = child
     return tuple(found[key] for key in sorted(found))
 
 

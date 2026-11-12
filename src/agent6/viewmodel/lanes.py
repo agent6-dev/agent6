@@ -156,7 +156,7 @@ def _recorded_child(
     record: lane_dispatch.DispatchRecord, child: lane_dispatch.ChildRecord, bucket: pathlib.Path
 ) -> ChildView:
     lane_dir = bucket / child.session_id
-    launched = lane_dir.exists() or lane_dir.is_symlink()
+    launched = lane_dir.exists()
     status = route = ""
     if launched:
         summary = listing.summarize_session_dir(lane_dir)
