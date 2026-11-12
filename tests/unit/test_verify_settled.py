@@ -25,6 +25,7 @@ from agent6.harness import (
     nudges,
     operator_bridge,
     run_chain,
+    tool_effects,
 )
 from agent6.tools import background, command_tools, results
 from agent6.viewmodel import session_status
@@ -230,7 +231,7 @@ def test_only_the_returned_command_handle_holds_the_settled_streak(
     decisions: list[advice.Nudge | advice.Stop | None] = []
     for number in range(1, 4):
         turn = _turn(number)
-        wf._note_tool_effects(state, turn, "run_command", outcome, {})  # pyright: ignore[reportPrivateUsage]
+        tool_effects.note(wf, state, turn, "run_command", outcome, {})
         decisions.append(guards.verify_settled(turn, state, ctx))
     assert state.settled.idle == (0 if handle else 3)
     assert isinstance(decisions[-1], advice.Stop) is (not handle)
@@ -269,7 +270,7 @@ def test_a_background_read_counts_only_the_selected_jobs_returned_state(
     state = _green_state()
     state.settled = guards.SettledGuard(tree="tree", idle=1)
     turn = _turn(3)
-    wf._note_tool_effects(state, turn, "read_background", outcome, {})  # pyright: ignore[reportPrivateUsage]
+    tool_effects.note(wf, state, turn, "read_background", outcome, {})
     guards.verify_settled(turn, state, turn_context(tree_sha=lambda: "tree"))
     assert state.settled.idle == (1 if selected_state == "running" else 2)
     assert outcome.to_wire() == {
@@ -304,9 +305,10 @@ def test_waits_accumulate_within_a_turn_but_progress_restarts_the_streak(
     )
     ended = dataclasses.replace(live, returncode=0, background_id="")
     for outcome in [live, ended] if wait_first else [ended, live]:
-        wf._note_tool_effects(state, turn, "run_command", outcome, {})  # pyright: ignore[reportPrivateUsage]
+        tool_effects.note(wf, state, turn, "run_command", outcome, {})
     if edited:
-        wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        tool_effects.note(
+            wf,
             state,
             turn,
             "apply_edit",
@@ -345,7 +347,8 @@ def test_a_memory_store_write_restarts_the_idle_streak() -> None:
     state = _green_state()
     state.settled = guards.SettledGuard(tree="tree", idle=nudges.VERIFY_SETTLED_NUDGE_AFTER - 1)
     turn = _turn(5)
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+    tool_effects.note(
+        wf,
         state,
         turn,
         "apply_edit",

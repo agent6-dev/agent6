@@ -15,7 +15,15 @@ from unittest import mock
 
 from agent6.config import Config
 from agent6.context import memory
-from agent6.harness import guards, loop, loop_conversation, loop_snapshot, loop_state, run_chain
+from agent6.harness import (
+    guards,
+    loop,
+    loop_conversation,
+    loop_snapshot,
+    loop_state,
+    run_chain,
+    tool_effects,
+)
 from agent6.tools import results
 
 
@@ -45,7 +53,8 @@ def _turn() -> loop_state.TurnState:
 
 
 def _read(wf: loop.Harness, state: loop_state.LoopState, path: str) -> None:
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+    tool_effects.note(
+        wf,
         state,
         _turn(),
         "read_file",
@@ -57,7 +66,8 @@ def _read(wf: loop.Harness, state: loop_state.LoopState, path: str) -> None:
 def _edit(
     wf: loop.Harness, state: loop_state.LoopState, path: str, *, created: bool = False
 ) -> None:
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+    tool_effects.note(
+        wf,
         state,
         _turn(),
         "apply_edit",
@@ -71,7 +81,8 @@ def _edit(
 
 
 def _patch(wf: loop.Harness, state: loop_state.LoopState, text: str) -> None:
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+    tool_effects.note(
+        wf,
         state,
         _turn(),
         "apply_patch",

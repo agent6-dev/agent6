@@ -26,7 +26,7 @@ import pytest
 from agent6 import kinds
 from agent6.config import Config, load_config
 from agent6.graph import curator, models
-from agent6.harness import compaction_elision, nudges
+from agent6.harness import compaction_elision, nudges, tool_effects
 from agent6.sandbox import jail_session
 from agent6.sessions import layout
 from agent6.tools import dispatch, operator_prompts, result_format, results, tool_errors
@@ -567,7 +567,7 @@ def test_wire_tool_error_shape(tmp_path: pathlib.Path) -> None:
 
     Rebuilding it here pinned the test's own literal and left the producer unpinned.
     """
-    from agent6.harness import loop, loop_state
+    from agent6.harness import loop_state
 
     d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     with pytest.raises(tool_errors.ToolError) as exc:
@@ -575,9 +575,7 @@ def test_wire_tool_error_shape(tmp_path: pathlib.Path) -> None:
 
     wf = mock.MagicMock()
     state = loop_state.LoopState(original_task="t", tool_calls=0)
-    content = loop.Harness._note_tool_error(  # pyright: ignore[reportPrivateUsage]
-        wf, state, "no_such_tool", {}, exc.value
-    )
+    content = tool_effects.note_tool_error(wf, state, "no_such_tool", {}, exc.value)
     assert content == '{"error": "Unknown tool: no_such_tool"}'
 
 
@@ -585,7 +583,7 @@ def test_the_tool_error_log_line_names_the_tool_once() -> None:
     """A tool raises the bare message; the logger prefixes the tool's name."""
     from agent6 import path_safety
     from agent6.context import skills
-    from agent6.harness import loop, loop_state
+    from agent6.harness import loop_state
     from agent6.tools import skill_tools
 
     with pytest.raises(tool_errors.ToolError) as exc:
@@ -597,9 +595,7 @@ def test_the_tool_error_log_line_names_the_tool_once() -> None:
     assert str(exc.value).startswith("unknown or disabled skill 'x'")
     wf = mock.MagicMock()
     state = loop_state.LoopState(original_task="t", tool_calls=0)
-    loop.Harness._note_tool_error(  # pyright: ignore[reportPrivateUsage]
-        wf, state, "use_skill", {}, exc.value
-    )
+    tool_effects.note_tool_error(wf, state, "use_skill", {}, exc.value)
     wf.log.assert_called_with(f"  tool_error: use_skill: {exc.value}")
 
 

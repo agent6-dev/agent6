@@ -15,7 +15,7 @@ from typing import Any
 from unittest import mock
 
 from agent6.config import Config
-from agent6.harness import loop, loop_conversation, loop_state, nudges, run_chain
+from agent6.harness import loop, loop_conversation, loop_state, nudges, run_chain, tool_effects
 from agent6.tools import results
 
 NOTICE_HEAD = "[harness verify] The gate was red at the last verify and green at this one;"
@@ -91,8 +91,13 @@ def _edit(
 ) -> None:
     """Apply an edit through the real path: the file changes on disk, then the loop notes it."""
     (wf.chain.root / rel).write_text("y = 2\n", encoding="utf-8")
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "apply_edit", results.EditResult(applied=("replace",), path=rel), {"path": rel}
+    tool_effects.note(
+        wf,
+        state,
+        turn,
+        "apply_edit",
+        results.EditResult(applied=("replace",), path=rel),
+        {"path": rel},
     )
 
 
@@ -104,20 +109,18 @@ def _command(
     writes: tuple[str, ...] = (),
 ) -> None:
     """A run_command edit is on disk when the loop asks git whether the tree moved."""
-    before = wf._tree_before_command("run_command")  # pyright: ignore[reportPrivateUsage]
+    before = tool_effects.tree_before_command(wf, "run_command")
     for rel in writes:
         (wf.chain.root / rel).write_text("z = 3\n", encoding="utf-8")
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "run_command", _exec(0), {"command": "ls"}, tree_before=before
+    tool_effects.note(
+        wf, state, turn, "run_command", _exec(0), {"command": "ls"}, tree_before=before
     )
 
 
 def _verify(
     wf: loop.Harness, state: loop_state.LoopState, turn: loop_state.TurnState, rc: int
 ) -> None:
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "run_verify_command", _exec(rc), {}
-    )
+    tool_effects.note(wf, state, turn, "run_verify_command", _exec(rc), {})
 
 
 def _notices(turn: loop_state.TurnState) -> list[str]:

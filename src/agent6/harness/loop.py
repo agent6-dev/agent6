@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, media, paths, task_text, terminal
+from agent6 import errors, media, task_text, terminal
 from agent6.config import Config
 from agent6.context import memory as agent6_memory
 from agent6.context import skills
@@ -42,7 +42,6 @@ from agent6.harness import (
     loop_snapshot,
     loop_state,
     loop_steer,
-    memory_touch,
     metric_sampler,
     nudges,
     operator_bridge,
@@ -58,6 +57,7 @@ from agent6.harness import (
     run_chain,
     run_checkpoint,
     standing_goal,
+    tool_effects,
     toolset,
     verify_gate,
     verify_verdict,
@@ -71,7 +71,7 @@ from agent6.providers import (
     ToolDefinition,
 )
 from agent6.sessions import process
-from agent6.tools import dispatch, mcp_client, operator_prompts, results, schema, tool_errors
+from agent6.tools import dispatch, operator_prompts, schema, tool_errors
 
 # Bytes a repeated tool result must exceed before the dedupe stub replaces it.
 _DEDUPE_MIN_CHARS = 500
@@ -474,7 +474,9 @@ class Harness:
             # The response's blocks enter the history verbatim, so tool_use ids round-trip.
             assistant = conversation.assistant(got.raw.get("content") or [])
             if not assistant.tool_uses:
-                result = self._handle_no_tool_use(got, assistant, conversation, state, ctx)
+                result = quiet_turns.handle_no_tool_use(
+                    self, got, assistant, conversation, state, ctx
+                )
                 if result is not None:
                     return result
                 # A prose-only turn also reaches the snapshot and the operator boundary.
@@ -634,7 +636,7 @@ class Harness:
         self.operator_tasks.take(state.root_task_id)
         self._maybe_surface_current_task(conversation, state)
         for advisor in guards.BEFORE_CALL:
-            self._tell(conversation, advisor(state, ctx))
+            self.tell(conversation, advisor(state, ctx))
 
     def _maybe_surface_current_task(
         self, conversation: loop_conversation.Conversation, state: loop_state.LoopState
@@ -667,7 +669,7 @@ class Harness:
                 pydantic.ValidationError,
             ) as exc:  # advisory; never fatal
                 self.log(f"LOOP: cursor advance skipped: {exc}")
-        self._tell(conversation, guards.stuck_on_task(state, current_id, nodes[current_id], nodes))
+        self.tell(conversation, guards.stuck_on_task(state, current_id, nodes[current_id], nodes))
         if current_id == state.focus.surfaced_task_id:
             return  # already surfaced; the banner survives tier-1 elision
         node = nodes[current_id]
@@ -848,7 +850,7 @@ class Harness:
                 if refusal is not None:
                     # The provider's front-end refused the input; the same error is the result.
                     raise tool_errors.ToolError(refusal)
-                tree_before = self._tree_before_command(name)
+                tree_before = tool_effects.tree_before_command(self, name)
                 result = self.dispatcher.dispatch(name, tool_input)
                 attachment = result.attachment
                 if attachment is not None and (reason := media_budget.refusal(attachment)):
@@ -856,11 +858,11 @@ class Harness:
                     self.emit("loop.media.refused", provider_tool_call_id=tu.id, reason=reason)
                     raise tool_errors.ToolError(reason)
                 wire_result = result.to_wire()
-                if note := self._left_out_note(turn, name, result, tool_input):
+                if note := tool_effects.left_out_note(self, turn, name, result, tool_input):
                     wire_result["note"] = note
                 content = json.dumps(wire_result, ensure_ascii=False)
-                self._note_tool_effects(
-                    state, turn, name, result, tool_input, tree_before=tree_before
+                tool_effects.note(
+                    self, state, turn, name, result, tool_input, tree_before=tree_before
                 )
                 # A repeated call with an unchanged result serves a stub, so a re-read stays small.
                 if attachment is None and state.spiral.stub_repeat(
@@ -885,9 +887,9 @@ class Harness:
                     state, turn, ctx, guards.unreachable_tool(state, name, tool_input, result)
                 )
                 # Only a dispatched finish counts; a refused one is an error result.
-                self._capture_finish(state, turn, name, tool_input)
+                tool_effects.capture_finish(self, state, turn, name, tool_input)
             except tool_errors.ToolError as exc:
-                content = self._note_tool_error(state, name, tool_input, exc)
+                content = tool_effects.note_tool_error(self, state, name, tool_input, exc)
                 self._take(state, turn, ctx, guards.tool_error_ladder(turn, state, ctx))
             except tool_errors.OperatorCommandUnexecutableError as exc:
                 return self._unexecutable_abort(exc, turn=turn.number, state=state)
@@ -912,265 +914,6 @@ class Harness:
         except tool_errors.OperatorCommandUnexecutableError as exc:
             return self._unexecutable_abort(exc, turn=turn.number, state=state)
         return None
-
-    def _left_out_note(
-        self, turn: loop_state.TurnState, name: str, result: results.ToolResult, tool_input: Any
-    ) -> str:
-        """Return the sentence for an edit the run's commits leave out, and log the paths.
-
-        Args:
-            turn: This turn's state.
-            name: The tool that ran.
-            result: The dispatched tool's result.
-            tool_input: The model's input to the tool.
-
-        Returns:
-            One sentence per left-out path; "" when the commits hold every path written.
-        """
-        if self.mode != "run":
-            return ""
-        # A memory write names its file inside the store, which is no path of the repository.
-        touch = memory_touch.memory_store_touch(self.state_dir, name, result, tool_input)
-        if touch is not None and touch.whole_store:
-            return ""
-        store_paths = () if touch is None else touch.store_paths
-        if isinstance(result, results.EditResult):
-            paths: tuple[str, ...] = (result.path,)
-        elif isinstance(result, results.PatchResult):
-            written = tuple(p for p, _ in result.files) or (result.path,)
-            paths = tuple(p for p in written if p not in result.deleted and p not in store_paths)
-        else:
-            return ""
-        ignored, untracked = self.chain.left_out(paths)
-        if not (ignored or untracked):
-            return ""
-        self.emit(
-            "loop.edit.left_out",
-            turn=turn.number,
-            ignored=list(ignored),
-            untracked=list(untracked),
-        )
-        tail = ": the edit is on disk, and this run's commits leave it out."
-        return " ".join(
-            [f"{p} is ignored by git{tail}" for p in ignored]
-            + [f"{p} was untracked when the run started{tail}" for p in untracked]
-        )
-
-    def _tree_before_command(self, name: str) -> str:
-        """Return the tree's content sha before a child-process tool's call.
-
-        The operator's own gates are excluded: the caches they drop must not invalidate
-        the pass they just produced.
-
-        Args:
-            name: The tool about to run.
-
-        Returns:
-            The sha, or "" for a tool that cannot touch the tree.
-        """
-        if name != "run_command" and not name.startswith(mcp_client.MCP_TOOL_PREFIX):
-            return ""
-        return self.chain.tree_sha()
-
-    def _left_the_tree_dirty(self, tree_before: str) -> bool:
-        """Report whether a child-process tool changed the tree.
-
-        Git decides, so a read-only probe costs its pass nothing and gitignored build
-        output never counts.
-
-        Args:
-            tree_before: The sha from `_tree_before_command`; "" reads as unchanged.
-
-        Returns:
-            True when the tree's content sha differs from `tree_before`.
-        """
-        if not tree_before:
-            return False
-        after = self.chain.tree_sha()
-        return bool(after) and after != tree_before
-
-    def _note_tool_effects(
-        self,
-        state: loop_state.LoopState,
-        turn: loop_state.TurnState,
-        name: str,
-        result: results.ToolResult,
-        tool_input: Any,
-        tree_before: str = "",
-    ) -> None:
-        """Note a dispatched tool's effects on the turn.
-
-        Verify results, metric samples, tree edits and graph mutations feed the commit,
-        the review panel and the finish gates.
-
-        Args:
-            state: The execution's state.
-            turn: This turn's state.
-            name: The tool that ran.
-            result: Its result.
-            tool_input: Its input.
-            tree_before: The sha from `_tree_before_command` for a child-process tool.
-        """
-        if (
-            name == "ask_user"
-            and isinstance(result, results.AnswersResult)
-            and result.answers is not None
-        ):
-            # The result carries the questions the dispatcher accepted; the input is not reparsed.
-            for question, answer in zip(result.asked, result.answers, strict=False):
-                self._record_decision(state, question, answer)
-        state.command_cut = state.command_cut or (
-            isinstance(result, results.ExecResult) and result.stopped_by_operator
-        )
-        if name == "run_verify_command" and isinstance(result, results.ExecResult):
-            # A timed-out model gate gets the scoped follow-up, whatever the gate policy.
-            if not (
-                self.mode == "run"
-                and result.timed_out
-                and not state.verify.scoped
-                and self.gate.scoped_followup(state, turn) is not None
-            ):
-                if result.returncode == 0:
-                    # The model's call runs the full argv, so its green is a full pass.
-                    state.verify.scoped = False
-                self.gate.note_result(state, turn, result)
-        elif name == "run_metric_command" and isinstance(result, results.MetricResult):
-            turn.metric_sampled = True
-            # The tree this reading covers, so the auto path does not sample it again.
-            state.metric.tree = self.chain.tree_sha()
-            turn.metric_feedback = self.metrics.record(
-                state.metric.history,
-                result,
-                turn=turn.number,
-                label=f"manual turn {turn.number}",
-                sha="",
-            )
-            if turn.verify_just_passed:
-                turn.metric_plateau_finish = self.metrics.plateau_finish(state.metric.history)
-        turn.waited_on_background |= (
-            name == "run_command"
-            and isinstance(result, results.ExecResult)
-            and bool(result.background_id)
-        ) or (
-            name == "read_background"
-            and isinstance(result, results.BackgroundResult)
-            and result.running
-        )
-        if name in ("apply_edit", "apply_patch") and isinstance(result, results.PreviewResult):
-            return  # a dry run writes nothing: no memory write, no tree edit
-        if self._note_memory_touch(state, name, result, tool_input):
-            # A memory write is not workspace work: the tree bookkeeping below does not apply.
-            turn.wrote_memory = True
-            return
-        if name in ("apply_edit", "apply_patch"):
-            turn.edited = True
-            state.ever_edited = True
-            # A same-turn verify pass no longer covers this tree.
-            turn.edit_since_verify_pass = True
-            state.verify.note_edit()
-        elif self._left_the_tree_dirty(tree_before):
-            # A command or an MCP tool changed the tree, so a green verify no longer covers it.
-            turn.edit_since_verify_pass = True
-            state.verify.note_edit()
-        if name in dag_focus.DAG_MUTATING_TOOLS:
-            turn.dag_mutated = True  # snapshot once after the turn
-
-    def _note_memory_touch(
-        self, state: loop_state.LoopState, name: str, result: results.ToolResult, tool_input: Any
-    ) -> bool:
-        """Count a read of a memory fact, or record an edit tool's write to the store.
-
-        Args:
-            state: The execution's state; holds the memory bookkeeping.
-            name: The tool that ran.
-            result: Its result.
-            tool_input: Its input.
-
-        Returns:
-            True for a write to the store, which is not workspace work.
-        """
-        touch = memory_touch.memory_store_touch(self.state_dir, name, result, tool_input)
-        if touch is None:
-            return False
-        if name == "read_file":
-            for fact in touch.facts:
-                state.memory.read[fact] = state.memory.read.get(fact, 0) + 1
-            return False
-        if name in ("apply_edit", "apply_patch"):
-            state.memory.written = True
-            for fact, op in touch.facts.items():
-                state.memory.note_write(fact, op)
-            return touch.whole_store
-        return False
-
-    def _capture_finish(
-        self, state: loop_state.LoopState, turn: loop_state.TurnState, name: str, tool_input: Any
-    ) -> None:
-        """Record a dispatched finish on the turn; a finish_planning also writes its plan.
-
-        The finish gates may still revoke it; a gate proposal it carried stays for the end.
-
-        Args:
-            state: The execution's state.
-            turn: This turn's state.
-            name: The tool that ran.
-            tool_input: Its input.
-        """
-        finish = finish_gates.FinishCall.parse(name, tool_input)
-        if finish is None:
-            return
-        turn.finish = finish
-        if finish.stale_gate:
-            state.gates.stale_gate = finish.stale_gate
-        if finish.kind != "finish_planning":
-            return
-        if finish.plan_salvaged:
-            self.log("  plan salvaged: folded summary into a title-only plan_markdown")
-        if self.plan_output_path is None or not finish.plan_markdown:
-            return
-        plan_md = finish_gates.with_original_task(
-            finish.plan_markdown,
-            state.operator_task or task_text.operator_task_text(state.original_task),
-        )
-        try:
-            paths.mkdir_for_real_user(self.plan_output_path.parent)
-            self.plan_output_path.write_text(plan_md, encoding="utf-8")
-            self.log(f"  plan written: {self.plan_output_path} ({len(plan_md)} chars)")
-            self.emit(
-                "loop.plan_written",
-                path=str(self.plan_output_path),
-                bytes=len(plan_md.encode("utf-8")),
-            )
-        except OSError as exc:
-            self.log(f"  plan write failed: {exc}")
-            self.emit("loop.plan_write.failed", path=str(self.plan_output_path), error=str(exc))
-
-    def _note_tool_error(
-        self,
-        state: loop_state.LoopState,
-        name: str,
-        tool_input: dict[str, Any],
-        exc: tool_errors.ToolError,
-    ) -> str:
-        """Note one failed dispatch for the spiral guard and the reachability note.
-
-        Args:
-            state: The execution's state.
-            name: The tool that failed.
-            tool_input: Its input.
-            exc: The error.
-
-        Returns:
-            The error content served as the tool result.
-        """
-        content = json.dumps({"error": str(exc)})
-        self.log(f"  tool_error: {name}: {exc}")
-        state.spiral.note_error(
-            nudges.tool_error_signature(name, str(exc)),
-            denial=isinstance(exc, tool_errors.ToolDeniedError),
-            content=content,
-        )
-        return content
 
     def _turn_auto_commit_and_metric(
         self, state: loop_state.LoopState, turn: loop_state.TurnState
@@ -1331,7 +1074,7 @@ class Harness:
         state.settled.restart()
         return True
 
-    def _end_gates(
+    def end_gates(
         self,
         state: loop_state.LoopState,
         turn: loop_state.TurnState,
@@ -1412,7 +1155,7 @@ class Harness:
             tree_green=lambda: self.gate.tree_green(state.verify),
             budget_remaining=self._budget_fraction_remaining,
             operator_wait_s=lambda: self.dispatcher.operator_wait_s,
-            open_subtasks=self._open_subtasks,
+            open_subtasks=self.open_subtasks,
         )
 
     def _budget_fraction_remaining(self) -> float | None:
@@ -1471,7 +1214,7 @@ class Harness:
         if outcome.event:
             self.emit(outcome.event, **outcome.fields)
         if outcome.declared and turn.finish is None:
-            aborted = self._end_gates(
+            aborted = self.end_gates(
                 state, turn, ctx, ending=outcome.declared, gates=finish_gates.END_GATES
             )
             if aborted is not None:
@@ -1481,7 +1224,7 @@ class Harness:
         turn.stops.append(outcome)
         return None
 
-    def _tell(
+    def tell(
         self, conversation: loop_conversation.Conversation, nudge: advice.Nudge | None
     ) -> None:
         """Apply a before-call advisor's answer: the notice joins the conversation.
@@ -1557,7 +1300,7 @@ class Harness:
                 state,
                 loop_snapshot.End(
                     reason,
-                    advice.with_open_tasks(finish.summary, self._open_subtasks()),
+                    advice.with_open_tasks(finish.summary, self.open_subtasks()),
                     completed=True,
                     verdict="grounded" if finish.kind == "finish_session" else "passed",
                     checkpoint=False,
@@ -1566,168 +1309,6 @@ class Harness:
                 turn=turn.number,
             )
         return None
-
-    def _handle_no_tool_use(
-        self,
-        resp: ProviderResponse,
-        assistant: loop_conversation.AssistantMessage,
-        conversation: loop_conversation.Conversation,
-        state: loop_state.LoopState,
-        ctx: advice.TurnContext,
-    ) -> loop_snapshot.SessionResult | None:
-        """Handle a turn with no tool call: a silent finish with text, went-quiet without.
-
-        A silent finish passes the gates a finish_session would; an empty turn is nudged
-        up to a cap and never reads as success.
-
-        Args:
-            resp: The model's response.
-            assistant: The turn as it entered the conversation.
-            conversation: The conversation so far.
-            state: The execution's state.
-            ctx: This turn's context.
-
-        Returns:
-            The end, or None to go on after a nudge.
-        """
-        text = resp.text.strip() if resp.text else ""
-        if text:
-            # A prose turn is non-empty, so the went-quiet nudge budget refills.
-            state.quiet.went_quiet_nudges_used = 0
-            turn = loop_state.TurnState(number=ctx.turn, resp=resp, assistant=assistant)
-            return self._handle_silent_finish(text, conversation, state, turn, ctx)
-        return self._handle_went_quiet(resp, conversation, state, ctx)
-
-    def _handle_silent_finish(
-        self,
-        text: str,
-        conversation: loop_conversation.Conversation,
-        state: loop_state.LoopState,
-        turn: loop_state.TurnState,
-        ctx: advice.TurnContext,
-    ) -> loop_snapshot.SessionResult | None:
-        """Run a prose turn through the end gates as an implicit finish.
-
-        Args:
-            text: The turn's prose.
-            conversation: The conversation the gates' notices enter.
-            state: The execution's state.
-            turn: This turn's state.
-            ctx: This turn's context.
-
-        Returns:
-            The silent-finish end, or None when a gate sent the worker back to work.
-        """
-        if (stall := quiet_turns.silent_no_work(state, ctx)) is not None:
-            self._tell(conversation, stall)
-            return None
-        aborted = self._end_gates(
-            state, turn, ctx, ending="silent_finish", gates=finish_gates.SILENT_END_GATES
-        )
-        # A prose turn has no tool results, so the gates' notices go to the conversation.
-        for item in turn.tool_results:
-            if isinstance(item, loop_conversation.Notice):
-                conversation.notice(item.text)
-        if aborted is not None or turn.end_returned:
-            return aborted
-        if (asked := quiet_turns.question_in_prose(state, ctx, text)) is not None:
-            self._tell(conversation, asked)
-            return None
-        # A standing goal re-enters, else an interactive run parks for a steer; ask mode ends.
-        cont = loop_steer.quiet_continuation(
-            self, conversation, state, turn=turn.number, reason="silent_finish"
-        )
-        if cont is not None:
-            return None if isinstance(cont, loop_state.NextTurn) else cont
-        # In ask mode the prose is the answer, so the end reads "answered".
-        reason: loop_snapshot.SessionEndReason = (
-            "answered" if self.mode == "ask" else "silent_finish"
-        )
-        if self.mode == "ask":
-            self.log(f"  ask answered at turn {turn.number}")
-        else:
-            self.log(
-                f"LOOP: silent_finish at turn {turn.number} - agent emitted text but no tool_use"
-            )
-        # Run and plan ground on the verify state as finish_session does; ask keeps the answer.
-        return self.finish(
-            state,
-            loop_snapshot.End(
-                reason,
-                text
-                if self.mode == "ask"
-                else advice.with_open_tasks(text[:1000], self._open_subtasks()),
-                completed=True,
-                verdict="grounded" if reason == "silent_finish" else "passed",
-            ),
-            turn=turn.number,
-        )
-
-    def _handle_went_quiet(
-        self,
-        resp: ProviderResponse,
-        conversation: loop_conversation.Conversation,
-        state: loop_state.LoopState,
-        ctx: advice.TurnContext,
-    ) -> loop_snapshot.SessionResult | None:
-        """Nudge an empty turn up to the per-streak cap, then end the execution as went_quiet.
-
-        The empty assistant message leaves the conversation first: providers reject an
-        assistant message with no content.
-
-        Args:
-            resp: The model's response.
-            conversation: The conversation so far.
-            state: The execution's state.
-            ctx: This turn's context.
-
-        Returns:
-            The end, or None to go on after a nudge.
-        """
-        turn = ctx.turn
-        reasoning_chars = provider_call.reasoning_starvation(resp)
-        starved = reasoning_chars > 0
-        if starved:
-            self.log(
-                f"LOOP: reasoning_starvation at turn {turn}"
-                f" - stop_reason=length, reasoning_chars={reasoning_chars},"
-                f" output_tokens={resp.output_tokens}; the model spent"
-                f" its entire output budget on reasoning_content."
-                f" Add this model to _REASONING_MODEL_HINTS in"
-                f" providers/openai.py if it isn't already."
-            )
-            self.emit(
-                "loop.reasoning_starvation",
-                turn=turn,
-                reasoning_chars=reasoning_chars,
-                output_tokens=resp.output_tokens,
-                stop_reason=resp.stop_reason,
-            )
-        # A subscription plan is metered in points, so it says "spent", not "billed".
-        plan_metered = self.budget is not None and self.budget.snapshot().plan_latest is not None
-        spent_word = "spent" if plan_metered else "billed"
-        billed = (
-            f" ({resp.output_tokens} output tokens {spent_word} on it: reasoning that never"
-            " surfaced, or a tool call the provider dropped)"
-            if resp.output_tokens > 0 and not starved
-            else ""
-        )
-        self.log(f"LOOP: went_quiet at turn {turn} - agent emitted no text and no tool_use{billed}")
-        # Every path below calls again or snapshots, and a provider rejects the empty turn.
-        conversation.pop_quiet_assistant()
-        if (nudge := quiet_turns.went_quiet(state, ctx, resp)) is not None:
-            self._tell(conversation, nudge)
-            return None
-        cont = loop_steer.quiet_continuation(
-            self, conversation, state, turn=turn, reason="went_quiet"
-        )
-        if cont is not None:
-            return None if isinstance(cont, loop_state.NextTurn) else cont
-        return self.finish(
-            state,
-            loop_snapshot.End("went_quiet", "(agent emitted no text and no tool_use)"),
-            turn=turn,
-        )
 
     # ---- the end -------------------------------------------------------------
 
@@ -1891,7 +1472,7 @@ class Harness:
         }
         self.emit("graph.update", nodes=nodes, cursor=cursor)
 
-    def _open_subtasks(self) -> list[tuple[str, str]]:
+    def open_subtasks(self) -> list[tuple[str, str]]:
         """List the worker's open subtasks as (id, title) pairs, in run mode.
 
         The root stays open until the end, so counting it would deadlock every gate; a
@@ -1926,7 +1507,7 @@ class Harness:
         """Return the operator's recorded rulings for the prompt, "" without a state dir."""
         return agent6_memory.decisions_text(self.state_dir) if self.state_dir is not None else ""
 
-    def _record_decision(self, state: loop_state.LoopState, question: str, answer: str) -> None:
+    def record_decision(self, state: loop_state.LoopState, question: str, answer: str) -> None:
         """Append an operator's answer to the repo's decisions.md as a ruling.
 
         Args:
@@ -2093,7 +1674,7 @@ class Harness:
             bridge=self.bridge,
             parallel=lambda: self.parallel,
             dispatcher=self.dispatcher,
-            record_decision=self._record_decision,
+            record_decision=self.record_decision,
             log=self.log,
             emit=self.emit,
         )

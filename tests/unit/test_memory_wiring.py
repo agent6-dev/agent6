@@ -16,7 +16,7 @@ import pytest
 from agent6 import kinds
 from agent6.config import Config
 from agent6.context import memory as agent6_memory
-from agent6.harness import prompt_blocks
+from agent6.harness import prompt_blocks, tool_effects
 from agent6.tools import dispatch, tool_errors
 
 
@@ -190,14 +190,12 @@ def test_mixed_patch_records_memory_and_workspace_effects(
     turn = loop_state.TurnState(
         number=1, resp=mock.MagicMock(), assistant=loop_conversation.AssistantMessage((), ())
     )
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "apply_patch", result, tool_input
-    )
+    tool_effects.note(wf, state, turn, "apply_patch", result, tool_input)
     assert state.ever_edited and not state.verify.green_and_untouched
     assert state.memory.written
     assert state.memory.wrote == ["fresh"]
     assert state.memory.created == ["fresh"]
-    note = wf._left_out_note(turn, "apply_patch", result, tool_input)  # pyright: ignore[reportPrivateUsage]
+    note = tool_effects.left_out_note(wf, turn, "apply_patch", result, tool_input)
     assert note == (
         "notes.txt was untracked when the run started: the edit is on disk, and this"
         " run's commits leave it out."
@@ -263,13 +261,9 @@ def test_a_memory_write_does_not_withdraw_a_green_verify(
 
     result = mock.MagicMock()
     result.path = "fact.md"  # the store-relative spelling EditResult uses
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "apply_edit", result, {"path": str(target), "edits": []}
-    )
+    tool_effects.note(wf, state, turn, "apply_edit", result, {"path": str(target), "edits": []})
     assert state.memory.written is True
     assert state.verify.green_and_untouched  # the green survived
     # A workspace edit still marks the tree.
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "apply_edit", result, {"path": "src/x.py", "edits": []}
-    )
+    tool_effects.note(wf, state, turn, "apply_edit", result, {"path": "src/x.py", "edits": []})
     assert not state.verify.green_and_untouched

@@ -22,6 +22,7 @@ from agent6.harness import (
     loop_state,
     nudges,
     run_chain,
+    tool_effects,
     verify_verdict,
 )
 from agent6.tools import results
@@ -55,7 +56,8 @@ def _turn(turn: int = 1, **kw: Any) -> loop_state.TurnState:
 def _verify(
     wf: loop.Harness, state: loop_state.LoopState, turn: loop_state.TurnState, rc: int
 ) -> None:
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+    tool_effects.note(
+        wf,
         state,
         turn,
         "run_verify_command",
@@ -141,7 +143,8 @@ def test_memory_dir_edit_marks_memory_written() -> None:
     wf = _wf()
     state = _state()
     turn = _turn(1)
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+    tool_effects.note(
+        wf,
         state,
         turn,
         "apply_edit",
@@ -168,7 +171,8 @@ def test_memory_dir_patch_without_a_path_marks_memory_written() -> None:
         wf = _wf()
         state = _state()
         turn = _turn(1)
-        wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+        tool_effects.note(
+            wf,
             state,
             turn,
             "apply_patch",
@@ -216,8 +220,8 @@ def test_a_preview_edit_is_no_edit() -> None:
     ]
     for name, tool_input in calls:
         wf, state, turn = _wf(), _state(), _turn(1)
-        wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-            state, turn, name, preview(str(tool_input.get("path", "src/code.py"))), tool_input
+        tool_effects.note(
+            wf, state, turn, name, preview(str(tool_input.get("path", "src/code.py"))), tool_input
         )
         assert (state.memory.written, state.ever_edited, turn.edited) == (False, False, False)
         assert turn.edit_since_verify_pass is False
@@ -227,7 +231,8 @@ def test_workspace_edit_does_not_mark_memory_written() -> None:
     wf = _wf()
     state = _state()
     turn = _turn(1)
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+    tool_effects.note(
+        wf,
         state,
         turn,
         "apply_edit",

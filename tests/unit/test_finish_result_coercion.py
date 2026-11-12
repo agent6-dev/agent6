@@ -9,7 +9,14 @@ from typing import Any
 from unittest import mock
 
 from agent6.config import Config
-from agent6.harness import finish_gates, loop, loop_conversation, loop_state, run_chain
+from agent6.harness import (
+    finish_gates,
+    loop,
+    loop_conversation,
+    loop_state,
+    run_chain,
+    tool_effects,
+)
 
 
 def _wf(**kw: Any) -> loop.Harness:
@@ -30,7 +37,7 @@ def _capture(tool_input: dict[str, Any]) -> finish_gates.FinishCall:
         number=1, resp=mock.MagicMock(), assistant=loop_conversation.AssistantMessage((), ())
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
-    wf._capture_finish(state, turn, "finish_session", tool_input)  # pyright: ignore[reportPrivateUsage]
+    tool_effects.capture_finish(wf, state, turn, "finish_session", tool_input)
     assert turn.finish is not None
     return turn.finish
 

@@ -18,7 +18,14 @@ import types
 from typing import Any
 from unittest import mock
 
-from agent6.harness import loop, loop_conversation, provider_call, review_gate, run_chain
+from agent6.harness import (
+    loop,
+    loop_conversation,
+    provider_call,
+    quiet_turns,
+    review_gate,
+    run_chain,
+)
 from agent6.providers import ProviderResponse
 from agent6.sessions import event_log
 from agent6.tools import results
@@ -728,14 +735,14 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     with mock.patch.object(review_gate.Reviewer, "critique", panel):
         turn = loop_state.TurnState(number=5, resp=_resp("Done."), assistant=mock.MagicMock())
         ctx = wf._turn_context(state, turn=5, execution_start=1)  # pyright: ignore[reportPrivateUsage]
-        assert wf._handle_silent_finish("Done.", conv, state, turn, ctx) is None  # pyright: ignore[reportPrivateUsage]
+        assert quiet_turns.handle_silent_finish(wf, "Done.", conv, state, turn, ctx) is None
         texts = [b["text"] for m in conv.to_wire() for b in m["content"] if b.get("type") == "text"]
         assert any("[harness verify] finish: verify_command exit 1" in t for t in texts)
         assert any("the next red finish ends the run" in t for t in texts)
         assert panel.calls == 0  # a red gate returns the end before the panel sits
         # The return is spent: the next silent finish stands, the panel sits and approves.
         turn = loop_state.TurnState(number=6, resp=_resp("Done."), assistant=mock.MagicMock())
-        ended = wf._handle_silent_finish("Done.", conv, state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
+        ended = quiet_turns.handle_silent_finish(wf, "Done.", conv, state, turn, ctx)
     assert ended is not None and ended.reason == "silent_finish"
     assert ended.verification == "failed"
     assert panel.calls == 1

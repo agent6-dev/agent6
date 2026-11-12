@@ -11,7 +11,7 @@ import pytest
 from agent6 import paths, providers
 from agent6.app import role_providers, session_runtime
 from agent6.config import Config
-from agent6.harness import guards, loop, loop_conversation, loop_state, run_chain
+from agent6.harness import guards, loop, loop_conversation, loop_state, run_chain, tool_effects
 from agent6.tools import dispatch, results
 from agent6.ui.cli import cli_main
 from tests.unit.turn_context import turn_context
@@ -88,7 +88,7 @@ def test_settled_accounting_follows_the_actual_command_result(
                 d.dispatch("stop_background", {"id": selected.background_id})
             name, raw = "read_background", {"id": selected.background_id, "wait_s": 5}
         outcome = d.dispatch(name, raw)
-        wf._note_tool_effects(state, turn, name, outcome, raw)  # pyright: ignore[reportPrivateUsage]
+        tool_effects.note(wf, state, turn, name, outcome, raw)
         guards.verify_settled(turn, state, turn_context(tree_sha=lambda: "tree"))
         assert state.settled.idle == (1 if neutral else 2)
     finally:

@@ -141,7 +141,7 @@ The loop-owned conversation: typed messages over the provider wire.
 **Conversation** &mdash; The history as frozen messages plus the rolling cache-mark pair.
 
 - **Written by:** harness/loop
-- **Read by:** harness/{compaction_driver, compaction_rules, compaction_window, loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, provider_call, review_seat, standing_goal, verify_gate}
+- **Read by:** harness/{compaction_driver, compaction_rules, compaction_window, loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, provider_call, quiet_turns, review_seat, standing_goal, verify_gate}
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (33 test files exercise it)
 
 ## SessionManifest
@@ -203,7 +203,7 @@ Hold a session's end and the snapshot a resume re-enters.
 | `base_sha` | `str` | `''` |
 
 - **Written by:** harness/loop
-- **Read by:** app/{execution, finalize, fork, frontend, resume, undo}, harness/{advice, finish_gates, guards, loop_resume, loop_state, loop_steer, metric_rules}, ui/acp/frontend, ui/cli/ask
+- **Read by:** app/{execution, finalize, fork, frontend, resume, undo}, harness/{advice, finish_gates, guards, loop_resume, loop_state, loop_steer, metric_rules, quiet_turns}, ui/acp/frontend, ui/cli/ask
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (35 test files exercise it)
 
 ## ToolResult family
@@ -217,7 +217,7 @@ Typed tool-handler results.
 Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ReadMediaResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`, `FindingsResult`
 
 - **Written by:** tools/{command_tools, control_tools, dag_tools, dispatch, edit_diag, fs_tools, nav_tools, skill_tools}
-- **Read by:** app/review_actions, harness/{guards, loop, memory_touch, metric_sampler, review_seat, toolset, verify_gate}, tools/result_format
+- **Read by:** app/review_actions, harness/{guards, memory_touch, metric_sampler, review_seat, tool_effects, toolset, verify_gate}, tools/result_format
 - **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (36 test files exercise it)
 
 ## Event union

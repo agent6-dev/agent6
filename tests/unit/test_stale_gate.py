@@ -22,6 +22,7 @@ from agent6.harness import (
     loop_steer,
     operator_bridge,
     run_chain,
+    tool_effects,
 )
 from agent6.tools import results
 from agent6.viewmodel import session_status
@@ -270,7 +271,7 @@ def _finish_call(
     turn = loop_state.TurnState(
         number=3, resp=mock.MagicMock(), assistant=loop_conversation.AssistantMessage((), ())
     )
-    wf._capture_finish(state, turn, "finish_session", tool_input)  # pyright: ignore[reportPrivateUsage]
+    tool_effects.capture_finish(wf, state, turn, "finish_session", tool_input)
     ctx = wf._turn_context(state, turn=turn.number, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     wf._turn_finish_gates(state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
     return turn

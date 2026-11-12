@@ -22,6 +22,7 @@ from agent6.harness import (
     loop_snapshot,
     loop_state,
     run_chain,
+    tool_effects,
     verify_verdict,
 )
 from agent6.prompts import loop as prompts_loop
@@ -257,8 +258,12 @@ def test_a_command_that_dirties_the_tree_invalidates_the_verify_pass(
     subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True)
 
     wf = _wf(verify=True, root=tmp_path)
-    dirty = wf._left_the_tree_dirty  # pyright: ignore[reportPrivateUsage]
-    before = wf._tree_before_command  # pyright: ignore[reportPrivateUsage]
+
+    def dirty(tree_before: str) -> bool:
+        return tool_effects._left_the_tree_dirty(wf, tree_before)  # pyright: ignore[reportPrivateUsage]
+
+    def before(name: str) -> str:
+        return tool_effects.tree_before_command(wf, name)
 
     sha = before("run_command")
     assert sha and before("mcp__srv__write") == sha
@@ -289,15 +294,15 @@ def test_a_read_only_command_over_uncommitted_work_keeps_the_verify_pass(
     state.verify.note_edit()
     state.verify.note_pass()
     turn = _turn()
-    before = wf._tree_before_command("run_command")  # pyright: ignore[reportPrivateUsage]
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "run_command", _exec(0), {"argv": ["git", "diff"]}, tree_before=before
+    before = tool_effects.tree_before_command(wf, "run_command")
+    tool_effects.note(
+        wf, state, turn, "run_command", _exec(0), {"argv": ["git", "diff"]}, tree_before=before
     )
     assert state.verify.green_and_untouched is True
     assert turn.edit_since_verify_pass is False
     (tmp_path / "a.txt").write_text("the command wrote this\n", encoding="utf-8")
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "run_command", _exec(0), {"argv": ["sed", "-i"]}, tree_before=before
+    tool_effects.note(
+        wf, state, turn, "run_command", _exec(0), {"argv": ["sed", "-i"]}, tree_before=before
     )
     assert state.verify.green_and_untouched is False
     assert turn.edit_since_verify_pass is True
@@ -835,9 +840,7 @@ def test_a_models_own_timed_out_gate_gets_the_scoped_followup(
     dispatcher.run_verify.return_value = _exec(0)
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn()
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "run_verify_command", _exec(124, timed_out=True), {}
-    )
+    tool_effects.note(wf, state, turn, "run_verify_command", _exec(124, timed_out=True), {})
     dispatcher.run_verify.assert_called_once_with(extra_argv=("tests/test_mod.py",))
     assert state.verify.scoped is True
     assert turn.verify_just_passed is True  # the scoped green stands
@@ -863,9 +866,7 @@ def test_never_mode_gives_the_models_timed_out_gate_the_same_scoped_followup(
     dispatcher.run_verify.return_value = _exec(0)
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn()
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "run_verify_command", _exec(124, timed_out=True), {}
-    )
+    tool_effects.note(wf, state, turn, "run_verify_command", _exec(124, timed_out=True), {})
     dispatcher.run_verify.assert_called_once_with(extra_argv=("tests/test_mod.py",))
     assert state.verify.scoped is True
     assert turn.verify_just_passed is True
@@ -879,14 +880,10 @@ def test_a_full_green_from_the_models_own_gate_unarms_scoping(
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     dispatcher.run_verify.return_value = _exec(0)
     state = loop_state.LoopState(original_task="t", tool_calls=0)
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, _turn(), "run_verify_command", _exec(124, timed_out=True), {}
-    )
+    tool_effects.note(wf, state, _turn(), "run_verify_command", _exec(124, timed_out=True), {})
     assert state.verify.scoped is True
     turn = _turn()
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "run_verify_command", _exec(0), {}
-    )
+    tool_effects.note(wf, state, turn, "run_verify_command", _exec(0), {})
     assert state.verify.scoped is False
     assert turn.verify_just_passed is True
     dispatcher.run_verify.assert_called_once_with(extra_argv=("tests/test_mod.py",))
@@ -948,7 +945,7 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     state.verify.note_fail("sig")
     turn = loop_state.TurnState(number=4, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
-    wf._end_gates(  # pyright: ignore[reportPrivateUsage]
+    wf.end_gates(
         state,
         turn,
         wf._turn_context(state, turn=turn.number, execution_start=1),  # pyright: ignore[reportPrivateUsage]
@@ -988,7 +985,7 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     state.verify.note_edit()
     turn = loop_state.TurnState(number=7, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
-    wf._end_gates(  # pyright: ignore[reportPrivateUsage]
+    wf.end_gates(
         state,
         turn,
         wf._turn_context(state, turn=turn.number, execution_start=1),  # pyright: ignore[reportPrivateUsage]

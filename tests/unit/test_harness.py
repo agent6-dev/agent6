@@ -39,6 +39,7 @@ from agent6.harness import (
     quiet_turns,
     review_gate,
     run_chain,
+    tool_effects,
     verify_verdict,
 )
 from agent6.providers import ProviderError, ProviderResponse
@@ -228,7 +229,8 @@ def _typed(nodes: dict[str, dict[str, Any]]) -> dict[str, Any]:
 def test_ask_silent_finish_ends_as_answered_not_silent_finish() -> None:
     # In ask mode a prose answer ends as "answered", not "silent_finish".
     wf = _wf(mode="ask")
-    result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+    result = quiet_turns.handle_silent_finish(
+        wf,
         "The answer is 42.",
         loop_conversation.Conversation(),
         _state(),
@@ -244,7 +246,8 @@ def test_ask_silent_finish_ends_as_answered_not_silent_finish() -> None:
 def test_run_silent_finish_stays_silent_finish() -> None:
     # In run mode (edited + verified) a no-tool prose turn is still an implicit silent_finish.
     wf = _wf(mode="run")
-    result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+    result = quiet_turns.handle_silent_finish(
+        wf,
         "Done.",
         loop_conversation.Conversation(),
         _state(ever_edited=True, verify=verify_verdict.VerifyVerdict(ever_passed=True)),
@@ -286,7 +289,8 @@ def test_run_silent_finish_over_red_verify_is_not_passed() -> None:
     """A silent finish preserves the final verification word."""
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev)
-    result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+    result = quiet_turns.handle_silent_finish(
+        wf,
         "I tried, but the tests still fail.",
         loop_conversation.Conversation(),
         _state(
@@ -304,7 +308,8 @@ def test_run_silent_finish_over_green_verify_stays_passed() -> None:
     """The mirror: a clean green tree still ends passed (no false negative)."""
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev)
-    wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+    quiet_turns.handle_silent_finish(
+        wf,
         "Done, all green.",
         loop_conversation.Conversation(),
         _state(
@@ -322,7 +327,8 @@ def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
     """A gateless run's silent finish ends with verification=None and reads "finished"."""
     ev = _EventCapture()
     wf = _wf(mode="run", events=ev)  # _wf's default config has no verify_command
-    result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+    result = quiet_turns.handle_silent_finish(
+        wf,
         "READY",
         loop_conversation.Conversation(),
         _state(ever_edited=True),
@@ -373,7 +379,8 @@ def test_finish_planning_salvages_a_title_only_plan(tmp_path: pathlib.Path) -> N
     # Weak models put the plan in `summary`; the fold must produce a plan.md with real content.
     plan_path = tmp_path / "plan.md"
     wf = _wf(mode="plan", plan_output_path=plan_path)
-    wf._capture_finish(  # pyright: ignore[reportPrivateUsage]
+    tool_effects.capture_finish(
+        wf,
         _state(),
         _turn(),
         "finish_planning",
@@ -402,16 +409,20 @@ def test_the_plans_original_task_is_the_operators_text(tmp_path: pathlib.Path) -
         "> The task is above; `finish_planning` ends the pass with the plan markdown.\n\n"
         "## Tasks\n1. real step\n"
     )
-    wf._capture_finish(  # pyright: ignore[reportPrivateUsage]
-        state, _turn(), "finish_planning", {"summary": "s", "plan_markdown": quoted}
+    tool_effects.capture_finish(
+        wf, state, _turn(), "finish_planning", {"summary": "s", "plan_markdown": quoted}
     )
     text = plan_path.read_text(encoding="utf-8")
     section = "## Original task\nAdd a --count flag.\nKeep the help short.\n\n## Tasks\n1. real"
     assert section in text
     assert "finish_planning" not in text and "TASK:" not in text
     # A plan without the section is written as it came.
-    wf._capture_finish(  # pyright: ignore[reportPrivateUsage]
-        state, _turn(), "finish_planning", {"summary": "s", "plan_markdown": "# Plan: Y\n\n1. a"}
+    tool_effects.capture_finish(
+        wf,
+        state,
+        _turn(),
+        "finish_planning",
+        {"summary": "s", "plan_markdown": "# Plan: Y\n\n1. a"},
     )
     assert plan_path.read_text(encoding="utf-8") == "# Plan: Y\n\n1. a"
 
@@ -420,7 +431,8 @@ def test_finish_planning_keeps_a_real_plan_markdown(tmp_path: pathlib.Path) -> N
     # A proper plan_markdown is written verbatim; the summary is NOT appended.
     plan_path = tmp_path / "plan.md"
     wf = _wf(mode="plan", plan_output_path=plan_path)
-    wf._capture_finish(  # pyright: ignore[reportPrivateUsage]
+    tool_effects.capture_finish(
+        wf,
         _state(),
         _turn(),
         "finish_planning",
@@ -3769,12 +3781,12 @@ def test_task_finish_gate_nudges_open_subtasks_then_caps() -> None:
     wf = _wf(curator=_FakeGraph(nodes))
     st = _state()
     for i in range(1, nudges.TASK_FINISH_PATIENCE + 1):
-        nudge = finish_gates.task_finish_nudge(wf._open_subtasks(), st.gates)  # pyright: ignore[reportPrivateUsage]
+        nudge = finish_gates.task_finish_nudge(wf.open_subtasks(), st.gates)
         assert nudge is not None and "sub1: audit providers" in nudge
         assert "audit sandbox" not in nudge  # passed subtask not listed
         assert st.gates.task_nudges_used == i
-    assert finish_gates.task_finish_nudge(wf._open_subtasks(), st.gates) is None  # pyright: ignore[reportPrivateUsage]
-    assert "1 open task(s): audit providers" in advice.with_open_tasks("done", wf._open_subtasks())  # pyright: ignore[reportPrivateUsage]
+    assert finish_gates.task_finish_nudge(wf.open_subtasks(), st.gates) is None
+    assert "1 open task(s): audit providers" in advice.with_open_tasks("done", wf.open_subtasks())
 
 
 def test_a_plans_tasks_neither_gate_nor_decorate_its_finish() -> None:
@@ -3785,12 +3797,12 @@ def test_a_plans_tasks_neither_gate_nor_decorate_its_finish() -> None:
     }
     wf = _wf(curator=_FakeGraph(nodes))
     wf.mode = "plan"
-    assert finish_gates.task_finish_nudge(wf._open_subtasks(), _state().gates) is None  # pyright: ignore[reportPrivateUsage]
-    assert advice.with_open_tasks("planned", wf._open_subtasks()) == "planned"  # pyright: ignore[reportPrivateUsage]
+    assert finish_gates.task_finish_nudge(wf.open_subtasks(), _state().gates) is None
+    assert advice.with_open_tasks("planned", wf.open_subtasks()) == "planned"
     turn = _turn()
     state = _state()
     assert (
-        wf._end_gates(  # pyright: ignore[reportPrivateUsage]
+        wf.end_gates(
             state,
             turn,
             _ctx(wf, state),
@@ -3848,12 +3860,10 @@ def test_task_finish_gate_allows_finish_without_open_subtasks() -> None:
     """Only subtasks gate: the always-pending root never blocks a finish; no curator, no gate."""
     root_only = _FakeGraph({"root": {"parent_id": None, "status": "pending", "title": "t"}})
     assert (
-        finish_gates.task_finish_nudge(_wf(curator=root_only)._open_subtasks(), _state().gates)
+        finish_gates.task_finish_nudge(_wf(curator=root_only).open_subtasks(), _state().gates)
         is None
     )  # pyright: ignore[reportPrivateUsage]
-    assert (
-        finish_gates.task_finish_nudge(_wf(curator=None)._open_subtasks(), _state().gates) is None
-    )  # pyright: ignore[reportPrivateUsage]
+    assert finish_gates.task_finish_nudge(_wf(curator=None).open_subtasks(), _state().gates) is None  # pyright: ignore[reportPrivateUsage]
 
 
 def test_verify_settled_end_is_refused_while_a_subtask_is_open() -> None:
@@ -7662,21 +7672,29 @@ def test_standing_default_never_self_quits_and_escalates() -> None:
     wf = _wf(mode="run", curator=curator, budget=None)
     conv = loop_conversation.Conversation()
     state = _state(ever_edited=True, verify=verify_verdict.VerifyVerdict(ever_passed=True))
-    first = wf._handle_silent_finish("Done.", conv, state, _turn(number=3), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    first = quiet_turns.handle_silent_finish(
+        wf, "Done.", conv, state, _turn(number=3), _ctx(wf, _state())
+    )
     assert first is None
     assert "standing task" in conv.to_wire()[-1]["content"][0]["text"]
     # Quiet again with no executed call: still absorbed, nudge escalates.
     state.tool_calls += 1  # a REFUSED call is not work
-    second = wf._handle_silent_finish("Done.", conv, state, _turn(number=4), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    second = quiet_turns.handle_silent_finish(
+        wf, "Done.", conv, state, _turn(number=4), _ctx(wf, _state())
+    )
     assert second is None
     text = conv.to_wire()[-1]["content"][0]["text"]
     assert "different approach" in text and "fruitless round 1" in text
-    third = wf._handle_silent_finish("Done.", conv, state, _turn(number=5), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    third = quiet_turns.handle_silent_finish(
+        wf, "Done.", conv, state, _turn(number=5), _ctx(wf, _state())
+    )
     assert third is None
     assert "fruitless round 2" in conv.to_wire()[-1]["content"][0]["text"]
     # Work landing resets the streak: the next absorb is the plain nudge.
     state.ok_tool_calls += 1
-    fourth = wf._handle_silent_finish("Done.", conv, state, _turn(number=6), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    fourth = quiet_turns.handle_silent_finish(
+        wf, "Done.", conv, state, _turn(number=6), _ctx(wf, _state())
+    )
     assert fourth is None
     assert "fruitless" not in conv.to_wire()[-1]["content"][0]["text"]
     assert state.standing.fruitless == 0
@@ -7691,9 +7709,9 @@ def test_standing_patience_bounds_fruitless_reentries() -> None:
     conv = loop_conversation.Conversation()
     state = _state(ever_edited=True, verify=verify_verdict.VerifyVerdict(ever_passed=True))
     ctx = _ctx(wf, state)
-    assert wf._handle_silent_finish("Done.", conv, state, _turn(number=3), ctx) is None  # pyright: ignore[reportPrivateUsage]
-    assert wf._handle_silent_finish("Done.", conv, state, _turn(number=4), ctx) is None  # pyright: ignore[reportPrivateUsage]
-    ended = wf._handle_silent_finish("Done.", conv, state, _turn(number=5), ctx)  # pyright: ignore[reportPrivateUsage]
+    assert quiet_turns.handle_silent_finish(wf, "Done.", conv, state, _turn(number=3), ctx) is None
+    assert quiet_turns.handle_silent_finish(wf, "Done.", conv, state, _turn(number=4), ctx) is None
+    ended = quiet_turns.handle_silent_finish(wf, "Done.", conv, state, _turn(number=5), ctx)
     assert ended is not None and ended.reason == "silent_finish"
 
     wf0 = _wf(mode="run", curator=curator, budget=None)
@@ -7702,12 +7720,14 @@ def test_standing_patience_bounds_fruitless_reentries() -> None:
     ctx0 = _ctx(wf0, state0)
     quiet = _turn(number=3)
     assert (
-        wf0._handle_silent_finish("Done.", loop_conversation.Conversation(), state0, quiet, ctx0)
+        quiet_turns.handle_silent_finish(
+            wf0, "Done.", loop_conversation.Conversation(), state0, quiet, ctx0
+        )
         is None
     )  # pyright: ignore[reportPrivateUsage]
     quiet = _turn(number=4)
-    ended0 = wf0._handle_silent_finish(
-        "Done.", loop_conversation.Conversation(), state0, quiet, ctx0
+    ended0 = quiet_turns.handle_silent_finish(
+        wf0, "Done.", loop_conversation.Conversation(), state0, quiet, ctx0
     )  # pyright: ignore[reportPrivateUsage]
     assert ended0 is not None and ended0.reason == "silent_finish"
 
@@ -7806,7 +7826,9 @@ def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -
     )
     conv = loop_conversation.Conversation()
     state = _state(ever_edited=True, verify=verify_verdict.VerifyVerdict(ever_passed=True))
-    parked = wf._handle_silent_finish("Done.", conv, state, _turn(number=4), _ctx(wf, _state()))  # pyright: ignore[reportPrivateUsage]
+    parked = quiet_turns.handle_silent_finish(
+        wf, "Done.", conv, state, _turn(number=4), _ctx(wf, _state())
+    )
     assert parked is None  # steered onward, same conversation
     wire = conv.to_wire()
     assert "keep going: also cover sub()" in wire[-1]["content"][0]["text"]
@@ -7819,7 +7841,8 @@ def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -
             steer_requested=lambda: True, steer_prompt=lambda: next(aborts)
         ),
     )
-    ended = wf2._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+    ended = quiet_turns.handle_silent_finish(
+        wf2,
         "Done.",
         loop_conversation.Conversation(),
         _state(ever_edited=True, verify=verify_verdict.VerifyVerdict(ever_passed=True)),
@@ -7832,7 +7855,8 @@ def test_interactive_quiet_turn_parks_and_a_steer_continues_the_conversation() -
 def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() -> None:
     # Non-interactive: unchanged silent_finish end.
     wf = _wf(mode="run", interactive=False)
-    ended = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+    ended = quiet_turns.handle_silent_finish(
+        wf,
         "Done.",
         loop_conversation.Conversation(),
         _state(ever_edited=True, verify=verify_verdict.VerifyVerdict(ever_passed=True)),
@@ -7845,7 +7869,8 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
     curator.nodes.return_value = _standing_nodes()
     wf2 = _wf(mode="run", interactive=True, curator=curator, budget=None)
     conv = loop_conversation.Conversation()
-    out = wf2._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
+    out = quiet_turns.handle_silent_finish(
+        wf2,
         "Done.",
         conv,
         _state(ever_edited=True, verify=verify_verdict.VerifyVerdict(ever_passed=True)),
@@ -8415,7 +8440,8 @@ def test_operator_answers_become_recorded_rulings(tmp_path: pathlib.Path) -> Non
     )
     st = _state()
     turn = _turn(number=1)
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+    tool_effects.note(
+        wf,
         st,
         turn,
         "ask_user",
@@ -8576,7 +8602,7 @@ def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: path
     turn = _edited_turn(1)
     (repo / "x.txt").write_text("an improvement\n", encoding="utf-8")
 
-    wf._note_tool_effects(state, turn, "run_metric_command", _metric_result(42.0), {})  # pyright: ignore[reportPrivateUsage]
+    tool_effects.note(wf, state, turn, "run_metric_command", _metric_result(42.0), {})
     wf._turn_auto_commit_and_metric(state, turn)  # pyright: ignore[reportPrivateUsage]
 
     assert dispatched == [], "the harness re-ran the operator's metric over an unchanged tree"
@@ -8611,7 +8637,7 @@ def test_three_real_improvements_do_not_read_as_a_plateau(tmp_path: pathlib.Path
         score["v"] = 41.0 + i
         (repo / "x.txt").write_text(f"improvement {i}\n", encoding="utf-8")
         turn = _edited_turn(i)
-        wf._note_tool_effects(state, turn, "run_metric_command", _metric_result(score["v"]), {})  # pyright: ignore[reportPrivateUsage]
+        tool_effects.note(wf, state, turn, "run_metric_command", _metric_result(score["v"]), {})
         wf._turn_auto_commit_and_metric(state, turn)  # pyright: ignore[reportPrivateUsage]
         if turn.metric_plateau_finish is not None:
             plateaus.append(turn.metric_plateau_finish)
@@ -8721,7 +8747,8 @@ def test_a_flat_ask_user_call_records_its_ruling(tmp_path: pathlib.Path) -> None
     )
     flat = {"question": question, "options": ["yes", "no"]}
 
-    wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+    tool_effects.note(
+        wf,
         state,
         turn,
         "ask_user",
@@ -8798,7 +8825,7 @@ def test_ask_user_args_the_dispatcher_coerced_still_record_their_ruling(
         resp=_resp(""),
         assistant=loop_conversation.AssistantMessage(raw_content=(), tool_uses=()),
     )
-    wf._note_tool_effects(state, turn, "ask_user", result, raw)  # pyright: ignore[reportPrivateUsage]
+    tool_effects.note(wf, state, turn, "ask_user", result, raw)
     assert len(state.decisions_recorded) == 1
     assert question in memory.decisions_path(tmp_path / "state").read_text(encoding="utf-8")
 
@@ -9243,8 +9270,8 @@ def test_the_original_task_section_ends_at_the_skeletons_next_heading(
         "# Plan: X\n\n## Original task\n> Add a --count flag.\n>\n> ## Background\n"
         "> The CLI counts words.\n\n## Tasks\n1. real step\n"
     )
-    wf._capture_finish(  # pyright: ignore[reportPrivateUsage]
-        state, _turn(), "finish_planning", {"summary": "s", "plan_markdown": quoted}
+    tool_effects.capture_finish(
+        wf, state, _turn(), "finish_planning", {"summary": "s", "plan_markdown": quoted}
     )
     text = plan_path.read_text(encoding="utf-8")
     section = (
