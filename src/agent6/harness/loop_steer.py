@@ -123,11 +123,12 @@ def ranked_opening(
     conversation: loop_conversation.Conversation,
     turn: int,
     state: loop_state.LoopState,
-) -> loop_snapshot.SessionResult:
+) -> loop_snapshot.SessionResult | None:
     """Run the dispatch a run opens with, joined by rank, and end the run on what landed.
 
     The ranking's winner joins the run's chain; the run's own gate then judges the joined
-    tree. No model call is made: a resume with a steer continues from there.
+    tree. No model call is made unless the operator steered while the lanes ran: the run
+    then goes on with that steer, as a resume with a steer does later.
 
     Args:
         harness: The execution's harness, built with an opening.
@@ -138,7 +139,8 @@ def ranked_opening(
     Returns:
         The end: `lanes_ranked` when a lane joined (or, with no chain to join onto, was
         placed), `no_lane_passed` when the ranking crowned none, `budget_exhausted` when the
-        budget ended every lane, `no_lane_result` otherwise, or the operator's stop.
+        budget ended every lane, `no_lane_result` otherwise, or the operator's stop; None
+        when a steer gives the run more work.
     """
     assert harness.opening is not None
     result = harness.parallel.dispatch(
@@ -147,7 +149,17 @@ def ranked_opening(
     stopped = operator_stop(harness, turn, state)
     if stopped is not None:
         return stopped
-    harness.parallel.record_delivery(result)
+    if harness.bridge.steer_requested():
+        # A steer sent while the lanes ran is the run's next work, from what landed.
+        harness.parallel.deliver(conversation, result)
+        size = len(conversation)
+        asked = steer_outcome(
+            harness, harness.steering.handle(conversation, turn, state), turn, state
+        )
+        if asked is not None or len(conversation) > size:
+            return asked
+    else:
+        harness.parallel.record_delivery(result)
     # A refusal before any lane ran has no lanes to word: its own message is the summary.
     summary = parallel_join.rank_summary(result.lanes) if result.lanes else result.message
     statuses = {join.status for join in result.lanes}

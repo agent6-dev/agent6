@@ -1027,12 +1027,13 @@ def _opening_wf(
     order: tuple[int, ...],
     verify_command: tuple[str, ...] = (),
     crowns: bool = True,
+    steer_text: str = "",
 ) -> tuple[loop.Harness, mock.MagicMock]:
     provider = mock.MagicMock()
     wf = _build_wf(
         repo,
         provider,
-        steer_text="",
+        steer_text=steer_text,
         lane_spawner=spawner,
         events=events,
         verify_command=verify_command,
@@ -1069,6 +1070,28 @@ def test_a_run_that_opens_with_a_ranked_dispatch_lands_the_winner_and_calls_no_m
         "  session-p1-l2: first; joined at " + _git(repo, "rev-parse", "refs/agent6/coord")[:12],
         "  session-p1-l3: 3 of 3; agent6/session-p1-l3 holds its work",
     ]
+
+
+def test_a_steer_sent_while_the_opening_ran_is_the_runs_next_work(tmp_path: pathlib.Path) -> None:
+    """The steer was accepted, the run ended without a step, and the next resume dropped it."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    spawner = _FakeGroupSpawner(repo, "session", tmp_path / "wt")
+    events = _FakeEvents(tmp_path / "session" / "logs.jsonl")
+    wf, provider = _opening_wf(
+        repo, spawner, events, order=(2, 1, 3), steer_text="also add a changelog line"
+    )
+    provider.call.side_effect = [_resp_tool("finish_session", {"summary": "added it"}, "t1")]
+
+    result = wf.run("add a lane file")
+
+    assert provider.call.call_count == 1 and result.reason == "finish_session"
+    texts = _user_texts(_final_messages(provider))
+    joined = next(i for i, t in enumerate(texts) if "session-p1-l2" in t and "joined" in t)
+    steered = next(i for i, t in enumerate(texts) if "also add a changelog line" in t)
+    assert joined < steered
+    # The model works from the winner's tree.
+    assert "lane2.txt" in _git(repo, "ls-tree", "--name-only", "refs/agent6/coord").split()
 
 
 def test_an_opening_whose_lanes_all_fail_ends_with_no_lane_result(
