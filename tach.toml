@@ -457,6 +457,7 @@ depends_on = [
   "agent6.machine",
   "agent6.machine.journal",
   "agent6.machine.schema",
+  "agent6.models.choices",
   "agent6.models.registry",
   "agent6.paths",
   "agent6.providers",

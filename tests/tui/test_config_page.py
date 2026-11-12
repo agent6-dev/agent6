@@ -1952,3 +1952,34 @@ def test_reset_action_label_matches_the_menu() -> None:
     """The reset action has the same name in its registry and the menu."""
     action = next(action for action in config_page.CONFIG_ACTIONS if action.id == "reset")
     assert action.label == "Unset override"
+
+
+@pytest.mark.parametrize("role", ["default", "helper"])
+def test_an_unconfigured_role_opens_the_model_picker_too(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, role: str
+) -> None:
+    """`models.default` and `models.helper` rows open the picker like the three roles once named."""
+
+    def _models(*_a: object, **_k: object) -> list[str]:
+        return ["x/y"]
+
+    monkeypatch.setattr(models_choices, "provider_model_choices", _models)
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test(size=(100, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, config_page.ConfigScreen)
+            tbl = screen.query_one("#tbl-models", widgets.DataTable)
+            tbl.focus()
+            ridx = next(
+                r for r in range(tbl.row_count) if str(tbl.get_row_at(r)[0]).strip() == role
+            )
+            tbl.move_cursor(row=ridx)
+            await pilot.pause()
+            screen.action_edit()
+            await pilot.pause()
+            assert isinstance(app.screen, config_model.ModelModal)
+
+    asyncio.run(scenario())

@@ -19,6 +19,7 @@ import pydantic_core
 
 from agent6.config import io, layer_data, layer_presets
 from agent6.config import layer as config_layer
+from agent6.models import choices as models_choices
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -56,6 +57,8 @@ class ConfigSetting:
     display_safe: bool = False
     mask_value: bool = False
     choice_meanings: dict[str, str] = dataclasses.field(default_factory=dict)
+    # The role whose model picker the leaf opens; "" for every other leaf.
+    model_role: str = ""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -315,6 +318,7 @@ def build_config_view(
                     choice_meanings=schema.choice_meanings,
                     display_safe=schema.display_safe,
                     mask_value=schema.mask_value,
+                    model_role=models_choices.model_picker_role(leaf) or "",
                 )
             )
     return ConfigView(settings=tuple(settings), sections=tuple(ordered), layers=eff.layers)
@@ -409,6 +413,7 @@ def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
         description: The config model's field meaning.
         display: The rendered effective value.
         default_display: The rendered default value.
+        model_role: The role whose model picker the leaf opens; "" for every other leaf.
 
     Args:
         s: The leaf.
@@ -432,6 +437,7 @@ def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
         "choice_meanings": s.choice_meanings,
         "display": display_value(s),
         "default_display": format_value(s.default, display_safe=s.display_safe),
+        "model_role": s.model_role,
     }
 
 

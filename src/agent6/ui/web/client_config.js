@@ -286,7 +286,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
   box.setAttribute('role', 'dialog');
   box.setAttribute('aria-label', 'edit ' + key);
-  const role = /^models\.(planner|worker|reviewer)(?:\.model)?$/.exec(key)?.[1];
+  const role = s.model_role || null; // the view's one rule for the model picker
   const section = role ? 'models.' + role : null;
   const title = el('h2', null, role ? 'Model: ' + role : key);
   title.style.textTransform = 'none'; // a config key is a case-sensitive identifier

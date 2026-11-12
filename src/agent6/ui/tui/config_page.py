@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
-import re
 from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
@@ -673,11 +672,10 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             )
             return
 
-        role = re.fullmatch(r"models\.(planner|worker|reviewer)(?:\.model)?", setting.key)
-        if role is not None and self._eff is not None:
+        if setting.model_role and self._eff is not None:
             self.app.push_screen(
                 config_model.ModelModal(
-                    self.repo_root, self._eff, role[1], setting.source, self.config_paths
+                    self.repo_root, self._eff, setting.model_role, setting.source, self.config_paths
                 ),
                 self._form_closed,
             )

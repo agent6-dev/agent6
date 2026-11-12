@@ -10,8 +10,9 @@ import tomllib
 
 import pytest
 
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.config import Config, layer, layer_data
+from agent6.models import choices as models_choices
 from agent6.models import registry
 from agent6.sandbox import detect
 from agent6.ui.cli import main
@@ -463,3 +464,31 @@ def test_config_surfaces_share_toml(
     assert model.config_payload(tmp_path, (config,))[key]["display"] == shown
     assert main(["config", "set", key, shown, "--repo"]) == 0
     assert shown in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("role", kinds.MODEL_ROLES)
+def test_every_role_opens_the_model_picker_from_both_key_shapes(role: str) -> None:
+    """`models.default` and `models.helper` lacked the picker: two UIs named three roles by hand."""
+    assert models_choices.model_picker_role(f"models.{role}") == role
+    assert models_choices.model_picker_role(f"models.{role}.model") == role
+    assert models_choices.model_picker_role(f"models.{role}.effort") is None
+    assert models_choices.model_picker_role("models.other.model") is None
+
+
+def test_the_view_marks_the_model_picker_for_every_role(tmp_path: pathlib.Path) -> None:
+    """The read model carries the role, so the TUI and the web open the picker from one rule."""
+    eff = _effort_config(
+        tmp_path,
+        '[providers.openrouter]\nbackend = "openai"\nbase_url = "https://openrouter.ai/api/v1"\n'
+        '[models.worker]\nmodel = "openrouter/moonshotai/kimi-k2.6"\n',
+    )
+    view = config_view.build_config_view(eff)
+    by_key = {s.key: s for s in view.settings}
+    assert by_key["models.default"].model_role == "default"
+    assert by_key["models.worker.model"].model_role == "worker"
+    assert by_key["models.worker.effort"].model_role == ""
+    assert by_key["sandbox.isolation"].model_role == ""
+    assert (
+        json.loads(config_view.render_show(eff, as_json=True))["models.helper"]["model_role"]
+        == "helper"
+    )

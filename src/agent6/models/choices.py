@@ -193,6 +193,26 @@ def resume_defaults(
     )
 
 
+def model_picker_role(key: str) -> kinds.RoleName | None:
+    """Return the role whose model a config key sets, or None for any other key.
+
+    The one rule every config editor reads: `models.<role>` (a role not yet configured is
+    one leaf) and `models.<role>.model` both open the model picker for that role.
+
+    Args:
+        key: The dotted config key.
+
+    Returns:
+        The role, or None.
+    """
+    parts = io.split_key(key)
+    if len(parts) not in (2, 3) or parts[0] != "models" or parts[1] not in validate.ROLES:
+        return None
+    if len(parts) == 3 and parts[2] != "model":
+        return None
+    return parts[1]
+
+
 def config_value_choices(eff: layer_data.EffectiveConfig, key: str) -> list[str]:
     """Return what a chooser offers for an open-text config leaf.
 
@@ -203,17 +223,11 @@ def config_value_choices(eff: layer_data.EffectiveConfig, key: str) -> list[str]
         key: The leaf, or the pseudo-key `parallel.models` for a `/parallel` autocomplete.
 
     Returns:
-        Qualified model routes for a role or `parallel.models`, else [].
+        Qualified model routes for a role's model or `parallel.models`, else [].
     """
     if key == "parallel.models":
         return route_choices(eff.config)
-    parts = io.split_key(key)
-    if (
-        len(parts) == 3
-        and parts[0] == "models"
-        and parts[1] in validate.ROLES
-        and parts[2] == "model"
-    ):
+    if model_picker_role(key) is not None:
         return sorted(
             f"{provider}/{model}"
             for provider in eff.config.providers

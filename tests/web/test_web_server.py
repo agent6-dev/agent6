@@ -23,7 +23,7 @@ from typing import Any, cast
 
 import pytest
 
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.app import fork
 from agent6.config import io, write
 from agent6.machine import journal as machine_journal
@@ -1761,6 +1761,20 @@ def test_config_suggest_endpoint(server: tuple[web_server.WebServer, int]) -> No
     st, body, _ = _get(port, "/api/config/suggest/models.worker.provider")
     assert st == 200
     assert json.loads(body) == {"values": []}
+
+
+def test_config_payload_names_the_model_picker_role_for_every_role(
+    server: tuple[web_server.WebServer, int],
+) -> None:
+    """The page opens the picker from the payload's `model_role`, not from a list of three roles."""
+    _srv, port = server
+    st, body, _ = _get(port, "/api/config")
+    assert st == 200
+    payload = json.loads(body)
+    assert {payload[f"models.{role}"]["model_role"] for role in kinds.MODEL_ROLES} == set(
+        kinds.MODEL_ROLES
+    )
+    assert payload["sandbox.isolation"]["model_role"] == ""
 
 
 def test_config_suggest_endpoint_accepts_the_selected_provider(
