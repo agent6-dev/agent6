@@ -1257,6 +1257,58 @@ class QuestionPrompt(Event):
     wait: bool = pydantic.Field(description="Whether the call waits for answers.")
 
 
+class RoleAttempt(Event):
+    """One request attempt of a model call ended; the ending attempt's role.result follows."""
+
+    TYPE: ClassVar[str] = "role.attempt"
+    execution_id: str | None = pydantic.Field(
+        default=None,
+        description="The execution the call ran in; null for a call outside one.",
+    )
+    panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
+    role: str = pydantic.Field(description="The calling model role.")
+    model: str = pydantic.Field(description="Model identifier.")
+    provider: str = pydantic.Field(description="Configured provider name.")
+    model_call_id: str = pydantic.Field(
+        description="Identifier pairing the attempt with its model call.",
+    )
+    seat_index: int | None = pydantic.Field(
+        default=None,
+        description="Zero-based review seat index.",
+    )
+    attempt: int = pydantic.Field(description="The attempt's number within the call, from 1.")
+    request_id: str | None = pydantic.Field(
+        default=None,
+        description="The HTTP attempt's id, as provider.request and the transcript name it.",
+    )
+    ok: bool = pydantic.Field(description="Whether the attempt returned a response.")
+    tokens_in: int | None = pydantic.Field(
+        default=None,
+        description="Input tokens the attempt used.",
+    )
+    tokens_out: int | None = pydantic.Field(
+        default=None,
+        description="Output tokens the attempt used.",
+    )
+    cache_read: int | None = pydantic.Field(
+        default=None,
+        description="Cached input tokens the attempt used.",
+    )
+    cache_creation: int | None = pydantic.Field(
+        default=None,
+        description="Cache-creation tokens the attempt used.",
+    )
+    cost_usd: float | None = pydantic.Field(
+        default=None,
+        description="Provider-reported USD cost; zero means free, absent means unreported.",
+    )
+    stop_reason: str | None = pydantic.Field(
+        default=None,
+        description="The provider's response stop reason.",
+    )
+    error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
+
+
 class RoleCall(Event):
     """A model call started for a role."""
 
@@ -1279,7 +1331,7 @@ class RoleCall(Event):
 
 
 class RoleResult(Event):
-    """A model call returned or failed. Failed calls include usage only when reported."""
+    """A model call returned or failed, once per logical call, with its last attempt's usage."""
 
     TYPE: ClassVar[str] = "role.result"
     execution_id: str | None = pydantic.Field(
@@ -1795,6 +1847,7 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "provider.request": ProviderRequest,
     "question.answer": QuestionAnswer,
     "question.prompt": QuestionPrompt,
+    "role.attempt": RoleAttempt,
     "role.call": RoleCall,
     "role.result": RoleResult,
     "role.text_delta": RoleTextDelta,

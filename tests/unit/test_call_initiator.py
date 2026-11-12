@@ -7,6 +7,8 @@ from __future__ import annotations
 import pathlib
 from typing import Any
 
+import pytest
+
 from agent6 import kinds
 from agent6.harness import loop_conversation, provider_call
 from agent6.providers import ProviderError, ProviderResponse, request_headers
@@ -143,3 +145,100 @@ def test_streamed_deltas_carry_the_call_identity(tmp_path: pathlib.Path) -> None
     for name in ("role.call", "role.text_delta", "role.thinking_delta", "role.result"):
         assert by_type[name]["model_call_id"] == "given", name
         assert by_type[name]["execution_id"] == "exec-1", name
+
+
+def _wrapped(inner: Any, tmp_path: pathlib.Path) -> Any:
+    from agent6 import budget as agent6_budget
+    from agent6.app import role_providers
+    from agent6.sessions import event_log
+
+    return role_providers.InstrumentedProvider(
+        inner=inner,
+        role="worker",
+        model="m",
+        provider_name="p",
+        events=event_log.EventSink(tmp_path / "logs.jsonl"),
+        budget=agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
+    )
+
+
+def _rows(tmp_path: pathlib.Path) -> list[dict[str, Any]]:
+    import json
+
+    return [
+        json.loads(line)
+        for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+
+
+def test_a_retried_call_is_one_lifecycle_with_an_attempt_row_each(tmp_path: pathlib.Path) -> None:
+    """A transient error leaves role.call once, a row per attempt and role.result once."""
+    calls: list[int] = []
+
+    class _Flaky:
+        def call(self, **kw: Any) -> ProviderResponse:
+            calls.append(kw["context"].attempt)
+            if len(calls) == 1:
+                raise ProviderError("busy", status_code=503)
+            return _ok()
+
+    _caller(_wrapped(_Flaky(), tmp_path), retry_count=1).call("s", [], [], 10)
+    rows = [r for r in _rows(tmp_path) if r["type"].startswith("role.")]
+    assert [r["type"] for r in rows] == [
+        "role.call",
+        "role.attempt",
+        "role.attempt",
+        "role.result",
+    ]
+    assert len({r["model_call_id"] for r in rows}) == 1
+    first, second = rows[1], rows[2]
+    assert (first["attempt"], first["ok"], first["error"]) == (1, False, "busy")
+    assert (second["attempt"], second["ok"]) == (2, True)
+    assert rows[3]["ok"] is True and calls == [1, 2]
+
+
+def test_a_permanent_error_closes_the_call_on_its_first_attempt(tmp_path: pathlib.Path) -> None:
+    """A status no retry recovers ends the lifecycle at once: one attempt, one failed result."""
+
+    class _Refusing:
+        def call(self, **kw: Any) -> ProviderResponse:
+            raise ProviderError("bad request", status_code=400)
+
+    with pytest.raises(ProviderError):
+        _caller(_wrapped(_Refusing(), tmp_path), retry_count=3).call("s", [], [], 10)
+    types = [r["type"] for r in _rows(tmp_path) if r["type"].startswith("role.")]
+    assert types == ["role.call", "role.attempt", "role.result"]
+
+
+def test_an_empty_tool_call_response_is_an_attempt_of_the_same_call(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The blind retry of an empty tool-call response stays inside the one lifecycle."""
+    responses = iter(
+        [
+            ProviderResponse(
+                text="",
+                tool_uses=(),
+                stop_reason="tool_use",
+                input_tokens=1,
+                output_tokens=1,
+                cache_read_tokens=0,
+                cache_creation_tokens=0,
+            ),
+            _ok(),
+        ]
+    )
+
+    class _Empty:
+        def call(self, **kw: Any) -> ProviderResponse:
+            return next(responses)
+
+    _caller(_wrapped(_Empty(), tmp_path), retry_count=1).call("s", [], [], 10)
+    rows = [r for r in _rows(tmp_path) if r["type"].startswith("role.")]
+    assert [r["type"] for r in rows] == [
+        "role.call",
+        "role.attempt",
+        "role.attempt",
+        "role.result",
+    ]
+    assert rows[1]["ok"] is True and rows[3]["text"] == "ok"

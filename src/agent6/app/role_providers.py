@@ -23,7 +23,7 @@ from agent6.config import (
     RoleName,
     secret_store,
 )
-from agent6.harness import review_gate
+from agent6.harness import provider_call, review_gate
 from agent6.models import cache as models_cache
 from agent6.models import registry as models_registry
 from agent6.providers import (
@@ -369,7 +369,7 @@ def _usage_fields(usage: provider_types.ProviderUsage | None) -> dict[str, Any]:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class InstrumentedProvider:
-    """Wrap a provider with `role.call`, `role.result` and `budget.update` emission.
+    """Wrap a provider with `role.call`, `role.attempt`, `role.result` and `budget.update` emission.
 
     Attributes:
         inner: The wrapped provider, unchanged.
@@ -438,19 +438,31 @@ class InstrumentedProvider:
             kinds.CallContext(seat_index=self.seat_index)
         )
         caller_observe = context.observe if context is not None else None
+        request_ids: list[str] = []  # the attempt's HTTP request, for its role.attempt row
 
         def observe(facts: request_headers.RequestFacts) -> None:
+            request_ids.append(facts.request_id)
             self._observe(facts)
             if caller_observe is not None:
                 caller_observe(facts)
 
+        # The caller's attempt counts survive the conversation state's rebuild of the context.
+        attempt, attempts = (context.attempt, context.attempts) if context is not None else (1, 1)
         if context is None or not context.conversation_id:
             initiator = context.initiator if context is not None else "agent"
             context = self.conversations.context(
                 self.role, self.provider_name, initiator=initiator, call_context=call_context
             )
-        context = dataclasses.replace(context, call_context=call_context, observe=observe)
-        if self.events is not None:
+        context = dataclasses.replace(
+            context,
+            call_context=call_context,
+            observe=observe,
+            attempt=attempt,
+            attempts=attempts,
+        )
+        # One lifecycle per logical call: the first attempt opens it, the one that settles or
+        # closes it ends it, and every attempt leaves its own row beneath.
+        if self.events is not None and context.attempt == 1:
             self.events.emit(journal.RoleCall(**self._identity(call_context)))
         # Every live view subscribes to the delta events; a caller callback chains through.
         role_for_event = self.role
@@ -493,31 +505,66 @@ class InstrumentedProvider:
         except Exception as exc:
             if isinstance(exc, ProviderError) and not exc.provider:
                 exc.provider = self.provider_name  # the hint names the config key
-            if self.events is not None:
-                self.events.emit(
-                    journal.RoleResult(
-                        **self._identity(call_context),
-                        ok=False,
-                        error=str(exc)[:200],
-                        **_usage_fields(exc.usage if isinstance(exc, ProviderError) else None),
-                    )
-                )
+            self._record_attempt(
+                call_context,
+                context,
+                request_ids,
+                {
+                    "ok": False,
+                    "error": str(exc)[:200],
+                    **_usage_fields(exc.usage if isinstance(exc, ProviderError) else None),
+                },
+                ends_call=provider_call.closes_call(exc, context),
+            )
             self._emit_budget()
             raise
         self.conversations.completed(self.role, self.provider_name, call_context=call_context)
-        if self.events is not None:
-            self.events.emit(
-                journal.RoleResult(
-                    **self._identity(call_context),
-                    ok=True,
-                    # The settled prose: a headless run streams no deltas, so this is its only text.
-                    text=resp.text,
-                    **_usage_fields(resp.usage),
-                    stop_reason=resp.stop_reason,
-                )
-            )
+        self._record_attempt(
+            call_context,
+            context,
+            request_ids,
+            {"ok": True, "stop_reason": resp.stop_reason, **_usage_fields(resp.usage)},
+            ends_call=provider_call.settles_call(resp, context),
+            # The settled prose: a headless run streams no deltas, so this is its only text.
+            text=resp.text,
+        )
         self._emit_budget()
         return resp
+
+    def _record_attempt(
+        self,
+        call_context: kinds.CallContext,
+        context: request_headers.RequestContext,
+        request_ids: list[str],
+        outcome: dict[str, Any],
+        *,
+        ends_call: bool,
+        text: str | None = None,
+    ) -> None:
+        """Journal one attempt's row and, when it ends the logical call, the call's result.
+
+        Args:
+            call_context: The call's identity.
+            context: The attempt's request context, with its number.
+            request_ids: The HTTP requests observed so far; the last is this attempt's.
+            outcome: The attempt's `ok`, usage and stop reason or error.
+            ends_call: Whether no retry of the call follows.
+            text: The response text the result carries; None for a failure.
+        """
+        if self.events is None:
+            return
+        identity = self._identity(call_context)
+        self.events.emit(
+            journal.RoleAttempt(
+                **identity,
+                attempt=context.attempt,
+                request_id=request_ids[-1] if request_ids else None,
+                **outcome,
+            )
+        )
+        if ends_call:
+            settled: dict[str, Any] = {"text": text} if text is not None else {}
+            self.events.emit(journal.RoleResult(**identity, **outcome, **settled))
 
     def _identity(self, call_context: kinds.CallContext) -> dict[str, Any]:
         """Return the fields that pair a `role.call` with its `role.result`."""

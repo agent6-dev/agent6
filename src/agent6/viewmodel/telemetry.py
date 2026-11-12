@@ -219,27 +219,64 @@ class TelemetryFold:
             span_id, parent, telemetry_records.SPAN_MODEL_CALL, step.now, "client", fields
         )
 
-    def _role_result(self, step: telemetry_records.Step) -> None:
-        execution, event = step.execution, step.event
+    def _open_call(
+        self, execution: telemetry_records.Execution, event: Mapping[str, Any]
+    ) -> telemetry_records.OpenSpan | None:
+        """Return the open model-call span a role row belongs to, or None."""
         key = str(event.get("model_call_id") or "")
         span = execution.calls.get(key)
         if span is None and not key and len(execution.calls) == 1:
             span = next(iter(execution.calls.values()))  # one open call: the pairing is certain
-        ok = event.get("ok") is not False
+        return span
+
+    def _count_tokens(
+        self, event: Mapping[str, Any], span: telemetry_records.OpenSpan | None
+    ) -> tuple[str, str]:
+        """Count the row's tokens on the meters.
+
+        Args:
+            event: The role row.
+            span: The call's open span, whose labels fill in what the row leaves out.
+
+        Returns:
+            The model and provider labels.
+        """
         known_model = span.attributes["agent6.model"] if span is not None else "unattributed"
         known_provider = span.attributes["agent6.provider"] if span is not None else "unattributed"
         model = self.meter.label("model", event.get("model") or known_model)
         provider = self.meter.label("provider", event.get("provider") or known_provider)
-        outcome = "ok" if ok else "error"
-        self.meter.count(
-            "agent6_model_calls_total", outcome=outcome, model=model, provider=provider
-        )
         for kind, field in _TOKEN_TYPES:
             tokens = telemetry_records.as_int(event.get(field)) or 0
             if tokens:
                 self.meter.count(
                     "agent6_tokens_total", tokens, type=kind, model=model, provider=provider
                 )
+        return model, provider
+
+    def _role_attempt(self, step: telemetry_records.Step) -> None:
+        execution, event = step.execution, step.event
+        span = self._open_call(execution, event)
+        self._count_tokens(event, span)
+        if span is not None:
+            attempts = telemetry_records.as_int(span.attributes.get("agent6.attempts")) or 0
+            span.attributes["agent6.attempts"] = attempts + 1
+
+    def _role_result(self, step: telemetry_records.Step) -> None:
+        execution, event = step.execution, step.event
+        span = self._open_call(execution, event)
+        ok = event.get("ok") is not False
+        if span is not None and "agent6.attempts" in span.attributes:
+            # The attempts counted their own usage; the result repeats the last one's.
+            known_model = span.attributes["agent6.model"]
+            known_provider = span.attributes["agent6.provider"]
+            model = self.meter.label("model", event.get("model") or known_model)
+            provider = self.meter.label("provider", event.get("provider") or known_provider)
+        else:
+            model, provider = self._count_tokens(event, span)
+        outcome = "ok" if ok else "error"
+        self.meter.count(
+            "agent6_model_calls_total", outcome=outcome, model=model, provider=provider
+        )
         if span is None:
             return
         span.attributes["agent6.ok"] = ok
@@ -561,6 +598,7 @@ class TelemetryFold:
         step.logs.append(log)
 
     _HANDLERS: ClassVar[dict[str, Callable[[TelemetryFold, telemetry_records.Step], None]]] = {
+        "role.attempt": _role_attempt,
         "role.call": _role_call,
         "role.result": _role_result,
         "tool.call": _tool_call,

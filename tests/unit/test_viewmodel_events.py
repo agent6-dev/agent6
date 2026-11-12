@@ -125,3 +125,12 @@ def test_tool_rows_and_deltas_read_their_call_identity() -> None:
     )
     assert isinstance(delta, journal.RoleTextDelta) and delta.model_call_id == "c1"
     assert delta.execution_id is None  # a row without the field leaves it unset
+
+
+def test_an_attempt_row_reads_into_its_record_with_defaults() -> None:
+    """A role.attempt row parses; a row without the attempt number reads as the first."""
+    row = ev.parse_event(
+        {"type": "role.attempt", "role": "worker", "model_call_id": "c1", "ok": False, "error": "x"}
+    )
+    assert isinstance(row, journal.RoleAttempt)
+    assert (row.attempt, row.ok, row.model_call_id, row.request_id) == (1, False, "c1", None)

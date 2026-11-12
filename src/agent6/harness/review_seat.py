@@ -277,25 +277,30 @@ def repo_review(
         entry, sep, model = model_route.partition("/")
         route = kinds.ModelRoute(entry if sep else "", model if sep else entry)
         recovery = provider_call.MediaRecovery(media.InputCapabilities(route))
-    for i in range(max_turns):
+    call_context = kinds.CallContext(
+        panel_id=panel_id, seat_index=seat_index, execution_id=execution_id
+    )
+
+    def _logical_call(messages: list[dict[str, Any]]) -> ProviderResponse:
+        # One identity per logical call: a media-free retry is a new call, and the turn's
+        # tool rows name the call that returned.
+        nonlocal call_context
         call_context = kinds.CallContext(
             panel_id=panel_id, seat_index=seat_index, execution_id=execution_id
         )
+        return provider.call(
+            system=system,
+            messages=messages,
+            tools=tools,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            context=request_headers.RequestContext.initiated_by("agent", call_context=call_context),
+        )
+
+    for i in range(max_turns):
         try:
             resp = provider_call.call_with_media_recovery(
-                lambda messages, call_context=call_context: provider.call(
-                    system=system,
-                    messages=messages,
-                    tools=tools,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    context=request_headers.RequestContext.initiated_by(
-                        "agent", call_context=call_context
-                    ),
-                ),
-                conversation,
-                recovery,
-                emit=emit,
+                _logical_call, conversation, recovery, emit=emit
             )
         except ProviderError as exc:
             return review_records.ReviewVerdict(

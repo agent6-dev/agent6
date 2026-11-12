@@ -719,18 +719,23 @@ class Harness:
             The response, the end of the execution, or `NEXT_TURN` when a mid-stream
             steer discarded the turn.
         """
-        # One identity per turn: the attempts share it, and the turn's tool rows name it.
-        state.call_context = kinds.CallContext(execution_id=self.execution_id)
+
+        def _logical_call(messages: list[dict[str, Any]]) -> ProviderResponse:
+            # One identity per logical call: its attempts share it, a media-free retry is a
+            # new call, and the turn's tool rows name the call that returned.
+            state.call_context = kinds.CallContext(execution_id=self.execution_id)
+            return self.caller.call(
+                system,
+                messages,
+                tools,
+                self._worker_max_tokens(state),
+                initiator=conversation.initiator,
+                call_context=state.call_context,
+            )
+
         try:
             return provider_call.call_with_media_recovery(
-                lambda messages: self.caller.call(
-                    system,
-                    messages,
-                    tools,
-                    self._worker_max_tokens(state),
-                    initiator=conversation.initiator,
-                    call_context=state.call_context,
-                ),
+                _logical_call,
                 conversation,
                 provider_call.MediaRecovery(
                     self.media_input,

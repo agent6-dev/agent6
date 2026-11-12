@@ -284,6 +284,22 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 seat_index=_seat_index(raw),
                 execution_id=raw.get("execution_id"),
             )
+        case "role.attempt":
+            return journal.RoleAttempt(
+                role=_text(raw, "role"),
+                model=_text(raw, "model"),
+                provider=_text(raw, "provider"),
+                model_call_id=_text(raw, "model_call_id"),
+                seat_index=_seat_index(raw),
+                execution_id=raw.get("execution_id"),
+                attempt=as_int(raw.get("attempt")) or 1,
+                request_id=raw.get("request_id"),
+                ok=raw.get("ok") is not False,
+                tokens_in=as_int(raw.get("tokens_in")),
+                tokens_out=as_int(raw.get("tokens_out")),
+                cache_read=as_int(raw.get("cache_read")),
+                cache_creation=as_int(raw.get("cache_creation")),
+            )
         case "role.result":
             return journal.RoleResult(
                 role=_text(raw, "role"),

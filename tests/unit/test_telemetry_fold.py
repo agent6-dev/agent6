@@ -535,3 +535,41 @@ def test_event_ns_keeps_microseconds_exactly() -> None:
     assert (
         telemetry_records.event_ns("yesterday") is None and telemetry_records.event_ns(True) is None
     )
+
+
+def test_attempts_count_their_own_tokens_under_one_model_call_span() -> None:
+    """Two attempts of one call make one span; each attempt counts once, the result not again."""
+    rows = _journal()
+    call = next(row for row in rows if row["type"] == "role.call")
+    result = next(row for row in rows if row["type"] == "role.result")
+    at = rows.index(result)
+    identity = {k: call[k] for k in ("role", "model", "provider", "model_call_id")}
+    attempts = [
+        {
+            "type": "role.attempt",
+            "ts": result["ts"],
+            **identity,
+            "attempt": 1,
+            "ok": False,
+            "tokens_in": 10,
+            "tokens_out": 0,
+            "error": "busy",
+        },
+        {
+            "type": "role.attempt",
+            "ts": result["ts"],
+            **identity,
+            "attempt": 2,
+            "ok": True,
+            "tokens_in": 10,
+            "tokens_out": 5,
+        },
+    ]
+    rows[at:at] = attempts
+    fold, spans, _logs = _run(rows)
+    named = _by_name(spans)
+    assert _counter(fold, "agent6_tokens_total", model="m", provider="p", type="input") == 20
+    assert _counter(fold, "agent6_tokens_total", model="m", provider="p", type="output") == 5
+    assert _counter(fold, "agent6_model_calls_total", model="m", outcome="ok", provider="p") == 1
+    assert _attr(named[telemetry_records.SPAN_MODEL_CALL], "agent6.attempts") == 2
+    assert sum(span.name == telemetry_records.SPAN_MODEL_CALL for span in spans) == 1

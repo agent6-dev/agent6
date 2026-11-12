@@ -59,6 +59,46 @@ def provider_error_hint(status_code: int | None, provider: str = "") -> str:
     return ""
 
 
+def is_permanent(exc: ProviderError) -> bool:
+    """Return whether a provider error ends its call: fatal, or a status no retry recovers."""
+    return exc.fatal or exc.status_code in NON_RETRYABLE_HTTP_STATUSES
+
+
+def closes_call(exc: BaseException, context: request_headers.RequestContext) -> bool:
+    """Return whether a failed attempt ends its logical call.
+
+    An operator stop or steer, a media rejection, a permanent error and the last allowed
+    attempt each end it; a transient error with attempts left does not.
+
+    Args:
+        exc: What the attempt raised.
+        context: The attempt's context, with its attempt count.
+
+    Returns:
+        True when no retry of this call follows.
+    """
+    if not isinstance(exc, ProviderError):
+        return True
+    if isinstance(exc, ProviderAborted | ProviderInterrupted | provider_types.MediaInputError):
+        return True
+    return is_permanent(exc) or context.attempt >= context.attempts
+
+
+def settles_call(resp: Any, context: request_headers.RequestContext) -> bool:
+    """Return whether a returned response is its logical call's result.
+
+    An empty tool-call response with attempts left is retried instead.
+
+    Args:
+        resp: The provider response.
+        context: The attempt's context, with its attempt count.
+
+    Returns:
+        True when the caller takes the response.
+    """
+    return context.attempt >= context.attempts or not is_empty_tool_call_response(resp)
+
+
 def is_empty_tool_call_response(resp: Any) -> bool:
     """Return whether the stop reason promises a tool call that no tool_use or text delivers.
 
@@ -314,6 +354,7 @@ class ProviderCaller:
             initiator, call_context=call_context or kinds.CallContext()
         )
         while True:
+            context = dataclasses.replace(context, attempt=attempt, attempts=attempts)
             try:
                 resp = self.provider.call(
                     system=system,
@@ -328,7 +369,7 @@ class ProviderCaller:
             except (ProviderAborted, ProviderInterrupted, provider_types.MediaInputError):
                 raise  # an operator stop or steer is handled, never retried
             except ProviderError as exc:
-                if exc.fatal or exc.status_code in NON_RETRYABLE_HTTP_STATUSES:
+                if is_permanent(exc):
                     self.log(
                         f"LOOP: provider error {exc.status_code or 'fatal'} is permanent;"
                         " not retrying"
@@ -337,7 +378,7 @@ class ProviderCaller:
                         journal.LoopProviderFatal(status_code=exc.status_code, error=str(exc)[:200])
                     )
                     raise
-                if attempt == attempts:
+                if closes_call(exc, context):
                     exc.attempts = attempt
                     raise
                 delay = self._backoff(attempt, exc.retry_after_s)
@@ -347,7 +388,7 @@ class ProviderCaller:
                 )
                 self.emit(journal.LoopProviderRetry(attempt=attempt, error=str(exc)[:200]))
             else:
-                if attempt == attempts or not is_empty_tool_call_response(resp):
+                if settles_call(resp, context):
                     return resp
                 # Model flakiness, not rate limiting: a short fixed delay.
                 delay = min(self.retry_delay_s, 1.0) * random.uniform(0.5, 1.0)  # noqa: S311

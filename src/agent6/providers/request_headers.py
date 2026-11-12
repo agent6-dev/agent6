@@ -33,6 +33,8 @@ class RequestContext:
             answer), else `agent`.
         observe: Receives each HTTP attempt's facts; None observes nothing.
         call_context: The logical call's identity; None outside an identified call.
+        attempt: The request attempt of the logical call, from 1.
+        attempts: The attempts the caller allows the call; the last one closes it.
     """
 
     conversation_id: str
@@ -41,6 +43,8 @@ class RequestContext:
     initiator: str
     observe: Callable[[RequestFacts], None] | None = None
     call_context: kinds.CallContext | None = None
+    attempt: int = 1
+    attempts: int = 1
 
     @classmethod
     def initiated_by(

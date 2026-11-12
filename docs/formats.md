@@ -1200,6 +1200,30 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `call_id` | `int, optional` | The tool call correlated with this event. |
 | `wait` | `bool` | Whether the call waits for answers. |
 
+### role.attempt
+
+**Support: public.** One request attempt of a model call ended; the ending attempt's role.result follows.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
+| `panel_id` | `str, optional` | Review panel identifier. |
+| `role` | `str` | The calling model role. |
+| `model` | `str` | Model identifier. |
+| `provider` | `str` | Configured provider name. |
+| `model_call_id` | `str` | Identifier pairing the attempt with its model call. |
+| `seat_index` | `int, optional` | Zero-based review seat index. |
+| `attempt` | `int` | The attempt's number within the call, from 1. |
+| `request_id` | `str, optional` | The HTTP attempt's id, as provider.request and the transcript name it. |
+| `ok` | `bool` | Whether the attempt returned a response. |
+| `tokens_in` | `int, optional` | Input tokens the attempt used. |
+| `tokens_out` | `int, optional` | Output tokens the attempt used. |
+| `cache_read` | `int, optional` | Cached input tokens the attempt used. |
+| `cache_creation` | `int, optional` | Cache-creation tokens the attempt used. |
+| `cost_usd` | `float, optional` | Provider-reported USD cost; zero means free, absent means unreported. |
+| `stop_reason` | `str, optional` | The provider's response stop reason. |
+| `error` | `str, optional` | The failure diagnostic. |
+
 ### role.call
 
 **Support: public.** A model call started for a role.
@@ -1216,7 +1240,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### role.result
 
-**Support: public.** A model call returned or failed. Failed calls include usage only when reported.
+**Support: public.** A model call returned or failed, once per logical call, with its last attempt's usage.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
