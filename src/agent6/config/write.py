@@ -16,7 +16,7 @@ import dataclasses
 import difflib
 import pathlib
 import shlex
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from typing import Annotated, Any, Literal, get_args, get_origin
 
 import pydantic
@@ -715,6 +715,36 @@ def set_config_table(
         ConfigError: The target does not parse, or a value has no TOML form.
         OperatorError: The target cannot be written.
     """
+    return _write_fields(
+        repo_root,
+        table,
+        fields,
+        to_repo=to_repo,
+        edit=lambda target, _prior, _held: io.upsert_toml_table(target, table, fields),
+    )
+
+
+def _write_fields(
+    repo_root: pathlib.Path,
+    table: str,
+    fields: dict[str, io.ConfigLeafValue],
+    *,
+    to_repo: bool,
+    edit: Callable[[pathlib.Path, str | None, bool], None],
+) -> str | None:
+    """Edit one `[table]` under the config lock and revalidate each leaf it wrote.
+
+    Args:
+        repo_root: The repo.
+        table: The table name.
+        fields: The leaves; a None value is omitted.
+        to_repo: The repo layer instead of the global one.
+        edit: Writes the file; given the target, its text before the edit and whether the
+            lock is held.
+
+    Returns:
+        The error when the edit produced an invalid config (rolled back), else None.
+    """
     if refusal := _provider_key_refusal(table, fields):
         return refusal
     target = _prepare_write_target(repo_root, to_repo=to_repo)
@@ -723,7 +753,7 @@ def set_config_table(
         io.read_toml_file(target)  # refuse line surgery on a file that does not parse
         was_valid = merged_config_error(repo_root) is None
         _seed_builtin_preset(repo_root, target, table)
-        io.upsert_toml_table(target, table, fields)
+        edit(target, prior, held)
         return revalidate_write(
             repo_root,
             target,
@@ -1162,14 +1192,8 @@ def set_config_leaves(
             rolled back first).
         OperatorError: The target cannot be written.
     """
-    if refusal := _provider_key_refusal(table, fields):
-        return refusal
-    target = _prepare_write_target(repo_root, to_repo=to_repo)
-    with writing_config(target) as held:
-        prior = agent6_errors.read_operator_file(target) if target.is_file() else None
-        io.read_toml_file(target)  # refuse line surgery on a file that does not parse
-        was_valid = merged_config_error(repo_root) is None
-        _seed_builtin_preset(repo_root, target, table)
+
+    def edit(target: pathlib.Path, prior: str | None, held: bool) -> None:
         try:
             for key, val in fields.items():
                 if val is not None:
@@ -1179,18 +1203,8 @@ def set_config_leaves(
             raise validation.ConfigError(
                 keep_or_rollback(target, prior, str(exc), held=held)
             ) from exc
-        return revalidate_write(
-            repo_root,
-            target,
-            prior,
-            was_valid=was_valid,
-            held=held,
-            written=[
-                (io.render_key((*io.split_key(table), k)), v)
-                for k, v in fields.items()
-                if v is not None
-            ],
-        )
+
+    return _write_fields(repo_root, table, fields, to_repo=to_repo, edit=edit)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
