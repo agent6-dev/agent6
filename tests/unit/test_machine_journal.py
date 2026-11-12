@@ -394,8 +394,8 @@ def test_snapshot_pruning_keeps_configured_tail(tmp_path: pathlib.Path) -> None:
     assert latest is not None and latest.seq == 19
 
 
-def test_snapshot_keep_zero_disables_pruning(tmp_path: pathlib.Path) -> None:
-    j = machine_journal.MachineJournal(tmp_path / "inst", keep_snapshots=0)
+def test_keep_snapshots_minus_one_disables_pruning(tmp_path: pathlib.Path) -> None:
+    j = machine_journal.MachineJournal(tmp_path / "inst", keep_snapshots=-1)
     j.ensure_dirs()
     for seq in range(10):
         j.write_snapshot(machine_journal.Snapshot(seq=seq, state="s", blackboard={}))

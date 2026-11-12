@@ -67,22 +67,20 @@ class MachineConfig(pydantic.BaseModel):
     model_config = validation.MODEL_CONFIG
 
     # `machine status` reads the latest snapshot; recovery folds the journal.
-    keep_snapshots: int = pydantic.Field(
-        ge=0,
+    keep_snapshots: validation.NoLimitOrPositive = pydantic.Field(
         default=5,
         description=(
             "blackboard snapshots kept per machine instance; latest read by `machine status`, "
-            "journal folded for recovery and `machine replay`; `machine.keep_snapshots = 0`: all "
+            "journal folded for recovery and `machine replay`; `machine.keep_snapshots = -1`: all "
             "snapshots"
         ),
     )
-    keep_state_logs: int = pydantic.Field(
-        ge=0,
+    keep_state_logs: validation.NoLimitOrPositive = pydantic.Field(
         default=50,
         description=(
             "per-state log dirs kept under `<instance>/states/`, watchable logs of each state's "
             "execution; full transition history in the journal regardless; "
-            "`machine.keep_state_logs = 0`: all logs"
+            "`machine.keep_state_logs = -1`: all logs"
         ),
     )
     pass_env: validation.StrTuple = pydantic.Field(

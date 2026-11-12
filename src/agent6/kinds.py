@@ -366,7 +366,7 @@ class JailPolicy:
             every bind; agent6's own private dirs are unioned in at serialization.
         timeout_s: The command's deadline.
         memory_limit_mib: The per-process data-segment cap (RLIMIT_DATA) in MiB, inherited
-            by every descendant; 0 disables, since capping costs real builds more than it buys.
+            by every descendant; -1 disables, since capping costs real builds more than it buys.
     """
 
     cwd: pathlib.Path
@@ -382,7 +382,7 @@ class JailPolicy:
     tool_paths: tuple[pathlib.Path, ...] = ()
     hide_paths: tuple[pathlib.Path, ...] = ()
     timeout_s: float = 600.0
-    memory_limit_mib: int = 0
+    memory_limit_mib: int = -1
 
 
 ControlValue = str | int | tuple[str, ...]

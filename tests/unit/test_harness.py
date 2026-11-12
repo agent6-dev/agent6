@@ -3022,7 +3022,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: pathlib.Pa
         budget=budget,
         max_turns=max_turns,
     )
-    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with mock.patch(
@@ -3101,7 +3101,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: pathlib.Pat
         budget=budget,
         max_turns=20,
     )
-    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -3169,7 +3169,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: pathlib.Path) 
         budget=None,
         max_turns=20,
     )
-    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -3251,7 +3251,7 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: pathlib.Path
         budget=None,
         max_turns=20,
     )
-    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="system",
@@ -3381,7 +3381,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
         budget=budget,
         max_turns=20,
     )
-    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with mock.patch(
@@ -4537,7 +4537,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
         ),
         max_turns=30,
     )
-    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: x"}]}]
     with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="abc1234567890"):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -4642,7 +4642,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
         budget=None,
         max_turns=30,
     )
-    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: review"}]}]
     with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="abc1234567890"):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -5415,7 +5415,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
         budget=None,
         max_turns=30,
     )
-    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK: optimize"}]}]
 
     with mock.patch("agent6.vcs.git_ops.chain_commit", return_value="abc1234567890"):

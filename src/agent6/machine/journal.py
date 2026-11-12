@@ -369,7 +369,7 @@ class MachineJournal:
     """The append-only event log plus the snapshots of one machine instance.
 
     Attributes:
-        keep_snapshots: How many recent snapshots to keep (`[machine].keep_snapshots`); 0 keeps
+        keep_snapshots: How many recent snapshots to keep (`[machine].keep_snapshots`); -1 keeps
             all.
         root: The instance directory.
         journal_path: The journal file.

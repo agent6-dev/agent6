@@ -139,7 +139,7 @@ def effective_controls(
     row(
         "memory_limit_mib",
         sb.memory_limit_mib,
-        "per-process RLIMIT_DATA in MiB" if sb.memory_limit_mib else "no memory cap",
+        "per-process RLIMIT_DATA in MiB" if sb.memory_limit_mib > 0 else "no memory cap",
     )
     for name in ("extra_read_paths", "extra_write_paths"):
         row(
@@ -242,7 +242,7 @@ def container_controls(config: Config) -> tuple[kinds.EffectiveControl, ...]:
         "memory_limit_mib",
         sb.memory_limit_mib,
         "per-process RLIMIT_DATA in MiB, applied by the launcher inside"
-        if sb.memory_limit_mib
+        if sb.memory_limit_mib > 0
         else "no memory cap",
         "agent6",
     )

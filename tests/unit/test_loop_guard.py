@@ -319,7 +319,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: pathlib.Pat
 
 
 def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: pathlib.Path) -> None:
-    """`loop_guard_kill_threshold = 0` restores notice-only behaviour."""
+    """`loop_guard_kill_threshold = -1` restores notice-only behaviour."""
     repo = tmp_path / "repo"
     _init_repo(repo)
 
@@ -358,7 +358,7 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: pathlib.Path) ->
         call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_turns=20,
     )
-    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     result = wf.run("loop")
 
     assert result.completed is True
@@ -491,7 +491,7 @@ def test_max_turns_stop_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -
         _dirtying_dispatcher(repo),
         max_turns=3,
     )
-    wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
+    wf.config = _knobs(wf.config, loop_guard_kill_threshold=-1)
     result = wf.run("keep going")
 
     assert result.reason == "max_turns"
@@ -995,7 +995,7 @@ def test_the_kill_is_a_hard_stop_at_the_threshold_and_off_at_zero() -> None:
     assert stop.log == (
         "LOOP: loop_guard_killed at turn 5 - read_file called 5x in a row (threshold=5)"
     )
-    off = turn_context(loop_guard_kill_threshold=0)
+    off = turn_context(loop_guard_kill_threshold=-1)
     assert guards.loop_guard_kill(turn, state, off) is None
 
 

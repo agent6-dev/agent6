@@ -595,7 +595,7 @@ def _environment(
 def prepare(
     discovery: ContainerDiscovery,
     *,
-    memory_limit_mib: int = 0,
+    memory_limit_mib: int = -1,
     controls: tuple[kinds.EffectiveControl, ...] = (),
 ) -> jail_session.JailSession:
     """Install one static launcher and prove its target before handing over the session.

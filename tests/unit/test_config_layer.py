@@ -165,7 +165,7 @@ def test_config_show_pins_the_default_settled_stop(repo: pathlib.Path) -> None:
     assert setting.source == "default" and setting.py_type == "int"
 
 
-@pytest.mark.parametrize("stop_after", [0, 6, 18])
+@pytest.mark.parametrize("stop_after", [-1, 6, 18])
 def test_config_load_and_show_accept_a_settled_stop_override(
     repo: pathlib.Path, stop_after: int
 ) -> None:
@@ -179,16 +179,19 @@ def test_config_load_and_show_accept_a_settled_stop_override(
     assert setting.source == "repo" and setting.modified is True
 
 
-def test_config_load_refuses_a_negative_settled_stop(repo: pathlib.Path) -> None:
-    """A negative settled-stop threshold is rejected as an invalid value, not an unknown key."""
+@pytest.mark.parametrize("stop_after", [0, -2])
+def test_config_load_refuses_a_settled_stop_of_zero_or_below_minus_one(
+    repo: pathlib.Path, stop_after: int
+) -> None:
+    """Zero has no meaning as a threshold and -1 alone spells off: both loaders name the key."""
     paths_mod.repo_config_path(repo).write_text(
-        "[harness]\nsettled_stop_after = -1\n", encoding="utf-8"
+        f"[harness]\nsettled_stop_after = {stop_after}\n", encoding="utf-8"
     )
     with pytest.raises(ConfigError) as exc:
         layer.load_effective(repo)
     text = str(exc.value)
     assert "harness.settled_stop_after" in text
-    assert "greater than or equal to 0" in text
+    assert "must be 1 or more, or exactly -1 for no limit" in text
 
 
 @pytest.mark.parametrize("layered", [False, True])

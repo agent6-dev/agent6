@@ -137,7 +137,7 @@ _WITHIN: dict[str, Callable[[_Side, _Side], bool]] = {
     ),
     "home": lambda op, st: _HOME_RANK[st.sandbox.home] >= _HOME_RANK[op.sandbox.home],
     "memory_limit_mib": lambda op, st: (
-        op.sandbox.memory_limit_mib == 0
+        op.sandbox.memory_limit_mib == -1
         or 0 < st.sandbox.memory_limit_mib <= op.sandbox.memory_limit_mib
     ),
 }

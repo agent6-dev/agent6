@@ -136,12 +136,11 @@ class SandboxConfig(pydantic.BaseModel):
     # RLIMIT_DATA rather than RLIMIT_AS so V8, the JVM and ASAN, which reserve address space
     # without committing it, keep working. A guardrail, never a security control; set before
     # exec at every isolation level.
-    memory_limit_mib: int = pydantic.Field(
-        default=0,
-        ge=0,
+    memory_limit_mib: validation.NoLimitOrPositive = pydantic.Field(
+        default=-1,
         description=(
             "per-process `RLIMIT_DATA` data-segment cap in MiB (1024 * 1024 bytes) for jailed "
-            "processes and their children; `sandbox.memory_limit_mib = 0`: no cap; explicit cap "
+            "processes and their children; `sandbox.memory_limit_mib = -1`: no cap; explicit cap "
             "to bound a task; cap exceeded: ordinary command error"
         ),
     )

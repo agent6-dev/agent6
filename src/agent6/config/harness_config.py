@@ -284,25 +284,23 @@ class HarnessConfig(pydantic.BaseModel):
             "bursts included; 0 ends the run on the first."
         ),
     )
-    loop_guard_kill_threshold: int = pydantic.Field(
+    loop_guard_kill_threshold: validation.NoLimitOrPositive = pydantic.Field(
         default=10,
-        ge=0,
         description=(
             "The same (tool, args) call this many times in a row ends the run as "
-            "`loop_guard_killed` (the notice fires from three, every other turn); 0 leaves "
-            "the notice alone."
+            "`loop_guard_killed` (the notice fires from three, every other turn); "
+            "`harness.loop_guard_kill_threshold = -1`: the notice alone, no end."
         ),
     )
     # Measured: six idle turns cut steered runs mid-work, twelve none (bench/coreagent/FINDINGS.md).
-    settled_stop_after: int = pydantic.Field(
+    settled_stop_after: validation.NoLimitOrPositive = pydantic.Field(
         default=12,
-        ge=0,
         description=(
             "consecutive turns with no edit, commit or memory write and an unchanged tree "
             "before a plain run ends after a green verify or an editing step; verify runs and "
             "waits on a live background command neutral; streak reset by progress or "
             "operator steer; default 12, measured; "
-            "`harness.settled_stop_after = 0`: stop disabled, nudge at three idle turns "
+            "`harness.settled_stop_after = -1`: stop disabled, nudge at three idle turns "
             "retained"
         ),
     )
@@ -431,7 +429,7 @@ class CompactionConfig(pydantic.BaseModel):
             "`compaction.keep_recent_chars = 0`: none"
         ),
     )
-    keep_thinking_turns: int = pydantic.Field(
+    keep_thinking_turns: validation.NoLimitOrPositive = pydantic.Field(
         default=-1,
         description=(
             "thinking retained at tier 1 for the newest N assistant turns with "
@@ -461,24 +459,6 @@ class CompactionConfig(pydantic.BaseModel):
             "`compaction.elision_gists = false`: bare placeholders directly"
         ),
     )
-
-    @pydantic.field_validator("keep_thinking_turns")
-    @classmethod
-    def _thinking_unlimited_is_exactly_minus_one(cls, v: int) -> int:
-        """Refuse a count that is neither positive nor exactly -1.
-
-        Args:
-            v: The configured count.
-
-        Returns:
-            The count unchanged.
-
-        Raises:
-            ValueError: The count is 0 or below -1.
-        """
-        if v == 0 or v < -1:
-            raise ValueError("keep_thinking_turns is >= 1, or exactly -1 to keep all thinking")
-        return v
 
     @pydantic.model_validator(mode="after")
     def _check_compaction_thresholds(self) -> CompactionConfig:

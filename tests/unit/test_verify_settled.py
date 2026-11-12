@@ -173,13 +173,13 @@ def test_the_configured_threshold_moves_the_settled_stop(
 
 
 @pytest.mark.parametrize("gated", [False, True])
-def test_zero_disables_the_settled_stop_but_keeps_the_nudge(
+def test_minus_one_disables_the_settled_stop_but_keeps_the_nudge(
     tmp_path: pathlib.Path, gated: bool
 ) -> None:
     """A disabled settled stop still nudges at idle 3 without announcing an end."""
     state = _green_state() if gated else loop_state.LoopState(original_task="t", tool_calls=0)
     state.settled.gateless_ever_edited = not gated
-    ctx = _configured_context(tmp_path, state, 0)
+    ctx = _configured_context(tmp_path, state, -1)
     answers = [guards.verify_settled(_turn(i), state, ctx) for i in range(1, 102)]
     nudge_answers = [a for a in answers if isinstance(a, advice.Nudge)]
     assert not any(isinstance(a, advice.Stop) for a in answers)

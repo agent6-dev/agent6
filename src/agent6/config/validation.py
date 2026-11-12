@@ -60,6 +60,27 @@ MODEL_CONFIG = pydantic.ConfigDict(extra="forbid", frozen=True, strict=True, all
 StrTuple = Annotated[tuple[str, ...], pydantic.Field(strict=False)]
 
 
+def _no_limit_or_positive(value: int) -> int:
+    """Refuse a count that is neither positive nor exactly -1.
+
+    Args:
+        value: The configured count.
+
+    Returns:
+        The count unchanged.
+
+    Raises:
+        ValueError: The count is 0 or below -1.
+    """
+    if value == -1 or value >= 1:
+        return value
+    raise ValueError("must be 1 or more, or exactly -1 for no limit")
+
+
+# A count whose zero has no meaning: -1 spells no limit, as it does for the budget caps.
+NoLimitOrPositive = Annotated[int, pydantic.AfterValidator(_no_limit_or_positive)]
+
+
 def _argv_elements(v: tuple[str, ...]) -> tuple[str, ...]:
     """Refuse an empty argv element.
 

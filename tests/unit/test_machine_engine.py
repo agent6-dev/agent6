@@ -1573,8 +1573,8 @@ def test_per_state_agent_log_path_and_prune(tmp_path: pathlib.Path) -> None:
     assert sorted(p.name for p in states_root.iterdir()) == ["0002-s", "0003-s", "0004-s"]
 
 
-def test_state_log_keep_zero_disables_pruning(tmp_path: pathlib.Path) -> None:
-    """`[machine].keep_state_logs = 0` keeps every per-state log dir, like `keep_snapshots`."""
+def test_keep_state_logs_minus_one_disables_pruning(tmp_path: pathlib.Path) -> None:
+    """`[machine].keep_state_logs = -1` keeps every per-state log dir, like `keep_snapshots`."""
     journal = machine_journal.MachineJournal(tmp_path / "inst")
     states_root = tmp_path / "inst" / "states"
 
@@ -1591,7 +1591,7 @@ def test_state_log_keep_zero_disables_pruning(tmp_path: pathlib.Path) -> None:
         journal=journal,
         agent_runner=fake_runner,
         state_log_root=states_root,
-        keep_state_logs=0,
+        keep_state_logs=-1,
     )
     for seq in range(5):
         world.run_agent(

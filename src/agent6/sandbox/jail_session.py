@@ -392,7 +392,7 @@ class JailSession:
                 "timeout_s": timeout_s,
                 "checkin_s": checkin_s,
                 # The launcher's wire key keeps the old suffix.
-                "memory_limit_mb": self._memory_limit_mib,
+                "memory_limit_mb": max(0, self._memory_limit_mib),
             },
             interrupted=interrupted,
         )
@@ -436,7 +436,7 @@ class JailSession:
                 "argv": list(argv),
                 "env": [list(p) for p in env],
                 # The launcher's wire key keeps the old suffix.
-                "memory_limit_mb": self._memory_limit_mib,
+                "memory_limit_mb": max(0, self._memory_limit_mib),
             }
         )
         handle = answer.get("handle")

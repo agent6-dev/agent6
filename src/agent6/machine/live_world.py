@@ -43,9 +43,9 @@ def _prune_state_logs(root: pathlib.Path, *, keep: int) -> None:
 
     Args:
         root: The per-state log root.
-        keep: The number to keep, including the next; 0 prunes nothing.
+        keep: The number to keep, including the next; -1 prunes nothing.
     """
-    if keep == 0:
+    if keep <= 0:
         return
     try:
         dirs = sorted((p for p in root.iterdir() if p.is_dir()), key=_state_log_seq)

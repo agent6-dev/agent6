@@ -156,7 +156,7 @@ def test_boundaries_report_covers_every_actor(
     assert f"    ro  tool  {_TOOL_DIR}  (on the jail's PATH)" in out
     assert "    --        /work/secrets  (hidden)" in out
     assert "  network:   session (sandbox.network = auto)" in out
-    assert "  memory:    no cap (sandbox.memory_limit_mib = 0)" in out
+    assert "  memory:    no cap (sandbox.memory_limit_mib = -1)" in out
     assert "mcp servers: none run" in out
     assert "egress is unbounded" in out
     assert "secrets.toml" in out

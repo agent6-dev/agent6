@@ -763,7 +763,8 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
     compaction = {} if keep_messages is None else {"keep_thinking_turns": keep_messages}
     if retained is None:
         with pytest.raises(
-            pydantic.ValidationError, match=r"keep_thinking_turns.*>= 1.*-1.*all thinking"
+            pydantic.ValidationError,
+            match=r"keep_thinking_turns\n.*must be 1 or more, or exactly -1",
         ):
             Config.model_validate({"compaction": compaction})
         return

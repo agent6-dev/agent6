@@ -62,13 +62,13 @@ def die_with_parent(parent_pid: int, sig: int = signal.SIGTERM) -> Callable[[], 
     return _setup
 
 
-def _tied_to_agent(controlling_terminal: bool, memory_limit_mib: int = 0) -> Callable[[], None]:
+def _tied_to_agent(controlling_terminal: bool, memory_limit_mib: int = -1) -> Callable[[], None]:
     """Return the `preexec_fn` of an unconfined child: the parent tie and the memory cap.
 
     Args:
         controlling_terminal: Make the terminal on stdin the child's new session's
             controlling terminal, so its signals and job control reach the foreground group.
-        memory_limit_mib: The RLIMIT_DATA cap in MiB; 0 is no cap.
+        memory_limit_mib: The RLIMIT_DATA cap in MiB; -1 is no cap.
 
     Returns:
         The function to run in the child before exec.
@@ -343,7 +343,7 @@ def policy_spec(policy: kinds.JailPolicy) -> dict[str, Any]:
         "hide_paths": sorted({str(p) for p in paths.hidden_paths(policy.cwd, policy.hide_paths)}),
         "timeout_s": policy.timeout_s,
         # The launcher's wire key keeps the old suffix.
-        "memory_limit_mb": policy.memory_limit_mib,
+        "memory_limit_mb": max(0, policy.memory_limit_mib),
     }
 
 
@@ -351,7 +351,7 @@ def memory_cap(memory_limit_mib: int) -> Callable[[], None]:
     """Return a `preexec_fn` setting the child's RLIMIT_DATA, as the launcher does under `none`.
 
     Args:
-        memory_limit_mib: The cap in MiB; 0 is no cap.
+        memory_limit_mib: The cap in MiB; -1 is no cap.
 
     Returns:
         The function to run in the child before exec.
