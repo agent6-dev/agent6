@@ -100,7 +100,7 @@ CONDITIONS: dict[str, str] = {
     # G12 extends the base config's trailing [harness] table.
     "verify_finish": 'verify_when = "finish"\n',
     # Thrust 2: front-loaded decomposition.
-    "decompose": '[prompt]\ndecompose = "on"\n',
+    "decompose": '[harness.prompt]\ndecompose = "on"\n',
     # The tail must fit below the tier-2 trigger; zero selects a hard restart.
     "compact_tight": (
         "[compaction]\ndrop_at_chars = 18000\nsummarise_at_chars = 36000\nkeep_recent_chars = 0\n"
@@ -117,23 +117,23 @@ CONDITIONS: dict[str, str] = {
     # workflow, the tool map, the constraints; ~2.2k chars vs the shipped 1.0k
     # mechanics-only base). Same sentinels as the base, so isolation-specific
     # rules render identically in both arms.
-    "brief": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/brief.md"\n',
-    "moose": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/moose.md"\n',
-    "moose_top": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/moose_top.md"\n',
+    "brief": '[harness.prompt]\nsystem_prompt_file = "{ROOT}/prompts/brief.md"\n',
+    "moose": '[harness.prompt]\nsystem_prompt_file = "{ROOT}/prompts/moose.md"\n',
+    "moose_top": '[harness.prompt]\nsystem_prompt_file = "{ROOT}/prompts/moose_top.md"\n',
     # moose_user: same marker instruction as a TASK-PROMPT suffix (see
     # USER_SUFFIX) -- the channel `--skill`/steer-injected content rides.
     "moose_user": "",
     # H1 terse style, 3 arms: baseline / one-line concise control / distilled
     # caveman ruleset. The honest delta is ruleset vs terse_line (caveman's own
     # eval design); compliance is measured from transcripts, never assumed.
-    "terse_line": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/terse_line.md"\n',
-    "terse_ruleset": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/terse_ruleset.md"\n',
+    "terse_line": '[harness.prompt]\nsystem_prompt_file = "{ROOT}/prompts/terse_line.md"\n',
+    "terse_ruleset": '[harness.prompt]\nsystem_prompt_file = "{ROOT}/prompts/terse_ruleset.md"\n',
     # H3 negative control: a realistic 14-skill index, all irrelevant --
     # measures pure presence/distraction cost of a skills index block.
-    "index_irrelevant": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/index_irrelevant.md"\n',
+    "index_irrelevant": '[harness.prompt]\nsystem_prompt_file = "{ROOT}/prompts/index_irrelevant.md"\n',
     # H4: superpowers systematic-debugging SKILL.md injected whole (the
     # `always`-skill delivery shape); pair with the `bugs` task only.
-    "skill_debug": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/skill_debug.md"\n',
+    "skill_debug": '[harness.prompt]\nsystem_prompt_file = "{ROOT}/prompts/skill_debug.md"\n',
     # H2 delivery mechanism (needs an agent6 with the skills feature): the
     # same systematic-debugging content as skill_debug, delivered as an
     # always-skill vs an indexed on-demand skill (does the model call
@@ -147,7 +147,7 @@ CONDITIONS: dict[str, str] = {
     # H3b: length-matched NEUTRAL padding (~same bytes as the irrelevant
     # index). If this reproduces the index harm on mistral, the effect is
     # plain prompt-length sensitivity, not the skills index specifically.
-    "padding_neutral": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/padding_neutral.md"\n',
+    "padding_neutral": '[harness.prompt]\nsystem_prompt_file = "{ROOT}/prompts/padding_neutral.md"\n',
     # Bootstrap question: with the using-superpowers meta-skill injected
     # always-on (verbatim, no harness tool-mapping added), does the model
     # start invoking use_skill for a matching indexed skill? Compare the

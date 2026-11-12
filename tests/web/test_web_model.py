@@ -481,11 +481,15 @@ def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: path
     eff = layer.load_effective(tmp_path, (cfg,))
     resolved = registry.resolved_adaptive_values(eff.config)
     shown = json.loads(config_view.render_show(eff, as_json=True, resolved=resolved))
-    for key in ("prompt.decompose", "compaction.drop_at_chars", "compaction.summarise_at_chars"):
+    for key in (
+        "harness.prompt.decompose",
+        "compaction.drop_at_chars",
+        "compaction.summarise_at_chars",
+    ):
         shared = {name: value for name, value in payload[key].items() if name != "input"}
         assert shared == shown[key]
         assert payload[key]["adaptive"] is True
-    assert payload["prompt.decompose"]["display"] == '"off"  (adaptive)'
+    assert payload["harness.prompt.decompose"]["display"] == '"off"  (adaptive)'
     assert isinstance(payload["compaction.drop_at_chars"]["effective"], int)
 
 

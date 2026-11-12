@@ -4,7 +4,7 @@ A harness to measure agent6 *core-agent* changes (prompt/DAG/compaction) on
 objective, test-graded tasks, across models, with enough reps to separate signal
 from noise. Built for two thrusts:
 
-- **Thrust 2, task decomposition** (`[prompt].decompose`): whether
+- **Thrust 2, task decomposition** (`[harness.prompt].decompose`): whether
   front-loading a subtask plan helps small models finish multi-part tasks.
 - **Thrust 1, context compaction** (`[compaction].keep_recent_chars`): whether
   a recent verbatim tail at tier-2 beats the hard `[task, summary]` restart.
@@ -94,7 +94,7 @@ Dry runs print each config path and do not append result rows.
 | `baseline` | Shipped defaults: `harness.verify_when = "never"` | G12 and B15 control |
 | `verify_finish` | `harness.verify_when = "finish"` | G12 treatment: harness runs the finish gate; both arms retain the same tools and verify command |
 | `revise_auto` (retired) | Prompt revision, removed from config | B15 treatment: helper rewrote the task before the worker loop |
-| `decompose` | `prompt.decompose = "on"` | Front-loaded decomposition |
+| `decompose` | `harness.prompt.decompose = "on"` | Front-loaded decomposition |
 | `compact_tight` | Lower compaction thresholds | Force compaction on moderate tasks |
 
 The other prompt and skill conditions are listed in `CONDITIONS`.

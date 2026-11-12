@@ -295,7 +295,7 @@ class Harness:
         self.log(f"LOOP: mode={self.mode} system={len(system)} chars, task={len(user_task)} chars")
 
         dag_hint = dag_focus.initial_dag_hint(
-            root_id, self.mode, self.config.prompt.decompose == "on"
+            root_id, self.mode, self.config.harness.prompt.decompose == "on"
         )
         instructions = prompt_blocks.initial_instructions(
             self.mode,
@@ -814,7 +814,7 @@ class Harness:
             except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
                 self.log(f"LOOP: mark in_progress skipped: {exc}")
         banner = dag_focus.current_task_banner(
-            current_id, node, decompose=self.config.prompt.decompose == "on"
+            current_id, node, decompose=self.config.harness.prompt.decompose == "on"
         )
         conversation.notice(banner)
         state.focus.surfaced_task_id = current_id

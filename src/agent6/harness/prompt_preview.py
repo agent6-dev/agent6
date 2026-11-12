@@ -102,7 +102,9 @@ def model_exchange_for(
     header = prompt_blocks.initial_instructions(
         mode, config.sandbox.run_commands, has_gate=bool(config.harness.verify_command)
     )
-    hint = dag_focus.initial_dag_hint("<root task id>", mode, config.prompt.decompose == "on")
+    hint = dag_focus.initial_dag_hint(
+        "<root task id>", mode, config.harness.prompt.decompose == "on"
+    )
     return ModelExchange(
         mode=mode,
         system=system,

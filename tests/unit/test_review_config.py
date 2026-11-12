@@ -52,7 +52,7 @@ def test_configured_repo_call_budget_reaches_the_seat(
         '[review]\nrepo_max_turns = 2\nscope = "repo"\n'
         'when = "periodic"\ninterval_turns = 1\n'
         "[harness]\nmax_turns = 1\nverify_infer = false\n"
-        '[prompt]\ndecompose = "off"\n',
+        '[harness.prompt]\ndecompose = "off"\n',
         encoding="utf-8",
     )
     tool = {"type": "tool_use", "id": "r1", "name": "read_file", "input": {"path": "a.py"}}

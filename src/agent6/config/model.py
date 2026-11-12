@@ -95,9 +95,6 @@ class Config(pydantic.BaseModel):
     compaction: harness_config.CompactionConfig = pydantic.Field(
         default_factory=harness_config.CompactionConfig
     )
-    prompt: harness_config.PromptConfig = pydantic.Field(
-        default_factory=harness_config.PromptConfig
-    )
     skills: surface_config.SkillsConfig = pydantic.Field(
         default_factory=surface_config.SkillsConfig
     )
@@ -675,7 +672,7 @@ class Config(pydantic.BaseModel):
         return Config.model_validate(data)
 
     def with_decompose(self, value: Literal["on", "off"]) -> Config:
-        """Return a copy with `prompt.decompose` pinned, so the engine never sees `auto`.
+        """Return a copy with `harness.prompt.decompose` pinned, so the engine never sees `auto`.
 
         Args:
             value: The resolved setting.
@@ -684,7 +681,7 @@ class Config(pydantic.BaseModel):
             The config with the setting pinned.
         """
         data = self.model_dump(mode="python")
-        data.setdefault("prompt", {})["decompose"] = value
+        data["harness"]["prompt"]["decompose"] = value
         return Config.model_validate(data)
 
     def require_runnable(self, role: kinds.RoleName = "worker") -> None:
@@ -743,7 +740,7 @@ _REPLACED_KEYS = {
     "harness.verify_settled_stop_after": (
         "unknown config key; use harness.settled_stop_after with the same value"
     ),
-    "prompt.revise_prompt": "removed config key; delete prompt.revise_prompt",
+    "prompt": "moved config table; use [harness.prompt]",
     "machine.snapshot_keep": "renamed config key; use machine.keep_snapshots",
     "machine.state_log_keep": "renamed config key; use machine.keep_state_logs",
     "review.max_review_rejections": "renamed config key; use review.max_rejections",

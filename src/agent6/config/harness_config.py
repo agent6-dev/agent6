@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The loop-behaviour models.
 
-`[harness]` with its metric, `[review]`, `[compaction]`, `[prompt]` and `[budget]`.
+`[harness]` with its metric and prompt, `[review]`, `[compaction]` and `[budget]`.
 """
 
 from __future__ import annotations
@@ -197,6 +197,55 @@ class MetricConfig(pydantic.BaseModel):
             "only ties the best."
         ),
     )
+
+
+class PromptConfig(pydantic.BaseModel):
+    """The `[harness.prompt]` table: the system-prompt override and task decomposition."""
+
+    model_config = validation.MODEL_CONFIG
+
+    system_prompt_file: str = pydantic.Field(
+        default="",
+        description=(
+            "file path replacing run mode's built-in base system prompt; dynamic blocks still "
+            "appended; tool contracts supplied by the operator; startup warning for missing "
+            "core tool names; empty: built-in base; assembled prompt, tool definitions and "
+            "first message shown by `agent6 prompt show`"
+        ),
+    )
+    # `auto` resolves per model in models.registry.decompose_default; the engine reads only `on`.
+    decompose: Literal["auto", "on", "off"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "auto": "Choose from worker model capability registry",
+                "on": "Require ordered task decomposition before editing",
+                "off": "Do not require task decomposition",
+            }
+        },
+        default="auto",
+        description=(
+            "Ordered DAG subtasks worked one at a time before editing in run mode; required "
+            "decomposition helps small models under-finishing multi-part tasks (measured on "
+            "mistral-small), with 2-4x overhead for capable models; `config show` prints the "
+            "resolved value; `--decompose` forces it for one run."
+        ),
+    )
+
+    @pydantic.model_validator(mode="after")
+    def _check_system_prompt_file(self) -> PromptConfig:
+        """Refuse an override path that is not a file, at config time rather than at run start.
+
+        Returns:
+            The model unchanged.
+
+        Raises:
+            ValueError: `system_prompt_file` is set and is not a readable file.
+        """
+        if self.system_prompt_file:
+            p = pathlib.Path(self.system_prompt_file).expanduser()
+            if not p.is_file():
+                raise ValueError(f"harness.prompt.system_prompt_file: not a readable file: {p}")
+        return self
 
 
 class HarnessConfig(pydantic.BaseModel):
@@ -394,6 +443,7 @@ class HarnessConfig(pydantic.BaseModel):
             "listed, calls refused with `harness.metric` named"
         ),
     )
+    prompt: PromptConfig = pydantic.Field(default_factory=PromptConfig)
 
 
 class CompactionConfig(pydantic.BaseModel):
@@ -493,55 +543,6 @@ class CompactionConfig(pydantic.BaseModel):
                 f" keep_recent_chars ({self.keep_recent_chars}): the verbatim tail"
                 " alone would re-trigger tier 2 after every restart."
             )
-        return self
-
-
-class PromptConfig(pydantic.BaseModel):
-    """The `[prompt]` table: the system-prompt override and task decomposition."""
-
-    model_config = validation.MODEL_CONFIG
-
-    system_prompt_file: str = pydantic.Field(
-        default="",
-        description=(
-            "file path replacing run mode's built-in base system prompt; dynamic blocks still "
-            "appended; tool contracts supplied by the operator; startup warning for missing "
-            "core tool names; empty: built-in base; assembled prompt, tool definitions and "
-            "first message shown by `agent6 prompt show`"
-        ),
-    )
-    # `auto` resolves per model in models.registry.decompose_default; the engine reads only `on`.
-    decompose: Literal["auto", "on", "off"] = pydantic.Field(
-        json_schema_extra={
-            "choice_meanings": {
-                "auto": "Choose from worker model capability registry",
-                "on": "Require ordered task decomposition before editing",
-                "off": "Do not require task decomposition",
-            }
-        },
-        default="auto",
-        description=(
-            "Ordered DAG subtasks worked one at a time before editing in run mode; required "
-            "decomposition helps small models under-finishing multi-part tasks (measured on "
-            "mistral-small), with 2-4x overhead for capable models; `config show` prints the "
-            "resolved value; `--decompose` forces it for one run."
-        ),
-    )
-
-    @pydantic.model_validator(mode="after")
-    def _check_system_prompt_file(self) -> PromptConfig:
-        """Refuse an override path that is not a file, at config time rather than at run start.
-
-        Returns:
-            The model unchanged.
-
-        Raises:
-            ValueError: `system_prompt_file` is set and is not a readable file.
-        """
-        if self.system_prompt_file:
-            p = pathlib.Path(self.system_prompt_file).expanduser()
-            if not p.is_file():
-                raise ValueError(f"prompt.system_prompt_file: not a readable file: {p}")
         return self
 
 

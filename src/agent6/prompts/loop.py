@@ -105,7 +105,7 @@ PARTIAL_FS_RULE = """- Under partial isolation, jailed commands cannot CREATE ne
 # `__CREATE_HINT__` names the edit tool the run offers for that first file.
 CREATE_HINT = '`apply_edit` using `kind="create"`'
 
-# One of these two fills __DAG_RULES_BLOCK__ in run mode, keyed on `[prompt].decompose`; the
+# One of these two fills __DAG_RULES_BLOCK__ in run mode, keyed on `[harness.prompt].decompose`; the
 # decompose-first block is measured per model (`models.registry.decompose_default`).
 DAG_RULES_OPTIONAL = """<dag-rules>
 add_task / update_task / list_tasks keep a persistent task breakdown.

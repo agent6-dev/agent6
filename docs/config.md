@@ -51,7 +51,7 @@ It can be empty or absent when the global config supplies a provider and model.
   The repo layer and any selected preset are left as-is.
 - `agent6 config fix`: drop auto-removable invalid entries (unknown keys, stale values) from the global and repo configs and their presets, a global value a repo override masks included, naming each, and report entries that need manual repair; `--machine-file FILE` repairs an overlay instead.
 - `agent6 check`: validate config + sandbox + provider keys without starting an agent run.
-  `config show` tags resolved values `(adaptive)`: `auto` settings for `sandbox.isolation`, `sandbox.network` and `prompt.decompose`, each role's unset effort, and adaptive compaction thresholds.
+  `config show` tags resolved values `(adaptive)`: `auto` settings for `sandbox.isolation`, `sandbox.network` and `harness.prompt.decompose`, each role's unset effort, and adaptive compaction thresholds.
 
 ---
 
@@ -457,6 +457,13 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 | `pattern` | *(required)* | A regular expression over the command's output; its first capture group is the number, e.g. `"score: ([0-9.]+)"`. |
 | `goal` | *(required)* | Score direction; trajectory is reported; finish is allowed once a verified edit only ties the best.<ul><li><code>minimize</code>: Smaller scores are better</li><li><code>maximize</code>: Larger scores are better</li></ul> |
 
+### `[harness.prompt]`
+
+| Field | Default | Meaning |
+|---|---|---|
+| `system_prompt_file` | `""` | file path replacing run mode's built-in base system prompt; dynamic blocks still appended; tool contracts supplied by the operator; startup warning for missing core tool names; empty: built-in base; assembled prompt, tool definitions and first message shown by `agent6 prompt show` |
+| `decompose` | `"auto"` | Ordered DAG subtasks worked one at a time before editing in run mode; required decomposition helps small models under-finishing multi-part tasks (measured on mistral-small), with 2-4x overhead for capable models; `config show` prints the resolved value; `--decompose` forces it for one run.<ul><li><code>auto</code>: Choose from worker model capability registry</li><li><code>on</code>: Require ordered task decomposition before editing</li><li><code>off</code>: Do not require task decomposition</li></ul> |
+
 ## `[review]`
 
 | Field | Default | Meaning |
@@ -521,13 +528,6 @@ Tiered context compaction (approximate chars; tokens ≈ chars/4).
 | `keep_thinking_turns` | `-1` | thinking retained at tier 1 for the newest N assistant turns with `compaction.keep_thinking_turns = N` (`N >= 1`); `compaction.keep_thinking_turns = -1`: all thinking; `compaction.keep_thinking_turns = 0`: invalid, newest signed thinking block needed by an in-flight tool call; less replay for Anthropic's signed blocks and ChatGPT's reasoning items; no thinking re-sent on the OpenAI wire |
 | `summary_max_tokens` | `2048` | output-token cap for a tier-2 summary or gist distillation; smaller caps overridden by a reasoning model's per-call floor for reasoning tokens; no cap accepted by the chatgpt backend |
 | `elision_gists` | `true` | large `read_file` results replaced at tier 1 by model-written gists before bare placeholders; gists also dropped under continued pressure to keep the byte bound; `compaction.elision_gists = false`: bare placeholders directly |
-
-## `[prompt]`
-
-| Field | Default | Meaning |
-|---|---|---|
-| `system_prompt_file` | `""` | file path replacing run mode's built-in base system prompt; dynamic blocks still appended; tool contracts supplied by the operator; startup warning for missing core tool names; empty: built-in base; assembled prompt, tool definitions and first message shown by `agent6 prompt show` |
-| `decompose` | `"auto"` | Ordered DAG subtasks worked one at a time before editing in run mode; required decomposition helps small models under-finishing multi-part tasks (measured on mistral-small), with 2-4x overhead for capable models; `config show` prints the resolved value; `--decompose` forces it for one run.<ul><li><code>auto</code>: Choose from worker model capability registry</li><li><code>on</code>: Require ordered task decomposition before editing</li><li><code>off</code>: Do not require task decomposition</li></ul> |
 
 ## `[skills]`
 

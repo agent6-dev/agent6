@@ -425,19 +425,19 @@ def test_config_set_keeps_a_valid_write_despite_a_stale_value_elsewhere(
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
-    gpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
+    gpath.write_text("[harness.prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
     rc = main(["config", "set", "budget.max_usd", "5"])
     captured = capsys.readouterr()
     assert rc == 0  # the valid write is kept...
     assert "Set budget" in captured.out  # ...it succeeded,
-    assert "prompt.decompose" in captured.err  # ...and a warning names the stale value,
+    assert "harness.prompt.decompose" in captured.err  # ...and a warning names the stale value,
     assert str(gpath) in captured.err  # the exact file,
-    assert "config set prompt.decompose <value>" in captured.err  # and how to fix it.
+    assert "config set harness.prompt.decompose <value>" in captured.err  # and how to fix it.
 
     # Overwriting the offending value clears the warning; the write is clean.
-    assert main(["config", "set", "prompt.decompose", "off"]) == 0
+    assert main(["config", "set", "harness.prompt.decompose", "off"]) == 0
     assert "WARNING" not in capsys.readouterr().err
 
 
@@ -469,9 +469,9 @@ def test_config_set_rejects_a_newly_invalid_value(
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    rc = main(["config", "set", "prompt.decompose", "bogus"])
+    rc = main(["config", "set", "harness.prompt.decompose", "bogus"])
     assert rc == 2  # the write itself is invalid -> reverted + fail loud
-    assert "prompt.decompose" in capsys.readouterr().err
+    assert "harness.prompt.decompose" in capsys.readouterr().err
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     assert not gpath.is_file() or "decompose" not in gpath.read_text(encoding="utf-8")
@@ -494,7 +494,7 @@ def test_a_refused_write_still_hands_the_config_back_to_the_operator(
     gpath.write_text("[budget]\nmax_usd = 5.0\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    assert main(["config", "set", "prompt.decompose", "bogus"]) == 2  # rolled back
+    assert main(["config", "set", "harness.prompt.decompose", "bogus"]) == 2  # rolled back
     assert gpath in handed  # the rolled-back file is the operator's again
     assert gpath.parent in handed  # and so is the dir the write may have created
 
@@ -507,12 +507,14 @@ def test_config_set_keeps_a_write_on_an_already_invalid_config(
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
-    gpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
+    gpath.write_text("[harness.prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    assert main(["config", "set", "prompt.decompose", "enabled"]) == 2  # invalid value: rejected
-    assert "prompt.decompose" in capsys.readouterr().err  # friendly per-field error
-    assert main(["config", "set", "prompt.decompose", "on"]) == 0  # a valid value clears it
+    assert (
+        main(["config", "set", "harness.prompt.decompose", "enabled"]) == 2
+    )  # invalid value: rejected
+    assert "harness.prompt.decompose" in capsys.readouterr().err  # friendly per-field error
+    assert main(["config", "set", "harness.prompt.decompose", "on"]) == 0  # a valid value clears it
     assert "WARNING" not in capsys.readouterr().err
 
 
@@ -576,15 +578,15 @@ def test_config_set_bool_error_speaks_human(
 def test_config_set_global_keeps_a_valid_write_shadowed_by_a_stale_repo_layer(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # prompt.decompose is stale in the repo layer; a valid global write is kept with a warning.
+    # harness.prompt.decompose is stale in the repo layer; a valid global write is kept, warned.
     from agent6.ui.cli import main
 
     repo_cfg = paths.repo_config_path(tmp_path)
     repo_cfg.parent.mkdir(parents=True, exist_ok=True)
-    repo_cfg.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
+    repo_cfg.write_text("[harness.prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    rc = main(["config", "set", "prompt.decompose", "auto"])
+    rc = main(["config", "set", "harness.prompt.decompose", "auto"])
     captured = capsys.readouterr()
     assert rc == 0  # the valid global write is KEPT, not reverted over the repo's stale value
     assert "WARNING" in captured.err  # ...but warns the repo layer still shadows it
@@ -625,18 +627,20 @@ def test_config_set_submodel_inline_table_completed_by_a_lower_layer(
 def test_config_fix_drops_a_bad_value_and_keeps_valid_ones(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The valid budget entry beside the stale prompt.decompose survives the repair.
+    # The valid budget entry beside the stale harness.prompt.decompose survives the repair.
     from agent6.ui.cli import main
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
-    gpath.write_text("[prompt]\ndecompose = true\n[budget]\nmax_usd = 5.0\n", encoding="utf-8")
+    gpath.write_text(
+        "[harness.prompt]\ndecompose = true\n[budget]\nmax_usd = 5.0\n", encoding="utf-8"
+    )
     monkeypatch.chdir(tmp_path)
 
     rc = main(["config", "fix"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "prompt.decompose" in out and "global" in out  # named the entry + its layer
+    assert "harness.prompt.decompose" in out and "global" in out  # named the entry + its layer
     text = gpath.read_text(encoding="utf-8")
     assert "decompose" not in text  # the invalid entry is gone
     assert "max_usd" in text  # the valid one stays
@@ -793,12 +797,12 @@ def test_config_fix_labels_a_repo_layer_entry(
     monkeypatch.chdir(tmp_path)
     rpath = paths.repo_config_path(tmp_path)
     rpath.parent.mkdir(parents=True, exist_ok=True)
-    rpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
+    rpath.write_text("[harness.prompt]\ndecompose = true\n", encoding="utf-8")
 
     rc = main(["config", "fix"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "prompt.decompose" in out and "repo" in out
+    assert "harness.prompt.decompose" in out and "repo" in out
     assert "decompose" not in rpath.read_text(encoding="utf-8")
 
 
@@ -827,7 +831,7 @@ def test_config_fix_repairs_both_layers_and_labels_each(
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
-    gpath.write_text("[prompt]\ndecompose = true\n", encoding="utf-8")
+    gpath.write_text("[harness.prompt]\ndecompose = true\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     rpath = paths.repo_config_path(tmp_path)
     rpath.parent.mkdir(parents=True, exist_ok=True)
@@ -836,7 +840,7 @@ def test_config_fix_repairs_both_layers_and_labels_each(
     rc = main(["config", "fix"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "prompt.decompose" in out and "global" in out
+    assert "harness.prompt.decompose" in out and "global" in out
     assert "sandbox.run_commands" in out and "repo" in out
     assert "decompose" not in gpath.read_text(encoding="utf-8")
     assert "bogus" not in rpath.read_text(encoding="utf-8")
@@ -849,12 +853,12 @@ def test_config_fix_machine_overlay_leaves_the_spec_untouched(
 
     monkeypatch.chdir(tmp_path)
     mfile = tmp_path / "m.asm.toml"
-    mfile.write_text(_GOOD + "[config.prompt]\ndecompose = true\n", encoding="utf-8")
+    mfile.write_text(_GOOD + "[config.harness.prompt]\ndecompose = true\n", encoding="utf-8")
 
     rc = main(["config", "fix", "--machine-file", str(mfile)])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "prompt.decompose" in out
+    assert "harness.prompt.decompose" in out
     text = mfile.read_text(encoding="utf-8")
     assert "decompose" not in text  # the invalid overlay entry is gone
     assert 'machine = "m"' in text  # the machine spec itself is untouched

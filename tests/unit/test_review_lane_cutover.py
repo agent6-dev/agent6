@@ -369,7 +369,7 @@ protect_git = "off"
 run_commands = "deny"
 [review]
 when = "verify_fail"
-[prompt]
+[harness.prompt]
 decompose = "off"
 [harness]
 verify_infer = false

@@ -280,7 +280,7 @@ def test_a_state_that_runs_nothing_takes_no_config_table(tmp_path: pathlib.Path)
         ('[states.judge.config.git.commit]\nname = "x"\n', "read once for the whole machine"),
         ("[states.judge.config.git]\nrun_repo_hooks = true\n", "git.run_repo_hooks"),
         (
-            '[states.judge.config.prompt]\nsystem_prompt_file = "/etc/passwd"\n',
+            '[states.judge.config.harness.prompt]\nsystem_prompt_file = "/etc/passwd"\n',
             "system_prompt_file",
         ),
     ],

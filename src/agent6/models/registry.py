@@ -144,7 +144,7 @@ DECOMPOSE_WIN_MODEL_FAMILIES: tuple[str, ...] = ("mistral-small-3.2",)
 
 
 def decompose_default(model_id: str) -> bool:
-    """Return whether `prompt.decompose = "auto"` resolves to on for a model.
+    """Return whether `harness.prompt.decompose = "auto"` resolves to on for a model.
 
     Family matching ignores the org prefix and any date or `:tag` suffix.
 
@@ -219,6 +219,6 @@ def resolved_adaptive_values(cfg: Config) -> dict[str, object]:
     )
     out["compaction.drop_at_chars"] = drop
     out["compaction.summarise_at_chars"] = summarise
-    if cfg.prompt.decompose == "auto":
-        out["prompt.decompose"] = "on" if decompose_default(rm.model) else "off"
+    if cfg.harness.prompt.decompose == "auto":
+        out["harness.prompt.decompose"] = "on" if decompose_default(rm.model) else "off"
     return out

@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from typing import Annotated, Any, Literal
+from collections.abc import Iterator
+from typing import Annotated, Any, Literal, cast
 
 import pydantic
 
@@ -461,7 +462,7 @@ PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
     "machine.pass_env": (
         "it decides which of the operator's environment variables reach a tool jail"
     ),
-    "prompt.system_prompt_file": (
+    "harness.prompt.system_prompt_file": (
         "the system prompt is read from the host, outside the jail, and sent to the provider"
     ),
     "skills.extra_dirs": (
@@ -520,17 +521,31 @@ def protected_overlay_error(config: dict[str, Any], *, state: str = "") -> str |
                     validation.model_route(settings["model"])
             except ValueError as exc:
                 return str(exc)
-    for head, value in config.items():
-        keys = [head, *(f"{head}.{leaf}" for leaf in value)] if isinstance(value, dict) else [head]
-        for key in keys:
-            if state and key in STATE_OVERLAY_KEYS:
-                return (
-                    f"[states.{state}.config] must not set {key}.*: it is read once for the"
-                    " whole machine; set it in the machine's [config]"
-                )
-            if problem := protected_overlay_key_error(key, state):
-                return problem
+    for key in _table_keys(config):
+        if state and key in STATE_OVERLAY_KEYS:
+            return (
+                f"[states.{state}.config] must not set {key}.*: it is read once for the"
+                " whole machine; set it in the machine's [config]"
+            )
+        if problem := protected_overlay_key_error(key, state):
+            return problem
     return None
+
+
+def _table_keys(table: dict[str, Any], prefix: str = "") -> Iterator[str]:
+    """Yield the dotted key of every entry in a table, at every depth, parents first.
+
+    Args:
+        table: The table.
+        prefix: The dotted path of the table itself, ending in "." when not the root.
+
+    Yields:
+        Each dotted key.
+    """
+    for name, value in table.items():
+        yield f"{prefix}{name}"
+        if isinstance(value, dict):
+            yield from _table_keys(cast("dict[str, Any]", value), f"{prefix}{name}.")
 
 
 class MachineSpec(pydantic.BaseModel):

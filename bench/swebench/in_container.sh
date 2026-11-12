@@ -151,7 +151,7 @@ ${AGENT6_SB_VERIFY_WHEN:+verify_when = \"$AGENT6_SB_VERIFY_WHEN\"}
 verify_timeout_s = 240
 ${AGENT6_SB_STAGNATION_S:+stagnation_notice_after_s = $AGENT6_SB_STAGNATION_S}
 
-[prompt]
+[harness.prompt]
 $PROMPT_FILE_LINE
 
 $REVIEW_LINES

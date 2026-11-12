@@ -124,7 +124,7 @@ class TestBuildSystemPromptSkills:
     def test_skills_survive_system_prompt_file_override(self, tmp_path: pathlib.Path) -> None:
         override = tmp_path / "base.md"
         override.write_text("CUSTOM BASE\n", encoding="utf-8")
-        cfg = _config(tmp_path, f'[prompt]\nsystem_prompt_file = "{override}"\n')
+        cfg = _config(tmp_path, f'[harness.prompt]\nsystem_prompt_file = "{override}"\n')
         out = prompt_blocks.build_system_prompt(
             config=cfg,
             repo=_repo(tmp_path),

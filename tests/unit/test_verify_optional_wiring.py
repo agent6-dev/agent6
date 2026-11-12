@@ -838,7 +838,7 @@ def test_the_dag_block_and_tools_follow_the_curator(tmp_path: pathlib.Path) -> N
     from agent6.harness import toolset
 
     repo = _repo(tmp_path)
-    cfg = Config.model_validate({"prompt": {"decompose": "on"}})
+    cfg = Config.model_validate({"harness": {"prompt": {"decompose": "on"}}})
     with_dag = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
     without = prompt_blocks.build_system_prompt(
         config=cfg, repo=repo, mode="run", skills=None, dag_available=False

@@ -238,7 +238,9 @@ def test_an_empty_string_default_renders_a_visible_token(tmp_path: pathlib.Path)
     rows = config_view.render_show(
         eff, resolved=registry.resolved_adaptive_values(eff.config)
     ).splitlines()
-    prompt = next(line for line in rows if line.split()[:1] == ["prompt.system_prompt_file"])
+    prompt = next(
+        line for line in rows if line.split()[:1] == ["harness.prompt.system_prompt_file"]
+    )
     assert '""' in prompt, prompt
     preset = next(line for line in rows if line.split()[:1] == ["preset"])
     assert preset.split()[1:] == ['"none"', "default"]
@@ -430,7 +432,7 @@ def test_config_values_are_toml(value: object) -> None:
     ("key", "literal"),
     [
         (
-            "prompt.system_prompt_file",
+            "harness.prompt.system_prompt_file",
             '"a long file name with spaces and more than forty characters.md"',
         ),
         ("harness.max_turns", "42"),
@@ -451,7 +453,7 @@ def test_config_surfaces_share_toml(
     literal: str,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    if key == "prompt.system_prompt_file":
+    if key == "harness.prompt.system_prompt_file":
         (tmp_path / tomllib.loads("v = " + literal)["v"]).write_text("System prompt")
     config = tmp_path / "config.toml"
     config.write_text(f"{key} = {literal}\n")

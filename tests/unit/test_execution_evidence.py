@@ -190,13 +190,13 @@ def resumed(
             "sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"},
             "workspace": {"setup_command": ["/bin/true"]},
             "git": {"commit_per_turn": False, "auto_merge": False},
-            "prompt": {"decompose": "off"},
             "harness": {
                 "verify_command": ["/bin/true"],
                 "verify_at_start": True,
                 "verify_when": "finish",
                 "command_checkin_s": 0,
                 "max_turns": 6,
+                "prompt": {"decompose": "off"},
             },
             "review": {"when": "never"},
         }

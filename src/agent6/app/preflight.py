@@ -152,7 +152,7 @@ def budget_preflight(
 def warn_if_prompt_override_incomplete(
     cfg: Config, *, reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER
 ) -> None:
-    """Warn when a custom `prompt.system_prompt_file` omits a core tool contract.
+    """Warn when a custom `harness.prompt.system_prompt_file` omits a core tool contract.
 
     `finish_session` is the only clean exit and an edit primitive is needed to do
     work; the override is operator-owned, so this warns rather than blocks.
@@ -161,7 +161,7 @@ def warn_if_prompt_override_incomplete(
         cfg: The run's config.
         reporter: Receives the warning.
     """
-    path = cfg.prompt.system_prompt_file
+    path = cfg.harness.prompt.system_prompt_file
     if not path:
         return
     try:

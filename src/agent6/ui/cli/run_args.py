@@ -89,8 +89,8 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help=(
             "Make the agent split the task into ordered subtasks before editing, then work on"
             " one at a time. It does not ask you to approve the plan. This sets"
-            " prompt.decompose to `on` for this run. It can help smaller models with multi-part"
-            " tasks but adds work for models that already plan well."
+            " harness.prompt.decompose to `on` for this run. It can help smaller models with"
+            " multi-part tasks but adds work for models that already plan well."
         ),
     )
     run_p.add_argument(

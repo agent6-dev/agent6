@@ -50,7 +50,7 @@ It can be empty or absent when the global config supplies a provider and model.
   The repo layer and any selected preset are left as-is.
 - `agent6 config fix`: drop auto-removable invalid entries (unknown keys, stale values) from the global and repo configs and their presets, a global value a repo override masks included, naming each, and report entries that need manual repair; `--machine-file FILE` repairs an overlay instead.
 - `agent6 check`: validate config + sandbox + provider keys without starting an agent run.
-  `config show` tags resolved values `(adaptive)`: `auto` settings for `sandbox.isolation`, `sandbox.network` and `prompt.decompose`, each role's unset effort, and adaptive compaction thresholds.
+  `config show` tags resolved values `(adaptive)`: `auto` settings for `sandbox.isolation`, `sandbox.network` and `harness.prompt.decompose`, each role's unset effort, and adaptive compaction thresholds.
 
 ---
 
@@ -343,6 +343,10 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 
 <!-- config-table: harness.metric -->
 
+### `[harness.prompt]`
+
+<!-- config-table: harness.prompt -->
+
 ## `[review]`
 
 <!-- config-table: review -->
@@ -384,10 +388,6 @@ Findings injected in an earlier round or execution neither repeat nor count towa
 Tiered context compaction (approximate chars; tokens ≈ chars/4).
 
 <!-- config-table: compaction -->
-
-## `[prompt]`
-
-<!-- config-table: prompt -->
 
 ## `[skills]`
 

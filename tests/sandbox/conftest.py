@@ -131,8 +131,8 @@ def assert_execution_receipt(session: jail_session.JailSession) -> str:
                 "verify_when": "finish",
                 "command_checkin_s": 0,
                 "max_turns": 3,
+                "prompt": {"decompose": "off"},
             },
-            "prompt": {"decompose": "off"},
             "review": {"when": "never"},
         }
     )

@@ -25,7 +25,7 @@ def _cfg(model: str, decompose: str = "auto") -> Config:
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
             "models": {"worker": {"model": "o/" + model}},
-            "prompt": {"decompose": decompose},
+            "harness": {"prompt": {"decompose": decompose}},
         }
     )
 
@@ -179,15 +179,18 @@ def test_decompose_default_measured_families_only() -> None:
 def test_resolve_decompose_pins_auto_from_registry() -> None:
     win = _cfg("mistralai/mistral-small-3.2-24b-instruct")
     assert (
-        role_providers.resolve_decompose(win, win.models.resolve("worker")).prompt.decompose == "on"
+        role_providers.resolve_decompose(win, win.models.resolve("worker")).harness.prompt.decompose
+        == "on"
     )
     ceiling = _cfg("claude-haiku-4-5")
     assert (
-        role_providers.resolve_decompose(ceiling, ceiling.models.resolve("worker")).prompt.decompose
+        role_providers.resolve_decompose(
+            ceiling, ceiling.models.resolve("worker")
+        ).harness.prompt.decompose
         == "off"
     )
     # Unresolvable model pins off (never leaves "auto" for the engine).
-    assert role_providers.resolve_decompose(_cfg("x"), None).prompt.decompose == "off"
+    assert role_providers.resolve_decompose(_cfg("x"), None).harness.prompt.decompose == "off"
 
 
 def test_resolve_decompose_explicit_setting_passes_through() -> None:
@@ -203,15 +206,15 @@ def test_resolve_decompose_explicit_setting_passes_through() -> None:
 
 
 def test_with_decompose_pins_value() -> None:
-    assert Config().with_decompose("on").prompt.decompose == "on"
-    assert Config().with_decompose("off").prompt.decompose == "off"
+    assert Config().with_decompose("on").harness.prompt.decompose == "on"
+    assert Config().with_decompose("off").harness.prompt.decompose == "off"
 
 
 def test_resolved_adaptive_values_reports_auto_decompose(cache_home: pathlib.Path) -> None:
     win = models_registry.resolved_adaptive_values(_cfg("mistralai/mistral-small-3.2-24b-instruct"))
-    assert win["prompt.decompose"] == "on"
+    assert win["harness.prompt.decompose"] == "on"
     ceiling = models_registry.resolved_adaptive_values(_cfg("claude-haiku-4-5"))
-    assert ceiling["prompt.decompose"] == "off"
+    assert ceiling["harness.prompt.decompose"] == "off"
     # Explicitly pinned config has nothing to resolve.
     pinned = models_registry.resolved_adaptive_values(_cfg("claude-haiku-4-5", decompose="on"))
-    assert "prompt.decompose" not in pinned
+    assert "harness.prompt.decompose" not in pinned

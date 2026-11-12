@@ -15,7 +15,7 @@ python3 stats.py results/myrun.jsonl
 
 Read `stats.py --components` before trusting a delta: scores move on component curves, not only means, and n=4 cells disagreed with pooled n=12 cells on one task.
 
-## Task decomposition (`[prompt].decompose`)
+## Task decomposition (`[harness.prompt].decompose`)
 
 Score delta (decompose minus baseline) by model and task:
 
@@ -28,7 +28,7 @@ Score delta (decompose minus baseline) by model and task:
 
 - The win is on tasks whose failure is dropping or under-finishing independent components (textkit's five functions); a debug task shows no reliable effect.
 - Capable models sit at the ceiling both ways and pay 2 to 4x the turns (haiku: 6 -> 29 on rpn, 8 -> 29 on bugs) creating subtasks for work they would do directly.
-- State: `[prompt].decompose` defaults to `auto`, on per worker model from the capability registry; `--decompose` forces it for one run.
+- State: `[harness.prompt].decompose` defaults to `auto`, on per worker model from the capability registry; `--decompose` forces it for one run.
 
 ## Spiral guards and their thresholds
 

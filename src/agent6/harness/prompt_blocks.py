@@ -276,14 +276,16 @@ def build_system_prompt(
         if mode == "plan"
         else loop.SYSTEM_PROMPT_BASE
     )
-    # `[prompt].system_prompt_file` replaces run mode's static base; dynamic blocks still append.
-    override = config.prompt.system_prompt_file
+    # `harness.prompt.system_prompt_file` replaces run mode's static base; dynamic blocks append.
+    override = config.harness.prompt.system_prompt_file
     if mode == "run" and override:
         base = pathlib.Path(override).expanduser().read_text(encoding="utf-8")
     # The DAG-rules sentinel exists only in the run-mode default base; an override file has none.
     # "auto" is pinned before the harness starts; an unresolved "auto" renders the optional block.
     # A run with no curator (a machine agent state) has no DAG tools to teach.
-    dag_block = loop.dag_rules_block(config.prompt.decompose == "on") if dag_available else ""
+    dag_block = (
+        loop.dag_rules_block(config.harness.prompt.decompose == "on") if dag_available else ""
+    )
     base = base.replace("__DAG_RULES_BLOCK__", dag_block)
     # PARTIAL_FS_RULE holds only under `partial` with extra protect paths.
     carved = isolation == "partial" and protected_paths

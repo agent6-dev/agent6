@@ -41,7 +41,7 @@ def test_config_defaults_to_no_files_when_absent() -> None:
 
 
 def test_run_decompose_flag_defaults_off_and_parses() -> None:
-    # --decompose is plan-first (overrides [prompt].decompose for the run); off by default.
+    # --decompose is plan-first (overrides [harness.prompt].decompose for the run); off by default.
     p = cli_parser.build_parser()
     assert p.parse_args(["run", "fix it"]).decompose is False
     assert p.parse_args(["run", "--decompose", "fix it"]).decompose is True

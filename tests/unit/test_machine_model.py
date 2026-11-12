@@ -711,9 +711,9 @@ def test_machine_overlay_cannot_set_the_notify_hook(tmp_path: pathlib.Path) -> N
 
 def test_machine_overlay_cannot_name_a_system_prompt_file(tmp_path: pathlib.Path) -> None:
     # The file is read on the host and sent as the system prompt: an unbounded host-file read.
-    body = VALID_MACHINE + '\n[config.prompt]\nsystem_prompt_file = "/etc/shadow"\n'
+    body = VALID_MACHINE + '\n[config.harness.prompt]\nsystem_prompt_file = "/etc/shadow"\n'
     problems = _problems(tmp_path, body)
-    assert any("prompt.system_prompt_file" in p for p in problems)
+    assert any("harness.prompt.system_prompt_file" in p for p in problems)
 
 
 def test_machine_overlay_cannot_define_a_preset(tmp_path: pathlib.Path) -> None:

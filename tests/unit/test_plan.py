@@ -147,7 +147,7 @@ def test_build_system_prompt_plan_mode_mentions_plan(tmp_path: pathlib.Path) -> 
 def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: pathlib.Path) -> None:
     custom = tmp_path / "prompt.txt"
     custom.write_text("<role>CUSTOM WORKER. apply_edit + finish_session.</role>", encoding="utf-8")
-    cfg = Config.model_validate({"prompt": {"system_prompt_file": str(custom)}})
+    cfg = Config.model_validate({"harness": {"prompt": {"system_prompt_file": str(custom)}}})
     repo = kinds.RepoSummary(
         root=tmp_path,
         branch="main",
@@ -168,7 +168,7 @@ def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: pa
 
 
 def test_decompose_swaps_dag_rules_block(tmp_path: pathlib.Path) -> None:
-    """`[prompt].decompose` swaps the run-mode 'DAG optional' block for the 'decompose first' one.
+    """`harness.prompt.decompose` swaps run mode's 'DAG optional' block for 'decompose first'.
 
     The default keeps the optional block; the sentinel is always filled (never leaks), and only run
     mode is affected.
@@ -182,8 +182,8 @@ def test_decompose_swaps_dag_rules_block(tmp_path: pathlib.Path) -> None:
         agents_md="",
         recent_log="",
     )
-    off = Config.model_validate({"prompt": {"decompose": "off"}})
-    on = Config.model_validate({"prompt": {"decompose": "on"}})
+    off = Config.model_validate({"harness": {"prompt": {"decompose": "off"}}})
+    on = Config.model_validate({"harness": {"prompt": {"decompose": "on"}}})
     auto = Config()  # unresolved "auto" reaching the engine renders like off
     run_off = prompt_blocks.build_system_prompt(config=off, repo=repo, mode="run", skills=None)  # pyright: ignore[reportPrivateUsage]
     run_on = prompt_blocks.build_system_prompt(config=on, repo=repo, mode="run", skills=None)  # pyright: ignore[reportPrivateUsage]
@@ -200,7 +200,7 @@ def test_decompose_swaps_dag_rules_block(tmp_path: pathlib.Path) -> None:
 
 
 def test_decompose_defaults_auto(tmp_path: pathlib.Path) -> None:
-    assert Config().prompt.decompose == "auto"
+    assert Config().harness.prompt.decompose == "auto"
 
 
 def test_dag_hint_renders_only_where_the_dag_tools_exist() -> None:
@@ -225,7 +225,9 @@ def test_dag_hint_renders_only_where_the_dag_tools_exist() -> None:
 
 def test_system_prompt_file_validator_rejects_missing(tmp_path: pathlib.Path) -> None:
     with pytest.raises(ValueError, match="not a readable file"):
-        Config.model_validate({"prompt": {"system_prompt_file": str(tmp_path / "nope.txt")}})
+        Config.model_validate(
+            {"harness": {"prompt": {"system_prompt_file": str(tmp_path / "nope.txt")}}}
+        )
 
 
 def testwarn_if_prompt_override_incomplete(
@@ -239,12 +241,12 @@ def testwarn_if_prompt_override_incomplete(
     bad.write_text("just go do stuff", encoding="utf-8")
     # complete override -> silent
     preflight.warn_if_prompt_override_incomplete(
-        Config.model_validate({"prompt": {"system_prompt_file": str(good)}})
+        Config.model_validate({"harness": {"prompt": {"system_prompt_file": str(good)}}})
     )
     assert capsys.readouterr().err == ""
     # missing both contracts -> warns about each
     preflight.warn_if_prompt_override_incomplete(
-        Config.model_validate({"prompt": {"system_prompt_file": str(bad)}})
+        Config.model_validate({"harness": {"prompt": {"system_prompt_file": str(bad)}}})
     )
     err = capsys.readouterr().err
     assert "finish_session" in err and "apply_edit/apply_patch" in err

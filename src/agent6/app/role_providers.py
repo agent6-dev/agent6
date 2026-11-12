@@ -101,7 +101,7 @@ def resolve_compaction_thresholds(
 def resolve_decompose(
     cfg: Config, rm: RoleModel | None, *, log: Callable[[str], None] | None = None
 ) -> Config:
-    """Pin `prompt.decompose = "auto"` to on or off for this run.
+    """Pin `harness.prompt.decompose = "auto"` to on or off for this run.
 
     Auto turns on only when the model has a measured decompose win in the capability
     registry; an explicit on or off passes through untouched.
@@ -112,9 +112,9 @@ def resolve_decompose(
         log: Receives one line when auto turns on.
 
     Returns:
-        The config with `prompt.decompose` pinned.
+        The config with `harness.prompt.decompose` pinned.
     """
-    if cfg.prompt.decompose != "auto":
+    if cfg.harness.prompt.decompose != "auto":
         return cfg
     on = rm is not None and models_registry.decompose_default(rm.model)
     if on and log is not None and rm is not None:

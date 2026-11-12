@@ -244,7 +244,7 @@ def main() -> int:
         "--prompt-file",
         type=Path,
         default=None,
-        help="mount as prompt.system_prompt_file inside the container (A/B arm)",
+        help="mount as harness.prompt.system_prompt_file inside the container (A/B arm)",
     )
     ap.add_argument(
         "--container-script",
