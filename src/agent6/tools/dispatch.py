@@ -15,7 +15,6 @@ import json
 import os
 import pathlib
 import shlex
-import tempfile
 import threading
 import time
 import uuid
@@ -28,7 +27,7 @@ from agent6 import errors, evidence, kinds, path_safety, paths
 from agent6.config import Config
 from agent6.context import memory, skills
 from agent6.graph import curator as graph_curator
-from agent6.sandbox import jail, tool_paths
+from agent6.sandbox import tool_paths
 from agent6.sessions import event_log, ipc, shells
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import (
@@ -102,15 +101,14 @@ class ToolDispatcher:
         mcp_manager: The MCP servers; None routes no `mcp__` name.
         extra_protect_paths: Paths every jail re-binds read-only and the edit tools refuse,
             such as a running machine's own bundle; read by the prompt assembly too.
-        worktree_git_dir: The repository git dir recorded for the session's linked worktree.
         mode: The mode whose tool surface the dispatcher enforces as its backstop.
         state_dir: The per-repo state dir, for the sessions roster and the memory grant.
         session_dir: The run's dir, for background commands, the file bridge and the
             effective command policy; None leaves them unwired.
         findings: The session's findings reader behind `list_findings`; None refuses the tool.
-        command_access: Prepared commands owned by this dispatcher; None selects local one-shots.
+        command_access: The prepared command session this dispatcher owns; None runs no
+            command (file and navigation tools only).
         execution_id: The lifecycle's identity, or None to allocate one before setup.
-        session_net: The run's session network; None makes the dispatcher's own.
     """
 
     def __init__(
@@ -125,15 +123,12 @@ class ToolDispatcher:
         run_root_node_id: str | None = None,
         mcp_manager: mcp_client.MCPManager | None = None,
         extra_protect_paths: tuple[pathlib.Path, ...] = (),
-        worktree_git_dir: pathlib.Path | None = None,
         mode: Literal["run", "plan", "ask", "machine"] = "run",
         state_dir: pathlib.Path | None = None,
         session_dir: pathlib.Path | None = None,
         findings: Callable[[], results.FindingsResult] | None = None,
         command_access: command_tools.JailAccess | None = None,
         execution_id: str | None = None,
-        session_net: jail.SessionNetwork | None = None,
-        shared_writes: tuple[pathlib.Path, ...] = (),
     ) -> None:
         self._root = root.resolve()
         self.verify_tree: Callable[[], str] = self._verification_tree
@@ -148,12 +143,11 @@ class ToolDispatcher:
         if mem is not None:
             # The grant's target must exist: the model cannot mkdir outside the jail.
             paths.mkdir_for_real_user(mem)
-        # Resolved once: every jail launch and the file tools hold the same directories. A
-        # machine state's grants are judged against the regions its other states write too.
+        # Resolved once: the session's commands and the file tools hold the same directories.
         self._grants = (
             command_access.grants
             if command_access is not None
-            else tools_policy.resolve_grants(config, self._root, shared_writes=shared_writes)
+            else tools_policy.resolve_grants(config, self._root)
         )
         self._ws = tools_policy.workspace_for(
             config, self._root, memory_dir=mem, grants=self._grants
@@ -163,7 +157,6 @@ class ToolDispatcher:
         # next() is atomic under the GIL, so seats on a shared dispatcher need no lock.
         self._call_seq = itertools.count(1)
         self.extra_protect_paths = extra_protect_paths
-        self._worktree_git_dir = worktree_git_dir
         self._events = events
         self._prompts = prompts or operator_prompts.OperatorPrompts(
             journal=self._emit, session_dir=session_dir
@@ -186,14 +179,9 @@ class ToolDispatcher:
             else None
         )
         self._command_access = command_access
-        self._session_net = session_net
-        self._own_session_net: jail.SessionNetwork | None = None
-        self._temp_lock = threading.Lock()
-        self._command_tmp: tempfile.TemporaryDirectory[str] | None = None
         self._session_dir = session_dir
         if (
             command_access is not None
-            and command_access.session is not None
             and command_access.session.startup_stderr
             and not _in_container(command_access.session.target)
         ):
@@ -529,14 +517,7 @@ class ToolDispatcher:
         try:
             if self._shells is not None:
                 self._shells.stop_all()
-            detail = self._command_access.close() if self._command_access is not None else ""
-            if self._own_session_net is not None:
-                self._own_session_net.close()
-                self._own_session_net = None
-            if self._command_tmp is not None:
-                self._command_tmp.cleanup()
-                self._command_tmp = None
-            error = detail
+            error = self._command_access.close() if self._command_access is not None else ""
             self._closed = True
         except (background.BackgroundError, OSError) as exc:
             error = f"job settlement not confirmed: {exc}"
@@ -545,11 +526,7 @@ class ToolDispatcher:
             if error:
                 self._emit("jail.degraded", detail=error)
             if self.target_id is not None:
-                reason = error or (
-                    ""
-                    if self.execution_target is not None
-                    else "No session-wide settlement observation for one-shot commands."
-                )
+                reason = error
                 self._emit(
                     "execution.jobs",
                     execution_id=self.execution_id,
@@ -689,7 +666,7 @@ class ToolDispatcher:
         record = evidence.VerificationEvidence(
             verify_id=uuid.uuid4().hex,
             execution_id=self.execution_id,
-            target_id=self.target_id if self.execution_target is not None else None,
+            target_id=self.target_id,
             cmd=argv,
             tree_before=self.verify_tree() or None,
             tree_after=None,
@@ -1121,99 +1098,35 @@ class ToolDispatcher:
         )
         return results.MetricResult.from_exec(res, score)
 
-    def _jail_policy(
-        self,
-        argv: tuple[str, ...],
-        *,
-        timeout_s: float | None = None,
-        extra_rw_paths: tuple[pathlib.Path, ...] = (),
-    ) -> kinds.JailPolicy:
-        """Return the jail policy for an argv, with this dispatcher's protect paths and git dir."""
-        with self._temp_lock:
-            if self._command_tmp is None:
-                name = self._session_dir.name if self._session_dir is not None else "run"
-                self._command_tmp = tools_policy.command_temp(self.isolation, name)
-            temp_dir = pathlib.Path(self._command_tmp.name) if self._command_tmp else None
-        return tools_policy.jail_policy(
-            self._root,
-            self._config,
-            self.isolation,
-            argv,
-            timeout_s=timeout_s,
-            extra_rw_paths=extra_rw_paths,
-            temp_dir=temp_dir,
-            extra_protect_paths=self.extra_protect_paths,
-            worktree_git_dir=self._worktree_git_dir,
-            grants=self._grants,
-        )
-
-    def _net(self) -> jail.SessionNetwork:
-        """Return the session network this dispatcher's commands join.
-
-        Returns:
-            The run's network when there is a run, shared with its MCP servers; a dispatcher
-            built without one makes its own, so its commands still reach each other.
-        """
-        if self._session_net is not None:
-            return self._session_net
-        if self._own_session_net is None:
-            self._own_session_net = jail.SessionNetwork.open()
-        return self._own_session_net
-
-    def _net_for(self, policy: kinds.JailPolicy) -> jail.SessionNetwork | None:
-        """Return the network a command under the policy joins: the one owner of that decision.
-
-        Args:
-            policy: The command's jail policy.
-
-        Returns:
-            The session network for a `session` policy; None for every other network mode,
-            which opens nothing.
-        """
-        return self._net() if policy.network == "session" else None
-
     def _jail_access(self, label: str) -> command_tools.JailAccess:
-        """Return the injected session or the explicitly selected local one-shot policy.
+        """Return the prepared command session, the one transport every command uses.
 
         Args:
-            label: The command's name, for a one-shot preparation error.
+            label: The command's name, for the refusal.
 
         Returns:
-            The command policy and optional prepared session.
+            The command policy and its prepared session.
 
         Raises:
-            ToolError: The one-shot policy or network could not be prepared.
+            ToolError: This dispatcher has no prepared session (a run, a machine state and
+                `agent6 mcp serve` prepare one before dispatch exists).
         """
-        if self._command_access is not None:
-            return self._command_access
-        try:
-            policy = self._jail_policy(())
-            self._record_target(
-                kinds.ExecutionTarget(
-                    transport="local",
-                    host_root=policy.cwd,
-                    command_root=policy.cwd,
-                    user=str(os.getuid()),
-                    home=dict(policy.env).get("HOME"),
-                    environment=kinds.ExecutionEnvironment(policy.env),
-                    controls=target_policy.effective_controls(self._config, self.isolation),
-                )
+        if self._command_access is None:
+            raise tool_errors.ToolError(
+                f"{label}: this dispatcher has no prepared command session; commands run in a"
+                " run, a machine state or `agent6 mcp serve`"
             )
-            return command_tools.JailAccess(
-                policy=policy, session=None, grants=self._grants, network=self._net_for(policy)
-            )
-        except jail.JailUnavailableError as exc:
-            raise tool_errors.ToolError(f"{label}: jail unavailable: {exc}") from exc
+        return self._command_access
 
     @property
     def execution_target(self) -> kinds.ExecutionTarget | None:
-        """Return the prepared target, or None for a bare one-shot caller."""
+        """Return the prepared session's target; None for a dispatcher without one."""
         access = self._command_access
-        return access.session.target if access is not None and access.session is not None else None
+        return access.session.target if access is not None else None
 
     def executable_available(self, executable: str) -> bool:
-        """Return target executable availability, or the bare local caller's advisory lookup."""
+        """Return whether the prepared session finds the executable, else the host jail PATH."""
         access = self._command_access
-        if access is not None and access.session is not None:
+        if access is not None:
             return access.session.executable_available(executable)
         return tool_paths.jail_resolves(executable)

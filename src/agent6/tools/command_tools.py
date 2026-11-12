@@ -16,13 +16,13 @@ from agent6.tools import background, policy, result_format, results, schema, too
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class JailAccess:
-    """Resolved command policy and transport; None explicitly selects one-shot execution.
+    """Resolved command policy, its prepared session and the resources the owner releases.
 
     The owner closes jobs before these resources. Grants also govern host file tools.
     """
 
     policy: kinds.JailPolicy
-    session: jail_session.JailSession | None
+    session: jail_session.JailSession
     grants: policy.Grants
     network: jail.SessionNetwork | None = None
     temp: tempfile.TemporaryDirectory[str] | None = None
@@ -37,7 +37,7 @@ class JailAccess:
             The session cleanup error, or an empty string.
         """
         try:
-            return self.session.close() if self.session is not None else ""
+            return self.session.close()
         finally:
             if self.temp is not None:
                 self.temp.cleanup()
@@ -53,7 +53,7 @@ class JailAccess:
         """
         if self.lifecycle is not None:
             return self.lifecycle()
-        target = self.session.target if self.session is not None else None
+        target = self.session.target
         if target is None or target.transport == "local":
             return kinds.EnvironmentOutcome(
                 "not_applicable", "Local host lifecycle is not managed by agent6."
@@ -125,9 +125,8 @@ def run_model_command(
 ) -> results.ExecResult:
     """Run a model command; check-ins hand it back and an immediate stop ends it.
 
-    The check-in needs a jail session to own the running command, a background roster to
-    hand it to, and a mode whose tools can read the hand-back; otherwise this is a bounded
-    run with its timeout.
+    The check-in needs a background roster to hand the running command to and a mode whose
+    tools can read the hand-back; otherwise this is a bounded run with its timeout.
 
     Args:
         argv: The command.
@@ -144,10 +143,8 @@ def run_model_command(
     Raises:
         ToolError: The jail is unavailable or the operator's stop could not end the command.
     """
-    session = access.session
     if (
-        session is None
-        or shells is None
+        shells is None
         or checkin <= 0
         or schema.ReadBackgroundInput.TOOL_NAME not in schema.mode_tools(mode).permitted
     ):
@@ -158,7 +155,7 @@ def run_model_command(
         )
     try:
         policy = access.policy
-        outcome = session.run(
+        outcome = access.session.run(
             argv,
             env=policy.env,
             timeout_s=0.0,  # the check-in replaces the kill
@@ -170,7 +167,7 @@ def run_model_command(
         raise tool_errors.ToolError(f"jail unavailable: {exc}") from exc
     if isinstance(outcome, kinds.CommandResult):
         return result_format.exec_result(outcome)
-    view = shells.adopt(outcome, session=session)
+    view = shells.adopt(outcome, session=access.session)
     stopped_by_operator = interrupted()
     if stopped_by_operator:
         view = shells.stop(view.id)
@@ -283,13 +280,8 @@ def run_argv_raw(
             argv=argv,
             timeout_s=access.policy.timeout_s if timeout_s is None else timeout_s,
         )
-        session = access.session
         # The operator's gate needs a verdict, not a handle.
-        outcome = (
-            session.run(argv, env=policy.env, timeout_s=policy.timeout_s)
-            if session is not None
-            else jail.run_in_jail(policy, session_net=access.network)
-        )
+        outcome = access.session.run(argv, env=policy.env, timeout_s=policy.timeout_s)
     except jail.JailUnavailableError as exc:
         raise tool_errors.ToolError(f"{label}: jail unavailable: {exc}") from exc
     if isinstance(outcome, kinds.BackgroundHandoff):  # pragma: no cover - no check-in was asked for

@@ -10,13 +10,16 @@ import os
 import pathlib
 import socket
 import tempfile
+from collections.abc import Callable
 from unittest import mock
 
 import pydantic
 import pytest
 
 from agent6 import kinds
+from agent6.app import session_runtime
 from agent6.config import Config
+from agent6.sandbox import jail_session
 from agent6.tools import arguments, command_tools, dispatch, operator_prompts, schema, tool_errors
 from agent6.tools import results as tools_results
 
@@ -72,8 +75,9 @@ def test_read_file_ok(tmp_path: pathlib.Path) -> None:
     assert out["content"] == "hi"
 
 
-@pytest.mark.needs_namespaces
-def test_verify_command_unexecutable_raises_loud(tmp_path: pathlib.Path) -> None:
+def test_verify_command_unexecutable_raises_loud(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
     """A verify_command the jail cannot execute raises OperatorCommandUnexecutableError.
 
     On a no-userns host the jail PATH is /usr/bin:/bin; a uv-based verify exited 127, read as
@@ -82,7 +86,7 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: pathlib.Path) -> None
     """
     # run_commands = "allow": this exercises verify EXECUTION, not the gate.
     cfg = _config_with_run_commands(tmp_path, "allow")  # verify_command = ["true"]
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    d = build_dispatcher(root=tmp_path, config=cfg)
     unexecutable = kinds.CommandResult(
         argv=("true",),
         returncode=127,
@@ -92,7 +96,7 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: pathlib.Path) -> None
         exec_failed=True,
     )
     with (
-        mock.patch("agent6.sandbox.jail.run_in_jail", return_value=unexecutable),
+        mock.patch.object(jail_session.JailSession, "run", return_value=unexecutable),
         pytest.raises(tool_errors.OperatorCommandUnexecutableError),
     ):
         d.dispatch("run_verify_command", {})
@@ -102,7 +106,7 @@ def test_verify_command_unexecutable_raises_loud(tmp_path: pathlib.Path) -> None
     ran_and_failed = kinds.CommandResult(
         argv=("true",), returncode=1, stdout="", stderr="assert", duration_s=0.1, exec_failed=False
     )
-    with mock.patch("agent6.sandbox.jail.run_in_jail", return_value=ran_and_failed):
+    with mock.patch.object(jail_session.JailSession, "run", return_value=ran_and_failed):
         out = d.dispatch("run_verify_command", {}).to_wire()
     assert out["returncode"] == 1
 
@@ -1145,23 +1149,24 @@ def test_passthrough_env_is_fixed_allowlist() -> None:
                 os.environ[k] = v
 
 
-@pytest.mark.needs_namespaces
-def test_jail_env_disables_python_bytecode(tmp_path: pathlib.Path) -> None:
+def test_jail_env_disables_python_bytecode(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
     cfg = _config_with_run_commands(tmp_path, "allow")
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    d = build_dispatcher(root=tmp_path, config=cfg)
     captured: dict[str, str] = {}
 
-    def fake_run(policy: kinds.JailPolicy, **_kw: object) -> kinds.CommandResult:
-        captured.update(dict(policy.env))
-        return kinds.CommandResult(
-            argv=("true",),
-            returncode=0,
-            stdout="",
-            stderr="",
-            duration_s=0.0,
-        )
+    def fake_run(
+        _self: jail_session.JailSession,
+        argv: tuple[str, ...],
+        *,
+        env: tuple[tuple[str, str], ...],
+        **_kw: object,
+    ) -> kinds.CommandResult:
+        captured.update(dict(env))
+        return kinds.CommandResult(argv=argv, returncode=0, stdout="", stderr="", duration_s=0.0)
 
-    with mock.patch("agent6.sandbox.jail.run_in_jail", side_effect=fake_run):
+    with mock.patch.object(jail_session.JailSession, "run", fake_run):
         d.dispatch("run_verify_command", {})
 
     assert captured["PYTHONDONTWRITEBYTECODE"] == "1"
@@ -1322,9 +1327,10 @@ def test_run_metric_command_is_withheld_when_commands_are(tmp_path: pathlib.Path
         d.dispatch("run_metric_command", {})
 
 
-@pytest.mark.needs_namespaces
 def test_run_metric_command_invokes_jail(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    build_dispatcher: Callable[..., dispatch.ToolDispatcher],
 ) -> None:
     body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"') + (
         "\n[harness.metric]\n"
@@ -1340,18 +1346,16 @@ def test_run_metric_command_invokes_jail(
 
     captured: dict[str, object] = {}
 
-    def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
-        captured["argv"] = tuple(policy.argv)
+    def fake_run(
+        _self: jail_session.JailSession, argv: tuple[str, ...], **_kw: object
+    ) -> kinds.CommandResult:
+        captured["argv"] = argv
         return kinds.CommandResult(
-            argv=tuple(policy.argv),
-            returncode=0,
-            stdout="CYCLES: 42\n",
-            stderr="",
-            duration_s=0.01,
+            argv=argv, returncode=0, stdout="CYCLES: 42\n", stderr="", duration_s=0.01
         )
 
-    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    monkeypatch.setattr(jail_session.JailSession, "run", fake_run)
+    d = build_dispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("run_metric_command", {}).to_wire()
     assert out["returncode"] == 0
     assert "CYCLES: 42" in out["stdout"]
@@ -1361,9 +1365,10 @@ def test_run_metric_command_invokes_jail(
     assert out["score"] == 42.0
 
 
-@pytest.mark.needs_namespaces
 def test_run_metric_command_honors_verify_timeout(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    build_dispatcher: Callable[..., dispatch.ToolDispatcher],
 ) -> None:
     """verify_timeout_s bounds the metric command like the verify command.
 
@@ -1382,21 +1387,22 @@ def test_run_metric_command_honors_verify_timeout(
 
     captured: dict[str, object] = {}
 
-    def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
-        captured["timeout_s"] = policy.timeout_s
-        return kinds.CommandResult(
-            argv=tuple(policy.argv), returncode=0, stdout="1", stderr="", duration_s=0.01
-        )
+    def fake_run(
+        _self: jail_session.JailSession, argv: tuple[str, ...], *, timeout_s: float, **_kw: object
+    ) -> kinds.CommandResult:
+        captured["timeout_s"] = timeout_s
+        return kinds.CommandResult(argv=argv, returncode=0, stdout="1", stderr="", duration_s=0.01)
 
-    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    monkeypatch.setattr(jail_session.JailSession, "run", fake_run)
+    d = build_dispatcher(root=tmp_path, config=cfg)
     d.dispatch("run_metric_command", {})
     assert captured["timeout_s"] == 7.0
 
 
-@pytest.mark.needs_namespaces
 def test_run_metric_command_score_null_on_no_match(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    build_dispatcher: Callable[..., dispatch.ToolDispatcher],
 ) -> None:
     """A pattern that compiles but does not match yields a null score and an unchanged result."""
     body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"') + (
@@ -1411,17 +1417,15 @@ def test_run_metric_command_score_null_on_no_match(
 
     cfg = load_config(p)
 
-    def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
+    def fake_run(
+        _self: jail_session.JailSession, argv: tuple[str, ...], **_kw: object
+    ) -> kinds.CommandResult:
         return kinds.CommandResult(
-            argv=tuple(policy.argv),
-            returncode=0,
-            stdout="no number here\n",
-            stderr="",
-            duration_s=0.01,
+            argv=argv, returncode=0, stdout="no number here\n", stderr="", duration_s=0.01
         )
 
-    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    monkeypatch.setattr(jail_session.JailSession, "run", fake_run)
+    d = build_dispatcher(root=tmp_path, config=cfg)
     out = d.dispatch("run_metric_command", {}).to_wire()
     assert out["score"] is None
     assert out["returncode"] == 0
@@ -1652,13 +1656,11 @@ def test_rejected_tool_emits_call_and_result_pair(tmp_path: pathlib.Path) -> Non
 
 @pytest.mark.parametrize("reason", ["stop now", "abort", "check-in", "after turn"])
 def test_command_hand_back_distinguishes_operator_stop_from_checkin(
-    tmp_path: pathlib.Path, reason: str
+    tmp_path: pathlib.Path, reason: str, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
 ) -> None:
     """An operator-ended command must not reach the model or journal as a live background job."""
     import json
-    from collections.abc import Callable
 
-    from agent6.sandbox import jail_session
     from agent6.sessions import event_log, ipc
 
     root = tmp_path / "repo"
@@ -1668,7 +1670,7 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
     cfg = Config.model_validate(
         {"sandbox": {"run_commands": "allow"}, "harness": {"command_checkin_s": 10.0}}
     )
-    d = dispatch.ToolDispatcher(
+    d = build_dispatcher(
         root=root, config=cfg, session_dir=session_dir, events=event_log.EventSink(logs)
     )
     session = mock.Mock(spec=jail_session.JailSession)
@@ -1761,14 +1763,15 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
         resumed.close()
 
 
-def test_an_operator_stop_that_fails_stays_reachable_for_teardown(tmp_path: pathlib.Path) -> None:
+def test_an_operator_stop_that_fails_stays_reachable_for_teardown(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
     """A failed stop must not claim the command ended, and teardown must retry its cleanup."""
-    from agent6.sandbox import jail_session
     from agent6.sessions import ipc
 
     session_dir = tmp_path / "session"
     cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
+    d = build_dispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
     ipc.request_stop(session_dir, now=True)
     session = mock.Mock(spec=jail_session.JailSession)
     session.run.return_value = kinds.BackgroundHandoff(
@@ -1814,7 +1817,9 @@ def test_an_operator_stop_that_fails_stays_reachable_for_teardown(tmp_path: path
 
 
 def test_run_command_result_carries_output_tails(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    build_dispatcher: Callable[..., dispatch.ToolDispatcher],
 ) -> None:
     """Execution tools' tool.result events carry capped output tails; others stay summary-only."""
     import json
@@ -1823,7 +1828,7 @@ def test_run_command_result_carries_output_tails(
 
     cfg = _config_with_run_commands(tmp_path, "allow")  # skip the approval prompt
     logs = tmp_path / "logs.jsonl"
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, events=event_log.EventSink(logs))
+    d = build_dispatcher(root=tmp_path, config=cfg, events=event_log.EventSink(logs))
 
     def _fake_run_argv(argv: object, **kw: object) -> object:
 
@@ -1858,9 +1863,7 @@ def test_run_command_result_carries_output_tails(
 
 
 @pytest.mark.needs_namespaces
-def test_run_command_passes_extra_read_paths_to_policy(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_extra_read_paths_reach_the_command_policy(tmp_path: pathlib.Path) -> None:
     # sandbox.extra_read_paths must reach the JailPolicy as extra_ro_paths, so a
     # project whose toolchain/interpreter lives outside the repo (e.g. a conda
     # env at /opt) is usable under `partial`/`full`.
@@ -1873,24 +1876,16 @@ def test_run_command_passes_extra_read_paths_to_policy(
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
     cfg = load_config(p)
-    captured: dict[str, tuple[str, ...]] = {}
-
-    def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
-        captured["ro"] = tuple(str(x) for x in policy.extra_ro_paths)
-        return kinds.CommandResult(
-            argv=tuple(policy.argv), returncode=0, stdout="", stderr="", duration_s=0.0
-        )
-
-    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
-    d.dispatch("run_command", {"argv": ["echo", "hi"]})
-    assert "/opt/miniconda3" in captured["ro"]
+    access = session_runtime.prepare_local_execution(cfg, tmp_path, "full")
+    try:
+        assert "/opt/miniconda3" in {str(path) for path in access.policy.extra_ro_paths}
+    finally:
+        access.close()
 
 
 @pytest.mark.needs_namespaces
-def test_run_command_passes_extra_write_paths_to_policy(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.mark.needs_namespaces
+def test_extra_write_paths_reach_the_command_policy(tmp_path: pathlib.Path) -> None:
     # sandbox.extra_write_paths must reach the JailPolicy as extra_rw_paths (a
     # writable bind mount at the real location, so write implies read).
     from agent6.config import load_config
@@ -1902,18 +1897,11 @@ def test_run_command_passes_extra_write_paths_to_policy(
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
     cfg = load_config(p)
-    captured: dict[str, tuple[str, ...]] = {}
-
-    def fake_run_in_jail(policy, **_kw):  # type: ignore[no-untyped-def]
-        captured["rw"] = tuple(str(x) for x in policy.extra_rw_paths)
-        return kinds.CommandResult(
-            argv=tuple(policy.argv), returncode=0, stdout="", stderr="", duration_s=0.0
-        )
-
-    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
-    d.dispatch("run_command", {"argv": ["echo", "hi"]})
-    assert "/var/cache/shared" in captured["rw"]
+    access = session_runtime.prepare_local_execution(cfg, tmp_path, "full")
+    try:
+        assert "/var/cache/shared" in {str(path) for path in access.policy.extra_rw_paths}
+    finally:
+        access.close()
 
 
 # --- stringified-JSON argument coercion --------------------------------------
@@ -2135,10 +2123,7 @@ def test_ask_user_accepts_flat_single_question(tmp_path: pathlib.Path) -> None:
 @pytest.mark.parametrize(("isolation", "protected"), [("full", True), ("partial", False)])
 @pytest.mark.needs_namespaces
 def test_git_reaches_the_jail_as_a_protect_path_only_under_full(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    isolation: kinds.IsolationLevel,
-    protected: bool,
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel, protected: bool
 ) -> None:
     """`protect_git` is a read-only bind, so it needs a mount namespace.
 
@@ -2152,21 +2137,13 @@ def test_git_reaches_the_jail_as_a_protect_path_only_under_full(
     `protect_git = "on"` refuses to run there.
     """
     (tmp_path / ".git").mkdir()
-    captured: list[object] = []
-
-    def _capture(policy: object, **_kw: object) -> kinds.CommandResult:
-        captured.append(policy)
-        return kinds.CommandResult(
-            argv=("true",), returncode=0, stdout="", stderr="", duration_s=0.0
-        )
-
-    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", _capture)
     cfg = _config_with_run_commands(tmp_path, "allow")
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, isolation=isolation)
-    d.dispatch("run_command", {"argv": ["true"]})
-
-    paths = captured[0].extra_protect_paths  # pyright: ignore[reportAttributeAccessIssue]
-    assert ((tmp_path / ".git").resolve() in paths) is protected
+    access = session_runtime.prepare_local_execution(cfg, tmp_path, isolation)
+    try:
+        protect = access.policy.extra_protect_paths
+    finally:
+        access.close()
+    assert ((tmp_path / ".git").resolve() in protect) is protected
 
 
 def test_every_jail_tool_answers_to_run_commands(tmp_path: pathlib.Path) -> None:
@@ -3018,30 +2995,24 @@ def test_read_file_bounds_media_before_validation(
 def test_command_temp_files_belong_to_session(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
-    """A short per-session temp dir, granted and removed with the dispatcher.
+    """A short per-session temp dir, granted and removed with the prepared session.
 
     A directory under the session record is longer than a Unix socket path allows (108 bytes),
     so the directory lives in a short temp root and carries the first 12 characters of the id.
     """
     root = tmp_path / "repo"
     root.mkdir()
-    session = tmp_path / "state" / "sessions" / "runs" / ("t" * 60)
-    session.mkdir(parents=True)
-    runner = dispatch.ToolDispatcher(
-        root=root, config=Config(), isolation=isolation, session_dir=session
-    )
-    policy = runner._jail_policy(("true",))
-    temp = pathlib.Path(dict(policy.env)["TMPDIR"])
-    assert temp.name.startswith("agent6-" + "t" * 12 + "-") and not temp.is_relative_to(session)
-    assert temp in policy.extra_rw_paths
-    assert dict(runner._jail_policy(("true",)).env)["TMPDIR"] == str(temp)
+    access = session_runtime.prepare_local_execution(Config(), root, isolation, name="t" * 60)
+    temp = pathlib.Path(dict(access.policy.env)["TMPDIR"])
+    assert temp.name.startswith("agent6-" + "t" * 12 + "-")
+    assert temp in access.policy.extra_rw_paths
     sock = socket.socket(socket.AF_UNIX)
     sock.bind(str(temp / "s.sock"))  # the path fits a Unix socket
     sock.close()
     (temp / "leftover").write_text("test")
-    runner.close()
+    access.close()
     assert not temp.exists()
-    runner.close()
+    access.close()
 
 
 @pytest.mark.parametrize("isolation", ["none", "partial"])
@@ -3059,46 +3030,37 @@ def test_command_temp_socket_with_long_paths(
     monkeypatch.setenv("TMPDIR", str(inherited))
     monkeypatch.setattr(tempfile, "tempdir", None)
     name = "session-" + "s" * 180 if long_session else "session"
-    runners = [
-        dispatch.ToolDispatcher(
-            root=tmp_path,
-            config=Config(),
-            isolation=isolation,
-            session_dir=tmp_path / (name + suffix),
-        )
+    sessions = [
+        session_runtime.prepare_local_execution(Config(), tmp_path, isolation, name=name + suffix)
         for suffix in ("-a", "-b")
     ]
     temps: list[pathlib.Path] = []
     try:
-        for runner in runners:
-            policy = runner._jail_policy(("true",))
-            temp = pathlib.Path(dict(policy.env)["TMPDIR"])
+        for access in sessions:
+            temp = pathlib.Path(dict(access.policy.env)["TMPDIR"])
             temps.append(temp)
             with socket.socket(socket.AF_UNIX) as sock:
                 sock.bind(str(temp / "command-server.sock"))
-            assert temp in policy.extra_rw_paths
+            assert temp in access.policy.extra_rw_paths
             assert temp.stat().st_mode & 0o777 == 0o700
-            assert dict(runner._jail_policy(("true",)).env)["TMPDIR"] == str(temp)
             (temp / "leftover").write_text("owned")
         assert temps[0] != temps[1]
-        runners[0].close()
+        sessions[0].close()
         assert not temps[0].exists()
         assert (temps[1] / "leftover").read_text() == "owned"
     finally:
-        for runner in runners:
-            runner.close()
+        for access in sessions:
+            access.close()
     assert all(not temp.exists() for temp in temps)
 
 
+@pytest.mark.needs_namespaces
 def test_full_isolation_leaves_tmpdir_to_the_jail(tmp_path: pathlib.Path) -> None:
     """Under `full` the jail's private tmpfs is the run's /tmp: no host directory, no TMPDIR."""
     root = tmp_path / "repo"
     root.mkdir()
-    session = tmp_path / "state" / "sessions" / "runs" / "test"
-    session.mkdir(parents=True)
-    runner = dispatch.ToolDispatcher(
-        root=root, config=Config(), isolation="full", session_dir=session
-    )
-    policy = runner._jail_policy(("true",))
-    assert "TMPDIR" not in dict(policy.env)
-    runner.close()
+    access = session_runtime.prepare_local_execution(Config(), root, "full", name="test")
+    try:
+        assert "TMPDIR" not in dict(access.policy.env)
+    finally:
+        access.close()

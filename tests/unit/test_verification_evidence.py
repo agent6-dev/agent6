@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import pathlib
+from collections.abc import Callable
 from typing import Any, Literal
 from unittest import mock
 
@@ -11,6 +12,7 @@ import pytest
 from agent6 import kinds
 from agent6.config import Config
 from agent6.harness import loop, loop_resume, loop_snapshot, loop_state, run_chain
+from agent6.sandbox import jail_session
 from agent6.sessions import event_log
 from agent6.tools import command_tools, dispatch, result_format, results, tool_errors
 from agent6.vcs import git_read
@@ -18,7 +20,10 @@ from tests.unit import test_verify_finish_gate as gate_tests
 
 
 def _dispatcher(
-    root: pathlib.Path, journal: pathlib.Path, policy: str = "allow"
+    build: Callable[..., dispatch.ToolDispatcher],
+    root: pathlib.Path,
+    journal: pathlib.Path,
+    policy: str = "allow",
 ) -> dispatch.ToolDispatcher:
     config = Config.model_validate(
         {
@@ -26,7 +31,7 @@ def _dispatcher(
             "sandbox": {"run_commands": policy, "network": "host"},
         }
     )
-    return dispatch.ToolDispatcher(root=root, config=config, events=event_log.EventSink(journal))
+    return build(root=root, config=config, events=event_log.EventSink(journal))
 
 
 def _events(journal: pathlib.Path) -> list[dict[str, Any]]:
@@ -38,14 +43,18 @@ def _events(journal: pathlib.Path) -> list[dict[str, Any]]:
 )
 @pytest.mark.parametrize("scoped", [False, True])
 def test_attempt_records_tree_id_scope_and_output_caps(
-    tmp_path: pathlib.Path, rc: int, outcome: str, scoped: bool
+    tmp_path: pathlib.Path,
+    rc: int,
+    outcome: str,
+    scoped: bool,
+    build_dispatcher: Callable[..., dispatch.ToolDispatcher],
 ) -> None:
     """Harness calls carry evidence without a model tool call id."""
     repo = tmp_path / "repo"
     repo.mkdir()
     head = gate_tests._git_seed(repo)
     journal = tmp_path / "logs.jsonl"
-    dispatcher = _dispatcher(repo, journal)
+    dispatcher = _dispatcher(build_dispatcher, repo, journal)
     raw = kinds.CommandResult(
         argv=("true",),
         returncode=rc,
@@ -55,12 +64,11 @@ def test_attempt_records_tree_id_scope_and_output_caps(
         duration_s=1.0,
         exec_failed=False,
     )
-    with mock.patch("agent6.sandbox.jail.run_in_jail", return_value=raw):
+    with mock.patch.object(jail_session.JailSession, "run", return_value=raw):
         result = dispatcher.run_verify(extra_argv=("tests/test_x.py",) if scoped else ())
-    start, target, end = _events(journal)
-    assert target["type"] == "execution.target"
-    assert start["target_id"] is None
-    assert end["target_id"] == target["target_id"]
+    by_type = {event["type"]: event for event in _events(journal)}
+    target, start, end = by_type["execution.target"], by_type["verify.start"], by_type["verify.end"]
+    assert start["target_id"] == end["target_id"] == target["target_id"]
     assert end.get("verify_id"), end
     assert start["verify_id"] == end["verify_id"]
     assert end["tree_before"] == end["tree_after"] == git_read.tree_sha(repo, head)
@@ -76,11 +84,14 @@ def test_attempt_records_tree_id_scope_and_output_caps(
 @pytest.mark.parametrize("model", [False, True])
 @pytest.mark.parametrize("policy", ["allow", "ask"])
 def test_verify_start_states_its_approval_wait_and_tool_identity(
-    tmp_path: pathlib.Path, model: bool, policy: str
+    tmp_path: pathlib.Path,
+    model: bool,
+    policy: str,
+    build_dispatcher: Callable[..., dispatch.ToolDispatcher],
 ) -> None:
     """The start marker knows whether approval is required before the prompt is emitted."""
     journal = tmp_path / "logs.jsonl"
-    dispatcher = _dispatcher(tmp_path, journal, policy)
+    dispatcher = _dispatcher(build_dispatcher, tmp_path, journal, policy)
     with (
         mock.patch.object(dispatcher, "_approve", return_value=True),
         mock.patch.object(
@@ -98,14 +109,17 @@ def test_verify_start_states_its_approval_wait_and_tool_identity(
     rows = _events(journal)
     start = next(row for row in rows if row["type"] == "verify.start")
     assert start["approval_required"] is (policy == "ask")
-    assert start.get("call_id") == (rows[0]["call_id"] if model else None)
+    calls = [row for row in rows if row["type"] == "tool.call"]
+    assert start.get("call_id") == (calls[0]["call_id"] if model else None)
 
 
 @pytest.mark.parametrize("policy", ["deny", "ask"])
-def test_denial_is_an_attempt_without_a_verdict(tmp_path: pathlib.Path, policy: str) -> None:
+def test_denial_is_an_attempt_without_a_verdict(
+    tmp_path: pathlib.Path, policy: str, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
     """Both denial paths record missing verification rather than empty success."""
     journal = tmp_path / "logs.jsonl"
-    dispatcher = _dispatcher(tmp_path, journal, policy)
+    dispatcher = _dispatcher(build_dispatcher, tmp_path, journal, policy)
     with (
         mock.patch.object(dispatcher, "_approve", return_value=False),
         pytest.raises(tool_errors.ToolDeniedError),
@@ -123,11 +137,14 @@ def test_denial_is_an_attempt_without_a_verdict(tmp_path: pathlib.Path, policy: 
     ],
 )
 def test_exception_keeps_an_attempt(
-    tmp_path: pathlib.Path, exception: BaseException, outcome: str
+    tmp_path: pathlib.Path,
+    exception: BaseException,
+    outcome: str,
+    build_dispatcher: Callable[..., dispatch.ToolDispatcher],
 ) -> None:
     """An interrupted or unavailable command leaves an evidence record."""
     journal = tmp_path / "logs.jsonl"
-    dispatcher = _dispatcher(tmp_path, journal)
+    dispatcher = _dispatcher(build_dispatcher, tmp_path, journal)
     with (
         mock.patch.object(command_tools, "run_argv_in_jail", side_effect=exception),
         pytest.raises(type(exception)),
@@ -138,10 +155,12 @@ def test_exception_keeps_an_attempt(
     assert end["stdout_truncated"] is None and end["stderr_truncated"] is None
 
 
-def test_refusal_truncation_marks_the_reason_not_the_streams(tmp_path: pathlib.Path) -> None:
+def test_refusal_truncation_marks_the_reason_not_the_streams(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
     """A refusal text past 2000 characters marked stderr truncated; no stream was captured."""
     journal = tmp_path / "logs.jsonl"
-    dispatcher = _dispatcher(tmp_path, journal)
+    dispatcher = _dispatcher(build_dispatcher, tmp_path, journal)
     with (
         mock.patch.object(
             dispatcher, "_approve_command", side_effect=tool_errors.ToolDeniedError("x" * 2001)
@@ -157,11 +176,13 @@ def test_refusal_truncation_marks_the_reason_not_the_streams(tmp_path: pathlib.P
 
 @pytest.mark.parametrize("reason_length", [2001, 20001])
 def test_an_execution_refusal_has_no_truncated_stderr(
-    tmp_path: pathlib.Path, reason_length: int
+    tmp_path: pathlib.Path,
+    reason_length: int,
+    build_dispatcher: Callable[..., dispatch.ToolDispatcher],
 ) -> None:
     """A long execution refusal is a reason, not a truncated stderr stream."""
     journal = tmp_path / "logs.jsonl"
-    dispatcher = _dispatcher(tmp_path, journal)
+    dispatcher = _dispatcher(build_dispatcher, tmp_path, journal)
     raw = kinds.CommandResult(
         argv=("true",),
         returncode=127,
@@ -171,7 +192,7 @@ def test_an_execution_refusal_has_no_truncated_stderr(
         exec_failed=True,
     )
     with (
-        mock.patch("agent6.sandbox.jail.run_in_jail", return_value=raw),
+        mock.patch.object(jail_session.JailSession, "run", return_value=raw),
         pytest.raises(tool_errors.OperatorCommandUnexecutableError),
     ):
         dispatcher.run_verify()
@@ -183,12 +204,14 @@ def test_an_execution_refusal_has_no_truncated_stderr(
     assert dispatcher.last_verification.stderr_truncated is False
 
 
-def test_a_verifying_command_cannot_certify_its_own_edit(tmp_path: pathlib.Path) -> None:
+def test_a_verifying_command_cannot_certify_its_own_edit(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
     """Exit zero after writing the tree leaves the final tree unverified."""
     repo = tmp_path / "repo"
     repo.mkdir()
     gate_tests._git_seed(repo)
-    dispatcher = _dispatcher(repo, tmp_path / "logs.jsonl")
+    dispatcher = _dispatcher(build_dispatcher, repo, tmp_path / "logs.jsonl")
     harness = loop.Harness(
         chain=run_chain.RunChain(repo),
         config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
@@ -285,14 +308,14 @@ def test_snapshot_and_end_carry_evidence_id(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("denied", [True, False])
 def test_unsuccessful_retry_replaces_an_earlier_final_pass(
-    tmp_path: pathlib.Path, denied: bool
+    tmp_path: pathlib.Path, denied: bool, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
 ) -> None:
     """A raised attempt replaces the final id and cannot leave an earlier pass current."""
     repo = tmp_path / "repo"
     repo.mkdir()
     gate_tests._git_seed(repo)
     journal = tmp_path / "logs.jsonl"
-    dispatcher = _dispatcher(repo, journal, "ask")
+    dispatcher = _dispatcher(build_dispatcher, repo, journal, "ask")
     harness = loop.Harness(
         chain=run_chain.RunChain(repo),
         config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
@@ -334,7 +357,10 @@ def denied_rows(tmp_path: pathlib.Path) -> list[dict[str, Any]]:
     """Record a denied verification through the real dispatcher."""
     journal = tmp_path / "logs.jsonl"
     with pytest.raises(tool_errors.ToolDeniedError):
-        _dispatcher(tmp_path, journal, "deny").dispatch("run_verify_command", {})
+        # A denied command never reaches the session, so a bare dispatcher serves.
+        _dispatcher(dispatch.ToolDispatcher, tmp_path, journal, "deny").dispatch(
+            "run_verify_command", {}
+        )
     return _events(journal)
 
 

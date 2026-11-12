@@ -12,14 +12,19 @@ import shutil
 import tempfile
 import termios
 import threading
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from typing import Any
 
 import pytest
 import tree_sitter_language_pack
 from xdist import workermanage
 
+from agent6 import kinds
+from agent6.app import session_runtime
+from agent6.config import Config
 from agent6.sandbox import tool_paths
 from agent6.sessions import event_log, event_schema, lock
+from agent6.tools import dispatch
 from tests.browser_env import require_browser
 from tests.collector_env import require_collector
 from tests.jail_env import require_userns_jail
@@ -246,3 +251,35 @@ def short_repo() -> Iterator[pathlib.Path]:
         repo = pathlib.Path(directory).resolve()
         assert len(str(repo).encode()) < 100
         yield repo
+
+
+@pytest.fixture
+def build_dispatcher() -> Iterator[Callable[..., dispatch.ToolDispatcher]]:
+    """Build dispatchers over a prepared local command session; teardown closes them all.
+
+    `root`, `config` and `isolation` (default `none`) prepare the session; every other keyword
+    argument goes to `ToolDispatcher`.
+    """
+    built: list[dispatch.ToolDispatcher] = []
+
+    def build(
+        *,
+        root: pathlib.Path,
+        config: Config,
+        isolation: kinds.IsolationLevel = "none",
+        **kwargs: Any,
+    ) -> dispatch.ToolDispatcher:
+        access = session_runtime.prepare_local_execution(config, root, isolation)
+        try:
+            dispatcher = dispatch.ToolDispatcher(
+                root=root, config=config, isolation=isolation, command_access=access, **kwargs
+            )
+        except BaseException:
+            access.close()
+            raise
+        built.append(dispatcher)
+        return dispatcher
+
+    yield build
+    for dispatcher in built:
+        dispatcher.close()

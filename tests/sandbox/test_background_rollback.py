@@ -104,24 +104,17 @@ def test_registration_rollback_retains_private_job_until_persistence_succeeds(
                     os.close(shell.log_fd)
 
 
+@pytest.mark.parametrize("detached", [False, True], ids=["handed_back", "detached"])
 @pytest.mark.parametrize("isolation", ["none", "partial", "full"])
-def test_dispatcher_close_retains_shared_capture_until_copy_succeeds(
-    monkeypatch: pytest.MonkeyPatch, isolation: kinds.IsolationLevel
+def test_dispatcher_close_retains_capture_until_copy_succeeds(
+    monkeypatch: pytest.MonkeyPatch, isolation: kinds.IsolationLevel, detached: bool
 ) -> None:
-    """Failed close keeps prepared capture alive and records unknown settlement until retry."""
-    _assert_dispatcher_close_retries(monkeypatch, isolation, shared=True)
-
-
-@pytest.mark.parametrize("isolation", ["none", "partial", "full"])
-def test_dispatcher_close_retains_private_resources_until_copy_succeeds(
-    monkeypatch: pytest.MonkeyPatch, isolation: kinds.IsolationLevel
-) -> None:
-    """Failed close keeps dispatcher-owned temp and network resources for private capture."""
-    _assert_dispatcher_close_retries(monkeypatch, isolation, shared=False)
+    """A failed close keeps the session and its capture; settlement is unknown until the retry."""
+    _assert_dispatcher_close_retries(monkeypatch, isolation, detached=detached)
 
 
 def _assert_dispatcher_close_retries(
-    monkeypatch: pytest.MonkeyPatch, isolation: kinds.IsolationLevel, *, shared: bool
+    monkeypatch: pytest.MonkeyPatch, isolation: kinds.IsolationLevel, *, detached: bool
 ) -> None:
     repo = pathlib.Path(__file__).resolve().parents[2]
     with tempfile.TemporaryDirectory(dir=repo, prefix=".rollback-records-") as scratch:
@@ -145,9 +138,7 @@ def _assert_dispatcher_close_retries(
             isolation=isolation,
             session_dir=saved.session_dir,
             events=event_log.EventSink(saved.logs_path),
-            command_access=session_runtime.prepare_local_execution(cfg, work, isolation)
-            if shared
-            else None,
+            command_access=session_runtime.prepare_local_execution(cfg, work, isolation),
         )
         real_write = os.pwrite
         writes = 0
@@ -170,24 +161,20 @@ def _assert_dispatcher_close_retries(
                         "while [ ! -f release ]; do sleep 0.01; done; "
                         "printf 'after\\n'; touch emitted; sleep 30",
                     ],
-                    "background": not shared,
+                    "background": detached,
                 },
             ).to_wire()
             assert started["background_id"] == "bg1" and started["still_running"]
             shells = tools._shells  # pyright: ignore[reportPrivateUsage]
             access = tools._command_access  # pyright: ignore[reportPrivateUsage]
-            assert shells is not None
+            assert shells is not None and access is not None
             shell = shells._get("bg1")  # pyright: ignore[reportPrivateUsage]
             owner = shell.job._session  # pyright: ignore[reportPrivateUsage]
             handle = shell.job._handle  # pyright: ignore[reportPrivateUsage]
-            assert shell.job._owns_session is not shared  # pyright: ignore[reportPrivateUsage]
-            if shared:
-                assert access is not None and access.session is owner
-                temp, net = access.temp, access.network
-            else:
-                assert access is None
-                temp = tools._command_tmp  # pyright: ignore[reportPrivateUsage]
-                net = tools._own_session_net  # pyright: ignore[reportPrivateUsage]
+            assert not shell.job._owns_session  # pyright: ignore[reportPrivateUsage]
+            assert access.session is owner
+            temp, net = access.temp, access.network
+            if detached:
                 deadline = time.monotonic() + 5
                 while not (work / "ready").exists():
                     assert time.monotonic() < deadline, "command never emitted its output"
@@ -215,12 +202,8 @@ def _assert_dispatcher_close_retries(
                     assert shells._get("bg1") is shell  # pyright: ignore[reportPrivateUsage]
                     assert shell.log_fd == fd and os.pread(fd, 100, 0) == b"before\naf"
                     assert not tools._closed  # pyright: ignore[reportPrivateUsage]
-                    if access is not None:
-                        assert access.session is owner
-                        assert access.temp is temp and access.network is net
-                    else:
-                        assert tools._command_tmp is temp  # pyright: ignore[reportPrivateUsage]
-                        assert tools._own_session_net is net  # pyright: ignore[reportPrivateUsage]
+                    assert access.session is owner
+                    assert access.temp is temp and access.network is net
                     assert holder is None or holder.poll() is None
                     assert temp is None or pathlib.Path(temp.name).is_dir()
                     status = owner.status_background(handle)
@@ -250,8 +233,6 @@ def _assert_dispatcher_close_retries(
             assert not result["error"] and not result["capture_error"]
             assert holder is None or holder.poll() is not None
             assert temp is None or not pathlib.Path(temp.name).exists()
-            assert tools._command_tmp is None  # pyright: ignore[reportPrivateUsage]
-            assert tools._own_session_net is None  # pyright: ignore[reportPrivateUsage]
             journal = saved.logs_path.read_bytes()
             rows = [json.loads(line) for line in journal.splitlines()]
             (target,) = [row for row in rows if row["type"] == "execution.target"]
@@ -259,12 +240,9 @@ def _assert_dispatcher_close_retries(
             assert [row["outcome"] for row in jobs] == [
                 "unknown",
                 "unknown",
-                "settled" if shared else "unknown",
+                "settled",
             ]
-            if shared:
-                assert jobs[-1]["reason"] == ""
-            else:
-                assert "No session-wide settlement observation" in jobs[-1]["reason"]
+            assert jobs[-1]["reason"] == ""
             environments = [row for row in rows if row["type"] == "execution.environment"]
             assert [row["outcome"] for row in environments] == ["not_applicable"] * 3
             for row in (*jobs, *environments):

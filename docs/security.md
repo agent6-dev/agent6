@@ -302,7 +302,6 @@ Cleanup is not a guarantee against uninterruptible kernel sleep, lost signal per
 `partial` and `none` do not stop same-user commands from signalling their supervisors; `none` also provides no filesystem or privilege boundary.
 A lost transport leaves cleanup unconfirmed even if the remaining subreaper succeeds.
 Under `full`, destruction of the namespace's init additionally makes the kernel kill its remaining processes.
-The one-shot and MCP transports keep their separate host-process cleanup; they do not interpret session job handles.
 
 **Verify**
 

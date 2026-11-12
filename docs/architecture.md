@@ -317,8 +317,8 @@ The bound store's security rules are in [Security](security.md#8-secrets-and-con
 `app/session_runtime.py::prepare_local_execution` resolves a local policy and opens its command session before gate inference or workspace commands.
 `tools/command_tools.py::JailAccess` carries that policy, session, resolved grants and owned local resources into dispatch; it contains no lazy session callback.
 Setup, baseline verification, model commands and later verification use that same session.
-A failed preparation propagates before dispatch exists; it never selects one-shot execution.
-Bare dispatchers explicitly retain the local one-shot path.
+A failed preparation propagates before dispatch exists.
+A dispatcher without a prepared session serves the file and navigation tools; its command tools refuse.
 
 `kinds.ExecutionTarget` holds immutable transport, workspace roots, user, HOME, environment policy, effective controls and observed protocol identity.
 Unobserved runtime, container, launcher-instance, launcher-version and lifecycle identities are `None`.
@@ -479,9 +479,7 @@ Every LLM tool call passes the same gates: audit events wrap it, the mode backst
 Commands and verify run jailed; file tools resolve through the workspace boundary.
 `tools/command_tools.py` holds jailed execution, command check-ins, and background read and stop handlers.
 `tools/dispatch.py` owns routing, approvals, verify and metric events, and the jail-session lifecycle.
-Session preparation failures are retained and propagated; they never select a one-shot fallback.
-Explicit local one-shot callers remain separate.
-Under `partial` and `none` it gives commands a shared `TMPDIR` in a private `agent6-<session>-*` (the id's first 12 characters) directory in the system temp dir, falling back to `/tmp` when that root exceeds 32 bytes to leave room for Unix socket names.
+Under `partial` and `none`, `prepare_local_execution` gives commands a shared `TMPDIR` in a private `agent6-<session>-*` (the id's first 12 characters) directory in the system temp dir, falling back to `/tmp` when that root exceeds 32 bytes to leave room for Unix socket names.
 Under `full` the jail's own tmpfs `/tmp` is the run's.
 The start gate, verify tool, foreground commands and background commands use this directory; the dispatcher removes it after stopping commands at teardown.
 `agent6 exec SESSION -- CMD` and `agent6 exec --new` use the same rule, with a fresh directory per exec, removed when the command exits and never shared with a live run.
@@ -805,7 +803,6 @@ The CLI `sessions receipt`, web receipt route, TUI screen and ACP `/receipt` rea
 The stamp retains both roots, user, HOME, effective controls, environment inheritance policy and variable names, never environment values.
 Its host-issued `target_id` distinguishes observations; the target also carries the observed launcher instance and any installation build identity.
 The dispatcher assigns `execution_id` before setup; setup, the baseline and later verification retain their own target references across resumes.
-A bare one-shot attempt has no target reference while approval is pending; its result names the target selected after approval.
 `evidence.ExecutionObservations` folds target, setup, job-settlement and environment-lifecycle records for `scan_session_log` and the receipt.
 Its `ExecutionTargets` fold also supplies the current environment to live views and run and resume start renderers, independent of manifest mirror writes.
 An execution boundary without matching target evidence clears that binding; invalid target records retain history but clear the displayed environment.

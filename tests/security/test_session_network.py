@@ -15,7 +15,6 @@ import pathlib
 import subprocess
 import tempfile
 import time
-from typing import assert_type
 
 import pytest
 
@@ -268,24 +267,6 @@ def test_a_private_policy_without_a_network_refuses_rather_than_running_alone(
         jail.run_in_jail(policy)
 
 
-def test_the_network_accessors_never_answer_none(tmp_path: pathlib.Path) -> None:
-    """`ToolDispatcher._net` is typed to return a network, never None.
-
-    `net_for` answers None only for a policy off the run's network, and opens nothing for it.
-    `assert_type` does nothing at runtime: strict pyright is the check.
-    """
-    d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="full")
-    try:
-        on_host = tools_policy.jail_policy(tmp_path, Config(), "full", ("true",), network="host")
-        assert d._net_for(on_host) is None
-        assert d._own_session_net is None, "a host policy opened a network"
-        shared = tools_policy.jail_policy(tmp_path, Config(), "full", ("true",), network="session")
-        assert_type(d._net(), jail.SessionNetwork)
-        assert d._net_for(shared) is d._net()
-    finally:
-        d.close()
-
-
 def test_a_run_only_builds_a_network_when_something_would_join_it(tmp_path: pathlib.Path) -> None:
     """A run whose commands and servers all take the host network creates no holder."""
     from agent6.app import session_setup
@@ -515,7 +496,6 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
             cfg, tmp_path, "full", session_net=net
         ),
         mcp_manager=mgr,
-        session_net=net,
     )
     try:
         assert not mgr.failures, [f.error for f in mgr.failures]

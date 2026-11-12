@@ -47,7 +47,9 @@ def test_start_records_only_a_linked_checkouts_git_grant_before_tools(
         recorded = sessions_manifest.read_manifest(session_dir).worktree_git_dir
         assert recorded == ((repo / ".git").resolve() if linked else None)
         built = real_tools(config, **kw)
-        policies.append(built.dispatcher._jail_policy(("true",)))
+        access = built.dispatcher._command_access  # pyright: ignore[reportPrivateUsage]
+        assert access is not None
+        policies.append(access.policy)
         return built
 
     monkeypatch.setattr(session_runtime, "build_session_tools", tools)

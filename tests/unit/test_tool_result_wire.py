@@ -17,6 +17,7 @@ import dataclasses
 import hashlib
 import json
 import pathlib
+from collections.abc import Callable
 from typing import Any
 from unittest import mock
 
@@ -307,7 +308,9 @@ def test_a_coloured_failure_has_the_plain_failure_signature() -> None:
 
 
 @pytest.mark.parametrize("name", ["run_command", "run_verify_command", "run_metric_command"])
-def test_command_results_and_log_tails_are_scrubbed(tmp_path: pathlib.Path, name: str) -> None:
+def test_command_results_and_log_tails_are_scrubbed(
+    tmp_path: pathlib.Path, name: str, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
     """Every execution handler gives the model and the journal escape-free output."""
     from agent6.sessions import event_log
 
@@ -317,11 +320,12 @@ def test_command_results_and_log_tails_are_scrubbed(tmp_path: pathlib.Path, name
     config_path = tmp_path / "agent6.toml"
     config_path.write_text(toml, encoding="utf-8")
     logs = tmp_path / "logs.jsonl"
-    d = dispatch.ToolDispatcher(
+    d = build_dispatcher(
         root=tmp_path, config=load_config(config_path), events=event_log.EventSink(logs)
     )
-    with mock.patch(
-        "agent6.sandbox.jail.run_in_jail",
+    with mock.patch.object(
+        jail_session.JailSession,
+        "run",
         return_value=_cmd_result(stdout="\x1b[32mscore: 42\x1b[0m", stderr="\x1b[31merr\x1b[0m"),
     ):
         out = d.dispatch(name, {"argv": ["true"]} if name == "run_command" else {}).to_wire()
@@ -333,7 +337,9 @@ def test_command_results_and_log_tails_are_scrubbed(tmp_path: pathlib.Path, name
     assert tail["stdout_tail"] == "score: 42" and tail["stderr_tail"] == "err"
 
 
-def test_metric_pattern_reads_raw_output_before_the_scrub_and_clip(tmp_path: pathlib.Path) -> None:
+def test_metric_pattern_reads_raw_output_before_the_scrub_and_clip(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
     """An operator's regex can still match escape bytes in an early score line."""
     toml = _VALID_TOML + (
         '\n[harness.metric]\ncommand = ["true"]\n'
@@ -341,9 +347,10 @@ def test_metric_pattern_reads_raw_output_before_the_scrub_and_clip(tmp_path: pat
     )
     config_path = tmp_path / "agent6.toml"
     config_path.write_text(toml, encoding="utf-8")
-    d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(config_path))
-    with mock.patch(
-        "agent6.sandbox.jail.run_in_jail",
+    d = build_dispatcher(root=tmp_path, config=load_config(config_path))
+    with mock.patch.object(
+        jail_session.JailSession,
+        "run",
         return_value=_cmd_result(stdout="\x1b[31mSCORE: 42\x1b[0m\n" + "y" * 25_000),
     ):
         out = d.dispatch("run_metric_command", {}).to_wire()
@@ -351,7 +358,9 @@ def test_metric_pattern_reads_raw_output_before_the_scrub_and_clip(tmp_path: pat
     assert out["stdout"] == "... 5010 earlier chars clipped ...\n" + "y" * 20_000
 
 
-def test_a_handed_back_command_is_scrubbed(tmp_path: pathlib.Path) -> None:
+def test_a_handed_back_command_is_scrubbed(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
     """A check-in hand-back scrubs both streams and retains a readable background handle."""
     data = b"\x1b[32mout\x1b[0m\n"
     handoff = kinds.BackgroundHandoff(
@@ -377,9 +386,7 @@ def test_a_handed_back_command_is_scrubbed(tmp_path: pathlib.Path) -> None:
     session.stop_background.return_value = jail_session.Stopped(
         returncode=-9, survivors=frozenset()
     )
-    d = dispatch.ToolDispatcher(
-        root=tmp_path, config=_config(tmp_path), session_dir=tmp_path / "run"
-    )
+    d = build_dispatcher(root=tmp_path, config=_config(tmp_path), session_dir=tmp_path / "run")
     with mock.patch.object(
         d, "_command_access", dataclasses.replace(d._jail_access("run_command"), session=session)
     ):
@@ -397,9 +404,11 @@ def test_a_handed_back_command_is_scrubbed(tmp_path: pathlib.Path) -> None:
             d.close()
 
 
-def test_wire_run_verify(tmp_path: pathlib.Path) -> None:
-    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    with mock.patch("agent6.sandbox.jail.run_in_jail", return_value=_cmd_result(stdout="ok")):
+def test_wire_run_verify(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
+    d = build_dispatcher(root=tmp_path, config=_config(tmp_path))
+    with mock.patch.object(jail_session.JailSession, "run", return_value=_cmd_result(stdout="ok")):
         out = d.dispatch("run_verify_command", {})
     # The gate names itself: the worker never chose this command, so without
     # it a real failure and a stale gate look identical from the result.
@@ -414,7 +423,9 @@ def test_wire_run_verify(tmp_path: pathlib.Path) -> None:
     )
 
 
-def test_wire_run_verify_timeout_names_the_cap(tmp_path: pathlib.Path) -> None:
+def test_wire_run_verify_timeout_names_the_cap(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
     """A verify killed at verify_timeout_s reaches the model as timed_out with the cap.
 
     A bare returncode 124 with empty output was indistinguishable from a failing suite, and
@@ -425,9 +436,10 @@ def test_wire_run_verify_timeout_names_the_cap(tmp_path: pathlib.Path) -> None:
     )
     p = tmp_path / "agent6.toml"
     p.write_text(toml, encoding="utf-8")
-    d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(p))
-    with mock.patch(
-        "agent6.sandbox.jail.run_in_jail",
+    d = build_dispatcher(root=tmp_path, config=load_config(p))
+    with mock.patch.object(
+        jail_session.JailSession,
+        "run",
         return_value=_cmd_result(returncode=124, duration_s=240.1, timed_out=True),
     ):
         out = d.dispatch("run_verify_command", {})
@@ -442,10 +454,14 @@ def test_wire_run_verify_timeout_names_the_cap(tmp_path: pathlib.Path) -> None:
     )
 
 
-def test_exit_124_has_no_timeout_label(tmp_path: pathlib.Path) -> None:
+def test_exit_124_has_no_timeout_label(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
     """A command's own exit 124 stays a failure in evidence, wire data and summaries."""
-    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    with mock.patch("agent6.sandbox.jail.run_in_jail", return_value=_cmd_result(returncode=124)):
+    d = build_dispatcher(root=tmp_path, config=_config(tmp_path))
+    with mock.patch.object(
+        jail_session.JailSession, "run", return_value=_cmd_result(returncode=124)
+    ):
         out = d.run_verify()
     assert out.verification is not None and out.verification.outcome == "failed"
     for result in (out, results.MetricResult.from_exec(out, None)):
@@ -453,10 +469,13 @@ def test_exit_124_has_no_timeout_label(tmp_path: pathlib.Path) -> None:
         assert "timed out" not in result.summary()
 
 
-def test_wire_run_command(tmp_path: pathlib.Path) -> None:
-    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    with mock.patch(
-        "agent6.sandbox.jail.run_in_jail",
+def test_wire_run_command(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
+    d = build_dispatcher(root=tmp_path, config=_config(tmp_path))
+    with mock.patch.object(
+        jail_session.JailSession,
+        "run",
         return_value=_cmd_result(returncode=3, stdout="o", stderr="e"),
     ):
         out = d.dispatch("run_command", {"argv": ["echo", "hi"]})
@@ -486,14 +505,16 @@ def test_wire_exec_result_stopped_by_operator(returncode: int | None) -> None:
     )
 
 
-def test_wire_run_command_clip_names_dropped_chars(tmp_path: pathlib.Path) -> None:
+def test_wire_run_command_clip_names_dropped_chars(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
     """Output over the 20k cap leads with a marker naming the dropped char count.
 
     A bare tail read as the complete output.
     """
-    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    d = build_dispatcher(root=tmp_path, config=_config(tmp_path))
     big = "x" * 25_000
-    with mock.patch("agent6.sandbox.jail.run_in_jail", return_value=_cmd_result(stdout=big)):
+    with mock.patch.object(jail_session.JailSession, "run", return_value=_cmd_result(stdout=big)):
         out = d.dispatch("run_command", {"argv": ["echo", "hi"]})
     stdout = _wire(out)["stdout"]
     assert stdout.startswith("... 5000 earlier chars clipped ...\n")
@@ -504,9 +525,9 @@ def test_wire_run_command_clip_names_dropped_chars(tmp_path: pathlib.Path) -> No
         'pattern = "CYCLES: (\\\\d+)"\n'
         'goal = "minimize"\n'
     )
-    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path, extra=extra))
-    with mock.patch(
-        "agent6.sandbox.jail.run_in_jail", return_value=_cmd_result(stdout="CYCLES: 42")
+    d = build_dispatcher(root=tmp_path, config=_config(tmp_path, extra=extra))
+    with mock.patch.object(
+        jail_session.JailSession, "run", return_value=_cmd_result(stdout="CYCLES: 42")
     ):
         out = d.dispatch("run_metric_command", {})
     # score is APPENDED after the exec fields, in that order.
@@ -516,7 +537,9 @@ def test_wire_run_command_clip_names_dropped_chars(tmp_path: pathlib.Path) -> No
     )
 
 
-def test_metric_score_survives_the_display_clip(tmp_path: pathlib.Path) -> None:
+def test_metric_score_survives_the_display_clip(
+    tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
+) -> None:
     """The metric score comes from the command's unclipped output.
 
     Parsed from the display-clipped stdout, a real score before the tail window was lost, or a
@@ -527,9 +550,11 @@ def test_metric_score_survives_the_display_clip(tmp_path: pathlib.Path) -> None:
     )
     p = tmp_path / "agent6.toml"
     p.write_text(toml, encoding="utf-8")
-    d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(p))
+    d = build_dispatcher(root=tmp_path, config=load_config(p))
     stdout = "CYCLES: 42\n" + "y" * 25_000
-    with mock.patch("agent6.sandbox.jail.run_in_jail", return_value=_cmd_result(stdout=stdout)):
+    with mock.patch.object(
+        jail_session.JailSession, "run", return_value=_cmd_result(stdout=stdout)
+    ):
         out = d.dispatch("run_metric_command", {})
     assert _wire(out)["score"] == 42.0
 

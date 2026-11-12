@@ -54,7 +54,6 @@ def _serving(
             "full",
             session_net=net,
         ),
-        session_net=net,
     )
     serve = (
         "import http.server,socketserver;"

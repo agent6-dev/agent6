@@ -451,7 +451,6 @@ def run_one(
             run_root_node_id=None,
             mcp_manager=None,
             extra_protect_paths=protect,
-            shared_writes=req.shared_writes,
             mode="machine" if read_only else "run",
             # The repo's state dir, keyed on the checkout: a clone has no memory of its own.
             state_dir=paths.state_dir(req.cwd),

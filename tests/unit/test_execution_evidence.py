@@ -394,38 +394,6 @@ def test_target_stamps_record_environment_policy_not_values(
     assert "CI" in view["targets"][0]["target"]["environment"]["variable_names"]
 
 
-def test_one_shot_attempts_never_reference_the_previous_launcher(
-    saved: layout.SessionLayout,
-) -> None:
-    """A pending one-shot attempt cannot borrow the target of an earlier command."""
-    from agent6.tools import dispatch
-
-    cfg = Config.model_validate(
-        {
-            "sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"},
-            "harness": {"verify_command": ["/bin/true"]},
-        }
-    )
-    dispatcher = dispatch.ToolDispatcher(
-        root=pathlib.Path.cwd(),
-        config=cfg,
-        isolation="none",
-        events=event_log.EventSink(saved.logs_path),
-    )
-    try:
-        dispatcher.run_verify()
-        dispatcher.run_verify()
-    finally:
-        dispatcher.close()
-    events = [json.loads(line) for line in saved.logs_path.read_text().splitlines()]
-    starts = [event for event in events if event["type"] == "verify.start"]
-    ends = [event for event in events if event["type"] == "verify.end"]
-    assert all(start["target_id"] is None for start in starts)
-    assert len({event["target_id"] for event in ends}) == 2
-    view = receipt.read_receipt(saved.session_dir, pathlib.Path.cwd())
-    assert view.jobs[-1].outcome == "unknown"
-
-
 def test_old_logs_do_not_borrow_a_later_environment(saved: layout.SessionLayout) -> None:
     """Historical setup and verification keep unknown target references even beside a new stamp."""
     saved.logs_path.write_text(

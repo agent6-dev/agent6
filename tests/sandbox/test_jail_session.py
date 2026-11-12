@@ -319,11 +319,7 @@ def test_closing_the_session_takes_the_namespace_down(tmp_path: pathlib.Path) ->
 def test_a_run_scoped_dispatcher_serves_its_commands_from_one_process(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A run's commands share one jail process; a bare dispatcher keeps the per-command launcher.
-
-    The second command sees what the first left in the private /tmp; nothing outside a run
-    changes.
-    """
+    """A run's commands share one jail process: the second sees what the first left in /tmp."""
     from agent6.config import Config
     from agent6.tools import dispatch
 
@@ -344,17 +340,6 @@ def test_a_run_scoped_dispatcher_serves_its_commands_from_one_process(
         assert "one" in str(second["stdout"])
     finally:
         scoped.close()
-
-    bare = dispatch.ToolDispatcher(root=tmp_path, config=cfg, isolation="full")
-    try:
-        wrote = bare.dispatch(
-            "run_command", {"argv": ["sh", "-c", "echo two > /tmp/marker2; echo ok"]}
-        ).to_wire()
-        assert wrote["returncode"] == 0, wrote
-        gone = bare.dispatch("run_command", {"argv": ["cat", "/tmp/marker2"]}).to_wire()
-        assert gone["returncode"] != 0, "a bare dispatcher must not share a namespace"
-    finally:
-        bare.close()
 
 
 @pytest.mark.needs_namespaces

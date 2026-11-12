@@ -16,7 +16,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.sandbox import jail, jail_jobs, jail_session
-from agent6.tools import background
+from agent6.sessions import shells as session_shells
 
 
 class _FakeProc:
@@ -145,7 +145,7 @@ def test_failed_stop_preserves_received_exit_and_cleanup_failure(
         record = json.loads((outcome / "result.json").read_text())
         assert record["returncode"] == 23
         assert detail in record["error"]
-        rendered = background.roster_from_dir(outcome.parent)[0]
+        rendered = session_shells.roster_from_dir(outcome.parent)[0]
         assert "exited 23" in rendered and detail in rendered
 
 

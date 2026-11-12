@@ -754,7 +754,6 @@ These [job states](architecture.md#jail-job-ownership) are separate from the wor
 - Every supervisor response must match the prepared launcher instance and request ID; reconnecting after transport loss creates a new instance, never a continuation of old job ownership.
 - `execution.jobs` records `settled` only after the prepared supervisor confirms cleanup; a lost launcher or failed settlement records `unknown`.
 - Failed host persistence records `unknown` with its reason; a successful close retry can confirm `settled` for the same prepared target and execution.
-- Bare one-shot commands have no session-wide settlement observation and do not claim one.
 - `execution.environment` records `left_running`, `stopped`, `unknown` or `not_applicable`, with its reason and target reference.
 - An environment lease (`app/environment_lease.py`) moves through acquire, attach, settle and lost: a run that started the container becomes its owner; every other run attaches as a borrower; a release settles the session's entry; an owner whose container was replaced, or whose worker died, has lost ownership and the lease says so.
 - The owner's stop runs only when every borrower released, none ended without releasing, and a stop command is set; attaching grants no stop authority.

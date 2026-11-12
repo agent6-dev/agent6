@@ -9,7 +9,7 @@ import os
 import pathlib
 import shutil
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
 
@@ -110,7 +110,9 @@ def test_a_write_grant_holding_a_read_only_mount_names_the_grant_and_the_mount(
 
 @pytest.mark.parametrize("isolation", [_FULL, "partial"])
 def test_a_grant_repointed_between_two_launches_keeps_the_tree_the_run_started_with(
-    scratch: pathlib.Path, isolation: kinds.IsolationLevel
+    scratch: pathlib.Path,
+    isolation: kinds.IsolationLevel,
+    build_dispatcher: Callable[..., dispatch.ToolDispatcher],
 ) -> None:
     """A symlinked grant is the same tree for every launch of a run, whoever re-points it.
 
@@ -135,7 +137,7 @@ def test_a_grant_repointed_between_two_launches_keeps_the_tree_the_run_started_w
             }
         }
     )
-    run = dispatch.ToolDispatcher(root=repo, config=cfg, isolation=isolation)
+    run = build_dispatcher(root=repo, config=cfg, isolation=isolation)
     try:
         before = run.dispatch("run_command", {"argv": ["cat", f"{grant}/name"]}).to_wire()
         assert before["returncode"] == 0 and before["stdout"] == "first\n", before

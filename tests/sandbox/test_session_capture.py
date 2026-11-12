@@ -11,6 +11,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.sandbox import jail, jail_jobs, jail_session
+from agent6.sessions import shells as session_shells
 from agent6.tools import background
 
 
@@ -277,6 +278,6 @@ def test_lost_outcome_and_copied_output_survive_replay(
     session._proc.wait(timeout=5)  # pyright: ignore[reportPrivateUsage]
     shells.settle()
     shells.stop_all()
-    replay = background.roster_from_dir(tmp_path / "shells")
+    replay = session_shells.roster_from_dir(tmp_path / "shells")
     assert len(replay) == 1 and "outcome unknown" in replay[0]
     assert (shells.log_root / view.id / "out.log").read_bytes() == b"before\n"

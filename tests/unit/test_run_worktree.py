@@ -16,6 +16,7 @@ import pathlib
 import shlex
 import subprocess
 import time
+from collections.abc import Callable
 from typing import Any
 from unittest import mock
 
@@ -39,6 +40,7 @@ from agent6.harness import subrun
 from agent6.providers import ProviderResponse
 from agent6.sessions import ipc, lock
 from agent6.sessions import manifest as sessions_manifest
+from agent6.tools import dispatch
 from agent6.ui.cli import cli_main
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.ui.cli import run as cli_run
@@ -1369,31 +1371,31 @@ def test_a_setup_on_resume_leaves_the_runs_own_files_in_its_commits(
 
 @pytest.mark.parametrize("unavailable", [False, True])
 def test_dispatch_setup_keeps_timeout_and_wraps_jail_unavailability(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, unavailable: bool
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    unavailable: bool,
+    build_dispatcher: Callable[..., dispatch.ToolDispatcher],
 ) -> None:
     """Setup retains its jail timeout and reports jail refusal through prepare, not an abort."""
-    from agent6.sandbox import jail
-    from agent6.tools import dispatch
+    from agent6.sandbox import jail, jail_session
 
     cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}}).with_setup_command(
         ("true",)
     )
-    seen: list[kinds.JailPolicy] = []
+    seen: list[tuple[tuple[str, ...], float]] = []
 
-    def run(policy: kinds.JailPolicy, **kwargs: object) -> kinds.CommandResult:
-        seen.append(policy)
+    def run(
+        _self: jail_session.JailSession, argv: tuple[str, ...], *, timeout_s: float, **_kw: object
+    ) -> kinds.CommandResult:
+        seen.append((argv, timeout_s))
         if unavailable:
             raise jail.JailUnavailableError("namespace unavailable")
         return kinds.CommandResult(
-            argv=policy.argv,
-            returncode=124,
-            stdout="",
-            stderr="timed out",
-            duration_s=policy.timeout_s,
+            argv=argv, returncode=124, stdout="", stderr="timed out", duration_s=timeout_s
         )
 
-    monkeypatch.setattr(jail, "run_in_jail", run)
-    dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=cfg, isolation="none")
+    monkeypatch.setattr(jail_session.JailSession, "run", run)
+    dispatcher = build_dispatcher(root=tmp_path, config=cfg)
     prepared = workspace_setup.prepare(
         cfg,
         tmp_path,
@@ -1405,11 +1407,11 @@ def test_dispatch_setup_keeps_timeout_and_wraps_jail_unavailability(
         assert "namespace unavailable" in prepared.problem
         assert prepared.result is None
     else:
-        setup_policy = next(policy for policy in seen if policy.argv == ("true",))
-        assert setup_policy.timeout_s > 0
+        setup_timeout = next(timeout for argv, timeout in seen if argv == ("true",))
+        assert setup_timeout > 0
         assert prepared.result is not None
         assert prepared.result.returncode == 124
-        assert prepared.result.duration_s == setup_policy.timeout_s
+        assert prepared.result.duration_s == setup_timeout
 
 
 class _FailingSetup:

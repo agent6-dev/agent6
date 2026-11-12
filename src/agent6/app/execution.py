@@ -365,7 +365,6 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 session_net=session_net,
                 worktree_git_dir=inputs.worktree_git_dir,
             )
-        assert access.session is not None
         cfg = inputs.gate(cfg, budget, access.session.executable_available)
 
         steer_state = frontend.make_steer_state(

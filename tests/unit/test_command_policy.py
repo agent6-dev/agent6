@@ -5,12 +5,14 @@
 from __future__ import annotations
 
 import pathlib
+from collections.abc import Callable
 
 import pytest
 
 from agent6 import portable
 from agent6.app import frontend as app_frontend
 from agent6.config import Config
+from agent6.sandbox import jail_session
 from agent6.sessions import ipc
 from agent6.tools import dispatch, operator_prompts
 
@@ -125,9 +127,10 @@ def test_parallel_makes_the_operator_decide_once(commands: str, refused: bool) -
         assert "agent6 config set sandbox.run_commands" in err
 
 
-@pytest.mark.needs_namespaces
 def test_a_single_no_refuses_one_call_and_withdraws_nothing(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    build_dispatcher: Callable[..., dispatch.ToolDispatcher],
 ) -> None:
     """A single "no" refuses one call and withdraws nothing."""
     from agent6 import kinds
@@ -141,7 +144,7 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(
         return operator_prompts.ApprovalAnswer(next(answers) == "yes", "stdin")
 
     prompts = operator_prompts.OperatorPrompts(approver=_answer, session_dir=tmp_path)
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path, prompts=prompts)
+    d = build_dispatcher(root=tmp_path, config=cfg, session_dir=tmp_path, prompts=prompts)
     for _ in range(2):
         with pytest.raises(Exception, match="not approved"):
             d.dispatch("run_command", {"argv": ["true"]})
@@ -150,12 +153,12 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(
         assert set(d.available_tool_names()) >= _COMMAND_TOOLS
 
     # The mirror: a single "yes" runs exactly that call and widens nothing.
-    def _ran(policy: kinds.JailPolicy, **_kw: object) -> kinds.CommandResult:
-        return kinds.CommandResult(
-            argv=tuple(policy.argv), returncode=0, stdout="", stderr="", duration_s=0.01
-        )
+    def _ran(
+        _self: jail_session.JailSession, argv: tuple[str, ...], **_kw: object
+    ) -> kinds.CommandResult:
+        return kinds.CommandResult(argv=argv, returncode=0, stdout="", stderr="", duration_s=0.01)
 
-    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", _ran)
+    monkeypatch.setattr(jail_session.JailSession, "run", _ran)
     assert d.dispatch("run_command", {"argv": ["true"]}).to_wire()["returncode"] == 0
     assert d.command_policy() == "ask"
     assert not ipc.session_deny_set(tmp_path, ipc.COMMAND_SCOPE)

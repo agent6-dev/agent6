@@ -585,14 +585,12 @@ def build_session_tools(
             curator=curator,
             run_root_node_id=None,  # Harness seeds the root + calls set_run_root_node_id
             mcp_manager=mcp_manager,
-            worktree_git_dir=worktree_git_dir,
             mode=mode,
             state_dir=state_dir,
             session_dir=layout.session_dir,
             findings=functools.partial(review_actions.findings_result, layout.session_dir),
             command_access=access,
             execution_id=execution_id,
-            session_net=session_net,
         )
     except BaseException:
         access.close()
