@@ -16,7 +16,8 @@ from agent6.app import merge, role_providers
 from agent6.sessions import journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import main
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:

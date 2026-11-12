@@ -1099,7 +1099,7 @@ def test_jail_fork_worktree_reads_the_repository_git(
     """
     from agent6.config import Config
     from agent6.tools import policy as tools_policy
-    from agent6.vcs import git_ops
+    from agent6.vcs.git import ops as git_ops
 
     repo = tmp_path / "repo"
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)

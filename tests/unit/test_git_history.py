@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for the read-only history helpers in agent6.vcs.git_ops, on a repository built here."""
+"""Tests for the read-only history helpers in agent6.vcs.git.ops, on a repository built here."""
 
 from __future__ import annotations
 
@@ -11,7 +11,9 @@ import subprocess
 
 import pytest
 
-from agent6.vcs import git_files, git_history, git_read
+from agent6.vcs.git import files as git_files
+from agent6.vcs.git import history as git_history
+from agent6.vcs.git import read as git_read
 
 _CLOCK = {"n": 0}
 # Two valid PNGs, so an image's "before" and "after" differ in size and dimensions.

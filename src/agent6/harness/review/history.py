@@ -10,7 +10,8 @@ import pydantic
 
 from agent6 import errors, review_records
 from agent6.sessions import event_log
-from agent6.vcs import git_read, review
+from agent6.vcs import review
+from agent6.vcs.git import read as git_read
 
 
 class ReviewHistoryError(Exception):

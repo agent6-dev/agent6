@@ -22,7 +22,9 @@ from agent6.sessions import id, lineage, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import common, steer_tty
-from agent6.vcs import git_ops, git_policy, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import policy as git_policy
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import format, newest_session_dir, session_dirs, summarize_session_dir, wire
 from agent6.viewmodel import listing as viewmodel_listing
 from agent6.viewmodel.session import status as session_status

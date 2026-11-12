@@ -47,7 +47,8 @@ from agent6.sessions import ipc, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main, lane_agent, main
 from agent6.ui.cli import parallel as parallel_cmd
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing
 from agent6.viewmodel.session import log as session_log
 from agent6.viewmodel.session import status as session_status

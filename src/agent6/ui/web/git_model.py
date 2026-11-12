@@ -16,7 +16,11 @@ from typing import Any
 
 from agent6 import errors, paths
 from agent6.ui.web import diff_highlight, highlight, markdown
-from agent6.vcs import git_diff, git_files, git_history, git_ops, git_read
+from agent6.vcs.git import diff as git_diff
+from agent6.vcs.git import files as git_files
+from agent6.vcs.git import history as git_history
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import format, listing
 
 # Commits per graph page, and the most a request may ask for.

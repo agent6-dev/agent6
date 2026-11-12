@@ -14,7 +14,8 @@ from textual import app, containers, screen, widgets
 
 from agent6 import terminal
 from agent6.ui.tui import menubar, screen_chrome
-from agent6.vcs import git_files, git_read
+from agent6.vcs.git import files as git_files
+from agent6.vcs.git import read as git_read
 
 _MAX_BYTES = 1 << 20
 

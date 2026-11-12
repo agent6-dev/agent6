@@ -13,7 +13,7 @@ from agent6 import review_records
 from agent6.harness import llm_json
 from agent6.harness.review import panel as review_panel
 from agent6.sessions import completion
-from agent6.vcs import git_files
+from agent6.vcs.git import files as git_files
 
 
 def build_user_message(ctx: review_panel.ReviewContext) -> str:

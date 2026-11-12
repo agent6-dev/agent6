@@ -24,7 +24,8 @@ from agent6.providers import ProviderResponse
 from agent6.sessions import ipc
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import cli_main, run
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 
 _CONFIG = """
 [sandbox]

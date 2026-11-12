@@ -13,7 +13,8 @@ import os
 import pathlib
 
 from agent6 import errors, kinds, path_safety, review_records, terminal
-from agent6.vcs import git_read, review_rule_reader
+from agent6.vcs import review_rule_reader
+from agent6.vcs.git import read as git_read
 
 _REPO_MAP_MAX_LINES = 60
 _REPO_MAP_MAX_FILES_PER_DIR = 6

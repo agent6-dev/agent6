@@ -27,7 +27,7 @@ from agent6.sandbox import (
 from agent6.tools import policy as tools_policy
 from agent6.tools import target_policy
 from agent6.ui.cli import check_render, common, sandbox_paths
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 _FILE_TOOLS = (
     "read_file, list_dir, outline, find_definition, find_references, apply_edit, apply_patch"

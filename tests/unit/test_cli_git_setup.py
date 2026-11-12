@@ -16,7 +16,8 @@ from agent6.app import preflight
 from agent6.config import Config, ConfigError
 from agent6.ui.cli import init_cmds as ic
 from agent6.ui.cli import init_wizard, main
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 
 
 def test_headless_approval_refusal(monkeypatch: pytest.MonkeyPatch) -> None:

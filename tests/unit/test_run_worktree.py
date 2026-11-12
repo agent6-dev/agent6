@@ -45,7 +45,8 @@ from agent6.tools import dispatch
 from agent6.ui.cli import cli_main
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.ui.cli import run as cli_run
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing
 from tests import lane_env
 

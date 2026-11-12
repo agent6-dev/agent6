@@ -47,7 +47,8 @@ from agent6.ui.cli import (
     main,
     resume,  # pyright: ignore[reportPrivateUsage]
 )
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import session_state_as_dict
 
 pytestmark = pytest.mark.usefixtures("linked_worktrees")

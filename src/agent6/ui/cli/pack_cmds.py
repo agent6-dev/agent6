@@ -5,7 +5,8 @@ from __future__ import annotations
 import pathlib
 
 from agent6 import errors, pack, paths
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 
 
 def cmd_pack(*, repo_config: bool = False) -> int:

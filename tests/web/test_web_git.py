@@ -22,7 +22,10 @@ import pytest
 
 from agent6.ui.web import git_model, page
 from agent6.ui.web import server as web_server
-from agent6.vcs import git_diff, git_files, git_history, git_read
+from agent6.vcs.git import diff as git_diff
+from agent6.vcs.git import files as git_files
+from agent6.vcs.git import history as git_history
+from agent6.vcs.git import read as git_read
 from tests.unit.test_git_history import (
     PNG_BLUE_2X2,
     PNG_RED_1X1,

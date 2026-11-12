@@ -83,7 +83,7 @@ from agent6.providers import (
 from agent6.sessions import completion, journal, process
 from agent6.tools import dispatch, operator_prompts, schema, tool_errors
 from agent6.tools import results as tools_results
-from agent6.vcs import git_ops
+from agent6.vcs.git import ops as git_ops
 
 # Bytes a repeated tool result must exceed before the dedupe stub replaces it.
 _DEDUPE_MIN_CHARS = 500

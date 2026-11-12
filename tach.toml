@@ -86,9 +86,9 @@ depends_on = [
   "agent6.tools.target_policy",
   "agent6.tools.verify_infer",
   "agent6.vcs.commit_message",
-  "agent6.vcs.git_ops",
-  "agent6.vcs.git_policy",
-  "agent6.vcs.git_read",
+  "agent6.vcs.git.ops",
+  "agent6.vcs.git.policy",
+  "agent6.vcs.git.read",
   "agent6.vcs.review",
   "agent6.viewmodel",
 ]
@@ -161,9 +161,9 @@ depends_on = [
   "agent6.ui.tui",
   "agent6.ui.web",
   "agent6.vcs.commit_message",
-  "agent6.vcs.git_ops",
-  "agent6.vcs.git_policy",
-  "agent6.vcs.git_read",
+  "agent6.vcs.git.ops",
+  "agent6.vcs.git.policy",
+  "agent6.vcs.git.read",
   "agent6.viewmodel",
   "agent6.viewmodel.receipt",
 ]
@@ -226,10 +226,10 @@ depends_on = [
   "agent6.tools.target_policy",
   "agent6.tools.verify_infer",  # gateless runs adopt a verify mid-run (deterministic tiers)
   "agent6.vcs.commit_message",
-  "agent6.vcs.git_files",
-  "agent6.vcs.git_ops",
-  "agent6.vcs.git_read",
-  "agent6.vcs.git_snapshots",
+  "agent6.vcs.git.files",
+  "agent6.vcs.git.ops",
+  "agent6.vcs.git.read",
+  "agent6.vcs.git.snapshots",
   "agent6.vcs.review",
   "agent6.vcs.review_rule_reader",
   "agent6.viewmodel",  # the run review folds a session's record with the one listing scan
@@ -284,8 +284,8 @@ depends_on = []
 [[modules]]
 path = "agent6.ui.tui"
 # agent6.app: /undo forks in-process (app.fork), like ui.acp and ui.web.
-# agent6.vcs.git_read: one branch-tips snapshot per hub poll (the unmerged mark).
-depends_on = ["agent6.app", "agent6.budget", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.layer_data", "agent6.config.layer_presets", "agent6.config.notices", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.evidence", "agent6.graph.order", "agent6.kinds", "agent6.machine", "agent6.models.choices", "agent6.paths", "agent6.portable", "agent6.review_records", "agent6.sessions.ipc", "agent6.sessions.journal", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.sessions.shells", "agent6.terminal", "agent6.ui.directive_actions", "agent6.ui.keymap", "agent6.ui.notify", "agent6.ui.spawn", "agent6.vcs.git_files", "agent6.vcs.git_history", "agent6.vcs.git_read", "agent6.viewmodel", "agent6.viewmodel.receipt"]
+# agent6.vcs.git.read: one branch-tips snapshot per hub poll (the unmerged mark).
+depends_on = ["agent6.app", "agent6.budget", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.layer_data", "agent6.config.layer_presets", "agent6.config.notices", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.evidence", "agent6.graph.order", "agent6.kinds", "agent6.machine", "agent6.models.choices", "agent6.paths", "agent6.portable", "agent6.review_records", "agent6.sessions.ipc", "agent6.sessions.journal", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.sessions.shells", "agent6.terminal", "agent6.ui.directive_actions", "agent6.ui.keymap", "agent6.ui.notify", "agent6.ui.spawn", "agent6.vcs.git.files", "agent6.vcs.git.history", "agent6.vcs.git.read", "agent6.viewmodel", "agent6.viewmodel.receipt"]
 
 [[modules]]
 # What a composer line does when it is not a steer, for every entry point that
@@ -449,11 +449,11 @@ depends_on = [
   "agent6.ui.spawn",
   "agent6.ui.telemetry",
   # One branch-tips snapshot per hub poll (the listing's unmerged mark).
-  "agent6.vcs.git_diff",
-  "agent6.vcs.git_files",
-  "agent6.vcs.git_history",
-  "agent6.vcs.git_ops",
-  "agent6.vcs.git_read",
+  "agent6.vcs.git.diff",
+  "agent6.vcs.git.files",
+  "agent6.vcs.git.history",
+  "agent6.vcs.git.ops",
+  "agent6.vcs.git.read",
   "agent6.viewmodel",
   "agent6.viewmodel.receipt",
   # The sign-in secret is minted from the session-id wordlist.
@@ -501,7 +501,7 @@ depends_on = [
   "agent6.sessions.shells",
   "agent6.task_text",
   "agent6.terminal",
-  "agent6.vcs.git_read",
+  "agent6.vcs.git.read",
   "agent6.viewmodel.telemetry_machine",
   "agent6.viewmodel.telemetry_metrics",
   "agent6.viewmodel.telemetry_records",
@@ -523,7 +523,7 @@ depends_on = ["agent6.viewmodel.telemetry_metrics"]
 [[modules]]
 # tools: a manifest is read through the workspace containment the file tools use.
 path = "agent6.tools.verify_infer"
-depends_on = ["agent6.path_safety", "agent6.vcs.git_read"]
+depends_on = ["agent6.path_safety", "agent6.vcs.git.read"]
 
 
 [[modules]]
@@ -570,48 +570,48 @@ path = "agent6.vcs.commit_message"
 depends_on = ["agent6.task_text"]  # the squash headline is the task's headline
 
 [[modules]]
-path = "agent6.vcs.git_command"
-depends_on = ["agent6.errors", "agent6.kinds", "agent6.vcs.git_policy"]
+path = "agent6.vcs.git.command"
+depends_on = ["agent6.errors", "agent6.kinds", "agent6.vcs.git.policy"]
 
 [[modules]]
 path = "agent6.vcs.review_rule_reader"
-depends_on = ["agent6.errors", "agent6.path_safety", "agent6.review_records", "agent6.vcs.git_files", "agent6.vcs.git_read"]
+depends_on = ["agent6.errors", "agent6.path_safety", "agent6.review_records", "agent6.vcs.git.files", "agent6.vcs.git.read"]
 
 [[modules]]
-path = "agent6.vcs.git_diff"
-depends_on = ["agent6.errors", "agent6.vcs.git_files", "agent6.vcs.git_history"]
+path = "agent6.vcs.git.diff"
+depends_on = ["agent6.errors", "agent6.vcs.git.files", "agent6.vcs.git.history"]
 
 [[modules]]
-path = "agent6.vcs.git_files"
-depends_on = ["agent6.errors", "agent6.path_safety", "agent6.vcs.git_command", "agent6.vcs.git_history", "agent6.vcs.git_read"]
+path = "agent6.vcs.git.files"
+depends_on = ["agent6.errors", "agent6.path_safety", "agent6.vcs.git.command", "agent6.vcs.git.history", "agent6.vcs.git.read"]
 
 [[modules]]
-path = "agent6.vcs.git_history"
-depends_on = ["agent6.errors", "agent6.vcs.git_command", "agent6.vcs.git_read"]
+path = "agent6.vcs.git.history"
+depends_on = ["agent6.errors", "agent6.vcs.git.command", "agent6.vcs.git.read"]
 
 [[modules]]
-path = "agent6.vcs.git_ops"
-depends_on = ["agent6.errors", "agent6.vcs.git_command", "agent6.vcs.git_policy", "agent6.vcs.git_read"]
+path = "agent6.vcs.git.ops"
+depends_on = ["agent6.errors", "agent6.vcs.git.command", "agent6.vcs.git.policy", "agent6.vcs.git.read"]
 
 [[modules]]
-path = "agent6.vcs.git_snapshots"
-depends_on = ["agent6.errors", "agent6.vcs.git_command", "agent6.vcs.git_read"]
+path = "agent6.vcs.git.snapshots"
+depends_on = ["agent6.errors", "agent6.vcs.git.command", "agent6.vcs.git.read"]
 
 [[modules]]
-path = "agent6.vcs.git_read"
-depends_on = ["agent6.errors", "agent6.paths", "agent6.vcs.commit_message", "agent6.vcs.git_command"]
+path = "agent6.vcs.git.read"
+depends_on = ["agent6.errors", "agent6.paths", "agent6.vcs.commit_message", "agent6.vcs.git.command"]
 
 [[modules]]
-path = "agent6.vcs.git_policy"
+path = "agent6.vcs.git.policy"
 depends_on = ["agent6.child_env", "agent6.errors"]
 
 [[modules]]
 path = "agent6.vcs.review"
-depends_on = ["agent6.errors", "agent6.path_safety", "agent6.review_records", "agent6.vcs.git_command", "agent6.vcs.git_files", "agent6.vcs.git_history", "agent6.vcs.git_policy", "agent6.vcs.git_read", "agent6.vcs.review_submodules"]
+depends_on = ["agent6.errors", "agent6.path_safety", "agent6.review_records", "agent6.vcs.git.command", "agent6.vcs.git.files", "agent6.vcs.git.history", "agent6.vcs.git.policy", "agent6.vcs.git.read", "agent6.vcs.review_submodules"]
 
 [[modules]]
 path = "agent6.vcs.review_submodules"
-depends_on = ["agent6.errors", "agent6.path_safety", "agent6.vcs.git_command"]
+depends_on = ["agent6.errors", "agent6.path_safety", "agent6.vcs.git.command"]
 
 [[modules]]
 # The package __init__ re-exports the models as the public API.
@@ -871,7 +871,7 @@ path = "agent6.sessions.id"
 # so the generator and the guard sit together rather than each caller spelling
 # the path out. git_read: an explicit --session-id must be a valid git branch
 # name (it becomes agent6/<id> and refs/agent6/<id>/head) before state creation.
-depends_on = ["agent6.graph.ulid", "agent6.sessions.layout", "agent6.vcs.git_read", "agent6.words"]
+depends_on = ["agent6.graph.ulid", "agent6.sessions.layout", "agent6.vcs.git.read", "agent6.words"]
 
 [[modules]]
 path = "agent6.words"
@@ -1002,7 +1002,7 @@ depends_on = ["agent6.paths", "agent6.portable", "agent6.sessions.event_log", "a
 [[modules]]
 # Routing and lifecycle own the command helpers' inputs; execution stays jailed.
 path = "agent6.tools.dispatch"
-depends_on = ["agent6.config", "agent6.context.memory", "agent6.context.skills", "agent6.errors", "agent6.evidence", "agent6.graph.curator", "agent6.kinds", "agent6.path_safety", "agent6.paths", "agent6.sandbox", "agent6.sessions.event_log", "agent6.sessions.ipc", "agent6.sessions.journal", "agent6.sessions.layout", "agent6.sessions.shells", "agent6.tools", "agent6.tools.command_tools", "agent6.tools.schema", "agent6.tools.target_policy", "agent6.vcs.git_read"]
+depends_on = ["agent6.config", "agent6.context.memory", "agent6.context.skills", "agent6.errors", "agent6.evidence", "agent6.graph.curator", "agent6.kinds", "agent6.path_safety", "agent6.paths", "agent6.sandbox", "agent6.sessions.event_log", "agent6.sessions.ipc", "agent6.sessions.journal", "agent6.sessions.layout", "agent6.sessions.shells", "agent6.tools", "agent6.tools.command_tools", "agent6.tools.schema", "agent6.tools.target_policy", "agent6.vcs.git.read"]
 
 [[modules]]
 path = "agent6.tools.command_tools"
@@ -1030,11 +1030,11 @@ depends_on = ["agent6.kinds"]
 
 [[modules]]
 path = "agent6.vcs.commit_graph"
-depends_on = ["agent6.errors", "agent6.vcs.git_command"]
+depends_on = ["agent6.errors", "agent6.vcs.git.command"]
 
 [[modules]]
 path = "agent6.viewmodel.receipt"
-depends_on = ["agent6.budget", "agent6.errors", "agent6.evidence", "agent6.sessions.manifest", "agent6.vcs.commit_graph", "agent6.vcs.git_read", "agent6.viewmodel"]
+depends_on = ["agent6.budget", "agent6.errors", "agent6.evidence", "agent6.sessions.manifest", "agent6.vcs.commit_graph", "agent6.vcs.git.read", "agent6.viewmodel"]
 
 [[modules]]
 path = "agent6.media"

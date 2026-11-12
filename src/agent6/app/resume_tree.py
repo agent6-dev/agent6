@@ -23,7 +23,8 @@ from agent6 import errors, terminal
 from agent6.app import preflight
 from agent6.app import reporter as app_reporter
 from agent6.tools import schema
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 
 _LISTED = 10
 

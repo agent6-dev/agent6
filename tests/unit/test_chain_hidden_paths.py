@@ -8,7 +8,7 @@ import pathlib
 import subprocess
 
 from agent6.harness import run_chain
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 
 def _git(root: pathlib.Path, *args: str) -> str:

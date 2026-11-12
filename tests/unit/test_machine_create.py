@@ -344,7 +344,7 @@ def test_create_commit_guidance_applies_only_to_a_target_in_git(
     in_git: bool,
 ) -> None:
     """The commit hint describes run's repository check, not a rule for non-git bundles."""
-    from agent6.vcs import git_ops
+    from agent6.vcs.git import ops as git_ops
 
     monkeypatch.chdir(tmp_path)
     _stub_preflight(monkeypatch)

@@ -20,7 +20,7 @@ from agent6.sandbox import jail
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.cli import sessions_cmds, sessions_merge
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 
 def test_merge_planner_passes_the_explicit_config_path(

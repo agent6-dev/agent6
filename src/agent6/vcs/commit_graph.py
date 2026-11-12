@@ -6,7 +6,7 @@ import pathlib
 import re
 
 from agent6 import errors
-from agent6.vcs import git_command
+from agent6.vcs.git import command as git_command
 
 
 def parents(root: pathlib.Path, commit: str) -> tuple[str, ...]:

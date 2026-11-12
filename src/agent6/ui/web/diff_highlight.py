@@ -7,7 +7,8 @@ import re
 from typing import Literal
 
 from agent6.ui.web import highlight
-from agent6.vcs import git_files, git_history
+from agent6.vcs.git import files as git_files
+from agent6.vcs.git import history as git_history
 
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _HEADER = re.compile(r'^diff --git ("(?:[^"\\]|\\.)*"|a/.*?) ("(?:[^"\\]|\\.)*"|b/.*)$')

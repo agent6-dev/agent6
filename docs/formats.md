@@ -2763,7 +2763,7 @@ Source: [`agent6.app.review.actions.ActionResult`](https://github.com/agent6-dev
 
 **Support: public.** One line's last commit; an empty sha marks uncommitted content.
 
-Source: [`agent6.vcs.git_files.BlameLine`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git_files.py).
+Source: [`agent6.vcs.git.files.BlameLine`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git/files.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2778,7 +2778,7 @@ Source: [`agent6.vcs.git_files.BlameLine`](https://github.com/agent6-dev/agent6/
 
 **Support: public.** One entry of a tree listing.
 
-Source: [`agent6.vcs.git_files.TreeFile`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git_files.py).
+Source: [`agent6.vcs.git.files.TreeFile`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git/files.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |

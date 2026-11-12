@@ -41,7 +41,7 @@ from agent6.providers import claude_code, oauth, provider_types
 from agent6.sandbox import detect, jail
 from agent6.sessions import event_log, journal, manifest
 from agent6.tools import mcp_client, mcp_http, policy
-from agent6.vcs import git_policy
+from agent6.vcs.git import policy as git_policy
 
 
 def budget_tracker(cfg: Config, *, max_usd: float | None = None) -> agent6_budget.BudgetTracker:

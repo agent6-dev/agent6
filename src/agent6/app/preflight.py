@@ -27,7 +27,7 @@ from agent6.providers import TranscriptSink
 from agent6.sandbox import tool_paths
 from agent6.sessions import event_log, ipc, journal, manifest
 from agent6.tools import schema, verify_infer
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import format, listing
 
 

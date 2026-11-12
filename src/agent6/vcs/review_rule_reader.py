@@ -6,7 +6,8 @@ import pathlib
 import posixpath
 
 from agent6 import errors, path_safety, review_records
-from agent6.vcs import git_files, git_read
+from agent6.vcs.git import files as git_files
+from agent6.vcs.git import read as git_read
 
 _LINK_LIMIT = 8
 _LINK_BYTES = 64 * 1024

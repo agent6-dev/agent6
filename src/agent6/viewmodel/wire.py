@@ -15,7 +15,7 @@ from agent6 import budget
 from agent6.machine import MachineJournal, load_machine
 from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import comparison, format, lanes, listing, state_view, tail
 from agent6.viewmodel import state as viewmodel_state
 from agent6.viewmodel.machine import logs as machine_logs

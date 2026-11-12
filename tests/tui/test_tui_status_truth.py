@@ -122,7 +122,7 @@ def test_end_hold_title_uses_the_listing_label(
 ) -> None:
     """A finished TUI title includes the unmerged mark its hub row shows."""
     from agent6.sessions import manifest
-    from agent6.vcs import git_read
+    from agent6.vcs.git import read as git_read
 
     monkeypatch.chdir(tmp_path)
     subprocess.run(["git", "init", "-q"], check=True)

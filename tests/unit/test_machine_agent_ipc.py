@@ -12,7 +12,7 @@ import pathlib
 
 from agent6.app.machine import agent
 from agent6.machine import AgentExecResult, AgentRequest, schema
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 _REQUEST = agent.MachineAgentRequest(
     cwd=pathlib.Path("/work/repo"),

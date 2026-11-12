@@ -27,7 +27,7 @@ from agent6.providers import ProviderResponse
 from agent6.sessions import journal, lane_dispatch
 from agent6.tools import results as tools_results
 from agent6.ui.cli import parallel as cli_parallel
-from agent6.vcs import git_ops
+from agent6.vcs.git import ops as git_ops
 from agent6.viewmodel import transcript as viewmodel_transcript
 
 

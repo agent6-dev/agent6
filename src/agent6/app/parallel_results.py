@@ -20,7 +20,7 @@ from agent6.harness import judge, subrun
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import format, listing, produced_result, summarize_session_dir
 from agent6.viewmodel.session import log as session_log
 

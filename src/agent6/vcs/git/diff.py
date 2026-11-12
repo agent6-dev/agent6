@@ -8,7 +8,8 @@ import os
 import pathlib
 
 from agent6 import errors
-from agent6.vcs import git_files, git_history
+from agent6.vcs.git import files as git_files
+from agent6.vcs.git import history as git_history
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

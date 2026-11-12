@@ -20,7 +20,8 @@ from agent6.config import ConfigError, io, layer, layer_data, layer_presets, wri
 from agent6.models import choices
 from agent6.sessions import layout, manifest, process
 from agent6.ui.web import diff_highlight
-from agent6.vcs import git_history, git_read
+from agent6.vcs.git import history as git_history
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import (
     MachineSummary,
     config_view,

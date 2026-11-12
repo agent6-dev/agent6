@@ -63,7 +63,7 @@ def _patch_git(monkeypatch: pytest.MonkeyPatch, wf: loop.Harness) -> None:
     def _status(_root: object, **_kw: object) -> object:
         return wf._git_status()  # pyright: ignore[reportAttributeAccessIssue]
 
-    monkeypatch.setattr("agent6.vcs.git_read.status", _status)
+    monkeypatch.setattr("agent6.vcs.git.read.status", _status)
 
 
 def _state() -> loop_state.LoopState:
@@ -229,7 +229,7 @@ def test_an_unreadable_git_claims_nothing(monkeypatch: pytest.MonkeyPatch) -> No
         raise errors.GitError("index.lock held")
 
     state, turn = _state(), _turn()
-    monkeypatch.setattr("agent6.vcs.git_read.status", _boom)
+    monkeypatch.setattr("agent6.vcs.git.read.status", _boom)
     _wf().gate.note_result(state, turn, _verify(1))
     assert state.verify.baseline_ok is None
 

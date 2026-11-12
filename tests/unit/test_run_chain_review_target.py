@@ -9,7 +9,7 @@ import pytest
 
 from agent6 import errors
 from agent6.harness import run_chain
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:

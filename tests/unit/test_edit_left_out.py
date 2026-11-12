@@ -19,7 +19,7 @@ from agent6.harness import loop_conversation, loop_snapshot, loop_state, run_cha
 from agent6.sessions import journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import results
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 from tests.unit import test_harness
 from tests.unit.turn_context import turn_context
 

@@ -49,7 +49,9 @@ from agent6.sessions import event_log, ipc, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import command_tools, dispatch, operator_prompts, target_policy
-from agent6.vcs import commit_message, git_ops, git_read
+from agent6.vcs import commit_message
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import policy, transcript_text
 
 

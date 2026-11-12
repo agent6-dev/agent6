@@ -18,7 +18,8 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
 from agent6.ui.cli import common, sessions_cmds
-from agent6.vcs import commit_message, git_read
+from agent6.vcs import commit_message
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing, scan_session_log, tail_events, worker_models
 
 # The gate words that mean the gate did not certify the run's final tree.

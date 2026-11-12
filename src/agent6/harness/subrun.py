@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Clone a lane's workspace and import its finished branch and run dir.
 
-Git plumbing over `agent6.vcs.git_ops`, with no model, UI or process spawning; `app.parallel`
+Git plumbing over `agent6.vcs.git.ops`, with no model, UI or process spawning; `app.parallel`
 drives a `LaneSpawner` over it.
 """
 
@@ -13,7 +13,8 @@ import shutil
 
 from agent6 import errors, kinds, lane_records, paths
 from agent6.sessions import layout, lineage, process
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 
 
 class SubrunError(Exception):

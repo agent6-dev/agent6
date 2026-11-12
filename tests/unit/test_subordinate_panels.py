@@ -38,7 +38,7 @@ from agent6.sessions import (
 from agent6.sessions import manifest as session_manifest
 from agent6.tools import dispatch, tool_errors
 from agent6.ui.cli import parallel
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing, receipt
 from tests import lane_env, subordinate_env
 

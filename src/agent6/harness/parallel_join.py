@@ -14,7 +14,8 @@ from agent6.graph import curator as graph_curator
 from agent6.graph import models as graph_models
 from agent6.harness import dag_focus
 from agent6.sessions import lane_dispatch
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 
 
 def join_lane_result(

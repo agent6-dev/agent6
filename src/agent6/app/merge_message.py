@@ -16,7 +16,8 @@ from agent6.providers import ProviderError, TranscriptSink, call_for_text
 from agent6.sessions import event_log
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import commit_message, git_read
+from agent6.vcs import commit_message
+from agent6.vcs.git import read as git_read
 
 
 def squash_message(

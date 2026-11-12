@@ -20,7 +20,7 @@ from agent6 import paths, portable
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.cli import main, sessions_cmds, steer_tty
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 pytestmark = pytest.mark.usefixtures("linked_worktrees")
 

@@ -20,7 +20,8 @@ from agent6 import errors, evidence, review_records
 from agent6.sessions import manifest
 from agent6.ui import keymap
 from agent6.ui.tui import forms
-from agent6.vcs import git_history, git_read
+from agent6.vcs.git import history as git_history
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import SessionState, format
 
 

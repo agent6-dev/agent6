@@ -19,7 +19,8 @@ from agent6.app import reporter, undo
 from agent6.harness import loop_snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, process
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel.session import log as session_log
 from agent6.viewmodel.session import status as session_status
 

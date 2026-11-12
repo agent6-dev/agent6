@@ -28,7 +28,8 @@ from agent6.machine import (
     dry_run,
 )
 from agent6.sessions import event_log, id, journal, layout, lock, process
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 
 _CREATE_TIMEOUT_S = 900.0
 

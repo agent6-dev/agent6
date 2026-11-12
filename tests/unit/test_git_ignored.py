@@ -4,7 +4,8 @@ import pathlib
 
 import pytest
 
-from agent6.vcs import git_files, git_read
+from agent6.vcs.git import files as git_files
+from agent6.vcs.git import read as git_read
 from tests.unit import test_git_history
 
 

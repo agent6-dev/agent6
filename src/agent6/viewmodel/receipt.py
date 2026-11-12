@@ -12,7 +12,8 @@ import pydantic
 
 from agent6 import budget, errors, evidence
 from agent6.sessions import manifest
-from agent6.vcs import commit_graph, git_read
+from agent6.vcs import commit_graph
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import lanes
 from agent6.viewmodel import review as review_view
 from agent6.viewmodel.session import log as session_log

@@ -12,7 +12,7 @@ from agent6 import terminal
 from agent6.harness import loop_conversation, loop_snapshot, loop_state
 from agent6.sessions import journal, lane_dispatch
 from agent6.tools import operator_prompts
-from agent6.vcs import git_ops
+from agent6.vcs.git import ops as git_ops
 
 if TYPE_CHECKING:
     from agent6.harness import loop

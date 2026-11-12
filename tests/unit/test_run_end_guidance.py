@@ -13,7 +13,7 @@ from agent6.harness import loop_snapshot
 from agent6.providers import ProviderResponse
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import cli_main
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:

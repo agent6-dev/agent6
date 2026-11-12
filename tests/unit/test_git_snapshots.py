@@ -5,7 +5,9 @@ import pathlib
 import pytest
 
 from agent6 import errors
-from agent6.vcs import git_ops, git_read, git_snapshots
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
+from agent6.vcs.git import snapshots as git_snapshots
 from tests import review_helpers
 
 

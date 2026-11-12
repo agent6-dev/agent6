@@ -15,7 +15,7 @@ from agent6.harness import loop, loop_resume, loop_snapshot, loop_state, run_cha
 from agent6.sandbox import jail_session
 from agent6.sessions import event_log
 from agent6.tools import command_tools, dispatch, result_format, results, tool_errors
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 from tests.unit import test_verify_finish_gate as gate_tests
 
 

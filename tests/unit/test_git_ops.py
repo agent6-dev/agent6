@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.vcs.git_ops on a temporary repository."""
+"""Tests for agent6.vcs.git.ops on a temporary repository."""
 
 from __future__ import annotations
 
@@ -13,7 +13,11 @@ from unittest import mock
 import pytest
 
 from agent6 import errors, kinds
-from agent6.vcs import commit_message, git_command, git_ops, git_policy, git_read, review
+from agent6.vcs import commit_message, review
+from agent6.vcs.git import command as git_command
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import policy as git_policy
+from agent6.vcs.git import read as git_read
 
 
 def _init_repo(path: pathlib.Path) -> None:
@@ -417,10 +421,10 @@ def test_create_branch_at_idempotent_and_refuses_move(tmp_path: pathlib.Path) ->
 
 def test_only_the_vcs_package_imports_the_runner() -> None:
     """Only the `vcs` package's modules may import or access the private git runner."""
-    root = pathlib.Path(git_ops.__file__).parents[1]
+    root = pathlib.Path(git_ops.__file__).parents[2]
     callers: list[str] = []
     for path in root.rglob("*.py"):
-        if path.parent == root / "vcs":
+        if root / "vcs" in path.parents:
             continue
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if (
@@ -428,15 +432,15 @@ def test_only_the_vcs_package_imports_the_runner() -> None:
                 or (isinstance(node, ast.Attribute) and node.attr == "git_command")
                 or (
                     isinstance(node, ast.Import)
-                    and any(a.name == "agent6.vcs.git_command" for a in node.names)
+                    and any(a.name == "agent6.vcs.git.command" for a in node.names)
                 )
                 or (
                     isinstance(node, ast.ImportFrom)
                     and (
-                        node.module == "agent6.vcs.git_command"
+                        node.module == "agent6.vcs.git.command"
                         or (
-                            node.module == "agent6.vcs"
-                            and any(a.name == "git_command" for a in node.names)
+                            node.module == "agent6.vcs.git"
+                            and any(a.name == "command" for a in node.names)
                         )
                     )
                 )
@@ -445,8 +449,11 @@ def test_only_the_vcs_package_imports_the_runner() -> None:
     assert not callers, f"git runner access outside the vcs package: {callers}"
 
 
+_VCS = pathlib.Path(git_ops.__file__).parents[1]
+
+
 @pytest.mark.parametrize(
-    "module_name", sorted(p.name for p in pathlib.Path(git_ops.__file__).parent.glob("*.py"))
+    "module_name", sorted(p.relative_to(_VCS).as_posix() for p in _VCS.rglob("*.py"))
 )
 def test_the_vcs_package_never_spells_a_destructive_verb(module_name: str) -> None:
     """Pin every module of the `vcs` package, including direct subprocess calls.
@@ -454,8 +461,7 @@ def test_the_vcs_package_never_spells_a_destructive_verb(module_name: str) -> No
     The one sanctioned exception is force_delete_squash_merged_branch's `branch -D`, operator-only
     and content-safe.
     """
-    root = pathlib.Path(git_ops.__file__).parent
-    src = (root / module_name).read_text(encoding="utf-8")
+    src = (_VCS / module_name).read_text(encoding="utf-8")
     tree = ast.parse(src)
     forbidden = {"push", "--force", "-f", "--hard", "rebase", "--amend", "filter-branch", "-D"}
     offenders: list[str] = []
@@ -475,7 +481,7 @@ def test_the_vcs_package_never_spells_a_destructive_verb(module_name: str) -> No
             # `stash push` is git's stash verb, not a remote push.
             if "stash" in words:
                 hit -= {"push"}
-            if module_name == "git_ops.py" and fn.name == "force_delete_squash_merged_branch":
+            if module_name == "git/ops.py" and fn.name == "force_delete_squash_merged_branch":
                 hit -= {"-D"}
             if hit:
                 offenders.append(f"{module_name}:{fn.name}: {sorted(hit)}")
@@ -1374,7 +1380,7 @@ def test_conventional_subject_derives_type_and_scope() -> None:
     assert got == "feat(config): one write path"
     # Modified-only source -> fix.
     got = commit_message.conventional_commit_subject(
-        [("M", "src/agent6/vcs/git_ops.py")], summary="Trailer emitted once."
+        [("M", "src/agent6/vcs/git/ops.py")], summary="Trailer emitted once."
     )
     assert got == "fix(vcs): trailer emitted once"
     # No changes at all still yields a valid subject.

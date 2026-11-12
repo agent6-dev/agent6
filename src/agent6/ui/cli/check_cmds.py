@@ -26,7 +26,7 @@ from agent6.sandbox import (
 )
 from agent6.tools import mcp_client, verify_infer
 from agent6.ui.cli import check_render, check_sandbox, common
-from agent6.vcs import git_policy
+from agent6.vcs.git import policy as git_policy
 
 
 def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:

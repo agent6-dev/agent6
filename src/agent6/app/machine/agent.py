@@ -44,7 +44,9 @@ from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox import jail
 from agent6.sessions import event_log, ipc, process
 from agent6.tools import dispatch, operator_prompts
-from agent6.vcs import commit_message, git_ops, git_read
+from agent6.vcs import commit_message
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel.machine import logs as machine_logs
 
 

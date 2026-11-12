@@ -20,7 +20,7 @@ from agent6.config import Config, ConfigError, validate_config
 from agent6.harness import loop as harness_loop
 from agent6.machine import AgentRequest
 from agent6.tools import dispatch
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 
 def _cfg(network: str = "session") -> Config:

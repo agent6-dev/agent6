@@ -399,7 +399,7 @@ def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
     import subprocess
 
     from agent6.sessions import layout as sessions_layout
-    from agent6.vcs import git_ops
+    from agent6.vcs.git import ops as git_ops
 
     repo = tmp_path / "repo"
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)

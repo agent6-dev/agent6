@@ -9,7 +9,8 @@ import shlex
 from agent6 import errors, review_records
 from agent6.harness import repo_context
 from agent6.prompts import review_directive as review_prompt
-from agent6.vcs import git_read, review
+from agent6.vcs import review
+from agent6.vcs.git import read as git_read
 
 PATCH_MAX_BYTES = 64 * 1024
 NO_CHANGES = "no uncommitted changes to review"

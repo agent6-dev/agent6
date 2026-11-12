@@ -24,7 +24,7 @@ from agent6.sandbox import detect
 from agent6.sessions import event_log
 from agent6.ui.cli import check_cmds as cli_check_cmds  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli import main
-from agent6.vcs import git_policy
+from agent6.vcs.git import policy as git_policy
 
 
 @pytest.mark.parametrize("name", ["chatgpt", "work"])

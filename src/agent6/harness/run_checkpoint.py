@@ -16,7 +16,8 @@ from agent6 import errors
 from agent6.harness import run_chain
 from agent6.providers import Provider, ProviderError, call_for_text
 from agent6.sessions import journal
-from agent6.vcs import commit_message, git_read
+from agent6.vcs import commit_message
+from agent6.vcs.git import read as git_read
 
 if TYPE_CHECKING:
     from agent6.harness import loop_state

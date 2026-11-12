@@ -6,7 +6,9 @@ from typing import Any
 import pytest
 
 from agent6.ui.web import git_model, highlight, model, review_routes
-from agent6.vcs import git_diff, git_history, git_read
+from agent6.vcs.git import diff as git_diff
+from agent6.vcs.git import history as git_history
+from agent6.vcs.git import read as git_read
 from tests.unit import test_git_history
 
 

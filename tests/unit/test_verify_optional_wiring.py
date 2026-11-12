@@ -24,7 +24,7 @@ from agent6.harness import loop_snapshot, prompt_blocks, run_chain
 from agent6.harness.verify import verdict as verify_verdict
 from agent6.sandbox import detect, tool_paths
 from agent6.tools import dispatch
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 
 def _cfg(*, verify: bool) -> Config:

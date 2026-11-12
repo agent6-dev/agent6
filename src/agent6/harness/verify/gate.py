@@ -21,7 +21,7 @@ from agent6.harness.verify import scope as verify_scope
 from agent6.harness.verify import verdict as verify_verdict
 from agent6.sessions import journal
 from agent6.tools import dispatch, results, tool_errors, verify_infer
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 if TYPE_CHECKING:
     from agent6.harness import loop_state

@@ -19,7 +19,8 @@ from collections.abc import Iterator
 import pytest
 
 from agent6 import errors
-from agent6.vcs import git_ops, git_policy
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import policy as git_policy
 
 
 @pytest.fixture(autouse=True)
@@ -174,7 +175,7 @@ def test_blame_and_the_other_diff_family_verbs_do_not_run_a_repo_textconv(
     The runner forced the builtin renderer for `diff` and `show` only; `blame`, `diff-tree`
     and `log` take the same flags.
     """
-    from agent6.vcs import git_files
+    from agent6.vcs.git import files as git_files
 
     root = _repo(tmp_path / "r")
     marker = tmp_path / "pwned"
@@ -191,7 +192,7 @@ def test_blame_keeps_an_author_time_python_cannot_date(tmp_path: pathlib.Path) -
     """A commit dated past year 9999 raised `ValueError` out of blame; the row keeps the time."""
     import os
 
-    from agent6.vcs import git_files
+    from agent6.vcs.git import files as git_files
 
     root = _repo(tmp_path / "r")
     (root / "f.txt").write_text("v2\n", encoding="utf-8")
@@ -213,7 +214,7 @@ def test_blame_refuses_an_ignore_revs_file_outside_the_repository(tmp_path: path
     Git quotes the file's first unparsable line in its error, so a poisoned `.git/config`
     read any host file a line at a time through `/api/git/blame`.
     """
-    from agent6.vcs import git_files
+    from agent6.vcs.git import files as git_files
 
     root = _repo(tmp_path / "r")
     secret = tmp_path / "token.txt"
@@ -229,7 +230,7 @@ def test_blame_refuses_an_ignore_revs_file_outside_the_repository(tmp_path: path
 
 def test_blame_honours_an_ignore_revs_file_inside_the_repository(tmp_path: pathlib.Path) -> None:
     """A repository-relative `blame.ignoreRevsFile` naming a commit still attributes lines."""
-    from agent6.vcs import git_files
+    from agent6.vcs.git import files as git_files
 
     root = _repo(tmp_path / "r")
     first = _git(root, "rev-parse", "HEAD").stdout.strip()
@@ -251,7 +252,7 @@ def test_blame_refuses_an_ignore_revs_file_whose_name_holds_a_newline(
     Git reads the value whole, so a file named `a<newline>b` that links outside the repository
     passed a check that split the value into `a` and `b`, two regular files inside it.
     """
-    from agent6.vcs import git_files
+    from agent6.vcs.git import files as git_files
 
     root = _repo(tmp_path / "r")
     secret = tmp_path / "token.txt"
@@ -276,7 +277,8 @@ def test_blame_reads_a_private_copy_of_the_ignore_revs_file(
     A jailed command that swapped the file for a link between the check and git's open had
     git read a host file; blame runs in a private work tree holding a copy.
     """
-    from agent6.vcs import git_command, git_files
+    from agent6.vcs.git import command as git_command
+    from agent6.vcs.git import files as git_files
 
     root = _repo(tmp_path / "r")
     secret = tmp_path / "token.txt"

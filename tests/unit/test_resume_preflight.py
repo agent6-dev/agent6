@@ -28,7 +28,7 @@ from agent6.sessions import event_log, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import resume as cli_resume  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli import run as cli_run
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 
 def _git_repo(path: pathlib.Path) -> None:

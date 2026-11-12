@@ -44,7 +44,7 @@ from agent6.ui.tui import (
     screen_chrome,
     theme,
 )
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,
     SessionSummary,

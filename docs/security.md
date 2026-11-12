@@ -572,7 +572,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 
 **agent6's own git**
 
-- agent6's own commits, refs and merges go through `vcs/git_ops.py`, its queries through `vcs/git_read.py`, and the web Git and Files tabs' reads through `vcs/git_history.py` and `vcs/git_files.py`.
+- agent6's own commits, refs and merges go through `vcs/git/ops.py`, its queries through `vcs/git/read.py`, and the web Git and Files tabs' reads through `vcs/git/history.py` and `vcs/git/files.py`.
   Only the `vcs` package's modules may import the private runner, `git_command.py`, enforced by `test_only_the_vcs_package_imports_the_runner`.
     - the package spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable.
       `test_the_vcs_package_never_spells_a_destructive_verb` pins every verb but `filter-repo` in every module of the package, exempting two argv: `push` inside a `git stash push`, and the one `branch -D` below
@@ -855,8 +855,8 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 <details markdown="1">
 <summary>Allowed host-side subprocesses by module</summary>
 
-- `vcs/git_command.py` and `vcs/git_ops.py`: agent6's own git operations ([Git](#7-git)); the other `vcs` modules run git through `git_command`, except the config query the next line names.
-- `vcs/git_policy.py`: shared hardening flags and hook/driver policy; its fixed git config query enumerates repo content drivers.
+- `vcs/git/command.py` and `vcs/git/ops.py`: agent6's own git operations ([Git](#7-git)); the other `vcs` modules run git through `git_command`, except the config query the next line names.
+- `vcs/git/policy.py`: shared hardening flags and hook/driver policy; its fixed git config query enumerates repo content drivers.
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
 - `sandbox/container.py`: bounded `ps`/`inspect` discovery and the fixed installation bootstrap through operator-owned prefixes ([Container transport boundary](#container-transport-boundary)).
   Model argv travels only through the prepared `JailSession` channel, never through a host subprocess argv.

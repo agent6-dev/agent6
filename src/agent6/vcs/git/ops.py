@@ -19,7 +19,9 @@ import tempfile
 from collections.abc import Collection, Sequence
 
 from agent6 import errors
-from agent6.vcs import git_command, git_policy, git_read
+from agent6.vcs.git import command as git_command
+from agent6.vcs.git import policy as git_policy
+from agent6.vcs.git import read as git_read
 
 
 def stash_tracked_changes(path: pathlib.Path, message: str, paths: Collection[str] = ()) -> None:

@@ -10,7 +10,9 @@ from agent6 import paths, review_records
 from agent6.harness import loop_state, run_chain
 from agent6.harness.review import gate as review_gate
 from agent6.sessions import event_log, layout
-from agent6.vcs import git_ops, git_read, review
+from agent6.vcs import review
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from tests import review_helpers, review_lane_env
 from tests.unit import test_review_gate
 

@@ -355,7 +355,8 @@ def test_runs_list_marks_a_branchless_chain_unmerged(
     """A branch_per_run-off run's hidden chain carries the unmerged mark like a visible branch."""
     import subprocess
 
-    from agent6.vcs import git_ops, git_read
+    from agent6.vcs.git import ops as git_ops
+    from agent6.vcs.git import read as git_read
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -409,7 +410,8 @@ def test_a_merge_names_the_unmerged_runs_that_changed_the_same_paths(
 
     A listing flagged every such pair on every read, at one tree diff per unmerged run.
     """
-    from agent6.vcs import git_ops, git_read
+    from agent6.vcs.git import ops as git_ops
+    from agent6.vcs.git import read as git_read
     from tests import review_helpers
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -501,7 +503,8 @@ def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(
     """
     import subprocess
 
-    from agent6.vcs import git_ops, git_read
+    from agent6.vcs.git import ops as git_ops
+    from agent6.vcs.git import read as git_read
     from agent6.viewmodel import summarize_session_dir
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))

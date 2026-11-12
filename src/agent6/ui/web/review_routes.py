@@ -16,7 +16,10 @@ from agent6.app.review import actions as review_actions
 from agent6.sessions import layout
 from agent6.ui import spawn
 from agent6.ui.web import diff_highlight, git_model, highlight
-from agent6.vcs import git_diff, git_files, git_history, git_read
+from agent6.vcs.git import diff as git_diff
+from agent6.vcs.git import files as git_files
+from agent6.vcs.git import history as git_history
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing, receipt, review, scan_session_log
 
 

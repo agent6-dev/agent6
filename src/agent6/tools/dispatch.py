@@ -51,7 +51,7 @@ from agent6.tools import (
     tool_errors,
 )
 from agent6.tools import policy as tools_policy
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 # An MCP approval prompt carries the full arguments up to this bound, then a session-dir file.
 _PAYLOAD_IDS = itertools.count(1)

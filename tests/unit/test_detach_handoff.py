@@ -129,7 +129,8 @@ def test_a_resume_names_what_the_tree_holds_that_no_commit_does(tmp_path: pathli
     """
     import subprocess
 
-    from agent6.vcs import git_ops, git_read
+    from agent6.vcs.git import ops as git_ops
+    from agent6.vcs.git import read as git_read
 
     repo = tmp_path / "repo"
     repo.mkdir()

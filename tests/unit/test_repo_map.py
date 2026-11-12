@@ -11,7 +11,7 @@ import subprocess
 import pytest
 
 from agent6.harness import prompt_blocks, repo_context
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 
 def _repo_map(root: pathlib.Path) -> str:

@@ -52,7 +52,8 @@ from agent6.sandbox import detect, jail
 from agent6.sessions import layout, lock, process
 from agent6.tools import policy as tools_policy
 from agent6.tools import result_format, target_policy
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel.machine import logs as machine_logs
 from agent6.viewmodel.machine import state as machine_state
 

@@ -12,7 +12,7 @@ from agent6.app import merge
 from agent6.config import Config
 from agent6.sessions import journal, manifest
 from agent6.sessions import layout as sessions_layout
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 from tests.unit import test_cli_sessions_merge as merge_tests
 
 
@@ -88,7 +88,7 @@ def test_reversal_uses_objects_even_after_source_ref_pruning(
         tmp_path, "receipt", commits=[("a", "one", "one"), ("b", "two", "two")]
     )
     source = merge_tests._git(tmp_path, "rev-parse", "agent6/receipt")
-    from agent6.vcs import git_ops
+    from agent6.vcs.git import ops as git_ops
 
     landed = git_ops.plumb_merge(tmp_path, "main", source, method=method, message="land").merged_sha
     merge_tests._git(tmp_path, "update-ref", "-d", "refs/heads/agent6/receipt")
@@ -123,7 +123,7 @@ def test_reversal_refuses_missing_objects_and_unverified_parents(tmp_path: pathl
 
 def test_fast_forward_with_merges_requires_a_manual_plan(tmp_path: pathlib.Path) -> None:
     """Fast-forward reversal never guesses a mainline for a landed merge."""
-    from agent6.vcs import git_ops
+    from agent6.vcs.git import ops as git_ops
     from agent6.viewmodel import receipt
 
     base = merge_tests._setup_run(tmp_path, "receipt", commits=[("a", "one", "one")])
@@ -314,7 +314,7 @@ def test_historical_baseline_marks_only_its_observation(tmp_path: pathlib.Path) 
 def test_revert_request_carries_recorded_facts(tmp_path: pathlib.Path, method: str | None) -> None:
     """A new worker gets recorded facts without needing masked session files."""
     from agent6.app import stamps
-    from agent6.vcs import git_ops
+    from agent6.vcs.git import ops as git_ops
     from agent6.viewmodel import receipt
 
     base = merge_tests._setup_run(tmp_path, "receipt", commits=[("a", "one", "one")])

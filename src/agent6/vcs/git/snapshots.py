@@ -5,7 +5,8 @@ from __future__ import annotations
 import pathlib
 
 from agent6 import errors
-from agent6.vcs import git_command, git_read
+from agent6.vcs.git import command as git_command
+from agent6.vcs.git import read as git_read
 
 
 def snapshot_commit(

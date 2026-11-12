@@ -13,7 +13,8 @@ import pytest
 from agent6.config import Config
 from agent6.harness import loop, loop_state, run_chain
 from agent6.tools import dispatch
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 
 
 def _wf(

@@ -18,7 +18,8 @@ from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import common, steer_tty
-from agent6.vcs import git_policy, git_read
+from agent6.vcs.git import policy as git_policy
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import events, newest_session_dir
 from agent6.viewmodel.session import log as session_log
 

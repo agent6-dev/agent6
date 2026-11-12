@@ -17,7 +17,8 @@ from agent6.app import finalize as _finalize
 from agent6.app import reporter
 from agent6.harness import advice, loop_snapshot
 from agent6.sessions import layout as sessions_layout
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 
 
 def _layout(

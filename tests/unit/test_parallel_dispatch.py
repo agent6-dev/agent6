@@ -14,7 +14,8 @@ import pytest
 from agent6 import directive, errors, lane_records
 from agent6.app import lanes, parallel, preflight
 from agent6.harness import parallel_dispatch, parallel_join
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 
 
 def _res(

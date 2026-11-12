@@ -18,7 +18,8 @@ from typing import Literal
 from agent6 import errors, paths, terminal
 from agent6.sessions import lock, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import session_dirs
 
 

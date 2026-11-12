@@ -10,7 +10,7 @@ import pathlib
 import subprocess
 
 from agent6 import errors, kinds
-from agent6.vcs import git_policy
+from agent6.vcs.git import policy as git_policy
 
 # Local ops finish in well under a second; this fires only on a stuck filesystem or a held lock.
 GIT_TIMEOUT_S = 120.0

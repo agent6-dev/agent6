@@ -37,7 +37,8 @@ from agent6.sessions import layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import run
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:

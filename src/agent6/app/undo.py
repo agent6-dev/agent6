@@ -27,7 +27,8 @@ from agent6.harness import loop_snapshot
 from agent6.sessions import event_log, journal, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel.session import log as session_log
 
 _STEER_NOTICE = "OPERATOR STEERING"

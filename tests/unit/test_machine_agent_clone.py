@@ -22,7 +22,8 @@ from agent6.config import Config
 from agent6.machine import AgentRequest
 from agent6.providers import ProviderResponse
 from agent6.sandbox import jail as sandbox_jail
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 
 BRANCH = "agent6/machine-m1"
 CHAIN = git_read.chain_ref_for("machine-m1")

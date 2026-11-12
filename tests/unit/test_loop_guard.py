@@ -989,7 +989,7 @@ def test_a_checkpoint_names_the_subtask_the_turn_worked_on(tmp_path: pathlib.Pat
     from agent6.graph import curator as graph_curator
     from agent6.graph import models
     from agent6.sessions import layout as sessions_layout
-    from agent6.vcs import git_read
+    from agent6.vcs.git import read as git_read
 
     repo = tmp_path / "repo"
     _init_repo(repo)

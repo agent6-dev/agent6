@@ -14,7 +14,12 @@ from typing import Literal
 import pydantic
 
 from agent6 import errors, path_safety, review_records
-from agent6.vcs import git_command, git_files, git_history, git_policy, git_read, review_submodules
+from agent6.vcs import review_submodules
+from agent6.vcs.git import command as git_command
+from agent6.vcs.git import files as git_files
+from agent6.vcs.git import history as git_history
+from agent6.vcs.git import policy as git_policy
+from agent6.vcs.git import read as git_read
 
 # Diff grounding: the (path, line) citations this diff supports.
 # Both the old-side and new-side line numbers, so a deletion grounds against the pre-image path.

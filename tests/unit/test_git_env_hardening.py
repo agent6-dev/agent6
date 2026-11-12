@@ -14,7 +14,9 @@ from agent6 import child_env
 from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.ui.cli import ask, sessions_cmds, skills_cmds
-from agent6.vcs import git_command, git_policy, git_read
+from agent6.vcs.git import command as git_command
+from agent6.vcs.git import policy as git_policy
+from agent6.vcs.git import read as git_read
 
 
 @pytest.fixture(autouse=True)

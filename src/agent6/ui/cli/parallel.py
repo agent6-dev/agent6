@@ -22,7 +22,7 @@ from agent6.sessions import id
 from agent6.ui import spawn as ui_spawn
 from agent6.ui import steer
 from agent6.ui.cli import common, compare_ranking, interact
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 
 def lane_runtime() -> app_lanes.LaneRuntime:

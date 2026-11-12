@@ -18,7 +18,7 @@ from agent6 import portable
 from agent6.sessions import ipc as sessions_ipc
 from agent6.sessions import journal, process
 from agent6.ui.cli import common, sessions_show
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 
 def _ts(off_s: float) -> str:

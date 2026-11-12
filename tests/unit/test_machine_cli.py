@@ -447,7 +447,7 @@ def test_uncommitted_refusal_logs_a_git_error_instead_of_silently_failing(
 ) -> None:
     # The dirty-file gate fails open on a GitError but never silently.
     from agent6.app.machine import run as machine_run
-    from agent6.vcs import git_read
+    from agent6.vcs.git import read as git_read
 
     _git_init(tmp_path)
     f = tmp_path / "m.asm.toml"
@@ -1100,7 +1100,7 @@ def test_machine_start_and_resume_share_one_begin_and_setup_source(
     from agent6.config import Config
     from agent6.machine import journal as machine_journal
     from agent6.sessions import layout
-    from agent6.vcs import git_read
+    from agent6.vcs.git import read as git_read
 
     config_home = tmp_path.parent / f"{tmp_path.name}-config"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
@@ -1161,7 +1161,7 @@ def test_fresh_instance_refuses_unmerged_visible_branch(
 ) -> None:
     """An absent or merged chain cannot hide unmerged work on the visible branch."""
     from agent6.machine import journal as machine_journal
-    from agent6.vcs import git_read
+    from agent6.vcs.git import read as git_read
 
     cfg_home = tmp_path.parent / (tmp_path.name + "-cfg")  # outside the workspace
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))

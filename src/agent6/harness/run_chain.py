@@ -12,7 +12,9 @@ import pathlib
 
 from agent6 import errors, review_records
 from agent6.config import GitCommitConfig
-from agent6.vcs import git_ops, git_read, git_snapshots
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
+from agent6.vcs.git import snapshots as git_snapshots
 
 _DIRTY_NOTE_CAP = 500  # paths a dirty-worktree note counts before it says "+"
 

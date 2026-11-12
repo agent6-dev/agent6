@@ -19,7 +19,7 @@ from agent6.app import fork_worktrees, role_providers
 from agent6.providers import ProviderResponse
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 _CONFIG = """
 [sandbox]

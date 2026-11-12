@@ -24,7 +24,7 @@ import shlex
 from collections.abc import Callable, Iterator
 
 from agent6 import path_safety
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 # A command line with any of these, or a leading assignment, is shell, wrapped in `sh -c`.
 _SHELL_META = re.compile(r"[|&;<>`$*]")

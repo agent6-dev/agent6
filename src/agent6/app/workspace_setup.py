@@ -27,7 +27,7 @@ from agent6.config import Config
 from agent6.sandbox import tool_paths
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import target_policy, tool_errors, verify_infer
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 # The lines of the command's output a failure's summary carries.
 _TAIL_LINES = 20

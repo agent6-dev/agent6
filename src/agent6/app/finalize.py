@@ -23,7 +23,9 @@ from agent6.harness import advice, loop_snapshot
 from agent6.sessions import budget_events, event_log, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import commit_message, git_ops, git_read
+from agent6.vcs import commit_message
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import (
     format,
     scan_session_log,

@@ -30,7 +30,7 @@ from agent6.context import skills as agent6_skills
 from agent6.context.skills import Skill, resolve_states  # re-export
 from agent6.tools import http_body
 from agent6.ui.cli import common, steer_menu
-from agent6.vcs import git_policy
+from agent6.vcs.git import policy as git_policy
 
 _ORIGIN_FILE = ".origin.toml"
 _FETCH_TIMEOUT_S = 30.0

@@ -28,7 +28,7 @@ from agent6.sessions import (
     process,
 )
 from agent6.ui.cli import parallel
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 
 def git(repo: pathlib.Path, *args: str) -> str:

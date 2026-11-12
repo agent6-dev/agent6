@@ -41,7 +41,7 @@ from agent6.sessions import ipc, journal, layout, process, shells
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui import directive_actions, spawn
 from agent6.ui.tui import composer, conversation, dashboard, modals, new_work, prompts, theme
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import (
     SessionState,
     context_fill,

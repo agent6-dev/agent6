@@ -32,7 +32,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui import steer
 from agent6.ui.acp import frontend as acp_frontend
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing
 
 # The preflight accepts this snapshot and Conversation.from_wire rejects it: a result with no call.
@@ -1266,7 +1266,7 @@ def test_an_escape_before_the_harness_exists_records_the_tree_too(
     """
     import subprocess
 
-    from agent6.vcs import git_read
+    from agent6.vcs.git import read as git_read
 
     repo = tmp_path / "repo"
     repo.mkdir()

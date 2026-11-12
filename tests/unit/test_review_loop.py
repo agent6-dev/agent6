@@ -22,7 +22,7 @@ from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
 from agent6.sessions import event_log, journal
 from agent6.tools import results
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 from tests import review_helpers, review_lane_env
 from tests.unit.test_review_gate import (
     _exec,  # pyright: ignore[reportPrivateUsage]

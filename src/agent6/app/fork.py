@@ -33,7 +33,8 @@ from agent6.harness import loop_snapshot
 from agent6.sandbox import detect
 from agent6.sessions import id, layout, retention
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import newest_session_dir
 
 # The DAG artifacts copied verbatim when there is no version to rebuild at.

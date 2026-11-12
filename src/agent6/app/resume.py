@@ -41,7 +41,8 @@ from agent6.harness import loop_snapshot, repo_context
 from agent6.sessions import id, ipc, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_ops, git_read
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing
 from agent6.viewmodel.session import log as session_log
 

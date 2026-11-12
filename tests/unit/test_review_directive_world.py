@@ -6,7 +6,7 @@ import subprocess
 import pytest
 
 from agent6.app.review import directive as review_directive
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 
 def git(repo: pathlib.Path, *args: str) -> str:

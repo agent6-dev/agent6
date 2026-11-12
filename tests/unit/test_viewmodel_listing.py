@@ -327,7 +327,7 @@ def test_manifest_branches_names_the_ref_holding_the_commits(tmp_path: pathlib.P
     """
     import subprocess
 
-    from agent6.vcs import git_read
+    from agent6.vcs.git import read as git_read
 
     repo = tmp_path / "repo"
     repo.mkdir()

@@ -19,7 +19,7 @@ from agent6.harness.review import panel as review_panel
 from agent6.harness.review import seat as review_seat
 from agent6.prompts import review
 from agent6.sessions import completion, journal, layout
-from agent6.vcs import git_read
+from agent6.vcs.git import read as git_read
 
 if TYPE_CHECKING:
     from agent6.harness import loop_state
