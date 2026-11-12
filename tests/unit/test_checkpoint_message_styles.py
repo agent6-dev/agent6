@@ -50,13 +50,16 @@ def test_agent6_style_is_the_default_and_unchanged(tmp_path: pathlib.Path) -> No
 
 
 def test_conventional_style_derives_from_the_chain(tmp_path: pathlib.Path) -> None:
-    """The conventional subject's type and scope come from the chain's own delta."""
+    """The conventional subject comes from the chain's own delta, never the model's prose.
+
+    A subject cut from the response read `test: i'll add one test that catches…`.
+    """
     wf = _wf(tmp_path, "conventional")
     target = tmp_path / "src/agent6/config/write.py"
     target.parent.mkdir(parents=True)
     target.write_text("x = 1\n")
-    got = wf.checkpoints.subject(_turn("Add the unified write path."), fallback="verify passed")
-    assert got == "feat(config): add the unified write path"
+    got = wf.checkpoints.subject(_turn("I'll add the unified write path."), fallback="checkpoint")
+    assert got == "feat(config): update src/agent6/config/write.py"
 
 
 def test_model_style_uses_the_provider_text(tmp_path: pathlib.Path) -> None:
@@ -113,7 +116,7 @@ def test_a_pure_rename_is_a_refactor(tmp_path: pathlib.Path) -> None:
     (tmp_path / "old.py").rename(tmp_path / "new.py")
     assert wf.chain.name_status() == (("R100", "new.py"),)
     assert wf.checkpoints.subject(_turn("Rename the module."), fallback="checkpoint") == (
-        "refactor: rename the module"
+        "refactor: update new.py"
     )
 
 

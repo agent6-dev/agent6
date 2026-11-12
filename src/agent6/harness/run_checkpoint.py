@@ -69,11 +69,13 @@ class Checkpoints:
         default = commit_message.agent6_subject(text, turn.number, fallback=fallback)
         if self.style == "agent6":
             return default
-        summary = commit_message.first_prose_line(text, fallback=fallback)
         if self.style == "conventional":
-            return commit_message.conventional_commit_subject(changes, summary=summary)
+            # The delta words it: the response's first line is talk, not a subject.
+            return commit_message.conventional_commit_subject(changes, summary=fallback)
         try:
-            msg = self._model_subject(changes, hint=summary)
+            msg = self._model_subject(
+                changes, hint=commit_message.first_prose_line(text, fallback=fallback)
+            )
         except ProviderError as exc:
             self.log(f"WARNING: model commit message failed ({exc}); using the agent6 style")
             return default
