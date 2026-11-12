@@ -22,14 +22,14 @@ from agent6.viewmodel import (
     listing,
     manifest_branches,
     session_is_live,
-    session_log,
     session_mtime,
     session_placement,
     session_state_as_dict,
-    session_status,
     summarize_session_dir,
     task_snippet,
 )
+from agent6.viewmodel.session import log as session_log
+from agent6.viewmodel.session import status as session_status
 
 
 def test_continuation_keeps_original_task(tmp_path: pathlib.Path) -> None:
@@ -1909,7 +1909,7 @@ def test_a_journal_written_before_the_turn_rename_keeps_its_end_turn(
     tmp_path: pathlib.Path,
 ) -> None:
     """A stop stamped `iterations`, and events stamped `iteration`, still give the turn."""
-    from agent6.viewmodel import session_log
+    from agent6.viewmodel.session import log as session_log
 
     journal = [
         {"type": "session.start", "mode": "run", "user_task": "t"},

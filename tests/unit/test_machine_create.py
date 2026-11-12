@@ -26,7 +26,7 @@ from agent6.machine import (
 )
 from agent6.sandbox import detect
 from agent6.ui.cli import main
-from agent6.viewmodel import session_status
+from agent6.viewmodel.session import status as session_status
 
 VALID_MACHINE = """\
 machine = "greeter"

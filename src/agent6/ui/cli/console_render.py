@@ -22,14 +22,8 @@ from agent6 import kinds, terminal
 from agent6.sessions import journal
 from agent6.ui import notify
 from agent6.ui.cli import task_tree, terminal_guard
-from agent6.viewmodel import (
-    events,
-    format,
-    session_status,
-    transcript,
-    transcript_items,
-    transcript_style,
-)
+from agent6.viewmodel import events, format, transcript, transcript_items, transcript_style
+from agent6.viewmodel.session import status as session_status
 
 _ANSI = {
     "dim": "\033[2m",

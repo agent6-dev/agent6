@@ -51,10 +51,10 @@ from agent6.viewmodel import (
     format,
     is_winner,
     session_dirs,
-    session_status,
     summarize_session_dir,
 )
 from agent6.viewmodel import listing as viewmodel_listing
+from agent6.viewmodel.session import status as session_status
 
 # The poll cadence, the web hub's, so a session that ends while watched stops reading as running.
 _HUB_POLL_S = 4.0

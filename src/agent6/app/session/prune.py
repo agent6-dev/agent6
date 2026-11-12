@@ -9,7 +9,7 @@ import shutil
 from agent6 import portable
 from agent6.app import reporter as app_reporter
 from agent6.sessions import layout, lock, process, retention
-from agent6.viewmodel import session_log
+from agent6.viewmodel.session import log as session_log
 
 
 def prune_artifacts(

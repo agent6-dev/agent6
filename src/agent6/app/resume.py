@@ -42,7 +42,8 @@ from agent6.sessions import id, ipc, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_ops, git_read
-from agent6.viewmodel import listing, session_log
+from agent6.viewmodel import listing
+from agent6.viewmodel.session import log as session_log
 
 
 def resumable_bucket_dirs(state_dir: pathlib.Path) -> list[pathlib.Path]:

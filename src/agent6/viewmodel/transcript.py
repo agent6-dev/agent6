@@ -18,7 +18,8 @@ from typing import Any
 from agent6 import budget, evidence, kinds
 from agent6.sessions import journal
 from agent6.viewmodel import events as viewmodel_events
-from agent6.viewmodel import format, review, session_status, transcript_items, transcript_text
+from agent6.viewmodel import format, review, transcript_items, transcript_text
+from agent6.viewmodel.session import status as session_status
 
 # Text characters, not graphics, so every terminal font renders them.
 CALL = "→"

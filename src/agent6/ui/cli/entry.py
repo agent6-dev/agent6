@@ -26,7 +26,7 @@ from agent6.sandbox import jail
 from agent6.sessions import event_log, process
 from agent6.ui.cli import common, terminal_guard
 from agent6.ui.cli import parser as cli_parser
-from agent6.viewmodel import session_status
+from agent6.viewmodel.session import status as session_status
 
 
 def _plan_title(plan_md: str, max_chars: int | None = 80) -> str:

@@ -9,7 +9,9 @@ import pathlib
 from typing import Any
 
 from agent6.sessions import journal, manifest
-from agent6.viewmodel import events, policy, session_core, session_log, state, state_types
+from agent6.viewmodel import events, policy, state, state_types
+from agent6.viewmodel.session import core as session_core
+from agent6.viewmodel.session import log as session_log
 
 _START: dict[str, Any] = {"type": "session.start", "execution_id": "e1", "user_task": "t"}
 _STARTING: dict[str, Any] = {

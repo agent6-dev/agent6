@@ -8,7 +8,8 @@ import uuid
 import pytest
 
 from agent6.sessions import layout
-from agent6.viewmodel import receipt, session_log
+from agent6.viewmodel import receipt
+from agent6.viewmodel.session import log as session_log
 from tests.unit import test_execution_evidence
 
 saved = test_execution_evidence.saved

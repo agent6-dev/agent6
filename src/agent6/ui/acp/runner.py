@@ -33,8 +33,9 @@ from agent6.ui.acp import frontend as acp_frontend
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
 from agent6.ui.acp import updates
-from agent6.viewmodel import session_log, transcript, transcript_items
 from agent6.viewmodel import tail as viewmodel_tail
+from agent6.viewmodel import transcript, transcript_items
+from agent6.viewmodel.session import log as session_log
 
 # Bounds the join on a tail wedged on a filesystem; `_stop` ends it one read pass after the run.
 DRAIN_S = 5.0

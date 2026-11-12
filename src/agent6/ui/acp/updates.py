@@ -15,13 +15,8 @@ from typing import Any
 
 from agent6 import directive, evidence
 from agent6.sessions import journal
-from agent6.viewmodel import (
-    receipt,
-    session_status,
-    state_view,
-    transcript,
-    transcript_items,
-)
+from agent6.viewmodel import receipt, state_view, transcript, transcript_items
+from agent6.viewmodel.session import status as session_status
 
 # The update a fold item becomes; the operator's own words echo back as a user message.
 _CHUNK_KIND = {

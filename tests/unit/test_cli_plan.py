@@ -10,7 +10,7 @@ import pytest
 
 from agent6 import errors, paths
 from agent6.ui.cli import cli_main, entry, main
-from agent6.viewmodel import session_status
+from agent6.viewmodel.session import status as session_status
 
 
 def _seed_plan(tmp_path: pathlib.Path, session_id: str, body: str) -> pathlib.Path:

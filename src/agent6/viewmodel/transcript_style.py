@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from agent6.viewmodel import session_status, transcript, transcript_items
+from agent6.viewmodel import transcript, transcript_items
+from agent6.viewmodel.session import status as session_status
 
 StyleName = Literal[
     "thinking",

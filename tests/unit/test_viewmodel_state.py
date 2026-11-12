@@ -1326,7 +1326,8 @@ def test_a_question_outside_an_execution_is_nobodys_to_answer_later(tmp_path: pa
 
     from agent6.app import resume_questions
     from agent6.sessions import process
-    from agent6.viewmodel import session_log, state_view
+    from agent6.viewmodel import state_view
+    from agent6.viewmodel.session import log as session_log
 
     gate = {"type": "question.prompt", "id": "question-1", "questions": [{"question": "stash?"}]}
     log = tmp_path / "logs.jsonl"

@@ -33,10 +33,10 @@ from agent6.viewmodel import (
     format,
     produced_result,
     session_is_live,
-    session_log,
     summarize_session_dir,
     tail_events,
 )
+from agent6.viewmodel.session import log as session_log
 
 
 class ParallelError(Exception):

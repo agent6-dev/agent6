@@ -17,7 +17,8 @@ from agent6.models import registry
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.web import model
-from agent6.viewmodel import config_view, machine_snapshot, session_snapshot, session_status
+from agent6.viewmodel import config_view, machine_snapshot, session_snapshot
+from agent6.viewmodel.session import status as session_status
 
 
 def _bucket(cwd: pathlib.Path, sub: str) -> pathlib.Path:

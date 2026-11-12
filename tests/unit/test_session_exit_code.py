@@ -18,7 +18,7 @@ import pytest
 from agent6 import kinds
 from agent6.app import finalize
 from agent6.harness import loop_snapshot
-from agent6.viewmodel import session_status
+from agent6.viewmodel.session import status as session_status
 
 
 def _result(

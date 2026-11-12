@@ -18,7 +18,9 @@ from agent6 import errors, kinds, paths
 from agent6.sessions import ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
-from agent6.viewmodel import comparison, events, format, review, session_log, session_status
+from agent6.viewmodel import comparison, events, format, review
+from agent6.viewmodel.session import log as session_log
+from agent6.viewmodel.session import status as session_status
 
 
 def session_mtime(session_dir: pathlib.Path) -> float:

@@ -15,7 +15,7 @@ from agent6.app import lane_watch, lanes, stop
 from agent6.config import Config, RoleModel
 from agent6.sessions import manifest, process
 from agent6.ui.cli import parallel
-from agent6.viewmodel import session_log
+from agent6.viewmodel.session import log as session_log
 from tests import lane_env
 
 

@@ -12,7 +12,7 @@ from collections.abc import Callable
 from agent6.app.session import setup as session_setup
 from agent6.sessions import layout
 from agent6.ui.cli import common, resume
-from agent6.viewmodel import session_log
+from agent6.viewmodel.session import log as session_log
 
 # Free text is the next execution's operator instruction, as `--steer` carries it.
 _NEXT_PROMPT = "next (/exit to finish): "

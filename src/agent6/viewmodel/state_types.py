@@ -8,7 +8,8 @@ import dataclasses
 from typing import Literal
 
 from agent6 import budget, evidence, kinds
-from agent6.viewmodel import format, review, session_status
+from agent6.viewmodel import format, review
+from agent6.viewmodel.session import status as session_status
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
 

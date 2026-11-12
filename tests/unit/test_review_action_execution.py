@@ -16,7 +16,7 @@ from agent6.app.review import actions as review_actions
 from agent6.sessions import event_log, ipc, lock, process
 from agent6.ui import spawn
 from agent6.ui.cli import main
-from agent6.viewmodel import session_log
+from agent6.viewmodel.session import log as session_log
 from tests import review_helpers
 
 

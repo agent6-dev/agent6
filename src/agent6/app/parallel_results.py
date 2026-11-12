@@ -21,7 +21,8 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
 from agent6.vcs import git_read
-from agent6.viewmodel import format, listing, produced_result, session_log, summarize_session_dir
+from agent6.viewmodel import format, listing, produced_result, summarize_session_dir
+from agent6.viewmodel.session import log as session_log
 
 
 def imported_branch_note(origin: pathlib.Path, branch: str) -> str:

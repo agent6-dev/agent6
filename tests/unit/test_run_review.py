@@ -27,7 +27,7 @@ from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
 from agent6.sessions import journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import main
-from agent6.viewmodel import session_log
+from agent6.viewmodel.session import log as session_log
 
 _EVENTS: list[dict[str, Any]] = [
     {

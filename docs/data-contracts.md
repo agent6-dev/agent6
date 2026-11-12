@@ -96,7 +96,7 @@ Fold review evidence and operator history for every session reader.
 
 Public fields: [Formats](formats.md#reviewview).
 
-- **Written by:** viewmodel/{session_log, state}
+- **Written by:** viewmodel/state, viewmodel/session/log
 - **Read by:** app/review/actions, ui/acp/review, ui/cli/sessions_findings, ui/tui/review, ui/web/review_routes, viewmodel/{listing, log_line, receipt, state_types, state_view, telemetry, transcript, transcript_text}
 - **Guarded by:** [test_viewmodel_review.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_review.py) (5 test files exercise it)
 
@@ -155,7 +155,7 @@ The manifest.json shape and its one reader; `app.stamps` is the writer.
 Public fields: [Formats](formats.md#sessionmanifest).
 
 - **Written by:** app/stamps
-- **Read by:** app/{compare, execution, finalize, fork, fork_worktrees, lane_launch, lanes, merge, merge_message, parallel, parallel_results, preflight, resume, resume_chain, run, stop, undo, workdirs, workspace_setup}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/{directive_actions, mcp_server}, ui/acp/session, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/model, viewmodel/{comparison, format, lanes, listing, policy, receipt, session_status, state_view, wire}
+- **Read by:** app/{compare, execution, finalize, fork, fork_worktrees, lane_launch, lanes, merge, merge_message, parallel, parallel_results, preflight, resume, resume_chain, run, stop, undo, workdirs, workspace_setup}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/{directive_actions, mcp_server}, ui/acp/session, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/model, viewmodel/{comparison, format, lanes, listing, policy, receipt, state_view, wire}, viewmodel/session/status
 - **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (48 test files exercise it)
 
 ## SessionSnapshot
@@ -229,7 +229,7 @@ Read logs.jsonl rows into the journal's records, with the coercions old run dirs
 Public fields: [Formats](formats.md#journal).
 
 - **Written by:** viewmodel/events
-- **Read by:** app/lanes, harness/review/session, ui/cli/{ask, console_render, machine_cmds, plan_watch, repl}, ui/tui/machines, viewmodel/{__init__, listing, log_line, review, session_core, session_log, state, telemetry, transcript, transcript_items, transcript_text}
+- **Read by:** app/lanes, harness/review/session, ui/cli/{ask, console_render, machine_cmds, plan_watch, repl}, ui/tui/machines, viewmodel/{__init__, listing, log_line, review, state, telemetry, transcript, transcript_items, transcript_text}, viewmodel/session/{core, log}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (8 test files exercise it)
 
 ## MachineSpec

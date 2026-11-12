@@ -48,7 +48,7 @@ from agent6.sessions import event_log, ipc, journal, process
 from agent6.tools import mcp_client, operator_prompts
 from agent6.tools import results as tools_results
 from agent6.tools import schema as tools_schema
-from agent6.viewmodel import session_status
+from agent6.viewmodel.session import status as session_status
 from tests.unit.turn_context import turn_context
 
 # The `[git]` surface the loop reads, empty as a real Config carries it unset.

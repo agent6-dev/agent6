@@ -8,7 +8,8 @@ from importlib import resources
 
 import pytest
 
-from agent6.viewmodel import review, session_log
+from agent6.viewmodel import review
+from agent6.viewmodel.session import log as session_log
 from tests.web.test_web_files_client import _DOM
 
 

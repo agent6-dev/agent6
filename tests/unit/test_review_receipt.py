@@ -415,7 +415,8 @@ def test_receipt_uses_one_shared_scan_without_per_line_adapters(tmp_path: pathli
 
     import pydantic
 
-    from agent6.viewmodel import receipt, session_log
+    from agent6.viewmodel import receipt
+    from agent6.viewmodel.session import log as session_log
 
     row = json.dumps({"type": "verify.end", "verify_id": "v", "command": ["true"], "exit_code": 0})
     (tmp_path / "logs.jsonl").write_text((row + "\n") * 2000)
@@ -433,7 +434,8 @@ def test_receipt_uses_one_shared_scan_without_per_line_adapters(tmp_path: pathli
 def test_torn_live_journal_keeps_evidence_but_cannot_certify(tmp_path: pathlib.Path) -> None:
     """A torn multibyte tail keeps earlier output without certifying a tree."""
     from agent6.sessions import event_log
-    from agent6.viewmodel import receipt, session_log
+    from agent6.viewmodel import receipt
+    from agent6.viewmodel.session import log as session_log
 
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     sink.emit(

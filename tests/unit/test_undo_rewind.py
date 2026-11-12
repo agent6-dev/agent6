@@ -20,7 +20,8 @@ from agent6.harness import loop_snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, process
 from agent6.vcs import git_ops, git_read
-from agent6.viewmodel import session_log, session_status
+from agent6.viewmodel.session import log as session_log
+from agent6.viewmodel.session import status as session_status
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:

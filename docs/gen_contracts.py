@@ -105,7 +105,7 @@ CONTRACTS: tuple[Contract, ...] = (
         public_format="reviewview",
         module="agent6.viewmodel.review",
         primary=("FindingView", "ReviewView", "MergeReviewGuard"),
-        writers=("viewmodel/state.py", "viewmodel/session_log.py"),
+        writers=("viewmodel/state.py", "viewmodel/session/log.py"),
         pins=("tests/unit/test_viewmodel_review.py",),
     ),
     Contract(

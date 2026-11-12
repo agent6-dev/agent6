@@ -34,7 +34,7 @@ def test_the_settled_reading_reaches_the_journal_and_the_end_block(
 ) -> None:
     """The end block printed the settled movement; `sessions show` kept the earlier figure."""
     from agent6.sessions import event_log
-    from agent6.viewmodel import session_log
+    from agent6.viewmodel.session import log as session_log
 
     layout = _layout(
         tmp_path,

@@ -43,11 +43,11 @@ from agent6.viewmodel.machine.state import (  # re-export
     verb_answer,
 )
 from agent6.viewmodel.policy import session_policy  # re-export
-from agent6.viewmodel.session_log import (  # re-export
+from agent6.viewmodel.session.log import (  # re-export
     LogScan,
     scan_session_log,
 )
-from agent6.viewmodel.session_status import (  # re-export
+from agent6.viewmodel.session.status import (  # re-export
     LIVE_STATUS_WORDS,
     StatusFacts,
     died_without_end,

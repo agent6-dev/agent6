@@ -781,7 +781,7 @@ def test_attention_notice_names_a_wait_and_an_end() -> None:
     """The hub announces a session that starts waiting, or a live one that ended; nothing else."""
     from agent6.ui.tui import home as tui_home
     from agent6.viewmodel import listing as viewmodel_listing
-    from agent6.viewmodel import session_status
+    from agent6.viewmodel.session import status as session_status
 
     def summary(status: str, detail: str = "") -> viewmodel_listing.SessionSummary:
         return viewmodel_listing.SessionSummary(

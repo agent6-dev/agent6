@@ -302,7 +302,7 @@ def test_a_real_lane_ends_by_its_deadline(short_repo: pathlib.Path, tmp_path: pa
     """A lane whose model keeps running commands ends at its deadline, not as a success."""
     from agent6 import paths
     from agent6.app import workdirs
-    from agent6.viewmodel import session_log
+    from agent6.viewmodel.session import log as session_log
     from tests import lane_env
 
     clone = short_repo / "clone"

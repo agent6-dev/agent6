@@ -88,7 +88,7 @@ def test_activity_keeps_the_last_readable_recorded_time(
     tmp_path: pathlib.Path, journal: bytes, expected: float
 ) -> None:
     """Tail lookup agrees with the full scan, including large, untimed and torn final lines."""
-    from agent6.viewmodel import session_log
+    from agent6.viewmodel.session import log as session_log
 
     log = tmp_path / "logs.jsonl"
     log.write_bytes(journal)

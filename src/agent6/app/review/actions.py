@@ -15,7 +15,8 @@ from agent6 import review_records
 from agent6.sessions import event_log, ipc, journal, layout, lock, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import results, tool_errors
-from agent6.viewmodel import review, session_log
+from agent6.viewmodel import review
+from agent6.viewmodel.session import log as session_log
 
 Source = Literal["cli", "tui", "web", "acp"]
 

@@ -25,7 +25,8 @@ from agent6.harness import judge as harness_judge
 from agent6.providers import Provider, ProviderError, TranscriptSink
 from agent6.sessions import event_log
 from agent6.sessions import manifest as sessions_manifest
-from agent6.viewmodel import format, listing, session_status
+from agent6.viewmodel import format, listing
+from agent6.viewmodel.session import status as session_status
 
 # Builds the reviewer provider the judge call uses.
 BuildProvider = Callable[

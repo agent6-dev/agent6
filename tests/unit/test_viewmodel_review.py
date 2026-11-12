@@ -9,7 +9,8 @@ import pytest
 
 from agent6 import review_records
 from agent6.sessions import event_log, journal
-from agent6.viewmodel import review, session_log, state, state_view
+from agent6.viewmodel import review, state, state_view
+from agent6.viewmodel.session import log as session_log
 from tests import review_helpers
 
 

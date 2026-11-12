@@ -10,7 +10,8 @@ import pathlib
 import pytest
 
 from agent6 import evidence, kinds
-from agent6.viewmodel import session_log, session_policy
+from agent6.viewmodel import session_policy
+from agent6.viewmodel.session import log as session_log
 
 
 def _manifest(session_dir: pathlib.Path, **over: object) -> None:

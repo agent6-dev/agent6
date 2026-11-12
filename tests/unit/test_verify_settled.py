@@ -29,7 +29,7 @@ from agent6.harness import (
 )
 from agent6.sessions import journal
 from agent6.tools import background, command_tools, results
-from agent6.viewmodel import session_status
+from agent6.viewmodel.session import status as session_status
 from tests.unit.turn_context import turn_context
 
 

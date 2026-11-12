@@ -28,7 +28,8 @@ import time
 
 from agent6.sandbox import jail
 from agent6.sessions import ipc, lineage, manifest, process, shells
-from agent6.viewmodel import listing, session_is_live, session_status, summarize_session_dir
+from agent6.viewmodel import listing, session_is_live, summarize_session_dir
+from agent6.viewmodel.session import status as session_status
 
 STOP_WAIT_S = 5.0  # a run that reads its requests ends within this
 FANOUT_WAIT_S = 30.0  # a coordinator drains its ended lanes and imports what landed within this

@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 
-from agent6.viewmodel import fold_transcript, restate, session_status, transcript_text
+from agent6.viewmodel import fold_transcript, restate, transcript_text
+from agent6.viewmodel.session import status as session_status
 
 
 def _read(path: str) -> list[dict[str, object]]:

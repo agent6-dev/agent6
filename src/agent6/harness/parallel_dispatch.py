@@ -21,7 +21,7 @@ from agent6.graph import curator as graph_curator
 from agent6.harness import parallel_join, run_chain, subrun
 from agent6.sessions import budget_events, journal, lane_dispatch
 from agent6.vcs import git_read
-from agent6.viewmodel import session_log
+from agent6.viewmodel.session import log as session_log
 
 if TYPE_CHECKING:
     from agent6.harness import loop_conversation, loop_state

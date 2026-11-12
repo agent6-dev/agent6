@@ -27,12 +27,12 @@ from agent6.vcs import commit_message, git_ops, git_read
 from agent6.viewmodel import (
     format,
     scan_session_log,
-    session_status,
     summarize_session_dir,
     tail_events,
     wire,
     worker_models,
 )
+from agent6.viewmodel.session import status as session_status
 
 # The run stopped at its budget; resumable from its snapshot once the cap is raised.
 _EXIT_BUDGET_EXHAUSTED = 3

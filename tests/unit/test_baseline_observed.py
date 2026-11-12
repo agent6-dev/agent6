@@ -17,7 +17,7 @@ import pytest
 from agent6.harness import finish_gates, loop, loop_state, nudges, run_chain
 from agent6.sessions import journal
 from agent6.tools import results
-from agent6.viewmodel import session_status
+from agent6.viewmodel.session import status as session_status
 from tests.unit.turn_context import turn_context
 
 _BASE = "b" * 40

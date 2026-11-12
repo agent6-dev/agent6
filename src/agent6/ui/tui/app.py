@@ -21,7 +21,7 @@ from collections.abc import Iterable
 from typing import ClassVar
 
 from agent6.config import layer_presets
-from agent6.viewmodel import session_status
+from agent6.viewmodel.session import status as session_status
 
 try:
     import textual

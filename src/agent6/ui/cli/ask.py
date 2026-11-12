@@ -19,7 +19,8 @@ from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import common, steer_tty
 from agent6.vcs import git_policy, git_read
-from agent6.viewmodel import events, newest_session_dir, session_log
+from agent6.viewmodel import events, newest_session_dir
+from agent6.viewmodel.session import log as session_log
 
 
 def summarize_session_log(logs_path: pathlib.Path) -> str:

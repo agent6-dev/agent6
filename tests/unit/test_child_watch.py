@@ -17,7 +17,8 @@ from agent6.app import child_watch, lane_watch
 from agent6.sessions import ipc, journal
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import interact
-from agent6.viewmodel import listing, session_log, state_view
+from agent6.viewmodel import listing, state_view
+from agent6.viewmodel.session import log as session_log
 
 
 def _child(tmp_path: pathlib.Path, *rows: dict[str, object]) -> pathlib.Path:

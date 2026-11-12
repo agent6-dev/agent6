@@ -17,7 +17,8 @@ from typing import get_args
 from agent6 import kinds
 from agent6.app import finalize
 from agent6.harness import loop_snapshot
-from agent6.viewmodel import format, session_status
+from agent6.viewmodel import format
+from agent6.viewmodel.session import status as session_status
 
 _CLI = pathlib.Path(__file__).resolve().parents[2] / "docs" / "cli.md"
 

@@ -18,7 +18,8 @@ from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.sessions import id
 from agent6.ui.cli import common, run
-from agent6.viewmodel import listing, session_log
+from agent6.viewmodel import listing
+from agent6.viewmodel.session import log as session_log
 
 
 def _cmd_fork(
