@@ -2615,6 +2615,7 @@ Source: [`agent6.viewmodel.review_queue.ReviewQueueEntry`](https://github.com/ag
 | `oldest_open_at` | `float \| None` | When the pending work began, as epoch seconds: the oldest unanswered question's ask, the oldest open block's first observation, else the run's end; None when nothing is pending. |
 | `source_tip` | `str \| None` | The run's last diff checkpoint commit. |
 | `merge_allowed` | `bool` | Whether the open-block merge guard lets this session merge. |
+| `overlaps` | `tuple[Overlap, ...]` | The other awaiting-merge sessions that changed some of the same paths; landing one means resuming the others on the new base. |
 
 ### MergeReviewGuard
 
@@ -3374,6 +3375,17 @@ Source: [`agent6.viewmodel.machine_state.NotificationView`](https://github.com/a
 | `state` | `str` | The state that emitted the notification. |
 | `message` | `str` | The notification text. |
 | `level` | `str` | The notification's presentation level. |
+
+### Overlap
+
+**Support: public.** Another awaiting-merge session that changed some of the same paths.
+
+Source: [`agent6.viewmodel.review_queue.Overlap`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/review_queue.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `session_id` | `str` | The other session. |
+| `paths` | `tuple[str, ...]` | The repo-relative paths both changed, sorted. |
 
 ### VerificationEvidence
 

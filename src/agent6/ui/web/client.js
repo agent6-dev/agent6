@@ -559,6 +559,9 @@ function paintSession(r, it, g) {
   const laneGroups = Object.entries(r.lane_groups || {}).map(([k, n]) => `${n} ${QUEUE_LABEL[k].toLowerCase()}`).join(', ');
   const review = [q.reason, laneGroups && `lane queue groups: ${laneGroups}`].filter(Boolean).join(' · ');
   if (review) g.appendChild(el('div', 'sub review-queue', review));
+  // Two awaiting-merge runs that changed the same paths: land one, resume the other on the new base.
+  const overlaps = (q.overlaps || []).map(o => `${o.session_id} (${(o.paths || []).join(', ')})`).join(' · ');
+  if (overlaps) g.appendChild(el('div', 'sub review-queue', 'same paths as ' + overlaps));
   it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
   if (QUEUE_LEVEL[r.queue_group]) it.appendChild(pill(QUEUE_LEVEL[r.queue_group], QUEUE_LABEL[r.queue_group]));
   // Review fills the new-work composer with `/review <branch>`; Merge lands the branch

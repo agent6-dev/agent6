@@ -26,6 +26,7 @@ from agent6.vcs import git_ops, git_policy, git_read
 from agent6.viewmodel import (
     format,
     newest_session_dir,
+    review_queue,
     session_dirs,
     session_status,
     summarize_session_dir,
@@ -68,13 +69,12 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
     def cells(
         row: viewmodel_listing.ListingRow, id_cell: str
     ) -> tuple[str, str, str, str, str, session_status.TaskLabel]:
-        """Return a row's cells with the id cell as given; the review cell is "" by activity."""
+        """Return a row's cells with the id cell as given."""
         s = row.summary
+        label = format.listing_status_label(s.mode, s.status, s.detail, unmerged=s.unmerged)
+        note = review_queue.overlap_note(s.review_queue)
         styled, plain = common.styled_status(
-            s.status,
-            s.detail,
-            color=color,
-            label=format.listing_status_label(s.mode, s.status, s.detail, unmerged=s.unmerged),
+            s.status, s.detail, color=color, label=f"{label} · {note}" if note else label
         )
         return (
             format.format_when(row.group_last_activity),
@@ -116,18 +116,6 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
         for continuation in task_lines[1:]:
             print(" " * fixed + continuation)
     return 0
-
-
-def _review_cell(row: viewmodel_listing.ListingRow) -> str:
-    """Return the review column's text: the queue group, the reason and the lanes' groups."""
-    group = viewmodel_listing.row_group(row)
-    parts = [group.replace("_", " ") if group != "other" else "", row.summary.review_queue.reason]
-    lanes = ", ".join(
-        f"{n} {name.replace('_', ' ')}" for name, n in viewmodel_listing.lane_groups(row).items()
-    )
-    if lanes:
-        parts.append(f"lane queue groups: {lanes}")
-    return " · ".join(p for p in parts if p)
 
 
 def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: bool = True) -> int:

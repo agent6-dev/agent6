@@ -452,6 +452,42 @@ def _summary(
     )
 
 
+def test_awaiting_merge_runs_that_changed_the_same_paths_flag_each_other() -> None:
+    """Two clean runs over one path name each other; a run touching other paths stays clean."""
+    paths = {
+        "one": frozenset({"src/a.py", "src/b.py"}),
+        "two": frozenset({"src/b.py", "docs/x.md"}),
+        "three": frozenset({"README.md"}),
+        "lane-1": frozenset({"src/a.py"}),
+    }
+    summaries = [
+        _summary("one", "awaiting_merge", mtime=90.0, pending=900.0),
+        _summary("two", "awaiting_merge", mtime=80.0, pending=800.0),
+        _summary("three", "awaiting_merge", mtime=70.0, pending=700.0),
+        _summary("fan", "other", mtime=10.0),
+        _summary("lane-1", "awaiting_merge", mtime=11.0, pending=110.0, coordinator="fan", lane=1),
+        _summary("busy", "blocked", mtime=5.0, pending=50.0),
+    ]
+    rows = listing.flag_overlaps(listing.nested_rows(summaries), lambda s: paths[s.session_id])
+    by_id = {r.summary.session_id: r for r in rows}
+    assert by_id["one"].summary.review_queue.overlaps == (
+        review_queue.Overlap("two", ("src/b.py",)),
+        review_queue.Overlap("lane-1", ("src/a.py",)),
+    )
+    assert by_id["two"].summary.review_queue.overlaps == (
+        review_queue.Overlap("one", ("src/b.py",)),
+    )
+    assert by_id["three"].summary.review_queue.overlaps == ()
+    (lane,) = by_id["fan"].lanes
+    assert lane.summary.review_queue.overlaps == (review_queue.Overlap("one", ("src/a.py",)),)
+    assert by_id["busy"].summary.review_queue.overlaps == ()
+    wire = json.loads(json.dumps(listing.row_json(by_id["one"], winners=set())))
+    assert wire["review_queue"]["overlaps"] == [
+        {"session_id": "two", "paths": ["src/b.py"]},
+        {"session_id": "lane-1", "paths": ["src/a.py"]},
+    ]
+
+
 def test_a_coordinator_takes_its_lanes_place_and_keeps_its_own_verification() -> None:
     """A fan-out takes its lanes' earliest review state; the lane counts ride the row."""
     summaries = [

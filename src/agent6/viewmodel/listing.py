@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import functools
 import pathlib
-from collections.abc import Container, Iterable, Mapping, Sequence
+from collections.abc import Callable, Container, Iterable, Mapping, Sequence
 from typing import Any, NotRequired, TypedDict
 
-from agent6 import kinds, paths
+from agent6 import errors, kinds, paths
 from agent6.sessions import ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
@@ -130,6 +131,7 @@ class SessionSummary:
         branch: The run's branch while the caller's branch-tips snapshot holds it; "" without
             a snapshot, a branch or a commit on it.
         review_queue: Where the session sits in the review queue, derived from its journal.
+        base_sha: The commit the run started from, as the manifest recorded it; "" unknown.
     """
 
     session_id: str
@@ -153,6 +155,7 @@ class SessionSummary:
     worktree: str = ""
     worktree_missing: str = ""
     branch: str = ""
+    base_sha: str = ""
     review_queue: review_queue.ReviewQueueEntry = dataclasses.field(
         default_factory=review_queue.ReviewQueueEntry
     )
@@ -189,11 +192,15 @@ class ListingRow:
         return max((self.summary.last_activity, *(lane.group_last_activity for lane in self.lanes)))
 
 
-def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
+def nested_rows(
+    summaries: Iterable[SessionSummary], *, repo: pathlib.Path | None = None
+) -> list[ListingRow]:
     """Nest each lane under the listed session that dispatched it, newest activity first.
 
     Args:
         summaries: The sessions to list.
+        repo: The repository whose history tells which paths each awaiting-merge run changed;
+            with it, two such runs that changed the same paths flag each other.
 
     Returns:
         The rows, every session appearing once: a lane whose coordinator is not listed
@@ -217,7 +224,78 @@ def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
     # A coordinator chain that loops reaches no root: its sessions are rows.
     rows.extend(row(s) for s in items if s.session_id not in placed)
     rows.sort(key=lambda r: r.group_last_activity, reverse=True)
-    return rows
+    return rows if repo is None else flag_overlaps(rows, changed_paths(repo))
+
+
+def flag_overlaps(
+    rows: list[ListingRow], touched: Callable[[SessionSummary], frozenset[str]]
+) -> list[ListingRow]:
+    """Flag awaiting-merge sessions that changed some of the same paths, lanes included.
+
+    Args:
+        rows: The nested listing rows.
+        touched: Returns the paths a session changed between its base and its tip.
+
+    Returns:
+        The rows, each awaiting-merge summary's `review_queue.overlaps` naming the others.
+    """
+    waiting: dict[str, frozenset[str]] = {}
+
+    def collect(row: ListingRow) -> None:
+        s = row.summary
+        if s.review_queue.group == "awaiting_merge":
+            waiting[s.session_id] = touched(s)
+        for lane in row.lanes:
+            collect(lane)
+
+    for row in rows:
+        collect(row)
+    if len(waiting) < 2:
+        return rows
+
+    def flagged(row: ListingRow) -> ListingRow:
+        s = row.summary
+        lanes = tuple(flagged(lane) for lane in row.lanes)
+        mine = waiting.get(s.session_id)
+        if mine is None:
+            return dataclasses.replace(row, lanes=lanes)
+        overlaps = tuple(
+            review_queue.Overlap(other, tuple(sorted(mine & theirs)))
+            for other, theirs in waiting.items()
+            if other != s.session_id and mine & theirs
+        )
+        queue = dataclasses.replace(s.review_queue, overlaps=overlaps)
+        return ListingRow(dataclasses.replace(s, review_queue=queue), lanes)
+
+    return [flagged(row) for row in rows]
+
+
+def changed_paths(repo: pathlib.Path) -> Callable[[SessionSummary], frozenset[str]]:
+    """Return a reader of the paths a run changed, from its base to its last checkpoint.
+
+    Args:
+        repo: The repository holding the run's commits.
+
+    Returns:
+        The reader; a run without a recorded base or checkpoint changed no known path.
+    """
+
+    def touched(s: SessionSummary) -> frozenset[str]:
+        tip = s.review_queue.source_tip
+        if not s.base_sha or not tip:
+            return frozenset()
+        return _paths_between(str(repo), s.base_sha, tip)
+
+    return touched
+
+
+@functools.lru_cache(maxsize=512)
+def _paths_between(repo: str, base: str, tip: str) -> frozenset[str]:
+    """Return the paths two commits differ in; two shas name immutable trees, so cached."""
+    try:
+        return frozenset(git_read.tree_diff_paths(pathlib.Path(repo), base, tip))
+    except errors.GitError:
+        return frozenset()
 
 
 def row_group(row: ListingRow) -> review_queue.Group:
@@ -261,7 +339,7 @@ def rows_for(
     tips = git_read.run_ref_tips(cwd)
     dirs = session_dirs(paths.state_dir(cwd), buckets)
     winners = {d.name for d in dirs if comparison.is_winner(d)}
-    rows = nested_rows(summarize_session_dir(d, branch_tips=tips) for d in dirs)
+    rows = nested_rows((summarize_session_dir(d, branch_tips=tips) for d in dirs), repo=cwd)
     return rows, winners
 
 
@@ -437,7 +515,7 @@ def summary_row(
         "coordinator": s.coordinator,
         "worktree": s.worktree or None,
         "branch": s.branch or None,
-        "review_queue": dataclasses.asdict(s.review_queue),
+        "review_queue": review_queue.as_dict(s.review_queue),
         "lanes": list(lanes),
     }
 
@@ -761,5 +839,6 @@ def summarize_session_dir(
         worktree=str(manifest.worktree) if manifest is not None and manifest.worktree else "",
         worktree_missing=sessions_manifest.worktree_blocker(manifest.worktree) if manifest else "",
         branch=existing_branch(manifest, branch_tips),
+        base_sha=manifest.base_sha if manifest is not None else "",
         review_queue=queue,
     )

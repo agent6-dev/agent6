@@ -50,6 +50,7 @@ from agent6.viewmodel import (
     SessionSummary,
     format,
     is_winner,
+    review_queue,
     session_dirs,
     session_status,
     summarize_session_dir,
@@ -116,6 +117,9 @@ def _status_cell(summary: SessionSummary, *, narrow: bool = False) -> text.Text:
     label = format.listing_status_label(
         summary.mode, summary.status, reason, unmerged=summary.unmerged
     )
+    note = review_queue.overlap_note(summary.review_queue)
+    if note and not narrow:
+        label += f" · {note}"
     return text.Text(label, style=theme.status_style(summary.status))
 
 
@@ -262,7 +266,8 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         tips = git_read.run_ref_tips(self.repo_cwd)
         dirs = {rd.name: rd for rd in session_dirs(self.agent6_dir) if rd.is_dir()}
         listing = viewmodel_listing.nested_rows(
-            summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values()
+            (summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values()),
+            repo=self.repo_cwd,
         )
         self._fanouts = {row.summary.session_id: row for row in listing if row.lanes}
 

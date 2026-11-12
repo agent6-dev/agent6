@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Literal
+from typing import Any, Literal
 
 from agent6.viewmodel import review, session_log
 
@@ -52,6 +52,33 @@ class QueueFacts:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class Overlap:
+    """Another awaiting-merge session that changed some of the same paths.
+
+    Attributes:
+        session_id: The other session.
+        paths: The repo-relative paths both changed, sorted.
+    """
+
+    session_id: str
+    paths: tuple[str, ...]
+
+
+def as_dict(entry: ReviewQueueEntry) -> dict[str, Any]:
+    """Return the entry's wire form: the fields as JSON values, the overlaps as lists."""
+    out = dataclasses.asdict(entry)
+    out["overlaps"] = [{"session_id": o.session_id, "paths": list(o.paths)} for o in entry.overlaps]
+    return out
+
+
+def overlap_note(entry: ReviewQueueEntry) -> str:
+    """Return `same paths as <ids>` for an entry with overlaps, else ""."""
+    if not entry.overlaps:
+        return ""
+    return "same paths as " + ", ".join(o.session_id for o in entry.overlaps)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class ReviewQueueEntry:
     """Where a session sits in the review queue.
 
@@ -76,6 +103,8 @@ class ReviewQueueEntry:
             None when nothing is pending.
         source_tip: The run's last diff checkpoint commit.
         merge_allowed: Whether the open-block merge guard lets this session merge.
+        overlaps: The other awaiting-merge sessions that changed some of the same paths;
+            landing one means resuming the others on the new base.
     """
 
     group: Group = "other"
@@ -88,6 +117,7 @@ class ReviewQueueEntry:
     oldest_open_at: float | None = None
     source_tip: str | None = None
     merge_allowed: bool = True
+    overlaps: tuple[Overlap, ...] = ()
 
     @property
     def rank(self) -> int:

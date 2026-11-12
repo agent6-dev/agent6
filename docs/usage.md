@@ -320,6 +320,7 @@ Every listing row carries its review state, derived from its journal on each rea
 - **blocked**: open `block` findings; the row names their count and dates from the oldest one's first panel
 - **unverified**: an ended run whose final tree the gate did not certify whole (no verify, a red or timed-out gate, a pass over selected paths only, a pass with no verification evidence, edits after the last green)
 - **awaiting merge**: a clean run waiting for a merge: no open findings, a complete and current panel with no abstained seat, a whole-tree pass whose evidence certifies the end tree, unmerged work with its chain and branch at the recorded checkpoint, no live worker, not stranded or undone
+    - two awaiting-merge runs that changed the same paths flag each other (`same paths as <id> (<paths>)`): land one, then resume the other on the new base
 - **other**: the rest, with its reason: open warnings or nits, an unreviewed, skipped, stale, incomplete, inconclusive or freeform review, a seat that abstained, a review still running, legacy counts, unreadable evidence, a live or unfinished run's status, a fan-out, a merged run, commits on the run
 
 A fan-out coordinator takes its lanes' earliest state and shows their counts without inheriting a lane's verification.
