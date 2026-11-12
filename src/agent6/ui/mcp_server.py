@@ -303,8 +303,9 @@ class MCPServer:
                 name="list_sessions",
                 description=(
                     "Enumerate sessions under the per-repo state dir (most-recent first): the"
-                    " listing row every hub shares (status, label, level, reason, mode, task,"
-                    " usage) plus the manifest (lineage: parent, branch, worktree, base_sha)."
+                    " listing row every hub shares (status, status_label, status_level,"
+                    " status_detail, mode, task, usage) plus the manifest (lineage: parent,"
+                    " branch, worktree, base_sha)."
                 ),
                 input_schema={
                     "type": "object",
