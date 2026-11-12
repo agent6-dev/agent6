@@ -202,6 +202,43 @@ def _call_identity(raw: dict[str, Any]) -> dict[str, Any]:
     return fields
 
 
+def _count(value: object) -> int | None:
+    """Return a recorded token counter; None when the row carries none.
+
+    Args:
+        value: The row's value.
+
+    Returns:
+        The counter.
+
+    Raises:
+        ValueError: The value is not an integer, so the row degrades to `RawEvent`.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"not a counter: {value!r}")
+    return value
+
+
+def _amount(value: object) -> float:
+    """Return a recorded money figure.
+
+    Args:
+        value: The row's value.
+
+    Returns:
+        The figure.
+
+    Raises:
+        ValueError: The value is not a number (a torn or hand-edited row), so the row degrades
+            to `RawEvent` and the fold keeps its last good figure.
+    """
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"not an amount: {value!r}")
+    return float(value)
+
+
 def _cap(value: object) -> float | None:
     """Return a recorded cap; None when the row carries none."""
     return None if value is None else float(value)  # pyright: ignore[reportArgumentType]
@@ -342,6 +379,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 tokens_out=as_int(raw.get("tokens_out")),
                 cache_read=as_int(raw.get("cache_read")),
                 cache_creation=as_int(raw.get("cache_creation")),
+                error=str(raw["error"]) if raw.get("error") else None,
             )
         case "role.text_delta":
             return journal.RoleTextDelta(
@@ -391,11 +429,12 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             )
         case "budget.update":
             return journal.BudgetUpdate(
-                input_total=int(raw.get("input_total", 0)),
-                output_total=int(raw.get("output_total", 0)),
-                cache_read_total=int(raw.get("cache_read_total", 0)),
-                cache_creation_total=int(raw.get("cache_creation_total", 0)),
-                usd_total=float(raw.get("usd_total", 0.0)),
+                # A counter the row lacks stays unknown; the four travel as one group.
+                input_total=_count(raw.get("input_total")),
+                output_total=_count(raw.get("output_total")),
+                cache_read_total=_count(raw.get("cache_read_total")),
+                cache_creation_total=_count(raw.get("cache_creation_total")),
+                usd_total=_amount(raw.get("usd_total", 0.0)),
                 usd_partial=bool(raw.get("usd_partial", False)),
                 # A row without a cap leaves it unknown; a recorded 0 (refuse) or -1 stays.
                 usd_cap=_cap(raw.get("usd_cap")),

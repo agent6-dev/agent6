@@ -9,11 +9,11 @@ import dataclasses
 import json
 import os
 import pathlib
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from typing import Any
 
 from agent6 import budget, evidence, kinds, terminal
-from agent6.viewmodel import events, format, review, session_status
+from agent6.viewmodel import events, format, review, session_core, session_status, state_types
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -196,79 +196,6 @@ class LogScan:
         )
 
 
-def read_plan_usage(ev: Mapping[str, object]) -> budget.PlanUsage | None:
-    """Return the plan windows a budget.update carries, or None when it carries none."""
-    account = ev.get("account")
-    # A journal written before the account record keys the windows flat.
-    raw = account.get("windows") if isinstance(account, dict) else ev.get("plan_windows")
-    windows: list[budget.PlanWindow] = []
-    for w in raw if isinstance(raw, list) else ():
-        if not isinstance(w, dict):
-            continue
-        try:
-            windows.append(
-                budget.PlanWindow(
-                    str(w["name"]),
-                    float(w["used_percent"]),
-                    int(w["window_minutes"]),
-                    float(w["resets_at"]),
-                )
-            )
-        except (KeyError, TypeError, ValueError):
-            continue
-    return budget.PlanUsage(windows=tuple(windows)) if windows else None
-
-
-def account_used_percent(ev: Mapping[str, object], last_good: float) -> float:
-    """Read a budget.update's account used percent; an older journal keys it flat.
-
-    Args:
-        ev: The event.
-        last_good: The figure to keep when the value is unusable.
-
-    Returns:
-        The account's used percent, or `last_good`.
-    """
-    account = ev.get("account")
-    if isinstance(account, dict):
-        return tolerant_float(account.get("used_percent"), last_good)
-    return figure(ev, "plan_used_percent", last_good)
-
-
-def figure(ev: Mapping[str, object], key: str, last_good: float) -> float:
-    """Read a budget.update figure as the typed fold does.
-
-    Args:
-        ev: The event.
-        key: The figure's key.
-        last_good: The figure to keep when the value is unusable.
-
-    Returns:
-        0.0 for an absent key (an aggregate event carries only what it summed), else
-        the tolerant float.
-    """
-    return tolerant_float(ev[key], last_good) if key in ev else 0.0
-
-
-def tolerant_float(raw: object, last_good: float) -> float:
-    """Read a figure that a torn or adversarial line may have mangled.
-
-    Args:
-        raw: The raw value.
-        last_good: The figure to keep when the value is unusable; falsy junk keeps it
-            too, where an `or 0.0` fallback would reset it.
-
-    Returns:
-        The float of a real number or numeric string, else `last_good`.
-    """
-    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
-        return float(raw)
-    if isinstance(raw, str):
-        with contextlib.suppress(ValueError):
-            return float(raw)
-    return last_good
-
-
 def events_backward(logs: pathlib.Path) -> Iterator[dict[str, Any]]:
     """Yield the journal's parseable records newest first, reading from the tail.
 
@@ -366,8 +293,9 @@ def current_target(logs: pathlib.Path) -> evidence.ExecutionTargetEvidence | Non
 def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915  # one branch per event type
     """Fold a session's journal into a `LogScan`.
 
-    A live writer can leave a torn multibyte tail, so the file is decoded with
-    replacement and the mangled line fails `json.loads` and is skipped.
+    The lifecycle and the usage fold in `session_core`, the one reducer the viewers' fold shares;
+    the rest is the listing's own. A live writer can leave a torn multibyte tail, so the file is
+    decoded with replacement and the mangled line fails `json.loads` and is skipped.
 
     Args:
         logs: The journal path.
@@ -375,30 +303,12 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     Returns:
         The scan; an empty one when the file cannot be read.
     """
-    mode, task = "?", session_status.TaskLabel("")
-    finished, stop_reason, end_summary = False, "", ""
-    stranded = False
-    end_tree = ""
+    core = state_types.SessionCore()
+    setup_output = ""
     baseline_ok: bool | None = None
     gate_swapped = False
-    undone_to = ""
-    setup_output = ""
-    provider_error = ""
-    verification: kinds.Verification | None = None
-    verify_scoped = False
-    saw_start = False
-    usd_execution = 0.0
-    usd_prior_executions = 0.0
+    end_tree = ""
     saw_budget = False
-    usd_partial = False
-    executions = 1
-    input_tokens: int | None = None
-    output_tokens: int | None = None
-    cache_read_tokens: int | None = None
-    cache_creation_tokens: int | None = None
-    plan_observed_points = plan_prior_executions = plan_cap = plan_used_percent = 0.0
-    plan_usage: budget.PlanUsage | None = None
-    plan_usage_at: float = 0.0
     turn: int | None = None
     start_ep: float | None = None
     first_ep: float | None = None
@@ -408,13 +318,8 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     pending_prompts: dict[str, tuple[str, float | None]] = {}
     # Every question nobody has answered yet, by id, across executions.
     open_questions: dict[str, float | None] = {}
-    unattended_questions = 0
-    last_verify_rc: int | None = None
-    verify_timeout_s = 0.0
-    pins: list[str] = []
     left_out: dict[str, str] = {}
     review_view = review.ReviewView()
-    execution_id: str | None = None
     source_tip: str | None = None
     final_verify_id: str | None = None
     end_ep: float | None = None
@@ -447,7 +352,6 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                 except (ValueError, TypeError) as exc:
                     evidence_notes.append(f"journal line {line_number}: {exc}")
                 if etype in ("session.start", "session.resume"):
-                    execution_id = ev.get("execution_id")
                     final_verify_id = None
                 elif etype == "diff.updated":
                     source_tip = ev.get("sha") or source_tip
@@ -470,10 +374,8 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         pending_prompts[str(pid)] = (kind, ep)
                 elif etype in session_status.OPERATOR_ANSWER_EVENTS:
                     pending_prompts.pop(str(ev.get("id")), None)
-                    if etype == "question.answer" and ev.get("unseen") is True:
-                        unattended_questions += 1
                 # A question outside an execution (the start gate) dies with its prompt.
-                in_execution = saw_start and not finished
+                in_execution = core.lifecycle.started and not core.lifecycle.finished
                 if (
                     etype == "question.prompt"
                     and in_execution
@@ -482,69 +384,32 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     open_questions[str(qid)] = ep
                 elif etype == "question.answer":
                     open_questions.pop(str(ev.get("id")), None)
+                if session_core.concerns(ev):
+                    core = session_core.apply(core, events.parse_event(ev), ev)
                 if etype == "session.start":
-                    task = task.start(str(ev.get("user_task", "")))
-                    saw_start = True
-                    finished, stranded, verification = False, False, None
                     end_ep = None
-                    end_summary = ""
                     end_tree = ""
-                    mode = str(ev.get("mode", mode))
                     # A new execution re-asks with restarted ids; a held-over prompt waits forever.
                     pending_prompts.clear()
-                    unattended_questions = 0
-                    last_verify_rc = None
-                    verify_timeout_s = 0.0
                     if start_ep is None:
                         start_ep = ep
                 elif etype == "session.stop":
-                    finished = True
                     if isinstance(end_turns := ev.get("turns", ev.get("iterations")), int):
                         turn = end_turns
-                    verify_scoped = bool(ev.get("scoped", False))
-                    stop_reason = str(ev.get("reason", ""))
-                    end_summary = str(ev.get("summary", ""))
-                    if stop_reason == "setup_command_failed" and ev.get("summary"):
+                    if core.lifecycle.stop_reason == "setup_command_failed" and ev.get("summary"):
                         setup_output = terminal.scrub_terminal_controls(str(ev["summary"]))
-                    verification = events.verification_word(ev.get("verification"))
                     end_tree = str(ev.get("tree") or "")
                     final_verify_id = ev.get("final_verify_id")
                     end_ep = ep
                 elif etype == "session.resume":
-                    task = task.resume(str(ev.get("user_task", "")), str(ev.get("steer", "")))
-                    if saw_start:
-                        # Each execution's budget starts at 0: bank the finished one's total.
-                        usd_prior_executions += usd_execution
-                        usd_execution = 0.0
-                        input_tokens = output_tokens = None
-                        cache_read_tokens = cache_creation_tokens = None
-                        # The account's reading stays: the run is plan-metered before its
-                        # next call too.
-                        plan_prior_executions += plan_observed_points
-                        plan_observed_points = plan_cap = 0.0
-                        last_verify_rc = None
-                        verify_timeout_s = 0.0
-                        executions += 1
-                    saw_start = True
-                    mode = str(ev.get("mode", mode))
-                    finished, stranded, verification = False, False, None
                     end_ep = None
-                    end_summary = ""
                     end_tree = ""
                     pending_prompts.clear()
-                    unattended_questions = 0
-                elif etype == "session.stranded":
-                    stranded = True
-                elif etype == "session.undone":
-                    undone_to = str(ev.get("new_session_id", ""))
                 elif etype == "workspace.setup":
                     setup_output = format.setup_output(ev)
                 elif etype == "verify.start":
                     if ev.get("verify_id"):
                         pending_verifications.add(str(ev["verify_id"]))
-                    # The verdict before it described an older tree; the run page drops it too.
-                    last_verify_rc = None
-                    verify_timeout_s = 0.0
                 elif etype == "verify.end":
                     try:
                         record = evidence.from_event(ev)
@@ -554,17 +419,6 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         verifications.append(record)
                         if record.verify_id:
                             pending_verifications.discard(record.verify_id)
-                    rc = ev.get("exit_code")
-                    last_verify_rc = (
-                        rc if isinstance(rc, int) and not isinstance(rc, bool) else None
-                    )
-                    verify_timeout_s = events.verify_limit_hit(
-                        evidence.outcome(ev), ev.get("timeout_s")
-                    )
-                elif etype == "role.result":
-                    # A side call's failure never ends the run, so it is not the reason.
-                    if ev.get("ok") is False and not kinds.is_side_role(str(ev.get("role", ""))):
-                        provider_error = str(ev.get("error", ""))
                 elif etype == "loop.baseline":
                     if baseline_ok is None:
                         baseline_ok = bool(ev.get("ok"))
@@ -580,43 +434,24 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         raw_paths = ev.get(reason)
                         for p in raw_paths if isinstance(raw_paths, list) else []:
                             left_out[str(p)] = reason
-                elif etype == "loop.pin.added":
-                    pins.append(str(ev.get("text", "")))
-                elif etype == "loop.pin.restored":
-                    raw_pins = ev.get("pins")
-                    pins = [str(p) for p in raw_pins] if isinstance(raw_pins, list) else []
                 elif etype == "budget.update":
                     saw_budget = True
-                    usd_execution = figure(ev, "usd_total", usd_execution)
-                    usd_partial = bool(ev.get("usd_partial")) or usd_partial
-                    ti, to = ev.get("input_total"), ev.get("output_total")
-                    if isinstance(ti, int):
-                        # The four counters travel as one group: no stale cached side from earlier.
-                        cr, cc = ev.get("cache_read_total"), ev.get("cache_creation_total")
-                        input_tokens = ti
-                        cache_read_tokens = cr if isinstance(cr, int) else None
-                        cache_creation_tokens = cc if isinstance(cc, int) else None
-                    output_tokens = to if isinstance(to, int) else output_tokens
-                    plan_observed_points = figure(
-                        ev,
-                        # Journals written before the rename stamp `plan_consumed`.
-                        "plan_observed_points" if "plan_observed_points" in ev else "plan_consumed",
-                        plan_observed_points,
-                    )
-                    plan_cap = figure(ev, "plan_cap", plan_cap)
-                    plan_used_percent = account_used_percent(ev, plan_used_percent)
-                    if (reading := read_plan_usage(ev)) is not None:
-                        plan_usage = reading
-                        plan_usage_at = events.event_epoch(ev.get("ts")) or 0.0
     except FileNotFoundError:
         evidence_notes.append("Journal missing.")
     except OSError as exc:
         evidence_notes.append(f"Journal unreadable: {exc}")
         review_view = dataclasses.replace(review_view, read_failure=str(exc))
+    life, usage = core.lifecycle, core.budget
+    account = usage.account
+    oldest = min(
+        pending_prompts.values(),
+        key=lambda kv: kv[1] if kv[1] is not None else float("inf"),
+        default=None,
+    )
     return LogScan(
-        saw_start=saw_start,
+        saw_start=life.started,
         review=review_view,
-        execution_id=execution_id,
+        execution_id=life.execution_id or None,
         source_tip=source_tip,
         verifications=tuple(verifications),
         targets=observations.targets.recorded,
@@ -628,34 +463,38 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         end_ep=end_ep,
         evidence_notes=tuple(evidence_notes)
         + tuple(f"Verification {v} has no recorded result." for v in sorted(pending_verifications)),
-        mode=mode,
-        task_label=task,
-        finished=finished,
-        verification=verification,
-        verify_scoped=verify_scoped,
-        stop_reason=stop_reason,
-        stranded=stranded,
-        end_summary=end_summary,
+        mode=life.mode or "?",
+        task_label=life.task_label,
+        finished=life.finished,
+        verification=life.verification,
+        verify_scoped=life.verify_scoped,
+        stop_reason=life.stop_reason,
+        stranded=life.stranded,
+        end_summary=life.end_summary,
         baseline_ok=baseline_ok,
         gate_swapped=gate_swapped,
         setup_output=setup_output,
         end_tree=end_tree,
-        undone_to=undone_to,
-        provider_error=provider_error,
-        cost_usd=(usd_prior_executions + usd_execution) if saw_budget else None,
-        usd_partial=usd_partial,
-        executions=executions,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        cache_read_tokens=cache_read_tokens,
-        cache_creation_tokens=cache_creation_tokens,
-        plan_observed_points=plan_prior_executions + plan_observed_points,
-        plan_prior_executions=plan_prior_executions,
-        plan_cap=plan_cap,
-        plan_used_percent=plan_used_percent,
-        plan_usage=plan_usage,
-        plan_usage_at=plan_usage_at,
-        unattended_questions=unattended_questions,
+        undone_to=life.undone_to,
+        provider_error=life.provider_error,
+        cost_usd=usage.session.usd if saw_budget else None,
+        usd_partial=usage.session.usd_partial,
+        executions=life.executions,
+        input_tokens=usage.execution.input_tokens,
+        output_tokens=usage.execution.output_tokens,
+        cache_read_tokens=usage.execution.cache_read_tokens,
+        cache_creation_tokens=usage.execution.cache_creation_tokens,
+        plan_observed_points=usage.session.plan_observed_points,
+        plan_prior_executions=(
+            usage.session.plan_observed_points - usage.execution.plan_observed_points
+        ),
+        plan_cap=usage.execution.plan_cap or 0.0,
+        plan_used_percent=account.used_percent if account else 0.0,
+        plan_usage=budget.PlanUsage(windows=account.windows)
+        if account and account.windows
+        else None,
+        plan_usage_at=account.observed_at if account else 0.0,
+        unattended_questions=life.unattended_questions,
         pending_questions=len(open_questions),
         oldest_pending_question_ep=min(
             (ep for ep in open_questions.values() if ep is not None), default=None
@@ -665,20 +504,10 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         last_ep=last_ep,
         last_type=last_type,
         operator_blocked=bool(pending_prompts),
-        blocked_kind=(
-            oldest[0]
-            if (
-                oldest := min(
-                    pending_prompts.values(),
-                    key=lambda kv: kv[1] if kv[1] is not None else float("inf"),
-                    default=None,
-                )
-            )
-            else ""
-        ),
+        blocked_kind=oldest[0] if oldest else "",
         blocked_since_ep=oldest[1] if oldest else None,
-        last_verify_rc=last_verify_rc,
-        verify_timeout_s=verify_timeout_s,
-        pins=tuple(pins),
+        last_verify_rc=life.last_verify_rc,
+        verify_timeout_s=life.verify_timeout_s,
+        pins=life.pins,
         left_out=tuple(left_out.items()),
     )

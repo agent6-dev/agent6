@@ -18,7 +18,7 @@ from typing import Any
 from agent6.models import registry
 from agent6.sessions import ipc, process, shells
 from agent6.sessions import manifest as sessions_manifest
-from agent6.viewmodel import events, format, listing, policy, review, session_status, state_types
+from agent6.viewmodel import format, listing, policy, review, session_status, state_types
 from agent6.viewmodel import state as session_fold
 
 PUBLIC_STATE_FIELDS = (
@@ -83,15 +83,14 @@ def status_facts(state: state_types.SessionState) -> session_status.StatusFacts:
         ("approval", a.asked_ep) for a in state.approvals if not a.answered
     ] + [("question", q.asked_ep) for q in state.questions if not q.answered and q.blocking]
     oldest = min(pending, key=lambda p: p[1] if p[1] is not None else float("inf"), default=None)
-    gate = state.last_verify
+    life = state.core.lifecycle
     return session_status.StatusFacts(
         started=state.started,
         finished=state.finished,
         verification=state.verification,
         verify_scoped=state.verify_scoped,
-        gate_red=gate is not None and gate.exit_code is not None and gate.exit_code != 0,
-        gate_timed_out=gate is not None
-        and events.verify_limit_hit(gate.outcome, gate.timeout_s) > 0,
+        gate_red=life.last_verify_rc is not None and life.last_verify_rc != 0,
+        gate_timed_out=life.verify_timeout_s > 0,
         stop_reason=state.stop_reason,
         operator_blocked=bool(pending),
         blocked_kind=oldest[0] if oldest else "",

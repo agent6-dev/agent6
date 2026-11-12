@@ -137,10 +137,10 @@ class ExecutionUsage:
     a recorded -1 means unlimited and a recorded 0 means refused.
 
     Attributes:
-        input_tokens: Input tokens.
-        output_tokens: Output tokens.
-        cache_read_tokens: The cached side of the input.
-        cache_creation_tokens: Cache-creation tokens.
+        input_tokens: Input tokens; None until a budget row carries the counters.
+        output_tokens: Output tokens; None until a budget row carries the counters.
+        cache_read_tokens: The cached side of the input; None when the row lacked it.
+        cache_creation_tokens: Cache-creation tokens; None when the row lacked it.
         usd: The metered spend.
         usd_partial: Some model had no price, so `usd` is a lower bound.
         unmetered_tokens: Input and output tokens of calls the meter could not price.
@@ -150,10 +150,10 @@ class ExecutionUsage:
         plan_cap: `[budget].max_plan_points`.
     """
 
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cache_read_tokens: int = 0
-    cache_creation_tokens: int = 0
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_creation_tokens: int | None = None
     usd: float = 0.0
     usd_partial: bool = False
     unmetered_tokens: int = 0
@@ -217,6 +217,67 @@ class BudgetView:
     session: SessionUsage = dataclasses.field(default_factory=SessionUsage)
     execution: ExecutionUsage = dataclasses.field(default_factory=ExecutionUsage)
     account: AccountReading | None = None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Lifecycle:
+    """Where a session stands, as every fold reads it.
+
+    Attributes:
+        started: An execution has begun; a parked or created run has none.
+        finished: A session.stop was folded and no later execution began.
+        mode: The session's mode, "" until a start names it.
+        execution_id: The current execution's id, "" until its start is read.
+        executions: One plus the resumed executions.
+        task_label: The first task and the latest resume steer.
+        stop_reason: The session.stop reason word, "" while an execution runs.
+        verification: The final verification word, or None when unknown.
+        verify_scoped: The judging gate ran scoped.
+        stranded: This execution finished with its edits uncommitted and no commit landed.
+        end_summary: The end sentence the journal carries, "" when it carries none.
+        finish_summary: The finish tool's summary, the agent's closing statement.
+        undone_to: The session `/undo` forked, "" when it was never undone.
+        provider_error: The last failed driving call's error, "" when none failed.
+        last_verify_rc: This execution's last verify.end exit code; None before one ends.
+        verify_timeout_s: The limit that verify ran out, 0.0 when it ended on its own.
+        unattended_questions: This execution's questions answered empty because nobody was
+            attached.
+        pins: The operator's pinned instructions in force, most recent last.
+    """
+
+    started: bool = False
+    finished: bool = False
+    mode: str = ""
+    execution_id: str = ""
+    executions: int = 1
+    task_label: session_status.TaskLabel = dataclasses.field(
+        default_factory=session_status.TaskLabel
+    )
+    stop_reason: str = ""
+    verification: kinds.Verification | None = None
+    verify_scoped: bool = False
+    stranded: bool = False
+    end_summary: str = ""
+    finish_summary: str = ""
+    undone_to: str = ""
+    provider_error: str = ""
+    last_verify_rc: int | None = None
+    verify_timeout_s: float = 0.0
+    unattended_questions: int = 0
+    pins: tuple[str, ...] = ()
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class SessionCore:
+    """The facts both folds share: the lifecycle and the usage.
+
+    Attributes:
+        lifecycle: Where the session stands.
+        budget: Its usage, each amount with one lifetime.
+    """
+
+    lifecycle: Lifecycle = dataclasses.field(default_factory=Lifecycle)
+    budget: BudgetView = dataclasses.field(default_factory=BudgetView)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -371,6 +432,8 @@ class SessionState:
     """A session's folded state, the read model every front-end paints.
 
     Attributes:
+        core: The lifecycle and usage both folds share; the lifecycle and `budget` fields
+            below mirror it for the wire and the surfaces.
         session_id: The session's id, "" until an event carries it.
         mode: The session's mode, "" until known.
         execution_id: The current execution's id, "" until its start is read.
@@ -415,6 +478,7 @@ class SessionState:
             "working… Ns" timer measures from, so replayed history reads as its true age.
     """
 
+    core: SessionCore = dataclasses.field(default_factory=SessionCore)
     session_id: str = ""
     mode: str = ""
     execution_id: str = ""

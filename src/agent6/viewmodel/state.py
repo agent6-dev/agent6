@@ -13,10 +13,17 @@ import pathlib
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from agent6 import budget, terminal
+from agent6 import terminal
 from agent6.graph import models
 from agent6.sessions import journal, layout, process
-from agent6.viewmodel import events, format, log_line, review, session_status, state_types
+from agent6.viewmodel import (
+    events,
+    format,
+    log_line,
+    review,
+    session_core,
+    state_types,
+)
 
 
 def initial_state() -> state_types.SessionState:
@@ -102,55 +109,21 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
         new_log = _push_bounded(state.log_tail, entry, MAX_LOG_TAIL)
         state = dataclasses.replace(state, log_tail=new_log, log_count=state.log_count + 1)
 
-    match events.parse_event(event):
-        case journal.SessionStart(user_task=task, execution_id=eid):
-            # The ask REPL re-runs on one log, so a second start clears the prior end.
-            # No banking, unlike ResumeStart: the REPL's one tracker is already cumulative.
+    record = events.parse_event(event)
+    # The lifecycle and the usage fold once, under both folds; the view mirrors them.
+    core = session_core.apply(state.core, record, event)
+    if core is not state.core:
+        state = _mirror(state, core)
+    match record:
+        case journal.SessionStart() | journal.SessionResume():
+            # An execution begins: the view's own per-execution records start over.
             return dataclasses.replace(
                 state,
-                task_label=state.task_label.start(task),
-                mode=str(event.get("mode", state.mode)),
-                execution_id=eid,
-                started=True,
-                finished=False,
-                verification=None,
-                verify_scoped=False,
-                stop_reason="",
-                stranded=False,
-                end_summary="",
                 last_role=None,
-                finish_summary="",
                 last_verify=None,
                 approvals=_answered_only(state.approvals),
                 questions=_carried(state.questions),
-                unattended_questions=0,
                 tool_count=0,
-            )
-
-        case journal.SessionResume(user_task=task, steer=steer, execution_id=eid):
-            # The new execution's counters start fresh: bank the spend, zero the rest.
-            return dataclasses.replace(
-                state,
-                task_label=state.task_label.resume(task, steer),
-                mode=str(event.get("mode", state.mode)),
-                execution_id=eid,
-                started=True,
-                finished=False,
-                verification=None,
-                verify_scoped=False,
-                stop_reason="",
-                stranded=False,
-                end_summary="",
-                last_role=None,
-                finish_summary="",
-                last_verify=None,
-                approvals=_answered_only(state.approvals),
-                questions=_carried(state.questions),
-                unattended_questions=0,
-                tool_count=0,
-                # The session's usage keeps the finished execution's; the account's last
-                # reading stays, the run is plan-metered before its next call too.
-                budget=dataclasses.replace(state.budget, execution=state_types.ExecutionUsage()),
             )
 
         case journal.GraphUpdate(nodes=nodes, cursor=cursor):
@@ -232,15 +205,10 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 task_id=state.cursor_task_id,
                 call_id=cid,
             )
-            finish_summary = state.finish_summary
-            finish = name in events.FINISH_TOOLS
-            if finish:
-                finish_summary = str(raw_args.get("summary", "")).strip() or finish_summary
             return dataclasses.replace(
                 state,
                 tool_calls=_push_bounded(state.tool_calls, tc, _MAX_TOOL_HISTORY),
-                tool_count=state.tool_count + (0 if finish else 1),
-                finish_summary=finish_summary,
+                tool_count=state.tool_count + (0 if name in events.FINISH_TOOLS else 1),
             )
 
         case journal.ToolResult(name=name, ok=ok, summary=summary, call_id=cid):
@@ -298,67 +266,6 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 ),
             )
 
-        case journal.BudgetUpdate(
-            input_total=it,
-            output_total=ot,
-            cache_read_total=cr,
-            cache_creation_total=cc,
-            usd_total=usd,
-            usd_partial=partial,
-            usd_cap=ucap,
-            tokens_unmetered=unmet,
-            tokens_fallback_cap=fcap,
-            plan_observed_points=plan_used,
-            plan_cap=plan_cap,
-            account=account,
-        ):
-            # The row carries the tracker's lifetime; the finished executions' usage is the
-            # difference between the session's and the execution's.
-            prior = state.budget
-            banked_usd = prior.session.usd - prior.execution.usd
-            banked_points = (
-                prior.session.plan_observed_points - prior.execution.plan_observed_points
-            )
-            execution = state_types.ExecutionUsage(
-                input_tokens=it or 0,
-                output_tokens=ot or 0,
-                cache_read_tokens=cr or 0,
-                cache_creation_tokens=cc or 0,
-                usd=usd,
-                usd_partial=bool(partial),
-                unmetered_tokens=unmet or 0,
-                plan_observed_points=plan_used or 0.0,
-                usd_cap=ucap,
-                tokens_fallback_cap=fcap,
-                plan_cap=plan_cap,
-            )
-            session = state_types.SessionUsage(
-                usd=banked_usd + usd,
-                usd_partial=bool(partial) or prior.session.usd_partial,
-                plan_observed_points=banked_points + (plan_used or 0.0),
-            )
-            reading = prior.account
-            if account is not None:
-                reading = state_types.AccountReading(
-                    provider=account.provider,
-                    used_percent=account.used_percent,
-                    resets_at=account.resets_at,
-                    windows=tuple(
-                        budget.PlanWindow(w.name, w.used_percent, w.window_minutes, w.resets_at)
-                        for w in account.windows
-                    ),
-                    credits_has=account.credits_has,
-                    credits_unlimited=account.credits_unlimited,
-                    credits_balance=account.credits_balance,
-                    observed_at=events.event_epoch(event.get("ts")) or 0.0,
-                )
-            return dataclasses.replace(
-                state,
-                budget=state_types.BudgetView(
-                    session=session, execution=execution, account=reading
-                ),
-            )
-
         case journal.ApprovalPrompt(id=aid, prompt=prompt, standing=standing):
             ap = state_types.ApprovalPrompt(
                 id=aid,
@@ -392,25 +299,14 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             kept = tuple(q for q in state.questions if q.id != qid)
             return dataclasses.replace(state, questions=(*kept, qp))
 
-        case journal.QuestionAnswer(id=wanted, answers=answers, unseen=unseen, source=source):
+        case journal.QuestionAnswer(id=wanted, answers=answers, source=source):
             new_q = tuple(
                 dataclasses.replace(q, answered=True, answers=tuple(answers), source=source)
                 if q.id == wanted
                 else q
                 for q in state.questions
             )
-            # Counted per event: prompt ids restart on every execution.
-            return dataclasses.replace(
-                state,
-                questions=new_q,
-                unattended_questions=state.unattended_questions + (1 if unseen else 0),
-            )
-
-        case journal.LoopPinAdded(text=text):
-            return dataclasses.replace(state, pins=(*state.pins, text))
-
-        case journal.LoopPinRestored(pins=pins):
-            return dataclasses.replace(state, pins=tuple(pins))
+            return dataclasses.replace(state, questions=new_q)
 
         case journal.LoopCompactRestored(elided=elided, gists=gists):
             return dataclasses.replace(state, compact_elided=elided, compact_gists_live=gists)
@@ -428,28 +324,44 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
         case journal.SessionSteerRequested():
             return dataclasses.replace(state, steer_requests=state.steer_requests + 1)
 
-        case journal.SessionStop(
-            verification=verification, reason=reason, summary=summary, scoped=scoped
-        ):
+        case journal.SessionStop():
+            # The worker is on no task after the end: each draws its own status.
             return dataclasses.replace(
                 state,
-                finished=True,
-                verification=events.verification_word(verification),
-                stop_reason=reason,
-                end_summary=session_status.end_text(reason, summary or "", state.finish_summary),
-                verify_scoped=bool(scoped),
-                # The worker is on no task after the end: each draws its own status.
                 tasks=tuple(dataclasses.replace(t, is_cursor=False, glyph="") for t in state.tasks),
             )
 
-        case journal.SessionStranded():
-            return dataclasses.replace(state, stranded=True)
-
-        case journal.SessionUndone(new_session_id=new_id, undone_text=text):
-            return dataclasses.replace(state, undone_to=new_id, undone_text=text)
+        case journal.SessionUndone(undone_text=text):
+            return dataclasses.replace(state, undone_text=text)
 
         case _:
             return state
+
+
+def _mirror(
+    state: state_types.SessionState, core: state_types.SessionCore
+) -> state_types.SessionState:
+    """Return the state with the core's lifecycle and usage mirrored into its wire fields."""
+    life = core.lifecycle
+    return dataclasses.replace(
+        state,
+        core=core,
+        mode=life.mode,
+        execution_id=life.execution_id,
+        task_label=life.task_label,
+        started=life.started,
+        finished=life.finished,
+        verification=life.verification,
+        verify_scoped=life.verify_scoped,
+        stop_reason=life.stop_reason,
+        stranded=life.stranded,
+        end_summary=life.end_summary,
+        finish_summary=life.finish_summary,
+        unattended_questions=life.unattended_questions,
+        undone_to=life.undone_to,
+        pins=life.pins,
+        budget=core.budget,
+    )
 
 
 def task_tree_views(

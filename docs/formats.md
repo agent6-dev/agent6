@@ -3100,6 +3100,17 @@ Source: [`agent6.sessions.manifest.FanoutStamp`](https://github.com/agent6-dev/a
 | `lanes` | `int` | How many lanes it dispatched. |
 | `spec` | `str` | The `--parallel` argument as typed. |
 
+### SessionCore
+
+**Support: public.** The facts both folds share: the lifecycle and the usage.
+
+Source: [`agent6.viewmodel.state_types.SessionCore`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `lifecycle` | `Lifecycle` | Where the session stands. |
+| `budget` | `BudgetView` | Its usage, each amount with one lifetime. |
+
 ### TaskNodeView
 
 **Support: public.** One node of the live task tree, flattened in DFS pre-order with its depth.
@@ -3484,6 +3495,33 @@ Source: [`agent6.kinds.EffectiveControl`](https://github.com/agent6-dev/agent6/b
 | `probe` | `Literal['not probed', 'resolved', 'prepared']` | How far target preparation confirmed the control. |
 | `reason` | `str` | The refusal or warning reason, if any. |
 
+### Lifecycle
+
+**Support: public.** Where a session stands, as every fold reads it.
+
+Source: [`agent6.viewmodel.state_types.Lifecycle`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `started` | `bool` | An execution has begun; a parked or created run has none. |
+| `finished` | `bool` | A session.stop was folded and no later execution began. |
+| `mode` | `str` | The session's mode, "" until a start names it. |
+| `execution_id` | `str` | The current execution's id, "" until its start is read. |
+| `executions` | `int` | One plus the resumed executions. |
+| `task_label` | `TaskLabel` | The first task and the latest resume steer. |
+| `stop_reason` | `str` | The session.stop reason word, "" while an execution runs. |
+| `verification` | `Literal['passed', 'failed', 'unverified', 'not_applicable'] \| None` | The final verification word, or None when unknown. |
+| `verify_scoped` | `bool` | The judging gate ran scoped. |
+| `stranded` | `bool` | This execution finished with its edits uncommitted and no commit landed. |
+| `end_summary` | `str` | The end sentence the journal carries, "" when it carries none. |
+| `finish_summary` | `str` | The finish tool's summary, the agent's closing statement. |
+| `undone_to` | `str` | The session `/undo` forked, "" when it was never undone. |
+| `provider_error` | `str` | The last failed driving call's error, "" when none failed. |
+| `last_verify_rc` | `int \| None` | This execution's last verify.end exit code; None before one ends. |
+| `verify_timeout_s` | `float` | The limit that verify ran out, 0.0 when it ended on its own. |
+| `unattended_questions` | `int` | This execution's questions answered empty because nobody was attached. |
+| `pins` | `tuple[str, ...]` | The operator's pinned instructions in force, most recent last. |
+
 ### PanelView
 
 **Support: public.** Keep a panel's roster, grounded verdicts and completion evidence.
@@ -3570,10 +3608,10 @@ Source: [`agent6.viewmodel.state_types.ExecutionUsage`](https://github.com/agent
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `input_tokens` | `int` | Input tokens. |
-| `output_tokens` | `int` | Output tokens. |
-| `cache_read_tokens` | `int` | The cached side of the input. |
-| `cache_creation_tokens` | `int` | Cache-creation tokens. |
+| `input_tokens` | `int \| None` | Input tokens; None until a budget row carries the counters. |
+| `output_tokens` | `int \| None` | Output tokens; None until a budget row carries the counters. |
+| `cache_read_tokens` | `int \| None` | The cached side of the input; None when the row lacked it. |
+| `cache_creation_tokens` | `int \| None` | Cache-creation tokens; None when the row lacked it. |
 | `usd` | `float` | The metered spend. |
 | `usd_partial` | `bool` | Some model had no price, so `usd` is a lower bound. |
 | `unmetered_tokens` | `int` | Input and output tokens of calls the meter could not price. |

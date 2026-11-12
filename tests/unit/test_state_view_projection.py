@@ -43,7 +43,7 @@ def test_every_state_field_has_an_explicit_wire_classification() -> None:
         "verify_scoped",
         "stranded",
     }
-    private = {"targets", "task_label"}
+    private = {"core", "targets", "task_label"}
     assert set(state_view.PUBLIC_STATE_FIELDS) == public
     assert not public & private
     assert {f.name for f in dataclasses.fields(state_types.SessionState)} == public | private

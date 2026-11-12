@@ -95,10 +95,10 @@
       "plan_observed_points": 0.0
     },
     "execution": {
-      "input_tokens": 0,
-      "output_tokens": 0,
-      "cache_read_tokens": 0,
-      "cache_creation_tokens": 0,
+      "input_tokens": null,
+      "output_tokens": null,
+      "cache_read_tokens": null,
+      "cache_creation_tokens": null,
       "usd": 0.0,
       "usd_partial": false,
       "unmetered_tokens": 0,

@@ -3,9 +3,9 @@
 """The two folds over one session log agree on the facts they share.
 
 `viewmodel.session_log.scan_session_log` folds `logs.jsonl` for the listings and
-`viewmodel.state.fold_session` folds the same log for the viewers, each with
-its own rules for the resume-then-end-again shape and the budget banking.
-Two readers of one stream drift; this folds every fixture both ways.
+`viewmodel.state.fold_session` folds the same log for the viewers; the lifecycle and the
+usage fold once, in `viewmodel.session_core`, and each keeps its own projection. This folds
+every fixture both ways and pins the two projections against the core they share.
 """
 
 from __future__ import annotations
@@ -172,7 +172,7 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
 
 def _shared_facts(
     events: list[dict[str, Any]], tmp_path: pathlib.Path
-) -> tuple[dict[str, Any], ...]:
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     log = tmp_path / "logs.jsonl"
     log.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     scan = session_log.scan_session_log(log)
@@ -188,10 +188,10 @@ def _shared_facts(
         "cost_usd": scan.cost_usd,
         "usd_partial": scan.usd_partial,
         "tokens": (
-            scan.input_tokens or 0,
-            scan.output_tokens or 0,
-            scan.cache_read_tokens or 0,
-            scan.cache_creation_tokens or 0,
+            scan.input_tokens,
+            scan.output_tokens,
+            scan.cache_read_tokens,
+            scan.cache_creation_tokens,
         ),
         "plan": (scan.plan_observed_points, scan.plan_prior_executions, scan.plan_cap),
         "pins": scan.pins,
@@ -223,13 +223,39 @@ def _shared_facts(
         "blocked": any(not p.answered for p in (*state.approvals, *state.questions)),
         "unattended": state.unattended_questions,
     }
-    return listing, viewer
+    life, usage = state.core.lifecycle, state.core.budget
+    core: dict[str, Any] = {
+        **viewer,
+        "task": life.task_label.task,
+        "finished": life.finished,
+        "stop_reason": life.stop_reason if life.finished else "",
+        "verification": life.verification if life.finished else None,
+        "verify_scoped": life.verify_scoped,
+        "gate_red": life.last_verify_rc is not None and life.last_verify_rc != 0,
+        "gate_timed_out": life.verify_timeout_s > 0,
+        "cost_usd": usage.session.usd if scan.cost_usd is not None else None,
+        "usd_partial": usage.session.usd_partial,
+        "tokens": (
+            usage.execution.input_tokens,
+            usage.execution.output_tokens,
+            usage.execution.cache_read_tokens,
+            usage.execution.cache_creation_tokens,
+        ),
+        "plan": (
+            usage.session.plan_observed_points,
+            usage.session.plan_observed_points - usage.execution.plan_observed_points,
+            usage.execution.plan_cap or 0.0,
+        ),
+        "pins": life.pins,
+        "unattended": life.unattended_questions,
+    }
+    return listing, viewer, core
 
 
 @pytest.mark.parametrize("shape", sorted(_SHAPES))
 def test_the_listing_and_the_viewer_fold_agree(shape: str, tmp_path: pathlib.Path) -> None:
-    listing, viewer = _shared_facts(_SHAPES[shape], tmp_path)
-    assert listing == viewer, shape
+    listing, viewer, core = _shared_facts(_SHAPES[shape], tmp_path)
+    assert listing == viewer == core, shape
 
 
 def test_the_viewer_fold_counts_unseen_questions_per_execution() -> None:
@@ -243,8 +269,8 @@ def test_the_viewer_fold_counts_unseen_questions_per_execution() -> None:
 def test_the_folds_agree_on_the_golden_log(tmp_path: pathlib.Path) -> None:
     from agent6.viewmodel import tail
 
-    listing, viewer = _shared_facts(list(tail.tail_events(_GOLDEN, follow=False)), tmp_path)
-    assert listing == viewer
+    listing, viewer, core = _shared_facts(list(tail.tail_events(_GOLDEN, follow=False)), tmp_path)
+    assert listing == viewer == core
 
 
 def _verify_end(exit_code: int, **fields: Any) -> dict[str, Any]:
@@ -276,8 +302,8 @@ def test_exit_124_without_a_timeout_fact_stays_red(tmp_path: pathlib.Path, recor
     if recorded:
         end["outcome"] = "failed"
     events = [_START, end, _END_RED]
-    listing, viewer = _shared_facts(events, tmp_path)
-    assert listing == viewer
+    listing, viewer, core = _shared_facts(events, tmp_path)
+    assert listing == viewer == core
     assert listing["gate_timed_out"] is False
     assert evidence.outcome(end) == "failed"
     done = next(it for it in transcript.fold_transcript(events) if it.kind == "done")
@@ -289,20 +315,20 @@ def test_both_folds_tell_a_timed_out_gate_from_a_red_one(tmp_path: pathlib.Path)
     from agent6.viewmodel import transcript
 
     timed_out = [_START, _verify_end(124, timeout_s=300.0, outcome="timed_out"), _END_RED]
-    listing, viewer = _shared_facts(timed_out, tmp_path)
-    assert listing == viewer
+    listing, viewer, core = _shared_facts(timed_out, tmp_path)
+    assert listing == viewer == core
     assert listing["gate_timed_out"] is True and listing["gate_red"] is True
     done = next(it for it in transcript.fold_transcript(timed_out) if it.kind == "done")
     assert done.name == "finished · gate timed out"
     # An exit without a timeout fact is a red gate.
     for red in (_verify_end(124), _verify_end(124, timeout_s=0.0), _verify_end(1, timeout_s=300.0)):
-        listing, viewer = _shared_facts([_START, red, _END_RED], tmp_path)
-        assert listing == viewer
+        listing, viewer, core = _shared_facts([_START, red, _END_RED], tmp_path)
+        assert listing == viewer == core
         assert listing["gate_timed_out"] is False and listing["gate_red"] is True
     # A later verdict, or a new execution, replaces the timeout.
     for later in (_verify_end(1, timeout_s=300.0), {**_START, "type": "session.resume"}):
         events = [_START, _verify_end(124, timeout_s=300.0, outcome="timed_out"), later, _END_RED]
-        listing, viewer = _shared_facts(events, tmp_path)
+        listing, viewer, core = _shared_facts(events, tmp_path)
         assert listing == viewer and listing["gate_timed_out"] is False
 
 
