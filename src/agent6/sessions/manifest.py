@@ -469,14 +469,6 @@ def read_manifest(session_dir: pathlib.Path) -> SessionManifest:
     if (newer := _newer_note(data)) is not None:
         # `extra="ignore"` would read a record it cannot interpret as a plain older one.
         raise ManifestError(newer)
-    if "harness" not in data and "workflow" in data:
-        data["harness"] = data.pop("workflow")  # the stamp's key through version 3
-    budget = data.get("budget")
-    if isinstance(budget, dict) and "max_plan_points" not in budget and "max_percent" in budget:
-        budget["max_plan_points"] = budget.pop("max_percent")  # the cap's key through version 5
-    policy = data.get("policy")
-    if isinstance(policy, dict) and "commit_per_turn" not in policy and "commit_per_step" in policy:
-        policy["commit_per_turn"] = policy.pop("commit_per_step")  # the key through version 5
     try:
         return SessionManifest.model_validate(data)
     except pydantic.ValidationError as exc:

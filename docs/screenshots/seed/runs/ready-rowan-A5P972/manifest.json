@@ -18,7 +18,7 @@
       "model": "moonshotai/kimi-k2.7-code-20260612"
     }
   },
-  "workflow": {
+  "harness": {
     "critic": "off",
     "preset": "none"
   }

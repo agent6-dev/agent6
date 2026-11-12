@@ -18,7 +18,7 @@
       "model": "deepseek/deepseek-v4-flash-20260423"
     }
   },
-  "workflow": {
+  "harness": {
     "critic": "off",
     "preset": "none"
   }

@@ -18,7 +18,7 @@
       "model": "qwen/qwen3.6-35b-a3b-20260415"
     }
   },
-  "workflow": {
+  "harness": {
     "critic": "off",
     "preset": "none"
   }

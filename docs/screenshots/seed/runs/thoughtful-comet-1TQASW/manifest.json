@@ -18,7 +18,7 @@
       "model": "qwen/qwen3-coder"
     }
   },
-  "workflow": {
+  "harness": {
     "critic": "off"
   }
 }

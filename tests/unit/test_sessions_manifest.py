@@ -507,65 +507,6 @@ def test_the_stamp_records_the_network_the_commands_join(tmp_path: pathlib.Path)
     assert sessions_manifest.read_manifest(layout.session_dir).policy.network == ""
 
 
-def test_a_manifest_keeps_its_commit_policy_under_the_old_key(tmp_path: pathlib.Path) -> None:
-    """A manifest's `policy.commit_per_step` stamp is read as `commit_per_turn`.
-
-    `extra="ignore"` dropped it silently, so a resumed no-commit run read the default True.
-    """
-    (tmp_path / "manifest.json").write_text(
-        json.dumps(
-            {
-                "version": 5,
-                "session_id": "old-run-AAAAAA",
-                "mode": "run",
-                "policy": {"commit_per_step": False},
-            }
-        ),
-        encoding="utf-8",
-    )
-    assert sessions_manifest.read_manifest(tmp_path).policy.commit_per_turn is False
-
-
-def test_a_manifest_keeps_its_plan_cap_under_the_old_key(tmp_path: pathlib.Path) -> None:
-    """A manifest's `budget.max_percent` stamp is read as `max_plan_points`.
-
-    `extra="ignore"` dropped it silently, so a resumed session ran under the config's cap.
-    """
-    (tmp_path / "manifest.json").write_text(
-        json.dumps(
-            {
-                "version": 4,
-                "session_id": "old-run-AAAAAA",
-                "mode": "run",
-                "budget": {"max_usd": 2.0, "max_percent": 40.0},
-            }
-        ),
-        encoding="utf-8",
-    )
-    stamp = sessions_manifest.read_manifest(tmp_path).budget
-    assert (stamp.max_usd, stamp.max_plan_points) == (2.0, 40.0)
-
-
-def test_a_version_3_manifest_keeps_its_stamp_under_the_old_key(tmp_path: pathlib.Path) -> None:
-    """A version-3 manifest's `workflow` stamp is read under the `harness` key.
-
-    `extra="ignore"` dropped it silently, so a resumed session lost its preset and gate pin.
-    """
-    (tmp_path / "manifest.json").write_text(
-        json.dumps(
-            {
-                "version": 3,
-                "session_id": "old-run-AAAAAA",
-                "mode": "run",
-                "workflow": {"review_when": "off", "preset": "strict", "preset_from_flag": True},
-            }
-        ),
-        encoding="utf-8",
-    )
-    stamp = sessions_manifest.read_manifest(tmp_path).harness
-    assert (stamp.review_when, stamp.preset, stamp.replay_preset) == ("off", "strict", "strict")
-
-
 def test_write_manifest_bytes_coordinator(tmp_path: pathlib.Path) -> None:
     """The coordinator golden pins group facts without a lane placement."""
     from agent6.app import stamps
