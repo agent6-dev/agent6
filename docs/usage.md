@@ -280,7 +280,7 @@ Failed or unparseable seats remain abstentions with their diagnostics; an all-ab
 Child review does not certify a later or different parent tree.
 Session-owned panels retain a cloneable snapshot of the exact comparison, including uncommitted work after failed verification and with `git.commit_per_turn = false`.
 Snapshotting does not checkpoint the run or move HEAD, the index or visible branches.
-`sessions remove <id>` deletes the session's review snapshot refs and its review seats' records with its record; `sessions remove --asks --yes` does the same for the removed asks, while `sessions prune` leaves review snapshots alone.
+`sessions remove <id>` deletes the session's review snapshot refs, its lanes' records and its review seats' records with its record; `sessions remove --asks --yes` does the same for the removed asks, while `sessions prune` leaves review snapshots alone.
 The snapshot certifies only its recorded trees and path coverage, not later parent edits.
 Under `git.control = "model"` a panel compares the base recorded at the start with the checkout's HEAD and its uncommitted edits, since the model's commits are the record.
 An exact repeat on the same cited blob keeps its finding ID across rounds and resumes.

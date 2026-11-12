@@ -412,3 +412,72 @@ def test_remove_asks_takes_their_review_seat_records(
     kept = _seat(state, f"{_ID}-rpanel-l1", _ID)
     assert main(["sessions", "remove", "--asks", "--yes"]) == 0
     assert not asked.exists() and kept.exists()
+
+
+def _lane(state: pathlib.Path, lane_id: str, parent: str) -> pathlib.Path:
+    lane = state / "sessions" / "runs" / lane_id
+    lane.mkdir(parents=True)
+    (lane / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "session_id": lane_id,
+                "mode": "run",
+                "user_task": "t",
+                "parallel": {"group": f"{parent}-p1", "lane": 1, "coordinator": parent},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (lane / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "session.stop", "reason": "finish_session"})
+        + "\n",
+        encoding="utf-8",
+    )
+    return lane
+
+
+def test_remove_takes_the_runs_lanes_with_it(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A removed run left its lanes' records, and a run reusing its id then failed to dispatch."""
+    monkeypatch.chdir(tmp_path)
+    _ended_unmerged_run(tmp_path)
+    state = paths.state_dir(tmp_path)
+    lane = _lane(state, f"{_ID}-p1-l1", _ID)
+    lane_seat = _seat(state, f"{lane.name}-rpanel-l1", lane.name)
+    other = _lane(state, "other-p1-l1", "other")
+    chain = git_read.chain_ref_for(lane.name)
+    _git(tmp_path, "update-ref", chain, "HEAD")
+    _git(tmp_path, "branch", f"agent6/{lane.name}", "HEAD")
+
+    assert main(["sessions", "remove", _ID]) == 0
+
+    assert not lane.exists() and not lane_seat.exists() and other.exists()
+    assert git_read.chain_tip(tmp_path, chain) is None
+    # A lane's branch is git's, as a run's is: prune is the branch verb.
+    assert git_read.branch_exists(tmp_path, f"agent6/{lane.name}")
+    out = capsys.readouterr().out
+    assert "1 lane" in out and "1 review seat record" in out
+
+
+def test_remove_refuses_while_a_lane_of_the_run_is_live(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A dead run's live lane keeps its record: removing the run would orphan it."""
+    monkeypatch.chdir(tmp_path)
+    layout = _ended_unmerged_run(tmp_path)
+    lane = _lane(paths.state_dir(tmp_path), f"{_ID}-p1-l1", _ID)
+    process.write_worker_pid(lane, os.getpid())
+
+    assert main(["sessions", "remove", _ID]) == 2
+
+    assert layout.session_dir.exists() and lane.exists()
+    assert f"{lane.name} is still live" in capsys.readouterr().err

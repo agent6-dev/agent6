@@ -490,12 +490,12 @@ def _remove_refusal(
         tips: The branch tips the worktree's commits must reach.
 
     Returns:
-        The refusal when the session is live or its worktree holds work no commit has.
+        The refusal when the session or a lane of it is live, or its worktree holds work
+        no commit has.
     """
-    if process.worker_is_alive(layout.session_dir):
-        return (
-            f"{layout.session_id} is still live; stop it first (agent6 stop {layout.session_id})."
-        )
+    for live in (layout.session_dir, *lineage.descendants_of(layout.session_dir)):
+        if process.worker_is_alive(live):
+            return f"{live.name} is still live; stop it first (agent6 stop {layout.session_id})."
     if worktree is None or not (dirt := fork_worktrees.uncommitted_in_worktree(worktree, tips)):
         return ""
     return (
@@ -513,7 +513,8 @@ def _remove_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) ->
         layout: The session.
 
     Returns:
-        The id, task and state lines, then for unmerged commits whether a branch keeps them.
+        The id, task and state lines, its lane count, then for unmerged commits whether a
+        branch keeps them.
     """
     tips = git_read.run_ref_tips(cwd)
     summary = summarize_session_dir(layout.session_dir, branch_tips=tips)
@@ -523,6 +524,13 @@ def _remove_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) ->
         f"  task:    {task}",
         f"  state:   {format.status_label(summary.status, summary.detail)}",
     ]
+    lanes = [
+        child
+        for child in lineage.descendants_of(layout.session_dir)
+        if child.parent.name != sessions_layout.EVIDENCE_BUCKET
+    ]
+    if lanes:
+        lines.append(f"  lanes:   {len(lanes)} go with it")
     if summary.unmerged:
         branch = git_read.run_branch_for(layout.session_id)
         kept = f"branch {branch} keeps them" if branch in tips else "they go with it"
@@ -606,7 +614,10 @@ def _remove_session(
     sharing: list[str],
     tips: tuple[str, ...],
 ) -> int:
-    """Delete one session's record, then its worktree and owned refs, and print what went.
+    """Delete one session's record with its lanes' and seats', then its worktree and owned refs.
+
+    The listings fold a run's lanes under it and show no seat, so they go with the run. A
+    lane's branch stays, as the run's does.
 
     Args:
         cwd: The checkout git runs from.
@@ -618,16 +629,20 @@ def _remove_session(
     Returns:
         The exit code; 1 on a partial delete.
     """
-    seats = lineage.seat_records(layout.state_dir, {layout.session_id})
+    children = lineage.descendants_of(layout.session_dir)
+    seats = [c for c in children if c.parent.name == sessions_layout.EVIDENCE_BUCKET]
+    lanes = [c for c in children if c not in seats]
     try:
         shutil.rmtree(layout.session_dir)
-        for seat in seats:
-            shutil.rmtree(seat)
+        for child in children:
+            shutil.rmtree(child)
     except OSError as exc:
         # A partial delete leaves a remnant: no success line, and the chain ref stays as its anchor.
         common.error(f"could not remove {layout.session_dir}: {exc}")
         return 1
     went: list[str] = []  # what went with the record
+    if lanes:
+        went.append(f"its {len(lanes)} lane{'' if len(lanes) == 1 else 's'}")
     if seats:
         went.append(f"{len(seats)} review seat record{'' if len(seats) == 1 else 's'}")
     stays = ""
@@ -659,7 +674,7 @@ def _remove_session(
         snapshots = git_read.session_refs(cwd, layout.session_id)
         for ref in (
             *snapshots,
-            *(r for seat in seats for r in git_read.session_refs(cwd, seat.name)),
+            *(r for child in children for r in git_read.session_refs(cwd, child.name)),
         ):
             git_ops.delete_ref(cwd, ref)
         if snapshots:
