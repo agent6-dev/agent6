@@ -452,24 +452,8 @@ def _summary(
     )
 
 
-def test_review_order_groups_rows_and_dates_pending_work_oldest_first() -> None:
-    """Rows sort by queue group, the oldest pending work first; nothing pending keeps activity."""
-    summaries = [
-        _summary("merged", "other", mtime=50.0),
-        _summary("clean", "awaiting_merge", mtime=40.0, pending=400.0),
-        _summary("block-new", "blocked", mtime=60.0, pending=600.0),
-        _summary("unverified", "unverified", mtime=30.0, pending=300.0),
-        _summary("block-old", "blocked", mtime=20.0, pending=200.0),
-        _summary("warn", "other", mtime=10.0),
-    ]
-    by_activity = [r.summary.session_id for r in listing.nested_rows(summaries)]
-    assert by_activity == ["block-new", "merged", "clean", "unverified", "block-old", "warn"]
-    by_review = [r.summary.session_id for r in listing.nested_rows(summaries, sort="review")]
-    assert by_review == ["block-old", "block-new", "unverified", "clean", "merged", "warn"]
-
-
 def test_a_coordinator_takes_its_lanes_place_and_keeps_its_own_verification() -> None:
-    """A fan-out whose lane holds an open block sorts first; the lane counts ride the row."""
+    """A fan-out takes its lanes' earliest review state; the lane counts ride the row."""
     summaries = [
         _summary("clean", "awaiting_merge", mtime=90.0, pending=900.0),
         _summary("fan", "other", mtime=10.0),
@@ -477,12 +461,11 @@ def test_a_coordinator_takes_its_lanes_place_and_keeps_its_own_verification() ->
         _summary("lane-2", "blocked", mtime=12.0, pending=120.0, coordinator="fan", lane=2),
         _summary("orphan", "blocked", mtime=5.0, pending=50.0, coordinator="gone", lane=1),
     ]
-    rows = listing.nested_rows(summaries, sort="review")
-    assert [r.summary.session_id for r in rows] == ["orphan", "fan", "clean"]
+    rows = listing.nested_rows(summaries)
+    assert [r.summary.session_id for r in rows] == ["clean", "fan", "orphan"]  # newest first
     fan = rows[1]
     assert [lane.summary.session_id for lane in fan.lanes] == ["lane-1", "lane-2"]
     assert listing.row_group(fan) == "blocked" and fan.summary.review_queue.group == "other"
-    assert listing.pending_since(fan) == 120.0
     row = listing.row_json(fan, winners=set())
     assert row.get("queue_group") == "blocked" and row.get("lane_groups") == {
         "blocked": 1,
@@ -492,24 +475,9 @@ def test_a_coordinator_takes_its_lanes_place_and_keeps_its_own_verification() ->
     assert isinstance(entry, dict) and entry["verification_state"] == "not_applicable"
 
 
-def test_a_nested_lanes_pending_work_dates_its_coordinator() -> None:
-    """A lane's own lane places and dates the coordinator, as the group does."""
-    summaries = [
-        _summary("fan", "other", mtime=10.0),
-        _summary("lane-1", "other", mtime=11.0, coordinator="fan", lane=1),
-        _summary("sub-1", "blocked", mtime=12.0, pending=5.0, coordinator="lane-1", lane=1),
-    ]
-    (fan,) = listing.nested_rows(summaries, sort="review")
-    assert listing.row_group(fan) == "blocked" and listing.pending_since(fan) == 5.0
-    blocked = review_queue.GROUPS.index("blocked")
-    assert listing.review_sort_key(fan) == (blocked, 0, 5.0, "fan")
-
-
 def test_a_pending_question_leads_the_queue(tmp_path: pathlib.Path) -> None:
     """A session with a question nobody answered sits first, dated from the oldest open one."""
     import datetime
-
-    from agent6.ui import keymap
 
     def row(kind: str, second: int, **fields: Any) -> dict[str, Any]:
         return {"type": kind, "ts": f"2026-07-14T10:00:0{second}+00:00", **fields}
@@ -526,7 +494,6 @@ def test_a_pending_question_leads_the_queue(tmp_path: pathlib.Path) -> None:
     assert (entry.group, entry.reason) == ("needs_answer", "1 question pending")
     asked = datetime.datetime(2026, 7, 14, 10, 0, 2, tzinfo=datetime.UTC).timestamp()
     assert entry.oldest_open_at == asked
-    assert set(keymap.QUEUE_TEXT) == set(review_queue.GROUPS)
 
 
 def test_a_saved_answer_leaves_the_needs_answer_group(tmp_path: pathlib.Path) -> None:

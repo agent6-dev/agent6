@@ -311,24 +311,21 @@ agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
 - Fix retries read the journal, not the launch confirmation from the initiating response.
   Without a recorded submission or failure, a retry reports `delivery unknown` and never launches or sends the instruction again.
 
-## The review queue
+## A session's review state
 
-Every listing places each session in a review queue, derived from its journal on each read and never stored.
-The groups, in order:
+Every listing row carries its review state, derived from its journal on each read and never stored:
 
-- **needs answer**: questions the model asked during an execution that nobody has answered, on a running run or an ended one; the row counts the question sets and dates from the oldest; `agent6 answer <id>` answers them, and a set whose answer is saved on disk waits for the run's next turn or its resume instead
+- **needs answer**: questions the model asked during an execution that nobody has answered, on a running run or an ended one; the row counts the question sets and dates from the oldest; `agent6 answer <id>` answers them, and a set whose answer is saved on disk waits for the run's next turn or its resume
 - **blocked**: open `block` findings; the row names their count and dates from the oldest one's first panel
 - **unverified**: an ended run whose final tree the gate did not certify whole (no verify, a red or timed-out gate, a pass over selected paths only, a pass with no verification evidence, edits after the last green)
 - **awaiting merge**: a clean run waiting for a merge: no open findings, a complete and current panel with no abstained seat, a whole-tree pass whose evidence certifies the end tree, unmerged work with its chain and branch at the recorded checkpoint, no live worker, not stranded or undone
-- **other**: the rest, with its reason: open warnings or nits, an unreviewed, skipped, stale, incomplete, inconclusive or freeform review, a seat that abstained, a review still running, legacy counts, unreadable evidence, a live or unfinished run's status, a fan-out, a merged run, commits on the run's refs after it, no recorded checkpoint, nothing to merge, an ask or plan
+- **other**: the rest, with its reason: open warnings or nits, an unreviewed, skipped, stale, incomplete, inconclusive or freeform review, a seat that abstained, a review still running, legacy counts, unreadable evidence, a live or unfinished run's status, a fan-out, a merged run, commits on the run
 
-Within a group the oldest pending work comes first; rows with nothing pending keep their activity order.
-A fan-out coordinator takes its lanes' earliest group and shows their counts without inheriting a lane's verification.
-Lifecycle status stays apart: a running session with an open block reads running in the blocked group, and a failed run reads failed.
+A fan-out coordinator takes its lanes' earliest state and shows their counts without inheriting a lane's verification.
+Lifecycle status stays apart: a running session with an open block reads running and blocked, and a failed run reads failed.
 
-`agent6 sessions list --sort review` prints the queue with a review column (the group, the reason, a fan-out's lanes by group); `--sort activity` is the default.
-`sessions list --json` includes the [structured review queue](formats.md#reviewqueueentry) and [lane groups](formats.md#cli-json).
-The web and TUI hubs open in review order with activity one toggle away ([web](web.md#pages), [terminal](terminal.md#hub)); ACP's `/review-queue` lists the repository's queue as text ([ACP](acp.md)).
+Every listing orders sessions by last activity, newest first.
+The web hub shows the state as a pill on the row; `sessions list --json` includes the [structured review state](formats.md#reviewqueueentry) and [lane groups](formats.md#cli-json).
 
 ## Session receipts
 

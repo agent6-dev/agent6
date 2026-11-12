@@ -34,14 +34,11 @@ from agent6.viewmodel import (
 from agent6.viewmodel import listing as viewmodel_listing
 
 
-def _cmd_list(
-    *, as_json: bool = False, lanes: bool = False, sort: viewmodel_listing.Sort = "activity"
-) -> int:
-    """List this repo's sessions, newest first or in review-queue order.
+def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
+    """List this repo's sessions, newest activity first.
 
     Columns: updated, status (the mode folded in when the word does not imply it, the
-    failure reason, the unmerged mark), usage, id, task; `--sort review` adds the review
-    column (the row's queue group and reason) before usage. A fan-out's lanes nest under
+    failure reason, the unmerged mark), usage, id, task. A fan-out's lanes nest under
     its row: folded into a count, or listed indented with `lanes`; the JSON row always
     nests them. Every bucket, unlike the TUI and web hubs, which give `machine create`
     drafts their own card.
@@ -49,13 +46,12 @@ def _cmd_list(
     Args:
         as_json: Print the rows as JSON.
         lanes: List each fan-out's lanes.
-        sort: Most recent activity first, or the review queue's groups.
 
     Returns:
         The exit code, 0.
     """
     listing, winners = viewmodel_listing.rows_for(
-        pathlib.Path.cwd(), buckets=sessions_layout.SESSION_BUCKETS, sort=sort
+        pathlib.Path.cwd(), buckets=sessions_layout.SESSION_BUCKETS
     )
     if not listing:
         print(
@@ -71,7 +67,7 @@ def _cmd_list(
 
     def cells(
         row: viewmodel_listing.ListingRow, id_cell: str
-    ) -> tuple[str, str, str, str, str, str, session_status.TaskLabel]:
+    ) -> tuple[str, str, str, str, str, session_status.TaskLabel]:
         """Return a row's cells with the id cell as given; the review cell is "" by activity."""
         s = row.summary
         styled, plain = common.styled_status(
@@ -84,13 +80,12 @@ def _cmd_list(
             format.format_when(row.group_last_activity),
             styled,
             plain,
-            _review_cell(row) if sort == "review" else "",
             s.usage_cell,
             id_cell,
             s.task_label,
         )
 
-    rows: list[tuple[str, str, str, str, str, str, session_status.TaskLabel]] = []
+    rows: list[tuple[str, str, str, str, str, session_status.TaskLabel]] = []
 
     def emit(row: viewmodel_listing.ListingRow, depth: int) -> None:
         """Append the row's cells, then its lanes' when listing them."""
@@ -108,21 +103,16 @@ def _cmd_list(
     for row in listing:
         emit(row, 0)
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
-    review_w = max(6, *(len(r[3]) for r in rows)) if sort == "review" else 0
-    review_head = f"{'review':<{review_w}}  " if review_w else ""
-    id_w = max(2, *(len(r[5]) for r in rows))
+    id_w = max(2, *(len(r[4]) for r in rows))
     # The task column takes what a tty has left (floor 24); piped output keeps a fixed 60.
-    fixed = 11 + 2 + status_w + 2 + (review_w + 2 if review_w else 0) + 8 + 2 + id_w + 2
+    fixed = 11 + 2 + status_w + 2 + 8 + 2 + id_w + 2
     task_w = max(24, shutil.get_terminal_size().columns - fixed) if color else 60
-    print(
-        f"{'updated':<11}  {'status':<{status_w}}  {review_head}{'usage':<8}  {'id':<{id_w}}  task"
-    )
-    for when, styled, plain, review, usage, session_id, task in rows:
+    print(f"{'updated':<11}  {'status':<{status_w}}  {'usage':<8}  {'id':<{id_w}}  task")
+    for when, styled, plain, usage, session_id, task in rows:
         pad = " " * (status_w - len(plain))
-        review_col = f"{review:<{review_w}}  " if review_w else ""
         task_lines = task.line(max_chars=task_w).splitlines()
         snip = task_lines[0] if task_lines else ""
-        print(f"{when:<11}  {styled}{pad}  {review_col}{usage:<8}  {session_id:<{id_w}}  {snip}")
+        print(f"{when:<11}  {styled}{pad}  {usage:<8}  {session_id:<{id_w}}  {snip}")
         for continuation in task_lines[1:]:
             print(" " * fixed + continuation)
     return 0

@@ -42,7 +42,6 @@ from agent6.ui.tui import (
     new_work,
     review,
     screen_chrome,
-    settings,
     theme,
 )
 from agent6.vcs import git_read
@@ -68,14 +67,12 @@ _NARROWEST_COLS = 80
 _WIDE_COLS = 140
 
 
-def _sync_columns(table: widgets.DataTable[Any], width: int, *, review: bool) -> tuple[str, ...]:
+def _sync_columns(table: widgets.DataTable[Any], width: int) -> tuple[str, ...]:
     """Set the table's columns for the width, rebuilt only on a change, and empty it for a refill.
 
     Args:
         table: The hub table.
-        width: The terminal width; the cost column hides below `_NARROWEST_COLS`.
-        review: Whether the listing is in review-queue order, which adds the review column
-            from `_NARROW_COLS` up.
+        width: The terminal width; the usage column hides below `_NARROWEST_COLS`.
 
     Returns:
         The column labels.
@@ -83,8 +80,6 @@ def _sync_columns(table: widgets.DataTable[Any], width: int, *, review: bool) ->
     labels = ("updated", "status", "usage", "id", "task")
     if width < _NARROWEST_COLS:
         labels = ("updated", "status", "id", "task")
-    elif review and width >= _NARROW_COLS:
-        labels = ("updated", "status", "review", "usage", "id", "task")
     if width >= _WIDE_COLS:
         labels = (*labels[:-1], "branch", "task")
     if tuple(str(c.label) for c in table.columns.values()) != labels:
@@ -92,25 +87,6 @@ def _sync_columns(table: widgets.DataTable[Any], width: int, *, review: bool) ->
         table.add_columns(*labels)
     table.clear()
     return labels
-
-
-def _review_cell(row: viewmodel_listing.ListingRow) -> text.Text:
-    """Return the review column: the row's queue group, its reason and its lanes' groups."""
-    group = viewmodel_listing.row_group(row)
-    entry = row.summary.review_queue
-    lanes = ", ".join(
-        f"{n} {name.replace('_', ' ')}" for name, n in viewmodel_listing.lane_groups(row).items()
-    )
-    parts = [keymap.QUEUE_TEXT[group] if group != "other" else "", entry.reason]
-    if lanes:
-        parts.append(f"lane queue groups: {lanes}")
-    style = {
-        "needs_answer": "bold yellow",
-        "blocked": "bold red",
-        "unverified": "yellow",
-        "awaiting_merge": "green",
-    }.get(group, "")
-    return text.Text(" · ".join(p for p in parts if p), style=style)
 
 
 def _status_cell(summary: SessionSummary, *, narrow: bool = False) -> text.Text:
@@ -154,7 +130,6 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 menubar.MenuItem("View logs", "view_logs"),
                 menubar.MenuItem(keymap.FINDINGS, "view_findings"),
                 menubar.MenuItem("Fold/expand lanes", "toggle_lanes"),
-                menubar.MenuItem("Order: review queue / activity", "toggle_sort"),
                 menubar.MenuItem("Theme…", "choose_theme"),
                 menubar.MenuItem("Copy method…", "choose_copy_method"),
             ),
@@ -171,7 +146,6 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         ("new_work", "New session"),
         ("open_selected", "Open"),
         ("toggle_lanes", "Lanes"),
-        ("toggle_sort", "Order"),
         ("merge_selected", "Merge run"),
         ("delete_selected", "Delete run"),
         ("open_config", "Config"),
@@ -205,10 +179,6 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         # The fan-outs listed, by coordinator id, and the ones the operator expanded.
         self._fanouts: dict[str, viewmodel_listing.ListingRow] = {}
         self._expanded: set[str] = set()
-        # The listing's order, the operator's remembered choice: the review queue or activity.
-        self._sort: viewmodel_listing.Sort = (
-            "activity" if settings.get_hub_sort() == "activity" else "review"
-        )
 
     def compose(self) -> app.ComposeResult:
         """Lay out the hub.
@@ -249,9 +219,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             selected = self._runs[table.cursor_row].name
         # A zero width is the mount-time fill before layout: laid out as wide.
         narrow = (self.size.width or _NARROW_COLS) < _NARROW_COLS
-        labels = _sync_columns(
-            table, self.size.width or _NARROW_COLS, review=self._sort == "review"
-        )
+        labels = _sync_columns(table, self.size.width or _NARROW_COLS)
         # `_runs` stays 1:1 with the rows: a dir that vanished since the listing is dropped from
         # both, or every cursor-indexed action past the gap maps to the wrong session.
         survivors: list[pathlib.Path] = []
@@ -259,8 +227,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         tips = git_read.run_ref_tips(self.repo_cwd)
         dirs = {rd.name: rd for rd in session_dirs(self.agent6_dir) if rd.is_dir()}
         listing = viewmodel_listing.nested_rows(
-            (summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values()),
-            sort=self._sort,
+            summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values()
         )
         self._fanouts = {row.summary.session_id: row for row in listing if row.lanes}
 
@@ -272,7 +239,6 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             cells: dict[str, str | text.Text] = {
                 "updated": format.format_when(row.group_last_activity, short=narrow),
                 "status": _status_cell(s, narrow=narrow),
-                "review": _review_cell(row),
                 "usage": s.usage_cell,
                 "id": text.Text(id_cell),
                 "branch": s.branch,
@@ -330,15 +296,8 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             if not count
             else f"{count} session{'' if count == 1 else 's'}"
         )
-        order = "review queue" if self._sort == "review" else "activity"
-        self.app.sub_title = f"{self.repo_cwd.name} · {tally} · by {order}"
+        self.app.sub_title = f"{self.repo_cwd.name} · {tally}"
         table.show_cursor = table.row_count > 0  # no full-height cursor over an empty body
-
-    def action_toggle_sort(self) -> None:
-        """Switch the listing between the review queue and activity, and remember the choice."""
-        self._sort = "activity" if self._sort == "review" else "review"
-        settings.save_hub_sort(self._sort)
-        self.action_refresh()
 
     def action_toggle_lanes(self) -> None:
         """Expand or fold the selected fan-out's lanes; the cursor stays on the fan-out's row."""

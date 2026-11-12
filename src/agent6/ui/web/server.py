@@ -1011,11 +1011,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             )
             return
         if path == "/api/hub":
-            sort = (parse.parse_qs(parse.urlsplit(self.path).query).get("sort") or ["review"])[0]
-            if sort not in ("activity", "review"):
-                self._send_json({"error": "sort is activity or review"}, status=422)
-                return
-            self._send_json(model.hub_payload(self.cwd, self.config_paths, sort=sort))
+            self._send_json(model.hub_payload(self.cwd, self.config_paths))
             return
         if path == "/api/routes":
             self._send_routes()

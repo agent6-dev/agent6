@@ -66,42 +66,6 @@ def test_review_commands_are_advertised() -> None:
     assert "idle" in fix["description"] and "--resume" in fix["input"]["hint"]
 
 
-def test_review_queue_lists_the_repository_without_a_recorded_run(tmp_path: pathlib.Path) -> None:
-    """`/review-queue` answers for the repository, grouped, before any run exists in the thread."""
-    from tests.unit import test_review_queue as queue_tests
-
-    runs = paths.state_dir(tmp_path) / "sessions" / "runs"
-    (runs / "run-block").mkdir(parents=True)
-    (runs / "run-block" / "logs.jsonl").write_text(
-        "".join(
-            json.dumps(r) + "\n"
-            for r in (queue_tests._START, *queue_tests._panel_rows(block=1), queue_tests._END)
-        )
-    )
-    ran: list[str] = []
-
-    def run(_current: session.Session, text: str) -> str:
-        ran.append(text)
-        return "end_turn"
-
-    current = session.Session(acp_id="editor", cwd=tmp_path, session_id="")
-    sessions = session.Sessions(run=run, state_dir_for=paths.state_dir)
-    sessions._by_id[current.acp_id] = current  # pyright: ignore[reportPrivateUsage]
-    out = io.BytesIO()
-    connection = server.ACPServer(io.BytesIO(), out, sessions=sessions)
-    _prompt(connection, current, "/review-queue")
-    text = _notices(out)
-    assert "Blocked:" in text and "run-block" in text and "1 open block finding" in text
-    assert "agent6 sessions findings run-block" in text
-    assert ran == []
-    commands = next(
-        update["params"]["update"]["availableCommands"]
-        for update in updates.RunInfo("editor").feed(dict(type="session.start", user_task="task"))
-        if update["params"]["update"]["sessionUpdate"] == "available_commands_update"
-    )
-    assert "review-queue" in {c["name"] for c in commands}
-
-
 def test_findings_resolve_and_reopen_never_reach_the_model(tmp_path: pathlib.Path) -> None:
     ran: list[str] = []
 
@@ -404,26 +368,3 @@ def test_answer_writes_the_pending_questions_file_and_never_reaches_the_model(
     errors = [m for m in _messages(out) if "error" in m]
     assert errors and "no pending question 'question-9'" in errors[0]["error"]["message"]
     assert not ran
-
-
-def test_review_queue_names_the_answer_command(tmp_path: pathlib.Path) -> None:
-    """The queue lists the command for a needs-answer row as its Returns section promises."""
-    from agent6.ui.acp import review
-
-    saved = review_helpers.reviewed_session(tmp_path)
-    with saved.logs_path.open("a") as log:
-        log.write(json.dumps({"type": "session.start", "mode": "run", "user_task": "task"}) + "\n")
-        log.write(
-            json.dumps(
-                {
-                    "type": "question.prompt",
-                    "id": "question-1",
-                    "questions": [{"question": "Which DB?"}],
-                    "wait": False,
-                }
-            )
-            + "\n"
-        )
-    text = review.review_queue_text(tmp_path)
-    assert "Needs answer:" in text and f"agent6 answer {saved.session_id}" in text
-    assert "needs-answer" in (review.review_queue_text.__doc__ or "")

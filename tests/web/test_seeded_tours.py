@@ -113,16 +113,15 @@ def test_git_and_files_tour(tour_page: Page, tmp_path: pathlib.Path) -> None:
     _stop(page, tmp_path, "07-readme-blame")
 
 
-def test_review_queue_and_findings_tour(tour_page: Page, tmp_path: pathlib.Path) -> None:
-    """The queue and reviewed session retain two open warnings and the recorded receipt."""
+def test_hub_and_findings_tour(tour_page: Page, tmp_path: pathlib.Path) -> None:
+    """The hub's reviewed session retains two open warnings and the recorded receipt."""
     from playwright.sync_api import expect
 
     page = tour_page
-    expect(page.locator(".sort-toggle button.on")).to_have_text("Review")
     reviewed = page.locator(".item").filter(has_text="merry-fountain-B7XAJS")
     expect(reviewed).to_contain_text("2 warn open")
     expect(reviewed).to_contain_text("passed · unmerged")
-    _stop(page, tmp_path, "01-review-queue")
+    _stop(page, tmp_path, "01-hub")
     reviewed.click()
     findings = page.locator(".card-findings")
     expect(findings.locator(".finding-counts")).to_be_visible()

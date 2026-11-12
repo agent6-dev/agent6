@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "6b50bb1b50a8e02fb549976031d9a9d93d9a66d2c367b3f3d621fbc30ccc2159"
+PAGE_SHA256 = "043a717cf68ad508c9c4698d6fb7d515b535f3e3940281d1dfd93a1094be13d9"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -145,34 +145,6 @@ def test_the_plan_bar_meters_this_executions_points() -> None:
     assert "executionPt / planCap" in client
 
 
-def test_list_headings_require_distinct_groups() -> None:
-    """A single group adds no heading; mixed groups retain their boundaries."""
-    node = shutil.which("node")
-    if node is None:
-        pytest.skip("node is needed to exercise the web client")
-    client = page.CLIENT_JS
-    render = client[client.index("function listCard(") : client.index("const expandedFanouts")]
-    setup = """
-const assert = require('node:assert/strict');
-function el(tag, cls, text) {
-  return {tag, cls, text, children: [], appendChild(child) { this.children.push(child); }};
-}
-"""
-    scenario = """
-for (const [entries, expected] of [
-  [[], []], [['Other'], []], [['Other', 'Other'], []],
-  [['Unverified', 'Other'], ['Unverified', 'Other']],
-]) {
-  const card = listCard('Sessions', entries, 'none', () => {}, e => e);
-  const rows = card.children[1].children;
-  assert.deepEqual(rows.filter(r => r.cls === 'group').map(r => r.text), expected);
-  assert.equal(rows.filter(r => r.cls === 'item').length, entries.length);
-}
-"""
-    result = subprocess.run(
-        [node, "-e", setup + render + scenario], check=False, capture_output=True, text=True
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_the_sessions_card_folds_a_fan_outs_lanes() -> None:
@@ -198,7 +170,7 @@ def test_ctrl_k_opens_the_session_switcher_and_drafts_wait_in_the_composer() -> 
     switcher = client[
         client.index("async function openSwitcher") : client.index("function makeComposer")
     ]
-    assert "getJSON('/api/hub?sort=activity')" in switcher
+    assert "getJSON('/api/hub')" in switcher
     assert "'worktree ' + r.worktree : 'this checkout'" in switcher
     assert "'ref ' + r.branch" in switcher
     assert "handToNewWork({ task: '/review ' + r.branch })" in switcher

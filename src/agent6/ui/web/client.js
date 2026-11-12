@@ -494,18 +494,12 @@ function createMachineDock() {
 
 // A list card: h2 title + one clickable row per entry.
 // Headings separate groups only when the list contains more than one.
-function listCard(title, entries, empty, paint, groupOf) {
+function listCard(title, entries, empty, paint) {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, title));
   const list = el('div', 'list');
   if (!entries.length) list.appendChild(el('div', 'empty', empty));
-  const grouped = groupOf && new Set(entries.map(groupOf)).size > 1;
-  let group = null;
   for (const e of entries) {
-    if (grouped) {
-      const next = groupOf(e);
-      if (next !== group) { list.appendChild(el('div', 'group', next)); group = next; }
-    }
     const it = el('div', 'item');
     const g = el('div', 'grow');
     it.appendChild(g);
@@ -531,7 +525,7 @@ function taskTitle(parent, taskLine) {
   if (continued) parent.appendChild(el('div', 'continued', continued));
 }
 
-// The review queue's groups: the server's `queue_group`, its heading and its pill level.
+// A row's review state: the server's `queue_group`, its pill label and level.
 const QUEUE_LABEL = { needs_answer: 'Needs answer', blocked: 'Blocked', unverified: 'Unverified', awaiting_merge: 'Awaiting merge', other: 'Other' };
 const QUEUE_LEVEL = { needs_answer: 'warn', blocked: 'error', unverified: 'warn', awaiting_merge: 'ok' };
 
@@ -605,20 +599,8 @@ function paintSession(r, it, g) {
   g.appendChild(nested);
 }
 
-// The hub's order: the review queue (grouped, pending work first) or last activity; the
-// choice is the browser's, remembered like the theme.
-function hubSort() { return recall('a6-hub-sort', 'review') === 'activity' ? 'activity' : 'review'; }
-
-function sessionsCard(sessions, sort, onSort) {
-  const grouped = sort === 'review' ? (r => QUEUE_LABEL[r.queue_group] || 'Other') : null;
-  const card = listCard('Sessions', sessions, 'no sessions yet', paintSession, grouped);
-  const toggle = el('div', 'sort-toggle');
-  for (const [key, label] of [['review', 'Review'], ['activity', 'Activity']]) {
-    const b = el('button', 'mini' + (key === sort ? ' on' : ''), label);
-    b.onclick = () => { remember('a6-hub-sort', key); onSort(key); };
-    toggle.appendChild(b);
-  }
-  card.insertBefore(toggle, card.children[1]);
+function sessionsCard(sessions) {
+  const card = listCard('Sessions', sessions, 'no sessions yet', paintSession);
   // Maintenance sits behind one control, the actions the TUI's File menu
   // holds: the list is what the operator came for.
   const more = el('details', 'more');
@@ -686,25 +668,24 @@ function machineFilesCard(files) {
 
 async function renderHub(focus, gen) {
   setCrumb('');
-  const sort = hubSort();
-  const data = await getJSON('/api/hub?sort=' + sort);
+  const data = await getJSON('/api/hub');
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';
   const machinesTab = focus === 'machines';
   // Full-width listing stack; the tab's composer docks at the bottom of the
   // viewport (new work on Sessions, create-machine on Machines).
-  const build = (d, order) => {
+  const build = (d) => {
     const lists = el('div', 'grid');
     if (machinesTab) {
       if ((d.machine_files || []).length) lists.appendChild(machineFilesCard(d.machine_files));
       lists.appendChild(machinesCard(d.machines));
       if ((d.drafts || []).length) lists.appendChild(draftsCard(d.drafts));
     } else {
-      lists.appendChild(sessionsCard(d.sessions, order, () => { refreshLists(); }));
+      lists.appendChild(sessionsCard(d.sessions));
     }
     return lists;
   };
-  let lists = build(data, sort);
+  let lists = build(data);
   view.appendChild(lists);
   view.appendChild(machinesTab ? createMachineDock() : newWorkDock(data.presets, data.preset_default_label, data.sessions));
   // Without this the hub paints once, so a lane that finished, failed or
@@ -714,12 +695,10 @@ async function renderHub(focus, gen) {
   const refreshLists = async () => {
     if (document.hidden) return; // a background tab has nobody to mislead
     if (gen !== undefined && gen !== routeGen) return; // superseded; closeLive() clears us
-    const order = hubSort();
     try {
-      const next = await getJSON('/api/hub?sort=' + order);
+      const next = await getJSON('/api/hub');
       if (gen !== undefined && gen !== routeGen) return;
-      if (order !== hubSort()) return; // the toggle moved meanwhile; its own refresh paints
-      const fresh = build(next, order);
+      const fresh = build(next);
       lists.replaceWith(fresh);
       lists = fresh;
     } catch (_) { /* transient: keep the last good paint */ }
@@ -1065,7 +1044,7 @@ function openHistorySearch(entries, onPick) {
   render();
 }
 
-// Ctrl-K anywhere: switch to another session. The hub's rows in activity order,
+// Ctrl-K anywhere: switch to another session. The hub's rows, newest activity first,
 // lanes included, narrowed by what is typed against the id, mode, status, task,
 // branch and worktree. A row names where the run works and the ref holding its
 // commits; Enter opens the highlighted one, and Review code and Merge act as the
@@ -1073,7 +1052,7 @@ function openHistorySearch(entries, onPick) {
 async function openSwitcher() {
   if (activeOverlayClose) return; // one dialog at a time
   let data;
-  try { data = await getJSON('/api/hub?sort=activity'); } catch (e) { toast(e.message, true); return; }
+  try { data = await getJSON('/api/hub'); } catch (e) { toast(e.message, true); return; }
   const rows = [];
   const flatten = (r) => { rows.push(r); for (const lane of (r.lanes || [])) flatten(lane); };
   for (const r of (data.sessions || [])) flatten(r);

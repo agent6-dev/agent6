@@ -12,7 +12,7 @@ import contextlib
 import dataclasses
 import pathlib
 from collections.abc import Container, Iterable, Mapping, Sequence
-from typing import Any, Literal, NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from agent6 import kinds, paths
 from agent6.sessions import ipc, layout, process
@@ -189,19 +189,11 @@ class ListingRow:
         return max((self.summary.last_activity, *(lane.group_last_activity for lane in self.lanes)))
 
 
-# A listing's order: last activity, or the review queue (pending review work first).
-Sort = Literal["activity", "review"]
-
-
-def nested_rows(
-    summaries: Iterable[SessionSummary], *, sort: Sort = "activity"
-) -> list[ListingRow]:
-    """Nest each lane under the listed session that dispatched it.
+def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
+    """Nest each lane under the listed session that dispatched it, newest activity first.
 
     Args:
         summaries: The sessions to list.
-        sort: Newest activity first, or the review queue's groups with the oldest pending
-            work first inside each; rows with nothing pending keep their activity order.
 
     Returns:
         The rows, every session appearing once: a lane whose coordinator is not listed
@@ -225,8 +217,6 @@ def nested_rows(
     # A coordinator chain that loops reaches no root: its sessions are rows.
     rows.extend(row(s) for s in items if s.session_id not in placed)
     rows.sort(key=lambda r: r.group_last_activity, reverse=True)
-    if sort == "review":
-        rows.sort(key=review_sort_key)
     return rows
 
 
@@ -247,27 +237,6 @@ def row_group(row: ListingRow) -> review_queue.Group:
     return min(groups, key=review_queue.GROUPS.index)
 
 
-def pending_since(row: ListingRow) -> float | None:
-    """Return when the row's oldest pending work in its queue group began, as epoch seconds."""
-    return _pending_in(row, row_group(row))
-
-
-def _pending_in(row: ListingRow, group: review_queue.Group) -> float | None:
-    """Return the earliest pending time among the row and its lanes that sit in the group."""
-    own = row.summary.review_queue
-    times = [own.oldest_open_at] if own.group == group and own.oldest_open_at is not None else []
-    times.extend(t for lane in row.lanes if (t := _pending_in(lane, group)) is not None)
-    return min(times, default=None)
-
-
-def review_sort_key(row: ListingRow) -> tuple[int, int, float, str]:
-    """Return the review queue's sort key: group, pending work oldest first, then the id."""
-    since = pending_since(row)
-    if since is None:
-        return (review_queue.GROUPS.index(row_group(row)), 1, 0.0, "")
-    return (review_queue.GROUPS.index(row_group(row)), 0, since, row.summary.session_id)
-
-
 def lane_groups(row: ListingRow) -> dict[str, int]:
     """Return how many of the row's lanes sit in each queue group, the empty groups left out."""
     counts: dict[str, int] = {}
@@ -278,14 +247,13 @@ def lane_groups(row: ListingRow) -> dict[str, int]:
 
 
 def rows_for(
-    cwd: pathlib.Path, *, buckets: Iterable[str] = layout.HUB_BUCKETS, sort: Sort = "activity"
+    cwd: pathlib.Path, *, buckets: Iterable[str] = layout.HUB_BUCKETS
 ) -> tuple[list[ListingRow], set[str]]:
     """Return a repository's listing rows and its fan-out winners' ids.
 
     Args:
         cwd: The repository.
         buckets: The session buckets to list; the hub's by default.
-        sort: The rows' order.
 
     Returns:
         The nested rows in that order, and the ids of the compare winners.
@@ -293,7 +261,7 @@ def rows_for(
     tips = git_read.run_ref_tips(cwd)
     dirs = session_dirs(paths.state_dir(cwd), buckets)
     winners = {d.name for d in dirs if comparison.is_winner(d)}
-    rows = nested_rows((summarize_session_dir(d, branch_tips=tips) for d in dirs), sort=sort)
+    rows = nested_rows(summarize_session_dir(d, branch_tips=tips) for d in dirs)
     return rows, winners
 
 

@@ -59,18 +59,6 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         ),
     )
     sessions_list.add_argument(
-        "--sort",
-        dest="list_sort",
-        choices=("activity", "review"),
-        default="activity",
-        help=(
-            "Order the rows by most recent activity (the default), or by the review queue:"
-            " questions nobody answered, then open block findings, then ended runs the gate"
-            " did not certify, then clean runs waiting for a merge, then the rest; a review"
-            " column names each row's place."
-        ),
-    )
-    sessions_list.add_argument(
         "--lanes",
         dest="list_lanes",
         action="store_true",

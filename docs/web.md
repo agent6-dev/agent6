@@ -59,7 +59,7 @@ agent6 web --secret 'a phrase of your own'        # the flag wins over the varia
 Buttons do what the matching CLI command does, and prompts are answered inline on every page that shows a run.
 A question the model queued, or an ended run's, keeps its box: the answer reaches the run at its next turn, or at its resume.
 
-- **Sessions page**: every session (mode, status, last activity, cost), a fan-out's lanes folded under its row, in [review queue](usage.md#the-review-queue) order under group headings with each row's reason; **Activity** orders by last activity instead, a choice the browser remembers
+- **Sessions page**: every session (mode, status, last activity, usage), newest activity first, a fan-out's lanes folded under its row, each row carrying its [review state](usage.md#a-sessions-review-state) and reason
     - a run's row names its worktree and its branch while the branch exists; **Review** fills the composer with `/review <branch>`, and **Merge** lands the branch (`sessions merge`) when the run holds unmerged commits
     - the composer starts a run, plan or ask under a chosen preset and model (the model box shows what the config resolves; a pick overrides it); **worktree** starts the run in a new git worktree (`run --worktree`); **advanced** holds the plan to run from (`run --from`) and a spend cap (`--max-usd`)
     - **Run this plan** on a plan's view opens this composer with the plan chosen; Enter on an empty task runs the plan as written
@@ -127,8 +127,7 @@ curl -s -H 'Content-Type: application/json' \
   -d '{"secret": "amber-acorn-agile-alder-alert-arrow"}' localhost:7658/api/login
 # {"ok": true, "token": "<64 hex characters>"}
 A='Authorization: Bearer <token>'
-curl -s -H "$A" localhost:7658/api/hub                       # hub state, sessions in review-queue order
-curl -s -H "$A" "localhost:7658/api/hub?sort=activity"       # sessions by last activity
+curl -s -H "$A" localhost:7658/api/hub                       # hub state, sessions by last activity
 curl -s -H "$A" localhost:7658/api/session/<id>              # a run's state, as JSON
 curl -s -H "$A" localhost:7658/api/session/<id>/conversation # the folded conversation
 curl -s -H "$A" localhost:7658/api/machine/<name>            # a machine's state, as JSON

@@ -147,36 +147,6 @@ def test_resume_composer_keeps_the_recorded_model(
     assert not errors
 
 
-@pytest.mark.parametrize("mixed", [False, True])
-def test_hub_headings_only_separate_distinct_groups(
-    port: int,
-    tmp_path: pathlib.Path,
-    open_page: Callable[[int], tuple[Page, list[str]]],
-    mixed: bool,
-) -> None:
-    """The hub omits a lone Other heading but labels each group in a mixed list."""
-    from playwright.sync_api import expect
-
-    for index in range(2):
-        session = paths.state_dir(tmp_path) / "sessions" / "runs" / f"group-{index}"
-        session.mkdir(parents=True)
-        mode = "run" if mixed and index else "ask"
-        rows = [
-            {"type": "session.start", "mode": mode, "user_task": f"group task {index}"},
-            {"type": "session.stop", "reason": "finish_session", "verification": "unverified"},
-        ]
-        (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
-    page, errors = open_page(port)
-    page.goto(f"http://127.0.0.1:{port}/#/")
-    card = page.locator(".card").filter(
-        has=page.get_by_role("heading", name="Sessions", exact=True)
-    )
-    expect(card.locator(".item")).to_have_count(2)
-    if mixed:
-        expect(card.locator(".group")).to_have_text(["Unverified", "Other"])
-    else:
-        expect(card.locator(".group")).to_have_count(0)
-    assert not errors
 
 
 @pytest.mark.parametrize("unreadable", [False, True])
@@ -446,94 +416,6 @@ def test_removal_controls_reach_the_cli(
         button.click()
     assert response.value.ok, response.value.text()
     assert not session.exists()
-    assert not errors
-
-
-def test_the_hub_opens_as_a_review_queue_and_remembers_activity(
-    port: int, tmp_path: pathlib.Path, open_page: Callable[[int], tuple[Page, list[str]]]
-) -> None:
-    """The hub lists pending review work under group headings; Activity is a remembered choice."""
-    from playwright.sync_api import expect
-
-    from tests.unit import test_review_queue as queue_tests
-
-    def write(session_id: str, rows: list[dict[str, object]]) -> None:
-        run = paths.state_dir(tmp_path) / "sessions" / "runs" / session_id
-        run.mkdir(parents=True)
-        (run / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-
-    blocked: list[dict[str, object]] = [
-        queue_tests._START,
-        *queue_tests._panel_rows(block=1),
-        queue_tests._END,
-    ]
-    newest: list[dict[str, object]] = [
-        {
-            "type": "session.start",
-            "ts": "2026-10-25T12:00:00+00:00",
-            "mode": "run",
-            "user_task": "n",
-        }
-    ]
-    write("run-block", blocked)
-    write("run-newest", newest)
-    page, errors = open_page(port)
-    page.goto(f"http://127.0.0.1:{port}/")
-    items = page.locator(".card .list .item")
-    expect(items.first).to_contain_text("run-block")
-    headings = page.locator(".card .list .group")
-    expect(headings).to_have_count(2)
-    expect(headings.first).to_have_text("Blocked")
-    expect(items.first).to_contain_text("1 open block finding")
-    page.get_by_role("button", name="Activity").click()
-    expect(items.first).to_contain_text("run-newest")
-    expect(headings).to_have_count(0)
-    page.reload()
-    expect(page.locator(".card .list .item").first).to_contain_text("run-newest")
-    assert page.evaluate("localStorage.getItem('a6-hub-sort')") == "activity"
-    assert not errors
-
-
-def test_a_stale_hub_refresh_never_overrides_the_sort_toggle(
-    port: int, tmp_path: pathlib.Path, open_page: Callable[[int], tuple[Page, list[str]]]
-) -> None:
-    """A review-order refresh in flight when the operator picks Activity lands unpainted."""
-    from playwright.sync_api import Route, expect
-
-    from tests.unit import test_review_queue as queue_tests
-
-    run = paths.state_dir(tmp_path) / "sessions" / "runs"
-    for session_id, rows in (
-        ("run-block", [queue_tests._START, *queue_tests._panel_rows(block=1), queue_tests._END]),
-        ("run-newest", [{**queue_tests._START, "ts": "2026-10-25T12:00:00+00:00"}]),
-    ):
-        (run / session_id).mkdir(parents=True)
-        (run / session_id / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-    page, errors = open_page(port)
-    held: list[Route] = []
-    painted: list[bool] = []
-
-    def hold(route: Route) -> None:
-        if painted and "sort=review" in route.request.url:
-            held.append(route)
-        else:
-            route.continue_()
-
-    page.route("**/api/hub*", hold)
-    page.goto(f"http://127.0.0.1:{port}/")
-    items = page.locator(".card .list .item")
-    headings = page.locator(".card .list .group")
-    expect(items.first).to_contain_text("run-block")
-    painted.append(True)
-    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-    page.get_by_role("button", name="Activity").click()
-    expect(items.first).to_contain_text("run-newest")
-    assert len(held) == 1
-    with page.expect_response(lambda r: "sort=review" in r.url):
-        held[0].continue_()
-    # Read once, without retrying: the next poll would repaint the right order and hide a slip.
-    page.wait_for_timeout(300)
-    assert "run-newest" in items.first.inner_text() and headings.count() == 0
     assert not errors
 
 

@@ -13,7 +13,7 @@ from agent6 import review_records
 from agent6.app import review_actions
 from agent6.sessions import ipc, process
 from agent6.ui.acp import rpc, session, updates
-from agent6.viewmodel import listing, pending_questions, receipt, review, tail, transcript
+from agent6.viewmodel import pending_questions, receipt, review, tail, transcript
 
 
 class _CommandParser(argparse.ArgumentParser):
@@ -23,7 +23,7 @@ class _CommandParser(argparse.ArgumentParser):
 
 def _parse(command: str, text: str) -> argparse.Namespace:
     parser = _CommandParser(prog=command, add_help=False, allow_abbrev=False)
-    if command in ("/receipt", "/review-queue"):
+    if command == "/receipt":
         return parser.parse_args(shlex.split(text)[1:])
     if command == "/answer":
         parser.add_argument("question_id")
@@ -85,8 +85,6 @@ def _read_only_reply(
     Raises:
         RpcError: A per-run command arrived in a conversation with no recorded run.
     """
-    if command == "/review-queue":
-        return review_queue_text(current.cwd)
     if command not in {"/receipt", "/findings"}:
         return None
     if not current.session_id:
@@ -136,49 +134,6 @@ def _answer_reply(
     if current.is_running() or process.worker_is_alive(saved.session_dir):
         return given if prompt.blocking else f"{given}; the run reads it at its next turn"
     return f"{given}; saved: the next prompt resumes the run and delivers it"
-
-
-def review_queue_text(cwd: pathlib.Path) -> str:
-    """Return the repository's sessions in review-queue order as text.
-
-    Args:
-        cwd: The repository.
-
-    Returns:
-        One line per session under its group heading, a needs-answer, blocked, unverified
-        or awaiting-merge row with the CLI command that acts on it; a note when nothing is recorded.
-    """
-    rows, _winners = listing.rows_for(cwd, sort="review")
-    if not rows:
-        return "No sessions recorded for this repository."
-    lines: list[str] = []
-    group = ""
-    for row in rows:
-        own = listing.row_group(row)
-        if own != group:
-            group = own
-            lines.append(f"{group.replace('_', ' ').capitalize()}:")
-        lines.extend(_queue_lines(row, depth=1))
-    return "\n".join(lines)
-
-
-def _queue_lines(row: listing.ListingRow, *, depth: int) -> list[str]:
-    """Return a row's line and its lanes', indented, a pending row naming what to run."""
-    s = row.summary
-    entry = s.review_queue
-    commands = {
-        "needs_answer": f"agent6 answer {s.session_id}",
-        "blocked": f"agent6 sessions findings {s.session_id}",
-        "unverified": f"agent6 sessions receipt {s.session_id}",
-        "awaiting_merge": f"agent6 sessions merge {s.session_id}",
-    }
-    words = " · ".join(p for p in (s.status, entry.reason) if p)
-    command = commands.get(entry.group, "")
-    line = f"{'  ' * depth}{s.session_id}: {words}" + (f" ({command})" if command else "")
-    out = [line]
-    for lane in row.lanes:
-        out.extend(_queue_lines(lane, depth=depth + 1))
-    return out
 
 
 def _fix_targets(

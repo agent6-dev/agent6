@@ -62,10 +62,6 @@ _TOOL_KINDS = {
 # Stored-finding commands are front-end actions; /pin and /review reach the worker.
 REVIEW_COMMANDS: tuple[dict[str, Any], ...] = (
     {
-        "name": "review-queue",
-        "description": "List sessions by pending review work; a pending row names its command",
-    },
-    {
         "name": "receipt",
         "description": "Inspect recorded testing, review, risk and reversal evidence",
     },

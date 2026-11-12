@@ -116,14 +116,6 @@ REVIEW_TEXT = {
     "no_hunk": "No cited hunk is available in this preview.",
     "truncated": "\n… (truncated)",
 }
-# The review queue's groups as the hub names them.
-QUEUE_TEXT = {
-    "needs_answer": "needs answer",
-    "blocked": "blocked",
-    "unverified": "unverified",
-    "awaiting_merge": "awaiting merge",
-    "other": "other",
-}
 REVIEW_COLUMNS = ("ID", "Status", "Severity", "Location", "Title")
 REVIEW_HINTS = ("↑↓ selects a finding; Tab focuses its detail or read-only diff.",)
 REVIEW_DISPOSITIONS = (
@@ -154,7 +146,6 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "view_logs": "l",
         "view_findings": "v",
         "toggle_lanes": "space",
-        "toggle_sort": "s",
         "help": "question_mark",
         "command_palette": "ctrl+p",
     },

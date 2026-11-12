@@ -138,62 +138,6 @@ def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(
     asyncio.run(scenario())
 
 
-def test_the_hub_opens_as_a_review_queue_and_the_sort_key_remembers_activity(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The hub lists pending review work first with a review column; `s` switches and remembers."""
-    import asyncio
-
-    from textual import widgets
-
-    from agent6.ui.tui import home as tui_home
-    from agent6.ui.tui import settings
-    from tests.unit import test_review_queue as queue_tests
-
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    a6 = tmp_path / ".agent6"
-    _write_run(
-        a6,
-        "runs",
-        "run-block",
-        [queue_tests._START, *queue_tests._panel_rows(block=1), queue_tests._END],
-    )
-    _write_run(
-        a6,
-        "runs",
-        "run-newest",
-        [
-            {
-                "type": "session.start",
-                "ts": "2026-10-25T12:00:00+00:00",
-                "mode": "run",
-                "user_task": "n",
-            }
-        ],
-    )
-
-    async def scenario() -> None:
-        app = tui_home.Agent6HomeApp(a6, tmp_path)
-        async with app.run_test(size=(140, 40)) as pilot:
-            await pilot.pause()
-            screen = app.screen
-            assert isinstance(screen, tui_home.HomeScreen)
-            table = screen.query_one("#sessions", widgets.DataTable)
-            assert [rd.name for rd in screen._runs] == ["run-block", "run-newest"]  # pyright: ignore[reportPrivateUsage]
-            labels = [str(c.label) for c in table.columns.values()]
-            review = labels.index("review")
-            first = table.get_row_at(0)
-            assert "blocked · 1 open block finding" in str(first[review])
-            assert "by review queue" in app.sub_title
-            await pilot.press("s")
-            await pilot.pause()
-            assert [rd.name for rd in screen._runs] == ["run-newest", "run-block"]  # pyright: ignore[reportPrivateUsage]
-            assert "by activity" in app.sub_title
-            assert settings.get_hub_sort() == "activity"
-
-    asyncio.run(scenario())
-
-
 def test_home_app_lists_runs_and_opens_the_new_task_view(tmp_path: pathlib.Path) -> None:
     import asyncio
 
@@ -1109,11 +1053,6 @@ def test_the_hub_table_names_its_columns_like_the_cli(tmp_path: pathlib.Path) ->
             screen = app.screen
             assert isinstance(screen, tui_home.HomeScreen)
             table = screen.query_one("#sessions", widgets.DataTable)
-            labels = [str(column.label) for column in table.columns.values()]
-            # In review order the review column sits before cost, as `sessions list --sort review`.
-            assert labels == ["updated", "status", "review", "usage", "id", "task"]
-            screen.action_toggle_sort()
-            await pilot.pause()
             labels = [str(column.label) for column in table.columns.values()]
             assert labels == ["updated", "status", "usage", "id", "task"]
 

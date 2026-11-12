@@ -50,7 +50,7 @@ Browser recordings need a Playwright-capable Python with Chromium installed; set
 
 ## Web assertion tours
 
-`tests/web/test_seeded_tours.py` drives the hub and a session, Git and Files, and the review queue and findings through the real `agent6 web` CLI.
+`tests/web/test_seeded_tours.py` drives the hub and a session, Git and Files, and the findings through the real `agent6 web` CLI.
 Each test clones `seed/stats-demo.bundle`, installs the sessions with `seed.py`, and signs in to a loopback server with isolated config and state.
 The server inherits no provider keys, and the browser refuses non-GET requests after sign-in.
 No tour starts or resumes a model run.
