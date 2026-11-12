@@ -887,6 +887,8 @@ The structural defenses above confine a model that follows an injection.
 
 ## Known limitations
 
+- A budget cap bounds the next call, not the bill: provider metering can report an overshoot after a call, and a lane's reserved share promises no exact upstream monetary cutoff.
+
 - seccomp is required; kernels that block it from unprivileged callers make the jail fail closed.
 - Under `full` `sandbox.isolation` in a Docker or Podman container, the jail's `/proc` is empty and `ps` fails.
   Docker's `--security-opt systempaths=unconfined` or Podman's `--security-opt unmask=ALL` lets the jail mount its own `/proc`.

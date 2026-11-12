@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -842,3 +843,164 @@ def test_settle_reads_each_metered_plan_once_more() -> None:
     tracker.settle()
     assert tracker.snapshot().plan_observed_points == 5.0
     assert metered.call_count == 1 and idle.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Lane reservations: a parent splits what it has left and charges what its lanes used.
+# ---------------------------------------------------------------------------
+
+
+def _plan(pct: float, resets_at: float = 2e9, **rest: Any) -> budget.PlanUsage:
+    return budget.PlanUsage.single(pct, 10080, resets_at, **rest)
+
+
+def _usage(usd: float = 0.0, tokens: int = 0, *readings: tuple[str, budget.PlanUsage]) -> Any:
+    return budget.UsageSettlement(usd=usd, usd_partial=False, tokens=tokens, plan_readings=readings)
+
+
+def test_reserve_splits_what_is_available_and_a_spent_parent_refuses() -> None:
+    """Three lanes share the six dollars left; a parent at its cap grants nothing."""
+    t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
+    t.record(
+        route=kinds.ModelRoute("testprovider", "claude-sonnet-4-5"),
+        input_tokens=0,
+        output_tokens=0,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        cost_usd=4.0,
+    )
+    assert t.available().usd == pytest.approx(6.0)
+    grant = t.reserve("p1", ["a", "b", "c"], owner="exec-1")
+    assert [share.usd for _, share in grant.shares] == pytest.approx([2.0, 2.0, 2.0])
+    assert [share.tokens for _, share in grant.shares] == [-1, -1, -1]
+    assert t.available().usd == pytest.approx(0.0)
+    assert t.snapshot().reserved.usd == pytest.approx(6.0)
+    assert t.fraction_remaining() == pytest.approx(0.0)
+    # The breaker counts settled spend, not held shares: the parent's own call still runs.
+    t.check()
+    # The same identity is the same grant, never a second one.
+    assert t.reserve("p1", ["a", "b", "c"], owner="exec-1") == grant
+    spent = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=-1, max_plan_points=-1)
+    spent.record(
+        route=kinds.ModelRoute("testprovider", "claude-sonnet-4-5"),
+        input_tokens=0,
+        output_tokens=0,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        cost_usd=1.0,
+    )
+    with pytest.raises(budget.BudgetExceededError):
+        spent.reserve("p2", ["a"], owner="exec-1")
+
+
+def test_reserve_is_atomic_across_threads() -> None:
+    """Simultaneous reservations never grant more than the parent had."""
+    import threading
+
+    t = budget.BudgetTracker(max_usd=8.0, max_tokens_fallback=-1, max_plan_points=-1)
+    granted: list[float] = []
+    refused: list[str] = []
+    ready = threading.Barrier(8)
+
+    def take(i: int) -> None:
+        ready.wait()
+        try:
+            grant = t.reserve(f"p{i}", [f"p{i}-l1"], owner="exec-1")
+        except budget.BudgetExceededError as exc:
+            refused.append(str(exc))
+        else:
+            granted.extend(share.usd for _, share in grant.shares)
+
+    threads = [threading.Thread(target=take, args=(i,)) for i in range(8)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert sum(granted) <= 8.0 + 1e-9
+    assert len(granted) + len(refused) == 8
+    assert t.available().usd == pytest.approx(8.0 - sum(granted))
+
+
+def test_settle_charges_actual_usage_and_releases_the_rest() -> None:
+    """Usage above a share is charged whole; usage below it frees the difference."""
+    t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_plan_points=-1)
+    grant = t.reserve("p1", ["a", "b"], owner="exec-1")
+    assert [share.tokens for _, share in grant.shares] == [50, 50]
+    t.settle_lane("p1", "a", _usage(usd=7.0, tokens=10))  # above its $5 share
+    assert t.estimate_usd()[0] == pytest.approx(7.0)
+    assert t.snapshot().unmetered_tokens == 10
+    assert t.available().usd == pytest.approx(0.0)  # $7 spent, $5 still held: nothing left
+    t.settle_lane("p1", "b", _usage(usd=1.0, tokens=0))  # below: the rest is released
+    assert t.estimate_usd()[0] == pytest.approx(8.0)
+    assert t.available().usd == pytest.approx(2.0)
+    assert t.snapshot().reserved.usd == 0.0
+    # A duplicate settlement changes nothing.
+    t.settle_lane("p1", "b", _usage(usd=1.0, tokens=0))
+    assert t.estimate_usd()[0] == pytest.approx(8.0)
+    t.check()
+    # Actual usage over the cap trips the breaker for the parent's next call.
+    over = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
+    over.reserve("p1", ["a"], owner="exec-1")
+    over.settle_lane("p1", "a", _usage(usd=12.0))
+    with pytest.raises(budget.BudgetExceededError, match="USD budget exhausted"):
+        over.check()
+
+
+def test_unknown_usage_stays_held_until_it_is_known() -> None:
+    t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
+    t.reserve("p1", ["a", "b"], owner="exec-1")
+    t.settle_lane("p1", "a", None)  # the lane's record never came back
+    assert t.snapshot().reserved.usd == pytest.approx(10.0)
+    assert t.available().usd == pytest.approx(0.0)
+    t.settle_lane("p1", "b", _usage(usd=1.0))
+    assert t.snapshot().reserved.usd == pytest.approx(5.0)
+    t.settle_lane("p1", "a", _usage(usd=2.0))  # known at last: released and charged
+    assert t.snapshot().reserved.usd == 0.0
+    assert t.estimate_usd()[0] == pytest.approx(3.0)
+    assert "reserved for lanes" not in t.format_summary()
+
+
+def test_the_summary_names_held_shares() -> None:
+    t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
+    t.reserve("p1", ["a"], owner="exec-1")
+    assert "reserved for lanes: $10.00" in t.format_summary()
+
+
+def test_sibling_plan_readings_count_the_observed_union_once() -> None:
+    """Two lanes that saw the same account movement charge it once; order and jitter add nothing."""
+    t = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=10.0)
+    t.record_plan_preflight("chatgpt", _plan(40.0))
+    t.reserve("p1", ["a", "b", "c", "d"], owner="exec-1")
+    t.settle_lane("p1", "a", _usage(0.0, 0, ("chatgpt", _plan(42.0))))  # +2
+    t.settle_lane("p1", "b", _usage(0.0, 0, ("chatgpt", _plan(42.0))))  # the same movement: +0
+    t.settle_lane("p1", "c", _usage(0.0, 0, ("chatgpt", _plan(41.0))))  # arrived late, lower: +0
+    assert t.snapshot().plan_observed_points == pytest.approx(2.0)
+    # Reset-time jitter within a minute is the same window; a later reset is a new one.
+    t.settle_lane("p1", "d", _usage(0.0, 0, ("chatgpt", _plan(43.0, resets_at=2e9 + 30))))  # +1
+    assert t.snapshot().plan_observed_points == pytest.approx(3.0)
+    t.reserve("p2", ["e", "f"], owner="exec-1")
+    t.settle_lane(
+        "p2", "e", _usage(0.0, 0, ("chatgpt", _plan(3.0, resets_at=2e9 + 7 * 86400)))
+    )  # +3
+    t.settle_lane("p2", "f", _usage(0.0, 0, ("claude", _plan(10.0))))  # another provider's baseline
+    snap = t.snapshot()
+    assert snap.plan_observed_points == pytest.approx(6.0)
+    assert set(snap.plans) == {"chatgpt", "claude"}
+    assert not t.is_exhausted()
+
+
+def test_credit_balance_drops_seen_through_lanes_are_money_once() -> None:
+    t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
+    t.record_plan_preflight("chatgpt", _plan(40.0, has_credits=True, credits_balance="$5.00"))
+    t.reserve("p1", ["a", "b"], owner="exec-1")
+    t.settle_lane(
+        "p1",
+        "a",
+        _usage(0.0, 0, ("chatgpt", _plan(41.0, has_credits=True, credits_balance="$3.50"))),
+    )
+    t.settle_lane(
+        "p1",
+        "b",
+        _usage(0.0, 0, ("chatgpt", _plan(41.0, has_credits=True, credits_balance="$3.50"))),
+    )
+    assert t.estimate_usd()[0] == pytest.approx(1.5)
