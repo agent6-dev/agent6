@@ -57,8 +57,9 @@ class FormModal[ResultT](textual_screen.ModalScreen[ResultT]):
 class EditModal(FormModal[tuple[str, str, bool] | None]):
     """Edit one setting: a chooser for choices and bools, a text box otherwise.
 
-    The result is `(action, value, to_repo)` with the action "save" or "unset", or
-    None on cancel.
+    The result is `(action, value, to_repo)` with the action "save", "unset", "add_entry" or
+    "remove_entry", or None on cancel. `entry_label` names the table the setting belongs to
+    (a provider, an MCP server, a skill or the reviewer roster) and offers its Add and Remove.
     """
 
     # No Enter to save: Enter on a chooser selects the highlighted option.
@@ -77,9 +78,10 @@ class EditModal(FormModal[tuple[str, str, bool] | None]):
     """
     )
 
-    def __init__(self, setting: config_view.ConfigSetting) -> None:
+    def __init__(self, setting: config_view.ConfigSetting, *, entry_label: str = "") -> None:
         super().__init__()
         self._setting = setting
+        self._entry_label = entry_label
         self._done = False
 
     def on_mount(self) -> None:
@@ -147,6 +149,9 @@ class EditModal(FormModal[tuple[str, str, bool] | None]):
             with containers.Horizontal(id="edit-actions"):
                 yield forms.ActionItem("Save", "save")
                 yield forms.ActionItem("Unset override", "unset")
+                if self._entry_label:
+                    yield forms.ActionItem(f"Add {self._entry_label}…", "add_entry")
+                    yield forms.ActionItem(f"Remove {self._entry_label}", "remove_entry")
                 yield forms.ActionItem("Cancel", "cancel")
             yield textual_widgets.Static(
                 text.Text("↑↓ highlight · Space select · Tab field · Esc cancel", style="dim"),
@@ -177,6 +182,18 @@ class EditModal(FormModal[tuple[str, str, bool] | None]):
         if not self._done:
             self._done = True
             self.dismiss(("unset", "", False))
+
+    def action_add_entry(self) -> None:
+        """Hand the page the add: it opens the table's form."""
+        if not self._done:
+            self._done = True
+            self.dismiss(("add_entry", "", False))
+
+    def action_remove_entry(self) -> None:
+        """Hand the page the remove: it confirms, or picks the roster seat."""
+        if not self._done:
+            self._done = True
+            self.dismiss(("remove_entry", "", False))
 
     def action_cancel(self) -> None:
         """Return None for a cancel."""

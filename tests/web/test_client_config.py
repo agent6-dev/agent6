@@ -147,6 +147,10 @@ async function run() {
     await button('Add', overlay()).onclick();
     assert.ok(row('skills.state.' + (name === 'org.some.skill' ? '"org.some.skill"' : name)));
   }
+  row('providers.openrouter.base_url').onclick();
+  await button('Add provider…', overlay()).onclick();
+  assert.equal(overlay().children[0]['aria-label'], 'add provider');  // the popup hands over to the add form
+  button('Cancel', overlay()).onclick();
   for (const [key, label, table, name, repo] of [
     ['mcp.servers.local.url', 'MCP server', 'mcp.servers', 'local', true],
     ['providers.openrouter.base_url', 'provider', 'providers', 'openrouter', false],

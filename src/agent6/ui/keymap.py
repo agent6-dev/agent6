@@ -230,7 +230,6 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "add_skill": "s",
         "add_reviewer": "v",
         "remove_entry": "x",
-        "remove_reviewer": "X",
         "reset": "d",
         "search": "/",
         "toggle_modified": "m",

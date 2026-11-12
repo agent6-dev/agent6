@@ -1291,7 +1291,7 @@ def test_reviewer_form_and_positional_removal(repo: pathlib.Path) -> None:
             table.move_cursor(row=row)
             table.focus()
             await pilot.pause()
-            screen.action_remove_reviewer()
+            screen.action_remove_entry()  # one action: on the roster row it picks a seat
             await pilot.pause()
             chooser = app.screen
             assert isinstance(chooser, config_forms.RemoveReviewerModal)
@@ -1317,7 +1317,7 @@ def test_reviewer_form_and_positional_removal(repo: pathlib.Path) -> None:
                 for active in screen.active_bindings.values()
                 if active.binding.show
             }
-            assert {"add_reviewer", "remove_reviewer"} <= footer_actions
+            assert {"add_reviewer", "remove_entry"} <= footer_actions
 
     asyncio.run(scenario())
 
@@ -1368,7 +1368,9 @@ def test_remove_entry_without_an_entry_row(repo: pathlib.Path) -> None:
             await pilot.pause()
             assert app.screen is screen
             notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
-            assert notes[-1] == "Select a row of a provider, MCP server or skill first."
+            assert notes[-1] == (
+                "Select a row of a provider, MCP server, skill or the reviewer roster first."
+            )
 
     asyncio.run(scenario())
 
@@ -1981,5 +1983,42 @@ def test_an_unconfigured_role_opens_the_model_picker_too(
             screen.action_edit()
             await pilot.pause()
             assert isinstance(app.screen, config_model.ModelModal)
+
+    asyncio.run(scenario())
+
+
+def test_the_edit_popup_offers_add_and_remove_for_an_entrys_table(repo: pathlib.Path) -> None:
+    """A provider row's popup adds or removes a provider; a plain setting's popup offers neither."""
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test(size=(100, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, config_page.ConfigScreen)
+            tbl = screen.query_one("#tbl-providers", widgets.DataTable)
+            tbl.focus()
+            tbl.move_cursor(row=0)
+            await pilot.pause()
+            screen.action_edit()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, config_forms.EditModal)
+            labels = [str(item.render()) for item in modal.query(forms.ActionItem)]
+            assert "Add provider…" in labels and "Remove provider" in labels
+            modal.action_add_entry()
+            await pilot.pause()
+            assert isinstance(app.screen, config_forms.EntryModal)
+            await pilot.press("escape")
+            await pilot.pause()
+            tbl = screen.query_one("#tbl-sandbox", widgets.DataTable)
+            tbl.focus()
+            tbl.move_cursor(row=0)
+            await pilot.pause()
+            screen.action_edit()
+            await pilot.pause()
+            plain = app.screen
+            assert isinstance(plain, config_forms.EditModal)
+            assert not [i for i in plain.query(forms.ActionItem) if "Add" in str(i.render())]
 
     asyncio.run(scenario())

@@ -31,7 +31,7 @@ class _Host(textual_app.App[None]):
         ("add_entry", "providers.local.base_url"),
         ("remove_entry", "providers.local.base_url"),
         ("add_reviewer", "review.reviewers"),
-        ("remove_reviewer", "review.reviewers"),
+        ("remove_entry", "review.reviewers"),
     ],
 )
 def test_config_write_notices_name_a_shadowing_layer(
@@ -96,8 +96,13 @@ def test_config_write_notices_name_a_shadowing_layer(
                 modal.query_one("#entry-base_url", widgets.Input).value = "https://new.test/v1"
                 modal.action_add()
             elif operation == "remove_entry":
-                screen.action_remove_entry()
+                screen.action_remove_entry()  # on the roster row it picks a seat first
                 await pilot.pause()
+                if key == "review.reviewers":
+                    modal = app.screen
+                    assert isinstance(modal, config_forms.RemoveReviewerModal)
+                    modal.action_remove()
+                    await pilot.pause()
                 await pilot.press("y")
             elif operation == "add_reviewer":
                 screen.action_add_reviewer()
@@ -106,14 +111,6 @@ def test_config_write_notices_name_a_shadowing_layer(
                 assert isinstance(modal, config_forms.ReviewerModal)
                 modal.query_one("#reviewer-focus", widgets.Input).value = "new"
                 modal.action_add()
-            else:
-                screen.action_remove_reviewer()
-                await pilot.pause()
-                modal = app.screen
-                assert isinstance(modal, config_forms.RemoveReviewerModal)
-                modal.action_remove()
-                await pilot.pause()
-                await pilot.press("y")
             await pilot.pause()
             assert target.read_text() != (
                 'preset = "mask"\n' + initial + overlay if source == "preset" else initial

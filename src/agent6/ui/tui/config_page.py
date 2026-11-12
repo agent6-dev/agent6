@@ -43,6 +43,14 @@ class Action:
     description: str
 
 
+def _entry_label(key: str) -> str:
+    """Return the entry table a setting belongs to, as the edit popup names it, or ""."""
+    if key == "review.reviewers":
+        return "reviewer"
+    entry = write.entry_of(key)
+    return entry[0].label if entry is not None else ""
+
+
 # The one registry of the page's actions.
 CONFIG_ACTIONS: tuple[Action, ...] = (
     Action("search", "Filter", "Filter settings by name"),
@@ -58,9 +66,10 @@ CONFIG_ACTIONS: tuple[Action, ...] = (
     ),
     Action("add_reviewer", "Add reviewer…", "Append a reviewer to the ordered panel roster"),
     Action(
-        "remove_entry", "Remove entry", "Remove the selected provider, MCP server or skill entry"
+        "remove_entry",
+        "Remove entry",
+        "Remove the selected provider, MCP server or skill entry, or a seat of the roster",
     ),
-    Action("remove_reviewer", "Remove reviewer", "Choose a reviewer by position and remove it"),
     # The labels match the home and run footers.
     Action("reset", "Unset override", "Unset the selected setting in its source config layer"),
     Action("reload", "Refresh", "Re-read config from disk"),
@@ -179,7 +188,6 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                     if a.id.startswith("add_")
                 ),
                 menubar.MenuItem("Remove entry", "remove_entry"),
-                menubar.MenuItem("Remove reviewer", "remove_reviewer"),
                 menubar.MenuItem("Unset override", "reset"),
             ),
         ),
@@ -557,6 +565,13 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         """Open the skill state form."""
         self._add_entry("skills.state")
 
+    def _add_for(self, setting: config_view.ConfigSetting) -> None:
+        """Open the add form of the table the setting belongs to."""
+        if setting.key == "review.reviewers":
+            self.action_add_reviewer()
+        elif (entry := write.entry_of(setting.key)) is not None:
+            self._add_entry(entry[0].path)
+
     def _add_entry(self, path: str) -> None:
         """Open the entry form and reload after it."""
         table = next(t for t in write.ENTRY_TABLES if t.path == path)
@@ -575,11 +590,9 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             config_forms.ReviewerModal(self.repo_root, self.config_paths), self._form_closed
         )
 
-    def action_remove_reviewer(self) -> None:
-        """Open a positional chooser for the selected roster."""
-        setting = self._current_setting()
-        if setting is None or setting.key != "review.reviewers" or self._eff is None:
-            self.notify("Select review.reviewers first.", severity="warning")
+    def _remove_reviewer(self, setting: config_view.ConfigSetting) -> None:
+        """Open a positional chooser over the roster row."""
+        if self._eff is None:
             return
         roster = self._eff.config.review.reviewers
         if not roster:
@@ -603,12 +616,19 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         )
 
     def action_remove_entry(self) -> None:
-        """Confirm removal of the selected entry from its highest config layer."""
+        """Confirm removal of the selected entry from its highest config layer.
+
+        On the reviewer roster the entry is a seat, chosen by position.
+        """
         setting = self._current_setting()
+        if setting is not None and setting.key == "review.reviewers":
+            self._remove_reviewer(setting)
+            return
         entry = write.entry_of(setting.key) if setting is not None else None
         if entry is None:
             self.notify(
-                "Select a row of a provider, MCP server or skill first.", severity="warning"
+                "Select a row of a provider, MCP server, skill or the reviewer roster first.",
+                severity="warning",
             )
             return
         table, name = entry
@@ -688,6 +708,12 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             if action == "unset":
                 self._unset(setting)
                 return
+            if action == "add_entry":
+                self._add_for(setting)
+                return
+            if action == "remove_entry":
+                self.action_remove_entry()
+                return
             try:
                 err = write.set_config_value(self.repo_root, setting.key, raw, to_repo=to_repo)
             except errors.OperatorError as exc:
@@ -706,7 +732,9 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 )
                 self._reload()
 
-        self.app.push_screen(config_forms.EditModal(setting), _done)
+        self.app.push_screen(
+            config_forms.EditModal(setting, entry_label=_entry_label(setting.key)), _done
+        )
 
     def action_reset(self) -> None:
         """Unset the selected setting."""

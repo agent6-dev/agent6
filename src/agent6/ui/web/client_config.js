@@ -362,12 +362,20 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   const table = entry && tables.find(t => t.path === entry.table);
   let removeBtn = null;
   if (table) {
+    const addBtn = el('button', null, 'Add ' + table.label + '…');
+    addBtn.onclick = () => { close(); addEntry(table, refresh); };
+    row.appendChild(addBtn);
     removeBtn = el('button', null, 'Remove ' + table.label);
     removeBtn.disabled = !['global', 'repo'].includes(entry.source);
     removeBtn.title = removeBtn.disabled
       ? 'This entry comes from ' + entry.source + '; Remove edits only global and repo config.'
       : 'Remove ' + table.label + " '" + entry.name + "' and all its values from " + entry.source + ' config';
     row.appendChild(removeBtn);
+  }
+  if (key === 'review.reviewers') {
+    const addBtn = el('button', null, 'Add reviewer…');
+    addBtn.onclick = () => { close(); addReviewer(refresh); };
+    row.appendChild(addBtn);
   }
   row.appendChild(cancel); box.appendChild(row);
   back.appendChild(box); document.body.appendChild(back);
