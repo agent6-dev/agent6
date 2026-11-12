@@ -316,18 +316,35 @@ def _chatgpt_models_endpoint(
     Raises:
         ProviderError: The sign-in is absent, rebound or contradicts its account claim.
     """
+    url = f"{entry.base_url.rstrip('/')}/models?client_version={_CHATGPT_CLIENT_VERSION}"
+    return url, chatgpt_headers(provider_name, entry, "models")
+
+
+def chatgpt_headers(provider_name: str, entry: ChatGPTProviderEntry, target: str) -> dict[str, str]:
+    """Return a free request's headers for the subscription backend, the stored token as is.
+
+    Args:
+        provider_name: The provider's config name, under which its sign-in is stored.
+        entry: The provider entry.
+        target: The request's name for its facts (`models`, `usage`).
+
+    Returns:
+        The entry's extra headers, the stored access token and account id, and `originator`.
+
+    Raises:
+        ProviderError: The sign-in is absent, rebound or contradicts its account claim.
+    """
     credential = oauth.OAuthCredential(provider_name, entry)
     token = credential.token(refresh=False)
     account = credential.account_id()
-    url = f"{entry.base_url.rstrip('/')}/models?client_version={_CHATGPT_CLIENT_VERSION}"
     headers = request_headers.HeaderSet.from_config(entry.extra_headers).render(
-        request_headers.plain_facts("models")
+        request_headers.plain_facts(target)
     )
     headers["authorization"] = f"Bearer {token}"
     if account:
         headers["chatgpt-account-id"] = account
     headers["originator"] = "agent6"
-    return url, headers
+    return headers
 
 
 def _chatgpt_listing(payload: object) -> tuple[list[str], dict[str, int]]:

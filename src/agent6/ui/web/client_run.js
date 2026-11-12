@@ -343,7 +343,8 @@ function paintDetails(cards, s, asOf) {
   };
   // `b.session` is the run's usage across executions; `b.execution` is this execution's
   // beside its caps (null = unknown, -1 = unlimited, 0 = refused); `b.account` is the
-  // subscription account's latest reading. The usage text is the server's `usd_text`.
+  // subscription account's latest reading. The usage text is the server's `usd_text`, the
+  // plan reading the server's `plan_text` (percent, reset, when it was read).
   const run = b.execution || {};
   const usdCap = run.usd_cap || 0;
   const usdFrac = usdCap > 0 ? Math.min(1, (run.usd || 0) / usdCap) : 0;
@@ -363,7 +364,7 @@ function paintDetails(cards, s, asOf) {
     const executionPt = run.plan_observed_points || 0;
     const planFrac = planCap > 0 ? Math.min(1, executionPt / planCap)
                                  : Math.min(1, usedPct / 100);
-    const planText = `${usedPct}%`
+    const planText = (b.plan_text || `${usedPct}%`)
       + (planCap > 0 ? ` · moved ${executionPt.toFixed(1)} / ${planCap} pt this run` : '');
     cards.budget.appendChild(barRow('plan', planFrac, planText));
   }

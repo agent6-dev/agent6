@@ -10,6 +10,7 @@ pins the copy.
 
 from __future__ import annotations
 
+import math
 import pathlib
 import shlex
 import time
@@ -203,6 +204,55 @@ def format_usage_cell(
         return dollars
     points = f"{plan_points:g}pt"
     return f"{points} + {dollars}" if dollars else points
+
+
+def duration_words(seconds: float) -> str:
+    """Return a duration in its largest two units.
+
+    Args:
+        seconds: The duration; under a minute reads as such.
+
+    Returns:
+        `3 d 2 h`, `2 h 10 min`, `4 min` or `under a minute`, minutes rounded up.
+    """
+    if seconds < 60:
+        return "under a minute"
+    hours, minutes = divmod(math.ceil(seconds / 60), 60)
+    days, hours = divmod(hours, 24)
+    if days:
+        return f"{days} d {hours} h"
+    if hours:
+        return f"{hours} h {minutes} min"
+    return f"{minutes} min"
+
+
+def plan_readout(
+    used_percent: float, resets_at: float, *, now: float, observed_at: float = 0.0
+) -> str:
+    """Return a subscription account's reading as every surface words it.
+
+    Args:
+        used_percent: The binding window's used percent.
+        resets_at: When that window resets, as epoch seconds; 0 when unknown.
+        now: The clock the two relative times read against.
+        observed_at: When the reading was taken, as epoch seconds; 0 leaves it unsaid.
+
+    Returns:
+        `73%`, then `resets in 2 h 10 min` (`window reset since` once the reset passed) when
+        the reset is known, then `read 4 min ago` (`read just now`) when the time is known,
+        joined by ` · `.
+    """
+    parts = [f"{used_percent:g}%"]
+    if resets_at > 0:
+        parts.append(
+            f"resets in {duration_words(resets_at - now)}"
+            if resets_at > now
+            else "window reset since"
+        )
+    if observed_at > 0:
+        age = now - observed_at
+        parts.append("read just now" if age < 60 else f"read {duration_words(age)} ago")
+    return " · ".join(parts)
 
 
 def budget_usd_text(

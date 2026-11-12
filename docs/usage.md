@@ -23,13 +23,14 @@ The key lands in `~/.config/agent6/secrets.toml` (mode `0600`), shared across ev
 `connect` prompts locally and executes nothing a remote returns.
 On a terminal it ends by offering the default model when none is set, so `agent6 model default` is the second command only off a terminal or when you skip the pick.
 `agent6 connect --status [NAME]` lists the configured providers' local credential state and a free live check, with the account and access-token expiry for bound sign-ins.
+A ChatGPT sign-in adds the account's plan reading: the binding window's used percent and when it resets.
 It refreshes and spends nothing and exits 0 even for a refusal.
 
 ```text
-name        backend   authentication   state                                     live
-openrouter  openai       secrets.toml     ok                                        verified
-chatgpt     chatgpt      ChatGPT sign-in  ok <account-id> expires in 9 d 19 h       verified
-claude      claude_code  none             ok                                        verified
+name        backend      authentication   state                                live                  plan
+openrouter  openai       secrets.toml     ok                                   verified
+chatgpt     chatgpt      ChatGPT sign-in  ok <account-id> expires in 9 d 19 h  verified              73% · resets in 2 h 10 min
+claude      claude_code  none             ok                                   verified
 ```
 
 A provider whose sign-in is not built in takes a hand-written [`[providers.<name>].oauth`](config.md#configured-oauth) table; `agent6 connect <name>` then signs in at that issuer and stores the grant, bound to the entry's settings.

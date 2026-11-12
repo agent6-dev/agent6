@@ -13,6 +13,7 @@ import contextlib
 import dataclasses
 import functools
 import pathlib
+import time
 from typing import Any
 
 from agent6.models import registry
@@ -142,6 +143,8 @@ def session_state_as_dict(
         context_pct: The last model call's context fill percentage, or null when unknown.
         needs_new_work: Whether a resume requires a new task rather than continuing work.
         budget.usd_text: The rendered session spend, then this execution's against its cap.
+        budget.plan_text: The account's reading: the binding window's percent, its reset and
+            when it was read; "" without a reading.
         open_approval: The current approval identifier, or null when none is open.
         status: The lifecycle status word.
         status_label: The rendered status with mode and unmerged marks when available.
@@ -199,6 +202,17 @@ def session_state_as_dict(
             plan_observed_points=state.budget.session.plan_observed_points,
             plan_used_percent=state.budget.account.used_percent if state.budget.account else 0.0,
         ),
+    )
+    account = state.budget.account
+    d["budget"]["plan_text"] = (
+        format.plan_readout(
+            account.used_percent,
+            account.resets_at,
+            now=time.time(),
+            observed_at=account.observed_at,
+        )
+        if account is not None and account.used_percent > 0
+        else ""
     )
     for ap, row in zip(state.approvals, d["approvals"], strict=True):
         row["head"], row["payload"] = state_types.approval_parts(ap.prompt)

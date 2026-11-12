@@ -14,6 +14,7 @@ import dataclasses
 import json
 import os
 import pathlib
+import re
 import time
 from typing import Any
 
@@ -1248,11 +1249,13 @@ def test_subscription_header_separates_every_segment(
             app._tick()
             await pilot.pause()
             top = str(app._dash.query_one("#top", widgets.Static).render()).splitlines()[0]
-            assert top == (
-                "agent6  passed  tasks: 1/1  usage: 0pt  budget: 0%"
-                + "  plan: 52% (moved 0/10pt this run)"
-                + ("  ctx: 2%" if context_window else "")
-            )
+            # The saved reading's window has reset since it was read; both facts are said.
+            assert re.fullmatch(
+                r"agent6  passed  tasks: 1/1  usage: 0pt  budget: 0%"
+                r"  plan: 52% · window reset since · read \d+ d \d+ h ago"
+                r" \(moved 0/10pt this run\)" + (r"  ctx: 2%" if context_window else ""),
+                top,
+            ), top
 
     asyncio.run(scenario())
 

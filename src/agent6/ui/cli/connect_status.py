@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import math
 import os
 import pathlib
 import time
@@ -22,8 +21,9 @@ from agent6.config import (
     secret_store,
 )
 from agent6.models import cache
-from agent6.providers import claude_code, oauth, provider_types, token_command
+from agent6.providers import chatgpt, claude_code, oauth, provider_types, token_command, transport
 from agent6.ui.cli import common
+from agent6.viewmodel import format
 
 _LIVE_TIMEOUT_S = 7.0
 
@@ -32,13 +32,7 @@ def _token_life(remaining: float) -> str:
     """Return the remaining life in the largest two units, or expired."""
     if remaining <= 0:
         return "expired"
-    hours, minutes = divmod(math.ceil(remaining / 60), 60)
-    days, hours = divmod(hours, 24)
-    if days:
-        return f"expires in {days} d {hours} h"
-    if hours:
-        return f"expires in {hours} h {minutes} min"
-    return f"expires in {minutes} min"
+    return f"expires in {format.duration_words(remaining)}"
 
 
 def _credential_status(name: str, entry: ProviderEntry, secrets: dict[str, Any]) -> tuple[str, str]:
@@ -113,6 +107,39 @@ def _live_status(name: str, entry: ProviderEntry, secrets: dict[str, Any], state
     return live
 
 
+def _plan_status(name: str, entry: ProviderEntry, live: str) -> str:
+    """Return the subscription account's plan reading from a free `/usage` read.
+
+    Args:
+        name: The provider's config name.
+        entry: The provider entry.
+        live: The live check's result; the read follows a verified one.
+
+    Returns:
+        The percent and reset as `plan_readout` words them; `unread: <why>` when the
+        backend did not answer; "" for a backend with no free reading or a sign-in the
+        live check did not verify (the live column says why).
+    """
+    if not isinstance(entry, ChatGPTProviderEntry) or live != "verified":
+        return ""
+    try:
+        resp = transport.http_request(
+            "GET",
+            f"{entry.base_url.rstrip('/')}/usage",
+            headers=cache.chatgpt_headers(name, entry, "usage"),
+            timeout=_LIVE_TIMEOUT_S,
+        )
+        if resp.status_code != 200:
+            return f"unread: HTTP {resp.status_code}"
+        body = resp.json()
+    except (httpx2.HTTPError, OSError, ValueError, provider_types.ProviderError) as exc:
+        return f"unread: {' '.join(str(exc).split())[:200] or type(exc).__name__}"
+    plan = chatgpt.plan_usage_from_usage_body(body) if isinstance(body, dict) else None
+    if plan is None:
+        return "unread: no window in the answer"
+    return format.plan_readout(plan.used_percent, plan.resets_at, now=time.time())
+
+
 def show(provider: str, config_paths: tuple[pathlib.Path, ...]) -> int:
     """Print configured providers, local state and live checks, always returning zero.
 
@@ -129,18 +156,19 @@ def show(provider: str, config_paths: tuple[pathlib.Path, ...]) -> int:
     except (ConfigError, secret_store.SecretsError) as exc:
         common.error(str(exc))
     else:
-        rows = [("name", "backend", "authentication", "state", "live")]
+        rows = [("name", "backend", "authentication", "state", "live", "plan")]
         for name, entry in entries.items():
             if not provider or name == provider:
                 source, state = _credential_status(name, entry, secrets)
                 live = _live_status(name, entry, secrets, state)
-                rows.append((name, entry.backend, source, state, live))
+                plan = _plan_status(name, entry, live)
+                rows.append((name, entry.backend, source, state, live, plan))
         if provider and provider not in entries:
             common.warn(f"provider {provider!r} is not configured.")
-        widths = [max(len(row[i]) for row in rows) for i in range(4)]
-        for name, backend, source, state, live in rows:
+        widths = [max(len(row[i]) for row in rows) for i in range(5)]
+        for name, backend, source, state, live, plan in rows:
             print(
                 f"{name:<{widths[0]}}  {backend:<{widths[1]}}  {source:<{widths[2]}}"
-                f"  {state:<{widths[3]}}  {live}"
+                f"  {state:<{widths[3]}}  {live:<{widths[4]}}  {plan}".rstrip()
             )
     return 0

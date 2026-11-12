@@ -1729,6 +1729,7 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `context_pct` | `JSON` | The last model call's context fill percentage, or null when unknown. |
 | `needs_new_work` | `JSON` | Whether a resume requires a new task rather than continuing work. |
 | `budget.usd_text` | `JSON` | The rendered session spend, then this execution's against its cap. |
+| `budget.plan_text` | `JSON` | The account's reading: the binding window's percent, its reset and when it was read; "" without a reading. |
 | `open_approval` | `JSON` | The current approval identifier, or null when none is open. |
 | `status` | `JSON` | The lifecycle status word. |
 | `status_label` | `JSON` | The rendered status with mode and unmerged marks when available. |

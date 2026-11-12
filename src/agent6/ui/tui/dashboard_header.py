@@ -106,7 +106,12 @@ class RunHeader(widgets.Static):
             unmet = min(run.unmetered_tokens / run.tokens_fallback_cap, 1.0)
             segments.append(f"unmetered: {unmet:.0%}")
         if b.account is not None and b.account.used_percent > 0:
-            plan = f"plan: {b.account.used_percent:g}%"
+            plan = "plan: " + format.plan_readout(
+                b.account.used_percent,
+                b.account.resets_at,
+                now=time.time(),
+                observed_at=b.account.observed_at,
+            )
             if run.plan_cap is not None and run.plan_cap > 0:
                 plan += f" (moved {run.plan_observed_points:g}/{run.plan_cap:g}pt this run)"
             segments.append(plan)

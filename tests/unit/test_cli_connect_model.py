@@ -931,9 +931,12 @@ def test_connect_status_lists_local_credentials_without_secrets(
     def request(method: str, url: str, **kwargs: object) -> httpx2.Response:
         checked.append(url)
         assert method == "GET" and kwargs["timeout"] == 7.0
-        return httpx2.Response(
-            200, json={"data": [], "models": []}, request=httpx2.Request(method, url)
-        )
+        body: dict[str, object] = {"data": [], "models": []}
+        if url.endswith("/usage"):
+            body = {
+                "rate_limit": {"primary_window": {"used_percent": 73, "reset_after_seconds": 7800}}
+            }
+        return httpx2.Response(200, json=body, request=httpx2.Request(method, url))
 
     def run(
         argv: list[str], **kwargs: object
@@ -985,17 +988,20 @@ def test_connect_status_lists_local_credentials_without_secrets(
         strict=True,
     ):
         row.extend(live.split())
+    # The verified ChatGPT sign-in adds its plan reading from the free usage read.
+    expected[1].extend(["73%", "·", "resets", "in", "2", "h", "10", "min"])
     assert rows == ([expected[1]] if filtered else expected)
     endpoints = [
         "https://api.anthropic.com/v1/models",
         "https://chatgpt.com/backend-api/codex/models?client_version=1.0.0",
+        "https://chatgpt.com/backend-api/codex/usage",
         "claude",
         "https://api.anthropic.com/v1/models",
         "mint-token",
         "https://api.anthropic.com/v1/models",
         "https://api.openai.com/v1/models",
     ]
-    assert checked == ([endpoints[1]] if filtered else endpoints)
+    assert checked == (endpoints[1:3] if filtered else endpoints)
     for secret in (
         "sk-env-secret",
         "sk-stored-secret",

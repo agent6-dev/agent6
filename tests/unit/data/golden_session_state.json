@@ -109,7 +109,8 @@
       "plan_cap": null
     },
     "account": null,
-    "usd_text": "$0.0048"
+    "usd_text": "$0.0048",
+    "plan_text": ""
   },
   "approvals": [
     {

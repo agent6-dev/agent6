@@ -87,6 +87,7 @@ def test_status_probes_keys_and_command_tokens(
         "authentication",
         "state",
         "live",
+        "plan",
     ]
     assert requests == ["https://openrouter.ai/api/v1/key"]
     assert commands == ([["mint-token"]] if credential == "command" else [])
@@ -146,22 +147,34 @@ def test_status_lists_with_bound_bearer_without_refresh_or_exchange(
         assert headers["authorization"] == f"Bearer {token}"
         if kind == "chatgpt":
             assert headers["chatgpt-account-id"] == "account-7"
-        return httpx2.Response(
-            response, json={"data": [], "models": []}, request=httpx2.Request(method, url)
-        )
+        body: dict[str, object] = {"data": [], "models": []}
+        if url.endswith("/usage"):
+            # The free usage read: the account's windows; the email in the body is never kept.
+            body = {
+                "email": "operator@example",
+                "rate_limit": {
+                    "primary_window": {"used_percent": 73.0, "reset_after_seconds": 7800}
+                },
+            }
+        return httpx2.Response(response, json=body, request=httpx2.Request(method, url))
 
     monkeypatch.setattr(transport, "http_request", request)
     assert main(["connect", "--status", "work"]) == 0
     output = capsys.readouterr()
     row = " ".join(output.out.splitlines()[1].split())
     expected = "verified" if response == 200 else "refused: HTTP 401"
+    if kind == "chatgpt" and response == 200:
+        # The plan column follows a verified sign-in: the window's percent and its reset.
+        expected += " 73% · resets in 2 h 10 min"
     assert row.endswith(f"ok account-7 expired {expected}")
+    assert "operator@example" not in output.out
     endpoint = (
         "https://chatgpt.com/backend-api/codex/models?client_version=1.0.0"
         if kind == "chatgpt"
         else "https://models.example/v1/models"
     )
-    assert requests == [endpoint]
+    usage = ["https://chatgpt.com/backend-api/codex/usage"] if kind == "chatgpt" else []
+    assert requests == [endpoint, *(usage if response == 200 else [])]
     assert paths.secrets_path().read_bytes() == before
     for secret in ("access-secret", "refresh-secret", "exchanged-secret"):
         assert secret not in output.out + output.err
