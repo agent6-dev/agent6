@@ -569,7 +569,7 @@ def test_without_a_judge_the_candidates_keep_their_points(
 def _lane_extra(*, winner: bool, rank: int) -> dict[str, Any]:
     return {
         "parallel": {"group": "fan", "lane": rank, "coordinator": "fan"},
-        "compare": {"rank": rank, "of": 2, "winner": winner, "group": "fan"},
+        "placement": {"rank": rank, "of": 2, "winner": winner, "group": "fan"},
     }
 
 

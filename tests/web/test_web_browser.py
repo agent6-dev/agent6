@@ -1113,7 +1113,7 @@ def test_lane_details_read_the_coordinators_rationale(
                 "judge_cost_usd": 0.0123,
             }
         },
-        "lane": {"compare": {"group": "fan", "rank": 1, "of": 1, "winner": True}},
+        "lane": {"placement": {"group": "fan", "rank": 1, "of": 1, "winner": True}},
     }.items():
         session = runs / sid
         session.mkdir(parents=True)

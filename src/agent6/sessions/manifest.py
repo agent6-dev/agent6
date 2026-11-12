@@ -256,7 +256,7 @@ class FanoutStamp(pydantic.BaseModel):
     spec: str = ""
 
 
-class CompareStamp(pydantic.BaseModel):
+class PlacementStamp(pydantic.BaseModel):
     """A fan-out lane's auto-compare placement.
 
     Attributes:
@@ -297,7 +297,7 @@ class ComparisonStamp(pydantic.BaseModel):
 
 
 # Every stamp-rewrite re-stamps it, so the on-disk claim matches the shape on disk.
-MANIFEST_VERSION = 12
+MANIFEST_VERSION = 13
 MANIFEST_NAME = "manifest.json"
 
 
@@ -352,7 +352,7 @@ class SessionManifest(pydantic.BaseModel):
         includes: The unmerged run this run took in under `dirty_tree = "include"`, stamped
             merged when this run lands; None when it took none, or more than that run's tip.
         parallel: A fan-out lane's lineage, or None.
-        compare: A fan-out lane's placement and group reference, or None.
+        placement: A fan-out lane's rank and group reference, or None.
         comparison: The group's ranking and judge spend on its coordinator, or None.
         fanout: A fan-out's own record on its coordinator, or None.
     """
@@ -392,7 +392,7 @@ class SessionManifest(pydantic.BaseModel):
     merged: MergeStamp | None = None
     includes: IncludedRun | None = None
     parallel: ParallelLineage | None = None
-    compare: CompareStamp | None = None
+    placement: PlacementStamp | None = None
     comparison: ComparisonStamp | None = None
     fanout: FanoutStamp | None = None
 

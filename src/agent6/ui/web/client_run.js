@@ -514,7 +514,7 @@ function paintRun(cards, s) {
   }
   // Fan-out compare outcome (stamped into a lane's manifest by --parallel's
   // auto-compare): where this lane placed and why. Absent for a non-lane run.
-  if (s.compare && s.compare.line) add('compare', s.compare.line); // format_compare, server-side
+  if (s.placement && s.placement.line) add('compare', s.placement.line); // format_compare, server-side
   cards.head.appendChild(kv);
   // The judge's reason sits under its compare row (as sessions show prints it).
   if (s.comparison && s.comparison.rationale) {

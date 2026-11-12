@@ -195,7 +195,7 @@ def test_run_snapshot_embeds_the_compare_outcome(tmp_path: pathlib.Path) -> None
     d = _run(tmp_path, "lane1", [{"type": "session.start", "user_task": "x"}])
     (d / "manifest.json").write_text(
         json.dumps(
-            {"compare": {"group": "fan", "rank": 1, "of": 2, "winner": True,
+            {"placement": {"group": "fan", "rank": 1, "of": 2, "winner": True,
                          }}
         ),
         encoding="utf-8",
@@ -218,13 +218,13 @@ def test_run_snapshot_embeds_the_compare_outcome(tmp_path: pathlib.Path) -> None
     snap = session_snapshot(d)
     assert snap["comparison"]["rationale"] == "cleanest diff"
     assert snap["comparison"]["judge_cost_usd"] == 0.01
-    assert snap["compare"]["group"] == "fan"
-    assert snap["compare"]["winner"] is True and snap["compare"]["rank"] == 1
-    assert "rationale" not in snap["compare"]
-    assert "judge_cost_usd" not in snap["compare"]
+    assert snap["placement"]["group"] == "fan"
+    assert snap["placement"]["winner"] is True and snap["placement"]["rank"] == 1
+    assert "rationale" not in snap["placement"]
+    assert "judge_cost_usd" not in snap["placement"]
     # A run with no compare block carries no `compare` key (non-lane runs).
     plain = _run(tmp_path, "plain", [{"type": "session.start", "user_task": "y"}])
-    assert "compare" not in session_snapshot(plain)
+    assert "placement" not in session_snapshot(plain)
 
 
 def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: pathlib.Path) -> None:
@@ -281,7 +281,7 @@ def test_plan_snapshot_carries_the_plan_md(tmp_path: pathlib.Path) -> None:
 def test_hub_marks_the_fan_out_winner(tmp_path: pathlib.Path) -> None:
     d = _run(tmp_path, "lane-win", [{"type": "session.start", "mode": "run", "user_task": "t"}])
     (d / "manifest.json").write_text(
-        json.dumps({"compare": {"rank": 1, "of": 2, "winner": True}}), encoding="utf-8"
+        json.dumps({"placement": {"rank": 1, "of": 2, "winner": True}}), encoding="utf-8"
     )
     (s,) = model.hub_payload(tmp_path)["sessions"]
     assert s["winner"] is True

@@ -80,7 +80,9 @@ def _print_parallel_compare(
     """
     if (lineage := manifest.parallel) is not None:
         print(f"lane of:    {lineage.coordinator} (lane {lineage.lane} of group {lineage.group})")
-    formatted = format.format_compare(manifest.compare, comparison.session_comparison(session_dir))
+    formatted = format.format_compare(
+        manifest.placement, comparison.session_comparison(session_dir)
+    )
     if formatted is None:
         return
     headline, rationale = formatted
@@ -104,7 +106,7 @@ def _lanes(layout: sessions_layout.SessionLayout, tips: Mapping[str, str]) -> li
 
 def _won(manifest: sessions_manifest.SessionManifest | None) -> bool:
     """Return whether the manifest's compare stamp names it the winner."""
-    return manifest is not None and manifest.compare is not None and manifest.compare.winner
+    return manifest is not None and manifest.placement is not None and manifest.placement.winner
 
 
 def _lane_manifests(
@@ -150,7 +152,7 @@ def _print_lanes(
     width = max((len(ident) for ident in idents.values()), default=0)
     for lane in lanes:
         lane_manifest = lane_manifests.get(lane.session_id)
-        stamp = lane_manifest.compare if lane_manifest is not None else None
+        stamp = lane_manifest.placement if lane_manifest is not None else None
         place = f"rank {stamp.rank}/{stamp.of}" if stamp is not None else f"lane {lane.lane}"
         model = lane.model or "?"
         cost = lane.usage_cell
@@ -391,7 +393,7 @@ class StatusJSON(TypedDict):
     forked_from_turn: int | None
     forked_from_sha: str | None
     worktree: str | None
-    compare: dict[str, Any] | None
+    placement: dict[str, Any] | None
     comparison: dict[str, Any] | None
     parallel: dict[str, Any] | None
     fanout: dict[str, Any] | None
@@ -449,7 +451,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         forked_from_turn: The fork's source turn, or null.
         forked_from_sha: The fork's source commit, or null.
         worktree: The linked worktree path, or null.
-        compare: The lane placement and group id, or null outside a compared lane.
+        placement: The lane's rank and group id, or null outside a compared lane.
         comparison: The group record on its coordinator, or null for other sessions.
         parallel: The ParallelLineage, or null outside a lane.
         fanout: The FanoutStamp, or null outside a coordinator.
@@ -494,7 +496,6 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
 
     model = format.format_model_route(manifest.models.driver) or "?"
     model_from_flag = manifest.models.driver_from_flag
-    compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
     changes = _changes(target.name, manifest, undone=scan.finished and scan.stop_reason == "undone")
     tips = git_read.run_ref_tips(pathlib.Path.cwd())
     summary = summarize_session_dir(target, branch_tips=tips)
@@ -550,7 +551,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             "forked_from_turn": manifest.forked_from_turn,
             "forked_from_sha": manifest.forked_from_sha,
             "worktree": str(manifest.worktree) if manifest.worktree else None,
-            "compare": compare_json,
+            "placement": manifest.placement.model_dump(mode="json") if manifest.placement else None,
             "comparison": manifest.comparison.model_dump(mode="json")
             if manifest.comparison
             else None,

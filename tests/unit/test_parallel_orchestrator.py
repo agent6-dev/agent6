@@ -1540,11 +1540,11 @@ def test_compare_outcome_stamped_into_each_lane_manifest(
     m2 = json.loads(
         (origin_state / "sessions" / "runs" / "fan-l2" / "manifest.json").read_text("utf-8")
     )
-    assert m2["compare"] == {
+    assert m2["placement"] == {
         "rank": 1, "of": 2, "winner": True,
         "group": "fan",
     }  # fmt: skip
-    assert m1["compare"] == {
+    assert m1["placement"] == {
         "rank": 2, "of": 2, "winner": False,
         "group": "fan",
     }  # fmt: skip
@@ -1592,13 +1592,13 @@ def test_compare_stamp_records_judge_rationale_truncated(
     m2 = json.loads(
         (origin_state / "sessions" / "runs" / "fan-l2" / "manifest.json").read_text("utf-8")
     )
-    assert m1["compare"] == {"group": "fan", "rank": 1, "of": 2, "winner": True}
-    assert m2["compare"] == {"group": "fan", "rank": 2, "of": 2, "winner": False}
+    assert m1["placement"] == {"group": "fan", "rank": 1, "of": 2, "winner": True}
+    assert m2["placement"] == {"group": "fan", "rank": 2, "of": 2, "winner": False}
     assert m1["comparison"] is None and m2["comparison"] is None
     coordinator = json.loads(
         (origin_state / "sessions" / "runs" / "fan" / "manifest.json").read_text("utf-8")
     )
-    assert coordinator["compare"] is None
+    assert coordinator["placement"] is None
     assert coordinator["comparison"] == {
         "group": "fan",
         "ranking": ["fan-l1", "fan-l2"],
@@ -2906,7 +2906,7 @@ def test_crashed_lane_is_not_a_rankable_candidate(
 
     A lane that died without a stop folds to "stale", with no final verification word, the same
     tri-state as a clean unverified finish; ranked by cost, the cheapest (earliest-crashing) lane
-    would be stamped compare.winner=true and wear the winner glyph while the report says "no-
+    would be stamped placement.winner=true and wear the winner glyph while the report says "no-
     verify".
     """
     origin_state = paths.state_dir(origin)
@@ -2939,13 +2939,13 @@ def test_crashed_lane_is_not_a_rankable_candidate(
             encoding="utf-8"
         )
     )
-    assert (crashed.get("compare") or {}).get("winner") is not True
+    assert (crashed.get("placement") or {}).get("winner") is not True
     survivor = json.loads(
         (origin_state / "sessions" / "runs" / "crsh-l2" / "manifest.json").read_text(
             encoding="utf-8"
         )
     )
-    assert survivor["compare"]["winner"] is True
+    assert survivor["placement"]["winner"] is True
     assert "crsh-l1" in out and "no result (stale)" in out
     assert not lanes[0].workdir.exists()
     assert "nothing of theirs was deleted" not in out
@@ -3027,7 +3027,7 @@ def test_a_fanout_where_every_lane_failed_crowns_nobody(
 
     Only lanes that died WITHOUT a session.stop were excluded, so a lane that
     ended `provider_error` sailed into the candidate set: the fan-out stamped one
-    `compare.winner=true`, wore the star in every listing, printed a merge
+    `placement.winner=true`, wore the star in every listing, printed a merge
     command for a branch with nothing on it, and exited 0. `failed` is reserved
     for a run that did not finish deliberately, a deliberate finish over a red
     gate is `finished` and still ranks, which the sibling test above covers.
@@ -3064,7 +3064,7 @@ def test_a_fanout_where_every_lane_failed_crowns_nobody(
                 encoding="utf-8"
             )
         )
-        assert (m.get("compare") or {}).get("winner") is not True
+        assert (m.get("placement") or {}).get("winner") is not True
         # The work is not lost: the branch is named in the failure report.
         assert lane_id in out
     from agent6.viewmodel import transcript as viewmodel_transcript
@@ -3089,8 +3089,8 @@ def test_a_compare_where_every_candidate_failed_its_own_gate_crowns_nobody(
     """A compare where every candidate failed its own gate crowns nobody.
 
     Both lanes finished deliberately and each one's verify gate failed; mechanical ranking still
-    orders them by cost, and stamping the cheaper one compare.winner=true contradicts the fan-out's
-    own exit code (4).
+    orders them by cost, and stamping the cheaper one placement.winner=true contradicts the
+    fan-out's own exit code (4).
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -3120,7 +3120,7 @@ def test_a_compare_where_every_candidate_failed_its_own_gate_crowns_nobody(
         m = json.loads(
             (origin_state / "sessions" / "runs" / lane_id / "manifest.json").read_text("utf-8")
         )
-        assert m["compare"]["winner"] is False
+        assert m["placement"]["winner"] is False
 
 
 def test_a_judge_that_misranks_a_failed_gate_lane_first_crowns_nobody(
@@ -3134,7 +3134,7 @@ def test_a_judge_that_misranks_a_failed_gate_lane_first_crowns_nobody(
     Its system prompt says a passing candidate outranks a failing one, but nothing enforces that.
     When it ranks the lane whose OWN gate failed first anyway, `winner` keyed off the whole group's
     exit code (some lane DID pass, so `crown` read True) and stamped that failed lane
-    compare.winner=true: a crown on a lane that never passed its gate, wearing the star in every
+    placement.winner=true: a crown on a lane that never passed its gate, wearing the star in every
     listing over the lane that actually did.
     """
     origin_state = paths.state_dir(origin)
@@ -3170,8 +3170,8 @@ def test_a_judge_that_misranks_a_failed_gate_lane_first_crowns_nobody(
     m2 = json.loads(
         (origin_state / "sessions" / "runs" / "mis-l2" / "manifest.json").read_text("utf-8")
     )
-    assert m1["compare"]["winner"] is False  # its own gate failed; never crowned
-    assert m2["compare"]["winner"] is False  # not ranked first, so also uncrowned
+    assert m1["placement"]["winner"] is False  # its own gate failed; never crowned
+    assert m2["placement"]["winner"] is False  # not ranked first, so also uncrowned
 
 
 def test_fanout_exit_reflects_the_gate_verdicts() -> None:

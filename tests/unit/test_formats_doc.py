@@ -167,7 +167,7 @@ def test_session_fields_follow_serialization() -> None:
     actual = state_view.session_state_as_dict(state_types.SessionState())
     assert actual.keys() <= names
     assert "task_label" not in names
-    assert {"as_of.turn", "as_of.sha", "compare.line", "budget.usd_text"} <= names
+    assert {"as_of.turn", "as_of.sha", "placement.line", "budget.usd_text"} <= names
 
 
 def test_ps_fields_document_separate_status_and_reason() -> None:

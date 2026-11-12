@@ -71,6 +71,6 @@
   },
   "includes": null,
   "parallel": null,
-  "compare": null,
+  "placement": null,
   "fanout": null
 }

@@ -355,12 +355,12 @@ def format_lineage(parent: str | None, turn: int | None, sha: str | None) -> str
 
 
 def format_compare(
-    compare: manifest.CompareStamp | None, comparison: manifest.ComparisonStamp | None = None
+    placement: manifest.PlacementStamp | None, comparison: manifest.ComparisonStamp | None = None
 ) -> tuple[str, str] | None:
     """Word a lane's fan-out compare outcome.
 
     Args:
-        compare: The lane's compare stamp, None for a run outside a compared fan-out.
+        placement: The lane's placement stamp, None for a run outside a compared fan-out.
         comparison: The group record from its coordinator, None when unavailable.
 
     Returns:
@@ -368,10 +368,10 @@ def format_compare(
         call's cost for the whole group) and the judge's rationale (empty for a
         mechanical ranking), or None without a stamp.
     """
-    if compare is None:
+    if placement is None:
         return None
-    parts = [f"rank {compare.rank}/{compare.of}"]
-    if compare.winner:
+    parts = [f"rank {placement.rank}/{placement.of}"]
+    if placement.winner:
         parts.append("winner")
     if comparison is not None:
         by = comparison.ranked_by

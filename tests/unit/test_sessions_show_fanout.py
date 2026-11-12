@@ -61,7 +61,7 @@ def fan_out(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.
                     "driver_from_flag": True,
                 },
                 "parallel": {"group": "fan", "lane": lane, "coordinator": "fan"},
-                "compare": {"rank": 3 - lane, "of": 2, "winner": lane == 2, "group": "fan"},
+                "placement": {"rank": 3 - lane, "of": 2, "winner": lane == 2, "group": "fan"},
             },
         )
     return repo
@@ -603,11 +603,11 @@ def test_status_json_keeps_comparison_on_its_owner(
     """Lane status names the group; coordinator status carries its ranking and judge cost."""
     assert main(["sessions", "show", "fan-l2", "--json"]) == 0
     lane = json.loads(capsys.readouterr().out)
-    assert lane["compare"] == {"group": "fan", "rank": 1, "of": 2, "winner": True}
+    assert lane["placement"] == {"group": "fan", "rank": 1, "of": 2, "winner": True}
     assert lane["comparison"] is None
     assert main(["sessions", "show", "fan", "--json"]) == 0
     coordinator = json.loads(capsys.readouterr().out)
-    assert coordinator["compare"] is None
+    assert coordinator["placement"] is None
     assert coordinator["comparison"] == {
         "group": "fan",
         "ranking": ["fan-l2", "fan-l1"],

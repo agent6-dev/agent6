@@ -21,7 +21,7 @@ def _run(runs: pathlib.Path, session_id: str, *, winner: bool | None = None) -> 
     manifest: dict[str, object] = {"mode": "run"}
     if winner is not None:
         rank = 1 if winner else 2
-        manifest["compare"] = {"group": "fan", "rank": rank, "of": 2, "winner": winner}
+        manifest["placement"] = {"group": "fan", "rank": rank, "of": 2, "winner": winner}
     (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     (d / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": session_id})
@@ -676,7 +676,7 @@ def _fan_out(runs: pathlib.Path) -> None:
                         "driver_from_flag": True,
                     },
                     "parallel": {"group": "fan", "lane": lane, "coordinator": "fan"},
-                    "compare": {"rank": 3 - lane, "of": 2, "winner": lane == 2},
+                    "placement": {"rank": 3 - lane, "of": 2, "winner": lane == 2},
                 }
             ),
             encoding="utf-8",

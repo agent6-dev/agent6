@@ -21,10 +21,10 @@ from agent6.viewmodel import (
     is_winner,
     listing,
     manifest_branches,
-    session_compare,
     session_is_live,
     session_log,
     session_mtime,
+    session_placement,
     session_state_as_dict,
     session_status,
     summarize_session_dir,
@@ -149,9 +149,11 @@ def test_task_snippet_of_a_task_that_is_only_a_file_block_is_its_first_line() ->
     assert task_snippet(task) == '<file path="question.md">'
 
 
-def _stamp(session_dir: pathlib.Path, compare: object) -> None:
+def _stamp(session_dir: pathlib.Path, placement: object) -> None:
     session_dir.mkdir(parents=True, exist_ok=True)
-    (session_dir / "manifest.json").write_text(json.dumps({"compare": compare}), encoding="utf-8")
+    (session_dir / "manifest.json").write_text(
+        json.dumps({"placement": placement}), encoding="utf-8"
+    )
 
 
 def test_run_compare_and_is_winner_read_the_manifest_block(tmp_path: pathlib.Path) -> None:
@@ -159,14 +161,14 @@ def test_run_compare_and_is_winner_read_the_manifest_block(tmp_path: pathlib.Pat
     win = tmp_path / "win"
     _stamp(win, {"group": "fan", "rank": 1, "of": 2, "winner": True})
     assert is_winner(win) is True
-    assert isinstance(session_compare(win), sessions_manifest.CompareStamp)
+    assert isinstance(session_placement(win), sessions_manifest.PlacementStamp)
     loser = tmp_path / "loser"
     _stamp(loser, {"group": "fan", "rank": 2, "of": 2, "winner": False})
     assert is_winner(loser) is False
-    # A run outside any fan-out (no manifest / no compare block) reads as None.
+    # A run outside any fan-out (no manifest / no placement block) reads as None.
     plain = tmp_path / "plain"
     plain.mkdir()
-    assert session_compare(plain) is None and is_winner(plain) is False
+    assert session_placement(plain) is None and is_winner(plain) is False
 
 
 def test_group_facts_require_the_recorded_owner_and_group(tmp_path: pathlib.Path) -> None:
@@ -176,7 +178,7 @@ def test_group_facts_require_the_recorded_owner_and_group(tmp_path: pathlib.Path
     runs = tmp_path / "sessions" / "runs"
     lane = runs / "lane"
     _stamp(lane, {"group": "fan", "rank": 1, "of": 2, "winner": True})
-    placement = session_compare(lane)
+    placement = session_placement(lane)
     assert comparison.session_comparison(lane) is None
     assert format.format_compare(placement) == ("rank 1/2 · winner", "")
     owner = runs / "fan-longer"
@@ -206,7 +208,7 @@ def test_group_facts_require_the_recorded_owner_and_group(tmp_path: pathlib.Path
 
 def test_format_compare_headline_and_rationale() -> None:
     won = format.format_compare(
-        sessions_manifest.CompareStamp(rank=1, of=3, winner=True, group="fan"),
+        sessions_manifest.PlacementStamp(rank=1, of=3, winner=True, group="fan"),
         sessions_manifest.ComparisonStamp(
             group="fan", ranked_by="judge", rationale="cleanest diff"
         ),
@@ -214,7 +216,7 @@ def test_format_compare_headline_and_rationale() -> None:
     assert won == ("rank 1/3 · winner · judge", "cleanest diff")
     # A loser, mechanical, no rationale.
     lost = format.format_compare(
-        sessions_manifest.CompareStamp(rank=2, of=3, winner=False, group="fan"),
+        sessions_manifest.PlacementStamp(rank=2, of=3, winner=False, group="fan"),
         sessions_manifest.ComparisonStamp(group="fan"),
     )
     assert lost == ("rank 2/3 · mechanical", "")

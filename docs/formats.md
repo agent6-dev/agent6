@@ -1648,7 +1648,7 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `forked_from_turn` | `int \| None` | The fork's source turn, or null. |
 | `forked_from_sha` | `str \| None` | The fork's source commit, or null. |
 | `worktree` | `str \| None` | The linked worktree path, or null. |
-| `compare` | `dict[str, Any] \| None` | The lane placement and group id, or null outside a compared lane. |
+| `placement` | `dict[str, Any] \| None` | The lane's rank and group id, or null outside a compared lane. |
 | `comparison` | `dict[str, Any] \| None` | The group record on its coordinator, or null for other sessions. |
 | `parallel` | `dict[str, Any] \| None` | The ParallelLineage, or null outside a lane. |
 | `fanout` | `dict[str, Any] \| None` | The FanoutStamp, or null outside a coordinator. |
@@ -1758,8 +1758,8 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `dispatches` | `JSON` | The session's dispatch records, each with its lanes' outcomes. |
 | `forked_from` | `JSON` | The rendered fork lineage when recorded. |
 | `comparison` | `JSON` | The group record from the coordinator, directly or through the lane's group. |
-| `compare` | `JSON` | The lane's CompareStamp when recorded. |
-| `compare.line` | `JSON` | The rendered comparison placement. |
+| `placement` | `JSON` | The lane's PlacementStamp when recorded. |
+| `placement.line` | `JSON` | The rendered comparison placement. |
 | `as_of` | `JSON` | The selected commit's turn and sha, or null for the current snapshot. |
 | `as_of.turn` | `JSON` | The selected commit's turn number. |
 | `as_of.sha` | `JSON` | The selected commit identifier. |
@@ -2515,7 +2515,7 @@ Source: [`viewmodel.receipt.as_dict`](https://github.com/agent6-dev/agent6/blob/
 
 `SessionManifest` is the private, durable `manifest.json` record.
 `HarnessStamp.gate` separates the pinned command and source from execution availability.
-`ComparisonStamp` holds group facts on the coordinator; `CompareStamp` links each lane.
+`ComparisonStamp` holds group facts on the coordinator; `PlacementStamp` links each lane.
 Other records are nested objects used by the CLI and web serializers above.
 Properties are absent unless a serializer adds them explicitly.
 
@@ -2625,7 +2625,7 @@ Source: [`agent6.sessions.manifest.SessionManifest`](https://github.com/agent6-d
 | `merged` | `MergeStamp \| None` | The merge record, None until the run branch is merged. |
 | `includes` | `IncludedRun \| None` | The unmerged run this run took in under `dirty_tree = "include"`, stamped merged when this run lands; None when it took none, or more than that run's tip. |
 | `parallel` | `ParallelLineage \| None` | A fan-out lane's lineage, or None. |
-| `compare` | `CompareStamp \| None` | A fan-out lane's placement and group reference, or None. |
+| `placement` | `PlacementStamp \| None` | A fan-out lane's rank and group reference, or None. |
 | `comparison` | `ComparisonStamp \| None` | The group's ranking and judge spend on its coordinator, or None. |
 | `fanout` | `FanoutStamp \| None` | A fan-out's own record on its coordinator, or None. |
 
@@ -3266,11 +3266,11 @@ Source: [`agent6.sessions.manifest.ParallelLineage`](https://github.com/agent6-d
 | `coordinator` | `str` | The session that dispatched it, which every listing nests it under. |
 | `config_notes` | `tuple[str, ...]` | Resolved sampling values the lane's TOML snapshot could not preserve. |
 
-### CompareStamp
+### PlacementStamp
 
 **Support: public.** A fan-out lane's auto-compare placement.
 
-Source: [`agent6.sessions.manifest.CompareStamp`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py).
+Source: [`agent6.sessions.manifest.PlacementStamp`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |

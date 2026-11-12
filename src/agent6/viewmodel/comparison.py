@@ -8,8 +8,8 @@ from agent6.sessions import layout
 from agent6.sessions import manifest as sessions_manifest
 
 
-def session_compare(session_dir: pathlib.Path) -> sessions_manifest.CompareStamp | None:
-    """Return the fan-out compare stamp on a lane's manifest.
+def session_placement(session_dir: pathlib.Path) -> sessions_manifest.PlacementStamp | None:
+    """Return the placement stamp on a lane's manifest.
 
     The event fold does not carry it, so every run view reads it from here.
 
@@ -24,13 +24,13 @@ def session_compare(session_dir: pathlib.Path) -> sessions_manifest.CompareStamp
         manifest = sessions_manifest.read_manifest(session_dir)
     except sessions_manifest.ManifestError:
         return None
-    return manifest.compare
+    return manifest.placement
 
 
 def is_winner(session_dir: pathlib.Path) -> bool:
     """Return whether a run is its fan-out's compare winner."""
-    compare = session_compare(session_dir)
-    return compare is not None and compare.winner
+    placement = session_placement(session_dir)
+    return placement is not None and placement.winner
 
 
 def session_comparison(session_dir: pathlib.Path) -> sessions_manifest.ComparisonStamp | None:
@@ -46,9 +46,9 @@ def session_comparison(session_dir: pathlib.Path) -> sessions_manifest.Compariso
         manifest = sessions_manifest.read_manifest(session_dir)
         if manifest.comparison is not None:
             return manifest.comparison
-        if manifest.compare is None or not manifest.compare.group:
+        if manifest.placement is None or not manifest.placement.group:
             return None
-        group = manifest.compare.group
+        group = manifest.placement.group
         owner_id = manifest.parallel.coordinator if manifest.parallel is not None else group
         owner = layout.session_layout(layout.layout_of(session_dir).state_dir, owner_id)
         if owner is None or owner.session_id != owner_id:

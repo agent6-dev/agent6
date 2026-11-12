@@ -4,8 +4,8 @@
 
 Every failure shape (missing, unreadable, corrupt JSON, torn UTF-8, non-object) degrades through the
 typed ManifestError; every historical run dir (old ``version: 1`` shapes, the pre-v2 flat merged_*
-keys, the legacy ``compare.group``) still parses for rendering; and the fork/resume ``session_mode``
-gate refuses an unknown mode rather than falling open to write access.
+keys, a placement with a coordinator's facts) still parses for rendering; and the fork/resume
+``session_mode`` gate refuses an unknown mode rather than falling open to write access.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def test_missing_fields_default_so_any_old_dir_renders(tmp_path: pathlib.Path) -
     assert m.mode == ""
     assert m.run_branch is None
     assert m.models.driver is None
-    assert m.merged is None and m.compare is None
+    assert m.merged is None and m.placement is None
 
 
 def test_legacy_version_1_and_missing_profile(tmp_path: pathlib.Path) -> None:
@@ -76,17 +76,17 @@ def test_unknown_keys_are_dropped_never_folded(tmp_path: pathlib.Path) -> None:
     assert m.run_branch == "agent6/r"
 
 
-def test_lane_compare_keeps_placement_and_group_only(tmp_path: pathlib.Path) -> None:
+def test_lane_placement_keeps_rank_and_group_only(tmp_path: pathlib.Path) -> None:
     """A lane keeps its group reference and drops facts owned by the coordinator."""
     _write(
         tmp_path,
-        {"compare": {"group": "fan", "rank": 1, "of": 2, "winner": True, "ranked_by": "judge"}},
+        {"placement": {"group": "fan", "rank": 1, "of": 2, "winner": True, "ranked_by": "judge"}},
     )
     m = sessions_manifest.read_manifest(tmp_path)
-    assert m.compare is not None
-    assert m.compare.rank == 1 and m.compare.winner is True
-    assert m.compare.group == "fan"
-    assert set(m.compare.model_dump()) == {"group", "rank", "of", "winner"}
+    assert m.placement is not None
+    assert m.placement.rank == 1 and m.placement.winner is True
+    assert m.placement.group == "fan"
+    assert set(m.placement.model_dump()) == {"group", "rank", "of", "winner"}
 
 
 def test_session_mode_accepts_the_two_known_modes(tmp_path: pathlib.Path) -> None:
@@ -169,7 +169,7 @@ def test_write_manifest_bytes_fresh(tmp_path: pathlib.Path) -> None:
 
 def test_write_manifest_bytes_stamped_lane(tmp_path: pathlib.Path) -> None:
     # Byte pin of a fully-stamped fan-out lane: fork lineage + merge stamp +
-    # parallel lineage + compare, so every optional nested stamp's serialized
+    # parallel lineage + placement, so every optional nested stamp's serialized
     # shape is frozen, not just the fresh subset.
     from agent6.app import stamps
 
@@ -196,7 +196,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: pathlib.Path) -> None:
             tip="4" * 40,
         ),
         parallel=sessions_manifest.ParallelLineage(group="p-abc", lane=1, coordinator="p-abc"),
-        compare=sessions_manifest.CompareStamp(
+        placement=sessions_manifest.PlacementStamp(
             rank=1,
             of=3,
             winner=True,

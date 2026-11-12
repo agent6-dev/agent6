@@ -166,8 +166,8 @@ def manifest_header(
         lanes: The session's lanes by lineage, from the same listing as `sessions show`,
             for every session that has any.
         dispatches: The session's dispatch records, each with its lanes' outcomes.
-        compare: The lane's CompareStamp when recorded.
-        compare.line: The rendered comparison placement.
+        placement: The lane's PlacementStamp when recorded.
+        placement.line: The rendered comparison placement.
         comparison: The group record from the coordinator, directly or through the lane's group.
 
     Args:
@@ -178,7 +178,7 @@ def manifest_header(
     Returns:
         The branch facts, `unmerged` when the repo is given, `git_control`, `base_sha`,
         the fork lineage as `forked_from`,
-        the `worktree` and the fan-out `compare` outcome with its `line`; empty for a
+        the `worktree` and the lane's `placement` with its `line`; empty for a
         run with no readable manifest.
     """
     try:
@@ -219,10 +219,10 @@ def manifest_header(
     group_record = comparison.session_comparison(session_dir)
     if group_record is not None:
         header["comparison"] = group_record.model_dump(mode="json")
-    if m.compare is not None:
-        header["compare"] = m.compare.model_dump(mode="json")
-        line, _rationale = format.format_compare(m.compare, group_record) or ("", "")
-        header["compare"]["line"] = line
+    if m.placement is not None:
+        header["placement"] = m.placement.model_dump(mode="json")
+        line, _rationale = format.format_compare(m.placement, group_record) or ("", "")
+        header["placement"]["line"] = line
     return header
 
 

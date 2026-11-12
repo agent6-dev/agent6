@@ -1,5 +1,5 @@
 {
-  "version": 12,
+  "version": 13,
   "agent6_version": "",
   "session_id": "fan",
   "mode": "run",
@@ -53,7 +53,7 @@
   "merged": null,
   "includes": null,
   "parallel": null,
-  "compare": null,
+  "placement": null,
   "comparison": {
     "group": "fan",
     "ranking": [

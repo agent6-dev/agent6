@@ -1,5 +1,5 @@
 {
-  "version": 12,
+  "version": 13,
   "agent6_version": "0.1.0",
   "session_id": "r-lane02",
   "mode": "run",
@@ -72,7 +72,7 @@
     "coordinator": "p-abc",
     "config_notes": []
   },
-  "compare": {
+  "placement": {
     "rank": 1,
     "of": 3,
     "winner": true,

@@ -2166,7 +2166,7 @@ def test_lane_header_reads_the_coordinators_rationale(tmp_path: pathlib.Path) ->
         json.dumps(
             {
                 "mode": "run",
-                "compare": {"group": "fan", "rank": 1, "of": 2, "winner": True},
+                "placement": {"group": "fan", "rank": 1, "of": 2, "winner": True},
             }
         ),
         encoding="utf-8",

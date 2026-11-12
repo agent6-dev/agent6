@@ -587,7 +587,7 @@ def test_status_shows_fan_out_compare_outcome(
     """
     d = _make_run(tmp_path, monkeypatch, [{"ts": _ts(5), "type": "session.start", "mode": "run"}])
     manifest = json.loads((d / "manifest.json").read_text("utf-8"))
-    manifest["compare"] = {
+    manifest["placement"] = {
         "group": "fan", "rank": 1, "of": 2, "winner": True,
     }  # fmt: skip
     (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
@@ -614,7 +614,7 @@ def test_status_shows_fan_out_compare_outcome(
 
     sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True)
     obj = json.loads(capsys.readouterr().out)
-    assert obj["compare"]["winner"] is True and obj["compare"]["rank"] == 1
+    assert obj["placement"]["winner"] is True and obj["placement"]["rank"] == 1
 
 
 def test_worker_pid_clear(tmp_path: pathlib.Path) -> None:

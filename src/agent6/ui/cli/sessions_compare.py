@@ -157,7 +157,8 @@ def _recorded_outcome(
     if record is None or not ids.issubset(record.ranking):
         return None
     if any(
-        manifest.compare is None or manifest.compare.group != record.group for _, manifest in lanes
+        manifest.placement is None or manifest.placement.group != record.group
+        for _, manifest in lanes
     ):
         return None
     return compare.RankOutcome(
@@ -271,7 +272,7 @@ def _cmd_compare(
             (
                 layout.session_id
                 for layout, manifest in resolved
-                if manifest.compare is not None and manifest.compare.winner
+                if manifest.placement is not None and manifest.placement.winner
             ),
             None,
         )

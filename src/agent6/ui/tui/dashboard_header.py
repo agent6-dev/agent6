@@ -153,7 +153,7 @@ class RunHeader(widgets.Static):
         if self._compare_line is not None:
             return self._compare_line
         formatted = format.format_compare(
-            comparison.session_compare(self._tui.session_dir),
+            comparison.session_placement(self._tui.session_dir),
             comparison.session_comparison(self._tui.session_dir),
         )
         if formatted is None:

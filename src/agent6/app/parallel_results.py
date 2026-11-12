@@ -106,11 +106,13 @@ def stamp_compare_outcomes(
             and crown
             and (not any_verified or by_id[session_id].verification == "passed")
         )
-        compare = sessions_manifest.CompareStamp(rank=rank_pos, of=of, winner=winner, group=group)
+        placement = sessions_manifest.PlacementStamp(
+            rank=rank_pos, of=of, winner=winner, group=group
+        )
         # A judged fan-out ranks run lanes.
-        err = stamp(lane_watch.lane_link(origin_state, session_id, mode="run"), compare=compare)
+        err = stamp(lane_watch.lane_link(origin_state, session_id, mode="run"), placement=placement)
         if err is not None:
-            reporter.note(f"lane [{session_id}]: imported, but the compare stamp failed: {err}")
+            reporter.note(f"lane [{session_id}]: imported, but the placement stamp failed: {err}")
 
 
 def carry_back(

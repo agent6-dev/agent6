@@ -10,7 +10,7 @@ viewer in any language mirrors `SessionState` and `MachineState` field for field
 
 from __future__ import annotations
 
-from agent6.viewmodel.comparison import is_winner, session_compare  # re-export
+from agent6.viewmodel.comparison import is_winner, session_placement  # re-export
 from agent6.viewmodel.events import event_epoch  # re-export
 from agent6.viewmodel.listing import (  # re-export
     SessionSummary,
@@ -158,10 +158,10 @@ __all__ = [
     "produced_result",
     "restate",
     "scan_session_log",
-    "session_compare",
     "session_dirs",
     "session_is_live",
     "session_mtime",
+    "session_placement",
     "session_policy",
     "session_snapshot",
     "session_state_as_dict",
