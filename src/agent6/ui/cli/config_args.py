@@ -279,8 +279,8 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         choices=get_args(EffortLevel),
         default="",
         help=(
-            "Reasoning effort to save with this assignment. Default: none saved, so the"
-            " provider's own default applies."
+            "Reasoning effort to save with this assignment. Default: the existing setting is"
+            " kept; an unset role inherits models.default."
         ),
     )
     model_p.add_argument(

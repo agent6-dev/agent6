@@ -102,7 +102,7 @@ To give a finished run more work, use `agent6 resume <id> --steer "next task"`.
 ### Sandboxed commands
 
 Runs the model's commands in a Linux sandbox with the file and network access you set.
-Inside it, commands cannot read your provider keys.
+Under `full` or `partial` isolation, commands cannot read your provider keys.
 [Security model](security.md)
 
 </div>

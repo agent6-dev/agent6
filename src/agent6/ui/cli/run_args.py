@@ -227,8 +227,8 @@ def _add_fork_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         "fork",
         help=(
             "Copy a session at one of its saved turns, then continue the copy without changing"
-            " the source. A run copy gets its own git worktree. A plan or ask copy stays"
-            " read-only in the current checkout."
+            " the source. A run copy gets its own git worktree. A plan or ask copy stays in"
+            " the current checkout, without edit tools or automatic commits."
         ),
     )
     common._add_session_id(

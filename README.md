@@ -102,10 +102,10 @@ The worker, planner, reviewer, and helper inherit each unset model, effort, and 
 
 ## [Security][security]
 
-agent6 confines only the model's commands, in a jail on your host; the agent6 process stays trusted, holds your provider credentials, and connects to your configured providers.
+agent6 confines only the model's commands: in a jail on your host under `full` and `partial` isolation, or inside the dev container you select; the agent6 process stays trusted, holds your provider credentials, and connects to your configured providers.
 The repository stays at its real path, and the jail sees your system toolchains and `~/.local/bin` read-only.
 
-`sandbox.isolation = "auto"` picks the strongest level the host allows and warns when it falls back:
+`sandbox.isolation` names the command mode; `auto`, the default, picks the strongest of `full`, `partial` and `none` the host allows and warns when it falls back:
 
 - `full`: commands cannot read your provider keys or the secrets file, `.git` is read-only to them (`sandbox.protect_git = "auto"`, `git.control = "agent6"`), and they get a private network (`sandbox.network = "auto"`).
 - `partial`: commands cannot read your keys or the secrets file, but they share agent6's network and can write `.git`.
@@ -117,7 +117,7 @@ agent6's own git never pushes, rewrites history or runs `reset --hard`, and no c
 MCP is off by default, and locally spawned servers use the command sandbox unless explicitly configured otherwise.
 `agent6 check sandbox` shows the effective file and command boundaries, network and approval settings, and live probe results.
 
-### In a container
+### Running agent6 itself in Docker or Podman
 
 - Docker gives `partial` by default and allows `full` with both `--security-opt seccomp=unconfined` and `--security-opt apparmor=unconfined`.
 - Rootless Podman allows `full` with no flags ([rootful Podman][security]).

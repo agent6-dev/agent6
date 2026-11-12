@@ -17,8 +17,7 @@ initial = "attempt"
 # (mode="run") edits the repo to make a failing check pass, a `tool` state
 # verifies with a stdlib-only checker, and a `branch` loops until green or the
 # attempt budget is spent. The agent does the work inside one state; the operator
-# owns the control flow. The agent state inherits the operator's worker model, so
-# in the demo it runs against the record/replay proxy (no key) like the CLI run.
+# owns the control flow. The agent state inherits the operator's worker model.
 
 [budget]
 max_transitions = 40
@@ -124,6 +123,9 @@ stateDiagram-v2
     success --> [*]
     giveup --> [*]
 ```
+
+The complete bundle, the definition with the two scripts it calls (`scripts/verify.py`, `scripts/bump.py`), is under [docs/screenshots/seed/machine-repo](https://github.com/agent6-dev/agent6/tree/master/docs/screenshots/seed/machine-repo).
+Copy it into a repository, review it and commit it: `machine run` reads a definition inside a repository, and the scripts it names, from the committed tree.
 
 ```sh
 agent6 machine check code-fixer.asm.toml    # the format, the names and the schemas

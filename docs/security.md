@@ -15,6 +15,8 @@ The adversary controls the text of every LLM response and the content of any fil
 It also chooses the tool calls and their arguments, within the published JSON schema.
 Outside its control: the kernel, the agent6 binary, the provider endpoints.
 
+The holds below describe the local jail, `full` and `partial` `sandbox.isolation`; `none` confines nothing, and under `container` the container runtime is the boundary ([container transport boundary](#container-transport-boundary)).
+
 **Holds**
 
 - No writes outside the workspace
@@ -33,7 +35,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - `partial` `sandbox.isolation`: the host's `/tmp`
 - `HOME` is a directory of agent6's own under a jail; under `none` `sandbox.isolation` it is the operator's
     - `full` `sandbox.isolation`: `/tmp/agent6-home`, created inside the private tmpfs and gone with the run; `[sandbox].home = "cache"` swaps in the persistent dir below, bind-mounted read-write at its real path
-    - `partial` `sandbox.isolation`: `$XDG_CACHE_HOME/agent6/homes/<repo-id>` (default `~/.cache/agent6/homes/<repo-id>`), one directory per repository, created `0700` by agent6 and, Landlock-granted read-write like the workspace; every other repository's directory stays ungranted
+    - `partial` `sandbox.isolation`: `$XDG_CACHE_HOME/agent6/homes/<repo-id>` (default `~/.cache/agent6/homes/<repo-id>`), one directory per repository, created `0700` by agent6 and Landlock-granted read-write like the workspace; every other repository's directory stays ungranted
     - `none` `sandbox.isolation`: the operator's own HOME (`[sandbox].home = "host"`, what `auto` resolves to there); `[sandbox].home = "cache"` gives that persistent directory by convention only, since nothing confines the commands, and the start warning says so
     - a linked worktree (`run --worktree`, a fork) gets its repository's directory, named by the git dir the session recorded and never by the worktree's own `.git` pointer; a lane's clone and a machine state's clone get it too, named by the first directory below the workspace base directory, the owning repository's id
     - a symlink, another user's directory, a mode open to group or others, or a path inside agent6's private dirs at that location refuses the run.
@@ -139,7 +141,8 @@ An explicit command path skips this advisory lookup, not command approval or con
 | `full` | user namespace (one uid, the operator's own) + mount + PID + IPC + UTS namespaces (hostname `agent6`), a network namespace unless `sandbox.network = "host"`, `pivot_root` rootfs, private `/proc` and `/tmp`, curated `/dev`, Landlock where the kernel has it, seccomp, `NO_NEW_PRIVS`, capability drop, timeout |
 | `partial` | Landlock, seccomp, `NO_NEW_PRIVS`, capability drop, timeout. No namespaces, no rootfs |
 | `none` | No confinement: no namespaces, Landlock or seccomp. The timeout and `memory_limit_mib` still apply |
-| `auto` *(default)* | The strongest of the three this host supports |
+| `container` | None from agent6: commands run inside the selected container through the launcher's `none` branch; the runtime and the container's mounts bound them ([container transport boundary](#container-transport-boundary)) |
+| `auto` *(default)* | The strongest of `full`, `partial` and `none` this host supports; never `container` |
 
 Under `full` `sandbox.isolation` a kernel without Landlock skips that layer, warned once per run; under `partial` Landlock is the only filesystem boundary.
 

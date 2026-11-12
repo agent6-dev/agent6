@@ -85,7 +85,7 @@ uv run agent6 --help
 
 `AGENT6_JAIL_BIN=/path/to/agent6-jail` overrides the bundled jail binary.
 
-## Static launcher for the internal container transport
+## Static launcher for commands inside a dev container
 
 Container transfer requires a static Linux launcher matching the host and target architecture, x86-64 or aarch64.
 Published Linux wheels bundle their architecture's static-musl binary.
@@ -101,7 +101,7 @@ AGENT6_JAIL_TARGET="$target" uv sync --reinstall-package agent6
 The target needs `/bin/sh`, `uname`, `mktemp`, `head -c`, `chmod`, executable writable `/tmp` and readable `/proc/self`.
 It needs no Python, Node or Rust toolchain.
 Preparation never installs dependencies, downloads a launcher or falls back to the host.
-The transport is internal; application config does not activate it.
+`sandbox.isolation = "container"` activates it ([Commands inside a dev container](usage.md#commands-inside-a-dev-container)).
 See the [installation trust boundary](security.md#container-transport-boundary).
 
 The opt-in runtime test first attaches to this repository's existing labelled dev container with a non-root user and a different workspace path.
