@@ -78,7 +78,7 @@ Persistence also lets a poisoned cache or tool configuration reach later runs in
   <source src="/screenshots/out/temps-demo.webm" type="video/webm">
 </video>
 
-## Follow a run
+## Follow and steer a run
 
 `agent6 attach [<id>]` follows a run's conversation, or a machine's state, live.
 It rings the bell and sends a desktop notification (`notify-send`, when present) as the run starts waiting on an answer and as it ends; `run` does the same in the foreground.
@@ -92,6 +92,12 @@ agent6 steer ID "focus on X"  # an instruction at the next step; --now interrupt
 agent6 answer ID "yes"        # answer a pending question or approval (bare: list them; --question QID picks a question set)
 agent6 stop ID                # stop during the current turn (the worker killed if it does not answer); --all
 agent6 stop ID --after-turn   # finish the current turn, then stop
+agent6 ps                     # live sessions of every repository on the machine; --lanes, --json
+```
+
+## Inspect and land a session
+
+```sh
 agent6 sessions show          # status, turn, elapsed, usage, the gate's word, where the changes are; --json
 agent6 sessions diff          # the git diff the run produced; --stat, --path P
 agent6 sessions commits       # the run's per-turn commits
@@ -100,15 +106,23 @@ agent6 resume ID --merge main # merge main into the run's work first; a conflict
 agent6 sessions transcript    # the conversation as text; --no-thinking, --seq N, --tools calls|none
 agent6 sessions graph         # the task graph, each line led by the id /retire takes
 agent6 sessions compare <ids> # >=2 runs ranked by the reviewer model (a mechanical ranking when it is unavailable or fails), or a fan-out's saved verdict; --rejudge
+agent6 sessions dir [<id>]    # the repo's run history, or that session's directory
+agent6 history search <text>  # grep this repository's sessions' persisted data; --regex
+```
+
+`history search` searches the conversations, not the system prompt, the skill index or the tool declarations.
+It keeps the matches it read if a file disappears or another search error occurs, prints `search incomplete: some files were not read.` and the error, and exits with code 2.
+It does not report `no matches` when the search is incomplete.
+
+`sessions show --json`, `sessions list --json` and `attach --json` return the operator's full words in `task`, the latest resume steer in `continued_task` and their headlines in `task_line`; [Formats](formats.md#cli-json) lists every field and the clipping rules.
+An unsteered resume clears `continued_task`.
+
+## Clean up sessions
+
+```sh
 agent6 sessions prune         # delete merged agent6/* branches and worktrees, report the rest
 agent6 sessions prune --history --older-than 30 # delete stored transcripts, checkpoints and objects of sessions ended more than 30 days ago
 agent6 sessions remove [<id>] # delete one run's history; asks [y/N] on a controlling terminal, otherwise requires an id or --yes; --yes skips the question, --asks clears saved asks
-agent6 sessions dir [<id>]    # the repo's run history, or that session's directory
-agent6 exec ID -- <command>   # a command inside the run's jail and network, on your terminal or pipe
-agent6 exec --new [<command>] # a command, or your shell, in a fresh sandbox built from the config; no run needed
-agent6 forward ID 8000        # reach a port inside the run's network; --local-port N
-agent6 history search <text>  # grep this repository's sessions' persisted data; --regex
-agent6 ps                     # live sessions of every repository on the machine; --lanes, --json
 ```
 
 `sessions prune` removes merged worktrees, including squash and task merges (`tasks` is the default), but keeps worktrees holding work no commit has.
@@ -120,12 +134,13 @@ The [Formats reference](formats.md#provider-transcripts) describes the object st
 
 At launch, a note names the state directory when its filesystem has less than 10% free; low space never refuses a session.
 
-`history search` searches the conversations, not the system prompt, the skill index or the tool declarations.
-It keeps the matches it read if a file disappears or another search error occurs, prints `search incomplete: some files were not read.` and the error, and exits with code 2.
-It does not report `no matches` when the search is incomplete.
+## Run a command in the sandbox
 
-`sessions show --json`, `sessions list --json` and `attach --json` return the operator's full words in `task`, the latest resume steer in `continued_task` and their headlines in `task_line`; [Formats](formats.md#cli-json) lists every field and the clipping rules.
-An unsteered resume clears `continued_task`.
+```sh
+agent6 exec ID -- <command>   # a command inside the run's jail and network, on your terminal or pipe
+agent6 exec --new [<command>] # a command, or your shell, in a fresh sandbox built from the config; no run needed
+agent6 forward ID 8000        # reach a port inside the run's network; --local-port N
+```
 
 `agent6 exec` runs your own command on your own stdio.
 

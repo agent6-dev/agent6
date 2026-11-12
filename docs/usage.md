@@ -108,7 +108,7 @@ See [Media retention](security.md#media-retention) for containment and the upstr
 
 ## Follow and steer a run
 
-Every surface follows a run and sends it the same steers; the command-line verbs are on [Command line](cli.md#follow-a-run).
+Every surface follows a run and sends it the same steers; the command-line verbs are on [Command line](cli.md#follow-and-steer-a-run).
 
 A session's usage covers every execution, in dollars or in plan points, and in both for a run that spent both (`1pt + $0.03`); `sessions list`, `sessions show`, the end-of-run total and the fan-out report print the same figure.
 These points measure account-wide window movement between readings, accumulated across resets, not the run's own spend; other consumers sharing the plan contribute too.
