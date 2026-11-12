@@ -206,7 +206,7 @@ agent6 fork <session-id> --at-turn 7 # a new run from turn 7; --steer seeds it, 
 
 State is snapshotted before each model call and checkpointed per turn.
 
-- `fork` continues a copy of a run from a turn in its own git worktree ([isolated workspaces](#isolated-workspaces)); the original run and your checkout stay as they are, and `sessions merge`, `prune` and `remove` treat it like any run ([session state](architecture.md#session-state-on-disk))
+- `fork` continues a copy of a run from a turn in its own git worktree ([worktrees](#worktrees)); the original run and your checkout stay as they are, and `sessions merge`, `prune` and `remove` treat it like any run ([session state](architecture.md#session-state-on-disk))
   A plan or ask fork uses the current checkout without edit tools or automatic commits; approved commands can still modify files.
   `sessions prune` keeps a fork that has not started: its branch, chain ref and worktree stay.
 - `--at-turn 0` on a run that is itself a fork picks the seed it started from, before anything it did; the fork line says so
@@ -403,25 +403,25 @@ The verify command is the success gate.
 - [`[harness]`](config.md#harness) has the inference order and `harness.verify.when`.
 - An inferred `cargo test --quiet` still needs a toolchain and dependencies inside the jail; see [Rust toolchains](security.md#rust-toolchains).
 
-## Isolated workspaces
+## Worktrees
 
-`run --worktree`, a run-mode fork, each `--parallel` lane and a run-mode machine state work in a worktree or a clone of their own.
+`run --worktree`, a run-mode fork, each `--parallel` lane and a run-mode machine state work in a linked worktree or a clone of their own.
 
 - It starts with the repository's tracked files at the commit it was cut from: no uncommitted change, and nothing git does not track (`.venv`, `node_modules`, a build directory).
-- `[git.worktree].setup_command` builds what is missing; it runs once in each new workspace, before the first turn:
+- `[git.worktree].setup_command` builds what is missing; it runs once in each new worktree, before the first turn:
 
     ```sh
     agent6 config set --repo git.worktree.setup_command '["uv", "sync"]'
     ```
 
-- Unset, a `## Setup command` fenced block in AGENTS.md supplies it; a `--worktree` run and a `--parallel` fan-out read it from the commit the workspace is cut from, not from an uncommitted edit, and print the command and that AGENTS.md gave it.
+- Unset, a `## Setup command` fenced block in AGENTS.md supplies it; a `--worktree` run and a `--parallel` fan-out read it from the commit the worktree is cut from, not from an uncommitted edit, and print the command and that AGENTS.md gave it.
     - an AGENTS.md that is a symlink is not read there: set `git.worktree.setup_command`
 - The command runs in the run's own sandbox, under the isolation, network and grants of every command of that run; with no route out it has to work offline ([the offline recipe](security.md#4-commands-and-environment)).
 - Machine clones follow the [state setup and failure rules](state-machines.md#agent) and [setup approval policy](security.md#4-commands-and-environment).
 - For run, fork and lane sessions, the command and output tail are printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any turn (exit `1`).
     - A fork's unread steer survives the setup failure and reaches the worker on a bare resume.
   For a run or lane, no turn ran, so `agent6 resume` has nothing to continue: start the run again once the command works.
-- A fan-out prints each lane's setup line when it imports the lane, and a failed lane's output in the failed lanes block; `agent6 sessions show <id>` keeps the command, and a failed setup's output, after the workspace is gone.
+- A fan-out prints each lane's setup line when it imports the lane, and a failed lane's output in the failed lanes block; `agent6 sessions show <id>` keeps the command, and a failed setup's output, after the worktree is gone.
 - The files it leaves untracked stay out of the run's commits.
 - The verify gate is settled in your checkout and carried into the workspace: a gate inferred as `.venv/bin/python -m pytest -q` stays that.
 - A gate whose first word is a path git does not track, with no setup command, refuses `run --worktree`, `fork` and `run --parallel` before anything is created; the refusal names the path, the config line and the AGENTS.md block.
@@ -464,7 +464,7 @@ The pack contains:
 - `skills/`: installed skills from the data directory.
 - `repo/`: the entire repository state directory, including repo config, sessions, asks, runs, memory, reviews and decisions, except `locks/` and `pack-base.json`.
 
-The cache, jail homes, parallel workspaces and completions do not travel.
+The cache, jail homes, worktrees and completions do not travel.
 
 `unpack` uses a three-way rule per file: P is the pack's current hash, B is its recorded base hash (possibly null), and H is the home's hash (possibly absent).
 

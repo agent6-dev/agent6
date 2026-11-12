@@ -407,7 +407,7 @@ The agent works within the environment it is given:
     - a toolchain that keeps its state under your home needs that directory granted and named, because the jail's `HOME` is its own; see [Rust toolchains](#rust-toolchains) for rustup's `cargo`
 - Toolchains, venvs, and deps are installed outside agent6.
   Access widens through config (`extra_read_paths`, `network`), all visible in `config show`.
-- The setup command of an isolated workspace (`[git.worktree].setup_command`, or an AGENTS.md `## Setup command` block) is a jailed command like any other
+- The setup command of a worktree (`[git.worktree].setup_command`, or an AGENTS.md `## Setup command` block) is a jailed command like any other
     - Machine clones use the operator's configured command, else the AGENTS.md block at the starting commit recorded in `machine.begin`, never a block committed by a run state; read-only agent states run this setup too, under their command policy and jail
     - A machine clone needing setup refuses `sandbox.run_commands = "ask"` at preflight rather than asking; use `--auto-approve` or set it to `"allow"` to allow setup
     - it runs through the run's own jail: the isolation, network and grants every command of that run gets, the approval `run_commands = "ask"` asks, and nothing under `"deny"`

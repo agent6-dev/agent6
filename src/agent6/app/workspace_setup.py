@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Build the environment of an isolated workspace before its first turn.
+"""Build the environment of a worktree before its first turn.
 
 A `run --worktree` worktree, a fork's worktree, a lane's clone and a machine state's clone
 hold tracked files only. `[git.worktree].setup_command` runs once in each, through an injected

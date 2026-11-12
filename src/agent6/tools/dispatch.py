@@ -835,7 +835,7 @@ class ToolDispatcher:
             return ""
 
     def run_setup(self, argv: tuple[str, ...]) -> kinds.CommandResult:
-        """Run an isolated workspace's setup command under the policy a run command gets.
+        """Run a worktree's setup command under the policy a run command gets.
 
         Args:
             argv: The setup command.
