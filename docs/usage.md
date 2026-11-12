@@ -152,8 +152,9 @@ Task text keeps its internal whitespace and newlines, including later `--` token
 
 A fan-out group has no model loop: steer one of its lanes instead.
 The refusal names the lane session IDs.
-While a steer waits on disk, `sessions show`, the TUI header and the web session status show `steer queued, not yet delivered` with its text.
-The pending label clears when the worker consumes the steer.
+While a steer waits on disk, `sessions show`, the TUI header and the web session status show `steer queued, not yet delivered` with its text and the count waiting behind it.
+Steers sent while one waits queue in order and reach the model one per step; `abort`, `exit`, `/undo` and `detach` take the slot at once.
+The pending label clears when the worker consumes the last steer.
 
 ## Answer a parked prompt
 
@@ -287,7 +288,7 @@ agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
 - Resolve and Reopen require a nonblank reason of at most 2,000 characters.
   `fixed` records the operator's conclusion, not a verification result.
 - Fix builds its instruction from the stored finding and reviewed target, and asks the worker to reproduce the report before changing code.
-  It leaves the finding open and refuses an occupied steer slot or an unknown delivery.
+  It leaves the finding open, queues behind a steer in flight, and refuses a second Fix of a finding whose Fix is still queued or of unknown delivery.
 - `--resume` confirms the background resume of the same session.
   - A successful launch reports `run resumed to fix finding <id>`.
   - `; submission acknowledgement pending` means the worker has not yet recorded taking the instruction.

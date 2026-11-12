@@ -37,6 +37,12 @@ def test_steer_queues_for_a_live_run(
     assert main(["sessions", "show", d.name]) == 0
     shown = capsys.readouterr().out
     assert "steer queued, not yet delivered: land your best patch now" in shown
+    assert main(["steer", "tiny-run", "then run the gate"]) == 0
+    assert "steer queued behind 1 other; they reach the model one per step" in (
+        capsys.readouterr().out
+    )
+    assert main(["sessions", "show", d.name]) == 0
+    assert "land your best patch now (+1 more queued)" in capsys.readouterr().out
     # The one shared channel: request marker + answer, exactly what the
     # composers write and the loop consumes. A plain steer never carries the
     # interrupt urgency; --now writes it into the marker.
@@ -61,6 +67,7 @@ def test_steer_reports_a_failed_marker_write(
     session = _run_session(tmp_path, "tiny-run-EEEE55")
     process.write_worker_pid(session, os.getpid())
     (session / "steer.request").mkdir()
+    (session / ipc.STEERS_DIR_NAME).write_text("", encoding="utf-8")  # no inbox to fall back to
 
     assert main(["steer", "tiny-run-EEEE55", "hello"]) == 1
     captured = capsys.readouterr()

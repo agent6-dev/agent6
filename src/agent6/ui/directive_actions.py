@@ -177,13 +177,20 @@ def submit_composer_line(
         return False, "/now needs the instruction: /now <text>"
     now = now or urgent is not None
     sent = urgent or text
+    ahead = int(ipc.steer_request_pending(session_dir)) + len(ipc.queued_steers(session_dir))
     if not ipc.submit_steer(session_dir, sent, now=now):
         return False, "could not write the steer request"
-    said = (
-        "steering now, interrupting the call in flight"
-        if now
-        else "steer queued; it reaches the model at the next step"
-    )
+    if now:
+        said = "steering now, interrupting the call in flight" + (
+            "; the steer that waited follows it" if ahead else ""
+        )
+    elif ahead and sent.strip().lower() not in ipc.STEER_VERBS:
+        said = (
+            f"steer queued behind {ahead} other{'s' if ahead > 1 else ''}; they reach the model"
+            " one per step"
+        )
+    else:
+        said = "steer queued; it reaches the model at the next step"
     # A token inside the sent text travelled as words, in case it was meant as a directive.
     if (stray := agent6_directive.stray_directive(sent)) is not None:
         said += f" (`{stray}` mid-line is text; a directive has to start the line)"

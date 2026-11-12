@@ -484,6 +484,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             review_actions.drain(
                 events, execution_id=wf.execution_id, resume_steer=inputs.resume_steer
             )
+            ipc.promote_queued_steer(layout.session_dir)
             return steer_state.requested()
 
         wf = loop.Harness(

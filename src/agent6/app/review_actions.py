@@ -215,24 +215,37 @@ def _steer_text(view: review.ReviewView, finding: review.FindingView) -> str:
     )
 
 
+def _fix_queued(
+    session_dir: pathlib.Path, view: review.ReviewView, finding: review.FindingView
+) -> bool:
+    """Return whether a Fix steer for the finding waits in the slot or the inbox."""
+    if any(finding.finding_id in entry.findings for entry in ipc.queued_steers(session_dir)):
+        return True
+    if not ipc.steer_request_pending(session_dir):
+        return False
+    try:
+        slot = (session_dir / ipc.STEER_ANSWER_FILE).read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return slot == _steer_text(view, finding)
+
+
 def _validate(
     view: review.ReviewView, request: ActionRequest, session_dir: pathlib.Path
 ) -> review.FindingView:
     action = request.action
     finding = _finding(view, request.finding_id)
-    if action.expected_version != view.version:
+    # A Fix names a finding, which stays what it is; Resolve and Reopen record a conclusion
+    # over the version the operator read.
+    if action.action != "fix" and action.expected_version != view.version:
         raise ReviewActionError(
             f"stale review version {action.expected_version}; current version is {view.version}"
         )
     if action.action == "fix":
         if finding.status != "open":
             raise ReviewActionError("reopen the finding before requesting Fix")
-        if (
-            ipc.steer_answer_written(session_dir)
-            or ipc.steer_request_pending(session_dir)
-            or any(f.fix_state == "delivery_unknown" for f in view.findings)
-        ):
-            raise ReviewActionError("a steer or finding delivery is pending")
+        if finding.fix_state == "delivery_unknown" or _fix_queued(session_dir, view, finding):
+            raise ReviewActionError("a Fix for this finding is already queued")
     if action.action == "resolve" and finding.status == "resolved":
         raise ReviewActionError("finding is already resolved")
     if action.action == "reopen" and finding.status == "open":
@@ -289,15 +302,12 @@ def _apply(
             action="live-steer" if execution_id else "resume",
         )
         if execution_id:
-            if ipc.submit_steer(session_dir, _steer_text(view, finding), only_if_empty=True):
+            if ipc.submit_steer(
+                session_dir, _steer_text(view, finding), findings=(finding.finding_id,)
+            ):
                 _emit(events, request, "fix.submitted", execution_id=execution_id)
             else:
-                _emit(
-                    events,
-                    request,
-                    "fix.failed",
-                    error="could not submit steer; the slot is occupied or unwritable",
-                )
+                _emit(events, request, "fix.failed", error="could not write the steer")
     result = _recorded(read_review(session_dir), request)
     assert result is not None
     return result

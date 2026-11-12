@@ -137,9 +137,10 @@ def test_live_actions_are_applied_only_by_the_worker(tmp_path: pathlib.Path) -> 
 
 
 @pytest.mark.parametrize("resume_confirmed", [False, True])
-def test_fix_uses_stored_evidence_and_refuses_a_second_pending_steer(
+def test_fix_uses_stored_evidence_and_queues_a_second_fix(
     tmp_path: pathlib.Path, resume_confirmed: bool
 ) -> None:
+    """A Fix names its finding; a Fix of another finding queues behind it, not against it."""
     saved = review_helpers.reviewed_session(tmp_path)
     process.write_worker_pid(saved.session_dir, os.getpid())
     try:
@@ -169,15 +170,24 @@ def test_fix_uses_stored_evidence_and_refuses_a_second_pending_steer(
         ):
             assert evidence in text
         view = review_actions.read_review(saved.session_dir)
-        second = request.model_copy(update={"request_id": "fix2", "expected_version": view.version})
-        with pytest.raises(review_actions.ReviewActionError, match="pending"):
-            review_actions.act(saved.session_dir, "f2", second, source="web", wait_s=0)
-        assert (saved.session_dir / ipc.STEER_ANSWER_FILE).read_text() == text
         assert view.findings[0].fix_state == "submitted"
         assert view.findings[0].status == "open"
         rows = [json.loads(line) for line in saved.logs_path.read_text().splitlines()]
         assert [row["version"] for row in rows[-2:]] == [2, 3]
         assert rows[-1]["execution_id"] == "live"
+        # The version the caller read does not bind a Fix: the finding does.
+        second = request.model_copy(update={"request_id": "fix2", "expected_version": 1})
+        review_actions.act(saved.session_dir, "f2", second, source="web", wait_s=0)
+        review_actions.drain(event_log.EventSink(saved.logs_path), execution_id="live")
+        queued = review_actions.act(saved.session_dir, "f2", second, source="web", wait_s=0)
+        assert queued.status == "submitted"
+        assert (saved.session_dir / ipc.STEER_ANSWER_FILE).read_text() == text
+        (entry,) = ipc.queued_steers(saved.session_dir)
+        assert entry.findings == ("f2",) and "Review finding f2" in entry.text
+        # A second Fix of a finding whose Fix still waits is refused.
+        third = request.model_copy(update={"request_id": "fix3"})
+        with pytest.raises(review_actions.ReviewActionError, match="already queued"):
+            review_actions.act(saved.session_dir, "f1", third, source="web", wait_s=0)
     finally:
         process.clear_worker_pid(saved.session_dir)
 
@@ -347,10 +357,10 @@ def test_rejected_resolve_is_not_requeued_at_a_later_version(tmp_path: pathlib.P
         lock.release_single_writer(fd)
 
 
-@pytest.mark.parametrize("retry_at_worker", [False, True])
-def test_rejected_fix_keeps_its_reply_after_the_steer_slot_clears(
-    tmp_path: pathlib.Path, retry_at_worker: bool
+def test_a_fix_queues_behind_an_ordinary_steer_and_follows_it_into_the_slot(
+    tmp_path: pathlib.Path,
 ) -> None:
+    """A Fix sent while a steer waits is submitted, not refused; it reaches the model next."""
     saved = review_helpers.reviewed_session(tmp_path)
     fd = lock.acquire_single_writer(saved.session_dir)
     assert fd is not None
@@ -359,29 +369,20 @@ def test_rejected_fix_keeps_its_reply_after_the_steer_slot_clears(
     try:
         queued = review_actions.act(saved.session_dir, "f1", request, source="cli", wait_s=0)
         assert queued.status == "queued"
-        [(request_id, payload)] = ipc.review_requests(saved.session_dir)
         assert ipc.submit_steer(saved.session_dir, "ordinary steer")
-        before = saved.logs_path.read_bytes()
         events = event_log.EventSink(saved.logs_path)
         review_actions.drain(events, execution_id="worker")
         reply = ipc.read_review_reply(saved.session_dir, "fix")
-        assert reply is not None and json.loads(reply)["status"] == 409
-        assert saved.logs_path.read_bytes() == before
+        assert reply is not None and json.loads(reply)["result"]["status"] == "submitted"
         assert ipc.take_steer_answer(saved.session_dir) == "ordinary steer"
         ipc.clear_steer_request(saved.session_dir)
-        if retry_at_worker:
-            ipc.queue_review_action(saved.session_dir, request_id, payload)
-        else:
-            with pytest.raises(review_actions.ReviewActionError, match="pending") as caught:
-                review_actions.act(saved.session_dir, "f1", request, source="cli", wait_s=0)
-            assert caught.value.status == 409
-            assert ipc.review_requests(saved.session_dir) == []
-        review_actions.drain(events, execution_id="worker")
+        assert ipc.promote_queued_steer(saved.session_dir)
+        assert "Review finding f1" in (saved.session_dir / ipc.STEER_ANSWER_FILE).read_text()
+        before = saved.logs_path.read_bytes()
+        retry = review_actions.act(saved.session_dir, "f1", request, source="cli", wait_s=0)
+        assert retry.status == "submitted"
         assert saved.logs_path.read_bytes() == before
-        assert ipc.review_requests(saved.session_dir) == []
-        assert ipc.read_review_reply(saved.session_dir, "fix") == reply
-        assert not ipc.steer_answer_written(saved.session_dir)
-        assert not ipc.steer_request_pending(saved.session_dir)
+        assert ipc.queued_steers(saved.session_dir) == ()
     finally:
         process.clear_worker_pid(saved.session_dir)
         lock.release_single_writer(fd)

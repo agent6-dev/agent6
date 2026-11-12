@@ -653,6 +653,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `queue/` | the operator's queued tasks, standing goal and retirements (`/task`, `/standing`, `/retire`), read at the turn boundary |
 | `shells/` | the roster of background commands the run started |
 | `steer.request`, `stop.request`, `compact.request` | the operator's pending asks, which the loop reads at its turn boundary |
+| `steers/` | the instructions queued behind the steer in flight, one file each in the order sent; the worker moves the oldest into the slot when it clears |
 | `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between executions and it cannot show it wrote; left out of every chain commit and dirty check; a fork records its own checkout's set, and an `/undo` fork the set of the checkout it keeps |
 
 Transcript callers supply the object directory explicitly: sessions use the layout's `objects/`, and `sessions review` uses `<state-dir>/reviews/objects/`.

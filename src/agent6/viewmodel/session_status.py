@@ -350,8 +350,10 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
             steer = (session_dir / ipc.STEER_ANSWER_FILE).read_text(encoding="utf-8").strip()
         except (OSError, ValueError):
             steer = ""
-        if steer and steer.lower() not in {"abort", "detach", "exit", "undo"}:
+        if steer and steer.lower() not in ipc.STEER_VERBS:
             note = f"steer queued, not yet delivered: {steer}"
+            if behind := len(ipc.queued_steers(session_dir)):
+                note += f" (+{behind} more queued)"
             reason = f"{reason} · {note}" if reason else note
     return word, reason
 

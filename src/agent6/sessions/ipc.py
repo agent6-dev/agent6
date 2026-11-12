@@ -24,6 +24,8 @@ import time
 from collections.abc import Callable, Collection, Sequence
 from typing import Literal, cast
 
+import pydantic
+
 from agent6 import paths, portable
 from agent6.sessions import process
 
@@ -797,7 +799,26 @@ def read_question_answers(
     return tuple(str(x) for x in data) if isinstance(data, list) else (str(data),)
 
 
-# The steer bridge, single-slot: "" continues, "abort" stops, anything else is an instruction.
+# The steer bridge: one slot the loop reads at its boundary ("" continues, a verb acts, anything
+# else is an instruction), and behind it an ordered inbox the worker promotes one entry at a time.
+
+STEERS_DIR_NAME = "steers"
+# The steer words the loop acts on instead of injecting; a verb preempts a queued instruction.
+STEER_VERBS: frozenset[str] = frozenset({"abort", "exit", "/undo", "detach"})
+
+
+class QueuedSteer(pydantic.BaseModel, frozen=True, extra="forbid"):
+    """One instruction waiting behind the steer in flight.
+
+    Attributes:
+        text: The instruction.
+        now: Whether it interrupts the in-flight call once it is the one in the slot.
+        findings: The review findings a Fix steer carries, re-checked before delivery.
+    """
+
+    text: str
+    now: bool = False
+    findings: tuple[str, ...] = ()
 
 
 def write_steer_answer(session_dir: pathlib.Path, answer: str) -> None:
@@ -918,34 +939,145 @@ def steer_interrupt_pending(session_dir: pathlib.Path) -> bool:
 
 
 def submit_steer(
-    session_dir: pathlib.Path, text: str, *, now: bool = False, only_if_empty: bool = False
+    session_dir: pathlib.Path, text: str, *, now: bool = False, findings: tuple[str, ...] = ()
 ) -> bool:
-    """Queue the session's next steer: the answer first, then the request marker.
+    """Queue a steer: into the slot when it is free, else behind the one in flight.
 
-    The loop finds the answer the moment it notices the request and never waits on a modal.
+    The loop finds the slot's answer the moment it notices the request and never waits on a
+    modal; the worker promotes the inbox's oldest entry when the slot clears. A verb
+    (`abort`, `exit`, `/undo`, `detach`) takes the slot whatever it holds; an urgent steer
+    takes it too, and the instruction it displaces moves to the head of the inbox.
 
     Args:
         session_dir: The session directory.
         text: The instruction.
         now: Abort the in-flight model call to take it.
-        only_if_empty: Refuse an occupied slot instead of replacing its instruction.
+        findings: The review findings a Fix steer carries.
 
     Returns:
-        Whether both files landed; a failed marker removes its stranded answer.
+        Whether the steer landed, in the slot or the inbox.
     """
+    answer = session_dir / STEER_ANSWER_FILE
     try:
-        if only_if_empty:
-            if steer_request_pending(session_dir) or not _publish_answer(
-                session_dir / STEER_ANSWER_FILE, text
+        if text.strip().lower() in STEER_VERBS:
+            write_steer_answer(session_dir, text)
+        elif now and steer_request_pending(session_dir):
+            displaced = _consume_answer(answer)
+            if displaced is not None and not _queue_steer_first(
+                session_dir, QueuedSteer(text=displaced, now=steer_interrupt_pending(session_dir))
             ):
                 return False
-        else:
             write_steer_answer(session_dir, text)
+        elif steer_request_pending(session_dir) or not _publish_answer(answer, text):
+            return queue_steer(session_dir, QueuedSteer(text=text, now=now, findings=findings))
     except OSError:
         return False
     if request_steer(session_dir, now=now):
         return True
     clear_steer_answer(session_dir)
+    return False
+
+
+def queue_steer(session_dir: pathlib.Path, entry: QueuedSteer) -> bool:
+    """Append an entry to the steer inbox; the file name carries the clock, so order holds.
+
+    Args:
+        session_dir: The session directory.
+        entry: The steer.
+
+    Returns:
+        Whether the entry landed.
+    """
+    directory = session_dir / STEERS_DIR_NAME
+    try:
+        paths.mkdir_for_real_user(directory)
+        portable.atomic_write(
+            directory / f"{time.time_ns():020d}-{os.getpid()}.steer", entry.model_dump_json()
+        )
+    except OSError:
+        return False
+    return True
+
+
+def _queue_steer_first(session_dir: pathlib.Path, entry: QueuedSteer) -> bool:
+    """Put an entry at the head of the inbox: its name sorts before every entry there.
+
+    Args:
+        session_dir: The session directory.
+        entry: The steer displaced from the slot.
+
+    Returns:
+        Whether the entry landed.
+    """
+    directory = session_dir / STEERS_DIR_NAME
+    try:
+        paths.mkdir_for_real_user(directory)
+        names = sorted(p.name for p in directory.glob("*.steer"))
+        first = int(names[0].split("-", 1)[0]) if names else time.time_ns()
+        portable.atomic_write(
+            directory / f"{max(first - 1, 0):020d}-{os.getpid()}.steer", entry.model_dump_json()
+        )
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def queued_steer_files(session_dir: pathlib.Path) -> list[tuple[pathlib.Path, QueuedSteer]]:
+    """Return the inbox's entries with their files, oldest first; an unreadable one is dropped.
+
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        The entries in delivery order.
+    """
+    directory = session_dir / STEERS_DIR_NAME
+    if not directory.is_dir():
+        return []
+    out: list[tuple[pathlib.Path, QueuedSteer]] = []
+    for path in sorted(directory.glob("*.steer")):
+        try:
+            out.append((path, QueuedSteer.model_validate_json(path.read_text(encoding="utf-8"))))
+        except (OSError, pydantic.ValidationError):
+            with contextlib.suppress(OSError):
+                path.unlink()
+    return out
+
+
+def queued_steers(session_dir: pathlib.Path) -> tuple[QueuedSteer, ...]:
+    """Return the steers waiting behind the one in flight, oldest first.
+
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        The inbox's entries.
+    """
+    return tuple(entry for _, entry in queued_steer_files(session_dir))
+
+
+def promote_queued_steer(session_dir: pathlib.Path) -> bool:
+    """Move the inbox's oldest entry into a free slot; the worker calls this before it polls.
+
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        Whether an entry moved into the slot.
+    """
+    if steer_request_pending(session_dir):
+        return False
+    for path, entry in queued_steer_files(session_dir):
+        with contextlib.suppress(OSError):
+            path.unlink()
+        try:
+            write_steer_answer(session_dir, entry.text)
+        except OSError:
+            return False
+        if request_steer(session_dir, now=entry.now):
+            return True
+        clear_steer_answer(session_dir)
+        return False
     return False
 
 
