@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 sessions list/diff/commits/stop/dir/remove`: the run-branch read side.
 
-`merge` and `prune` are `sessions_merge`, `compare` is `sessions_compare`.
+`merge` is `sessions_merge`, `prune` is `sessions_prune`, `compare` is `sessions_compare`.
 """
 
 from __future__ import annotations

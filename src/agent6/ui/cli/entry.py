@@ -668,6 +668,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
         sessions_compare,
         sessions_findings,
         sessions_merge,
+        sessions_prune,
         sessions_show,
         sessions_transcript,
     )
@@ -737,7 +738,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
             return session_prune.prune_artifacts(
                 paths.state_dir(pathlib.Path.cwd()), args.older_than
             )
-        return sessions_merge._cmd_prune(
+        return sessions_prune.cmd_prune(
             delete_squashed=args.delete_squashed, config_paths=args.config
         )
     if args.sessions_command == "dir":

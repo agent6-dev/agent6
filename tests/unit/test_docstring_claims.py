@@ -35,7 +35,7 @@ def test_connect_verification_docstrings_exclude_chatgpt(name: str) -> None:
 
 
 def test_pruning_docstring_names_unreachable_commit_recovery() -> None:
-    text = _doc("ui/cli/sessions_merge.py", "_prune_branch")
+    text = _doc("ui/cli/sessions_prune.py", "_prune_branch")
     assert "tip sha, restorable until gc prunes the unreachable commit" in text
     assert "reflog" not in text
 
