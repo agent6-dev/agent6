@@ -73,27 +73,27 @@ def test_ps_reads_a_live_machine_through_the_shared_status_word(
     assert "agent6 machine status <id>" in out
 
 
-def test_ps_lists_a_linked_lane_once(
+def test_ps_lists_a_linked_child_once(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A lane's session dir is linked under the parent repo as well as its own state dir.
+    """A child's session dir is linked under the parent repo as well as its own state dir.
 
     One live session, one row.
     """
     base = tmp_path / "state"
     monkeypatch.setenv("XDG_STATE_HOME", str(base))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    lane = base / "agent6" / "lane-repo-000000" / "sessions" / "runs" / "fan-l1"
-    lane.mkdir(parents=True)
-    (lane / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
-    (lane / "logs.jsonl").write_text(
+    child = base / "agent6" / "child-repo-000000" / "sessions" / "runs" / "fan-l1"
+    child.mkdir(parents=True)
+    (child / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
+    (child / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    process.write_worker_pid(lane, os.getpid())
+    process.write_worker_pid(child, os.getpid())
     parent = base / "agent6" / "parent-repo-111111" / "sessions" / "runs"
     parent.mkdir(parents=True)
-    (parent / "fan-l1").symlink_to(lane, target_is_directory=True)
+    (parent / "fan-l1").symlink_to(child, target_is_directory=True)
     assert ps_cmd.cmd_ps() == 0
     assert capsys.readouterr().out.count("fan-l1") == 1
 
@@ -132,18 +132,18 @@ def test_ps_json_carries_the_row_facts(
     base = tmp_path / "state"
     monkeypatch.setenv("XDG_STATE_HOME", str(base))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    lane = base / "agent6" / "lane-repo-000000" / "sessions" / "runs" / "fan-l1"
-    lane.mkdir(parents=True)
-    (lane / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
-    (lane / "logs.jsonl").write_text(
+    child = base / "agent6" / "child-repo-000000" / "sessions" / "runs" / "fan-l1"
+    child.mkdir(parents=True)
+    (child / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
+    (child / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    process.write_worker_pid(lane, os.getpid())
+    process.write_worker_pid(child, os.getpid())
     assert main(["ps", "--json"]) == 0
     (row,) = json.loads(capsys.readouterr().out)
     assert row["id"] == "fan-l1" and row["mode"] == "run" and row["pid"] == os.getpid()
-    assert row["attached"] is False and row["repo_id"] == "lane-repo-000000"
+    assert row["attached"] is False and row["repo_id"] == "child-repo-000000"
     assert row["directory"] is None  # a state-dir id with no checkout behind it
 
 
@@ -183,7 +183,7 @@ def test_ps_json_waiting_facts(
         "pid": os.getpid(),
         "attached": False,
         "parent": "",
-        "lanes": [],
+        "children": [],
         "worktree": None,
     }
 
@@ -224,13 +224,13 @@ def test_pending_step_stop_is_visible_on_cli_listings(
     assert "running · stopping after this turn" in capsys.readouterr().out
 
 
-def test_ps_folds_a_live_lane_under_its_live_parent(
+def test_ps_folds_a_live_child_under_its_live_parent(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`ps` folds a live lane under its live parent.
+    """`ps` folds a live child under its live parent.
 
-    A group in flight is one row with its live lane count; `--lanes` lists the lanes under it; a
-    lane whose parent is not live stays a row of its own.
+    A group in flight is one row with its live child count; `--children` lists them under it; a
+    child whose parent is not live stays a row of its own.
     """
     base = tmp_path / "state"
     monkeypatch.setenv("XDG_STATE_HOME", str(base))
@@ -239,22 +239,22 @@ def test_ps_folds_a_live_lane_under_its_live_parent(
     _live(runs / "fan", {"mode": "run"})
     _live(
         runs / "fan-l1",
-        {"mode": "run", "parallel": {"group": "fan", "lane": 1, "parent": "fan"}},
+        {"mode": "run", "parallel": {"group": "fan", "number": 1, "parent": "fan"}},
     )
     _live(
         runs / "old-l1",
-        {"mode": "run", "parallel": {"group": "old", "lane": 1, "parent": "old"}},
+        {"mode": "run", "parallel": {"group": "old", "number": 1, "parent": "old"}},
     )
 
     assert ps_cmd.cmd_ps() == 0
     out = capsys.readouterr().out
-    assert "fan (1 lane)" in out and "fan-l1" not in out and "old-l1" in out
-    assert ps_cmd.cmd_ps(lanes=True) == 0
+    assert "fan (1 child)" in out and "fan-l1" not in out and "old-l1" in out
+    assert ps_cmd.cmd_ps(children=True) == 0
     assert "└ fan-l1" in capsys.readouterr().out
     assert ps_cmd.cmd_ps(as_json=True) == 0
     rows = {r["id"]: r for r in json.loads(capsys.readouterr().out)}
     assert set(rows) == {"fan", "old-l1"}
-    assert [ln["id"] for ln in rows["fan"]["lanes"]] == ["fan-l1"]
+    assert [ln["id"] for ln in rows["fan"]["children"]] == ["fan-l1"]
 
 
 def test_ps_names_the_worktree_a_run_works_in(

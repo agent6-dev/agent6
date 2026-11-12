@@ -12,8 +12,8 @@ import dataclasses
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from agent6 import child_records, kinds
 from agent6 import directive as agent6_directive
-from agent6 import kinds, lane_records
 from agent6.context import skills
 from agent6.harness import loop_conversation, nudges
 from agent6.sessions import ipc, journal
@@ -70,12 +70,12 @@ class OperatorBridge:
             the undone text, or None with the reason printed. Injected: harness never imports app.
         review_preparer: Builds a review message for this checkout, or returns operator feedback.
             Injected by app, which owns range resolution and checkout selection.
-        lane_authority: Work and harness-panel permissions, resolved from trusted launch data.
-        lane_spawner: The shared executor for work and harness-panel batches; None refuses
-            dispatch. `lane_authority` controls which entry point may use it.
-        lane_recoverer: Finds an interrupted dispatch's lanes on resume: stops what runs,
+        child_authority: Work and harness-panel permissions, resolved from trusted launch data.
+        child_spawner: The shared executor for work and harness-panel batches; None refuses
+            dispatch. `child_authority` controls which entry point may use it.
+        child_recoverer: Finds an interrupted dispatch's children on resume: stops what runs,
             imports what finished; None leaves such a dispatch diagnosed from its record.
-        lane_ranker: Orders the lanes of a dispatch joined by rank; None refuses such a join.
+        child_ranker: Orders the children of a dispatch joined by rank; None refuses such a join.
     """
 
     steer_requested: Callable[[], bool] = dataclasses.field(default=lambda: False)
@@ -94,12 +94,12 @@ class OperatorBridge:
         default=lambda _i, _sha: "continue"
     )
     undo_forker: Callable[[], tuple[str, str] | None] | None = None
-    lane_authority: lane_records.DispatchAuthority = dataclasses.field(
-        default_factory=lane_records.DispatchAuthority
+    child_authority: child_records.DispatchAuthority = dataclasses.field(
+        default_factory=child_records.DispatchAuthority
     )
-    lane_spawner: lane_records.GroupLaneSpawner | None = None
-    lane_recoverer: lane_records.LaneRecoverer | None = None
-    lane_ranker: lane_records.LaneRanker | None = None
+    child_spawner: child_records.GroupChildSpawner | None = None
+    child_recoverer: child_records.ChildRecoverer | None = None
+    child_ranker: child_records.ChildRanker | None = None
     review_preparer: Callable[[str], tuple[bool, str]] | None = None
 
 

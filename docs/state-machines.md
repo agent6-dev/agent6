@@ -260,17 +260,17 @@ An `agent` state spins up a normal agent6 run: its own transcript, budget slice,
 
 `mode` chooses the tool surface.
 
-- `"read_only"` (default): a read-only, structured-output loop: the read and navigation tools (`read_file`, `list_dir`, `outline`, `find_definition`, `find_references`) plus `finish_session`; the same `read_only` session kind a lane runs under a conversation contract, driven here by the machine agent inside the instance
+- `"read_only"` (default): a read-only, structured-output loop: the read and navigation tools (`read_file`, `list_dir`, `outline`, `find_definition`, `find_references`) plus `finish_session`; the same `read_only` session kind a child runs under a conversation contract, driven here by the machine agent inside the instance
 - `"run"`: coding work (edit + verify tools and the auto-commit), as `agent6 run` has
 
 Where a run state's work lands:
 
-- each run state executes in a fresh clone (the `--parallel` lane mechanism, `[git.worktree].base_dir` cache) checked out at the machine chain's tip
+- each run state executes in a fresh clone (the `--parallel` child mechanism, `[git.worktree].base_dir` cache) checked out at the machine chain's tip
 - run states require `git.commit_per_turn = true`: the committed chain is the only path out of a clone
 - its commits land per state on the visible `agent6/machine-<id>` branch; your checkout is never touched
 - merge the branch when you want the work (the run's ending names it and the `git merge` line)
 - the hub's machine card shows supervision state only
-- configured reviewers use the shared read-only lane executor; a machine state cannot claim a child worker's authority without that worker's matching private launch, and a read-only reviewer cannot schedule another panel
+- configured reviewers use the shared child executor; a machine state cannot claim a child worker's authority without that worker's matching private launch, and a read-only reviewer cannot schedule another panel
 - a state's clone is removed as it lands
 - `sessions prune` sweeps leftover `machine-*/state-*` clones when their chain tips are reachable in the origin
   A live machine or unreachable work keeps the group, with a note.
@@ -288,7 +288,7 @@ Where a run state's work lands:
     - setup runs under the tool state's network with none of its `pass_env` ([security](security.md#11-state-machines))
 - a `tool` state's tree writes are scratch, discarded with its clone; durable output goes to the blackboard or `$AGENT6_MACHINE_DATA_DIR`
 - a machine with no run states runs its tool states in your checkout
-- states are sequential continuations of the branch (each starts from the previous state's tree); lanes are parallel alternatives cut at base
+- states are sequential continuations of the branch (each starts from the previous state's tree); children are parallel alternatives cut at base
 - `machine run` resolves a git commit identity up front (`[git.commit]`, the `GIT_COMMITTER_*` variables or the repo's git config) and hands it to each run state as its `[git.commit]`, so the state's commits and a jailed `git commit` carry it
 
 `run_command` in a `mode = "run"` state is gated by `sandbox.run_commands`:
@@ -807,7 +807,7 @@ It is an ordinary agent6 run handed this document's grammar, writing the `.asm.t
 - no host is pre-allowed, so a headless `fetch` denies
 - it never sees the operator's checkout; the workspace bounds its writes the way a repo bounds a run's
 
-- the workspace is an empty git repo under `[git.worktree].base_dir` (where lane clones and fork worktrees live)
+- the workspace is an empty git repo under `[git.worktree].base_dir` (where child clones and fork worktrees live)
     - each turn commits, and a failed create keeps the workspace for the operator to read
 - every draft is gated: `machine check`, ruff (the destination's ruff config), ty, the `machine test` dry-run, and mock tests in a no-network jail
     - the mock tests run under `full` `sandbox.isolation` only: elsewhere agent6 reports them as not run
@@ -858,7 +858,7 @@ Files:
     - predicates and templates are parsed-then-walked against an allow-list; never `eval`/`exec`, never `getattr`
     - dotted references are agent6-interpreted data navigation
 - **All side effects stay jailed**
-    - `tool` states go through `run_in_jail`; each `agent` state is an ordinary run in its own subprocess, commands jailed like any run's; like a lane, it starts from a fixed `python -P -m` argv with its request in a private file (`request.json` for a state, the launch file for a lane), and a state's timeout ends its process as a lane's deadline does
+    - `tool` states go through `run_in_jail`; each `agent` state is an ordinary run in its own subprocess, commands jailed like any run's; like a child, it starts from a fixed `python -P -m` argv with its request in a private file (`request.json` for a state, the launch file for a child), and a state's timeout ends its process as a child's deadline does
     - `mode = "run"` machines never touch the operator's checkout: fresh clones per state, commits on `agent6/machine-<id>`, tool-state tree writes discarded with the clone
     - per-state network and refusals: [security.md, Network](security.md#5-network)
     - an overlay never widens the sandbox: [Machine config overlay](#machine-config-overlay-config)

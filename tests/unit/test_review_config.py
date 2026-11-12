@@ -21,7 +21,7 @@ from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
 from agent6.ui.cli import cli_main
 from agent6.viewmodel import config_view
-from tests import review_lane_env
+from tests import review_env
 from tests.unit import test_run_lifecycle_bugfix
 
 
@@ -62,10 +62,10 @@ def test_configured_call_budget_reaches_the_reviewer(
     monkeypatch.setattr(reviewer, "call", reviewer_call)
 
     def resolve_reviewers(_cfg: Config) -> list[review_gate.Reviewer]:
-        return [review_lane_env.reviewer("security", "p/m", reviewer)]
+        return [review_env.reviewer("security", "p/m", reviewer)]
 
     monkeypatch.setattr(role_providers, "resolve_reviewers", resolve_reviewers)
-    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)
+    monkeypatch.setattr(review_gate, "run_panel", review_env.run_panel)
     aggregate = mock.Mock(wraps=review_panel.aggregate_verdicts)
     monkeypatch.setattr(review_panel, "aggregate_verdicts", aggregate)
     worker = test_run_lifecycle_bugfix._Scripted(
@@ -219,7 +219,7 @@ def test_reviewer_sampling_reaches_provider_call(
             budget=mock.MagicMock(),
         )
         wired.append(
-            review_lane_env.reviewer(
+            review_env.reviewer(
                 resolved.focus,
                 resolved.model,
                 provider,
@@ -227,7 +227,7 @@ def test_reviewer_sampling_reaches_provider_call(
             )
         )
     with mock.patch("agent6.providers.transport.http_post", side_effect=post):
-        result = review_lane_env.run_panel(
+        result = review_env.run_panel(
             wired,
             review_panel.ReviewContext(task="review", diff=""),
             block_on="none",

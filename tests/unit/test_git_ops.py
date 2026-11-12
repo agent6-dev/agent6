@@ -692,9 +692,9 @@ def test_restore_stash_raced_drop_puts_the_bystander_back(
 def test_find_stash_does_not_prefix_match_another_runs_stash(tmp_path: pathlib.Path) -> None:
     """The stash lookup matches the pushed message exactly: `-l1` is a prefix of `-l10`."""
     _init_repo(tmp_path)
-    _stash_change(tmp_path, "one.txt", "lane l1 work\n", git_ops.auto_stash_message("group-l1"))
+    _stash_change(tmp_path, "one.txt", "child l1 work\n", git_ops.auto_stash_message("group-l1"))
     # newer: listed first
-    _stash_change(tmp_path, "ten.txt", "lane l10 work\n", git_ops.auto_stash_message("group-l10"))
+    _stash_change(tmp_path, "ten.txt", "child l10 work\n", git_ops.auto_stash_message("group-l10"))
     entry = git_read.find_stash(tmp_path, git_ops.auto_stash_message("group-l1"))
     assert entry is not None
     assert entry.ref == "stash@{1}"  # the l1 stash, not the newer l10 one
@@ -938,7 +938,7 @@ def test_plumb_merge_lands_without_touching_the_checkout_medium(tmp_path: pathli
     """
     _init_repo(tmp_path)
     base = git_read.status(tmp_path).head_sha
-    run_tip = _lane_commit(tmp_path, base, "feat.txt", "x\n")
+    run_tip = _child_commit(tmp_path, base, "feat.txt", "x\n")
     subprocess.run(
         ["git", "-C", str(tmp_path), "update-ref", "refs/agent6/r1", run_tip], check=True
     )
@@ -975,7 +975,7 @@ def test_a_merge_stamp_stops_holding_once_the_run_commits_past_it(tmp_path: path
     """The run's record is its chain, so a branchless run's later commits are not called merged."""
     _init_repo(tmp_path)
     base = git_read.status(tmp_path).head_sha
-    tip = _lane_commit(tmp_path, base, "a.txt", "one\n")
+    tip = _child_commit(tmp_path, base, "a.txt", "one\n")
     subprocess.run(
         ["git", "-C", str(tmp_path), "update-ref", git_read.chain_ref_for("branchless1"), tip],
         check=True,
@@ -983,7 +983,7 @@ def test_a_merge_stamp_stops_holding_once_the_run_commits_past_it(tmp_path: path
 
     assert git_read.merge_stamp_holds(tmp_path, "branchless1", "", tip)
 
-    later = _lane_commit(tmp_path, tip, "b.txt", "two\n")
+    later = _child_commit(tmp_path, tip, "b.txt", "two\n")
     subprocess.run(
         ["git", "-C", str(tmp_path), "update-ref", git_read.chain_ref_for("branchless1"), later],
         check=True,
@@ -1000,12 +1000,12 @@ def test_a_merge_stamp_on_the_chain_holds_through_an_operator_commit_on_the_bran
     """The stamp names the chain tip a merge took, so the listing accepts either tip as merged."""
     _init_repo(tmp_path)
     base = git_read.status(tmp_path).head_sha
-    chain = _lane_commit(tmp_path, base, "a.txt", "one\n")
+    chain = _child_commit(tmp_path, base, "a.txt", "one\n")
     subprocess.run(
         ["git", "-C", str(tmp_path), "update-ref", git_read.chain_ref_for("stamped1"), chain],
         check=True,
     )
-    own = _lane_commit(tmp_path, chain, "b.txt", "two\n")
+    own = _child_commit(tmp_path, chain, "b.txt", "two\n")
     subprocess.run(
         ["git", "-C", str(tmp_path), "update-ref", "refs/heads/agent6/stamped1", own], check=True
     )
@@ -1025,7 +1025,7 @@ def test_plumb_merge_names_the_files_the_checkout_kept_its_own_version_of(
     """
     _init_repo(tmp_path)
     base = git_read.status(tmp_path).head_sha
-    run_tip = _lane_commit(tmp_path, base, "feat.txt", "the run's line\n")
+    run_tip = _child_commit(tmp_path, base, "feat.txt", "the run's line\n")
     subprocess.run(
         ["git", "-C", str(tmp_path), "update-ref", "refs/agent6/r1", run_tip], check=True
     )
@@ -1039,7 +1039,7 @@ def test_plumb_merge_names_the_files_the_checkout_kept_its_own_version_of(
     ) == "a third version, the operator's\n"
 
     # The same merge onto a checkout that holds the run's own work: nothing kept.
-    second_tip = _lane_commit(tmp_path, res.merged_sha, "next.txt", "y\n")
+    second_tip = _child_commit(tmp_path, res.merged_sha, "next.txt", "y\n")
     subprocess.run(
         ["git", "-C", str(tmp_path), "update-ref", "refs/agent6/r2", second_tip], check=True
     )
@@ -1112,7 +1112,7 @@ def test_plumb_merge_from_a_linked_worktree_brings_the_main_checkout_forward(
     repo = tmp_path / "repo"
     _init_repo(repo)
     base = _rev(repo, "HEAD")
-    run_tip = _lane_commit(repo, base, "feat.txt", "x\n")
+    run_tip = _child_commit(repo, base, "feat.txt", "x\n")
     subprocess.run(["git", "-C", str(repo), "update-ref", "refs/agent6/r1", run_tip], check=True)
     wt = tmp_path / "wt"
     git_ops.add_worktree(repo, wt, base)
@@ -1128,7 +1128,7 @@ def test_plumb_merge_from_a_linked_worktree_brings_the_main_checkout_forward(
 def test_plumb_merge_conflict_moves_nothing(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
     base = git_read.status(tmp_path).head_sha
-    theirs = _lane_commit(tmp_path, base, "README.md", "run change\n")
+    theirs = _child_commit(tmp_path, base, "README.md", "run change\n")
     _commit_file(tmp_path, "README.md", "main change\n", "main edit")  # same line
     main_tip = git_read.status(tmp_path).head_sha
     res = git_ops.plumb_merge(tmp_path, "main", theirs, method="merge", message=None)
@@ -1142,13 +1142,13 @@ def test_plumb_merge_conflict_moves_nothing(tmp_path: pathlib.Path) -> None:
 def test_plumb_merge_ff_only_moves_the_ref_and_refuses_divergence(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
     base = git_read.status(tmp_path).head_sha
-    theirs = _lane_commit(tmp_path, base, "feat.txt", "x\n")
+    theirs = _child_commit(tmp_path, base, "feat.txt", "x\n")
     (tmp_path / "feat.txt").write_text("x\n", encoding="utf-8")
     res = git_ops.plumb_merge(tmp_path, "main", theirs, method="ff_only")
     assert res.merged_sha == theirs == _rev(tmp_path, "main")
     assert git_read.status(tmp_path).is_clean
 
-    diverged = _lane_commit(tmp_path, base, "other.txt", "y\n")
+    diverged = _child_commit(tmp_path, base, "other.txt", "y\n")
     with pytest.raises(errors.GitError):
         git_ops.plumb_merge(tmp_path, "main", diverged, method="ff_only")
     assert _rev(tmp_path, "main") == theirs  # a refused ff_only moves nothing
@@ -1157,8 +1157,8 @@ def test_plumb_merge_ff_only_moves_the_ref_and_refuses_divergence(tmp_path: path
 def test_plumb_merge_squash_is_one_commit_and_noop_when_contained(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
     base = git_read.status(tmp_path).head_sha
-    step1 = _lane_commit(tmp_path, base, "a.txt", "a\n")
-    step2 = _lane_commit(tmp_path, step1, "b.txt", "b\n")
+    step1 = _child_commit(tmp_path, base, "a.txt", "a\n")
+    step2 = _child_commit(tmp_path, step1, "b.txt", "b\n")
     for name, content in (("a.txt", "a\n"), ("b.txt", "b\n")):
         (tmp_path / name).write_text(content, encoding="utf-8")
     res = git_ops.plumb_merge(
@@ -1187,7 +1187,7 @@ def test_plumb_merge_preserves_the_operators_own_staging(tmp_path: pathlib.Path)
     """Index entries the operator staged survive the bring-forward; only old-tip entries move."""
     _init_repo(tmp_path)
     base = git_read.status(tmp_path).head_sha
-    theirs = _lane_commit(tmp_path, base, "feat.txt", "x\n")
+    theirs = _child_commit(tmp_path, base, "feat.txt", "x\n")
     (tmp_path / "feat.txt").write_text("x\n", encoding="utf-8")
     (tmp_path / "README.md").write_text("operator wip\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "README.md"], check=True)
@@ -1476,8 +1476,8 @@ def test_chain_commit_brings_a_checked_out_run_branch_index_forward(tmp_path: pa
     assert git_read.status(tmp_path).is_clean
 
 
-def test_chain_merge_lands_a_lane_on_a_checked_out_run_branch(tmp_path: pathlib.Path) -> None:
-    """Merging a lane onto the checked-out run branch leaves a clean status.
+def test_chain_merge_lands_a_child_on_a_checked_out_run_branch(tmp_path: pathlib.Path) -> None:
+    """Merging a child onto the checked-out run branch leaves a clean status.
 
     The worktree sync runs before the branch's index and worktree move, or it refuses to overwrite
     the moved file.
@@ -1490,23 +1490,23 @@ def test_chain_merge_lands_a_lane_on_a_checked_out_run_branch(tmp_path: pathlib.
         tmp_path, "step", ref="refs/agent6/r1/head", fallback_parent=base, also_branch="agent6/r1"
     )
     assert tip is not None
-    lane_dir = tmp_path.parent / "lane"
+    child_dir = tmp_path.parent / "child"
     subprocess.run(
-        ["git", "-C", str(tmp_path), "worktree", "add", "-q", str(lane_dir), "-b", "lane", tip],
+        ["git", "-C", str(tmp_path), "worktree", "add", "-q", str(child_dir), "-b", "child", tip],
         check=True,
     )
-    (lane_dir / "lane.txt").write_text("lane\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(lane_dir), "add", "lane.txt"], check=True)
-    subprocess.run(["git", "-C", str(lane_dir), "commit", "-q", "-m", "lane"], check=True)
-    merge_rev = _rev(lane_dir, "HEAD")
+    (child_dir / "child.txt").write_text("child\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(child_dir), "add", "child.txt"], check=True)
+    subprocess.run(["git", "-C", str(child_dir), "commit", "-q", "-m", "child"], check=True)
+    merge_rev = _rev(child_dir, "HEAD")
 
     sha = git_ops.chain_merge(
-        tmp_path, merge_rev, "merge lane", ref="refs/agent6/r1/head", also_branch="agent6/r1"
+        tmp_path, merge_rev, "merge child", ref="refs/agent6/r1/head", also_branch="agent6/r1"
     )
 
     assert sha is not None
     assert sha == _rev(tmp_path, "HEAD")
-    assert (tmp_path / "lane.txt").read_text(encoding="utf-8") == "lane\n"
+    assert (tmp_path / "child.txt").read_text(encoding="utf-8") == "child\n"
     assert git_read.status(tmp_path).is_clean
 
 
@@ -1562,9 +1562,9 @@ def test_chain_commit_root_and_trailer(tmp_path: pathlib.Path) -> None:
     assert body.strip().endswith("m1")  # %P empty: a root commit has no parent
 
 
-def _lane_commit(path: pathlib.Path, parent: str, name: str, content: str) -> str:
+def _child_commit(path: pathlib.Path, parent: str, name: str, content: str) -> str:
     """Return a commit adding a file on top of a parent, built with plumbing only."""
-    env = dict(os.environ, GIT_INDEX_FILE=str(path / ".git" / "lane-index"))
+    env = dict(os.environ, GIT_INDEX_FILE=str(path / ".git" / "child-index"))
     blob = subprocess.run(
         ["git", "-C", str(path), "hash-object", "-w", "--stdin"],
         input=content,
@@ -1582,15 +1582,15 @@ def _lane_commit(path: pathlib.Path, parent: str, name: str, content: str) -> st
         ["git", "-C", str(path), "write-tree"], env=env, capture_output=True, text=True, check=True
     ).stdout.strip()
     return subprocess.run(
-        ["git", "-C", str(path), "commit-tree", tree, "-p", parent, "-m", f"lane: {name}"],
+        ["git", "-C", str(path), "commit-tree", tree, "-p", parent, "-m", f"child: {name}"],
         capture_output=True,
         text=True,
         check=True,
     ).stdout.strip()
 
 
-def test_chain_merge_records_the_lane_and_syncs_the_worktree(tmp_path: pathlib.Path) -> None:
-    """A clean lane merge lands as a two-parent chain commit with the lane's files checked out.
+def test_chain_merge_records_the_child_and_syncs_the_worktree(tmp_path: pathlib.Path) -> None:
+    """A clean child merge lands as a two-parent chain commit with the child's files checked out.
 
     HEAD and the operator's checkout stay untouched; an already-contained rev is a no-op returning
     the tip.
@@ -1602,10 +1602,10 @@ def test_chain_merge_records_the_lane_and_syncs_the_worktree(tmp_path: pathlib.P
         tmp_path, "agent6 turn 1", ref="refs/agent6/t3", fallback_parent=head0
     )
     assert s1 is not None
-    lane = _lane_commit(tmp_path, head0, "c.txt", "lane\n")
+    child = _child_commit(tmp_path, head0, "c.txt", "child\n")
 
-    merged = git_ops.chain_merge(tmp_path, lane, "merge lane", ref="refs/agent6/t3")
-    assert merged is not None and merged not in (s1, lane)
+    merged = git_ops.chain_merge(tmp_path, child, "merge child", ref="refs/agent6/t3")
+    assert merged is not None and merged not in (s1, child)
     assert _rev(tmp_path, "refs/agent6/t3") == merged
     parents = subprocess.run(
         ["git", "-C", str(tmp_path), "log", "-1", "--format=%P", merged],
@@ -1613,15 +1613,15 @@ def test_chain_merge_records_the_lane_and_syncs_the_worktree(tmp_path: pathlib.P
         text=True,
         check=True,
     ).stdout.split()
-    assert parents == [s1, lane]
-    assert (tmp_path / "c.txt").read_text(encoding="utf-8") == "lane\n"
+    assert parents == [s1, child]
+    assert (tmp_path / "c.txt").read_text(encoding="utf-8") == "child\n"
     assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "two\n"
     assert _rev(tmp_path, "HEAD") == head0
     assert git_ops.chain_merge(tmp_path, head0, "again", ref="refs/agent6/t3") == merged
 
 
-def test_chain_merge_syncs_a_file_the_lane_modified(tmp_path: pathlib.Path) -> None:
-    """A lane that edits an existing file merges and the edit lands in the worktree.
+def test_chain_merge_syncs_a_file_the_child_modified(tmp_path: pathlib.Path) -> None:
+    """A child that edits an existing file merges and the edit lands in the worktree.
 
     The temp index carries no stat data, and `read-tree -m -u` refuses an entry it cannot prove up
     to date.
@@ -1633,9 +1633,9 @@ def test_chain_merge_syncs_a_file_the_lane_modified(tmp_path: pathlib.Path) -> N
         tmp_path, "agent6 turn 1", ref="refs/agent6/t5", fallback_parent=head0
     )
     assert s1 is not None
-    lane = _lane_commit(tmp_path, head0, "README.md", "hi\nlane edit\n")
+    child = _child_commit(tmp_path, head0, "README.md", "hi\nlane edit\n")
 
-    merged = git_ops.chain_merge(tmp_path, lane, "merge lane", ref="refs/agent6/t5")
+    merged = git_ops.chain_merge(tmp_path, child, "merge child", ref="refs/agent6/t5")
     assert merged is not None
     assert (tmp_path / "README.md").read_text(encoding="utf-8") == "hi\nlane edit\n"
     assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "two\n"
@@ -1649,9 +1649,9 @@ def test_chain_merge_conflict_leaves_chain_and_worktree_alone(tmp_path: pathlib.
     s1 = git_ops.chain_commit(
         tmp_path, "agent6 turn 1", ref="refs/agent6/t4", fallback_parent=head0
     )
-    lane = _lane_commit(tmp_path, head0, "b.txt", "theirs\n")
+    child = _child_commit(tmp_path, head0, "b.txt", "theirs\n")
 
-    assert git_ops.chain_merge(tmp_path, lane, "merge lane", ref="refs/agent6/t4") is None
+    assert git_ops.chain_merge(tmp_path, child, "merge child", ref="refs/agent6/t4") is None
     assert _rev(tmp_path, "refs/agent6/t4") == s1
     assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "ours\n"
 
@@ -1667,12 +1667,12 @@ def test_chain_merge_with_markers_commits_the_conflict_for_the_run_to_resolve(
         tmp_path, "agent6 turn 1", ref="refs/agent6/t6", fallback_parent=head0
     )
     assert s1 is not None
-    lane = _lane_commit(tmp_path, head0, "b.txt", "theirs\n")
+    child = _child_commit(tmp_path, head0, "b.txt", "theirs\n")
 
     merged = git_ops.chain_merge_with_markers(
-        tmp_path, lane, "merge lane", ref="refs/agent6/t6", also_branch=None
+        tmp_path, child, "merge child", ref="refs/agent6/t6", also_branch=None
     )
-    assert merged.merged and merged.conflicts == ("b.txt",) and merged.branch == lane
+    assert merged.merged and merged.conflicts == ("b.txt",) and merged.branch == child
     assert _rev(tmp_path, "refs/agent6/t6") == merged.sha
     parents = subprocess.run(
         ["git", "-C", str(tmp_path), "rev-list", "--parents", "-n", "1", merged.sha],
@@ -1680,13 +1680,13 @@ def test_chain_merge_with_markers_commits_the_conflict_for_the_run_to_resolve(
         text=True,
         check=True,
     ).stdout.split()
-    assert parents[1:] == [s1, lane]
+    assert parents[1:] == [s1, child]
     text = (tmp_path / "b.txt").read_text(encoding="utf-8")
     assert "<<<<<<<" in text and "ours" in text and "theirs" in text and ">>>>>>>" in text
     assert len(merged.notes) == 1 and merged.notes[0].startswith("CONFLICT (add/add)")
     assert "b.txt" in merged.notes[0]
-    # The chain now holds the lane: merging it again is nothing new.
-    again = git_ops.chain_merge_with_markers(tmp_path, lane, "again", ref="refs/agent6/t6")
+    # The chain now holds the child: merging it again is nothing new.
+    again = git_ops.chain_merge_with_markers(tmp_path, child, "again", ref="refs/agent6/t6")
     assert not again.merged and again.sha == merged.sha and again.conflicts == ()
 
 
@@ -1701,16 +1701,16 @@ def test_a_chain_merge_moves_no_ref_when_the_worktree_cannot_follow(
         tmp_path, "agent6 turn 1", ref="refs/agent6/t7", fallback_parent=head0, also_branch="run"
     )
     assert s1 is not None
-    lane = _lane_commit(tmp_path, head0, "README.md", "hi\nlane\n")
+    child = _child_commit(tmp_path, head0, "README.md", "hi\nlane\n")
     (tmp_path / "README.md").write_text("hi\nuncommitted\n", encoding="utf-8")
     with pytest.raises(errors.GitError):
         git_ops.chain_merge_with_markers(
-            tmp_path, lane, "merge lane", ref="refs/agent6/t7", also_branch="run"
+            tmp_path, child, "merge child", ref="refs/agent6/t7", also_branch="run"
         )
     assert _rev(tmp_path, "refs/agent6/t7") == s1 and _rev(tmp_path, "run") == s1
     assert (tmp_path / "README.md").read_text(encoding="utf-8") == "hi\nuncommitted\n"
     with pytest.raises(errors.GitError):
-        git_ops.chain_merge(tmp_path, lane, "merge lane", ref="refs/agent6/t7", also_branch="run")
+        git_ops.chain_merge(tmp_path, child, "merge child", ref="refs/agent6/t7", also_branch="run")
     assert _rev(tmp_path, "refs/agent6/t7") == s1
 
 
@@ -2044,7 +2044,7 @@ def test_plumb_merge_survives_a_recorded_but_missing_worktree(tmp_path: pathlib.
     _init_repo(repo)
     base = _rev(repo, "HEAD")
     subprocess.run(["git", "-C", str(repo), "branch", "side", base], check=True)
-    run_tip = _lane_commit(repo, base, "feat.txt", "x\n")
+    run_tip = _child_commit(repo, base, "feat.txt", "x\n")
     subprocess.run(["git", "-C", str(repo), "update-ref", "refs/agent6/r1", run_tip], check=True)
     gone = tmp_path / "gone"
     subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", str(gone), "side"], check=True)
@@ -2106,7 +2106,7 @@ def test_a_merge_tree_this_git_cannot_run_names_the_floor(
 
     _init_repo(tmp_path)
     base = git_read.status(tmp_path).head_sha
-    theirs = _lane_commit(tmp_path, base, "README.md", "run change\n")
+    theirs = _child_commit(tmp_path, base, "README.md", "run change\n")
     _commit_file(tmp_path, "README.md", "main change\n", "main edit")
     real_run = git_command.run
 

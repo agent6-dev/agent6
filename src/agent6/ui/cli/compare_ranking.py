@@ -4,7 +4,7 @@
 
 It supplies the two pieces the headless core cannot: the `judging...` spinner
 and the reviewer-provider builder; the group binds the same two through its
-`LaneRuntime`.
+`ChildRuntime`.
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ def rank(
 
     Args:
         cfg: The run's config.
-        candidates: The lanes' briefs.
+        candidates: The children's briefs.
         transcript_dir: Where the judge's transcript goes.
 
     Returns:

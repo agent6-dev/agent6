@@ -61,7 +61,7 @@ def _setup_run(
     """Cut agent6/<session_id> off base_sha with commits and write the run's state fixture.
 
     Writes manifest.json and logs.jsonl, then returns the checkout to where it was;
-    *manifest_extra* merges extra manifest fields (a lane's lineage, a compare stamp).
+    *manifest_extra* merges extra manifest fields (a child's lineage, a compare stamp).
     """
     branch = f"agent6/{session_id}"
     current = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
@@ -136,22 +136,22 @@ def test_compare_needs_at_least_two_ids(
     assert "2 or more run ids, or one --parallel group id" in capsys.readouterr().err
 
 
-def test_compare_of_a_group_id_compares_its_lanes(
+def test_compare_of_a_group_id_compares_its_children(
     repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A group id given alone names every lane carrying it, in lane order.
+    """A group id given alone names every child carrying it, in child order.
 
     It read as one run, too few, and `sessions show` called it ambiguous.
     """
     base = _init_repo(repo)
-    for lane, cost in ((1, 0.09), (2, 0.01)):
+    for child, cost in ((1, 0.09), (2, 0.01)):
         _setup_run(
             repo,
-            f"fan-{lane}",
+            f"fan-{child}",
             base_sha=base,
-            commits=[(f"{lane}.txt", "x\n", f"add {lane}")],
+            commits=[(f"{child}.txt", "x\n", f"add {child}")],
             cost=cost,
-            manifest_extra={"parallel": {"group": "fan", "lane": lane, "parent": "fan"}},
+            manifest_extra={"parallel": {"group": "fan", "number": child, "parent": "fan"}},
         )
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     assert main(["sessions", "compare", "fan"]) == 0
@@ -202,7 +202,7 @@ def test_compare_prefix_resolution_and_mechanical_ranking(
     repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     base = _init_repo(repo)
-    # Cheaper lane fails verify; the other passes -- verify-pass must win despite
+    # Cheaper child fails verify; the other passes -- verify-pass must win despite
     # costing more (mechanical_ranking: verify-pass first, then lower cost).
     _setup_run(
         repo,
@@ -316,7 +316,7 @@ def test_compare_excludes_a_run_that_never_finished(
     """A run that died before session.stop is dropped from a hand-picked comparison, and said so.
 
     Its truncated spend is the lowest, so mechanical ranking floated it to first place with a
-    merge suggestion; the group already excludes such lanes.
+    merge suggestion; the group already excludes such children.
     """
     base = _init_repo(repo)
     _setup_run(
@@ -566,9 +566,9 @@ def test_without_a_judge_the_candidates_keep_their_points(
     assert "total: candidates 2pt\n" in capsys.readouterr().out
 
 
-def _lane_extra(*, winner: bool, rank: int) -> dict[str, Any]:
+def _child_extra(*, winner: bool, rank: int) -> dict[str, Any]:
     return {
-        "parallel": {"group": "fan", "lane": rank, "parent": "fan"},
+        "parallel": {"group": "fan", "number": rank, "parent": "fan"},
         "placement": {"rank": rank, "of": 2, "winner": winner, "group": "fan"},
     }
 
@@ -576,21 +576,21 @@ def _lane_extra(*, winner: bool, rank: int) -> dict[str, Any]:
 def test_compare_discloses_a_fresh_verdict_that_contradicts_the_stamp(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Re-judging a group's lanes never rewrites the stamp, and a flipped winner is said."""
+    """Re-judging a group's children never rewrites the stamp, and a flipped winner is said."""
     base = _init_repo(repo)
     _setup_run(
         repo,
         "run-AAAA11",
         base_sha=base,
         commits=[("a.txt", "a\n", "add a")],
-        manifest_extra=_lane_extra(winner=False, rank=2),
+        manifest_extra=_child_extra(winner=False, rank=2),
     )
     _setup_run(
         repo,
         "run-BBBB22",
         base_sha=base,
         commits=[("b.txt", "b\n", "add b")],
-        manifest_extra=_lane_extra(winner=True, rank=1),
+        manifest_extra=_child_extra(winner=True, rank=1),
     )
     _write_reviewer_config(repo)
     # The fresh judge flips the order: stamped winner run-BBBB22 now ranks last.
@@ -616,14 +616,14 @@ def test_compare_stays_quiet_when_the_fresh_verdict_agrees_with_the_stamp(
         "run-AAAA11",
         base_sha=base,
         commits=[("a.txt", "a\n", "add a")],
-        manifest_extra=_lane_extra(winner=False, rank=2),
+        manifest_extra=_child_extra(winner=False, rank=2),
     )
     _setup_run(
         repo,
         "run-BBBB22",
         base_sha=base,
         commits=[("b.txt", "b\n", "add b")],
-        manifest_extra=_lane_extra(winner=True, rank=1),
+        manifest_extra=_child_extra(winner=True, rank=1),
     )
     _write_reviewer_config(repo)
     verdict = '{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b still wins"}'
@@ -877,8 +877,8 @@ def _judges_cfg(*judges: str) -> Config:
 
 
 def _three_candidates() -> list[harness_judge.CandidateBrief]:
-    """Three lanes whose mechanical order is B, A, C: a passed gate first, then the lower cost."""
-    lanes: tuple[tuple[str, kinds.Verification, float], ...] = (
+    """Three children in the mechanical order B, A, C: a passed gate first, then the lower cost."""
+    children: tuple[tuple[str, kinds.Verification, float], ...] = (
         ("A", "passed", 0.3),
         ("B", "passed", 0.2),
         ("C", "failed", 0.1),
@@ -887,7 +887,7 @@ def _three_candidates() -> list[harness_judge.CandidateBrief]:
         harness_judge.CandidateBrief(
             session_id=f"run-{name}", task="t", diff="", verification=gate, cost_usd=cost
         )
-        for name, gate, cost in lanes
+        for name, gate, cost in children
     ]
 
 
@@ -1025,21 +1025,21 @@ def test_compare_reads_a_pruned_runs_change_from_the_recorded_merge(
 
 
 def _stamped_group(repo: pathlib.Path) -> None:
-    """Two lanes of one group, stamped with the verdict its auto-compare recorded."""
+    """Two children of one group, stamped with the verdict its auto-compare recorded."""
     base = _init_repo(repo)
     _setup_run(
         repo,
         "run-AAAA11",
         base_sha=base,
         commits=[("a.txt", "a\n", "add a")],
-        manifest_extra=_lane_extra(winner=False, rank=2),
+        manifest_extra=_child_extra(winner=False, rank=2),
     )
     _setup_run(
         repo,
         "run-BBBB22",
         base_sha=base,
         commits=[("b.txt", "b\n", "add b")],
-        manifest_extra=_lane_extra(winner=True, rank=1),
+        manifest_extra=_child_extra(winner=True, rank=1),
     )
     owner = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="fan")
     owner.ensure()
@@ -1099,7 +1099,7 @@ def test_rejudge_on_a_group_id_spends_a_fresh_judge_call(
 def test_a_group_with_no_recorded_verdict_is_judged(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An auto-compare that never ran leaves no stamp, so the lanes are ranked instead."""
+    """An auto-compare that never ran leaves no stamp, so the children are ranked instead."""
     base = _init_repo(repo)
     for sid, name in (("run-AAAA11", "a"), ("run-BBBB22", "b")):
         _setup_run(
@@ -1107,7 +1107,7 @@ def test_a_group_with_no_recorded_verdict_is_judged(
             sid,
             base_sha=base,
             commits=[(f"{name}.txt", f"{name}\n", f"add {name}")],
-            manifest_extra={"parallel": {"group": "fan", "lane": 1, "parent": "fan"}},
+            manifest_extra={"parallel": {"group": "fan", "number": 1, "parent": "fan"}},
         )
     _write_reviewer_config(repo)
     judge = _FakeProvider(['{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b wins"}'])

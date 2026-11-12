@@ -100,7 +100,7 @@
   },
   {
     "kind": "marker",
-    "body": "dispatched 2 parallel tasks (group p1); lanes run detached, listed under this session\n• fix the race\n• add a test",
+    "body": "dispatched 2 parallel tasks (group p1); children run detached, listed under this session\n• fix the race\n• add a test",
     "name": "",
     "arg": "",
     "ok": null,
@@ -111,7 +111,7 @@
   },
   {
     "kind": "marker",
-    "body": "joined group p1: 2 lane(s)\njoined  co-p1-l1  agent6/co-p1-l1  abcdef123456\nconflict  co-p1-l2  agent6/co-p1-l2",
+    "body": "joined group p1: 2 child(ren)\njoined  co-p1-l1  agent6/co-p1-l1  abcdef123456\nconflict  co-p1-l2  agent6/co-p1-l2",
     "name": "",
     "arg": "",
     "ok": null,

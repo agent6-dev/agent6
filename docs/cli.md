@@ -17,7 +17,7 @@ This page is the reference for the command-line surface; the patterns behind the
 - `--model [provider/]model`: the model for the mode's role, over every config layer; a bare id keeps the role's provider, and a resume keeps the recorded route unless it sets its own
   The web and TUI resume composers default to that route and offer the config's routes as choices.
   A resume that changes the route prints both the chosen and recorded routes.
-- `--parallel 3` (or `reviewer,provider/model-a`: a role name brings its model, effort and temperature; a `[provider/]model` runs with the worker's): isolated lanes, ranked by `harness.parallel.judges`, the first-ranked lane joined onto the run's own branch; the run is a session that `attach`, `stop`, `sessions show`, `sessions merge` and `resume` address, its lanes folded under it (`--lanes` expands them) ([parallel](config.md#harnessparallel))
+- `--parallel 3` (or `reviewer,provider/model-a`: a role name brings its model, effort and temperature; a `[provider/]model` runs with the worker's): isolated children, ranked by `harness.parallel.judges`, the first-ranked child joined onto the run's own branch; the run is a session that `attach`, `stop`, `sessions show`, `sessions merge` and `resume` address, its children folded under it (`--children` expands them) ([parallel](config.md#harnessparallel))
 - `--worktree`: from the repository's top level, the run works in its own git worktree at HEAD's commit, under `[git.worktree].base_dir`
     - your checkout and its uncommitted changes stay as they are and are not carried, and neither is anything git does not track ([worktrees](usage.md#worktrees)), so you can keep working there or start more runs
     - `sessions merge` lands the work and `sessions prune` then removes the worktree, as it does for a run that committed nothing and left no edits
@@ -36,7 +36,7 @@ agent6 finds the running Docker or Podman dev container of this workspace by its
 `container.exec` names another container, `container.workspace` another path inside it, and `container.runtime` the runtime CLI (`["sudo", "-n", "docker"]` where docker needs sudo).
 File tools, credentials and session records stay on the host; the start block shows the container, both roots, the user, HOME, who owns the container and every control the container does not enforce.
 The receipt names the environment each check ran in and whether the container was left running; `container.stop` runs only for a container the run started, after every attached run ended.
-Lanes, reviewers, forks and `--worktree` runs get their worktrees under `container.worktree_base_dir` (`.agent6/worktrees` in the project), which the container mounts; agent6 keeps that directory out of git through `.git/info/exclude`.
+Children, reviewers, forks and `--worktree` runs get their worktrees under `container.worktree_base_dir` (`.agent6/worktrees` in the project), which the container mounts; agent6 keeps that directory out of git through `.git/info/exclude`.
 With `git.worktree.kind = "linked"`, a fork or a `--worktree` run refuses when the container mounts the workspace at another path than the host's, because a linked worktree names its repository by the host path; a clone, the default, runs at any path.
 `agent6 exec` refuses under container isolation (use the runtime's own exec).
 
@@ -85,8 +85,8 @@ Persistence also lets a poisoned cache or tool configuration reach later runs in
 `agent6 attach [<id>]` follows a run's conversation, or a machine's state, live.
 It rings the bell and sends a desktop notification (`notify-send`, when present) as the run starts waiting on an answer and as it ends; `run` does the same in the foreground.
 Ids are exact or an unambiguous prefix and default to the most recent run.
-A prefix selects the single matching session whose full id prefixes every other match, provided the others have its mode or are its reviewers (for example, a parallel parent and its lanes).
-Lanes remain reachable by their own ids.
+A prefix selects the single matching session whose full id prefixes every other match, provided the others have its mode or are its reviewers (for example, a parallel parent and its children).
+Children remain reachable by their own ids.
 
 ```sh
 agent6 attach                 # follow live; --raw tails events, --tui full screen, --json one snapshot
@@ -94,7 +94,7 @@ agent6 steer ID "focus on X"  # an instruction at the next step; --now interrupt
 agent6 answer ID "yes"        # answer a pending question or approval (bare: list them; --question QID picks a question set)
 agent6 stop ID                # stop during the current turn (the worker killed if it does not answer); --all
 agent6 stop ID --after-turn   # finish the current turn, then stop
-agent6 ps                     # live sessions of every repository on the machine; --lanes, --json
+agent6 ps                     # live sessions of every repository on the machine; --children, --json
 ```
 
 ## Inspect and land a session
@@ -178,7 +178,7 @@ Exit codes for `agent6 run`, `ask` and `resume`, for scripts to branch on:
 | `0` | finished with a green gate, or nothing to gate on |
 | `1` | ended unfinished: out of turns, stuck, a provider error, a crash |
 | `2` | operator error (bad flag or config, a refusal before anything ran) |
-| `3` | budget exhausted, including a `run --parallel` run whose budget ended every lane |
+| `3` | budget exhausted, including a `run --parallel` run whose budget ended every child |
 | `4` | finished over a red or timed-out verify gate, or a never-run gate under `harness.verify.when = "finish"` or `"turn"` |
 | `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing, or one with `[git].commit_per_turn = false`, stays `0`) |
 | `130` | interrupted, or stopped by the operator: Ctrl-C, SIGTERM to a run, ask or plan (`timeout`, CI, the kill `agent6 stop` falls back to), `agent6 stop`, abort or exit at the pause menu, stop after a commit |
@@ -220,9 +220,9 @@ Every end has one reason (`stop_reason` in `agent6 sessions show --json` and `se
 | `ask_repl_empty` | none: no end is recorded | `0` |
 | `gate_stale` | `finished · gate stale` | `4` (gate red, gate timed out, unverified under a harness gate), `0` (unverified with the harness gate off) |
 | `gate_red_at_base` | `finished · gate red at base` | `4` |
-| `lanes_ranked` | `finished · lanes ranked`, `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `0` (gate green, no gate, unverified with the harness gate off), `4` (gate red, gate timed out, unverified under a harness gate) |
-| `no_lane_result` | `failed · no lane result` | `1` |
-| `no_lane_passed` | `failed · no lane passed` | `4` |
+| `children_ranked` | `finished · children ranked`, `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `0` (gate green, no gate, unverified with the harness gate off), `4` (gate red, gate timed out, unverified under a harness gate) |
+| `no_child_result` | `failed · no child result` | `1` |
+| `no_child_passed` | `failed · no child passed` | `4` |
 
 - `finish_session` reads `passed` over a green gate and a bare `finished` with no gate
 - `silent_finish` means the model stopped calling tools without calling `finish_session`, and the harness took its last answer as the end

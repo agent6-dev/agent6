@@ -185,7 +185,7 @@ def test_second_run_parks_with_the_verbatim_task(repo: pathlib.Path) -> None:
 def test_the_parked_message_offers_a_run_in_its_own_worktree(
     repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run parked on a busy checkout was offered a resume and a lane, never `run --worktree`."""
+    """A run parked on a busy checkout was offered a resume and a child, never `run --worktree`."""
     holder_fd = lock.acquire_repo_writer(paths.state_dir(repo), repo, "run-LIVE")
     try:
         rc = app_run.run_task(
@@ -320,7 +320,7 @@ def test_hub_new_work_fans_out_while_checkout_busy(
 ) -> None:
     """A hub's New Work fans out while the checkout is busy.
 
-    A group takes no writer lock (its lanes clone the checkout), and the plain-run refusal tells
+    A group takes no writer lock (its children clone the checkout), and the plain-run refusal tells
     the operator to `/parallel` instead, so the same check must not refuse the `/parallel` message
     before parsing it.
     """
@@ -898,15 +898,15 @@ def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs
     assert "as yours" not in err
 
 
-def test_resume_of_a_lane_from_the_origin_checkout_refuses(
+def test_resume_of_a_child_from_the_origin_checkout_refuses(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A lane resumed from the origin ran on the checkout's tree, not the lane's.
+    """A child resumed from the origin ran on the checkout's tree, not the child's.
 
     Its record is imported into the origin's state and its work is on its branch. The resume
     ran in the checkout: the gate certified the wrong tree, the next commit started a chain
-    off the base branch, and a merge landed that commit alone while the lane read merged.
-    `agent6 fork` continues a lane in a worktree at its tip, and the refusal names it.
+    off the base branch, and a merge landed that commit alone while the child read merged.
+    `agent6 fork` continues a child in a worktree at its tip, and the refusal names it.
     """
     from agent6.app import execution
     from agent6.app import resume as resume_mod
@@ -927,7 +927,7 @@ def test_resume_of_a_lane_from_the_origin_checkout_refuses(
                 "base_branch": "main",
                 "run_branch": "agent6/fan-AAAA11-l1",
                 "user_task": "t",
-                "parallel": {"group": "fan-AAAA11", "lane": 1, "parent": "fan-AAAA11"},
+                "parallel": {"group": "fan-AAAA11", "number": 1, "parent": "fan-AAAA11"},
             }
         )
         + "\n",
@@ -965,7 +965,7 @@ def test_resume_of_a_lane_from_the_origin_checkout_refuses(
 
     assert rc == 2 and ran == []
     err = capsys.readouterr().err
-    assert "fan-AAAA11-l1 is a lane of the group fan-AAAA11" in err
+    assert "fan-AAAA11-l1 is a child of the group fan-AAAA11" in err
     assert "agent6 fork fan-AAAA11-l1" in err
 
 

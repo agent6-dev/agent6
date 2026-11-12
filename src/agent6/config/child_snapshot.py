@@ -1,4 +1,4 @@
-"""Serialize resolved lane models and load them without lower-layer model inheritance."""
+"""Serialize resolved child models and load them without lower-layer model inheritance."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from agent6.config import model as config_model
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Snapshot:
-    """The lane's TOML and the sampling values it cannot represent."""
+    """The child's TOML and the sampling values it cannot represent."""
 
     text: str
     notes: tuple[str, ...]
@@ -22,7 +22,7 @@ def build(cfg: config_model.Config, *, explicit_leaves: frozenset[str]) -> Snaps
     """Materialize resolved roles, keeping only the route in `models.default`.
 
     Args:
-        cfg: The lane config, including its worker route override.
+        cfg: The child config, including its worker route override.
         explicit_leaves: The parent's explicit settings, including resets to defaults.
 
     Returns:
@@ -49,11 +49,11 @@ def build(cfg: config_model.Config, *, explicit_leaves: frozenset[str]) -> Snaps
 
 
 def marked_path(config_paths: tuple[pathlib.Path, ...], snapshot: pathlib.Path) -> pathlib.Path:
-    """Require the lane's sole `--config` to be the snapshot its envelope names.
+    """Require the child's sole `--config` to be the snapshot its envelope names.
 
     Args:
         config_paths: The child command's config paths.
-        snapshot: The snapshot the lane's envelope names.
+        snapshot: The snapshot the child's envelope names.
 
     Returns:
         The snapshot path as the command gave it.
@@ -63,7 +63,7 @@ def marked_path(config_paths: tuple[pathlib.Path, ...], snapshot: pathlib.Path) 
     """
     if len(config_paths) != 1 or config_paths[0].resolve() != snapshot.resolve():
         raise validation.ConfigError(
-            "internal lane snapshot requires the lane's sole --config to be the snapshot its"
+            "internal child snapshot requires the child's sole --config to be the snapshot its"
             " envelope names"
         )
     return config_paths[0]
@@ -75,7 +75,7 @@ def load(
     """Replace models with the snapshot after preset selection; merge everything else normally.
 
     Args:
-        repo_root: The lane's workspace.
+        repo_root: The child's workspace.
         path: The explicitly identified snapshot file.
         preset: The invocation's preset flag.
 
@@ -94,7 +94,7 @@ def load(
         or set(models["default"]) != {"model"}
     ):
         raise validation.ConfigError(
-            "internal lane snapshot must contain every resolved model role and only the"
+            "internal child snapshot must contain every resolved model role and only the"
             " route in models.default"
         )
     presets = layer_presets.preset_names(layers)
@@ -108,5 +108,5 @@ def load(
         for source in layers
     ]
     return layer_data.effective_from_layers(
-        layers, source="(internal lane snapshot)", presets=presets
+        layers, source="(internal child snapshot)", presets=presets
     )

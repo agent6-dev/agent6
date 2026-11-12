@@ -18,22 +18,22 @@ def _segs(text: str) -> list[tuple[str, str]]:
 # --- spec grammar (single source, shared with `run --parallel <spec>`) --------
 
 
-def test_parse_spec_omitted_is_one_default_lane() -> None:
+def test_parse_spec_omitted_is_one_default_child() -> None:
     assert directive.parse_spec("", limit=4) == [None]
     assert directive.parse_spec("   ", limit=4) == [None]
 
 
-def test_parse_spec_int_is_n_default_lanes() -> None:
+def test_parse_spec_int_is_n_default_children() -> None:
     assert directive.parse_spec("3", limit=4) == [None, None, None]
     assert directive.parse_spec("1", limit=4) == [None]
 
 
-def test_parse_spec_model_list_is_one_lane_per_model() -> None:
+def test_parse_spec_model_list_is_one_child_per_model() -> None:
     assert directive.parse_spec("gpt-5,opus", limit=4) == ["gpt-5", "opus"]
     assert directive.parse_spec("kimi, glm ", limit=4) == ["kimi", "glm"]
 
 
-def test_parse_spec_slash_model_id_is_one_lane() -> None:
+def test_parse_spec_slash_model_id_is_one_child() -> None:
     # provider/model ids pass through whole; the CLI --parallel value shares this
     assert directive.parse_spec("moonshotai/kimi-k2.6", limit=4) == ["moonshotai/kimi-k2.6"]
     assert directive.parse_spec("a/b,c/d", limit=4) == ["a/b", "c/d"]
@@ -52,9 +52,9 @@ def test_parse_spec_over_limit_refuses_before_allocating() -> None:
     Pinned with small values: a test that proves the bound by allocating past it is the bug it tests
     for.
     """
-    with pytest.raises(directive.DirectiveError, match=r"max_lanes = 4"):
+    with pytest.raises(directive.DirectiveError, match=r"max_children = 4"):
         directive.parse_spec("9", limit=4)
-    with pytest.raises(directive.DirectiveError, match=r"max_lanes = 2"):
+    with pytest.raises(directive.DirectiveError, match=r"max_children = 2"):
         directive.parse_spec("a,b,c", limit=2)
     assert directive.parse_spec("4", limit=4) == [None] * 4  # the bound is inclusive
 
@@ -78,10 +78,10 @@ def test_leading_whitespace_before_the_token_is_allowed() -> None:
     assert _segs("  /parallel 2 -- do it") == [("2", "do it")]
 
 
-# --- spec is optional; omitted = one lane ---------------------------------
+# --- spec is optional; omitted = one child ---------------------------------
 
 
-def test_omitted_spec_is_one_lane_task_is_whole_segment() -> None:
+def test_omitted_spec_is_one_child_task_is_whole_segment() -> None:
     assert _segs("/parallel refactor the parser") == [("", "refactor the parser")]
     # a bare word first token is task text, never a single-model spec
     assert _segs("/parallel do it now") == [("", "do it now")]
@@ -184,9 +184,9 @@ def test_spec_without_task_refuses_with_the_reason(text: str) -> None:
         directive.parse_directive(text)
 
 
-def test_lane_limit_applies_only_to_an_explicit_spec() -> None:
+def test_child_limit_applies_only_to_an_explicit_spec() -> None:
     (seg,) = directive.parse_directive("/parallel 5 -- task") or []
-    with pytest.raises(directive.DirectiveError, match=r"requests 5 lanes.*max_lanes = 4"):
+    with pytest.raises(directive.DirectiveError, match=r"requests 5 children.*max_children = 4"):
         directive.parse_spec(seg.spec, limit=4)
     (seg,) = directive.parse_directive("/parallel 5 task") or []
     assert directive.parse_spec(seg.spec, limit=4) == [None]
@@ -206,7 +206,7 @@ def test_segment_is_a_frozen_dataclass() -> None:
         seg.spec = "3"  # type: ignore[misc]
 
 
-def test_superscript_digit_is_not_a_lane_count() -> None:
+def test_superscript_digit_is_not_a_child_count() -> None:
     """A count is parsed with `isdecimal()`, exactly `int()`'s accepted set.
 
     `isdigit()` accepts superscripts `int()` rejects, so `/parallel ²` raised a bare ValueError past
@@ -214,7 +214,7 @@ def test_superscript_digit_is_not_a_lane_count() -> None:
     """
     assert directive.parse_spec("\u00b2", limit=4) == ["\u00b2"]  # a (bogus) model token, no raise
     assert _segs("/parallel \u00b2 fix the bug") == [("", "\u00b2 fix the bug")]
-    # A genuine Unicode decimal digit still counts as a lane count (int('٢')==2).
+    # A genuine Unicode decimal digit still counts as a child count (int('٢')==2).
     assert directive.parse_spec("\u0662", limit=4) == [None, None]
 
 
@@ -297,7 +297,9 @@ def test_steer_problem_names_a_malformed_directive_and_passes_the_rest() -> None
 def test_spec_fragment_first_segment() -> None:
     assert directive.spec_fragment("/parallel gp") == "gp"
     assert directive.spec_fragment("/parallel ") == ""
-    assert directive.spec_fragment("/parallel 2") is None  # a bare lane count, not a model fragment
+    assert (
+        directive.spec_fragment("/parallel 2") is None
+    )  # a bare child count, not a model fragment
 
 
 def test_spec_fragment_later_segment_under_construction() -> None:
@@ -331,7 +333,7 @@ def test_spec_fragment_keeps_completing_until_separator(text: str, fragment: str
         "/parallel 2 ",
     ],
 )
-def test_spec_fragment_none_after_separator_or_for_lane_count(text: str) -> None:
+def test_spec_fragment_none_after_separator_or_for_child_count(text: str) -> None:
     assert directive.spec_fragment(text) is None
 
 

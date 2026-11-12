@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Every session's children: its lanes by lineage and what its dispatch records say of them.
+"""Every session's children: its children by lineage and what its dispatch records say of them.
 
 The listing, the session header and the receipt read children from here. A `/parallel`
 dispatch leaves a record under the parent's session dir; `run --parallel` and older
-sessions leave lanes whose manifests name their parent, and nothing else.
+sessions leave children whose manifests name their parent, and nothing else.
 """
 
 from __future__ import annotations
@@ -12,18 +12,18 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-from agent6.sessions import lane_dispatch, layout
+from agent6.sessions import child_dispatch, layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import listing
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ChildView:
-    """One lane of a session, as the surfaces show it.
+    """One child of a session, as the surfaces show it.
 
     Attributes:
-        session_id: The lane's session id.
-        lane: Its number in its group.
+        session_id: The child's session id.
+        number: Its number in its group.
         group: The group it was dispatched in.
         source: Who dispatched it: operator, model or panel; "" when no record says.
         task: Its task text; "" when unknown.
@@ -31,18 +31,18 @@ class ChildView:
         route: The `provider/model` its manifest records; "" when it never started.
         status: Its own status word; "" when it never started.
         outcome: How it joined: `joined`, `no_changes`, `conflict` or `failed`; "" when no
-            join is recorded, as for a group's lanes.
+            join is recorded, as for a group's children.
         join_sha: The merge commit, "" when none.
         imported_ref: The branch the join read, "" when none.
         error: The join's detail, "" when none.
-        spend_usd: What its parent settled for it; the lane's own cost when no record says.
+        spend_usd: What its parent settled for it; the child's own cost when no record says.
         usd_partial: Whether unpriced calls make the spend a lower bound.
         settled: Whether the parent charged its usage; False while it is unknown.
         launched: Whether a session dir of its own exists.
     """
 
     session_id: str
-    lane: int
+    number: int
     group: str
     source: str
     task: str
@@ -68,9 +68,9 @@ class DispatchView:
         source: Who dispatched it.
         state: The record's state, or `unreadable`.
         turn: The turn it was dispatched after.
-        base: The chain tip the lanes were cut from.
+        base: The chain tip the children were cut from.
         message: The delivered result, or why the record could not be read.
-        children: Its lanes, in lane order.
+        children: Its children, in child order.
     """
 
     identity: str
@@ -91,15 +91,15 @@ def dispatches_of(session_dir: pathlib.Path) -> tuple[DispatchView, ...]:
     Returns:
         The views; none for a session without records.
     """
-    directory = lane_dispatch.records_dir(session_dir)
+    directory = child_dispatch.records_dir(session_dir)
     if not directory.is_dir():
         return ()
     state_dir = layout.layout_of(session_dir).state_dir
     views: list[DispatchView] = []
-    for path in sorted(directory.glob("*.json"), key=lambda p: lane_dispatch.order_key(p.stem)):
+    for path in sorted(directory.glob("*.json"), key=lambda p: child_dispatch.order_key(p.stem)):
         try:
-            record = lane_dispatch.read_record(path)
-        except lane_dispatch.DispatchRecordError as exc:
+            record = child_dispatch.read_record(path)
+        except child_dispatch.DispatchRecordError as exc:
             views.append(DispatchView(path.stem, "", "unreadable", 0, "", str(exc), ()))
             continue
         views.append(
@@ -128,13 +128,13 @@ def dispatches_of(session_dir: pathlib.Path) -> tuple[DispatchView, ...]:
 
 
 def children_of(session_dir: pathlib.Path) -> tuple[ChildView, ...]:
-    """Return a session's children: from its records, else from its lanes' lineage.
+    """Return a session's children: from its records, else from its children's lineage.
 
     Args:
         session_dir: The session's dir.
 
     Returns:
-        The children in dispatch then lane order; none for a session with neither.
+        The children in dispatch then child order; none for a session with neither.
     """
     recorded = tuple(
         child
@@ -148,24 +148,24 @@ def children_of(session_dir: pathlib.Path) -> tuple[ChildView, ...]:
     runs = layout.bucket_dir(state_dir, "runs")
     return tuple(
         _lineage_child(summary, runs / summary.session_id)
-        for summary in listing.lanes_of(state_dir, session_dir.name)
+        for summary in listing.children_of(state_dir, session_dir.name)
     )
 
 
 def _recorded_child(
-    record: lane_dispatch.DispatchRecord, child: lane_dispatch.ChildRecord, bucket: pathlib.Path
+    record: child_dispatch.DispatchRecord, child: child_dispatch.ChildRecord, bucket: pathlib.Path
 ) -> ChildView:
-    lane_dir = bucket / child.session_id
-    launched = lane_dir.exists()
+    child_dir = bucket / child.session_id
+    launched = child_dir.exists()
     status = route = ""
     if launched:
-        summary = listing.summarize_session_dir(lane_dir)
+        summary = listing.summarize_session_dir(child_dir)
         status, route = summary.status, summary.model
     join = child.join
     usage = child.usage
     return ChildView(
         session_id=child.session_id,
-        lane=child.lane,
+        number=child.number,
         group=record.identity,
         source=record.source,
         task=child.task,
@@ -183,10 +183,10 @@ def _recorded_child(
     )
 
 
-def _lineage_child(summary: listing.SessionSummary, lane_dir: pathlib.Path) -> ChildView:
+def _lineage_child(summary: listing.SessionSummary, child_dir: pathlib.Path) -> ChildView:
     group, task = summary.parent, ""
     try:
-        manifest = sessions_manifest.read_manifest(lane_dir)
+        manifest = sessions_manifest.read_manifest(child_dir)
     except sessions_manifest.ManifestError:
         manifest = None
     if manifest is not None:
@@ -195,7 +195,7 @@ def _lineage_child(summary: listing.SessionSummary, lane_dir: pathlib.Path) -> C
             group = manifest.parallel.group
     return ChildView(
         session_id=summary.session_id,
-        lane=summary.lane or 0,
+        number=summary.number or 0,
         group=group,
         source="",
         task=task,

@@ -14,8 +14,8 @@ percentage points against `max_plan_points`; a call with neither counts its toke
 against `max_tokens_fallback`. Each cap: -1 unlimited, 0 refuse that ledger, >
 0 the cap.
 
-A parent that dispatches lanes reserves what it has left (`reserve`): each lane's share is
-its own cap, held until the lane settles (`settle_lane`) with its actual usage, charged
+A parent that dispatches children reserves what it has left (`reserve`): each child's share is
+its own cap, held until the child settles (`settle_child`) with its actual usage, charged
 whole, its plan readings folded through the same high-water rule as the parent's own.
 """
 
@@ -304,13 +304,13 @@ class BudgetAllowance:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class UsageSettlement:
-    """What a lane used, as its parent charges it.
+    """What a child used, as its parent charges it.
 
     Attributes:
-        usd: The lane's metered spend, charged whole.
-        usd_partial: Some of the lane's calls were unpriced, so `usd` is a lower bound.
-        tokens: The lane's fallback-ledger tokens.
-        plan_readings: The provider entry and reading of each plan observation the lane
+        usd: The child's metered spend, charged whole.
+        usd_partial: Some of the child's calls were unpriced, so `usd` is a lower bound.
+        tokens: The child's fallback-ledger tokens.
+        plan_readings: The provider entry and reading of each plan observation the child
             made, oldest first: account-global movement the parent folds, not spend.
     """
 
@@ -351,12 +351,12 @@ class BudgetSnapshot:
         exhausted: A ledger crossed its cap.
         exhausted_reason: Why, or "".
         per_model: The usage totals by provider/model route.
-        usd_running_lanes: What the lanes still running have spent so far; outside every
+        usd_running_children: What the children still running have spent so far; outside every
             total here until each settles.
-        tokens_running_lanes: Their fallback tokens so far, the same way.
-        available: What is left to spend in each currency, running lanes taken out, with the
+        tokens_running_children: Their fallback tokens so far, the same way.
+        available: What is left to spend in each currency, running children taken out, with the
             cap's meaning.
-        settled_lanes: Child sessions charged to this execution's cumulative totals.
+        settled_children: Child sessions charged to this execution's cumulative totals.
     """
 
     input_total: int
@@ -371,10 +371,10 @@ class BudgetSnapshot:
     exhausted: bool
     exhausted_reason: str
     per_model: dict[kinds.ModelRoute, ModelUsage]
-    usd_running_lanes: float
-    tokens_running_lanes: int
+    usd_running_children: float
+    tokens_running_children: int
     available: BudgetAllowance
-    settled_lanes: frozenset[str] = frozenset()
+    settled_children: frozenset[str] = frozenset()
 
     @property
     def plan_latest(self) -> PlanUsage | None:
@@ -433,9 +433,9 @@ class BudgetTracker:
     # Purchased credits seen leaving each account this run, in dollars; folds into the USD meter.
     _credits_last_usd: dict[str, float] = dataclasses.field(default_factory=dict)
     _credits_spent_usd: float = 0.0
-    # The spend the settled lanes' usage charged, and each running lane's last reading.
+    # The spend the settled children's usage charged, and each running child's last reading.
     _children_usd: float = 0.0
-    _charged_lanes: set[str] = dataclasses.field(default_factory=set)
+    _charged_children: set[str] = dataclasses.field(default_factory=set)
     _running: dict[str, UsageSettlement] = dataclasses.field(default_factory=dict)
 
     def record(
@@ -524,17 +524,17 @@ class BudgetTracker:
             )
 
     def _running_usd_locked(self) -> float:
-        """Return what the running lanes have spent so far, with the lock held."""
+        """Return what the running children have spent so far, with the lock held."""
         return math.fsum(max(usage.usd, 0.0) for usage in self._running.values())
 
     def _running_tokens_locked(self) -> int:
-        """Return the running lanes' fallback tokens so far, with the lock held."""
+        """Return the running children's fallback tokens so far, with the lock held."""
         return sum(max(usage.tokens, 0) for usage in self._running.values())
 
     def available(self) -> BudgetAllowance:
-        """Return what is left to spend in each currency, running lanes' spend taken out.
+        """Return what is left to spend in each currency, running children's spend taken out.
 
-        A lane starts under this as its own caps. Lanes share it: the run stops them once
+        A child starts under this as its own caps. Children share it: the run stops them once
         their spend together reaches a cap, so the total can pass it by what was in flight.
 
         Returns:
@@ -557,18 +557,18 @@ class BudgetTracker:
         return BudgetAllowance(usd=usd, tokens=tokens, plan_points=points)
 
     def note_running(self, child: str, usage: UsageSettlement) -> None:
-        """Count a running lane's spend so far against the caps, replacing its last reading.
+        """Count a running child's spend so far against the caps, replacing its last reading.
 
-        The reading is the lane's cumulative usage, its own running lanes included, so each
+        The reading is the child's cumulative usage, its own running children included, so each
         call replaces the one before. Its plan readings fold through the window rule the
         run's own readings use.
 
         Args:
-            child: The lane's session id.
-            usage: What the lane has used so far.
+            child: The child's session id.
+            usage: What the child has used so far.
         """
         with self._lock:
-            if child in self._charged_lanes:
+            if child in self._charged_children:
                 return
             self._running[child] = usage
             provider = ""
@@ -578,34 +578,34 @@ class BudgetTracker:
             self._check_ceilings(provider)
 
     def mark_settled(self, children: Iterable[str]) -> None:
-        """Take lanes an earlier execution of the session charged as settled.
+        """Take children an earlier execution of the session charged as settled.
 
         Their usage is inside the session's banked spend, so this tracker charges none of it.
 
         Args:
-            children: The lanes' session ids.
+            children: The children's session ids.
         """
         with self._lock:
-            self._charged_lanes.update(children)
+            self._charged_children.update(children)
 
-    def settle_lane(self, child: str, usage: UsageSettlement | None) -> None:
-        """Charge a lane's final usage once; unknown usage leaves its last reading counted.
+    def settle_child(self, child: str, usage: UsageSettlement | None) -> None:
+        """Charge a child's final usage once; unknown usage leaves its last reading counted.
 
-        Idempotent per lane: a second settlement changes nothing. The plan readings fold
-        through the window rule the run's own readings use, so movement two lanes both saw
+        Idempotent per child: a second settlement changes nothing. The plan readings fold
+        through the window rule the run's own readings use, so movement two children both saw
         counts once.
 
         Args:
-            child: The lane's session id.
-            usage: What the lane used; None when its record never came back.
+            child: The child's session id.
+            usage: What the child used; None when its record never came back.
         """
         with self._lock:
-            if child in self._charged_lanes or usage is None:
+            if child in self._charged_children or usage is None:
                 return
             self._running.pop(child, None)
             self._children_usd += max(usage.usd, 0.0)
             self._unmetered_tokens += max(usage.tokens, 0)
-            self._charged_lanes.add(child)
+            self._charged_children.add(child)
             provider = ""
             for provider, plan in usage.plan_readings:
                 self._note_plan_usage(provider, plan)
@@ -708,10 +708,10 @@ class BudgetTracker:
             running = self._running_usd_locked()
             cost = self._estimate_usd_locked()[0] + running
             if cost >= self.max_usd:
-                lanes = f", {format_usd(running)} of it in running lanes" if running else ""
+                children = f", {format_usd(running)} of it in running children" if running else ""
                 self._exceeded_reason = (
                     f"USD budget exhausted: ~{format_usd(cost)} >= {format_usd(self.max_usd)}"
-                    f" (includes cache_read/cache_write cost and purchased credits{lanes})"
+                    f" (includes cache_read/cache_write cost and purchased credits{children})"
                 )
 
     def register_plan_reader(self, provider: str, reader: Callable[[], PlanUsage | None]) -> None:
@@ -831,10 +831,10 @@ class BudgetTracker:
                 exhausted=bool(self._exceeded_reason),
                 exhausted_reason=self._exceeded_reason,
                 per_model=per_model,
-                usd_running_lanes=self._running_usd_locked(),
-                tokens_running_lanes=self._running_tokens_locked(),
+                usd_running_children=self._running_usd_locked(),
+                tokens_running_children=self._running_tokens_locked(),
                 available=self._available_locked(),
-                settled_lanes=frozenset(self._charged_lanes),
+                settled_children=frozenset(self._charged_children),
             )
 
     def estimate_usd(self) -> tuple[float, bool]:
@@ -965,11 +965,11 @@ class BudgetTracker:
         if any_unknown:
             budget_line += " (some models unpriced; figure is a lower bound)"
         lines.append(budget_line)
-        if snap.usd_running_lanes or snap.tokens_running_lanes:
-            parts = [format_usd(snap.usd_running_lanes)] if snap.usd_running_lanes else []
-            if snap.tokens_running_lanes:
-                parts.append(f"{snap.tokens_running_lanes} fallback tokens")
-            lines.append("  in lanes still running: " + ", ".join(parts))
+        if snap.usd_running_children or snap.tokens_running_children:
+            parts = [format_usd(snap.usd_running_children)] if snap.usd_running_children else []
+            if snap.tokens_running_children:
+                parts.append(f"{snap.tokens_running_children} fallback tokens")
+            lines.append("  in children still running: " + ", ".join(parts))
         for route, spend in snap.plans.items():
             lines.append("  " + format_plan_usage(route, spend, snap.max_plan_points))
         if snap.exhausted and include_stop_reason:
@@ -1012,7 +1012,7 @@ def format_plan_window(window: PlanWindow, windows: tuple[PlanWindow, ...]) -> s
 
 
 def format_plan_reading(route: str, usage: PlanUsage) -> str:
-    """Return a plan's reading with no observed movement, as a group prints its lanes' newest.
+    """Return a plan's reading with no observed movement, as a group prints its children's newest.
 
     Args:
         route: The provider entry's name.

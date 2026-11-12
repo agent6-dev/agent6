@@ -20,7 +20,7 @@ from agent6.harness.review import verdict as review_verdict
 from agent6.providers import Provider, ProviderError
 from agent6.sessions import journal
 from agent6.tools import results
-from tests import review_lane_env
+from tests import review_env
 
 SAMPLE_DIFF = """\
 --- a/foo.py
@@ -80,7 +80,7 @@ def _ctx() -> review_panel.ReviewContext:
 
 
 def test_structured_review_parses_clean_json() -> None:
-    v = review_lane_env.single_verdict(
+    v = review_env.single_verdict(
         _prov(_BLOCK_JSON), _ctx(), reviewer_index=0, focus="security", model_route="m1"
     )
     assert v.error is None and v.verdict == "block"
@@ -89,14 +89,14 @@ def test_structured_review_parses_clean_json() -> None:
 
 def test_structured_review_parses_fenced_json_with_prose() -> None:
     text = f"Here is my review:\n```json\n{_BLOCK_JSON}\n```\nDone."
-    v = review_lane_env.single_verdict(
+    v = review_env.single_verdict(
         _prov(text), _ctx(), reviewer_index=0, focus="s", model_route="m1"
     )
     assert v.error is None and v.verdict == "block" and len(v.findings) == 1
 
 
 def test_structured_review_junk_output_abstains() -> None:
-    v = review_lane_env.single_verdict(
+    v = review_env.single_verdict(
         _prov("I could not produce JSON, sorry."),
         _ctx(),
         reviewer_index=0,
@@ -108,14 +108,14 @@ def test_structured_review_junk_output_abstains() -> None:
 
 @pytest.mark.parametrize("text", ["{}", '{"findings": []}', '{"verdict": "maybe"}'])
 def test_structured_review_without_a_verdict_abstains(text: str) -> None:
-    v = review_lane_env.single_verdict(
+    v = review_env.single_verdict(
         _prov(text), _ctx(), reviewer_index=0, focus="s", model_route="m1"
     )
     assert v.error == "invalid reviewer verdict"
 
 
 def test_structured_review_provider_error_abstains() -> None:
-    v = review_lane_env.single_verdict(
+    v = review_env.single_verdict(
         cast(Provider, _ErrProvider()), _ctx(), reviewer_index=0, focus="s", model_route="m1"
     )
     assert v.error is not None and "provider" in v.error
@@ -131,7 +131,7 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     starved = _FakeProvider("")
     starved_resp = _Resp("", stop_reason="length", output_tokens=4500)
     starved.call = lambda **_kw: starved_resp  # type: ignore[method-assign]
-    v = review_lane_env.single_verdict(
+    v = review_env.single_verdict(
         cast(Provider, starved), _ctx(), reviewer_index=0, focus="s", model_route="kimi-k3"
     )
     assert v.error is not None and v.verdict == "abstain"
@@ -143,7 +143,7 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     cut = _FakeProvider("")
     cut_resp = _Resp('{"verdict": "blo', stop_reason="length", output_tokens=1500)
     cut.call = lambda **_kw: cut_resp  # type: ignore[method-assign]
-    v2 = review_lane_env.single_verdict(
+    v2 = review_env.single_verdict(
         cast(Provider, cut), _ctx(), reviewer_index=0, focus="s", model_route="m1"
     )
     assert v2.error is not None
@@ -161,7 +161,7 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     empty_resp = _Resp("", stop_reason="error", output_tokens=16801)
     empty.call = lambda **_kw: empty_resp  # type: ignore[method-assign]
 
-    v = review_lane_env.single_verdict(
+    v = review_env.single_verdict(
         cast(Provider, empty), _ctx(), reviewer_index=0, focus="s", model_route="kimi-k2.6"
     )
 
@@ -178,7 +178,7 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     thought = _Resp("", stop_reason="stop", output_tokens=7160, thinking="t" * 30_175)
     thinker.call = lambda **_kw: thought  # type: ignore[method-assign]
 
-    v2 = review_lane_env.single_verdict(
+    v2 = review_env.single_verdict(
         cast(Provider, thinker), _ctx(), reviewer_index=0, focus="s", model_route="kimi-k2.6"
     )
 
@@ -220,7 +220,7 @@ def test_coerce_findings_normalizes_bad_category_and_severity() -> None:
 def test_invalid_locations_abstain_instead_of_passing(location: object) -> None:
     payload = json.loads(_BLOCK_JSON)
     payload["findings"][0]["location"] = location
-    verdict = review_lane_env.single_verdict(
+    verdict = review_env.single_verdict(
         _prov(json.dumps(payload)), _ctx(), reviewer_index=3, focus="security", model_route="m1"
     )
     assert verdict.verdict == "abstain" and not verdict.findings
@@ -231,7 +231,7 @@ def test_invalid_locations_abstain_instead_of_passing(location: object) -> None:
 def test_provider_findings_keep_the_title_and_detail_caps() -> None:
     payload = json.loads(_BLOCK_JSON)
     payload["findings"][0].update(title="t" * 201, detail="d" * 1001)
-    verdict = review_lane_env.single_verdict(
+    verdict = review_env.single_verdict(
         _prov(json.dumps(payload)), _ctx(), reviewer_index=0, focus="security", model_route="m1"
     )
     assert verdict.error is None
@@ -258,10 +258,10 @@ def test_finding_text_is_one_line() -> None:
 
 def test_run_panel_distinct_models_quorum_blocks() -> None:
     reviewers = [
-        review_lane_env.reviewer(focus="security", model="m1", provider=_prov(_BLOCK_JSON)),
-        review_lane_env.reviewer(focus="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
+        review_env.reviewer(focus="security", model="m1", provider=_prov(_BLOCK_JSON)),
+        review_env.reviewer(focus="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
     ]
-    res = review_lane_env.run_panel(
+    res = review_env.run_panel(
         reviewers,
         _ctx(),
         block_on="model_quorum",
@@ -275,10 +275,8 @@ def test_run_panel_distinct_models_quorum_blocks() -> None:
 
 
 def test_run_panel_advisory_never_blocks() -> None:
-    reviewers = [
-        review_lane_env.reviewer(focus="security", model="m1", provider=_prov(_BLOCK_JSON))
-    ]
-    res = review_lane_env.run_panel(
+    reviewers = [review_env.reviewer(focus="security", model="m1", provider=_prov(_BLOCK_JSON))]
+    res = review_env.run_panel(
         reviewers, _ctx(), block_on="none", min_blocking_models=2, panel_id="p", max_turns=20
     )
     assert res.blocked is False
@@ -291,11 +289,11 @@ def test_run_panel_concurrent_preserves_order_and_aggregates() -> None:
     # 3 reviewers, distinct models, concurrency=3: results stay in reviewer order and the
     # grounded min_blocking_models still blocks (thread pool must not change the verdict).
     reviewers = [
-        review_lane_env.reviewer(focus="security", model="m1", provider=_prov(_BLOCK_JSON)),
-        review_lane_env.reviewer(focus="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
-        review_lane_env.reviewer(focus="edge", model="m3", provider=_prov(_BLOCK_JSON)),
+        review_env.reviewer(focus="security", model="m1", provider=_prov(_BLOCK_JSON)),
+        review_env.reviewer(focus="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
+        review_env.reviewer(focus="edge", model="m3", provider=_prov(_BLOCK_JSON)),
     ]
-    res = review_lane_env.run_panel(
+    res = review_env.run_panel(
         reviewers,
         _ctx(),
         block_on="model_quorum",
@@ -399,8 +397,8 @@ def test_bare_and_pinned_routes_to_the_same_model_count_once(monkeypatch: Any) -
         "anthropic/reviewer-default",
         "anthropic/reviewer-default",
     ]
-    reviewers = [review_lane_env.reviewer(s.focus, s.model, _prov(_BLOCK_JSON)) for s in reviewers]
-    result = review_lane_env.run_panel(
+    reviewers = [review_env.reviewer(s.focus, s.model, _prov(_BLOCK_JSON)) for s in reviewers]
+    result = review_env.run_panel(
         reviewers,
         _ctx(),
         block_on="model_quorum",
@@ -438,7 +436,7 @@ def test_reviewer_first_request_names_the_call_budget(max_turns: int) -> None:
     """The reviewer knows its total call budget and that the last call must be its verdict."""
     provider = mock.MagicMock()
     provider.call.return_value = _ReviewerResp(text=_BLOCK_JSON)
-    verdict = review_lane_env.single_verdict(
+    verdict = review_env.single_verdict(
         provider,
         _ctx(),
         reviewer_index=0,
@@ -471,7 +469,7 @@ def test_reviewer_returns_a_verdict_on_the_sixth_call(monkeypatch: pytest.Monkey
         dispatched.append(name)
         return results.RawResult({"matches": ["caller.py:9: read_doc(x)"]})
 
-    v = review_lane_env.single_verdict(
+    v = review_env.single_verdict(
         cast(Provider, provider),
         _ctx(),
         reviewer_index=0,
@@ -494,7 +492,7 @@ def test_reviewer_abstains_after_six_calls_without_a_verdict() -> None:
             for _ in range(10)
         ]
     )
-    v = review_lane_env.single_verdict(
+    v = review_env.single_verdict(
         cast(Provider, provider),
         _ctx(),
         reviewer_index=0,
@@ -524,7 +522,7 @@ def test_reviewer_skips_dispatch_on_final_turn() -> None:
         dispatched.append(name)
         return results.RawResult({"ok": True})
 
-    v = review_lane_env.single_verdict(
+    v = review_env.single_verdict(
         cast(Provider, provider),
         _ctx(),
         reviewer_index=0,
@@ -546,8 +544,8 @@ def test_run_panel_runs_a_reviewer_through_its_tool_loop() -> None:
             _ReviewerResp(text=_BLOCK_JSON),
         ]
     )
-    reviewer = review_lane_env.reviewer(focus="security", model="m1", provider=cast(Provider, prov))
-    res = review_lane_env.run_panel(
+    reviewer = review_env.reviewer(focus="security", model="m1", provider=cast(Provider, prov))
+    res = review_env.run_panel(
         [reviewer],
         _ctx(),
         block_on="any",
@@ -585,7 +583,7 @@ def test_reviewer_honors_verdict_alongside_tool_use_on_last_turn() -> None:
     provider = _ReviewerProvider(
         [_ReviewerResp(text=_BLOCK_JSON, tool_uses=(tu,), raw={"content": []})]
     )
-    v = review_lane_env.single_verdict(
+    v = review_env.single_verdict(
         cast(Provider, provider),
         _ctx(),
         reviewer_index=0,
@@ -605,10 +603,10 @@ def test_run_panel_executor_crash_retains_diagnostics() -> None:
             raise RuntimeError("unexpected reviewer crash")
 
     reviewers = [
-        review_lane_env.reviewer(focus="a", model="m", provider=_prov(_BLOCK_JSON)),
-        review_lane_env.reviewer(focus="b", model="m", provider=cast(Provider, _BoomProvider())),
+        review_env.reviewer(focus="a", model="m", provider=_prov(_BLOCK_JSON)),
+        review_env.reviewer(focus="b", model="m", provider=cast(Provider, _BoomProvider())),
     ]
-    result = review_lane_env.run_panel(
+    result = review_env.run_panel(
         reviewers,
         _ctx(),
         block_on="none",
@@ -642,10 +640,10 @@ def test_run_panel_concurrency_limit_is_honored() -> None:
             return _Resp(_BLOCK_JSON)
 
     reviewers = [
-        review_lane_env.reviewer(focus=f"s{i}", model="m", provider=cast(Provider, _SlowProvider()))
+        review_env.reviewer(focus=f"s{i}", model="m", provider=cast(Provider, _SlowProvider()))
         for i in range(6)
     ]
-    res = review_lane_env.run_panel(
+    res = review_env.run_panel(
         reviewers,
         _ctx(),
         block_on="none",
@@ -687,7 +685,7 @@ def test_reviewer_preserves_image_result() -> None:
         _ReviewerResp(text=_BLOCK_JSON),
     ]
     image = kinds.MediaAttachment(b"x" * 90000, "image/png", "page.png")
-    verdict = review_lane_env.single_verdict(
+    verdict = review_env.single_verdict(
         provider,
         _ctx(),
         reviewer_index=0,
@@ -720,7 +718,7 @@ def test_reviewer_uses_shared_media_recovery_without_rerunning_tools() -> None:
         return_value=results.ReadMediaResult(kinds.MediaAttachment(b"x", "image/png", "page.png"))
     )
     emit = mock.Mock()
-    verdict = review_lane_env.single_verdict(
+    verdict = review_env.single_verdict(
         provider,
         _ctx(),
         reviewer_index=0,
@@ -761,7 +759,7 @@ def test_panel_media_refusals_follow_the_reviewer_not_the_shared_dispatch() -> N
         ]
         role_providers.append(provider)
         reviewers.append(
-            review_lane_env.reviewer(
+            review_env.reviewer(
                 focus="ui",
                 model=f"p/{model}",
                 provider=provider,
@@ -771,7 +769,7 @@ def test_panel_media_refusals_follow_the_reviewer_not_the_shared_dispatch() -> N
     dispatch = mock.Mock(
         return_value=results.ReadMediaResult(kinds.MediaAttachment(b"x", "image/png", "page.png"))
     )
-    review_lane_env.run_panel(
+    review_env.run_panel(
         reviewers,
         _ctx(),
         block_on="none",
@@ -813,7 +811,7 @@ def test_reviewer_records_attachment_limit_refusals(cross_turn: bool) -> None:
         return_value=results.ReadMediaResult(kinds.MediaAttachment(data, "image/png", "page.png"))
     )
     emit = mock.Mock()
-    verdict = review_lane_env.single_verdict(
+    verdict = review_env.single_verdict(
         provider,
         _ctx(),
         reviewer_index=0,
@@ -832,5 +830,5 @@ def test_reviewer_records_attachment_limit_refusals(cross_turn: bool) -> None:
 
 
 @pytest.fixture(autouse=True)
-def panel_lanes(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)
+def panel_children(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(review_gate, "run_panel", review_env.run_panel)

@@ -5,13 +5,13 @@ import pathlib
 
 import pytest
 
-from agent6 import budget, kinds, lane_records, review_records
+from agent6 import budget, child_records, kinds, review_records
 from agent6.app import role_providers
 from agent6.harness import parallel_dispatch, toolset
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import verdict as review_verdict
 from agent6.sessions import completion
-from tests import child_env, review_lane_env, review_traces
+from tests import child_env, review_env, review_traces
 
 
 def test_reviewer_resolution_constructs_no_provider(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -50,49 +50,49 @@ def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
     directory = child_env.create_record(repo, "parent")
     meter = budget.BudgetTracker(max_usd=10, max_tokens_fallback=1000, max_plan_points=20)
     executor = child_env.dispatcher(repo, directory, child_env.config(), meter)
-    executor.max_lanes = 2
+    executor.max_children = 2
     executor.clock = lambda: 1000.0
     observed: list[tuple[int, float]] = []
     deadlines: list[float | None] = []
 
     def spawn(
-        lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
-    ) -> list[lane_records.LaneResult]:
-        assert lanes[0].allowance is not None
-        assert all(lane.allowance == lanes[0].allowance for lane in lanes)
-        observed.append((len(lanes), lanes[0].allowance.usd))
-        deadlines.extend(lane.limits.deadline_at if lane.limits else None for lane in lanes)
+        children: list[child_records.ChildTask], group: str, *, at: str | None = None
+    ) -> list[child_records.ChildResult]:
+        assert children[0].allowance is not None
+        assert all(child.allowance == children[0].allowance for child in children)
+        observed.append((len(children), children[0].allowance.usd))
+        deadlines.extend(child.limits.deadline_at if child.limits else None for child in children)
         spent = budget.UsageSettlement(usd=1, usd_partial=False, tokens=0)
-        for i in range(1, len(lanes) + 1):
+        for i in range(1, len(children) + 1):
             # The wait's watch counts a reviewer's spend while it runs.
             meter.note_running(f"parent-{group}-l{i}", spent)
         return [
-            lane_records.LaneResult(
-                lane_records.LaneSpec(i, f"parent-{group}-l{i}", repo, lane.settings),
+            child_records.ChildResult(
+                child_records.ChildSpec(i, f"parent-{group}-l{i}", repo, child.settings),
                 directory,
                 "",
                 False,
                 "scripted failure",
                 usage=spent,
             )
-            for i, lane in enumerate(lanes, 1)
+            for i, child in enumerate(children, 1)
         ]
 
-    executor.lane_spawner = spawn
+    executor.child_spawner = spawn
     contract = kinds.ConversationContract("s", "o", 1)
-    requests = [lane_records.LaneTask(str(i), "reviewer", contract=contract) for i in range(5)]
+    requests = [child_records.ChildTask(str(i), "reviewer", contract=contract) for i in range(5)]
     result = executor.dispatch_panel(
         requests,
         panel_id="roster",
         at=child_env.git(repo, "rev-parse", "HEAD"),
         concurrency=3,
     )
-    assert result.dispatched and len(result.lanes) == 5
+    assert result.dispatched and len(result.children) == 5
     assert observed == [(2, 10), (2, 8), (1, 6)]
-    assert meter.estimate_usd()[0] == 5 and meter.snapshot().usd_running_lanes == 0
-    assert [j.detail for j in result.lanes] == ["scripted failure"] * 5
+    assert meter.estimate_usd()[0] == 5 and meter.snapshot().usd_running_children == 0
+    assert [j.detail for j in result.children] == ["scripted failure"] * 5
     # A later batch waits for the earlier ones: its window starts where theirs ends.
-    window = parallel_dispatch.MODEL_LANE_DEADLINE_S
+    window = parallel_dispatch.MODEL_CHILD_DEADLINE_S
     assert deadlines == [1000 + window] * 2 + [1000 + 2 * window] * 2 + [1000 + 3 * window]
 
 
@@ -159,11 +159,11 @@ def test_failed_artifacts_keep_the_actual_diagnostic(
     target = executor.chain.retain_review_target(target, "parent")
 
     def spawn(
-        lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
-    ) -> list[lane_records.LaneResult]:
+        children: list[child_records.ChildTask], group: str, *, at: str | None = None
+    ) -> list[child_records.ChildResult]:
         sid = f"parent-{group}-l1"
         reviewer_dir = child_env.create_record(repo, sid, parent="parent", mode="reviewer")
-        contract = lanes[0].contract
+        contract = children[0].contract
         assert contract is not None
         if failure == "malformed":
             (reviewer_dir / completion.COMPLETION_NAME).write_text("not json")
@@ -181,12 +181,12 @@ def test_failed_artifacts_keep_the_actual_diagnostic(
                 ),
             )
         return [
-            lane_records.LaneResult(
-                lane_records.LaneSpec(1, sid, repo, lanes[0].settings),
+            child_records.ChildResult(
+                child_records.ChildSpec(1, sid, repo, children[0].settings),
                 reviewer_dir,
                 "",
                 False,
-                "lane deadline exceeded"
+                "child deadline exceeded"
                 if failure == "deadline"
                 else "child exited 1"
                 if failure == "exit"
@@ -195,7 +195,7 @@ def test_failed_artifacts_keep_the_actual_diagnostic(
             )
         ]
 
-    executor.lane_spawner = spawn
+    executor.child_spawner = spawn
     result = review_gate.run_panel(
         role_providers.resolve_reviewers(child_env.config()),
         review_panel.ReviewContext(task="Review changes", diff=child_env.git(repo, "diff")),
@@ -205,7 +205,7 @@ def test_failed_artifacts_keep_the_actual_diagnostic(
         min_blocking_models=2,
         panel_id="failure",
         max_turns=3,
-        tools=review_lane_env.READING_TOOLS,
+        tools=review_env.READING_TOOLS,
     )
     assert result.n_abstain == 1 and not result.blocked
     expected = {
@@ -257,7 +257,7 @@ def test_worker_child_schedules_its_panel_without_certifying_parent(
 ) -> None:
     from agent6 import directive
     from agent6.harness import loop_conversation, loop_state
-    from agent6.sessions import lane_dispatch
+    from agent6.sessions import child_dispatch
     from agent6.viewmodel import receipt
 
     repo = short_repo / "origin"
@@ -277,10 +277,10 @@ def test_worker_child_schedules_its_panel_without_certifying_parent(
             1,
             loop_state.LoopState(original_task="parent", tool_calls=0),
             [directive.Segment(task="Change README and finish", spec="1")],
-            limits=lane_records.LaneLimits(max_turns=5),
+            limits=child_records.ChildLimits(max_turns=5),
         )
-    assert result.dispatched and result.lanes[0].status == "joined", result.message
-    worker = directory.parent / result.lanes[0].session_id
+    assert result.dispatched and result.children[0].status == "joined", result.message
+    worker = directory.parent / result.children[0].session_id
     panels = receipt.read_receipt(worker, repo).review.panels
     assert len(panels) == 1 and panels[0].completion == "complete"
     leaf = receipt.read_receipt(worker, repo).children[0]
@@ -288,7 +288,7 @@ def test_worker_child_schedules_its_panel_without_certifying_parent(
     rendered = receipt.render(receipt.read_receipt(worker, repo))
     assert f"Reviewer 1 (security): {leaf.session_id}" in rendered
     assert completion.read_completion(leaf_dir) is not None
-    assert lane_dispatch.read_records(leaf_dir) == ()
+    assert child_dispatch.read_records(leaf_dir) == ()
     assert receipt.read_receipt(directory, repo).review.panels == ()
     assert len(calls) == 3
 
@@ -325,7 +325,7 @@ def test_a_reviewer_reads_the_retained_target_not_head_or_live_tree(
             min_blocking_models=2,
             panel_id="retained",
             max_turns=3,
-            tools=review_lane_env.READING_TOOLS,
+            tools=review_env.READING_TOOLS,
         )
     assert result.n_abstain == 0
     tool_results = [m["content"] for m in calls[1]["messages"] if m["role"] == "tool"]
@@ -335,9 +335,9 @@ def test_a_reviewer_reads_the_retained_target_not_head_or_live_tree(
 
 
 def test_configured_top_level_ask_retains_panel_authority(short_repo: pathlib.Path) -> None:
-    from agent6.app import lane_launch
+    from agent6.app import child_launch
 
-    authority = lane_launch.dispatch_authority(
+    authority = child_launch.dispatch_authority(
         child_env.config(), mode="ask", session_id="review", root=short_repo
     )
     assert authority.panels and not authority.work

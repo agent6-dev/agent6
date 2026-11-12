@@ -478,12 +478,12 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             reporter.error(str(exc))
             return 2
         cfg, explicit_leaves = effective.config, effective.explicit_leaves
-        # A lane's record is imported into the origin's state with its branch; its tree is no
+        # A child's record is imported into the origin's state with its branch; its tree is no
         # checkout's. Only its own clone, under the workspace base directory, may continue it.
-        lane = manifest.parallel
-        if lane is not None and not worktrees.holds(cfg, cwd):
+        child = manifest.parallel
+        if child is not None and not worktrees.holds(cfg, cwd):
             reporter.refuse(
-                f"{session_id} is a lane of the group {lane.parent}: its work is on its"
+                f"{session_id} is a child of the group {child.parent}: its work is on its"
                 " own branch, and this checkout holds another tree, so it cannot continue here."
                 " Continue it in a worktree of its own:\n"
                 f'    agent6 fork {session_id} --steer "..."'

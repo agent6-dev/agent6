@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`sessions show` lists a parent's lanes and names a lane's parent."""
+"""`sessions show` lists a parent's children and names a child's parent."""
 
 from __future__ import annotations
 
@@ -50,17 +50,17 @@ def group(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pa
             },
         },
     )
-    for lane in (1, 2):
+    for child in (1, 2):
         _session(
             repo,
-            f"fan-l{lane}",
+            f"fan-l{child}",
             {
                 "models": {
-                    "driver": {"provider": "openai", "model": f"lane-{lane}"},
+                    "driver": {"provider": "openai", "model": f"child-{child}"},
                     "driver_from_flag": True,
                 },
-                "parallel": {"group": "fan", "lane": lane, "parent": "fan"},
-                "placement": {"rank": 3 - lane, "of": 2, "winner": lane == 2, "group": "fan"},
+                "parallel": {"group": "fan", "number": child, "parent": "fan"},
+                "placement": {"rank": 3 - child, "of": 2, "winner": child == 2, "group": "fan"},
             },
         )
     return repo
@@ -119,33 +119,33 @@ def test_show_labels_the_session_status(
     assert json.loads(capsys.readouterr().out)["status"] == "passed"
 
 
-def test_show_on_a_parent_lists_its_lanes(
+def test_show_on_a_parent_lists_its_children(
     group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["sessions", "show", "fan"]) == 0
     out = capsys.readouterr().out
-    assert "lanes:      2\n" in out
-    lanes = [ln for ln in out.splitlines() if "fan-l" in ln]
-    assert len(lanes) == 2 and "fan-l1" in lanes[0] and "fan-l2" in lanes[1]
-    assert lanes[1].split()[:2] == ["rank", "1/2"] and "passed" in lanes[1]
+    assert "children:      2\n" in out
+    children = [ln for ln in out.splitlines() if "fan-l" in ln]
+    assert len(children) == 2 and "fan-l1" in children[0] and "fan-l2" in children[1]
+    assert children[1].split()[:2] == ["rank", "1/2"] and "passed" in children[1]
     assert main(["sessions", "show", "fan", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
-    assert [ln["session_id"] for ln in data["lanes"]] == ["fan-l1", "fan-l2"]
-    assert data["lanes"][1]["winner"] is True
+    assert [ln["session_id"] for ln in data["children"]] == ["fan-l1", "fan-l2"]
+    assert data["children"][1]["winner"] is True
 
 
-def test_show_on_a_parent_lists_each_lanes_route(
+def test_show_on_a_parent_lists_each_children_route(
     group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["sessions", "show", "fan"]) == 0
     lines = [ln for ln in capsys.readouterr().out.splitlines() if "fan-l" in ln]
-    assert "openai/lane-1" in lines[0]
-    assert "openai/lane-2" in lines[1]
+    assert "openai/child-1" in lines[0]
+    assert "openai/child-2" in lines[1]
 
     assert main(["sessions", "show", "fan", "--json"]) == 0
-    lanes = json.loads(capsys.readouterr().out)["lanes"]
-    assert [lane["model"] for lane in lanes] == ["openai/lane-1", "openai/lane-2"]
-    assert all(lane["model_from_flag"] is True for lane in lanes)
+    children = json.loads(capsys.readouterr().out)["children"]
+    assert [child["model"] for child in children] == ["openai/child-1", "openai/child-2"]
+    assert all(child["model_from_flag"] is True for child in children)
 
 
 def test_stale_parent_does_not_offer_resume(
@@ -168,7 +168,7 @@ def test_stale_parent_does_not_offer_resume(
 def test_show_keeps_a_failed_setups_output_and_network_diagnostic(
     group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A lane's setup failure remains readable when the clone and child streams are gone."""
+    """A child's setup failure remains readable when the clone and child streams are gone."""
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(group), session_id="fan-l1")
     problem = (
         "the setup command failed (exit 1): uv sync --offline\n"
@@ -197,27 +197,27 @@ def test_show_keeps_a_failed_setups_output_and_network_diagnostic(
     assert json.loads(capsys.readouterr().out)["setup_output"] == problem
 
 
-def test_show_on_a_lane_names_its_parent(
+def test_show_on_a_child_names_its_parent(
     group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["sessions", "show", "fan-l1"]) == 0
     out = capsys.readouterr().out
-    assert "lane of:    fan (lane 1 of group fan)" in out
+    assert "child of:    fan (child 1 of group fan)" in out
     assert main(["sessions", "show", "fan-l1", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["parallel"] == {
         "group": "fan",
-        "lane": 1,
+        "number": 1,
         "parent": "fan",
         "config_notes": [],
     }
-    assert data["lanes"] == []
+    assert data["children"] == []
 
 
-def test_show_marks_a_lane_unmerged_like_the_listing(
+def test_show_marks_a_child_unmerged_like_the_listing(
     group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A lane whose branch holds commits its base lacks reads unmerged in the group view."""
+    """A child whose branch holds commits its base lacks reads unmerged in the group view."""
     import subprocess
 
     def git(*args: str) -> str:
@@ -234,7 +234,7 @@ def test_show_marks_a_lane_unmerged_like_the_listing(
     git("checkout", "-q", "agent6/fan-l1")
     (group / "b.txt").write_text("b\n", encoding="utf-8")
     git("add", "b.txt")
-    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "lane work")
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "child work")
     git("checkout", "-q", "main")
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(group), session_id="fan-l1")
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
@@ -246,8 +246,8 @@ def test_show_marks_a_lane_unmerged_like_the_listing(
     (line,) = [ln for ln in out.splitlines() if "fan-l1" in ln]
     assert "unmerged" in line
     assert main(["sessions", "show", "fan", "--json"]) == 0
-    lanes = json.loads(capsys.readouterr().out)["lanes"]
-    assert lanes[0]["session_id"] == "fan-l1" and lanes[0]["unmerged"] is True
+    children = json.loads(capsys.readouterr().out)["children"]
+    assert children[0]["session_id"] == "fan-l1" and children[0]["unmerged"] is True
 
 
 def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
@@ -520,10 +520,10 @@ def test_show_offers_resume_for_a_run_that_stopped_short(
     assert "resume with:  agent6 resume solo-1" in capsys.readouterr().out
 
 
-def test_show_offers_fork_for_a_lane_that_stopped_short(
+def test_show_offers_fork_for_a_child_that_stopped_short(
     group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A stopped lane names `fork`: the resume command it printed was one resume refuses."""
+    """A stopped child names `fork`: the resume command it printed was one resume refuses."""
     _stopped_short(group, "fan-l1", "steer_abort")
 
     assert main(["sessions", "show", "fan-l1"]) == 0
@@ -531,7 +531,7 @@ def test_show_offers_fork_for_a_lane_that_stopped_short(
     out = capsys.readouterr().out
     assert "resume with:" not in out
     assert (
-        "resume:     a lane of the group fan, whose work is on its own branch; `agent6 fork" in out
+        "resume:     a child of the group fan, whose work is on its own branch; `agent6 fork" in out
     )
     assert 'fan-l1 --steer "..."` continues it in a worktree of its own' in out
 
@@ -545,8 +545,8 @@ def test_show_json_and_the_listing_name_the_stop_reason_alike(
     assert shown["stop_reason"] == "finish_session" and "reason" not in shown
 
     assert main(["sessions", "list", "--json"]) == 0
-    lanes = {r["session_id"]: r for r in json.loads(capsys.readouterr().out)[0]["lanes"]}
-    assert (lanes["fan-l1"]["stop_reason"], lanes["fan-l1"]["status_detail"]) == (
+    children = {r["session_id"]: r for r in json.loads(capsys.readouterr().out)[0]["children"]}
+    assert (children["fan-l1"]["stop_reason"], children["fan-l1"]["status_detail"]) == (
         "finish_session",
         "",
     )
@@ -602,11 +602,11 @@ def test_show_names_the_start_gates_verdict_beside_the_final_one(
 def test_status_json_keeps_comparison_on_its_owner(
     group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Lane status names the group; parent status carries its ranking and judge cost."""
+    """Child status names the group; parent status carries its ranking and judge cost."""
     assert main(["sessions", "show", "fan-l2", "--json"]) == 0
-    lane = json.loads(capsys.readouterr().out)
-    assert lane["placement"] == {"group": "fan", "rank": 1, "of": 2, "winner": True}
-    assert lane["comparison"] is None
+    child = json.loads(capsys.readouterr().out)
+    assert child["placement"] == {"group": "fan", "rank": 1, "of": 2, "winner": True}
+    assert child["comparison"] is None
     assert main(["sessions", "show", "fan", "--json"]) == 0
     parent = json.loads(capsys.readouterr().out)
     assert parent["placement"] is None
@@ -624,50 +624,50 @@ def test_status_json_keeps_comparison_on_its_owner(
 
 @pytest.fixture
 def ordinary_parent(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """A run that used `/parallel` once: no group stamp, two lanes by lineage, one record."""
-    from agent6.sessions import lane_dispatch
+    """A run that used `/parallel` once: no group stamp, two children by lineage, one record."""
+    from agent6.sessions import child_dispatch
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
     _session(repo, "co", {})
-    for lane in (1, 2):
+    for child in (1, 2):
         _session(
             repo,
-            f"co-p1-l{lane}",
+            f"co-p1-l{child}",
             {
-                "models": {"driver": {"provider": "openai", "model": f"lane-{lane}"}},
-                "parallel": {"group": "co-p1", "lane": lane, "parent": "co"},
+                "models": {"driver": {"provider": "openai", "model": f"child-{child}"}},
+                "parallel": {"group": "co-p1", "number": child, "parent": "co"},
             },
         )
     parent = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="co")
-    lane_dispatch.write_record(
+    child_dispatch.write_record(
         parent.session_dir,
-        lane_dispatch.DispatchRecord(
+        child_dispatch.DispatchRecord(
             identity="co-p1",
             source="operator",
             owner="exec-1",
             turn=2,
             base="a" * 40,
-            segments=(lane_dispatch.SegmentRecord(task="audit", spec="2", lanes=2),),
+            segments=(child_dispatch.SegmentRecord(task="audit", spec="2", children=2),),
             children=(
-                lane_dispatch.ChildRecord(
+                child_dispatch.ChildRecord(
                     session_id="co-p1-l1",
-                    lane=1,
+                    number=1,
                     task="audit",
-                    join=lane_dispatch.JoinRecord(
+                    join=child_dispatch.JoinRecord(
                         branch="agent6/co-p1-l1", status="joined", sha="b" * 40
                     ),
-                    usage=lane_dispatch.UsageRecord(usd=0.5),
+                    usage=child_dispatch.UsageRecord(usd=0.5),
                     settled=True,
                 ),
-                lane_dispatch.ChildRecord(
+                child_dispatch.ChildRecord(
                     session_id="co-p1-l2",
-                    lane=2,
+                    number=2,
                     task="audit",
-                    join=lane_dispatch.JoinRecord(branch="agent6/co-p1-l2", status="no_changes"),
-                    usage=lane_dispatch.UsageRecord(usd=0.25),
+                    join=child_dispatch.JoinRecord(branch="agent6/co-p1-l2", status="no_changes"),
+                    usage=child_dispatch.UsageRecord(usd=0.25),
                     settled=True,
                 ),
             ),
@@ -680,21 +680,21 @@ def ordinary_parent(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> 
     return repo
 
 
-def test_show_on_an_ordinary_parent_lists_its_lanes_with_their_joins(
+def test_show_on_an_ordinary_parent_lists_its_children_with_their_joins(
     ordinary_parent: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A `/parallel` run is no group: no group line, its lanes listed with their outcomes."""
+    """A `/parallel` run is no group: no group line, its children listed with their outcomes."""
     assert main(["sessions", "show", "co"]) == 0
     out = capsys.readouterr().out
     assert "group:" not in out
-    assert "lanes:      2" in out
-    assert "lane 1" in out and "co-p1-l1" in out and "openai/lane-1" in out
+    assert "children:      2" in out
+    assert "child 1" in out and "co-p1-l1" in out and "openai/child-1" in out
     assert "joined at bbbbbbbbbbbb" in out
-    assert "lane 2" in out and "no changes" in out
+    assert "child 2" in out and "no changes" in out
 
 
-def test_show_on_a_lane_of_an_ordinary_parent_names_it(
+def test_show_on_a_child_of_an_ordinary_parent_names_it(
     ordinary_parent: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["sessions", "show", "co-p1-l1"]) == 0
-    assert "lane of:    co (lane 1 of group co-p1)" in capsys.readouterr().out
+    assert "child of:    co (child 1 of group co-p1)" in capsys.readouterr().out

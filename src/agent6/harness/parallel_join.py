@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Join imported lanes and project their dispatch outcomes into the task graph."""
+"""Join imported children and project their dispatch outcomes into the task graph."""
 
 from __future__ import annotations
 
@@ -9,47 +9,47 @@ from collections.abc import Callable, Sequence
 
 import pydantic
 
-from agent6 import errors, lane_records
+from agent6 import child_records, errors
 from agent6.graph import curator as graph_curator
 from agent6.graph import models as graph_models
 from agent6.harness import dag_focus
-from agent6.sessions import lane_dispatch
+from agent6.sessions import child_dispatch
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 
 
-def join_lane_result(
+def join_child_result(
     root: pathlib.Path,
-    res: lane_records.LaneResult,
+    res: child_records.ChildResult,
     *,
     ref: str,
     fallback_parent: str | None,
     identity: git_read.CommitIdentity | None,
     also_branch: str | None,
-) -> lane_records.LaneJoin:
-    """Join one returned lane's branch onto the parent's chain.
+) -> child_records.ChildJoin:
+    """Join one returned child's branch onto the parent's chain.
 
-    `chain_merge` leaves HEAD and the operator's checkout alone; the worktree gains the lane's
+    `chain_merge` leaves HEAD and the operator's checkout alone; the worktree gains the child's
     files. Never raises; the DAG stamp is the segment's (`segment_stamp`).
 
     Args:
         root: The repository root.
-        res: The lane's result.
+        res: The child's result.
         ref: The chain ref the merge lands on.
         fallback_parent: The parent an unborn ref merges onto, or None.
         identity: The merge commit's identity, or None for the repo's.
         also_branch: A checked-out branch to move with the ref, or None.
 
     Returns:
-        `joined` with the sha, `no_changes` for a lane whose imported tip holds no commit
-        beyond its base (nothing merged), `conflict`, or `failed` for a lane that imported
+        `joined` with the sha, `no_changes` for a child whose imported tip holds no commit
+        beyond its base (nothing merged), `conflict`, or `failed` for a child that imported
         nothing.
     """
     rid = res.spec.session_id
     if not res.ok:
-        return lane_records.LaneJoin(rid, res.branch, "failed", "", res.error)
+        return child_records.ChildJoin(rid, res.branch, "failed", "", res.error)
     if not res.has_commits:
-        return lane_records.LaneJoin(rid, res.branch, "no_changes", "", res.stopped_by)
+        return child_records.ChildJoin(rid, res.branch, "no_changes", "", res.stopped_by)
     try:
         sha = git_ops.chain_merge(
             root,
@@ -61,34 +61,36 @@ def join_lane_result(
             also_branch=also_branch,
         )
     except (errors.GitError, OSError) as exc:
-        return lane_records.LaneJoin(rid, res.branch, "failed", "", str(exc))
+        return child_records.ChildJoin(rid, res.branch, "failed", "", str(exc))
     if sha is None:
-        return lane_records.LaneJoin(rid, res.branch, "conflict", "", "merge conflict")
-    return lane_records.LaneJoin(rid, res.branch, "joined", sha, res.stopped_by)
+        return child_records.ChildJoin(rid, res.branch, "conflict", "", "merge conflict")
+    return child_records.ChildJoin(rid, res.branch, "joined", sha, res.stopped_by)
 
 
-def segment_stamp(lanes: list[lane_records.LaneJoin]) -> tuple[graph_models.NodeStatus, str, str]:
-    """Reduce one segment's lane joins to its DAG stamp.
+def segment_stamp(
+    children: list[child_records.ChildJoin],
+) -> tuple[graph_models.NodeStatus, str, str]:
+    """Reduce one segment's child joins to its DAG stamp.
 
-    A segment passes when any lane joined or finished with no changes, recording the last
-    joined sha (none for no changes); the note names every lane. A conflict counts as not
-    joined, and so does a lane its parent stopped before it changed anything.
+    A segment passes when any child joined or finished with no changes, recording the last
+    joined sha (none for no changes); the note names every child. A conflict counts as not
+    joined, and so does a child its parent stopped before it changed anything.
 
     Args:
-        lanes: The segment's joins.
+        children: The segment's joins.
 
     Returns:
         The status, the note and the sha ("" when failed).
     """
-    joined = [j for j in lanes if j.status == "joined"]
-    note = "; ".join(lane_note(j) for j in lanes)
-    if joined or any(j.status == "no_changes" and not j.detail for j in lanes):
+    joined = [j for j in children if j.status == "joined"]
+    note = "; ".join(child_note(j) for j in children)
+    if joined or any(j.status == "no_changes" and not j.detail for j in children):
         return "passed", note, joined[-1].sha if joined else ""
     return "failed", note, ""
 
 
-def lane_note(j: lane_records.LaneJoin) -> str:
-    """Return one lane's outcome as a DAG note line."""
+def child_note(j: child_records.ChildJoin) -> str:
+    """Return one child's outcome as a DAG note line."""
     stopped = f" ({j.detail})" if j.detail else ""
     if j.status == "joined":
         return f"{j.session_id} joined at {j.sha[:12]}{stopped}"
@@ -101,24 +103,24 @@ def lane_note(j: lane_records.LaneJoin) -> str:
     return f"{j.session_id} failed: {j.detail}"
 
 
-def summary_text(group: str, lanes: list[lane_records.LaneJoin]) -> str:
-    """Return the one message that gives every lane's outcome and what the lane said.
+def summary_text(group: str, children: list[child_records.ChildJoin]) -> str:
+    """Return the one message that gives every child's outcome and what the child said.
 
     Args:
         group: The dispatch's group id.
-        lanes: Each lane's join, in dispatch order.
+        children: Each child's join, in dispatch order.
 
     Returns:
-        One line per lane, with the lane's finish summary under it as its journal holds it
+        One line per child, with the child's finish summary under it as its journal holds it
         (2,000 characters at most).
     """
-    lines = [f"[parallel] group {group} complete ({len(lanes)} lane(s)):"]
-    for j in lanes:
+    lines = [f"[parallel] group {group} complete ({len(children)} child(ren)):"]
+    for j in children:
         if j.status == "joined":
             stopped = f" ({j.detail})" if j.detail else ""
             lines.append(f"  - {j.session_id} ({j.branch}): joined at {j.sha[:12]}{stopped}")
         elif j.status == "no_changes":
-            # A lane its parent stopped did not finish: the line says what stopped it.
+            # A child its parent stopped did not finish: the line says what stopped it.
             ended = j.detail or "finished"
             lines.append(f"  - {j.session_id} ({j.branch}): {ended} with no changes to join.")
         elif j.status == "conflict":
@@ -141,19 +143,19 @@ def summary_text(group: str, lanes: list[lane_records.LaneJoin]) -> str:
     return "\n".join(lines)
 
 
-def rank_summary(lanes: Sequence[lane_records.LaneJoin]) -> str:
-    """Return what a rank join did, for the operator: one line per lane, in lane order.
+def rank_summary(children: Sequence[child_records.ChildJoin]) -> str:
+    """Return what a rank join did, for the operator: one line per child, in child order.
 
     Args:
-        lanes: Each lane's join.
+        children: Each child's join.
 
     Returns:
-        The count line and each lane's outcome: joined, changed nothing, its place with the
+        The count line and each child's outcome: joined, changed nothing, its place with the
         branch that holds its work, or its failure.
     """
-    ranked = sum(1 for j in lanes if j.status in ("joined", "no_changes", "ranked"))
-    lines = [f"{ranked} of {len(lanes)} lane(s) ranked:"]
-    for j in lanes:
+    ranked = sum(1 for j in children if j.status in ("joined", "no_changes", "ranked"))
+    lines = [f"{ranked} of {len(children)} child(ren) ranked:"]
+    for j in children:
         if j.status == "joined":
             what = f"first; joined at {j.sha[:12]}"
         elif j.status == "no_changes":
@@ -168,12 +170,12 @@ def rank_summary(lanes: Sequence[lane_records.LaneJoin]) -> str:
     return "\n".join(lines)
 
 
-def join_of(child: lane_dispatch.ChildRecord) -> lane_records.LaneJoin:
-    """Return a recorded lane's join; a lane never joined reads as failed."""
+def join_of(child: child_dispatch.ChildRecord) -> child_records.ChildJoin:
+    """Return a recorded child's join; a child never joined reads as failed."""
     join = child.join
     if join is None:
-        return lane_records.LaneJoin(child.session_id, "", "failed", "", "not joined")
-    return lane_records.LaneJoin(
+        return child_records.ChildJoin(child.session_id, "", "failed", "", "not joined")
+    return child_records.ChildJoin(
         child.session_id, join.branch, join.status, join.sha, join.detail, child.report
     )
 
@@ -192,7 +194,7 @@ def add_parallel_node(
     task: str,
     parent_id: str | None,
     *,
-    source: lane_records.DispatchSource = "operator",
+    source: child_records.DispatchSource = "operator",
     log: Callable[[str], None],
 ) -> str | None:
     """Add a steering-created DAG node for one dispatched task.
@@ -264,10 +266,10 @@ def stamp_parallel_node(
 def stamp_segment_node(
     curator: graph_curator.GraphCurator | None,
     node_id: str | None,
-    lanes: list[lane_records.LaneJoin],
+    children: list[child_records.ChildJoin],
     *,
     log: Callable[[str], None],
 ) -> None:
-    """Stamp one segment's DAG node from its lanes' joins (`segment_stamp`)."""
-    status, note, sha = segment_stamp(lanes)
+    """Stamp one segment's DAG node from its children's joins (`segment_stamp`)."""
+    status, note, sha = segment_stamp(children)
     stamp_parallel_node(curator, node_id, status=status, note=note, sha=sha, log=log)

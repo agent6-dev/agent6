@@ -300,12 +300,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         "--json",
         action="store_true",
         help="Emit the rows as a JSON array (directory, repo_id, id, mode, status, pid, attached,"
-        " parent, worktree, lanes).",
+        " parent, worktree, children).",
     )
     ps_p.add_argument(
-        "--lanes",
+        "--children",
         action="store_true",
-        help="List each group's live lanes under its row (folded into a count otherwise;"
+        help="List each group's live children under its row (folded into a count otherwise;"
         " the JSON form nests them always).",
     )
 

@@ -51,9 +51,9 @@ SessionEndReason = Literal[
     "ask_repl_empty",
     "gate_stale",
     "gate_red_at_base",
-    "lanes_ranked",
-    "no_lane_result",
-    "no_lane_passed",
+    "children_ranked",
+    "no_child_result",
+    "no_child_passed",
 ]
 
 
@@ -94,10 +94,10 @@ class SessionResult:
         gate_stale: the worker finished over a red gate it declares stale, with a replacement
             proposed; the gate is unchanged and the run does not pass.
         gate_red_at_base: the gate was red before the run touched anything.
-        lanes_ranked: a group's lanes ran and were ranked; no model finished it (the app
+        children_ranked: a group's children ran and were ranked; no model finished it (the app
             layer).
-        no_lane_result: no lane of a group produced a rankable result (the app layer).
-        no_lane_passed: no lane of a group went green (the app layer).
+        no_child_result: no child of a group produced a rankable result (the app layer).
+        no_child_passed: no child of a group went green (the app layer).
 
     Attributes:
         completed: Whether the model stopped deliberately; never whether the work verified.
@@ -203,7 +203,7 @@ class SessionSnapshot(pydantic.BaseModel):
         ok_tool_calls: The executed dispatches, for the standing spin guard.
         standing_tools_mark: The dispatch count at the last standing re-entry, -1 before any.
         standing_fruitless: The fruitless standing re-entries in a row.
-        parallel_groups_dispatched: The /parallel groups dispatched, run-lifetime because lane
+        parallel_groups_dispatched: The /parallel groups dispatched, run-lifetime because child
             ids embed the group number.
         pins: The operator's /pin texts, re-injected after every context restart.
         delivered_questions: The queued questions whose answers the model has read.

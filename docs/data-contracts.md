@@ -28,12 +28,12 @@ Scan session dirs into the listing rows every front-end's hub shows.
 
 **summary_row** &mdash; Return one listing row as JSON, the shape `sessions list --json` and `/api/hub` share.
 
-**row_json** &mdash; Return a listing row and its nested lanes as JSON.
+**row_json** &mdash; Return a listing row and its nested children as JSON.
 
 Public fields: [Formats](formats.md#cli-json).
 
 - **Written by:** ui/cli/sessions_cmds, ui/web/model
-- **Read by:** app/{btw, compare, finalize, fork, fork_worktrees, lane_watch, lanes, merge_plan, preflight, resume, run, stop}, app/review/recap, harness/review/session, ui/{mcp_server, spawn}, ui/acp/session, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home, new_work}, ui/web/{actions, git_model, review_routes, sse}, viewmodel/{__init__, lanes, wire}, viewmodel/session/view
+- **Read by:** app/{btw, child_wait, children, compare, finalize, fork, fork_worktrees, merge_plan, preflight, resume, run, stop}, app/review/recap, harness/review/session, ui/{mcp_server, spawn}, ui/acp/session, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home, new_work}, ui/web/{actions, git_model, review_routes, sse}, viewmodel/{__init__, children, wire}, viewmodel/session/view
 - **Guarded by:** [test_cli_sessions_list.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_cli_sessions_list.py) (27 test files exercise it)
 
 ## CLI session status
@@ -130,7 +130,7 @@ Public fields: [Formats](formats.md#typed-records).
 
 - **Written by:** app/review/actions, harness/review/{gate, history, panel, verdict}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
 - **Read by:** kinds, app/execution, app/review/directive, harness/{loop, loop_state, repo_context, run_chain}, sessions/completion, ui/acp/review, ui/tui/{diff_pane, review}, vcs/review_rule_reader, viewmodel/review
-- **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_verdict.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_verdict.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (21 test files exercise it)
+- **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_reviewer.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_reviewer.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (21 test files exercise it)
 
 ## Conversation
 
@@ -155,7 +155,7 @@ The manifest.json shape and its one reader; `app.stamps` is the writer.
 Public fields: [Formats](formats.md#sessionmanifest).
 
 - **Written by:** app/stamps
-- **Read by:** app/{compare, execution, finalize, fork, fork_worktrees, lane_launch, lanes, merge, merge_message, merge_plan, parallel_results, preflight, resume, resume_chain, run, undo, worktree_setup, worktrees}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/mcp_server, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/model, viewmodel/{comparison, format, lanes, listing, policy, receipt, wire}, viewmodel/session/{status, view}
+- **Read by:** app/{child_launch, children, compare, execution, finalize, fork, fork_worktrees, merge, merge_message, merge_plan, parallel_results, preflight, resume, resume_chain, run, undo, worktree_setup, worktrees}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/mcp_server, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/model, viewmodel/{children, comparison, format, listing, policy, receipt, wire}, viewmodel/session/{status, view}
 - **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (49 test files exercise it)
 
 ## SessionSnapshot
@@ -229,7 +229,7 @@ Read logs.jsonl rows into the journal's records, with the coercions old session 
 Public fields: [Formats](formats.md#journal).
 
 - **Written by:** viewmodel/events
-- **Read by:** app/lanes, harness/review/session, ui/cli/{ask, console_render, machine_cmds, plan_watch, repl}, ui/tui/machines, viewmodel/{__init__, listing, log_line, review, telemetry, transcript, transcript_items, transcript_text}, viewmodel/session/{core, log, state}
+- **Read by:** app/children, harness/review/session, ui/cli/{ask, console_render, machine_cmds, plan_watch, repl}, ui/tui/machines, viewmodel/{__init__, listing, log_line, review, telemetry, transcript, transcript_items, transcript_text}, viewmodel/session/{core, log, state}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (8 test files exercise it)
 
 ## MachineSpec

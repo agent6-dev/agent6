@@ -140,7 +140,7 @@ class Sessions:
                     state_dir, row.summary.session_id, subdir=bucket
                 )
                 if listing.resume_blocker(saved.session_dir):
-                    continue  # a parent, a lane, a run without a checkpoint: not reopened
+                    continue  # a parent, a child, a run without a checkpoint: not reopened
                 when = (
                     datetime.datetime.fromtimestamp(
                         row.group_last_activity, tz=datetime.UTC
@@ -423,11 +423,11 @@ def _refuse_editor_extras(params: dict[str, Any]) -> None:
 
 
 def _flat(rows: list[listing.ListingRow]) -> list[listing.ListingRow]:
-    """Return the rows and their lanes, each once, in listing order."""
+    """Return the rows and their children, each once, in listing order."""
     out: list[listing.ListingRow] = []
     for row in rows:
         out.append(row)
-        out.extend(_flat(list(row.lanes)))
+        out.extend(_flat(list(row.children)))
     return out
 
 

@@ -56,7 +56,7 @@ def tool_definitions(
         ):
             continue  # no skills: the tool could only error
         if cls is tools_schema.ParallelInput and not dispatcher.parallel_available():
-            continue  # off by config, a child or no lane dispatcher
+            continue  # off by config, a child or no child dispatcher
         description = cls.TOOL_DESCRIPTION
         if cls is tools_schema.ListFindingsInput and dispatcher.session_id:
             description = description.replace("<session_id>", dispatcher.session_id)
@@ -92,8 +92,8 @@ def parallel_description(cfg: Config) -> str:
 
     Returns:
         The contract, the spec grammar, every role's route, effort and temperature with where
-        an inherited value comes from, the provider names (never their settings), the lane
-        ceilings, and that a lane edits like any run.
+        an inherited value comes from, the provider names (never their settings), the child
+        ceilings, and that a child edits like any run.
     """
     roles: list[str] = []
     for role in kinds.MODEL_ROLES:
@@ -126,9 +126,9 @@ def parallel_description(cfg: Config) -> str:
         tools_schema.ParallelInput.TOOL_DESCRIPTION
         + " Roles: "
         + "; ".join(roles)
-        + f". Configured providers: {providers}. Each lane is an ordinary run that may edit,"
+        + f". Configured providers: {providers}. Each child is an ordinary run that may edit,"
         " under"
-        " 200 turns, 30 minutes and this run's remaining budget, which the lanes share; the"
-        " result names each lane's join and gives the summary it finished with, and"
-        " `read_session` reads a lane's transcript."
+        " 200 turns, 30 minutes and this run's remaining budget, which the children share; the"
+        " result names each child's join and gives the summary it finished with, and"
+        " `read_session` reads a child's transcript."
     )

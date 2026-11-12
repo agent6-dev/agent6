@@ -140,7 +140,7 @@ CONTRACTS: tuple[Contract, ...] = (
             "tests/unit/test_review_loop.py",
             "tests/unit/test_review_panel.py",
             "tests/unit/test_review_records.py",
-            "tests/unit/test_review_verdict.py",
+            "tests/unit/test_reviewer.py",
             "tests/web/test_findings.py",
         ),
     ),

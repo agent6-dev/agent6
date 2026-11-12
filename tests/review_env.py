@@ -7,7 +7,7 @@ import tempfile
 from collections.abc import Sequence
 from typing import Any, Protocol
 
-from agent6 import budget, kinds, lane_records, media, review_records
+from agent6 import budget, child_records, kinds, media, review_records
 from agent6.config import Config
 from agent6.harness import loop, operator_bridge, parallel_dispatch, provider_call, run_chain
 from agent6.harness.review import gate as review_gate
@@ -103,9 +103,9 @@ def run_panel(
         cfg = Config.model_validate({"sandbox": {"isolation": "none", "protect_git": "off"}})
 
         def spawn(
-            lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
-        ) -> list[lane_records.LaneResult]:
-            def one(pair: tuple[int, lane_records.LaneTask]) -> lane_records.LaneResult:
+            children: list[child_records.ChildTask], group: str, *, at: str | None = None
+        ) -> list[child_records.ChildResult]:
+            def one(pair: tuple[int, child_records.ChildTask]) -> child_records.ChildResult:
                 index, request = pair
                 assert request.contract is not None and request.contract.review_binding is not None
                 provider, capabilities = _providers[
@@ -152,8 +152,8 @@ def run_panel(
                     assert harness.events is not None
                     harness.events.subscribe(media_event)
                 harness.run(request.task)
-                return lane_records.LaneResult(
-                    lane_records.LaneSpec(index, sid, repo, request.settings, mode="reviewer"),
+                return child_records.ChildResult(
+                    child_records.ChildSpec(index, sid, repo, request.settings, mode="reviewer"),
                     child,
                     "",
                     True,
@@ -161,21 +161,21 @@ def run_panel(
                     usage=budget.UsageSettlement(usd=0, usd_partial=False, tokens=0),
                 )
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=len(lanes)) as pool:
-                return list(pool.map(one, enumerate(lanes, 1)))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(children)) as pool:
+                return list(pool.map(one, enumerate(children, 1)))
 
         executor = parallel_dispatch.ParallelDispatcher(
             chain=run_chain.RunChain(repo, ref=None, fallback_parent=None, per_turn=False),
             curator=None,
-            max_lanes=4,
-            lane_spawner=spawn,
+            max_children=4,
+            child_spawner=spawn,
             save_snapshot=lambda *_a, **_k: None,
             log=lambda _m: None,
             emit=lambda *_a, **_k: None,
             emit_graph_snapshot=lambda: None,
             session_id="parent",
             session_dir=directory,
-            authority=lane_records.DispatchAuthority(panels=True),
+            authority=child_records.DispatchAuthority(panels=True),
         )
         return _run_panel(reviewers, ctx, target=target, executor=executor, **kwargs)
 

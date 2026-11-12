@@ -581,7 +581,7 @@ def test_status_of_a_provider_failure_keeps_the_providers_error(
 def test_status_shows_compare_outcome(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions show` prints where a lane placed in its group, with the judge's rationale.
+    """`sessions show` prints where a child placed in its group, with the judge's rationale.
 
     The JSON carries the raw compare block.
     """
@@ -864,7 +864,7 @@ def test_worker_is_alive_reads_a_foreign_owned_pid_as_dead(
 
     A worker is always spawned by the probing user, so PermissionError means the worker died and the
     kernel reused the number. Reading it as alive renders a crashed run "running" forever and hangs
-    the `/parallel` lane await.
+    the `/parallel` child await.
     """
     if os.geteuid() == 0:
         pytest.skip("root can signal any pid; the foreign-owner probe needs a non-root euid")
@@ -936,7 +936,7 @@ def test_a_nonpositive_recorded_pid_never_reads_alive(tmp_path: pathlib.Path) ->
     """A worker.pid holding 0 or -1 never reads alive.
 
     `os.kill(0, 0)` signals the process group and `os.kill(-1, 0)` every process, so both succeed;
-    read as alive, such a pid refuses resume and hangs the `/parallel` lane await forever. The
+    read as alive, such a pid refuses resume and hangs the `/parallel` child await forever. The
     worker probe guards it like the front-end probe.
     """
     for junk in ("0", "-1"):

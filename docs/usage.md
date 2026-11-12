@@ -122,7 +122,7 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 - `/task <text>` adds work to the task graph (the turn in flight never sees it); `/retire <id>` drops a task, by the number `sessions graph` prints
 - `/standing <text>` sets the goal the run returns to whenever its queue drains, replacing any it had
 - `/pin <text>` survives every compaction; `/compact [focus]` compacts now; `/now <text>` interrupts the call in flight
-- `/btw <question>` asks a side question; `/parallel [SPEC --] TASK` fans out lanes ([parallel](config.md#harnessparallel))
+- `/btw <question>` asks a side question; `/parallel [SPEC --] TASK` dispatches children ([parallel](config.md#harnessparallel))
 - `/review [TARGET]` reviews changes in the session ([targets and worktrees](#plan-review-and-ask))
 - `/undo` is available in the TUI, web, a `run -i` prompt, or a live run's pause menu (Ctrl-C), so `agent6 steer` refuses it:
   - it takes back the last message
@@ -134,18 +134,18 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 
 ### Parallel directive
 
-`/parallel [SPEC --] TASK` runs a task in isolated lanes, including as the first prompt to `agent6 run`, through the same dispatch as `run --parallel SPEC TASK`.
-A lane is a child of the run that dispatched it: the parent hands down, the child pushes up, and the root is the one owner.
-The lane gets its config, task and remaining budget from its parent; its approvals, questions and spend go up to the parent while it runs; its work and memory reach the repository only when the parent imports it at its end.
-Its record is in the repository's state from its first event, so `sessions list --lanes`, `attach` and the hubs read a lane while it runs.
-The two land differently: a live run's steer merges each lane's work onto the run's chain in dispatch order, and `run --parallel` joins one lane.
-`run --parallel` is a run that makes no model call of its own: [`harness.parallel.judges`](config.md#harnessparallel) rank the lanes, the first-ranked lane joins the run's branch, the run's own gate judges the result, and the run ends `finished · lanes ranked`.
-The other lanes keep their branches, so `agent6 sessions merge <lane>` still lands one by hand.
-`SPEC` is a positive lane count or a comma-separated list of selectors, the same as `run --parallel`.
+`/parallel [SPEC --] TASK` runs a task in isolated children, including as the first prompt to `agent6 run`, through the same dispatch as `run --parallel SPEC TASK`.
+A child belongs to the run that dispatched it: the parent hands down, the child pushes up, and the root is the one owner.
+The child gets its config, task and remaining budget from its parent; its approvals, questions and spend go up to the parent while it runs; its work and memory reach the repository only when the parent imports it at its end.
+Its record is in the repository's state from its first event, so `sessions list --children`, `attach` and the hubs read a child while it runs.
+The two land differently: a live run's steer merges each child's work onto the run's chain in dispatch order, and `run --parallel` joins one child.
+`run --parallel` is a run that makes no model call of its own: [`harness.parallel.judges`](config.md#harnessparallel) rank the children, the first-ranked child joins the run's branch, the run's own gate judges the result, and the run ends `finished · children ranked`.
+The other children keep their branches, so `agent6 sessions merge <child>` still lands one by hand.
+`SPEC` is a positive child count or a comma-separated list of selectors, the same as `run --parallel`.
 A selector is an exact role name (`default`, `worker`, `planner`, `reviewer`, `helper`), which brings that role's model, effort and temperature together, or `[provider/]model`, which runs that model with the worker's effort and temperature; a model named like a role is written `provider/reviewer`.
 The spec ends at a whitespace-delimited `--` token.
-Without `--`, the whole segment is task text for one default lane, even if it starts with a path, a number or a model name.
-A bare `--`, a missing task, or more lanes than `[harness.parallel].max_lanes` across the message's segments is refused with the reason.
+Without `--`, the whole segment is task text for one default child, even if it starts with a path, a number or a model name.
+A bare `--`, a missing task, or more children than `[harness.parallel].max_children` across the message's segments is refused with the reason.
 
 ```text
 /parallel src/x.py: add a test
@@ -158,30 +158,30 @@ Repeat the `/parallel` token to batch tasks in one message.
 Each segment has its own optional spec and separator.
 Task text keeps its internal whitespace and newlines, including later `--` tokens.
 
-When the lanes return, each joins the run's chain in dispatch order and one notice names every outcome: `joined at <sha>`, `finished with no changes to join` (the lane ended with a result and committed nothing), `CONFLICT` (the merge is left for the operator) or `FAILED` with the reason.
-Under a lane's line the notice gives the summary the lane finished with (`summary: ...`), so a lane sent to find something out answers its parent without a commit.
-A lane the run ended at its deadline or at its budget says so on its line (`stopped at the run's budget with no changes to join`, `joined at <sha> (ended at its deadline)`), and a task whose lanes were all ended before changing anything is marked failed.
+When the children return, each joins the run's chain in dispatch order and one notice names every outcome: `joined at <sha>`, `finished with no changes to join` (the child ended with a result and committed nothing), `CONFLICT` (the merge is left for the operator) or `FAILED` with the reason.
+Under a child's line the notice gives the summary the child finished with (`summary: ...`), so a child sent to find something out answers its parent without a commit.
+A child the run ended at its deadline or at its budget says so on its line (`stopped at the run's budget with no changes to join`, `joined at <sha> (ended at its deadline)`), and a task whose children were all ended before changing anything is marked failed.
 
 ### The parallel tool
 
-With `harness.parallel.tool = true` ([parallel](config.md#harnessparallel)), a run's model is offered the `parallel` tool: `task` (required) and `spec` (the same grammar as `--parallel`, empty for one default lane).
-The call dispatches through the `/parallel` path: a checkpoint, fresh clones of the committed tree, the lanes joined back in dispatch order, each lane starting under the run's remaining budget, which the lanes share; the result returns as the tool's answer, naming each lane's join.
-Each lane is an ordinary run with the same tools as the parent: it may edit its clone, and its commits land on the parent's chain when it joins; a lane runs under 200 turns, 30 minutes and the run's remaining budget.
-The run counts its lanes' spend while they run and ends them once the sum reaches a cap, so the total can pass the cap by what was in flight.
+With `harness.parallel.tool = true` ([parallel](config.md#harnessparallel)), a run's model is offered the `parallel` tool: `task` (required) and `spec` (the same grammar as `--parallel`, empty for one default child).
+The call dispatches through the `/parallel` path: a checkpoint, fresh clones of the committed tree, the children joined back in dispatch order, each child starting under the run's remaining budget, which the children share; the result returns as the tool's answer, naming each child's join.
+Each child is an ordinary run with the same tools as the parent: it may edit its clone, and its commits land on the parent's chain when it joins; a child runs under 200 turns, 30 minutes and the run's remaining budget.
+The run counts its children's spend while they run and ends them once the sum reaches a cap, so the total can pass the cap by what was in flight.
 The tool's description names every role's resolved model, effort and temperature and the configured providers, so the model can pick a selector such as `reviewer`.
-The tool is offered only in run mode, never inside a child and never in a front-end without a lane dispatcher; a call that slips past the list is refused with the reason.
-A worker lane's configured harness panel retains authority to create bounded read-only leaves; neither the worker's model nor its `/parallel` steer may dispatch work.
+The tool is offered only in run mode, never inside a child and never in a front-end without a child dispatcher; a call that slips past the list is refused with the reason.
+A worker child's configured harness panel may still run its reviewers; neither the worker's model nor its `/parallel` steer may dispatch work.
 The knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel.
 
 A `run --parallel` run made no model call: `agent6 resume <id> --steer "..."` continues it from the joined work with the worker model.
-`agent6 stop ID` on a session with live lanes stops its descendants too, by the lineage their manifests record, including read-only leaves behind a worker that already ended.
+`agent6 stop ID` on a session with live children stops its descendants too, by the lineage their manifests record, including reviewers behind a worker that already ended.
 Worker import preserves descendant records and receipts in the original repository's state directory before clone cleanup.
 Their spend is included in the worker's total, not an extra charge, and their evidence certifies only the child's reviewed target, not the top-level tree.
-A lane that needs an approval, or waits on an `ask_user`, asks on the run that dispatched it: the prompt names the lane, and a standing answer given there covers the run's lanes.
-A question nobody answers on that run (`away mode deny`) returns `unanswered` to the lane with the same note; a question the lane queued (`wait: false`) stays on the lane's own row.
-A run interrupted while its lanes ran finishes that dispatch first when resumed: lanes still running are stopped, finished ones are imported and joined once, their spend is settled once, and the model hears the group's outcome before its first call.
-Every session that dispatched lanes shows them: `sessions show`, the hubs and `attach --json` list a run's lanes under it whether it is a `run --parallel` group or a run that used `/parallel`, and the run's receipt carries a `Lanes` section (one line per lane: its join, its spend) with the spend the lanes added to the run's total named, so the total is read as inclusive.
-The refusal names the lane session IDs.
+A child that needs an approval, or waits on an `ask_user`, asks on the run that dispatched it: the prompt names the child, and a standing answer given there covers the run's children.
+A question nobody answers on that run (`away mode deny`) returns `unanswered` to the child with the same note; a question the child queued (`wait: false`) stays on the child's own row.
+A run interrupted while its children ran finishes that dispatch first when resumed: children still running are stopped, finished ones are imported and joined once, their spend is settled once, and the model hears the group's outcome before its first call.
+Every session that dispatched children shows them: `sessions show`, the hubs and `attach --json` list a run's children under it whether it is a `run --parallel` group or a run that used `/parallel`, and the run's receipt carries a `Children` section (one line per child: its join, its spend) with the spend the children added to the run's total named, so the total is read as inclusive.
+The refusal names the child session IDs.
 While a steer waits on disk, `sessions show`, the TUI header and the web session status show `steer queued, not yet delivered` with its text and the count waiting behind it.
 Steers sent while one waits queue in order and reach the model one per step; `abort`, `exit`, `/undo` and `detach` take the slot at once.
 The pending label clears when the worker consumes the last steer.
@@ -215,8 +215,8 @@ State is snapshotted before each model call and checkpointed per turn.
   A plan or ask fork uses the current checkout without edit tools or automatic commits; approved commands can still modify files.
   `sessions prune` keeps a fork that has not started: its branch, chain ref and worktree stay.
 - `--at-turn 0` on a run that is itself a fork picks the seed it started from, before anything it did; the fork line says so
-- a `--parallel` lane continues through `agent6 fork <lane-id>`, in a worktree at the lane's last commit; `resume` refuses a lane from your checkout, whose tree is not the lane's
-- a `run --parallel` run whose budget ended every lane reads `failed · budget exhausted` and exits `3`; each stopped lane continues through `agent6 fork <lane-id>`
+- a `--parallel` child continues through `agent6 fork <child-id>`, in a worktree at the child's last commit; `resume` refuses a child from your checkout, whose tree is not the child's
+- a `run --parallel` run whose budget ended every child reads `failed · budget exhausted` and exits `3`; each stopped child continues through `agent6 fork <child-id>`
 - the first `--steer` on a fork becomes the fork's task and names its row and its merge subject; later steers are continuations
 - a resume with `--steer` keeps the original session label, with the latest steer beneath it as `continued: <steer>`; new questions in an ask REPL are not continuations
 - under the `agent6` and `conventional` squash message styles, a resumed run's merge keeps the task as its subject (`conventional` prefixes it with the type and scope), with `continued: <steer>` in the body
@@ -271,19 +271,19 @@ agent6 ask "how does the task-graph curator work?"
 - every `sessions review` is saved under `<state-dir>/reviews/`; the path prints on stderr
 - `ask` runs in any directory; `run` and `plan` need a git repository
 
-In-loop panels run each reviewer as a read-only lane with its own session, and record their findings and reviewed tree IDs in the session journal.
-Each batch's reviewers start under what the run has left; batches use at most `review.concurrency` and `harness.parallel.max_lanes` reviewers, without truncating the roster.
+In-loop panels run each reviewer as a child with its own session, and record their findings and reviewed tree IDs in the session journal.
+Each batch's reviewers start under what the run has left; batches use at most `review.concurrency` and `harness.parallel.max_children` reviewers, without truncating the roster.
 Results keep roster order even when reviewers finish in another order.
 A reviewer opens on the task, the rules, the verification and the diff, and investigates a clone of the retained snapshot with the tools its run has: the reading tools, and `run_command` with its background commands, `run_verify_command`, `fetch`, `read_session` and `use_skill` where the run's model is offered them.
 A reviewer edits nothing and dispatches nothing; `sandbox.run_commands = "deny"` withholds `run_command` and `run_verify_command` from a reviewer as it does from the run.
 A reviewer takes at most `review.max_turns` turns.
-Each reviewer has a session of its own, named on the receipt and the findings card; no listing counts it among the run's lanes.
+Each reviewer has a session of its own, named on the receipt and the findings card; no listing counts it among the run's children.
 A reviewer still running 30 minutes after its batch started is stopped and abstains; batches run one after another, each with its own 30 minutes.
 Failed or unparseable reviewers remain abstentions with their diagnostics; an all-abstain panel is inconclusive, not a clean review.
 Child review does not certify a later or different parent tree.
 Session-owned panels retain a cloneable snapshot of the exact comparison, including uncommitted work after failed verification and with `git.commit_per_turn = false`.
 Snapshotting does not checkpoint the run or move HEAD, the index or visible branches.
-`sessions remove <id>` deletes the session's review snapshot refs, its lanes' records and its reviewers' records with its record; `sessions remove --asks --yes` does the same for the removed asks, while `sessions prune` leaves review snapshots alone.
+`sessions remove <id>` deletes the session's review snapshot refs, its children's records and its reviewers' records with its record; `sessions remove --asks --yes` does the same for the removed asks, while `sessions prune` leaves review snapshots alone.
 The snapshot certifies only its recorded trees and path coverage, not later parent edits.
 Under `git.control = "model"` a panel compares the base recorded at the start with the checkout's HEAD and its uncommitted edits, since the model's commits are the record.
 An exact repeat on the same cited blob keeps its finding ID across rounds and resumes.
@@ -413,9 +413,9 @@ The verify command is the success gate.
 
 ## Worktrees
 
-`run --worktree`, a run-mode fork, each `--parallel` lane and a run-mode machine state work in a worktree of their own.
+`run --worktree`, a run-mode fork, each `--parallel` child and a run-mode machine state work in a worktree of their own.
 
-- `[git.worktree].kind` chooses the worktree of a fork and a `--worktree` run: `clone` (the default), a clone of the repository whose commits agent6 copies into the repository as the run makes them, or `linked`, a linked git worktree; a lane, a reviewer and a machine state work in a clone.
+- `[git.worktree].kind` chooses the worktree of a fork and a `--worktree` run: `clone` (the default), a clone of the repository whose commits agent6 copies into the repository as the run makes them, or `linked`, a linked git worktree; a child, a reviewer and a machine state work in a clone.
 - It starts with the repository's tracked files at the commit it was cut from: no uncommitted change, and nothing git does not track (`.venv`, `node_modules`, a build directory).
 - `[git.worktree].setup_command` builds what is missing; it runs once in each new worktree, before the first turn:
 
@@ -423,14 +423,14 @@ The verify command is the success gate.
     agent6 config set --repo git.worktree.setup_command '["uv", "sync"]'
     ```
 
-- Unset, a `## Setup command` fenced block in AGENTS.md supplies it; a `--worktree` run and a lane read it from the commit the worktree is cut from, not from an uncommitted edit, and print the command and that AGENTS.md gave it.
+- Unset, a `## Setup command` fenced block in AGENTS.md supplies it; a `--worktree` run and a child read it from the commit the worktree is cut from, not from an uncommitted edit, and print the command and that AGENTS.md gave it.
     - an AGENTS.md that is a symlink is not read there: set `git.worktree.setup_command`
 - The command runs in the run's own sandbox, under the isolation, network and grants of every command of that run; with no route out it has to work offline ([the offline recipe](security.md#4-commands-and-environment)).
 - Machine clones follow the [state setup and failure rules](state-machines.md#agent) and [setup approval policy](security.md#4-commands-and-environment).
-- For run, fork and lane sessions, the command and output tail are printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any turn (exit `1`).
+- For run, fork and child sessions, the command and output tail are printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any turn (exit `1`).
     - A fork's unread steer survives the setup failure and reaches the worker on a bare resume.
-  For a run or lane, no turn ran, so `agent6 resume` has nothing to continue: start the run again once the command works.
-- A run prints a lane's failed setup command and its output when it imports the lane; `agent6 sessions show <id>` keeps the command, and a failed setup's output, after the worktree is gone.
+  For a run or child, no turn ran, so `agent6 resume` has nothing to continue: start the run again once the command works.
+- A run prints a child's failed setup command and its output when it imports the child; `agent6 sessions show <id>` keeps the command, and a failed setup's output, after the worktree is gone.
 - The files it leaves untracked stay out of the run's commits.
 - The verify gate is settled in your checkout and carried into the workspace: a gate inferred as `.venv/bin/python -m pytest -q` stays that.
 - A gate whose first word is a path git does not track, with no setup command, refuses `run --worktree`, `fork` and `run --parallel` before anything is created; the refusal names the path, the config line and the AGENTS.md block.

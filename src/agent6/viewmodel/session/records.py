@@ -145,9 +145,9 @@ class ExecutionUsage:
         usd: The metered spend.
         usd_partial: Some model had no price, so `usd` is a lower bound.
         unmetered_tokens: Input and output tokens of calls the meter could not price.
-        usd_running_lanes: What the lanes still running have spent so far: inside the cap,
+        usd_running_children: What the children still running have spent so far: inside the cap,
             outside `usd` until each settles.
-        tokens_running_lanes: Their unpriced tokens so far, outside `unmetered_tokens`.
+        tokens_running_children: Their unpriced tokens so far, outside `unmetered_tokens`.
         plan_observed_points: The plan movement observed, in points.
         usd_cap: `[budget].max_usd`.
         tokens_fallback_cap: `[budget].max_tokens_fallback`.
@@ -161,8 +161,8 @@ class ExecutionUsage:
     usd: float = 0.0
     usd_partial: bool = False
     unmetered_tokens: int = 0
-    usd_running_lanes: float = 0.0
-    tokens_running_lanes: int = 0
+    usd_running_children: float = 0.0
+    tokens_running_children: int = 0
     plan_observed_points: float = 0.0
     usd_cap: float | None = None
     tokens_fallback_cap: int | None = None
@@ -178,14 +178,14 @@ class SessionUsage:
         usd_partial: Some execution's model had no price, so `usd` is a lower bound.
         plan_observed_points: The plan movement observed across every execution, in points.
         unmetered_tokens: Fallback tokens across every execution, including settled descendants.
-        settled_lanes: Child sessions whose spend is durably included in the journal.
+        settled_children: Child sessions whose spend is durably included in the journal.
     """
 
     usd: float = 0.0
     usd_partial: bool = False
     plan_observed_points: float = 0.0
     unmetered_tokens: int = 0
-    settled_lanes: tuple[str, ...] = ()
+    settled_children: tuple[str, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -230,11 +230,11 @@ class BudgetView:
 
     @property
     def usd_so_far(self) -> float:
-        """The spend every usage cell shows: every execution's, with the lanes still running.
+        """The spend every usage cell shows: every execution's, with the children still running.
 
-        A lane's spend moves into `session.usd` when it settles, so the figure never steps.
+        A child's spend moves into `session.usd` when it settles, so the figure never steps.
         """
-        return self.session.usd + self.execution.usd_running_lanes
+        return self.session.usd + self.execution.usd_running_children
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

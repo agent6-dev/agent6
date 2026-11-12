@@ -23,7 +23,7 @@ from agent6.harness.review import panel as review_panel
 from agent6.sessions import event_log, journal
 from agent6.tools import results
 from agent6.vcs.git import read as git_read
-from tests import review_helpers, review_lane_env
+from tests import review_env, review_helpers
 from tests.unit.test_review_gate import (
     _exec,  # pyright: ignore[reportPrivateUsage]
     _finish_tool_use,  # pyright: ignore[reportPrivateUsage]
@@ -101,7 +101,7 @@ def immutable_target(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _reviewer(provider: Any, focus: str = "security", model: str = "m1") -> review_gate.Reviewer:
-    return review_lane_env.reviewer(focus=focus, model=model, provider=provider)
+    return review_env.reviewer(focus=focus, model=model, provider=provider)
 
 
 def _disp() -> mock.MagicMock:
@@ -662,5 +662,5 @@ def test_findings_the_notice_cut_are_not_remembered_as_injected(
 
 
 @pytest.fixture(autouse=True)
-def panel_lanes(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)
+def panel_children(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(review_gate, "run_panel", review_env.run_panel)

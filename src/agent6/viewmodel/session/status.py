@@ -210,10 +210,10 @@ def status_word(
         # The gate was red at the base and red at the finish; the failures were not compared.
         "gate_red_at_base": ("finished", "gate red at base"),
         # A run that opened with a ranked dispatch: no model finished it, and the gate judged
-        # the tree the best-ranked lane left.
-        "lanes_ranked": (
+        # the tree the best-ranked child left.
+        "children_ranked": (
             "finished",
-            "lanes ranked" if verification in ("passed", "not_applicable", None) else not_green,
+            "children ranked" if verification in ("passed", "not_applicable", None) else not_green,
         ),
     }
     if stop_reason in own_word:
@@ -429,7 +429,7 @@ RESULT_WORDS = frozenset({"passed", "finished", "stopped", "planned", "answered"
 def produced_result(status: str) -> bool:
     """Return whether the status word means a deliberate end that left mergeable work.
 
-    Only such a lane is a compare candidate or joins a parent's branch.
+    Only such a child is a compare candidate or joins a parent's branch.
 
     Args:
         status: The session's status word.

@@ -59,13 +59,13 @@ agent6 web --secret 'a phrase of your own'        # the flag wins over the varia
 Buttons do what the matching CLI command does, and prompts are answered inline on every page that shows a run.
 A question the model queued, or an ended run's, keeps its box: the answer reaches the run at its next turn, or at its resume.
 
-- **Sessions page**: every session (mode, status, last activity, usage), newest activity first, a group's lanes folded under its row, each row carrying its [merge note](usage.md#a-rows-merge-note)
+- **Sessions page**: every session (mode, status, last activity, usage), newest activity first, a group's children folded under its row, each row carrying its [merge note](usage.md#a-rows-merge-note)
     - a run's row names its worktree and its branch while the branch exists; **Review** fills the composer with `/review <branch>`, and **Merge** lands the branch as `sessions merge` does when the run holds unmerged commits, after a confirm that names the unmerged runs that changed some of the same paths
     - the composer starts a run, plan or ask under a chosen preset and model (the model box shows what the config resolves; a pick overrides it); **worktree** starts the run in a new git worktree (`run --worktree`); **advanced** holds the plan to run from (`run --from`) and a spend cap (`--max-usd`)
     - **Run this plan** on a plan's view opens this composer with the plan chosen; Enter on an empty task runs the plan as written
 - **State machines page**: instances, `machine create` drafts, and buttons that run an authored machine file; the composer creates a new one
 - **Session view** (live over SSE): the conversation, the same folded transcript the CLI and TUI render, with the turn in flight streaming underneath; a detail toggle cycles collapsed, expanded, hidden
-    - **Lanes**: every lane the session dispatched (a `run --parallel` group's or a run's `/parallel` groups), each a link to its own view, with its model, status, usage and how it joined; the card follows lanes that appear while the run waits
+    - **Children**: every child the session dispatched (a `run --parallel` group's or a run's `/parallel` groups), each a link to its own view, with its model, status, usage and how it joined; the card follows children that appear while the run waits
     - the composer steers a live run or resumes an ended one under the preset and model picked above it, and takes the [steer directives](usage.md#follow-and-steer-a-run); Ctrl+Enter sends a live steer as `/now`, Ctrl-R searches past messages
     - **?** outside a field lists the keyboard shortcuts; **Ctrl-Shift-P**, or `>` typed into Ctrl-K's box, opens the command palette: the pages, the switcher, the theme, new work and the controls the current page shows, each by name
     - Ctrl-K on any page opens the session switcher: live and recent sessions newest first, narrowed as you type by id, task, branch or worktree; each row names its checkout and the ref holding its commits; Enter opens the highlighted one, **Review code** and **Merge** act as the Sessions page's row buttons do; a draft typed in a composer waits for the way back
@@ -75,7 +75,7 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
 
 - **Git page**: the repository's commit graph, a commit's files and diffs, and a compare of any two revisions, over the repository `agent6 web` was started in
     - your own hands, file by file: the working-tree panel stages and unstages a file, discards one tracked file's unstaged edits after a confirm (restored from the index; no untracked file is ever deleted), and commits the index with the message you type under the repository's own identity; the toolbar switches branches, creates one at HEAD, and **Review** fills the new-work composer with `/review <branch>`
-    - every write is refused while a session is live in this checkout (a worktree run, a fork or a lane works elsewhere and does not block); push, pull, rebase, amend and reset stay in your terminal
+    - every write is refused while a session is live in this checkout (a worktree run, a fork or a child works elsewhere and does not block); push, pull, rebase, amend and reset stay in your terminal
     - **Fetch** brings the chosen remote's branches into `<remote>/<branch>`, and **Fetch PR** one pull request into `<remote>/pr/<number>` (the remote's `refs/pull/<number>/head`, as GitHub, Gitea and Forgejo name it), left selected for **Review**; nothing is merged, and no branch, tag or checkout moves
         - the fetch goes to the URL shown beside the buttons, over https, ssh or a local path, and reads [none of the repository's own git config](security.md#7-git)
     - **blame** uses each line's own side: removed lines use the base, added and inline context lines use the head, split cells use their column, and old/new views use their selected side
@@ -92,7 +92,7 @@ Start a machine on the State machines page and watch the current state stream, a
 
 ## Receipts
 
-The Findings card's **Receipt** button opens Testing, Review, Lanes and How to revert from the [recorded session evidence](usage.md#session-receipts); each lane named links to its own view.
+The Findings card's **Receipt** button opens Testing, Review, Children and How to revert from the [recorded session evidence](usage.md#session-receipts); each child named links to its own view.
 **Ask a run to revert** fills the Sessions page's new-work composer with a proposed task; it does not submit the task or run a git command.
 `GET /api/session/<id>/receipt` returns the same derived receipt as JSON.
 

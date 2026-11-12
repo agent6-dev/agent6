@@ -116,7 +116,7 @@ class BudgetUpdate(Event):
     """The tracker's accounting since this process began, its caps and the account's reading."""
 
     TYPE: ClassVar[str] = "budget.update"
-    settled_lanes: tuple[str, ...] = pydantic.Field(
+    settled_children: tuple[str, ...] = pydantic.Field(
         default=(), description="Child session IDs included in this execution's cumulative spend."
     )
     usd_total: float = pydantic.Field(
@@ -142,10 +142,10 @@ class BudgetUpdate(Event):
         default=None,
         description="Spend cap in USD; -1 means unlimited.",
     )
-    usd_running_lanes: float = pydantic.Field(
+    usd_running_children: float = pydantic.Field(
         default=0.0,
         description=(
-            "USD the lanes still running have spent so far; outside `usd_total` until each "
+            "USD the children still running have spent so far; outside `usd_total` until each "
             "settles, inside the cap."
         ),
     )
@@ -153,9 +153,9 @@ class BudgetUpdate(Event):
         default=None,
         description="Tokens with no known price.",
     )
-    tokens_running_lanes: int = pydantic.Field(
+    tokens_running_children: int = pydantic.Field(
         default=0,
-        description="Unpriced tokens of the lanes still running; outside `tokens_unmetered`.",
+        description="Unpriced tokens of the children still running; outside `tokens_unmetered`.",
     )
     tokens_fallback_cap: int | None = pydantic.Field(
         default=None,
@@ -921,14 +921,14 @@ class ParallelCompared(Event):
 
 
 class ParallelDispatched(Event):
-    """Parallel lanes were dispatched."""
+    """Parallel children were dispatched."""
 
     TYPE: ClassVar[str] = "parallel.dispatched"
     group: str = pydantic.Field(description="Parallel dispatch group identifier.")
-    lanes: int = pydantic.Field(
-        description="Lane count for dispatch, or lane results for completion.",
+    children: int = pydantic.Field(
+        description="Child count for dispatch, or child results for completion.",
     )
-    tasks: Sequence[Any] = pydantic.Field(description="Task texts sent to the lanes.")
+    tasks: Sequence[Any] = pydantic.Field(description="Task texts sent to the children.")
     source: str = pydantic.Field(
         default="operator",
         description="Who dispatched: operator (a steer), model (the tool) or panel.",
@@ -936,24 +936,24 @@ class ParallelDispatched(Event):
 
 
 class ParallelFailed(Event):
-    """Parallel lane dispatch or execution failed."""
+    """Parallel child dispatch or execution failed."""
 
     TYPE: ClassVar[str] = "parallel.failed"
     group: str = pydantic.Field(description="Parallel dispatch group identifier.")
-    lanes: Sequence[Any] | None = pydantic.Field(
+    children: Sequence[Any] | None = pydantic.Field(
         default=None,
-        description="Lane count for dispatch, or lane results for completion.",
+        description="Child count for dispatch, or child results for completion.",
     )
     error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
 
 
 class ParallelJoined(Event):
-    """Parallel lane results returned."""
+    """Parallel child results returned."""
 
     TYPE: ClassVar[str] = "parallel.joined"
     group: str = pydantic.Field(description="Parallel dispatch group identifier.")
-    lanes: Sequence[Any] = pydantic.Field(
-        description="Lane count for dispatch, or lane results for completion.",
+    children: Sequence[Any] = pydantic.Field(
+        description="Child count for dispatch, or child results for completion.",
     )
     source: str = pydantic.Field(
         default="operator",
@@ -1295,7 +1295,7 @@ class ReviewVerdict(Event):
     summary: str = pydantic.Field(description="The result or outcome in words.")
     error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
     session_id: str = pydantic.Field(
-        default="", description="The read-only reviewer session, when assigned."
+        default="", description="The reviewer's session, when assigned."
     )
 
 

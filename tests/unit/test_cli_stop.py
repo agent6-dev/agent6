@@ -257,7 +257,7 @@ def test_all_with_nothing_live_is_a_successful_noop(
     assert "no live session to stop" in captured.err and not captured.out
 
 
-def test_a_group_stops_only_its_live_lanes(
+def test_a_group_stops_only_its_live_children(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -275,15 +275,15 @@ def test_a_group_stops_only_its_live_lanes(
         ),
         encoding="utf-8",
     )
-    for lane, number in ((live, 1), (ended, 2)):
-        (lane / "manifest.json").write_text(
+    for child, number in ((live, 1), (ended, 2)):
+        (child / "manifest.json").write_text(
             json.dumps(
                 {
                     "version": 3,
-                    "session_id": lane.name,
+                    "session_id": child.name,
                     "mode": "run",
                     "user_task": "t",
-                    "parallel": {"group": fan.name, "lane": number, "parent": fan.name},
+                    "parallel": {"group": fan.name, "number": number, "parent": fan.name},
                 }
             ),
             encoding="utf-8",
@@ -297,7 +297,7 @@ def test_a_group_stops_only_its_live_lanes(
     try:
         assert main(["stop", "fan-run-AAAAAA"]) == 0
         out = capsys.readouterr().out
-        assert "fan-run-AAAAAA stopped with its 1 live lane" in out
+        assert "fan-run-AAAAAA stopped with its 1 live child" in out
         assert "fan-run-AAAAAA-l2" not in out
         for proc in workers:
             proc.wait(timeout=5.0)
@@ -310,9 +310,9 @@ _DRAINING_PARENT = """
 import json, sys, time
 from pathlib import Path
 from agent6.viewmodel import session_is_live
-d, lane = Path(sys.argv[1]), Path(sys.argv[2])
+d, child = Path(sys.argv[1]), Path(sys.argv[2])
 (d / "draining").write_text("1")  # the caller waits for this before stopping
-while session_is_live(lane):
+while session_is_live(child):
     time.sleep(0.05)
 end = {"type": "session.stop", "reason": "steer_abort", "verification": "unverified"}
 with (d / "logs.jsonl").open("a") as fh:
@@ -320,8 +320,8 @@ with (d / "logs.jsonl").open("a") as fh:
 """
 
 
-def _group(tmp_path: pathlib.Path, fan: str, lane: str) -> tuple[pathlib.Path, pathlib.Path]:
-    fan_dir, lane_dir = _run(tmp_path, fan), _run(tmp_path, lane)
+def _group(tmp_path: pathlib.Path, fan: str, child: str) -> tuple[pathlib.Path, pathlib.Path]:
+    fan_dir, child_dir = _run(tmp_path, fan), _run(tmp_path, child)
     (fan_dir / "manifest.json").write_text(
         json.dumps(
             {
@@ -333,35 +333,35 @@ def _group(tmp_path: pathlib.Path, fan: str, lane: str) -> tuple[pathlib.Path, p
         ),
         encoding="utf-8",
     )
-    (lane_dir / "manifest.json").write_text(
+    (child_dir / "manifest.json").write_text(
         json.dumps(
             {
                 "version": 3,
-                "session_id": lane,
+                "session_id": child,
                 "mode": "run",
                 "user_task": "t",
-                "parallel": {"group": fan, "lane": 1, "parent": fan},
+                "parallel": {"group": fan, "number": 1, "parent": fan},
             }
         ),
         encoding="utf-8",
     )
-    return fan_dir, lane_dir
+    return fan_dir, child_dir
 
 
-def test_a_groups_lanes_end_before_its_parent_drains(
+def test_a_groups_children_end_before_its_parent_drains(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run's lanes end before the run drains them: it is waited for, not killed."""
+    """A run's children end before the run drains them: it is waited for, not killed."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(stop_mod, "LANES_WAIT_S", 3.0)
-    fan, lane = _group(tmp_path, "drain-run-AAAAAA", "drain-run-AAAAAA-l1")
-    # The lane is live before the parent starts, or its first poll drains and ends at once.
+    monkeypatch.setattr(stop_mod, "CHILDREN_WAIT_S", 3.0)
+    fan, child = _group(tmp_path, "drain-run-AAAAAA", "drain-run-AAAAAA-l1")
+    # The child is live before the parent starts, or its first poll drains and ends at once.
     worker = subprocess.Popen(
-        [sys.executable, "-c", _ANSWERING_WORKER, str(lane)], start_new_session=True
+        [sys.executable, "-c", _ANSWERING_WORKER, str(child)], start_new_session=True
     )
-    process.write_worker_pid(lane, worker.pid)
+    process.write_worker_pid(child, worker.pid)
     parent = subprocess.Popen(
-        [sys.executable, "-c", _DRAINING_PARENT, str(fan), str(lane)],
+        [sys.executable, "-c", _DRAINING_PARENT, str(fan), str(child)],
         start_new_session=True,
     )
     process.write_worker_pid(fan, parent.pid)
@@ -369,7 +369,7 @@ def test_a_groups_lanes_end_before_its_parent_drains(
     try:
         assert main(["stop", "drain-run-AAAAAA"]) == 0
         out = capsys.readouterr().out
-        assert "drain-run-AAAAAA stopped with its 1 live lane" in out
+        assert "drain-run-AAAAAA stopped with its 1 live child" in out
         assert parent.wait(timeout=5.0) == 0, "the parent was killed, not drained"
         assert worker.wait(timeout=5.0) == 0
     finally:
@@ -508,31 +508,31 @@ def test_a_bare_stop_with_nothing_live_is_a_successful_noop(
     assert not captured.out
 
 
-def test_a_bare_stop_passes_over_a_groups_lane(
+def test_a_bare_stop_passes_over_a_groups_child(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A lane stops with its parent; the newest live lane is not what a bare stop means."""
+    """A child stops with its parent; the newest live child is not what a bare stop means."""
     monkeypatch.chdir(tmp_path)
     fan = _run(tmp_path, "fan-run-AAAAAA")
     time.sleep(0.05)
-    lane = _run(tmp_path, "fan-run-AAAAAA-l1")
-    (lane / "manifest.json").write_text(
+    child = _run(tmp_path, "fan-run-AAAAAA-l1")
+    (child / "manifest.json").write_text(
         json.dumps(
             {
                 "version": 3,
-                "session_id": lane.name,
+                "session_id": child.name,
                 "mode": "run",
                 "user_task": "t",
-                "parallel": {"group": "fan-run-AAAAAA", "lane": 1, "parent": fan.name},
+                "parallel": {"group": "fan-run-AAAAAA", "number": 1, "parent": fan.name},
             }
         ),
         encoding="utf-8",
     )
     workers = [
         subprocess.Popen([sys.executable, "-c", _ANSWERING_WORKER, str(d)], start_new_session=True)
-        for d in (fan, lane)
+        for d in (fan, child)
     ]
-    for d, proc in zip((fan, lane), workers, strict=True):
+    for d, proc in zip((fan, child), workers, strict=True):
         process.write_worker_pid(d, proc.pid)
     try:
         assert main(["stop"]) == 0

@@ -222,7 +222,7 @@ def cmd_prune(*, delete_squashed: bool = False, config_paths: tuple[pathlib.Path
     """Delete what `git branch -d` can safely remove, and sweep the merged clones and worktrees.
 
     Run branches reachable-merged into HEAD go; squash-merged and unmerged ones are
-    reported. Group clone dirs go when every lane branch tip exists in this repo; a clone
+    reported. Group clone dirs go when every child branch tip exists in this repo; a clone
     holding any commit this repo lacks is kept whole. The worktree of a merged fork goes;
     an unmerged fork keeps its worktree, and an unstarted fork keeps its branch too.
     With `--delete-squashed`, branches and chain refs

@@ -13,8 +13,8 @@ from unittest import mock
 
 import pytest
 
-from agent6 import kinds, lane_records, paths
-from agent6.app import lane_launch, lane_watch, worktrees
+from agent6 import child_records, kinds, paths
+from agent6.app import child_launch, child_wait, worktrees
 from agent6.config import Config
 from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.harness.compaction import window as compaction_window
@@ -23,7 +23,7 @@ from agent6.sessions import completion, journal, layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch, tool_errors
 from agent6.viewmodel import listing
-from tests import lane_env
+from tests import launch_env
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -206,7 +206,7 @@ def test_a_contract_runs_the_commands_it_is_handed_and_never_edits(tmp_path: pat
         disp.dispatch("run_command", {"argv": ["git", "log", "--oneline"]})
     for outside, raw in (
         ("apply_edit", {"path": "README.md", "edits": [{"old": "hi", "new": "bye"}]}),
-        ("parallel", {"lanes": [{"task": "t"}]}),
+        ("parallel", {"children": [{"task": "t"}]}),
     ):
         with pytest.raises(tool_errors.ToolError, match="not available"):
             disp.dispatch(outside, raw)
@@ -322,9 +322,9 @@ def test_the_reviewers_bucket_is_a_real_discoverable_one(tmp_path: pathlib.Path)
     assert "reviewers" in layout.SESSION_BUCKETS and "reviewers" in layout.HUB_BUCKETS
     assert "reviewer" not in kinds.OPERATOR_MODES
     state = tmp_path / "state"
-    link = lane_watch.lane_dir(state, "co-p1-l1", mode="reviewer")
+    link = child_wait.child_dir(state, "co-p1-l1", mode="reviewer")
     assert link == state / "sessions" / "reviewers" / "co-p1-l1"
-    assert lane_records.LaneSpec(1, "x", tmp_path, None).mode == "run"
+    assert child_records.ChildSpec(1, "x", tmp_path, None).mode == "run"
 
 
 @pytest.mark.parametrize(("policy", "handed"), [("allow", True), ("deny", True), ("allow", False)])
@@ -342,7 +342,7 @@ def test_a_real_reviewer_never_edits_and_runs_only_the_commands_it_may(
         ("read_file", {"path": "README.md"}),
         '{"verdict": "pass"}',
     ]
-    with lane_env.scripted_provider(replies) as (base_url, calls):
+    with launch_env.scripted_provider(replies) as (base_url, calls):
         cfg = Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": base_url}},
@@ -356,9 +356,9 @@ def test_a_real_reviewer_never_edits_and_runs_only_the_commands_it_may(
                 "notify": {"on_event": ["touch", str(tmp_path / "hook-ran")]},
             }
         )
-        into = lane_launch.launch_dir(paths.state_dir(short_repo), "leaf")
-        spec = lane_records.LaneSpec(1, "leaf-l1", clone, None, mode="reviewer")
-        config = worktrees.write_lane_config(
+        into = child_launch.launch_dir(paths.state_dir(short_repo), "leaf")
+        spec = child_records.ChildSpec(1, "leaf-l1", clone, None, mode="reviewer")
+        config = worktrees.write_child_config(
             cfg,
             spec,
             explicit_leaves=frozenset(
@@ -377,9 +377,9 @@ def test_a_real_reviewer_never_edits_and_runs_only_the_commands_it_may(
             max_turns=6,
             allowed_tools=("read_file", "run_command") if handed else ("read_file",),
         )
-        path = lane_launch.write(
+        path = child_launch.write(
             into,
-            lane_launch.LaneLaunch(
+            child_launch.ChildLaunch(
                 worktree=clone,
                 record_state=paths.state_dir(clone),
                 session_id="leaf-l1",
@@ -388,19 +388,19 @@ def test_a_real_reviewer_never_edits_and_runs_only_the_commands_it_may(
                 notes=config.notes,
                 parent="leaf",
                 group="leaf",
-                lane=1,
+                number=1,
                 contract=contract,
             ),
         )
         env = {
             **os.environ,
-            lane_launch.ENV: str(path),
+            child_launch.ENV: str(path),
             "AGENT6_CHILD": "1",
             "AGENT6_STREAM_TO_LOG": "1",
             "AGENT6_ALLOW_ROOT": "1",
         }
         proc = subprocess.run(
-            lane_launch.bootstrap_argv(),
+            child_launch.bootstrap_argv(),
             cwd=str(clone),
             env=env,
             capture_output=True,
@@ -419,7 +419,7 @@ def test_a_real_reviewer_never_edits_and_runs_only_the_commands_it_may(
     assert results["run_command"]["ok"] is runs
     assert results["read_file"]["ok"] is True
     assert (clone / "README.md").read_text(encoding="utf-8") == "hi\n"
-    # A reviewer that may run commands gets the worktree a lane gets, its setup included.
+    # A reviewer that may run commands gets the worktree a child gets, its setup included.
     assert marker.exists() is runs
     assert (tmp_path / "command-ran").exists() is runs
     # The operator's hook hears of the parent's end, never of a reviewer's.

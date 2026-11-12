@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Build the environment of a worktree before its first turn.
 
-A `run --worktree` worktree, a fork's worktree, a lane's clone and a machine state's clone
+A `run --worktree` worktree, a fork's worktree, a child's clone and a machine state's clone
 hold tracked files only. `[git.worktree].setup_command` runs once in each, through an injected
 runner using the worktree's command policy and jail. A session's manifest records that its
 worktree is set up. With no command configured, the `## Setup command` block of AGENTS.md
@@ -44,7 +44,7 @@ def infer_if_unset(
 ) -> Config:
     """Return the config with the setup command AGENTS.md states, when none is configured.
 
-    Read once, in the origin, and carried in the config, so the worktree and every lane
+    Read once, in the origin, and carried in the config, so the worktree and every child
     run the command the start named.
 
     Args:

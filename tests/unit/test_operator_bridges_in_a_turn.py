@@ -98,7 +98,7 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: pat
                 stagnation_notice_after_s=300.0,
                 verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file="", decompose="off"),
-                parallel=types.SimpleNamespace(max_lanes=4),
+                parallel=types.SimpleNamespace(max_children=4),
             ),
         ),
         provider=provider,

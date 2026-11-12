@@ -3,7 +3,7 @@
 """Pre-spawn model validation: a bogus model id is refused with a did-you-mean.
 
 `validate_configured_model` checks a configured `models.<role>.model` at run start;
-`validate_spec_models` checks a `/parallel` spec's lane routes, each against its own
+`validate_spec_models` checks a `/parallel` spec's child routes, each against its own
 provider. Matching is cache-first, the id or its normalized form. A miss against an
 existing cache fetches the live listing once, so `refused` always rests on a listing this
 invocation fetched; a failed fetch degrades to `warned` and the run proceeds; with no cache
@@ -139,14 +139,14 @@ def _suggest(unknown: list[str], pool: list[str]) -> dict[str, tuple[str, ...]]:
 
 
 def validate_spec_models(routes: Sequence[kinds.ModelRoute | None], cfg: Config) -> ModelValidation:
-    """Check a `/parallel` spec's lane routes, each against its own provider.
+    """Check a `/parallel` spec's child routes, each against its own provider.
 
     A miss against an existing cache re-checks the live listing once; a miss on a provider
     with no cache is unvalidated. A confirmed miss refuses even when another route stays
     unvalidated.
 
     Args:
-        routes: The lane routes; None is the worker's own route and is skipped.
+        routes: The child routes; None is the worker's own route and is skipped.
         cfg: The effective config.
 
     Returns:
@@ -312,7 +312,7 @@ def directive_model_refusal(
 
     Returns:
         The refusal, a malformed spec's grammar error, or None when every model checks out
-        or there is no cache to check against (the lane's own preflight warns).
+        or there is no cache to check against (the child's own preflight warns).
     """
     try:
         cfg = layer.load_effective(cwd, config_paths, preset=preset).config
@@ -321,9 +321,9 @@ def directive_model_refusal(
     except ConfigError:
         return None  # a broken config is its own error elsewhere
     try:
-        cap = cfg.harness.parallel.max_lanes
+        cap = cfg.harness.parallel.max_children
         routes = [
-            chosen.route if (chosen := cfg.lane_settings(m)) is not None else None
+            chosen.route if (chosen := cfg.child_settings(m)) is not None else None
             for seg in segments
             for m in agent6_directive.parse_spec(seg.spec, limit=cap)
         ]

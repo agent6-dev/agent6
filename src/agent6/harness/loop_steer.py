@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from agent6 import terminal
 from agent6.harness import loop_conversation, loop_snapshot, loop_state, parallel_join
-from agent6.sessions import journal, lane_dispatch
+from agent6.sessions import child_dispatch, journal
 from agent6.tools import operator_prompts, tool_errors
 from agent6.vcs.git import ops as git_ops
 
@@ -127,19 +127,19 @@ def ranked_opening(
     """Run the dispatch a run opens with, joined by rank, and end the run on what landed.
 
     The ranking's winner joins the run's chain; the run's own gate then judges the joined
-    tree. No model call is made unless the operator steered while the lanes ran: the run
+    tree. No model call is made unless the operator steered while the children ran: the run
     then goes on with that steer, as a resume with a steer does later.
 
     Args:
         harness: The execution's harness, built with an opening.
-        conversation: The run's conversation, snapshotted before the lanes run.
+        conversation: The run's conversation, snapshotted before the children run.
         turn: The run's first turn.
         state: The execution's state.
 
     Returns:
-        The end: `lanes_ranked` when a lane joined (or, with no chain to join onto, was
-        placed), `no_lane_passed` when the ranking crowned none, `budget_exhausted` when the
-        budget ended every lane, `no_lane_result` otherwise, or the operator's stop; None
+        The end: `children_ranked` when a child joined (or, with no chain to join onto, was
+        placed), `no_child_passed` when the ranking crowned none, `budget_exhausted` when the
+        budget ended every child, `no_child_result` otherwise, or the operator's stop; None
         when a steer gives the run more work.
     """
     assert harness.opening is not None
@@ -150,7 +150,7 @@ def ranked_opening(
     if stopped is not None:
         return stopped
     if harness.bridge.steer_requested():
-        # A steer sent while the lanes ran is the run's next work, from what landed.
+        # A steer sent while the children ran is the run's next work, from what landed.
         harness.parallel.deliver(conversation, result)
         size = len(conversation)
         asked = steer_outcome(
@@ -160,19 +160,19 @@ def ranked_opening(
             return asked
     else:
         harness.parallel.record_delivery(result)
-    # A refusal before any lane ran has no lanes to word: its own message is the summary.
-    summary = parallel_join.rank_summary(result.lanes) if result.lanes else result.message
-    statuses = {join.status for join in result.lanes}
-    # Without a chain (`git.control = "model"`) a placed lane is the whole outcome.
+    # A refusal before any child ran has no children to word: its own message is the summary.
+    summary = parallel_join.rank_summary(result.children) if result.children else result.message
+    statuses = {join.status for join in result.children}
+    # Without a chain (`git.control = "model"`) a placed child is the whole outcome.
     landed = statuses & {"joined", "no_changes"} or ("ranked" in statuses and not harness.chain.ref)
     if not landed:
         spent = harness.budget is not None and harness.budget.is_exhausted()
         reason: loop_snapshot.SessionEndReason = (
-            "no_lane_passed"
+            "no_child_passed"
             if "ranked" in statuses
             else "budget_exhausted"
             if spent
-            else "no_lane_result"
+            else "no_child_result"
         )
         return harness.finish(state, loop_snapshot.End(reason, summary, roots=False), turn=turn)
     if "joined" in statuses:
@@ -182,7 +182,7 @@ def ranked_opening(
             return harness.unexecutable_abort(exc, turn=turn, state=state)
     return harness.finish(
         state,
-        loop_snapshot.End("lanes_ranked", summary, completed=True, verdict="grounded"),
+        loop_snapshot.End("children_ranked", summary, completed=True, verdict="grounded"),
         turn=turn,
     )
 
@@ -321,7 +321,7 @@ def execution_opening(
     resume_opening(harness, conversation, state)
     # An interrupted dispatch is finished or diagnosed before the first call.
     if harness.resume_state_path is not None and (
-        lane_dispatch.records_dir(harness.resume_state_path.parent).is_dir()
+        child_dispatch.records_dir(harness.resume_state_path.parent).is_dir()
     ):
         harness.parallel.reconcile(state, conversation)
     return seeded_steer(harness, conversation, turn, state)

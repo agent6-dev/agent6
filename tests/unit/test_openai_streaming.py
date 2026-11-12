@@ -363,7 +363,7 @@ def test_streaming_with_budget_requires_usage_trailer() -> None:
 
     At the call site a permanently misconfigured gateway is indistinguishable from one mangled
     stream (a degenerate stream the gateway cut dropped the trailer live, killing a $1 run at
-    $0.09), and the bounded retry lane converts the permanent case into at-most-N attempts while
+    $0.09), and the bounded retry child converts the permanent case into at-most-N attempts while
     saving the transient one.
     """
     provider = openai.OpenAIProvider(

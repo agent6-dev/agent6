@@ -237,7 +237,7 @@ def test_hub_lists_newest_first_and_each_row_carries_its_open_findings(
     assert by_id["run-block"]["merge_note"] == "open findings: 1 block, 2 warn"
     assert by_id["run-newest"]["open_findings"] == {"block": 0, "warn": 0, "nit": 0}
     assert by_id["run-newest"]["merge_note"] == "" and "overlaps" not in by_id["run-newest"]
-    assert not {"review_queue", "queue_group", "lane_groups"} & set(by_id["run-block"])
+    assert not {"review_queue", "queue_group", "child_groups"} & set(by_id["run-block"])
 
 
 def test_machine_snapshot_matches_watch_json(
@@ -2291,10 +2291,10 @@ def test_idle_session_frames_only_follow_changed_state(
         assert frames[-1][1]["shells"] == ["[bg1] exited 2: sleep 60"]
 
 
-def test_an_ordinary_live_parents_first_lane_reaches_the_stream_during_silence(
+def test_an_ordinary_live_parents_first_child_reaches_the_stream_during_silence(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A run with no lanes at open gains one while its log is silent; the next frame shows it."""
+    """A run with no children at open gains one while its log is silent; the next frame shows it."""
     from agent6.ui.web import sse
 
     monkeypatch.setattr(sse, "HEARTBEAT_S", 0.05)
@@ -2326,8 +2326,8 @@ def test_an_ordinary_live_parents_first_lane_reaches_the_stream_during_silence(
                         "version": 3,
                         "session_id": "solo-p1-l1",
                         "mode": "run",
-                        "parallel": {"group": "solo-p1", "lane": 1, "parent": "solo"},
-                        "models": {"driver": {"provider": "openai", "model": "lane-1"}},
+                        "parallel": {"group": "solo-p1", "number": 1, "parent": "solo"},
+                        "models": {"driver": {"provider": "openai", "model": "child-1"}},
                     }
                 ),
                 encoding="utf-8",
@@ -2336,11 +2336,11 @@ def test_an_ordinary_live_parents_first_lane_reaches_the_stream_during_silence(
 
     sse.stream_session(sse.SseChannel(send=send, ping=ping), d, repo=tmp_path)
 
-    assert "lanes" not in frames[0]
-    with_lane = next(f for f in frames if f.get("lanes"))
-    assert [row["session_id"] for row in with_lane["lanes"]] == ["solo-p1-l1"]
-    assert with_lane["lanes"][0]["model"] == "openai/lane-1"
-    assert with_lane["session_actions"]["fork"] is True
+    assert "children" not in frames[0]
+    with_child = next(f for f in frames if f.get("children"))
+    assert [row["session_id"] for row in with_child["children"]] == ["solo-p1-l1"]
+    assert with_child["children"][0]["model"] == "openai/child-1"
+    assert with_child["session_actions"]["fork"] is True
 
 
 def test_shell_cleanup_after_end_reaches_the_open_stream(

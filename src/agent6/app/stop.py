@@ -13,8 +13,8 @@ ACP cancel uses this form because its server is the worker. A stop after the ste
 the plain marker alone, so the step's command finishes and its tool results and auto-commit
 land first.
 
-A group's stop ends its live lanes first, then the parent, which imports and ranks what
-the lanes landed before it ends; that drain gets a longer wait.
+A group's stop ends its live children first, then the parent, which imports and ranks what
+the children landed before it ends; that drain gets a longer wait.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from agent6.viewmodel import listing, session_is_live, summarize_session_dir
 from agent6.viewmodel.session import status as session_status
 
 STOP_WAIT_S = 5.0  # a run that reads its requests ends within this
-LANES_WAIT_S = 30.0  # a run drains its ended lanes and imports what landed within this
+CHILDREN_WAIT_S = 30.0  # a run drains its ended children and imports what landed within this
 KILL_GRACE_S = 3.0  # SIGTERM to SIGKILL
 _POLL_S = 0.1
 
@@ -44,7 +44,7 @@ class StopOutcome:
         session_id: The stopped session.
         ok: Whether the stop took.
         how: `after_turn`, `requested`, `stopped`, `killed`, `stale` (no answer and nothing
-            left to signal), `lanes_stopped` (the session itself had ended; its live lanes
+            left to signal), `children_stopped` (the session itself had ended; its live children
             were stopped), `not_live` (nothing to stop) or `failed` (a request could not be
             written).
         message: The line every surface shows.
@@ -81,17 +81,17 @@ def stop_session(
     rid = session_dir.name
     wait_s = STOP_WAIT_S if wait_s is None else wait_s
     grace_s = KILL_GRACE_S if grace_s is None else grace_s
-    # Lanes are found by lineage, so a dead parent's count too.
-    lanes = _live_lanes(session_dir)
-    lane_count = f"{len(lanes)} live lane{'s' if len(lanes) > 1 else ''}"
+    # Children are found by lineage, so a dead parent's count too.
+    children = _live_children(session_dir)
+    child_count = f"{len(children)} live {'children' if len(children) > 1 else 'child'}"
     if not session_is_live(session_dir):
-        if not lanes:
+        if not children:
             return StopOutcome(
                 rid, False, "not_live", f"{rid} {_not_live_state(session_dir)}; nothing to stop"
             )
-        for lane in lanes:
+        for child in children:
             stop_session(
-                lane,
+                child,
                 after_turn=after_turn,
                 request_only=request_only,
                 wait_s=wait_s,
@@ -100,13 +100,13 @@ def stop_session(
         return StopOutcome(
             rid,
             True,
-            "lanes_stopped",
-            f"{rid} {_not_live_state(session_dir)}; its {lane_count} stopped",
+            "children_stopped",
+            f"{rid} {_not_live_state(session_dir)}; its {child_count} stopped",
         )
     resumable = not listing.resume_blocker(session_dir)
-    with_lanes = f" with its {lane_count}" if lanes else ""
+    with_children = f" with its {child_count}" if children else ""
     worker = process.read_live_worker_identity(session_dir)
-    # The session's own markers first: a parent reads its stop as its lanes end, and one
+    # The session's own markers first: a parent reads its stop as its children end, and one
     # written after they ended is never read.
     written = (
         ipc.request_stop(session_dir)
@@ -116,26 +116,26 @@ def stop_session(
     )
     if not written:
         return StopOutcome(rid, False, "failed", f"could not write the stop request for {rid}")
-    for lane in lanes:
+    for child in children:
         stop_session(
-            lane, after_turn=after_turn, request_only=request_only, wait_s=wait_s, grace_s=grace_s
+            child, after_turn=after_turn, request_only=request_only, wait_s=wait_s, grace_s=grace_s
         )
     if after_turn:
-        when = "their current turns" if lanes else "its current turn"
+        when = "their current turns" if children else "its current turn"
         return StopOutcome(
-            rid, True, "after_turn", f"{rid} stops{with_lanes} after {when}", resumable=resumable
+            rid, True, "after_turn", f"{rid} stops{with_children} after {when}", resumable=resumable
         )
     if request_only:
         return StopOutcome(
-            rid, True, "requested", f"{rid} stop requested{with_lanes}", resumable=resumable
+            rid, True, "requested", f"{rid} stop requested{with_children}", resumable=resumable
         )
     return _ended(
         session_dir,
         worker,
-        wait_s=max(wait_s, LANES_WAIT_S) if lanes else wait_s,
+        wait_s=max(wait_s, CHILDREN_WAIT_S) if children else wait_s,
         grace_s=grace_s,
         resumable=resumable,
-        with_lanes=with_lanes,
+        with_children=with_children,
     )
 
 
@@ -146,12 +146,14 @@ def _ended(
     wait_s: float,
     grace_s: float,
     resumable: bool,
-    with_lanes: str,
+    with_children: str,
 ) -> StopOutcome:
     """Return the outcome once both bridges are written: ended in time, or what the kill did."""
     rid = session_dir.name
     if _ended_within(session_dir, worker, wait_s):
-        return StopOutcome(rid, True, "stopped", f"{rid} stopped{with_lanes}", resumable=resumable)
+        return StopOutcome(
+            rid, True, "stopped", f"{rid} stopped{with_children}", resumable=resumable
+        )
     worker_killed, commands = _kill(session_dir, worker, grace_s)
     continues = ", and resume continues it" if resumable else ""
     if not worker_killed and not commands:
@@ -185,7 +187,7 @@ def _not_live_state(session_dir: pathlib.Path) -> str:
     return f"is not running ({summary.status})"
 
 
-def _live_lanes(session_dir: pathlib.Path) -> list[pathlib.Path]:
+def _live_children(session_dir: pathlib.Path) -> list[pathlib.Path]:
     """Return live descendants across buckets and clone links, including dead intermediaries."""
     return [child for child in lineage.descendants_of(session_dir) if session_is_live(child)]
 

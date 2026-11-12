@@ -72,7 +72,7 @@ def budget_preflight(
     A zero `max_tokens_fallback` refuses an unpriced model, a zero `max_usd` refuses a
     priced one, a zero `max_plan_points` refuses a plan-metered one; otherwise each unpriced
     or plan-metered model gets a notice naming its configured role and bound. A model chosen
-    later (a `/parallel` lane spec) is caught by the tracker's runtime backstop.
+    later (a `/parallel` child spec) is caught by the tracker's runtime backstop.
 
     Args:
         cfg: The run's config.

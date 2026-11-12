@@ -135,12 +135,12 @@ main { padding: 0; }
 .item .title, .item .continued { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .sub { font-size: 12px; color: var(--muted); }
 .setting { display: inline-block; max-width: 100%; }
-.lanes-toggle {
+.children-toggle {
   display: block; margin-top: 4px; padding: 0; background: none; border: 0;
   font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; text-align: left;
 }
-.lanes { margin: 6px 0 0 14px; border-left: 1px solid var(--border); padding-left: 6px; }
-.lanes .item { padding: 8px 6px; }
+.children { margin: 6px 0 0 14px; border-left: 1px solid var(--border); padding-left: 6px; }
+.children .item { padding: 8px 6px; }
 
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; }
 .kv .k { color: var(--muted); }

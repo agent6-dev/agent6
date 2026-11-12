@@ -29,8 +29,8 @@ def _note(text: str) -> None:
     print(f"[agent6] {text}", file=sys.stderr, flush=True)
 
 
-def lane_away_mode() -> ipc.AwayMode:
-    """Return the away-mode a group's lanes run with.
+def child_away_mode() -> ipc.AwayMode:
+    """Return the away-mode a group's children run with.
 
     Returns:
         The parent's `AGENT6_DETACHED_AWAY` when valid, else `wait` with a terminal to

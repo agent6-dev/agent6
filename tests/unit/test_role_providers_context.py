@@ -18,7 +18,7 @@ from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
 from agent6.providers import provider_types, stream_lifecycle, transport
 from agent6.sessions import event_log
-from tests import child_env, review_lane_env, review_traces
+from tests import child_env, review_env, review_traces
 
 
 def _session(
@@ -140,7 +140,7 @@ def test_review_requests_belong_to_real_distinct_reviewer_sessions(
             min_blocking_models=2,
             panel_id="panel-a",
             max_turns=2,
-            tools=review_lane_env.READING_TOOLS,
+            tools=review_env.READING_TOOLS,
             concurrency=2,
         )
         assert [s.verdict for s in result.per_reviewer] == ["pass", "pass"], result
@@ -170,7 +170,7 @@ def test_review_requests_belong_to_real_distinct_reviewer_sessions(
             min_blocking_models=2,
             panel_id="panel-a",
             max_turns=2,
-            tools=review_lane_env.READING_TOOLS,
+            tools=review_env.READING_TOOLS,
             concurrency=2,
         )
         assert repeated.n_abstain == 2 and len(calls) == 2

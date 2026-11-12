@@ -644,11 +644,13 @@ def test_the_chown_runs_after_the_auto_merge_writes(
     ]
 
 
-def test_a_lane_never_lands_itself(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A lane with `git.auto_merge` on leaves its branch to the session that dispatched it.
+def test_a_child_never_lands_itself(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A child with `git.auto_merge` on leaves its branch to the session that dispatched it.
 
     It merged into its throwaway clone's base branch and stamped itself merged, so every
-    listing read the lane merged while the operator's repository never got the work.
+    listing read the child merged while the operator's repository never got the work.
     """
     monkeypatch.setenv("AGENT6_CHILD", "1")
     assert _teardown_order(tmp_path, monkeypatch) == ["steer", "session", "dispatcher", "chown"]

@@ -33,7 +33,7 @@ _INTRO = (
     "Tab reaches the pickers below: mode, checkout, preset and model, then the plan to run"
     " from and a spend cap in USD.\n"
     "A run from a plan needs no task: Enter on an empty line starts it.\n"
-    "/parallel [SPEC --] TASK fans out isolated lanes.\n"
+    "/parallel [SPEC --] TASK dispatches isolated children.\n"
     "SPEC is a count or comma-separated models; repeat /parallel to queue more."
 )
 _WORKTREE = "worktree"

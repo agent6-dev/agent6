@@ -95,18 +95,18 @@ def test_listing_status_detail_names_the_status_explanation(tmp_path: pathlib.Pa
 
 
 def test_listing_separates_session_and_group_activity(tmp_path: pathlib.Path) -> None:
-    """A group's latest lane activity never overwrites its own session activity."""
+    """A group's latest child activity never overwrites its own session activity."""
     summary = listing.summarize_session_dir(tmp_path)
     own = dataclasses.replace(summary, session_id="group", last_activity=1000.0)
-    lane = dataclasses.replace(summary, session_id="lane", last_activity=2000.0)
-    row = listing.row_json(listing.ListingRow(own, (listing.ListingRow(lane),)), winners=set())
+    child = dataclasses.replace(summary, session_id="child", last_activity=2000.0)
+    row = listing.row_json(listing.ListingRow(own, (listing.ListingRow(child),)), winners=set())
     assert row["last_activity"] == 1000.0
     assert row.get("group_last_activity") == 2000.0
     assert row["when"] == format.format_when(2000.0)
-    lane_row = listing.summary_row(lane)
-    assert lane_row["last_activity"] == 2000.0
-    assert "group_last_activity" not in lane_row
-    assert row["lanes"][0]["last_activity"] == 2000.0
+    child_row = listing.summary_row(child)
+    assert child_row["last_activity"] == 2000.0
+    assert "group_last_activity" not in child_row
+    assert row["children"][0]["last_activity"] == 2000.0
 
 
 @pytest.mark.parametrize("family", ["approval", "question"])

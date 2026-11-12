@@ -29,7 +29,7 @@ MEMORY_DIR_NAME = "memory"
 DECISIONS_INJECT_CAP = 4_096
 # Past the cap the index is clipped with a pointer, so a runaway index cannot flood every prompt.
 INDEX_INJECT_CAP = 4_096
-# Beside a lane's store: the sha256 of every file `seed_store` copied in, by name.
+# Beside a child's store: the sha256 of every file `seed_store` copied in, by name.
 SEED_NAME = "memory-seed.json"
 # Beside the store, outside the model's write grant: who wrote each fact and which runs read it.
 USE_NAME = "memory-use.json"
@@ -50,11 +50,11 @@ def seed_digests(state_dir: pathlib.Path) -> dict[str, str]:
     """Return the seed manifest's name to sha256 map.
 
     Args:
-        state_dir: The lane's state dir.
+        state_dir: The child's state dir.
 
     Returns:
         Each seeded fact's sha256 as copied, by name. A missing, unreadable or misshapen
-        manifest reads as empty, so every file then reads as the lane's own.
+        manifest reads as empty, so every file then reads as the child's own.
     """
     try:
         raw = json.loads(seed_path(state_dir).read_text(encoding="utf-8"))
@@ -235,10 +235,10 @@ def _record_use_unlocked(
 def merge_use(
     src_state_dir: pathlib.Path, dst_state_dir: pathlib.Path, *, written: Collection[str]
 ) -> tuple[int, int]:
-    """Carry a lane's use record into the origin's at import, before the lane's state dir goes.
+    """Carry a child's use record into the origin's at import, before the child's state dir goes.
 
     Args:
-        src_state_dir: The lane's state dir.
+        src_state_dir: The child's state dir.
         dst_state_dir: The origin's state dir.
         written: The facts `merge_memory` carried or updated; their writes travel.
 
@@ -411,13 +411,13 @@ def _ruling(entry: str) -> str:
 
 
 def merge_decisions(src_state_dir: pathlib.Path, dst_state_dir: pathlib.Path) -> tuple[int, int]:
-    """Append a lane's rulings to the origin's decisions file.
+    """Append a child's rulings to the origin's decisions file.
 
     A ruling the destination already holds under any tag is skipped, as is a repeat
     within the source.
 
     Args:
-        src_state_dir: The lane's state dir.
+        src_state_dir: The child's state dir.
         dst_state_dir: The origin's state dir.
 
     Returns:
@@ -453,13 +453,13 @@ def _sha256(path: pathlib.Path) -> str:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class MemoryMerge:
-    """What a lane's memory left in the origin's store at import, by name.
+    """What a child's memory left in the origin's store at import, by name.
 
     Attributes:
         carried: New fact files landed.
-        updated: Names whose lane edit replaced a copy unchanged since seeding.
-        deleted: Names whose lane deletion removed such a copy.
-        held: Names changed on both sides, or already taken; the lane's version is kept aside.
+        updated: Names whose child edit replaced a copy unchanged since seeding.
+        deleted: Names whose child deletion removed such a copy.
+        held: Names changed on both sides, or already taken; the child's version is kept aside.
     """
 
     carried: tuple[str, ...] = ()
@@ -471,7 +471,7 @@ class MemoryMerge:
 def merge_memory(
     src_state_dir: pathlib.Path, dst_state_dir: pathlib.Path, *, held_dir: pathlib.Path
 ) -> MemoryMerge:
-    """Carry a lane's memory into the origin's store the way its branch comes back.
+    """Carry a child's memory into the origin's store the way its branch comes back.
 
     A copy unchanged since seeding is nothing. A change over a copy the origin has not
     touched lands: an edit replaces the file, a deletion removes it. A change on
@@ -479,9 +479,9 @@ def merge_memory(
     name with other content.
 
     Args:
-        src_state_dir: The lane's state dir.
+        src_state_dir: The child's state dir.
         dst_state_dir: The origin's state dir.
-        held_dir: Where a held lane version is kept.
+        held_dir: Where a held child version is kept.
 
     Returns:
         What landed, by name.
@@ -492,12 +492,12 @@ def merge_memory(
     dst = memory_dir(dst_state_dir)
     paths.mkdir_for_real_user(dst)
     seeds = seed_digests(src_state_dir)
-    lane = {p.stem: p for p in src.glob("*.md") if _is_fact_file(p)}
+    child = {p.stem: p for p in src.glob("*.md") if _is_fact_file(p)}
     landed: dict[str, list[str]] = {"carried": [], "updated": [], "deleted": [], "held": []}
-    for name in sorted(seeds.keys() | lane.keys()):
+    for name in sorted(seeds.keys() | child.keys()):
         if _NAME_RE.fullmatch(name) is None:
             continue  # not a memory name (`_check_name`): names no path in either store
-        path = lane.get(name)
+        path = child.get(name)
         origin = dst / f"{name}.md"
         seed = seeds.get(name)
         theirs = _sha256(path) if path is not None else None
@@ -513,7 +513,7 @@ def merge_memory(
                 if path is not None:
                     paths.mkdir_for_real_user(held_dir)
                     portable.atomic_write(held_dir / path.name, path.read_bytes())
-            elif path is not None:  # carried or updated: the lane has the file
+            elif path is not None:  # carried or updated: the child has the file
                 portable.atomic_write(origin, path.read_bytes())
         landed[fate].append(name)
     return MemoryMerge(
@@ -530,19 +530,19 @@ def _fate(
     """Return one name's fate at import.
 
     Args:
-        seed: The seeded copy's digest; None when the name is new in the lane.
-        theirs: The lane's file digest; None when absent.
+        seed: The seeded copy's digest; None when the name is new in the child.
+        theirs: The child's file digest; None when absent.
         ours: The origin's file digest; None when absent.
 
     Returns:
         The fate.
     """
-    if seed is None:  # new in the lane
+    if seed is None:  # new in the child
         if theirs is None or theirs == ours:
             return "skip"
         return "held" if ours is not None else "carried"
     if theirs in (seed, ours):
-        return "skip"  # untouched in the lane, or the same content on both sides
+        return "skip"  # untouched in the child, or the same content on both sides
     if ours != seed:
         return "held"  # changed on both sides
     return "deleted" if theirs is None else "updated"
@@ -551,15 +551,15 @@ def _fate(
 def seed_store(src_state_dir: pathlib.Path, dst_state_dir: pathlib.Path) -> int:
     """Copy the repo's fact files into a fresh state dir, recording each copy's digest.
 
-    A lane's clone has an empty store; copies, never links, so a lane cannot write
+    A child's clone has an empty store; copies, never links, so a child cannot write
     the origin's store mid-run. Anything already there stays, and a store entry that
     is not a fact file is not copied. A name seeded earlier is left alone on a retry,
-    a fact the lane has since deleted included. The origin's rulings are copied beside the
-    store, when the lane has none; an origin with no store leaves the lane storeless.
+    a fact the child has since deleted included. The origin's rulings are copied beside the
+    store, when the child has none; an origin with no store leaves the child storeless.
 
     Args:
         src_state_dir: The origin's state dir.
-        dst_state_dir: The lane's state dir.
+        dst_state_dir: The child's state dir.
 
     Returns:
         How many fact files were copied; the rulings copy is not one.

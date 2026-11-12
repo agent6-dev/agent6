@@ -201,7 +201,7 @@ def test_a_execution_that_moved_past_the_base_claims_nothing(
     """An execution that moved past the base claims nothing.
 
     A resume commits the previous execution's work first, so execution two opens on a clean tree
-    whose HEAD carries execution one's breakage; `/parallel` merges lane commits the same way.
+    whose HEAD carries execution one's breakage; `/parallel` merges child commits the same way.
     """
     state, turn = _state(), _turn()
     wf = _wf(head="c" * 40)

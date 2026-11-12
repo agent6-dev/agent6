@@ -154,7 +154,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 menubar.MenuItem("Open files", "open_files"),
                 menubar.MenuItem("View logs", "view_logs"),
                 menubar.MenuItem(keymap.FINDINGS, "view_findings"),
-                menubar.MenuItem("Fold/expand lanes", "toggle_lanes"),
+                menubar.MenuItem("Fold/expand children", "toggle_children"),
                 menubar.MenuItem("Theme…", "choose_theme"),
                 menubar.MenuItem("Copy method…", "choose_copy_method"),
             ),
@@ -170,7 +170,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
     FOOTER: ClassVar = (
         ("new_work", "New session"),
         ("open_selected", "Open"),
-        ("toggle_lanes", "Lanes"),
+        ("toggle_children", "Children"),
         ("merge_selected", "Merge run"),
         ("delete_selected", "Delete run"),
         ("open_config", "Config"),
@@ -183,7 +183,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
     COMMANDS: ClassVar = textual_screen.Screen.COMMANDS | {screen_chrome.MenuCommands}
     HELP_HINTS: ClassVar = (
         "Enter opens the selected run",
-        "Space folds or expands a group's lanes",
+        "Space folds or expands a group's children",
         "Pickers: ↑↓ highlight · Space selects",
     )
 
@@ -268,12 +268,12 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         listing = viewmodel_listing.nested_rows(
             summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values()
         )
-        self._groups = {row.summary.session_id: row for row in listing if row.lanes}
+        self._groups = {row.summary.session_id: row for row in listing if row.children}
 
         pending: list[tuple[tuple[str | text.Text, ...], session_status.TaskLabel]] = []
 
         def add(row: viewmodel_listing.ListingRow, id_cell: str) -> None:
-            # The time is the row's: a group's latest lane activity, as `sessions list` shows it.
+            # The time is the row's: a group's latest child activity, as `sessions list` shows it.
             s = row.summary
             cells: dict[str, str | text.Text] = {
                 "updated": format.format_when(row.group_last_activity, short=narrow),
@@ -295,16 +295,20 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             s = row.summary
             marked = s.id_cell(winner=is_winner(dirs[s.session_id]))
             if depth:
-                add(row, format.lane_id_cell(marked, depth))
-                for lane in row.lanes:
-                    emit(lane, depth + 1)
+                add(row, format.child_id_cell(marked, depth))
+                for child in row.children:
+                    emit(child, depth + 1)
                 return
             expanded = s.session_id in self._expanded
-            folded = f" ({format.lane_count(len(row.lanes))})" if row.lanes and not expanded else ""
+            folded = (
+                f" ({format.child_count(len(row.children))})"
+                if row.children and not expanded
+                else ""
+            )
             add(row, marked + folded)
             if expanded:
-                for lane in row.lanes:
-                    emit(lane, 1)
+                for child in row.children:
+                    emit(child, 1)
 
         for row in listing:
             emit(row, 0)
@@ -339,8 +343,8 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self.app.sub_title = f"{self.repo_cwd.name} · {tally}"
         table.show_cursor = table.row_count > 0  # no full-height cursor over an empty body
 
-    def action_toggle_lanes(self) -> None:
-        """Expand or fold the selected group's lanes; the cursor stays on the group's row."""
+    def action_toggle_children(self) -> None:
+        """Expand or fold the selected group's children; the cursor stays on the group's row."""
         target = self._selected_group()
         if target is None:
             return
@@ -355,7 +359,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             table.move_cursor(row=row)
 
     def _selected_group(self) -> str | None:
-        """Return the group the cursor's row belongs to, its own or a lane's; else None."""
+        """Return the group the cursor's row belongs to, its own or a child's; else None."""
         rd = self._selected_dir()
         if rd is None:
             return None
@@ -413,7 +417,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         )
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Grey unavailable actions and hide Lanes without a group.
+        """Grey unavailable actions and hide Children without a group.
 
         None greys a key where False would hide it, and a missing key reads as a
         capability the hub lacks. Model-controlled runs cannot merge.
@@ -429,7 +433,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             True, None to grey the key, or False to hide it.
         """
         del parameters
-        if action == "toggle_lanes":
+        if action == "toggle_children":
             return self._selected_group() is not None
         if action == "review_selected":
             rd = self._selected_dir()
@@ -548,7 +552,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 "Prune merged runs?",
                 "Runs `agent6 sessions prune`: deletes run branches git can remove as merged"
                 " (reachable from the checked-out branch), merged runs' chain refs, the"
-                " worktrees of merged forks and group clone dirs whose lanes are all here."
+                " worktrees of merged forks and group clone dirs whose children are all here."
                 " A run whose base branch already holds its work is recorded as merged first."
                 " Squash-merged branches and ones merged elsewhere are kept and named;"
                 " unmerged ones are never touched.",

@@ -177,7 +177,7 @@ class ReviewVerdict:
         findings: The grounded findings from this reviewer.
         summary: The reviewer's closing summary.
         error: The failure diagnostic for an abstention, or null.
-        session_id: The read-only reviewer session, empty in legacy verdicts.
+        session_id: The reviewer's session, empty in legacy verdicts.
     """
 
     reviewer_index: int

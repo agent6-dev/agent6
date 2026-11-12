@@ -91,10 +91,10 @@ def spawn_new_work(  # noqa: PLR0911
 ) -> tuple[pathlib.Path | None, str]:
     """Start a session detached from a hub.
 
-    In run mode a `/parallel` message fans out one detached `run --parallel` per
+    In run mode a `/parallel` message starts one detached `run --parallel` per
     segment: a malformed directive refuses before any spawn, and any segment's
-    failure fails the whole message while naming the lanes already running. A plain
-    run into a checkout another run is driving refuses at once; a group's lanes
+    failure fails the whole message while naming the children already running. A plain
+    run into a checkout another run is driving refuses at once; a group's children
     clone the checkout and a worktree run has a checkout of its own, so neither
     takes that lock.
 
@@ -108,7 +108,7 @@ def spawn_new_work(  # noqa: PLR0911
         config_paths: The front-end's explicit config, when any.
 
     Returns:
-        The new session's dir (the first lane's for a group) and "", or None and why.
+        The new session's dir (the first child's for a group) and "", or None and why.
     """
     options = options or RunOptions()
     if (problem := _refusal(mode, task, options)) is not None:
@@ -142,7 +142,7 @@ def spawn_new_work(  # noqa: PLR0911
             config_paths=config_paths,
         )
     if options.worktree or options.seed_from:
-        return None, "/parallel lanes clone the checkout; drop the worktree and the seed session"
+        return None, "/parallel children clone the checkout; drop the worktree and the seed session"
     refusal = validate.directive_model_refusal(
         cwd, segments, config_paths, preset=preset, model=model
     )
@@ -163,14 +163,14 @@ def spawn_new_work(  # noqa: PLR0911
             config_paths=config_paths,
         )
         if session_dir is None:
-            lines.append(f"lane {i} ({seg.task}): {err}")
+            lines.append(f"child {i} ({seg.task}): {err}")
             failed = True
             continue
-        lines.append(f"lane {i} ({seg.task}): running as {session_dir.name}")
+        lines.append(f"child {i} ({seg.task}): running as {session_dir.name}")
         if first is None:
             first = session_dir
     if failed:
-        # A partial failure must not vanish behind a surviving lane.
+        # A partial failure must not vanish behind a surviving child.
         return None, "\n".join(lines)
     assert first is not None
     return first, ""
@@ -207,7 +207,7 @@ def _spawn_run(
         task: The task text, passed after `--` so it never reads as a flag; "" passes none.
         preset: The `--preset` value, when any.
         model: The `--model` value, when any.
-        spec: The `--parallel` spec of a lane; "" for a plain run.
+        spec: The `--parallel` spec of a child; "" for a plain run.
         options: The run options beside the preset and model.
         config_paths: The front-end's explicit config, when any.
 
@@ -294,7 +294,7 @@ _COMMAND_GROUPS = frozenset({"machine", "sessions", "config"})
 def subcommand_label(argv: list[str]) -> str:
     """Return the subcommand the argv names, for diagnostics: "machine run", not "machine"."""
     if "-m" in argv and argv.index("-m") + 1 < len(argv):
-        # A `python -m agent6.ui.cli.lane_agent` bootstrap reads as "lane agent".
+        # A `python -m agent6.ui.cli.child_agent` bootstrap reads as "child agent".
         return argv[argv.index("-m") + 1].rsplit(".", 1)[-1].replace("_", " ")
     if len(argv) < 2:
         return argv[0]
@@ -484,13 +484,13 @@ def spawn_and_locate(
     Returns:
         The new dir and "", or None and why.
     """
-    found, _pid, err = spawn_lane(
+    found, _pid, err = spawn_child(
         argv, cwd, before=before, list_dirs=list_dirs, env=env, timeout_s=timeout_s
     )
     return found, err
 
 
-def spawn_lane(
+def spawn_child(
     argv: list[str],
     cwd: pathlib.Path,
     *,
@@ -500,10 +500,10 @@ def spawn_lane(
     timeout_s: float = 25.0,
     tie_to_parent: bool = True,
 ) -> tuple[pathlib.Path | None, int, str]:
-    """Spawn a lane detached, locate its session dir and keep the child's pid.
+    """Spawn a child detached, locate its session dir and keep the child's pid.
 
     The pid lets the parent stop a child that never reports a session dir; the parent
-    tie (PDEATHSIG) ends the lane with a parent that dies, as a Ctrl-C stop would.
+    tie (PDEATHSIG) ends the child with a parent that dies, as a Ctrl-C stop would.
 
     Args:
         argv: The command.
@@ -512,7 +512,7 @@ def spawn_lane(
         list_dirs: Lists the session dirs now.
         env: The child's environment; None inherits this process's.
         timeout_s: How long to wait for the dir.
-        tie_to_parent: Deliver SIGTERM to the lane when this process dies.
+        tie_to_parent: Deliver SIGTERM to the child when this process dies.
 
     Returns:
         The new dir, the pid and "", or None, the pid (0 when nothing started) and why.
@@ -549,7 +549,7 @@ def _spawn_and_wait[T](
         timeout_s: How long to poll.
         clean_exit: The answer for a child that exited 0 without one; None hands back
             its exit instead.
-        preexec: Runs in the child before exec; a lane's parent tie.
+        preexec: Runs in the child before exec; a child's parent tie.
 
     Returns:
         The answer, the child's pid and "", or None, the pid (0 when nothing started) and

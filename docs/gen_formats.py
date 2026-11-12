@@ -447,17 +447,17 @@ WEB = (
     Producer("viewmodel.receipt", "as_dict", "`/api/session/<id>/receipt` fields", "payload"),
 )
 MODELS = (
-    ("app.lane_launch", "LaneLaunch"),
+    ("app.child_launch", "ChildLaunch"),
     ("sessions.completion", "CompletionRecord"),
-    ("sessions.lane_dispatch", "DispatchRecord"),
+    ("sessions.child_dispatch", "DispatchRecord"),
     ("sessions.manifest", "SessionManifest"),
     ("ui.cli.ps_cmd", "_Row"),
     ("viewmodel.session.records", "SessionState"),
     ("viewmodel.machine.state", "MachineState"),
     ("viewmodel.review", "MergeReviewGuard"),
     ("viewmodel.receipt", "ReceiptView"),
-    ("viewmodel.lanes", "ChildView"),
-    ("viewmodel.lanes", "DispatchView"),
+    ("viewmodel.children", "ChildView"),
+    ("viewmodel.children", "DispatchView"),
     ("review_records", "FindingAction"),
     ("app.review.actions", "ActionResult"),
     ("vcs.git.files", "BlameLine"),
@@ -651,7 +651,7 @@ def build_markdown() -> str:
     sections.append(
         "`sessions list --json` emits `summary_row` objects with `row_json` additions.\n"
         "`sessions show --json` emits one `_cmd_status` object.\n"
-        "`ps --json` emits an array of `_Row` records, including nested lanes."
+        "`ps --json` emits an array of `_Row` records, including nested children."
     )
     sections.extend(p.render() for p in CLI)
     summary = _node(module_path("budget"), "BudgetTracker.format_summary")
@@ -718,7 +718,7 @@ def build_markdown() -> str:
         "`SessionManifest` is the private, durable `manifest.json` record.\n"
         "`HarnessStamp.gate` separates the pinned command and source from execution availability.\n"
         "`ComparisonStamp` holds group facts on the parent.\n"
-        "`PlacementStamp` links each lane to it.\n"
+        "`PlacementStamp` links each child to it.\n"
         "Other records are nested objects used by the CLI and web serializers above.\n"
         "Properties are absent unless a serializer adds them explicitly."
     )

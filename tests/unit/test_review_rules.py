@@ -16,7 +16,7 @@ from agent6.harness.review import verdict as review_verdict
 from agent6.sessions import event_log
 from agent6.vcs.git import files as git_files
 from agent6.vcs.git import read as git_read
-from tests import review_helpers, review_lane_env
+from tests import review_env, review_helpers
 from tests.unit import test_review_gate
 
 
@@ -230,11 +230,11 @@ def _reviewer_for(
     (repo / "AGENTS.md").unlink()
     chain.commit("edit")
     return review_gate.ReviewGate(
-        review_gate.ReviewSettings(reviewers=[review_lane_env.reviewer("s", "m", provider)]),
+        review_gate.ReviewSettings(reviewers=[review_env.reviewer("s", "m", provider)]),
         chain,
         (),
         mock.MagicMock,
-        lambda: review_lane_env.READING_TOOLS,
+        lambda: review_env.READING_TOOLS,
         lambda: None,
         lambda _s: None,
         sink.emit,
@@ -361,8 +361,8 @@ def test_malicious_rules_do_not_add_tools_or_change_grounding(repo: pathlib.Path
             }
         )
     )
-    result = review_lane_env.run_panel(
-        [review_lane_env.reviewer("s", "m", provider)],
+    result = review_env.run_panel(
+        [review_env.reviewer("s", "m", provider)],
         review_panel.ReviewContext(rules=rules, diff="diff --git a/foo.py b/foo.py\n"),
         block_on="any",
         min_blocking_models=1,
@@ -371,7 +371,7 @@ def test_malicious_rules_do_not_add_tools_or_change_grounding(repo: pathlib.Path
     )
     # The reviewer has the tools its parent handed down, whatever the rules ask for.
     offered = tuple(sorted(t.name for t in provider.call.call_args.kwargs["tools"]))
-    assert offered == review_lane_env.READING_TOOLS
+    assert offered == review_env.READING_TOOLS
     assert not result.blocked and result.merged_findings[0].severity == "warn"
 
 
@@ -490,5 +490,5 @@ def test_prepared_review_freezes_rules_findings_and_failed_verification(repo: pa
 
 
 @pytest.fixture(autouse=True)
-def panel_lanes(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)
+def panel_children(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(review_gate, "run_panel", review_env.run_panel)

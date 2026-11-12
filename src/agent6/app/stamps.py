@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from agent6 import __version__, evidence, kinds, portable, task_text
-from agent6.app import lane_launch
+from agent6.app import child_launch
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ReviewerConfig, RoleModel
 from agent6.models import registry
@@ -213,34 +213,34 @@ def write_session_manifest(
     write_manifest(layout.manifest_path, m)
 
 
-def lane_record_state() -> pathlib.Path | None:
-    """Return the state dir this lane's record lives under, or None outside a lane.
+def child_record_state() -> pathlib.Path | None:
+    """Return the state dir this child's record lives under, or None outside a child.
 
     Returns:
-        The state dir of the repository whose run dispatched the lane.
+        The state dir of the repository whose run dispatched the child.
 
     Raises:
-        ConfigError: The lane's envelope is missing or malformed.
+        ConfigError: The child's envelope is missing or malformed.
     """
-    envelope = lane_launch.read()
+    envelope = child_launch.read()
     return envelope.record_state if envelope is not None else None
 
 
-def lane_gate_source() -> manifest.GateSource:
-    """Return the origin of the gate a lane's config carries, or "" outside a lane.
+def child_gate_source() -> manifest.GateSource:
+    """Return the origin of the gate a child's config carries, or "" outside a child.
 
     The parent resolves the gate in the origin, where the repo signals are, and writes it
-    into the lane's config; the lane alone would read it as configured.
+    into the child's config; the child alone would read it as configured.
 
     Returns:
-        The gate's origin, "" outside a lane or when the parent passed none.
+        The gate's origin, "" outside a child or when the parent passed none.
     """
-    envelope = lane_launch.read()
+    envelope = child_launch.read()
     return envelope.gate_source if envelope is not None else ""
 
 
 def parallel_lineage() -> manifest.ParallelLineage | None:
-    """Return the group lineage the parent handed this lane, or None outside a lane.
+    """Return the group lineage the parent handed this child, or None outside a child.
 
     Read at the manifest's write so the grouping survives a parent death.
 
@@ -248,14 +248,14 @@ def parallel_lineage() -> manifest.ParallelLineage | None:
         The lineage, or None.
 
     Raises:
-        ConfigError: The lane's envelope is missing or malformed.
+        ConfigError: The child's envelope is missing or malformed.
     """
-    envelope = lane_launch.read()
+    envelope = child_launch.read()
     if envelope is None:
         return None
     return manifest.ParallelLineage(
         group=envelope.group,
-        lane=envelope.lane,
+        number=envelope.number,
         parent=envelope.parent,
         config_notes=envelope.notes,
     )

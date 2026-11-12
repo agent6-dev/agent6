@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The values a config leaf can take when the schema alone cannot say.
 
-A provider's model ids and the routes a `/parallel` lane may run, behind the config
+A provider's model ids and the routes a `/parallel` child may run, behind the config
 editors' pickers, the web suggest route and TAB completion, so every surface offers the
 same lists.
 """

@@ -1410,12 +1410,12 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
     assert "budget.update" in sink.types, "the squash spend never reached the log"
 
 
-def test_merge_adopts_an_orphaned_group_lane(
+def test_merge_adopts_an_orphaned_group_child(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions merge` adopts an orphaned lane from its clone and lands it like any run.
+    """`sessions merge` adopts an orphaned child from its clone and lands it like any run.
 
-    A parent death leaves a finished lane's branch only in its clone; `sessions prune` then
+    A parent death leaves a finished child's branch only in its clone; `sessions prune` then
     sweeps the clone dir.
     """
     monkeypatch.chdir(tmp_path)
@@ -1427,28 +1427,28 @@ def test_merge_adopts_an_orphaned_group_lane(
     _git(tmp_path, "commit", "-q", "-m", "init")
     base_sha = _git(tmp_path, "rev-parse", "HEAD")
 
-    # The lane clone as the spawner leaves it: workdir cache / repo-id / group / lane-1.
+    # The child clone as the spawner leaves it: workdir cache / repo-id / group / child-1.
     workdir = tmp_path / "cache" / "worktrees"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     (tmp_path / "cfg" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "cfg" / "agent6" / "config.toml").write_text(
         f'[git.worktree]\nbase_dir = "{workdir}"\n', encoding="utf-8"
     )
-    clone = workdir / paths.repo_id(tmp_path) / "fan" / "lane-1"
+    clone = workdir / paths.repo_id(tmp_path) / "fan" / "child-1"
     clone.parent.mkdir(parents=True)
     _git(tmp_path, "clone", "-q", str(tmp_path), str(clone))
     _git(clone, "config", "user.email", "t@t")
     _git(clone, "config", "user.name", "t")
     _git(clone, "checkout", "-q", "-b", "agent6/fan-l1")
-    (clone / "work.txt").write_text("lane work\n", encoding="utf-8")
+    (clone / "work.txt").write_text("child work\n", encoding="utf-8")
     _git(clone, "add", "-A")
     _git(clone, "commit", "-q", "-m", "agent6 turn 1: work")
 
-    # The lane's session dir in the origin's state, lineage stamped.
+    # The child's session dir in the origin's state, lineage stamped.
     origin_runs = paths.state_dir(tmp_path) / "sessions" / "runs"
-    lane_state = origin_runs / "fan-l1"
-    lane_state.mkdir(parents=True)
-    (lane_state / "manifest.json").write_text(
+    child_state = origin_runs / "fan-l1"
+    child_state.mkdir(parents=True)
+    (child_state / "manifest.json").write_text(
         json.dumps(
             {
                 "version": 2,
@@ -1458,12 +1458,12 @@ def test_merge_adopts_an_orphaned_group_lane(
                 "base_sha": base_sha,
                 "base_branch": "main",
                 "run_branch": "agent6/fan-l1",
-                "parallel": {"group": "fan", "lane": 1, "parent": "fan"},
+                "parallel": {"group": "fan", "number": 1, "parent": "fan"},
             }
         ),
         encoding="utf-8",
     )
-    (lane_state / "logs.jsonl").write_text(
+    (child_state / "logs.jsonl").write_text(
         json.dumps(
             {"type": "session.stop", "reason": "finish_session", "verification": "unverified"}
         )
@@ -1473,10 +1473,10 @@ def test_merge_adopts_an_orphaned_group_lane(
 
     assert main(["sessions", "merge", "fan-l1", "--method", "squash"]) == 0
     out = capsys.readouterr().out
-    assert "imported orphaned lane branch agent6/fan-l1" in out
-    assert (tmp_path / "work.txt").read_text(encoding="utf-8") == "lane work\n"
+    assert "imported orphaned child branch agent6/fan-l1" in out
+    assert (tmp_path / "work.txt").read_text(encoding="utf-8") == "child work\n"
 
-    # Every lane commit is now in the origin: prune sweeps the group dir.
+    # Every child commit is now in the origin: prune sweeps the group dir.
     assert main(["sessions", "prune", "--delete-squashed"]) == 0
     out = capsys.readouterr().out
     assert "clone groups: swept 1" in out

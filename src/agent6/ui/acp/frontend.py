@@ -273,5 +273,5 @@ def _no_parent(
     _auto_approve: bool,
     _watch: Callable[[pathlib.Path, str, str], bool],
 ) -> None:
-    """Refuse `/parallel`: an ACP client renders one session, so lanes would run unseen."""
+    """Refuse `/parallel`: an ACP client renders one session, so children would run unseen."""
     return None

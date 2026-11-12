@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The facts a parent hands a lane, in one private file named by `AGENT6_LANE`.
+"""The facts a parent hands a child, in one private file named by `AGENT6_LAUNCH`.
 
-The bootstrap (`agent6.ui.cli.lane_agent`) reads it to start the run; the lane's config load
+The bootstrap (`agent6.ui.cli.child_agent`) reads it to start the run; the child's config load
 and manifest write read it again, so the grouping survives a parent death. A run outside
-a lane has no launch file. The task and pins travel here, never on the host argv, under the
+a child has no launch file. The task and pins travel here, never on the host argv, under the
 state base every jail hides.
 """
 
@@ -18,14 +18,14 @@ import sys
 
 import pydantic
 
-from agent6 import budget, kinds, lane_records
+from agent6 import budget, child_records, kinds
 from agent6.config import Config, ConfigError
 from agent6.sessions import ipc, manifest
 
-ENV = "AGENT6_LANE"
+ENV = "AGENT6_LAUNCH"
 # The fixed bootstrap: `-P` keeps the cwd off `sys.path`, `-E` ignores `PYTHONPATH` and its
-# siblings, so nothing in the clone or the environment chooses what the lane imports.
-BOOTSTRAP = "agent6.ui.cli.lane_agent"
+# siblings, so nothing in the clone or the environment chooses what the child imports.
+BOOTSTRAP = "agent6.ui.cli.child_agent"
 _FILE_MODE = 0o600
 _DIR_MODE = 0o700
 
@@ -34,33 +34,33 @@ class LaunchError(ConfigError):
     """A launch file or its directory is missing, malformed, foreign-owned or exposed."""
 
 
-class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """What a lane needs to start, and what it knows about itself that no config layer holds.
+class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
+    """What a child needs to start, and what it knows about itself that no config layer holds.
 
-    **Support: internal.** Written by the parent for one spawn, read by that lane.
+    **Support: internal.** Written by the parent for one spawn, read by that child.
 
     Attributes:
-        worktree: The lane's clone, the run's cwd.
-        record_state: The state dir of the repository that dispatched the lane, where the
-            lane's record lives from its first event.
-        session_id: The lane's session id.
-        task: The task text, exactly as the lane's manifest records it.
+        worktree: The child's clone, the run's cwd.
+        record_state: The state dir of the repository that dispatched the child, where the
+            child's record lives from its first event.
+        session_id: The child's session id.
+        task: The task text, exactly as the child's manifest records it.
         pins: The parent's pins, out of band of the task.
         max_usd: The parent's forwarded `--max-usd`; None keeps the config's.
-        allowance: What the parent had left when the lane started, which sets every cap;
+        allowance: What the parent had left when the child started, which sets every cap;
             None for the config's caps.
         auto_approve: Whether the parent ran with `--auto-approve`.
-        away: The lane's away mode: `wait` parks a question for `agent6 attach`, `deny`
+        away: The child's away mode: `wait` parks a question for `agent6 attach`, `deny`
             answers it empty.
-        config: The lane's config snapshot, beside this file; the lane's sole `--config`.
-        notes: The snapshot's serialization loss notes, recorded in the lane's manifest.
-        parent: The session every listing nests the lane under.
-        group: The group the lane belongs to.
-        lane: The lane's number, from 1.
+        config: The child's config snapshot, beside this file; the child's sole `--config`.
+        notes: The snapshot's serialization loss notes, recorded in the child's manifest.
+        parent: The session every listing nests the child under.
+        group: The group the child belongs to.
+        number: The child's number, from 1.
         gate_source: Where the verify gate in the snapshot came from; "" for none.
         operator_task: The task's words before composition; None when they are the task.
-        limits: The turn cap and deadline the lane runs under; None for the config's own.
-        contract: The bounded conversation a `reviewer` lane drives; None for a run lane.
+        limits: The turn cap and deadline the child runs under; None for the config's own.
+        contract: The bounded conversation a `reviewer` child drives; None for a run child.
     """
 
     worktree: pathlib.Path
@@ -76,21 +76,21 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     notes: tuple[str, ...] = ()
     parent: str = pydantic.Field(min_length=1)
     group: str = pydantic.Field(min_length=1)
-    lane: int = pydantic.Field(ge=1)
+    number: int = pydantic.Field(ge=1)
     gate_source: manifest.GateSource = ""
     operator_task: str | None = None
-    limits: lane_records.LaneLimits | None = None
+    limits: child_records.ChildLimits | None = None
     contract: kinds.ConversationContract | None = None
 
 
-def is_lane() -> bool:
-    """Return whether this process runs a lane, whose work the session that dispatched it joins."""
+def is_child() -> bool:
+    """Return whether this process runs a child, whose work the session that dispatched it joins."""
     return bool(os.environ.get("AGENT6_CHILD"))
 
 
 def dispatch_authority(
     cfg: Config, *, mode: str, session_id: str, root: pathlib.Path
-) -> lane_records.DispatchAuthority:
+) -> child_records.DispatchAuthority:
     """Resolve authority from the private launch, never from a tool or steer argument.
 
     Args:
@@ -103,9 +103,9 @@ def dispatch_authority(
         Work authority only in top-level runs; configured panels also in top-level ask/plan.
     """
     launch = read()
-    is_child = launch is not None or is_lane()
+    in_child = launch is not None or is_child()
     worker = mode == "run"
-    if is_child:
+    if in_child:
         worker = (
             worker
             and launch is not None
@@ -114,20 +114,20 @@ def dispatch_authority(
             and launch.worktree.resolve() == root.resolve()
         )
     deadline = launch.limits.deadline_at if launch is not None and launch.limits else None
-    return lane_records.DispatchAuthority(
-        work=worker and not is_child,
-        panels=(worker or (not is_child and mode in ("ask", "plan")))
+    return child_records.DispatchAuthority(
+        work=worker and not in_child,
+        panels=(worker or (not in_child and mode in ("ask", "plan")))
         and cfg.review.when != "never",
         deadline_at=deadline,
     )
 
 
-def apply_limits(cfg: Config, limits: lane_records.LaneLimits | None) -> Config:
-    """Return the config with `harness.max_turns` clamped to the lane's cap.
+def apply_limits(cfg: Config, limits: child_records.ChildLimits | None) -> Config:
+    """Return the config with `harness.max_turns` clamped to the child's cap.
 
     Args:
-        cfg: The lane's loaded config.
-        limits: The lane's limits; None, or one without a turn cap, leaves the config alone.
+        cfg: The child's loaded config.
+        limits: The child's limits; None, or one without a turn cap, leaves the config alone.
 
     Returns:
         The config, the same object when nothing changes.
@@ -141,7 +141,7 @@ def apply_limits(cfg: Config, limits: lane_records.LaneLimits | None) -> Config:
 
 
 def bootstrap_argv() -> list[str]:
-    """Return the fixed host argv that starts a lane; the lane's facts travel in its file."""
+    """Return the fixed host argv that starts a child; the child's facts travel in its file."""
     return [sys.executable, "-P", "-E", "-m", BOOTSTRAP]
 
 
@@ -191,12 +191,12 @@ def write_private(path: pathlib.Path, text: str) -> None:
     pathlib.Path(tmp).replace(path)
 
 
-def write(directory: pathlib.Path, launch: LaneLaunch) -> pathlib.Path:
-    """Write the launch file `AGENT6_LANE` names, as `lane-<n>.json` under a private dir.
+def write(directory: pathlib.Path, launch: ChildLaunch) -> pathlib.Path:
+    """Write the launch file `AGENT6_LAUNCH` names, as `child-<n>.json` under a private dir.
 
     Args:
         directory: The group's launch dir (`launch_dir`), created private when missing.
-        launch: The lane's facts.
+        launch: The child's facts.
 
     Returns:
         The file's path.
@@ -205,16 +205,16 @@ def write(directory: pathlib.Path, launch: LaneLaunch) -> pathlib.Path:
         LaunchError: The dir cannot be private.
     """
     private_dir(directory)
-    path = directory / f"lane-{launch.lane}.json"
+    path = directory / f"child-{launch.number}.json"
     write_private(path, launch.model_dump_json(indent=2) + "\n")
     return path
 
 
-def read() -> LaneLaunch | None:
-    """Return the launch file `AGENT6_LANE` names, or None outside a lane.
+def read() -> ChildLaunch | None:
+    """Return the launch file `AGENT6_LAUNCH` names, or None outside a child.
 
     Returns:
-        The lane's facts, or None when the variable is unset.
+        The child's facts, or None when the variable is unset.
 
     Raises:
         LaunchError: The variable names a missing, malformed, foreign-owned or exposed file.
@@ -225,14 +225,14 @@ def read() -> LaneLaunch | None:
     return read_file(pathlib.Path(raw))
 
 
-def read_file(path: pathlib.Path) -> LaneLaunch:
+def read_file(path: pathlib.Path) -> ChildLaunch:
     """Validate and return a launch file: a regular `0600` file of this user's in a private dir.
 
     Args:
         path: The file.
 
     Returns:
-        The lane's facts.
+        The child's facts.
 
     Raises:
         LaunchError: The file is missing, a symlink, foreign-owned, readable by others or
@@ -240,9 +240,9 @@ def read_file(path: pathlib.Path) -> LaneLaunch:
     """
     text = read_private(path)
     try:
-        return LaneLaunch.model_validate_json(text)
+        return ChildLaunch.model_validate_json(text)
     except pydantic.ValidationError as exc:
-        raise LaunchError(f"invalid lane launch {path}: {exc}") from exc
+        raise LaunchError(f"invalid child launch {path}: {exc}") from exc
 
 
 def read_private(path: pathlib.Path) -> str:
@@ -262,7 +262,7 @@ def read_private(path: pathlib.Path) -> str:
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     except OSError as exc:
-        raise LaunchError(f"invalid lane launch {path}: {exc.strerror or exc}") from exc
+        raise LaunchError(f"invalid child launch {path}: {exc.strerror or exc}") from exc
     try:
         # The open file is checked again: the path check and the read must see one inode.
         _check_stat(path, os.fstat(fd), directory=False, exposed=0o077)
@@ -287,7 +287,7 @@ def _check_private(path: pathlib.Path, *, directory: bool, exposed: int) -> None
     try:
         st = os.lstat(path)
     except OSError as exc:
-        raise LaunchError(f"invalid lane launch {path}: {exc.strerror or exc}") from exc
+        raise LaunchError(f"invalid child launch {path}: {exc.strerror or exc}") from exc
     _check_stat(path, st, directory=directory, exposed=exposed)
 
 
@@ -305,13 +305,13 @@ def _check_stat(path: pathlib.Path, st: os.stat_result, *, directory: bool, expo
     """
     kind = "directory" if directory else "file"
     if stat.S_ISLNK(st.st_mode):
-        raise LaunchError(f"invalid lane launch {path}: a symlink where a {kind} must be")
+        raise LaunchError(f"invalid child launch {path}: a symlink where a {kind} must be")
     if directory != stat.S_ISDIR(st.st_mode) or not (directory or stat.S_ISREG(st.st_mode)):
-        raise LaunchError(f"invalid lane launch {path}: not a regular {kind}")
+        raise LaunchError(f"invalid child launch {path}: not a regular {kind}")
     if st.st_uid != os.geteuid():
-        raise LaunchError(f"invalid lane launch {path}: owned by uid {st.st_uid}, not this user")
+        raise LaunchError(f"invalid child launch {path}: owned by uid {st.st_uid}, not this user")
     if st.st_mode & exposed:
         raise LaunchError(
-            f"invalid lane launch {path}: mode {stat.S_IMODE(st.st_mode):04o} lets others"
+            f"invalid child launch {path}: mode {stat.S_IMODE(st.st_mode):04o} lets others"
             f" {'write' if directory else 'read'} it"
         )

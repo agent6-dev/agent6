@@ -14,7 +14,7 @@ from agent6 import budget, errors, evidence
 from agent6.sessions import manifest
 from agent6.vcs import commit_graph
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import lanes
+from agent6.viewmodel import children as vm_children
 from agent6.viewmodel import review as review_view
 from agent6.viewmodel.session import log as session_log
 
@@ -142,7 +142,7 @@ class ReceiptView:
         jobs: Job-settlement observations.
         environments: Environment lifecycle observations.
         acquisitions: The container leases the run's executions acquired.
-        children: The session's lanes, from its dispatch records or its lanes' lineage.
+        children: The session's children, from its dispatch records or its children's lineage.
     """
 
     session_id: str
@@ -160,7 +160,7 @@ class ReceiptView:
     jobs: tuple[evidence.JobsObservation, ...] = ()
     environments: tuple[evidence.EnvironmentObservation, ...] = ()
     acquisitions: tuple[evidence.AcquisitionObservation, ...] = ()
-    children: tuple[lanes.ChildView, ...] = ()
+    children: tuple[vm_children.ChildView, ...] = ()
 
 
 def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
@@ -206,7 +206,7 @@ def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
         fold.jobs,
         fold.environments,
         fold.acquisitions,
-        lanes.children_of(session_dir),
+        vm_children.children_of(session_dir),
     )
 
 
@@ -371,21 +371,21 @@ def environment_summary(view: ReceiptView | session_log.LogScan) -> str:
     return "\n".join(lines)
 
 
-def lanes_section(children: tuple[lanes.ChildView, ...]) -> list[str]:
-    """Return the receipt's `Lanes` lines: one per lane, then the spend they add to the total.
+def children_section(views: tuple[vm_children.ChildView, ...]) -> list[str]:
+    """Return the receipt's `Children` lines: one per child, then the spend they add to the total.
 
     Args:
-        children: The session's children; a panel's reviewers are listed with their panel.
+        views: The session's children; a panel's reviewers are listed with their panel.
 
     Returns:
-        The lines; none for a session without lanes.
+        The lines; none for a session without children.
     """
-    children = tuple(child for child in children if child.source != "panel")
-    if not children:
+    views = tuple(child for child in views if child.source != "panel")
+    if not views:
         return []
-    lines = ["", "Lanes"]
-    for child in children:
-        label = f"lane {child.lane} {child.session_id}"
+    lines = ["", "Children"]
+    for child in views:
+        label = f"child {child.number} {child.session_id}"
         if child.model:
             label += f" ({child.model})"
         if child.outcome == "joined":
@@ -398,10 +398,10 @@ def lanes_section(children: tuple[lanes.ChildView, ...]) -> list[str]:
             what = child.status or "not started"
         spend = f", {budget.format_usd(child.spend_usd)}" if child.settled else ""
         lines.append(f"{label}: {what}{spend}")
-    settled = math.fsum(child.spend_usd for child in children if child.settled)
+    settled = math.fsum(child.spend_usd for child in views if child.settled)
     if settled:
         # The parent's total already holds this: a reader adds nothing.
-        lines.append(f"spend includes the lanes' {budget.format_usd(settled)}")
+        lines.append(f"spend includes the children's {budget.format_usd(settled)}")
     return lines
 
 
@@ -413,7 +413,7 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
         include_output: Whether to include the retained stdout and stderr bodies.
 
     Returns:
-        Testing, review, lanes and reversal sections as plain text.
+        Testing, review, children and reversal sections as plain text.
     """
     final = next(
         (
@@ -478,7 +478,7 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
             )
     if view.review.read_failure:
         lines.append(view.review.read_failure)
-    lines.extend(lanes_section(view.children))
+    lines.extend(children_section(view.children))
     lines.extend(
         (
             "",

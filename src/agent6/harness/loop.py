@@ -25,10 +25,10 @@ import pydantic
 
 from agent6 import budget as agent6_budget
 from agent6 import (
+    child_records,
     directive,
     errors,
     kinds,
-    lane_records,
     media,
     review_records,
     task_text,
@@ -123,7 +123,7 @@ class Harness:
         call: The worker call's knobs: retries, temperature, output caps.
         compaction: The compaction tiers' thresholds, the tail kept, the summariser.
         review: The in-loop review panel's trigger, reviewers and decision rule.
-        initial_pins: Pins seeded before the first turn (a lane inherits the parent's);
+        initial_pins: Pins seeded before the first turn (a child inherits the parent's);
             fresh runs only, a resume restores pins from the snapshot.
         resume_state_path: Where the provider-agnostic resume snapshot is written before
             every model call; None writes none.
@@ -631,7 +631,7 @@ class Harness:
         Returns:
             The end when the operator's verify command cannot execute, else None.
         """
-        # A run that opens with a ranked dispatch leaves the baseline to its lanes.
+        # A run that opens with a ranked dispatch leaves the baseline to its children.
         if self.contract is None and self.opening is None:
             try:
                 for notice in self.gate.start_baseline(state):
@@ -875,7 +875,7 @@ class Harness:
 
         try:
             if self.budget is not None:
-                # A lane's settled spend stops the parent before its next call, not after it.
+                # A child's settled spend stops the parent before its next call, not after it.
                 self.budget.check()
             return provider_call.call_with_media_recovery(
                 _logical_call,
@@ -1914,9 +1914,9 @@ class Harness:
     def _parallel_tool(
         self, raw: dict[str, Any], origin: kinds.ToolCallOrigin | None
     ) -> tools_results.ToolResult:
-        """Dispatch lanes for the model's `parallel` call through the steer's own path.
+        """Dispatch children for the model's `parallel` call through the steer's own path.
 
-        The lanes run under the model-lane ceilings and the run's reserved allowance; the
+        The children run under the model-child ceilings and the run's reserved allowance; the
         dispatch is recorded with the model as its source and its result is the tool's
         answer, never a steer notice.
 
@@ -1935,9 +1935,9 @@ class Harness:
             raise tool_errors.ToolError("not available: no turn in progress")
         conversation, state, turn = self._tool_turn
         request = schema.ParallelInput.model_validate(raw)
-        limits = lane_records.LaneLimits(
-            max_turns=parallel_dispatch.MODEL_LANE_MAX_TURNS,
-            deadline_at=time.time() + parallel_dispatch.MODEL_LANE_DEADLINE_S,
+        limits = child_records.ChildLimits(
+            max_turns=parallel_dispatch.MODEL_CHILD_MAX_TURNS,
+            deadline_at=time.time() + parallel_dispatch.MODEL_CHILD_DEADLINE_S,
         )
         result = self.parallel.dispatch(
             conversation,
@@ -1953,19 +1953,19 @@ class Harness:
                 "group": result.group,
                 "dispatched": result.dispatched,
                 "message": result.message,
-                "lanes": [dataclasses.asdict(join) for join in result.lanes],
+                "children": [dataclasses.asdict(join) for join in result.children],
             }
         )
 
     @functools.cached_property
     def parallel(self) -> parallel_dispatch.ParallelDispatcher:
-        """Return the `/parallel` lane dispatcher."""
+        """Return the `/parallel` child dispatcher."""
         return parallel_dispatch.ParallelDispatcher(
             chain=self.chain,
             curator=self.curator,
-            max_lanes=self.config.harness.parallel.max_lanes,
-            lane_spawner=self.bridge.lane_spawner,
-            authority=self.bridge.lane_authority,
+            max_children=self.config.harness.parallel.max_children,
+            child_spawner=self.bridge.child_spawner,
+            authority=self.bridge.child_authority,
             save_snapshot=lambda *args, **kwargs: loop_resume.save_resume_snapshot(
                 self, *args, **kwargs
             ),
@@ -1978,8 +1978,8 @@ class Harness:
             session_dir=(
                 self.resume_state_path.parent if self.resume_state_path is not None else None
             ),
-            lane_recoverer=self.bridge.lane_recoverer,
-            ranker=self.bridge.lane_ranker,
+            child_recoverer=self.bridge.child_recoverer,
+            ranker=self.bridge.child_ranker,
             stop_pending=lambda: self.bridge.stop_requested() or self.bridge.should_abort(),
         )
 

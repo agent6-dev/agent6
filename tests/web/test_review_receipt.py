@@ -115,7 +115,7 @@ const host = el('div'); globalThis.location = {hash:''};
 const r = {session_id:'run',
  text:'Receipt run\\n\\nTesting\\n\\nReview\\n<script>raw text</script>\\n\\nHow to revert',
  revert_request:'Inspect the recorded run before reverting',
- children:[{lane:1, session_id:'worker-rpanel-l1'}],
+ children:[{child:1, session_id:'worker-rpanel-l1'}],
  review:{panels:[{panel_id:'panel',
    reviewers:[{reviewer_index:0, focus:'security', session_id:'worker-rpanel-l1'}]}]},
  verifications:[{verify_id:'v', stdout_tail:'<b>out</b>', stderr_tail:''}]};

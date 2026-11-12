@@ -109,33 +109,33 @@ def parallel_group_label(event: dict[str, Any]) -> str:
 
 
 def parallel_dispatched_body(event: dict[str, Any]) -> str:
-    """Word a dispatched group: how many lanes for how many tasks, and which.
+    """Word a dispatched group: how many children for how many tasks, and which.
 
     Args:
         event: The `parallel.dispatched` event.
 
     Returns:
-        The head line, then one bullet per task; an event carrying no lane count
+        The head line, then one bullet per task; an event carrying no child count
         names the tasks alone.
     """
     tasks_raw = event.get("tasks")
     tasks = [str(t).strip() for t in tasks_raw] if isinstance(tasks_raw, list) else []
     n = len(tasks)
     if event.get("source") == "panel":
-        # A panel's reviewers are read-only sessions of their own, on no lane listing.
+        # A panel's reviewers are read-only sessions of their own, on no child listing.
         head = (
             f"dispatched {n} reviewer{'' if n == 1 else 's'} ({parallel_group_label(event)});"
             " each runs as a read-only session"
         )
         return "\n".join([head, *(f"• {clip(t, 80)}" for t in tasks if t)])
-    lanes = event.get("lanes")
-    if isinstance(lanes, int) and not isinstance(lanes, bool):
-        what = format.lane_count(lanes) + (f" for {n} tasks" if n > 1 else "")
+    children = event.get("children")
+    if isinstance(children, int) and not isinstance(children, bool):
+        what = format.child_count(children) + (f" for {n} tasks" if n > 1 else "")
     else:
         what = f"{n} parallel task{'' if n == 1 else 's'}"
     head = (
         f"dispatched {what} ({parallel_group_label(event)});"
-        " lanes run detached, listed under this session"
+        " children run detached, listed under this session"
     )
     return "\n".join([head, *(f"• {clip(t, 80)}" for t in tasks if t)])
 
@@ -168,24 +168,28 @@ def parallel_compared_body(event: dict[str, Any]) -> str:
 
 
 def parallel_joined_body(event: dict[str, Any]) -> str:
-    """Word a joined group: one line per lane with its status, id, branch and sha.
+    """Word a joined group: one line per child with its status, id, branch and sha.
 
     Args:
         event: The `parallel.joined` event.
 
     Returns:
-        The head line, then one line per lane.
+        The head line, then one line per child.
     """
-    lanes_raw = event.get("lanes")
-    lanes = [ln for ln in lanes_raw if isinstance(ln, dict)] if isinstance(lanes_raw, list) else []
+    children_raw = event.get("children")
+    children = (
+        [ln for ln in children_raw if isinstance(ln, dict)]
+        if isinstance(children_raw, list)
+        else []
+    )
     panel = event.get("source") == "panel"
     head = (
-        f"reviewers returned ({parallel_group_label(event)}): {len(lanes)}"
+        f"reviewers returned ({parallel_group_label(event)}): {len(children)}"
         if panel
-        else f"joined {parallel_group_label(event)}: {len(lanes)} lane(s)"
+        else f"joined {parallel_group_label(event)}: {len(children)} child(ren)"
     )
     rows: list[str] = []
-    for ln in lanes:
+    for ln in children:
         status = str(ln.get("status", "?"))
         if panel and status == "no_changes":
             status = "returned"  # a reviewer has no work to join; its verdict follows in the panel
@@ -210,8 +214,8 @@ def parallel_failed_body(event: dict[str, Any]) -> str | None:
         event: The `parallel.failed` event.
 
     Returns:
-        The dispatch error when the event carries one; None for a failure after the lanes
-        ran, whose joined event or end summary already showed each lane's status.
+        The dispatch error when the event carries one; None for a failure after the children
+        ran, whose joined event or end summary already showed each child's status.
     """
     error = str(event.get("error", "")).strip()
     return f"{parallel_group_label(event)} dispatch failed: {error}" if error else None

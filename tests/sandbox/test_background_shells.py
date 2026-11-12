@@ -418,7 +418,7 @@ def test_a_command_cannot_redirect_the_agent_at_another_file(tmp_path: pathlib.P
 
 
 def test_the_sweep_spares_a_session_the_agent_opened_on_purpose() -> None:
-    """A `/btw` ask or a `/parallel` lane started later is not swept as an escapee.
+    """A `/btw` ask or a `/parallel` child started later is not swept as an escapee.
 
     They are agent6's own children in their own session, exactly what an escapee looks like;
     the exclusion set is not frozen at the background command's start.

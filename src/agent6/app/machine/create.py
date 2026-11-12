@@ -119,7 +119,7 @@ def _attempt_reason(problems: list[str]) -> str:
 def _discard_workspace(workspace: pathlib.Path, reporter: app_reporter.Reporter) -> None:
     """Remove a drafting workspace whose bundle is published, with its per-repo state dir.
 
-    The prune sweep knows lane and machine clones and fork worktrees, not drafting workspaces.
+    The prune sweep knows child and machine clones and fork worktrees, not drafting workspaces.
 
     Args:
         workspace: The drafting workspace.

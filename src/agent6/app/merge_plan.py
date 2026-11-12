@@ -81,7 +81,7 @@ def commits_ref(cwd: pathlib.Path, manifest: sessions_manifest.SessionManifest) 
     Returns:
         The run branch while it covers the chain, else the chain ref; else the manifest's
         branch name while no chain exists (the verbs read its absence themselves: pruned,
-        never cut, or a lane's branch still in its clone); else the reason the run has no
+        never cut, or a child's branch still in its clone); else the reason the run has no
         commits.
     """
     if ref := wire.commits_ref(manifest, cwd):
@@ -116,7 +116,7 @@ def chain_refusal(
         allow_model: Permit a read-only comparison of a model-controlled run.
 
     Returns:
-        The refusal for a group, whose lanes hold the commits, or for a run whose model
+        The refusal for a group, whose children hold the commits, or for a run whose model
         managed git itself.
     """
     return None if allow_model else sessions_manifest.model_git_refusal(manifest, "sessions")
@@ -207,9 +207,9 @@ def plan_merge(  # noqa: PLR0911
     except ConfigError as exc:
         reporter.error(f"{exc}")
         return 2
-    # An orphaned lane (its parent died before importing it) is adopted: fetched, then merged.
+    # An orphaned child (its parent died before importing it) is adopted: fetched, then merged.
     try:
-        adopted = worktrees.adopt_orphan_lane(cwd, cfg, layout, manifest)
+        adopted = worktrees.adopt_orphan_child(cwd, cfg, layout, manifest)
     except child_repo.ChildRepoError as exc:
         reporter.error(f"{exc}")
         return 2

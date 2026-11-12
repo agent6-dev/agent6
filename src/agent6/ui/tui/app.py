@@ -75,7 +75,7 @@ class TuiExit:
 
     Attributes:
         quit_hub: The operator quit the hub, not just the view.
-        open_next: The session to open next, such as a lane or a plan's new run.
+        open_next: The session to open next, such as a child or a plan's new run.
     """
 
     quit_hub: bool = False

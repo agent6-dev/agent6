@@ -542,7 +542,7 @@ def test_launchers_starting_at_once_do_not_wipe_each_others_root(tmp_path: pathl
 
     The jail root is shared per uid and setup clears nothing: each launcher mounts its own
     tmpfs over the shared mount point in its own namespace, so neither can remove the tree
-    the other is building. Reachable from /parallel lanes (separate agent6 processes, one
+    the other is building. Reachable from /parallel children (separate agent6 processes, one
     uid) and from any command run while an MCP server's launcher is alive. Asserted with
     real concurrency, and on the mount namespaces: a per-child namespace keeps one child's
     grants out of another's view.

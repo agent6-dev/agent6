@@ -44,7 +44,7 @@ def test_btw_docstrings_describe_detached_launch_without_namespace_escape() -> N
     assert "spawning it detached" in _doc("ui/btw.py")
     assert "It spawns as a detached `agent6` process." in _doc("app/btw.py")
     assert "namespace" not in _doc("ui/btw.py", "direct_launch")
-    assert "unlike a confined lane" not in (_ROOT / "src/agent6/ui/cli/run.py").read_text()
+    assert "unlike a confined child" not in (_ROOT / "src/agent6/ui/cli/run.py").read_text()
 
 
 def test_save_review_owns_rendered_reviews_not_every_file() -> None:

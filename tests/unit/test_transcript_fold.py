@@ -244,7 +244,7 @@ def test_a_jail_degradation_is_a_marker_in_the_fold() -> None:
 
 
 def test_parallel_dispatched_renders_a_truthful_marker() -> None:
-    # The dispatched event carries only group + per-segment tasks (lane ids do not
+    # The dispatched event carries only group + per-segment tasks (child ids do not
     # exist yet); the fold renders a task count + the task summary, never raw json.
     items = fold_transcript(
         [{"type": "parallel.dispatched", "group": "p1", "tasks": ["fix the bug", "add tests"]}]
@@ -256,13 +256,13 @@ def test_parallel_dispatched_renders_a_truthful_marker() -> None:
     assert "fix the bug" in item.body and "add tests" in item.body
 
 
-def test_parallel_joined_names_lane_ids_branches_shas() -> None:
+def test_parallel_joined_names_child_ids_branches_shas() -> None:
     items = fold_transcript(
         [
             {
                 "type": "parallel.joined",
                 "group": "p1",
-                "lanes": [
+                "children": [
                     {"session_id": "co-p1-l1", "branch": "agent6/co-p1-l1", "status": "joined",
                      "sha": "abcdef1234567890"},
                     {"session_id": "co-p1-l2", "branch": "agent6/co-p1-l2", "status": "conflict",
@@ -273,19 +273,19 @@ def test_parallel_joined_names_lane_ids_branches_shas() -> None:
     )  # fmt: skip
     (item,) = items
     assert item.kind == "marker"
-    assert "joined group p1: 2 lane(s)" in item.body
+    assert "joined group p1: 2 child(ren)" in item.body
     assert "joined  co-p1-l1  agent6/co-p1-l1  abcdef123456" in item.body  # sha clipped to 12
     assert "conflict  co-p1-l2  agent6/co-p1-l2" in item.body
 
 
-def test_a_panel_dispatch_reads_as_review_reviewers_not_lanes() -> None:
-    """A panel's reviewers read as lanes "listed under this session" that joined with no changes."""
+def test_a_panel_dispatch_reads_as_review_reviewers_not_children() -> None:
+    """A panel's reviewers read as children "listed under this session", joined with no changes."""
     dispatched, joined = fold_transcript(
         [
             {
                 "type": "parallel.dispatched",
                 "group": "rpanel",
-                "lanes": 2,
+                "children": 2,
                 "tasks": ["Review: security", "Review: tests"],
                 "source": "panel",
             },
@@ -293,13 +293,13 @@ def test_a_panel_dispatch_reads_as_review_reviewers_not_lanes() -> None:
                 "type": "parallel.joined",
                 "group": "run-rpanel",
                 "source": "panel",
-                "lanes": [
+                "children": [
                     {"session_id": "run-rpanel-l1", "branch": "", "status": "no_changes"},
                     {
                         "session_id": "run-rpanel-l2",
                         "branch": "",
                         "status": "failed",
-                        "detail": "lane deadline exceeded",
+                        "detail": "child deadline exceeded",
                     },
                 ],
             },
@@ -308,20 +308,20 @@ def test_a_panel_dispatch_reads_as_review_reviewers_not_lanes() -> None:
     assert dispatched.body.startswith(
         "dispatched 2 reviewers (group rpanel); each runs as a read-only session"
     )
-    assert "lane" not in dispatched.body and "• Review: tests" in dispatched.body
+    assert "child" not in dispatched.body and "• Review: tests" in dispatched.body
     assert joined.body.splitlines() == [
         "reviewers returned (group run-rpanel): 2",
         "returned  run-rpanel-l1",
-        "failed  run-rpanel-l2  lane deadline exceeded",
+        "failed  run-rpanel-l2  child deadline exceeded",
     ]
 
 
 def test_parallel_failed_renders_the_dispatch_error_but_not_the_join_subset() -> None:
     # A dispatch failure (carries `error`) renders; a post-join failure (carries
-    # only `lanes`, already shown by the joined marker) is not double-rendered.
+    # only `children`, already shown by the joined marker) is not double-rendered.
     (item,) = fold_transcript([{"type": "parallel.failed", "group": "p2", "error": "dirty tree"}])
     assert item.kind == "marker" and "group p2 dispatch failed: dirty tree" in item.body
-    assert fold_transcript([{"type": "parallel.failed", "group": "p2", "lanes": [{}]}]) == []
+    assert fold_transcript([{"type": "parallel.failed", "group": "p2", "children": [{}]}]) == []
 
 
 def test_salient_arg_prefers_a_primary_key() -> None:
@@ -730,9 +730,9 @@ _DONE_LABELS = {
     "ask_repl_empty": "failed · ask repl empty",
     "gate_stale": "finished · gate stale",
     "gate_red_at_base": "finished · gate red at base",
-    "lanes_ranked": "finished · lanes ranked",
-    "no_lane_result": "failed · no lane result",
-    "no_lane_passed": "failed · no lane passed",
+    "children_ranked": "finished · children ranked",
+    "no_child_result": "failed · no child result",
+    "no_child_passed": "failed · no child passed",
     "setup_command_failed": "failed · setup command failed",
     "sandbox_unavailable": "failed · sandbox unavailable",
 }
@@ -751,7 +751,7 @@ def test_every_stop_reason_has_a_done_line_label() -> None:
     for reason, label in _DONE_LABELS.items():
         verification = (
             "passed"
-            if reason in ("silent_finish", "metric_plateau", "verify_settled", "lanes_ranked")
+            if reason in ("silent_finish", "metric_plateau", "verify_settled", "children_ranked")
             else "unverified"
         )
         done = next(
@@ -1021,7 +1021,7 @@ def test_parallel_compared_renders_the_ranking() -> None:
                 "ranking": [
                     {"session_id": "fan-l2", "verify": "passed", "cost_usd": 0.05},
                     {"session_id": "fan-l1", "verify": "failed", "cost_usd": 0.07},
-                    # A lane on a subscription plan: the listings' cell rides the event.
+                    # A child on a subscription plan: the listings' cell rides the event.
                     {"session_id": "fan-l3", "verify": "passed", "cost_usd": 0.0, "cost": "1pt"},
                 ],
             }
@@ -1035,29 +1035,29 @@ def test_parallel_compared_renders_the_ranking() -> None:
     assert "judge: The first candidate covers the edge case." in item.body
 
 
-def test_parallel_dispatched_counts_lanes_when_the_event_carries_them() -> None:
-    """A group names its lanes, the count every listing shows.
+def test_parallel_dispatched_counts_children_when_the_event_carries_them() -> None:
+    """A group names its children, the count every listing shows.
 
-    The task count alone said "dispatched 1 parallel task" over two lanes.
+    The task count alone said "dispatched 1 parallel task" over two children.
     """
     (item,) = fold_transcript(
-        [{"type": "parallel.dispatched", "group": "fan", "lanes": 2, "tasks": ["t"]}]
+        [{"type": "parallel.dispatched", "group": "fan", "children": 2, "tasks": ["t"]}]
     )
-    assert "dispatched 2 lanes (group fan)" in item.body
+    assert "dispatched 2 children (group fan)" in item.body
     (item,) = fold_transcript(
-        [{"type": "parallel.dispatched", "group": "p1", "lanes": 3, "tasks": ["a", "b"]}]
+        [{"type": "parallel.dispatched", "group": "p1", "children": 3, "tasks": ["a", "b"]}]
     )
-    assert "dispatched 3 lanes for 2 tasks (group p1)" in item.body
+    assert "dispatched 3 children for 2 tasks (group p1)" in item.body
 
 
-def test_parallel_joined_renders_a_failed_lanes_reason() -> None:
-    """A failed lane's event distinguishes a failed start, a crash and no result."""
+def test_parallel_joined_renders_a_failed_children_reason() -> None:
+    """A failed child's event distinguishes a failed start, a crash and no result."""
     (item,) = fold_transcript(
         [
             {
                 "type": "parallel.joined",
                 "group": "run-p1",
-                "lanes": [
+                "children": [
                     {
                         "session_id": "run-p1-l1",
                         "branch": "agent6/run-p1-l1",

@@ -82,7 +82,7 @@ _SYMBOL_TOOL_ARMS: dict[str, frozenset[str]] = {
 }
 
 
-# The loop's lane dispatcher as the tool sees it: the validated arguments and the call's origin.
+# The loop's child dispatcher as the tool sees it: the validated arguments and the call's origin.
 type ParallelHandler = Callable[[dict[str, Any], kinds.ToolCallOrigin | None], results.ToolResult]
 
 
@@ -183,7 +183,7 @@ class ToolDispatcher:
         )
         self._command_access = command_access
         self._session_dir = session_dir
-        # The loop installs its lane dispatcher here; None where no dispatch can happen.
+        # The loop installs its child dispatcher here; None where no dispatch can happen.
         self.parallel_handler: ParallelHandler | None = None
         if (
             command_access is not None
@@ -311,9 +311,9 @@ class ToolDispatcher:
         if not self._config.harness.parallel.tool:
             return "not available (harness.parallel.tool is off)"
         if os.environ.get("AGENT6_CHILD"):
-            return "not available inside a lane (parallel dispatch is depth 1)"
+            return "not available inside a child (parallel dispatch is depth 1)"
         if self.parallel_handler is None:
-            return "not available (no lane dispatcher in this front-end)"
+            return "not available (no child dispatcher in this front-end)"
         return None
 
     def _tool_refusal(self, name: str) -> str | None:
@@ -1049,7 +1049,7 @@ class ToolDispatcher:
         )
 
     def _parallel(self, raw: dict[str, Any]) -> results.ToolResult:
-        """Dispatch lanes through the loop's handler, the call's identity beside the request.
+        """Dispatch children through the loop's handler, the call's identity beside the request.
 
         Args:
             raw: The model's arguments.
@@ -1062,7 +1062,7 @@ class ToolDispatcher:
         """
         request = schema.ParallelInput.model_validate(raw)
         if self.parallel_handler is None:
-            raise tool_errors.ToolError("not available (no lane dispatcher in this front-end)")
+            raise tool_errors.ToolError("not available (no child dispatcher in this front-end)")
         origin = getattr(self._gating, "origin", None)
         return self.parallel_handler(request.model_dump(), origin)
 

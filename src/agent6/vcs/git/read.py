@@ -343,7 +343,7 @@ def find_stash(path: pathlib.Path, message: str) -> StashEntry | None:
     """Return the newest stash pushed with exactly this message, or None.
 
     The subject is `On <branch>: MSG`, so `: MSG` anchored at the end matches the whole
-    message: lane ids are ordinal, so one message can be a prefix of another.
+    message: child ids are ordinal, so one message can be a prefix of another.
 
     Args:
         path: The repository.

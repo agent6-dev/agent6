@@ -23,7 +23,8 @@ from unittest import mock
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, kinds, lane_records, paths
+from agent6 import child_records, errors, kinds, paths
+from agent6.app import children as app_children
 from agent6.app import (
     fork_worktrees,
     preflight,
@@ -31,7 +32,6 @@ from agent6.app import (
     worktree_setup,
     worktrees,
 )
-from agent6.app import lanes as app_lanes
 from agent6.app import reporter as app_reporter
 from agent6.app import run as run_lifecycle
 from agent6.app.session import runtime as session_runtime
@@ -47,7 +47,7 @@ from agent6.ui.cli import run as cli_run
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing
-from tests import lane_env
+from tests import launch_env
 
 pytestmark = pytest.mark.usefixtures("linked_worktrees")
 
@@ -135,25 +135,25 @@ def _git(repo: pathlib.Path, *args: str) -> str:
     ).stdout
 
 
-def _lane_snapshot(
+def _child_snapshot(
     repo: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     *,
     gate_source: sessions_manifest.GateSource = "",
 ) -> pathlib.Path:
-    """Make this process lane 1 of a group over `repo`, started on a real config snapshot."""
+    """Make this process child 1 of a group over `repo`, started on a real config snapshot."""
     effective = layer.load_effective(repo)
-    spec = lane_records.LaneSpec(
-        lane=1, session_id="fan-l1", worktree=tmp_path / "lanes" / "lane-1", settings=None
+    spec = child_records.ChildSpec(
+        number=1, session_id="fan-l1", worktree=tmp_path / "children" / "child-1", settings=None
     )
-    snapshot = worktrees.write_lane_config(
+    snapshot = worktrees.write_child_config(
         effective.config,
         spec,
         explicit_leaves=effective.explicit_leaves,
         into=spec.worktree.parent / "launch",
     ).path
-    lane_env.mark_lane(
+    launch_env.mark_child(
         monkeypatch,
         snapshot.parent,
         config=snapshot,
@@ -500,10 +500,10 @@ def test_remove_typed_in_the_worktree_removes_the_chain_ref_too(
     assert _nothing_was_created(repo, "wt-SELF01")
 
 
-def test_a_budget_stopped_lane_continues_with_the_fork_command_its_record_names(
+def test_a_budget_stopped_child_continues_with_the_fork_command_its_record_names(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The fork command a capped lane's record names continues it after its clone is removed."""
+    """The fork command a capped child's record names continues it after its clone is removed."""
     repo = _repo(tmp_path, monkeypatch)
 
     class CappedProvider:
@@ -519,7 +519,7 @@ def test_a_budget_stopped_lane_continues_with_the_fork_command_its_record_names(
                 cache_read_tokens=0,
                 cache_write_tokens=0,
             )
-            return _Scripted([_edit("lane.txt", "work\n")]).call()
+            return _Scripted([_edit("child.txt", "work\n")]).call()
 
     def provider(*_a: Any, budget: agent6_budget.BudgetTracker, **_kw: Any) -> CappedProvider:
         return CappedProvider(budget)
@@ -527,29 +527,32 @@ def test_a_budget_stopped_lane_continues_with_the_fork_command_its_record_names(
     monkeypatch.setattr(role_providers, "build_role_provider", provider)
     cfg = layer.load_effective(repo).config
     state = paths.state_dir(repo)
-    lane = lane_records.LaneSpec(
-        lane=1, session_id="capped-fan-l1", worktree=tmp_path / "lanes" / "lane-1", settings=None
+    child = child_records.ChildSpec(
+        number=1,
+        session_id="capped-fan-l1",
+        worktree=tmp_path / "children" / "child-1",
+        settings=None,
     )
 
-    def spawn(spec: lane_records.LaneSpec, task: str) -> lane_records.LaneResult:
+    def spawn(spec: child_records.ChildSpec, task: str) -> child_records.ChildResult:
         child_repo.clone_worktree(repo, spec.worktree)
         output, errors = io.StringIO(), io.StringIO()
         with (
-            monkeypatch.context() as child,
+            monkeypatch.context() as patch,
             contextlib.redirect_stdout(output),
             contextlib.redirect_stderr(errors),
         ):
-            child.chdir(spec.worktree)
-            snapshot = worktrees.write_lane_config(
+            patch.chdir(spec.worktree)
+            snapshot = worktrees.write_child_config(
                 cfg, spec, explicit_leaves=frozenset(), into=spec.worktree.parent / "launch"
             ).path
-            lane_env.mark_lane(
-                child,
+            launch_env.mark_child(
+                patch,
                 snapshot.parent,
                 config=snapshot,
                 parent="capped-fan",
                 group="capped-fan",
-                lane=spec.lane,
+                number=spec.number,
                 record_state=state,
             )
             argv = ["run", "--config", str(snapshot), "--session-id", spec.session_id]
@@ -557,10 +560,10 @@ def test_a_budget_stopped_lane_continues_with_the_fork_command_its_record_names(
                 output.getvalue() + errors.getvalue()
             )
         session_dir = state / "sessions" / "runs" / spec.session_id
-        return lane_records.LaneResult(spec, session_dir, f"agent6/{spec.session_id}", True, "")
+        return child_records.ChildResult(spec, session_dir, f"agent6/{spec.session_id}", True, "")
 
-    result = app_lanes.run_lane_to_completion(
-        lane,
+    result = app_children.run_child_to_completion(
+        child,
         "task",
         cfg=cfg,
         explicit_leaves=frozenset(),
@@ -568,12 +571,12 @@ def test_a_budget_stopped_lane_continues_with_the_fork_command_its_record_names(
         record_state=state,
         group="capped-fan",
         parent="capped-fan",
-        runtime=parallel_cmd.lane_runtime(),
+        runtime=parallel_cmd.child_runtime(),
         spawner=spawn,
         poll_interval_s=0.01,
     )
     assert not result.ok and "budget exhausted" in result.error
-    assert not lane.worktree.exists()
+    assert not child.worktree.exists()
     capsys.readouterr()
     assert cli_main(["sessions", "show", "capped-fan-l1"]) == 0
     assert "`agent6 fork capped-fan-l1" in capsys.readouterr().out
@@ -1065,17 +1068,17 @@ def test_a_run_in_the_checkout_runs_no_setup_command(
     assert not (repo / ".setup-ran").exists()
 
 
-def test_a_lane_runs_the_setup_command_in_its_clone(
+def test_a_child_runs_the_setup_command_in_its_clone(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A lane's clone holds tracked files only, as a worktree does."""
+    """A child's clone holds tracked files only, as a worktree does."""
     repo = _repo(
         tmp_path,
         monkeypatch,
         config=_COMMANDS.replace("[sandbox]", '[git]\ndirty_tree = "include"\n\n[sandbox]'),
     )
     _with_setup(repo, '["sh", "-c", "echo ready > .setup-ran"]')
-    snapshot = _lane_snapshot(repo, tmp_path, monkeypatch)
+    snapshot = _child_snapshot(repo, tmp_path, monkeypatch)
     _script(monkeypatch)
 
     assert cli_main(["run", "--config", str(snapshot), "--session-id", "fan-l1", "task"]) == 0
@@ -1339,10 +1342,10 @@ def test_a_gate_on_an_untracked_path_with_no_setup_command_refuses_before_anythi
     assert "`## Setup command`" in err and "AGENTS.md" in err
 
 
-def test_a_gate_on_an_untracked_path_refuses_a_parallel_run_before_any_lane_is_cloned(
+def test_a_gate_on_an_untracked_path_refuses_a_parallel_run_before_any_child_is_cloned(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Every lane cloned, ran, and ended red: its clone had no `.venv` for the gate."""
+    """Every child cloned, ran, and ended red: its clone had no `.venv` for the gate."""
     repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
     _untracked_venv(repo)
     _pin_gate(repo)
@@ -1354,7 +1357,7 @@ def test_a_gate_on_an_untracked_path_refuses_a_parallel_run_before_any_lane_is_c
     assert prov.calls == 0
     assert _nothing_was_created(repo, "par-GATE01")
     assert "REFUSING: the verify gate runs `.venv/bin/python`" in err
-    assert "a lane's clone" in err
+    assert "a child's clone" in err
 
 
 def test_the_gate_is_inferred_in_the_checkout_and_carried_into_the_worktree(
@@ -1379,14 +1382,14 @@ def test_the_gate_is_inferred_in_the_checkout_and_carried_into_the_worktree(
     assert manifest.worktree is not None and (manifest.worktree / ".venv/bin/python").exists()
 
 
-def test_a_lane_stamps_the_gate_origin_its_parent_resolved(
+def test_a_child_stamps_the_gate_origin_its_parent_resolved(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The lane's config carries the gate the parent inferred; `(configured)` was a lie."""
+    """The child's config carries the gate the parent inferred; `(configured)` was a lie."""
     repo = _repo(tmp_path, monkeypatch, config=_FINISH_GATE + 'verify.command = ["true"]\n')
     _git(repo, "commit", "-qam", "the operator's edit")
     _script(monkeypatch)
-    snapshot = _lane_snapshot(repo, tmp_path, monkeypatch, gate_source="inferred")
+    snapshot = _child_snapshot(repo, tmp_path, monkeypatch, gate_source="inferred")
 
     assert cli_main(["run", "--config", str(snapshot), "--session-id", "fan-l1", "task"]) == 0
 

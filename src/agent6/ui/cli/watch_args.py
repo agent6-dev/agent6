@@ -188,9 +188,9 @@ def _add_stop_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         sub,
         "stop",
         help=(
-            "Stop a live session now: cut its model call and end its running commands; its lanes"
+            "Stop a live session now: cut its model call and end its running commands; its children"
             " stop with it. The run ends as stopped. A worker still live after 5 s (30 s while it"
-            " drains lanes) is killed with its commands. A run `agent6 resume` accepts stays"
+            " drains children) is killed with its commands. A run `agent6 resume` accepts stays"
             " resumable. Default: the newest live session."
         ),
     )
@@ -206,7 +206,7 @@ def _add_stop_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     stop_p.add_argument(
         "--all",
         action="store_true",
-        help="Stop every live session of this repository (a group's lanes with it).",
+        help="Stop every live session of this repository (a group's children with it).",
     )
 
 

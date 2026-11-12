@@ -222,31 +222,31 @@ class IncludedRun(pydantic.BaseModel):
 
 
 class ParallelLineage(pydantic.BaseModel):
-    """A lane's place.
+    """A child's place.
 
     Attributes:
         group: The group it was dispatched in: the parent's id for `run --parallel`,
             `<parent>-p<n>` for a `/parallel` group.
-        lane: Its number in the group.
+        number: Its number in the group.
         parent: The session that dispatched it, which every listing nests it under.
-        config_notes: Resolved sampling values the lane's TOML snapshot could not preserve.
+        config_notes: Resolved sampling values the child's TOML snapshot could not preserve.
     """
 
     model_config = _MODEL_CONFIG
 
     group: str = ""
-    lane: int = 0
+    number: int = 0
     parent: str = ""
     config_notes: tuple[str, ...] = ()
 
 
 class PlacementStamp(pydantic.BaseModel):
-    """A lane's auto-compare placement.
+    """A child's auto-compare placement.
 
     Attributes:
-        rank: The lane's place, 1 first.
-        of: How many lanes were ranked.
-        winner: The lane ranked first.
+        rank: The child's place, 1 first.
+        of: How many children were ranked.
+        winner: The child ranked first.
         group: The comparison group recorded on its parent.
     """
 
@@ -263,7 +263,7 @@ class ComparisonStamp(pydantic.BaseModel):
 
     Attributes:
         group: The comparison group id.
-        ranking: The ranked lane ids, best first.
+        ranking: The ranked child ids, best first.
         ranked_by: The ranking method, `judge` or `mechanical`.
         rationale: The judge's reason, at most 2000 characters; empty for mechanical ranking.
         judge_cost_usd: The group's judge spend in USD, zero when no judge call was made.
@@ -335,8 +335,8 @@ class SessionManifest(pydantic.BaseModel):
         merged: The merge record, None until the run branch is merged.
         includes: The unmerged run this run took in under `dirty_tree = "include"`, stamped
             merged when this run lands; None when it took none, or more than that run's tip.
-        parallel: A lane's lineage, or None.
-        placement: A lane's rank and group reference, or None.
+        parallel: A child's lineage, or None.
+        placement: A child's rank and group reference, or None.
         comparison: The group's ranking and judge spend on its parent, or None.
     """
 

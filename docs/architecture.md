@@ -24,7 +24,7 @@ graph TD
     n_tools --> n_sandbox
 ```
 
-Any layer may also use the shared substrate: `budget`, `child_env`, `config`, `context`, `directive`, `errors`, `evidence`, `graph`, `journal_tail`, `kinds`, `lane_records`, `machine`, `media`, `models`, `pack`, `pack_manifest`, `path_safety`, `paths`, `portable`, `prompts`, `providers`, `review_records`, `sessions`, `task_text`, `terminal`, `vcs`, `viewmodel`, `words`.
+Any layer may also use the shared substrate: `budget`, `child_env`, `child_records`, `config`, `context`, `directive`, `errors`, `evidence`, `graph`, `journal_tail`, `kinds`, `machine`, `media`, `models`, `pack`, `pack_manifest`, `path_safety`, `paths`, `portable`, `prompts`, `providers`, `review_records`, `sessions`, `task_text`, `terminal`, `vcs`, `viewmodel`, `words`.
 
 The `vcs` package holds agent6's own git operations: `git_ops.py` writes, `git_read.py` queries, and `git_history.py` reads for display.
 Only its modules import the runner, `git_command.py`.
@@ -35,7 +35,7 @@ Only its modules import the runner, `git_command.py`.
     - `ui/mcp_server.py`: agent6 as an MCP server
     - the write helpers: `ui/spawn`, `ui/notify`, `ui/steer` (the steer-file seam every front-end writes) and `ui/btw` (the side question a run answers without losing its place)
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` group
-    - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `LaneRuntime`); output goes through the injected `Reporter`
+    - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `ChildRuntime`); output goes through the injected `Reporter`
 - **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`), `review_session` (the read-only pass behind `agent6 sessions review`) and the review panel (`review_panel`, `reviewer`, `review_gate`); the agent loop makes its own provider calls through `provider_call`.
   `harness/loop_resume.py` owns snapshot carryover and persistence; `harness/loop_steer.py` applies steering at turn and execution boundaries.
 - **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed tool surface the LLM sees, plus dispatch.
@@ -138,7 +138,7 @@ The snapshot commit retains the base history as well as the head tree; an existi
 Before creating or reusing a snapshot, git checks the trees, retained history and every file object they reference.
 Retention never moves the operator's index, HEAD, visible branches or run chain.
 `ReviewGate.prepare` binds the panel ID and target to an immutable `ReviewInput` containing complete historical rules, prior findings and verification evidence.
-The current reviewer executor consumes that context; lane execution is not enabled by preparation.
+The current reviewer executor consumes that context; child execution is not enabled by preparation.
 Unreadable targets or failed retention skip the panel with `target_unreadable`, never substitute the chain tip for unreadable worktree content.
 The refs survive chain pruning and are removed with their owning session record (`sessions remove`, including `--asks`).
 `harness/review/history.py` restores those records on resume.
@@ -344,7 +344,7 @@ Source discovery still reads the host workspace.
 
 ## Environment ownership
 
-`app/environment_lease.py` keeps one lease per selected environment under `<state-dir>/environments/<key>.json`, written under a sibling lock so lanes in other processes see one record.
+`app/environment_lease.py` keeps one lease per selected environment under `<state-dir>/environments/<key>.json`, written under a sibling lock so children in other processes see one record.
 The key names the selection: the manual exec prefix, or the workspace's discovery under its runtime prefix.
 A replacement of a discovered container keeps the key, so the lease sees the swap.
 
@@ -576,7 +576,7 @@ The directive uses the session's tools and permissions and returns markdown, wit
 ## Parallel runs
 
 The primitive is a task run as a child in its own worktree, whose branch joins back.
-One rule holds for every child (a lane, a reviewer): the parent hands down, the child pushes up, and the root is the one owner.
+One rule holds for every child (a child, a reviewer): the parent hands down, the child pushes up, and the root is the one owner.
 
 - handed down: the config snapshot, the task and pins, the turn cap and deadline, and what the parent's budget has left
 - pushed up: the child's approvals and waiting questions, its spend while it runs, and at its end its branch, its record and its memory, which the parent imports
@@ -585,87 +585,87 @@ One rule holds for every child (a lane, a reviewer): the parent hands down, the 
 Three consumers drive it: `run --parallel`, the web and TUI composers' `/parallel` new-work directive, and a live run's `/parallel` steer.
 
 All three share `parse_spec` in [directive.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/directive.py), a pure-stdlib leaf both `harness` and `ui` import.
-It maps a lane count or model list to one model per lane.
+It maps a child count or model list to one model per child.
 The composers and steering use `parse_directive` to split `/parallel [SPEC --] TASK` segments ([grammar and examples](usage.md#parallel-directive)).
 
-Before any clone, a spec's models are checked against what a lane can run.
+Before any clone, a spec's models are checked against what a child can run.
 
-- a lane keeps the worker's provider unless the spec names another configured one; the model is checked against what the roles name on that provider plus its cached listing ([models/validate.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/models/validate.py))
+- a child keeps the worker's provider unless the spec names another configured one; the model is checked against what the roles name on that provider plus its cached listing ([models/validate.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/models/validate.py))
 - unknown model: a miss against an existing cache re-checks that provider's live listing, and refuses with a did-you-mean only when the fresh listing confirms it; no cache, or a re-fetch that fails, proceeds with a warning (offline machines never block on a regenerable cache)
 - all three consumers validate through the one helper, keeping `harness` free of a models dependency
 
 The primitive is git plumbing in [child_repo.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/child_repo.py), with no LLM, no UI, and no process spawning:
 
-- `clone_worktree(origin, dest)`: a plain `git clone` for a lane's own worktree.
-- `import_run(origin, lane_repo, branch, lane_session_dir)`: fetches the lane's branch and its retained session refs into the origin, refusing to overwrite an existing branch; the lane's record is in the origin's state already.
-  With model git control it fetches HEAD into the lane's chain ref and creates its checked-out branch only when that name is free.
+- `clone_worktree(origin, dest)`: a plain `git clone` for a child's own worktree.
+- `import_run(origin, child_worktree, branch, child_session_dir)`: fetches the child's branch and its retained session refs into the origin, refusing to overwrite an existing branch; the child's record is in the origin's state already.
+  With model git control it fetches HEAD into the child's chain ref and creates its checked-out branch only when that name is free.
   Cleanup keeps a clone whose HEAD or ref tips the origin cannot reach, unless a merge stamp covers them.
-- `LaneSpawner` / `GroupLaneSpawner`: the Protocols for dispatching one lane, or a sibling group, and awaiting completion.
+- `ChildSpawner` / `GroupChildSpawner`: the Protocols for dispatching one child, or a sibling group, and awaiting completion.
 
-[app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) implements those Protocols: it holds the front-end's `LaneRuntime`, plans the lanes, clones, spawns, awaits and imports one lane, and builds the parent's `/parallel` dispatcher.
-[app/parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel_results.py) imports a finished lane, carries its memory and decisions back, and stamps a ranking on the run and its lanes.
-[app/worktrees.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/worktrees.py) places clones and linked worktrees (`[git.worktree].base_dir`; `[container].worktree_base_dir` under a container), keeps a base inside the repository out of its git, writes lane configs, recovers orphaned lanes and removes imported or safely swept clones.
-The detached spawn `app/lanes.py` drives (`ui.spawn`'s `spawn_lane`: the fixed `python -P -E -m agent6.ui.cli.lane_agent` argv, the child's pid kept) is injected as a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`; liveness probes use `sessions.process` and stop requests use the session-dir bridge (`sessions.ipc`).
-A lane's task, pins, caps, away mode and lineage travel in its launch file (`app/lane_launch.py`, `0600` under `<origin_state>/launch/<group>/`), beside its config snapshot; the bootstrap validates both and drives `app.run.run_task` with the CLI's session seam.
+[app/children.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/children.py) implements those Protocols: it holds the front-end's `ChildRuntime`, plans the children, clones, spawns, awaits and imports one child, and builds the parent's `/parallel` dispatcher.
+[app/parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel_results.py) imports a finished child, carries its memory and decisions back, and stamps a ranking on the run and its children.
+[app/worktrees.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/worktrees.py) places clones and linked worktrees (`[git.worktree].base_dir`; `[container].worktree_base_dir` under a container), keeps a base inside the repository out of its git, writes child configs, recovers orphaned children and removes imported or safely swept clones.
+The detached spawn `app/children.py` drives (`ui.spawn`'s `spawn_child`: the fixed `python -P -E -m agent6.ui.cli.child_agent` argv, the child's pid kept) is injected as a `ChildRuntime` by the CLI adapter `ui/cli/parallel.py`; liveness probes use `sessions.process` and stop requests use the session-dir bridge (`sessions.ipc`).
+A child's task, pins, caps, away mode and lineage travel in its launch file (`app/child_launch.py`, `0600` under `<origin_state>/launch/<group>/`), beside its config snapshot; the bootstrap validates both and drives `app.run.run_task` with the CLI's session seam.
 A launch file that carries a `kinds.ConversationContract` starts a `reviewer` session instead of a run: the same bootstrap, `run_task` and `Harness`, with the contract's system prompt and opening in place of the task block, the turn limit `ConversationContract.max_turns`, the tools its parent hands down (`ConversationContract.allowed_tools`, within the `reviewer` mode's surface), and no baseline, MCP server, advisor, review trigger or finish gate; `git.worktree.setup_command` runs only where the session may run commands.
 A response with no tool call ends it `answered`, on the last allowed turn too; a last allowed turn that still asks for tools ends it `max_turns` with that response's text and those tools not run; either way `completion.json` (`sessions/completion.py`) holds the text, the stop reason, the provider calls made and what the limit cut.
-Its session dir is `sessions/reviewers/<id>` under the state of the repository that dispatched it (`lane_watch.lane_dir` reads the bucket from the lane's mode); `resume` refuses it.
+Its session dir is `sessions/reviewers/<id>` under the state of the repository that dispatched it (`child_wait.child_dir` reads the bucket from the child's mode); `resume` refuses it.
 
-**`agent6 run --parallel N|selector,...`** resolves each selector (a role name, or `[provider/]model` on the worker's effort and temperature) to one `kinds.ModelSettings` through `Config.lane_settings`, the resolver every entry point shares, and plans one `LaneSpec` per lane, each started through the lane bootstrap as an ordinary detached run with its own jail and `run_commands` policy.
+**`agent6 run --parallel N|selector,...`** resolves each selector (a role name, or `[provider/]model` on the worker's effort and temperature) to one `kinds.ModelSettings` through `Config.child_settings`, the resolver every entry point shares, and plans one `ChildSpec` per child, each started through the child bootstrap as an ordinary detached run with its own jail and `run_commands` policy.
 
-`app.worktrees.write_lane_config` uses `config.lane_snapshot` to materialize the parent's resolved worker, planner, reviewer and helper routes and sampling settings, with the lane's worker route override applied.
+`app.worktrees.write_child_config` uses `config.child_snapshot` to materialize the parent's resolved worker, planner, reviewer and helper routes and sampling settings, with the child's worker route override applied.
 The snapshot keeps only the route in `models.default`; it omits sampling keys only for resolved `None` values.
 On the internal child path, `app.session.setup.load_session_config` replaces only `[models]` after normal layer discovery and preset selection, discarding lower-layer model values and their provenance.
 Other sections retain normal merging and explicit-default resets, including sandbox values and budgets; ordinary operator `--config` remains a merge.
 
 TOML cannot preserve a selected `None` temperature with the unchanged sampling vocabulary: the omitted key reloads as the existing `0.0` default.
-The snapshot records each affected field in `parallel.config_notes`, written with the lane's first manifest and printed in the lane's end report and when the run imports the lane.
+The snapshot records each affected field in `parallel.config_notes`, written with the child's first manifest and printed in the child's end report and when the run imports the child.
 These notes survive manifest rewrites, import and temporary config cleanup; they document the loss and do not override the child config.
 
 - `run --parallel` is a run: `ExecutionInputs.opening` carries its spec and task to the harness, and the loop's opening step (`loop_steer.ranked_opening`) dispatches the group under the join policy `rank` in place of the first model call
-    - the dispatcher asks its ranker once the lanes settle (`app_lanes.build_lane_ranker`: `[harness.parallel].judges` over each lane's diff from the base, its gate verdict and its cost, billed to the run's own tracker), writes the order on the dispatch record before any join, joins the first lane onto the run's chain and records each other lane as `ranked` with its place
-    - the journal: the dispatch, the judges' streamed `model.*` events (`role = "judge"`), `parallel.compared` with the ranking and rationale, `parallel.joined`, the end (`lanes_ranked`, `no_lane_result` or `budget_exhausted`)
-    - a manifest comparison record: the group id, ranking, method, rationale and judge cost; lane manifests keep only their placement and group id
+    - the dispatcher asks its ranker once the children settle (`app_children.build_child_ranker`: `[harness.parallel].judges` over each child's diff from the base, its gate verdict and its cost, billed to the run's own tracker), writes the order on the dispatch record before any join, joins the first child onto the run's chain and records each other child as `ranked` with its place
+    - the journal: the dispatch, the judges' streamed `model.*` events (`role = "judge"`), `parallel.compared` with the ranking and rationale, `parallel.joined`, the end (`children_ranked`, `no_child_result` or `budget_exhausted`)
+    - a manifest comparison record: the group id, ranking, method, rationale and judge cost; child manifests keep only their placement and group id
     - `VerifyGate.after_rank_join` runs the run's own gate on the joined tree, and `git.auto_merge` lands the run as it lands any run (`finalize.LANDING_ENDS`)
-    - under `git.control = "model"` the run has no chain: every lane is placed and none is joined
+    - under `git.control = "model"` the run has no chain: every child is placed and none is joined
     - a resume with a steer continues from the joined work with the worker model
-- every lane's manifest names the session that dispatched it (`parallel.parent`, stamped from the private launch), so each listing nests lanes under their parent, folded into a count
-- a lane's session dir is in its mode's bucket under the state of the root repository from its first event (its launch file names that state dir, `LaneLaunch.record_state`), and so is every reviewer a lane dispatches: a lane is visible in every hub while it runs, and nothing is moved when it ends
-- a lane's memory and rulings stay in its clone's own state: seeded from its dispatcher's when it starts, merged back when it is imported (`parallel_results.carry_back`), and left untouched by a lane that fails
-- on completion a lane's branch is fetched into the origin; a failed-to-start lane keeps its clone, and a lane whose import is refused keeps its clone and says where it is (never the only copy lost)
-- a lane is the parent's own child, tied to it with PDEATHSIG (SIGTERM): a parent that dies ends its lanes as a Ctrl-C would; a lane that does not stop when asked (an interrupt, a deadline) is TERMed, KILLed after the kill grace and reaped by its recorded pid, reported failed with its clone kept, and a lane that never reported a session dir is stopped the same way
-- a lane's approval or waiting `ask_user` is asked on its parent: `lane_watch.await_lane` calls the parent's watch (`app/child_watch.py`) on each poll, which, while the lane reads `waiting`, puts the lane's open prompt through the parent's `OperatorPrompts` and writes the outcome into the lane's answer slot (the answers, or the note that the parent's operator gave none); a lane under a relay runs with the away mode `wait`, so a chain relays itself
-- a dispatch reserves nothing: each lane starts under what the parent has left in each finite ledger (`BudgetTracker.available`, `-1` and `0` passing through per currency) as its own caps, through its launch file, and a panel's later batch under what is left then; while a lane runs, the parent's watch reads its journal on each poll and counts its spend so far against the parent's caps (`BudgetTracker.note_running`), the lane's own running lanes included (`usd_running_lanes` and `tokens_running_lanes` on its `budget.update` row, which the watch writes as that spend moves, ten seconds apart at most); a running lane's spend is inside `available`, `fraction_remaining` and the breaker and outside `usd_total`; the lanes together reaching a cap ends them at once, so the total can pass the cap by what was in flight and one poll; a lane's settlement (`settle_lane`) charges its final usage once and folds its plan readings through the parent's high-water rule so movement two lanes both saw counts once; a lane whose usage is unknown stays unsettled, its last reading counted for that execution; a resumed execution takes the lanes its journal already names as settled (`mark_settled`) and charges none of them again; `run --parallel` hands down nothing (its lanes keep the config's caps and `--max-usd`)
-- every live dispatch is recorded before any lane launches (`sessions/lane_dispatch.py`, `<session_dir>/dispatch/<group>.json`, version 2, written atomically): the identity, source, join policy, owner execution, base, segments with their DAG nodes, each lane's share and limits; an unwritable record refuses the dispatch; the record advances `prepared`, `running`, `settling` (each lane's usage charged once, or marked outstanding), `joining` (each join written as it lands with the chain tip before and after) and `complete` with the delivered message, then `delivered`
-- the read model (`viewmodel/lanes.py`) shows every session's children: from its dispatch records when it has any (each lane's source, selector, join outcome and sha, the branch the join read, its settled spend, and whether it ever launched: a lane with no session dir reads `failed: never started`), else from its lanes' lineage (an older session) with no join to report; the session header carries `lanes` for every session that has any and `dispatches` when records exist; the receipt's `children` and its `Lanes` section name each lane and the spend the lanes added to the parent's inclusive total
-- the model's `parallel` tool (`[harness.parallel].tool`, off by default) runs through the same dispatcher with `source = "model"`: the dispatcher's `parallel_handler` is the loop's `_parallel_tool`, which validates the arguments, applies the model-lane ceilings (200 turns, 1,800 s) as `LaneLimits` the lanes' launch files enforce again, dispatches for the turn in progress and returns the result as the tool's answer; the tool is listed only when `ToolDispatcher.parallel_available()` holds (the knob, run mode, not a child, a handler installed), and the same gates refuse a call that slips past the list
-- a resumed execution reconciles every record that is not complete or whose panel charges lack journal confirmation before its first provider call: the grant is restored as recorded (settled lanes released, never a second split), the recoverer finds the lanes by their session dirs (a live one is stopped as `agent6 stop` stops a run, one whose record is only in its clone is imported, one already imported is read as it stands), usage is settled exactly once, a lane whose work the chain already reaches is recorded joined at the merge that landed it and never merged twice, the rest join in order, and the result is delivered once for the original call; a record with no lane found completes as `dispatch interrupted before launch; nothing ran`; a complete record never delivered is delivered; a session older than the records has none to reconcile
-- a dispatch may give a lane `LaneLimits` (a turn cap and a wall-clock deadline) in its launch file: the bootstrap clamps `harness.max_turns` (a configured `-1` cannot lift the cap) and arms its own backstop, the stop bridges at the deadline and SIGTERM to itself a grace later; the parent's await ends at the same deadline, and a lane that reaches it reads `ended at its deadline`, never a success
+- every child's manifest names the session that dispatched it (`parallel.parent`, stamped from the private launch), so each listing nests children under their parent, folded into a count
+- a child's session dir is in its mode's bucket under the state of the root repository from its first event (its launch file names that state dir, `ChildLaunch.record_state`), and so is every reviewer a child dispatches: a child is visible in every hub while it runs, and nothing is moved when it ends
+- a child's memory and rulings stay in its clone's own state: seeded from its dispatcher's when it starts, merged back when it is imported (`parallel_results.carry_back`), and left untouched by a child that fails
+- on completion a child's branch is fetched into the origin; a failed-to-start child keeps its clone, and a child whose import is refused keeps its clone and says where it is (never the only copy lost)
+- a child is the parent's own child, tied to it with PDEATHSIG (SIGTERM): a parent that dies ends its children as a Ctrl-C would; a child that does not stop when asked (an interrupt, a deadline) is TERMed, KILLed after the kill grace and reaped by its recorded pid, reported failed with its clone kept, and a child that never reported a session dir is stopped the same way
+- a child's approval or waiting `ask_user` is asked on its parent: `child_wait.await_child` calls the parent's watch (`app/child_watch.py`) on each poll, which, while the child reads `waiting`, puts the child's open prompt through the parent's `OperatorPrompts` and writes the outcome into the child's answer slot (the answers, or the note that the parent's operator gave none); a child under a relay runs with the away mode `wait`, so a chain relays itself
+- a dispatch reserves nothing: each child starts under what the parent has left in each finite ledger (`BudgetTracker.available`, `-1` and `0` passing through per currency) as its own caps, through its launch file, and a panel's later batch under what is left then; while a child runs, the parent's watch reads its journal on each poll and counts its spend so far against the parent's caps (`BudgetTracker.note_running`), the child's own running children included (`usd_running_children` and `tokens_running_children` on its `budget.update` row, which the watch writes as that spend moves, ten seconds apart at most); a running child's spend is inside `available`, `fraction_remaining` and the breaker and outside `usd_total`; the children together reaching a cap ends them at once, so the total can pass the cap by what was in flight and one poll; a child's settlement (`settle_child`) charges its final usage once and folds its plan readings through the parent's high-water rule so movement two children both saw counts once; a child whose usage is unknown stays unsettled, its last reading counted for that execution; a resumed execution takes the children its journal already names as settled (`mark_settled`) and charges none of them again; `run --parallel` hands down nothing (its children keep the config's caps and `--max-usd`)
+- every live dispatch is recorded before any child launches (`sessions/child_dispatch.py`, `<session_dir>/dispatch/<group>.json`, version 2, written atomically): the identity, source, join policy, owner execution, base, segments with their DAG nodes, each child's share and limits; an unwritable record refuses the dispatch; the record advances `prepared`, `running`, `settling` (each child's usage charged once, or marked outstanding), `joining` (each join written as it lands with the chain tip before and after) and `complete` with the delivered message, then `delivered`
+- the read model (`viewmodel/children.py`) shows every session's children: from its dispatch records when it has any (each child's source, selector, join outcome and sha, the branch the join read, its settled spend, and whether it ever launched: a child with no session dir reads `failed: never started`), else from its children's lineage (an older session) with no join to report; the session header carries `children` for every session that has any and `dispatches` when records exist; the receipt's `children` and its `Children` section name each child and the spend the children added to the parent's inclusive total
+- the model's `parallel` tool (`[harness.parallel].tool`, off by default) runs through the same dispatcher with `source = "model"`: the dispatcher's `parallel_handler` is the loop's `_parallel_tool`, which validates the arguments, applies the model-child ceilings (200 turns, 1,800 s) as `ChildLimits` the children's launch files enforce again, dispatches for the turn in progress and returns the result as the tool's answer; the tool is listed only when `ToolDispatcher.parallel_available()` holds (the knob, run mode, not a child, a handler installed), and the same gates refuse a call that slips past the list
+- a resumed execution reconciles every record that is not complete or whose panel charges lack journal confirmation before its first provider call: the grant is restored as recorded (settled children released, never a second split), the recoverer finds the children by their session dirs (a live one is stopped as `agent6 stop` stops a run, one whose record is only in its clone is imported, one already imported is read as it stands), usage is settled exactly once, a child whose work the chain already reaches is recorded joined at the merge that landed it and never merged twice, the rest join in order, and the result is delivered once for the original call; a record with no child found completes as `dispatch interrupted before launch; nothing ran`; a complete record never delivered is delivered; a session older than the records has none to reconcile
+- a dispatch may give a child `ChildLimits` (a turn cap and a wall-clock deadline) in its launch file: the bootstrap clamps `harness.max_turns` (a configured `-1` cannot lift the cap) and arms its own backstop, the stop bridges at the deadline and SIGTERM to itself a grace later; the parent's await ends at the same deadline, and a child that reaches it reads `ended at its deadline`, never a success
 - the ranking is `app.compare.rank`: each of `[harness.parallel].judges` ranks once ([judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py)) and the lowest sum of ranks wins; a tie, or a config with no judge, falls to verify-then-cost
-- the compare stamps each lane's manifest (`placement`, one writer): every view shows the rank and why; listings star the winner
-- only the first-ranked lane joins; the other lanes keep their branches for `sessions merge <lane>`
-- `--max-usd` is the run's cap: the lanes and the judges bill one tracker
+- the compare stamps each child's manifest (`placement`, one writer): every view shows the rank and why; listings star the winner
+- only the first-ranked child joins; the other children keep their branches for `sessions merge <child>`
+- `--max-usd` is the run's cap: the children and the judges bill one tracker
 
-**A `/parallel` steer dispatches a sibling group** through `OperatorBridge.lane_spawner`, on `Harness.bridge` (the injection point keeping `harness` from importing `ui`; `app/execution.py` wires the front-end's spawner, run mode only).
+**A `/parallel` steer dispatches a sibling group** through `OperatorBridge.child_spawner`, on `Harness.bridge` (the injection point keeping `harness` from importing `ui`; `app/execution.py` wires the front-end's spawner, run mode only).
 
-- the loop blocks with no provider calls while lanes run, in this order:
-    - expand each segment into its lanes
-    - chain-commit the worktree (lanes cut from the chain tip)
-    - clone, spawn, await and import the lanes
+- the loop blocks with no provider calls while children run, in this order:
+    - expand each segment into its children
+    - chain-commit the worktree (children cut from the chain tip)
+    - clone, spawn, await and import the children
     - merge each branch onto the chain in dispatch order (`chain_merge` syncs merged files into the worktree)
-- a lane that ended with a result and no commit beyond its base joins as `no_changes` and merges nothing
-- each segment gets one DAG node: `passed` with the last joined sha (none when every lane made no changes), or `failed` when every lane failed or conflicted; a conflict aborts that merge and tells the model; the run continues either way
+- a child that ended with a result and no commit beyond its base joins as `no_changes` and merges nothing
+- each segment gets one DAG node: `passed` with the last joined sha (none when every child made no changes), or `failed` when every child failed or conflicted; a conflict aborts that merge and tells the model; the run continues either way
 - `parallel.dispatched` / `joined` / `failed` render as conversation markers, so the blocked wait is visible
 
-**A child cannot dispatch work.** `app.lane_launch.dispatch_authority` separates work dispatch from configured harness-panel scheduling on `OperatorBridge.lane_authority`.
-Every lane bootstrap sets `AGENT6_CHILD=1`; a matching private worker launch retains panel authority under `[review]`, but its model and steer cannot dispatch work even with `harness.parallel.tool = true`.
+**A child cannot dispatch work.** `app.child_launch.dispatch_authority` separates work dispatch from configured harness-panel scheduling on `OperatorBridge.child_authority`.
+Every child bootstrap sets `AGENT6_CHILD=1`; a matching private worker launch retains panel authority under `[review]`, but its model and steer cannot dispatch work even with `harness.parallel.tool = true`.
 An unproven child, including unrelated machine-state execution, gets neither authority.
-A read-only conversation contract grants neither authority, ending the structure at the review leaf.
+A conversation contract grants neither authority, so the structure ends at the reviewer.
 
-`ParallelDispatcher.dispatch_panel` accepts bounded read-only conversations and a retained target through an internal record-only policy, independent of `harness.parallel.tool`.
+`ParallelDispatcher.dispatch_panel` accepts reviewers' contracts and a retained target through an internal record-only policy, independent of `harness.parallel.tool`.
 It shares the work dispatch's executor, reservation, import, settlement and recovery paths; `parallel_join` owns merge and DAG projections.
 `review_gate.run_panel` prepares ordered requests using provider-free reviewers resolved by `app.role_providers.resolve_reviewers`.
-The dispatcher reserves the entire roster before launching batches of at most `min(review.concurrency, harness.parallel.max_lanes)` reviewers; no reviewer is dropped.
+The dispatcher reserves the entire roster before launching batches of at most `min(review.concurrency, harness.parallel.max_children)` reviewers; no reviewer is dropped.
 Every reviewer is one contract: the panel prompt, `review.max_turns` turns and the tools the parent's own model is offered at that moment (`ReviewGate.tools`), cut to the `reviewer` mode's surface (`kinds.SESSION_KINDS`, `tools.schema.mode_tools`): every base tool but the two that edit, and `use_skill`; never the task list, `parallel`, `ask_user` or an MCP tool.
 A reviewer's reply has the output limit every session's has, and its conversation compacts as a run's does; a restart keeps the opening.
 A reviewer runs on the common bounded Harness path, including media recovery and final-turn verdict handling.
@@ -673,15 +673,15 @@ A reviewer runs on the common bounded Harness path, including media recovery and
 The parent validates each completion's session, panel, reviewer and retained target before parsing and grounding; an ordinary worker answer or successful exit is not evidence.
 Events, replay and receipts keep each reviewer's session ID.
 Configured top-level ask and plan reviews can schedule panels, but cannot dispatch work.
-Panel shares come from the worker's remaining allowance, and their deadlines take the minimum of the requested bound, the 1,800-second panel ceiling and the owning lane's deadline.
+Panel shares come from the worker's remaining allowance, and their deadlines take the minimum of the requested bound, the 1,800-second panel ceiling and the owning child's deadline.
 
 Worker import preserves descendant session directories, dispatch records, objects and lineage in the original state directory, and fetches hidden session-owned target refs before removing the clone.
 Stop and cleanup discover descendants through live symlinks, across buckets and through dead intermediaries.
 Cleanup retains live descendants and unimported records.
 The worker's usage is inclusive of settled descendants; importing their records does not charge them again.
-The dispatcher journals the cumulative budget with `settled_lanes` before recording settlement; ancestor settlement retains its hold until those rows confirm every panel child's inclusion.
+The dispatcher journals the cumulative budget with `settled_children` before recording settlement; ancestor settlement retains its hold until those rows confirm every panel child's inclusion.
 Recovery preserves journaled charges across executions and charges only children missing from that durable accounting.
-Provider calls, lane settlement and finalization share `sessions.budget_events` so every cumulative row carries the same accounting fields.
+Provider calls, child settlement and finalization share `sessions.budget_events` so every cumulative row carries the same accounting fields.
 Plan-window readings keep their recorded providers and replay in timestamp order across worker and descendant journals.
 Child panel evidence binds only its retained target: importing or merging the worker does not certify the top-level tree.
 
@@ -716,7 +716,7 @@ One live run-mode worker per checkout is the level above (`sessions/lock.py`, a 
 Run-mode workers share one working tree, so a second would interleave two runs' edits into each other's chain commits.
 A second `agent6 run` parks.
 The submitted task is saved verbatim in the new run's manifest (`parked_task`, with `parked_reason`, shown as "parked · checkout busy" in listings), and `agent6 resume <id>` starts it once the checkout is free.
-Plan and ask expose no edit tools and spawn freely; a run's lanes work in isolated clones.
+Plan and ask expose no edit tools and spawn freely; a run's children work in isolated clones.
 
 Files that are untracked at start are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt.
 A resume adds the files that appeared between executions and the run cannot show it wrote, and its note names them.
@@ -745,7 +745,7 @@ A run branch that is not at the chain tip (a commit made on `agent6/<id>`) refus
 
 The temporary workspace `.agent6/` layout and the transfer rules are documented under [Carry your state with the workspace](usage.md#carry-your-state-with-the-workspace).
 
-Each session directory is `<state-dir>/sessions/<bucket>/<session-id>/`, where the bucket is named for the mode (`kinds.SessionKind.bucket`): `runs/`, `plans/`, `asks/`, `machines/` for `machine create` authoring, and `reviewers/` for the bounded conversations lanes run under a contract.
+Each session directory is `<state-dir>/sessions/<bucket>/<session-id>/`, where the bucket is named for the mode (`kinds.SessionKind.bucket`): `runs/`, `plans/`, `asks/`, `machines/` for `machine create` authoring, and `reviewers/` for the bounded conversations children run under a contract.
 Ids are one namespace across every bucket, since every surface addresses a session by bare id.
 Minting picks an id no bucket holds; `run --session-id` refuses one another bucket holds (reusing a same-bucket id is the resume or parked-start path), and `fork --session-id` refuses one any bucket holds.
 
@@ -800,8 +800,8 @@ An unstarted fork keeps its branch, chain ref and worktree even when its tip is 
 The manifest is the only thing that names a worktree as agent6's.
 A worktree two sessions name (an `/undo` fork and its source) stays while either still needs it.
 
-The clone sweep deletes a group dir of `lane-*` clones once the origin reaches every one of their tips, and leaves every other directory under `[git.worktree].base_dir` alone.
-A clone with no lane session record stays because a spawn timeout can leave a child alive before its first write, even after the parent exits.
+The clone sweep deletes a group dir of `child-*` clones once the origin reaches every one of their tips, and leaves every other directory under `[git.worktree].base_dir` alone.
+A clone with no child session record stays because a spawn timeout can leave a child alive before its first write, even after the parent exits.
 
 The rebuild (`graph/replay.py`) undoes every journal-stamped mutation newer than that version, so a fork's tasks, statuses, cursor, and journal match the turn its conversation came from.
 Node content the journal never records (title, rationale, acceptance, paths) is immutable after creation and comes from the current nodes; `notes` and `updated_at` cannot be unwound and stay current.
@@ -841,11 +841,11 @@ A run started from a hub, or detached mid-run with `/detach`, keeps going with n
 
 - It writes an abort steer, which cuts a model call in flight, and the `stop.request` marker with its `now` urgency, which ends a running foreground command at once.
   Unless it is request-only, it waits for the run to end.
-- A worker still alive after that wait (5 s for a run, 30 s for one draining its lanes) gets SIGTERM and, 3 s later, SIGKILL, along with the background commands it started on the host.
+- A worker still alive after that wait (5 s for a run, 30 s for one draining its children) gets SIGTERM and, 3 s later, SIGKILL, along with the background commands it started on the host.
 - A run's worker takes the SIGTERM as a Ctrl-C stop (an `interrupted` end at exit 130).
 - Every target is named by process identity (pid plus start time), so a pid recycled before the identity check is never signalled.
 - `--after-turn` writes the plain marker alone, so the turn's running command finishes (or reaches `[harness].command_checkin_s`) and its tool results and auto-commit land first.
-- A session's live lanes, found by the lineage their manifests record, stop with it at the same urgency: a plain marker lets each lane finish its turn, a `now` marker ends their running commands at once; a parent that already ended still stops them (`lanes_stopped`).
+- A session's live children, found by the lineage their manifests record, stop with it at the same urgency: a plain marker lets each child finish its turn, a `now` marker ends their running commands at once; a parent that already ended still stops them (`children_stopped`).
 - An ACP cancel is request-only: it writes both requests without waiting for or signalling the worker, which is the ACP server itself.
 - An immediate stop ends a foreground `run_command` the launcher hands back.
   Its tool result carries `stopped_by_operator: true` and the output so far, without `still_running` or `background_id`, so the conversation a resume reads says the stop ended the command.
@@ -906,7 +906,7 @@ Every other approval publishes as `approval.prompt` before its answer.
 | Child repository primitive | [harness/child_repo.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/child_repo.py) |
 | Run-dir single-writer lock | [sessions/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lock.py) |
 | Compare judge | [harness/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py) |
-| Lane orchestrator | [app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) (lanes), [app/parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel_results.py) (import and ranking stamps), [app/worktrees.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/worktrees.py) (working directories), [ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
+| Child orchestrator | [app/children.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/children.py) (children), [app/parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel_results.py) (import and ranking stamps), [app/worktrees.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/worktrees.py) (working directories), [ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
 | Provider clients | [providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers) (`oauth.py` holds bound grants; `oauth_profile.py` holds resolved settings and identity and expiry policies; `oauth_exchange.py` exchanges issuer bearers for model tokens; `claude_code.py` orchestrates rounds; `claude_code_protocol.py` handles control messages and tool continuations; `claude_code_session.py` owns session state and pipe I/O; `claude_code_stream.py` folds stream events and scrubs email; `claude_code_wire.py` holds wire shapes) |
 | Task graph | [graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph) |
 | Event log and fold | [event_log.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/event_log.py) (writer), [viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (fold) |
@@ -926,9 +926,9 @@ These env vars are switches for benchmark arms, harness experiments and debuggin
 
 agent6 also sets markers for its own children:
 
-- `AGENT6_CHILD=1`: a child of a session (a lane, a machine state, a `/btw` question), whose model and operator work entry points cannot dispatch work ([Parallel runs](#parallel-runs)).
-- `AGENT6_STREAM_TO_LOG=1`: a detached spawn or lane emits its stream deltas as events with no console echo.
-- `AGENT6_LANE=<path>`: the lane's launch file (`app/lane_launch.py`): the task and pins, the caps and away mode, the config snapshot the lane's sole `--config` must name, its serialization loss notes, the lineage the lane's manifest records, the origin of the verify gate the parent resolved, and the operator's task; the bootstrap refuses a missing, malformed, foreign-owned or exposed file, and the config load refuses another `--config`.
+- `AGENT6_CHILD=1`: a child of a session (a child, a machine state, a `/btw` question), whose model and operator work entry points cannot dispatch work ([Parallel runs](#parallel-runs)).
+- `AGENT6_STREAM_TO_LOG=1`: a detached spawn or child emits its stream deltas as events with no console echo.
+- `AGENT6_LAUNCH=<path>`: the child's launch file (`app/child_launch.py`): the task and pins, the caps and away mode, the config snapshot the child's sole `--config` must name, its serialization loss notes, the lineage the child's manifest records, the origin of the verify gate the parent resolved, and the operator's task; the bootstrap refuses a missing, malformed, foreign-owned or exposed file, and the config load refuses another `--config`.
 
 ## Pre-1.0 stability
 

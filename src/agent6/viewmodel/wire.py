@@ -16,7 +16,7 @@ from agent6.machine import MachineJournal, load_machine
 from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import comparison, format, lanes, listing, tail
+from agent6.viewmodel import children, comparison, format, listing, tail
 from agent6.viewmodel.machine import logs as machine_logs
 from agent6.viewmodel.machine import state as machine_state
 from agent6.viewmodel.session import log as session_log
@@ -156,12 +156,12 @@ def manifest_header(
         unmerged: Whether the run holds unmerged work, when a repository is supplied.
         forked_from: The rendered fork lineage when recorded.
         worktree: The linked worktree path when recorded.
-        lanes: The session's lanes by lineage, from the same listing as `sessions show`,
+        children: The session's children by lineage, from the same listing as `sessions show`,
             for every session that has any.
-        dispatches: The session's dispatch records, each with its lanes' outcomes.
-        placement: The lane's PlacementStamp when recorded.
+        dispatches: The session's dispatch records, each with its children's outcomes.
+        placement: The child's PlacementStamp when recorded.
         placement.line: The rendered comparison placement.
-        comparison: The group record from the parent, directly or through the lane's group.
+        comparison: The group record from the parent, directly or through the child's group.
 
     Args:
         session_dir: The session's state dir.
@@ -171,7 +171,7 @@ def manifest_header(
     Returns:
         The branch facts, `unmerged` when the repo is given, `git_control`, `base_sha`,
         the fork lineage as `forked_from`,
-        the `worktree` and the lane's `placement` with its `line`; empty for a
+        the `worktree` and the child's `placement` with its `line`; empty for a
         run with no readable manifest.
     """
     try:
@@ -186,14 +186,14 @@ def manifest_header(
                 session_dir, scan.status_facts()
             )
         header["unmerged"] = listing.unmerged(m, status, git_read.run_ref_tips(repo))
-    children = listing.lanes_of(
+    nested = listing.children_of(
         layout.layout_of(session_dir).state_dir,
         session_dir.name,
         branch_tips=git_read.run_ref_tips(repo) if repo is not None else None,
     )
-    if children:
-        header["lanes"] = [listing.summary_row(lane) for lane in children]
-    dispatches = lanes.dispatches_of(session_dir)
+    if nested:
+        header["children"] = [listing.summary_row(child) for child in nested]
+    dispatches = children.dispatches_of(session_dir)
     if dispatches:
         header["dispatches"] = [dataclasses.asdict(view) for view in dispatches]
     # A reviewer's record is read, never acted on.

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic
 
-from agent6 import budget, errors, kinds, lane_records, review_records, terminal
+from agent6 import budget, child_records, errors, kinds, review_records, terminal
 from agent6.harness import parallel_dispatch, repo_context, run_chain
 from agent6.harness.review import history as review_history
 from agent6.harness.review import panel as review_panel
@@ -104,7 +104,7 @@ def run_panel(
     concurrency: int = 1,
     turn: int = 0,
 ) -> review_panel.PanelResult:
-    """Submit the roster as bounded lanes and aggregate only their bound artifacts.
+    """Submit the roster as bounded children and aggregate only their bound artifacts.
 
     Every reviewer is the same child: it opens on the task, the rules, the verification and the
     diff, investigates with the tools its parent hands down, and passes a judgement up.
@@ -113,14 +113,14 @@ def run_panel(
         reviewers: The resolved roster in reviewer order.
         ctx: The shared task, rules, verification and diff.
         target: The retained immutable comparison.
-        executor: The common lane dispatcher.
+        executor: The common child dispatcher.
         block_on: The blocking rule.
         min_blocking_models: The distinct blocking routes needed for quorum.
         panel_id: The parent-assigned panel identity.
         max_turns: Each reviewer's call ceiling.
         tools: The tools the parent's own model is offered now; a reviewer gets the ones a
             contract may carry.
-        concurrency: The maximum simultaneous reviewers, also bounded by harness.parallel.max_lanes.
+        concurrency: The most reviewers at once, also bounded by harness.parallel.max_children.
         turn: The owning worker's turn.
 
     Returns:
@@ -130,7 +130,7 @@ def run_panel(
         return review_panel.PanelResult(
             panel_id, block_on, False, (), (), 0, 0, skipped_reason=ctx.rules.reason
         )
-    requests: list[lane_records.LaneTask] = []
+    requests: list[child_records.ChildTask] = []
     carried = tools_schema.mode_tools("reviewer").names
     handed = tuple(name for name in tools if name in carried)
     commands = tools_schema.RunCommandInput.TOOL_NAME in handed
@@ -146,7 +146,7 @@ def run_panel(
             allowed_tools=handed,
         )
         requests.append(
-            lane_records.LaneTask(
+            child_records.ChildTask(
                 task=f"Review: {reviewer.focus}",
                 model=reviewer.model,
                 settings=reviewer.settings,
@@ -159,7 +159,7 @@ def run_panel(
     verdicts: list[review_records.ReviewVerdict] = []
     for i, (reviewer, request) in enumerate(zip(reviewers, requests, strict=True)):
         assert request.contract is not None and request.contract.review_binding is not None
-        joined = dispatched.lanes[i] if i < len(dispatched.lanes) else None
+        joined = dispatched.children[i] if i < len(dispatched.children) else None
         sid = joined.session_id if joined is not None else ""
         error = dispatched.message if joined is None else None
         artifact = None
@@ -276,7 +276,7 @@ class ReviewGate:
         settings: The panel's settings.
         chain: The run's chain: the diff the panel grounds on and the AGENTS.md it reads.
         hide: `[sandbox].hide_paths`, which no AGENTS.md is read from.
-        executor: The common lane dispatcher, resolved lazily.
+        executor: The common child dispatcher, resolved lazily.
         tools: The tools the run's own model is offered now, which a reviewer inherits.
         budget_remaining: The fraction of the budget left, or None without a tracker.
         log: The run's text logger.
@@ -301,7 +301,7 @@ class ReviewGate:
         *,
         panel_id: str,
     ) -> ReviewInput:
-        """Freeze the panel's input and retain its exact comparison for later lane cloning.
+        """Freeze the panel's input and retain its exact comparison for later child cloning.
 
         Args:
             state: The parent state whose evidence is captured once.

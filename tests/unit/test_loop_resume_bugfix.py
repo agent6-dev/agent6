@@ -227,7 +227,7 @@ def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: pathl
 def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: pathlib.Path) -> None:
     """The /parallel group counter is run-lifetime state, persisted like the completion scalars.
 
-    Lane ids and the imported branches embed it; a reset rebuilds a prior group's ids.
+    Child ids and the imported branches embed it; a reset rebuilds a prior group's ids.
     """
     snap = tmp_path / "loop_state.json"
     config = types.SimpleNamespace(
@@ -1041,7 +1041,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
 
 
 def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
-    """A `/parallel` lane inherits the parent's pins through `--pin`, not a task prefix.
+    """A `/parallel` child inherits the parent's pins through `--pin`, not a task prefix.
 
     Seeding emits the same replace-fold event a restore does and keeps the pins in state.
     """

@@ -55,7 +55,7 @@ class LoopState:
         root_task_id: The DAG root task id, set once by the loop.
         system: The system prompt, set once by the loop.
         parallel_groups_dispatched: How many `/parallel` sibling groups this run
-            dispatched; names each group's lanes. Persisted.
+            dispatched; names each group's children. Persisted.
         pins: Operator `/pin` instructions, re-injected verbatim after every tier-2
             restart, capped at PINS_MAX_CHARS in total. Persisted.
         spiral: The repeat-call guard (`spiral`).

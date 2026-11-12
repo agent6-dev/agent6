@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Place children's worktrees and manage a lane's files from config to cleanup."""
+"""Place children's worktrees and manage a child's files from config to cleanup."""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ import shlex
 import shutil
 from collections.abc import Callable
 
-from agent6 import errors, lane_records, paths
-from agent6.app import lane_launch
-from agent6.config import Config, lane_snapshot
+from agent6 import child_records, errors, paths
+from agent6.app import child_launch
+from agent6.config import Config, child_snapshot
 from agent6.harness import child_repo
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lineage, process
@@ -25,7 +25,7 @@ from agent6.vcs.git import read as git_read
 def child_worktree_root(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
     """Return the base dir for a group of children's worktrees.
 
-    Lane group ids, `machine-<id>` and fork ids are all groups, so one prune sweep
+    Child group ids, `machine-<id>` and fork ids are all groups, so one prune sweep
     covers them; the dir is scoped by repo id, so another repo's clones never enter
     a sweep.
 
@@ -121,8 +121,8 @@ def holds(cfg: Config, tree: pathlib.Path) -> bool:
 def mounted_workspace(cfg: Config, tree: pathlib.Path) -> pathlib.Path:
     """Return the workspace a container mounts for a tree: the checkout above every base.
 
-    A lane's clone sits under `[container].worktree_base_dir` of its origin, and a lane of
-    that lane under the clone's own; the container mounts the outermost checkout.
+    A child's clone sits under `[container].worktree_base_dir` of its origin, and a child of
+    that child under the clone's own; the container mounts the outermost checkout.
 
     Args:
         cfg: The run's config.
@@ -141,25 +141,25 @@ def mounted_workspace(cfg: Config, tree: pathlib.Path) -> pathlib.Path:
     return tree
 
 
-def adopt_orphan_lane(
+def adopt_orphan_child(
     origin: pathlib.Path,
     cfg: Config,
     layout: sessions_layout.SessionLayout,
     manifest: sessions_manifest.SessionManifest,
 ) -> str | None:
-    """Import an orphaned lane's branch so an ordinary merge can land it.
+    """Import an orphaned child's branch so an ordinary merge can land it.
 
-    A parent death leaves a finished lane's branch only in its clone; its record is
+    A parent death leaves a finished child's branch only in its clone; its record is
     in the origin's state already.
 
     Args:
         origin: The repository.
         cfg: The run's config.
-        layout: The lane's layout in the origin.
-        manifest: The lane's manifest.
+        layout: The child's layout in the origin.
+        manifest: The child's manifest.
 
     Returns:
-        The note to print, or None when the session is not an orphaned lane.
+        The note to print, or None when the session is not an orphaned child.
 
     Raises:
         ChildRepoError: The import failed.
@@ -171,22 +171,22 @@ def adopt_orphan_lane(
     ):
         return None
     lineage = manifest.parallel
-    clone = child_worktree_root(cfg, origin, lineage.group) / f"lane-{lineage.lane}"
+    clone = child_worktree_root(cfg, origin, lineage.group) / f"child-{lineage.number}"
     if not (clone / ".git").exists() or not git_read.branch_exists(clone, manifest.run_branch):
         return None
     child_repo.import_run(origin, clone, manifest.run_branch, layout.session_dir)
-    return f"imported orphaned lane branch {manifest.run_branch} from {clone}"
+    return f"imported orphaned child branch {manifest.run_branch} from {clone}"
 
 
 def recorded_merged(origin: pathlib.Path, clone: pathlib.Path, tip: str) -> bool:
     """Tell whether a session's manifest records the tip as merged into a live branch.
 
-    A squash-merged lane's commits are unreachable by design, so this is the second
+    A squash-merged child's commits are unreachable by design, so this is the second
     proof that its clone may go.
 
     Args:
         origin: The repository.
-        clone: The lane's clone.
+        clone: The child's clone.
         tip: The commit to prove.
 
     Returns:
@@ -206,45 +206,45 @@ def recorded_merged(origin: pathlib.Path, clone: pathlib.Path, tip: str) -> bool
     return False
 
 
-def lane_sessions(record_state: pathlib.Path, session_id: str) -> tuple[pathlib.Path, ...]:
-    """Find a lane's record and its descendants' records.
+def child_sessions(record_state: pathlib.Path, session_id: str) -> tuple[pathlib.Path, ...]:
+    """Find a child's record and its descendants' records.
 
     Args:
-        record_state: The state dir the lane's record lives under.
-        session_id: The lane's session id.
+        record_state: The state dir the child's record lives under.
+        session_id: The child's session id.
 
     Returns:
-        The lane's session dir and its descendants'; empty when the lane wrote none.
+        The child's session dir and its descendants'; empty when the child wrote none.
     """
     matches = sessions_layout.session_matches(record_state, session_id)
     if not matches:
         return ()
-    lane = matches[0].session_dir
-    return (lane, *lineage.descendants_of(lane))
+    child = matches[0].session_dir
+    return (child, *lineage.descendants_of(child))
 
 
 def clone_sessions(record_state: pathlib.Path, clone: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    """Find the records of the lane a swept clone belongs to.
+    """Find the records of the child a swept clone belongs to.
 
-    A group's clones sit at `<group>/lane-<n>`, and the lane's session id is `<group>-l<n>`.
+    A group's clones sit at `<group>/child-<n>`, and the child's session id is `<group>-l<n>`.
 
     Args:
         record_state: The state dir the group's records live under.
-        clone: The lane's clone.
+        clone: The child's clone.
 
     Returns:
-        The lane's session dir and its descendants'; empty when the lane wrote none.
+        The child's session dir and its descendants'; empty when the child wrote none.
     """
-    lane_id = f"{clone.parent.name}-l{clone.name.removeprefix('lane-')}"
-    return lane_sessions(record_state, lane_id)
+    child_id = f"{clone.parent.name}-l{clone.name.removeprefix('child-')}"
+    return child_sessions(record_state, child_id)
 
 
-def lane_keep_reason(record_state: pathlib.Path, clone: pathlib.Path) -> str:
-    """Return why a live lane or an unconfirmed startup keeps the clone, else "".
+def child_keep_reason(record_state: pathlib.Path, clone: pathlib.Path) -> str:
+    """Return why a live child or an unconfirmed startup keeps the clone, else "".
 
     Args:
-        record_state: The state dir the lane's record lives under.
-        clone: The lane's clone.
+        record_state: The state dir the child's record lives under.
+        clone: The child's clone.
 
     Returns:
         The keep reason; a spawn timeout can leave a live child with no session record.
@@ -252,11 +252,13 @@ def lane_keep_reason(record_state: pathlib.Path, clone: pathlib.Path) -> str:
     dirs = clone_sessions(record_state, clone)
     if not dirs:
         return (
-            "no lane session record, so a lane may still be starting; once none is, remove it"
+            "no child session record, so a child may still be starting; once none is, remove it"
             f" with: rm -r -- {shlex.quote(str(clone))}"
         )
     return (
-        "live lane; stop it before pruning" if any(process.worker_is_alive(d) for d in dirs) else ""
+        "live child; stop it before pruning"
+        if any(process.worker_is_alive(d) for d in dirs)
+        else ""
     )
 
 
@@ -266,11 +268,11 @@ def sweep_group_clones(  # noqa: PLR0912  # one refusal per retained clone condi
     *,
     note_keep: Callable[[pathlib.Path, str], None] = lambda _path, _why: None,
 ) -> tuple[int, int]:
-    """Delete idle lane and machine clone groups whose tips the origin reaches.
+    """Delete idle child and machine clone groups whose tips the origin reaches.
 
-    Unreachable commits keep the group: it may be the only copy. A lane with no session
+    Unreachable commits keep the group: it may be the only copy. A child with no session
     record stays because a spawn timeout can leave a live child before its first write.
-    Groups hold `lane-*` clones or `machine-*/state-*` clones; fork worktrees stay separate.
+    Groups hold `child-*` clones or `machine-*/state-*` clones; fork worktrees stay separate.
 
     Args:
         origin: The repository.
@@ -288,7 +290,7 @@ def sweep_group_clones(  # noqa: PLR0912  # one refusal per retained clone condi
         machine_id = (
             group_dir.name.removeprefix("machine-") if group_dir.name.startswith("machine-") else ""
         )
-        pattern = "state-*" if machine_id else "lane-*"
+        pattern = "state-*" if machine_id else "child-*"
         clones = [c for c in sorted(group_dir.glob(pattern)) if (c / ".git").is_dir()]
         if not clones:
             continue
@@ -303,7 +305,7 @@ def sweep_group_clones(  # noqa: PLR0912  # one refusal per retained clone condi
             if not machine_id and any(
                 process.worker_is_alive(d) for d in clone_sessions(paths.state_dir(origin), clone)
             ):
-                why = "live lane or descendant; stop it before pruning"
+                why = "live child or descendant; stop it before pruning"
                 break
             try:
                 tips = [git_read.chain_tip(clone, br) for br in git_read.list_run_branches(clone)]
@@ -313,7 +315,7 @@ def sweep_group_clones(  # noqa: PLR0912  # one refusal per retained clone condi
                     why = (
                         "no machine chain ref; review this clone before removing it"
                         if machine_id
-                        else lane_keep_reason(paths.state_dir(origin), clone)
+                        else child_keep_reason(paths.state_dir(origin), clone)
                     )
                     if why:
                         break
@@ -343,29 +345,29 @@ def sweep_group_clones(  # noqa: PLR0912  # one refusal per retained clone condi
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class LaneConfig:
-    """The generated lane config path and its serialization loss notes."""
+class ChildConfig:
+    """The generated child config path and its serialization loss notes."""
 
     path: pathlib.Path
     notes: tuple[str, ...]
 
 
-def write_lane_config(
+def write_child_config(
     cfg: Config,
-    spec: lane_records.LaneSpec,
+    spec: child_records.ChildSpec,
     *,
     explicit_leaves: frozenset[str],
     into: pathlib.Path,
-) -> LaneConfig:
-    """Write the origin's explicit settings and non-default lane values to `--config`.
+) -> ChildConfig:
+    """Write the origin's explicit settings and non-default child values to `--config`.
 
-    The clone's per-repo config is empty; unset defaults stay defaults in the lane.
+    The clone's per-repo config is empty; unset defaults stay defaults in the child.
 
     Args:
         cfg: The origin's effective config.
-        spec: The lane.
+        spec: The child.
         explicit_leaves: The dotted leaves the origin's config layers set.
-        into: The lane's private launch dir, created private when missing.
+        into: The child's private launch dir, created private when missing.
 
     Returns:
         The config file's path and serialization loss notes.
@@ -373,20 +375,20 @@ def write_lane_config(
     Raises:
         LaunchError: The dir cannot be private.
     """
-    lane_cfg = cfg.with_model_settings("worker", spec.settings)
-    # The import fetches the lane's branch, so branch_per_run stays on.
-    lane_cfg = lane_cfg.model_copy(
-        update={"git": lane_cfg.git.model_copy(update={"branch_per_run": True})}
+    child_cfg = cfg.with_model_settings("worker", spec.settings)
+    # The import fetches the child's branch, so branch_per_run stays on.
+    child_cfg = child_cfg.model_copy(
+        update={"git": child_cfg.git.model_copy(update={"branch_per_run": True})}
     )
-    lane_launch.private_dir(into)
-    config_path = into / f"lane-{spec.lane}-config.toml"
-    snapshot = lane_snapshot.build(lane_cfg, explicit_leaves=explicit_leaves)
-    lane_launch.write_private(config_path, snapshot.text)
-    return LaneConfig(config_path, snapshot.notes)
+    child_launch.private_dir(into)
+    config_path = into / f"child-{spec.number}-config.toml"
+    snapshot = child_snapshot.build(child_cfg, explicit_leaves=explicit_leaves)
+    child_launch.write_private(config_path, snapshot.text)
+    return ChildConfig(config_path, snapshot.notes)
 
 
 def cleanup(
-    imported: list[lane_records.LaneSpec],
+    imported: list[child_records.ChildSpec],
     *,
     origin: pathlib.Path,
     record_state: pathlib.Path,
@@ -396,15 +398,15 @@ def cleanup(
     cfg: Config,
     note_keep: Callable[[pathlib.Path, str], None] = lambda _path, _why: None,
 ) -> None:
-    """Tear down the clone, its own state dir, jail home and launch files of each imported lane.
+    """Tear down the clone, its own state dir, jail home and launch files of each imported child.
 
     Best-effort. Every level from the group dir up to the per-repo base is removed once
     empty, never the dir above it; the group's launch dir goes the same way.
 
     Args:
-        imported: The lanes whose import landed.
+        imported: The children whose import landed.
         origin: The repository that must reach every clone tip.
-        record_state: The state dir the lanes' records live under, which stay.
+        record_state: The state dir the children's records live under, which stay.
         note_keep: Receives the kept clone and reason.
         worktree_root: The group dir.
         base: The per-repo base dir.
@@ -412,7 +414,7 @@ def cleanup(
         cfg: The run's config.
     """
     for spec in imported:
-        records = lane_sessions(record_state, spec.session_id)
+        records = child_sessions(record_state, spec.session_id)
         if any(process.worker_is_alive(record) for record in records):
             note_keep(spec.worktree, "live descendant; stop it before cleanup")
             continue
@@ -435,8 +437,8 @@ def cleanup(
         shutil.rmtree(paths.state_dir(spec.worktree), ignore_errors=True)
         shutil.rmtree(paths.jail_cache_home(spec.worktree), ignore_errors=True)
         shutil.rmtree(spec.worktree, ignore_errors=True)
-        (launch_dir / f"lane-{spec.lane}-config.toml").unlink(missing_ok=True)
-        (launch_dir / f"lane-{spec.lane}.json").unlink(missing_ok=True)
+        (launch_dir / f"child-{spec.number}-config.toml").unlink(missing_ok=True)
+        (launch_dir / f"child-{spec.number}.json").unlink(missing_ok=True)
     for level in (launch_dir, launch_dir.parent):
         with contextlib.suppress(OSError):
             level.rmdir()  # succeeds only once every group's files are gone

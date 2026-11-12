@@ -237,10 +237,10 @@ def test_the_mounted_root_is_the_repository_of_a_linked_worktree(tmp_path: pathl
     cfg = Config.model_validate({"sandbox": {"isolation": "container"}})
     assert session_runtime.mounted_root(cfg, repo / "wt", repo / ".git") == repo
     assert session_runtime.mounted_root(cfg, repo, None) == repo
-    lane = repo / ".agent6/worktrees/repo-1/run-p1/lane-1"
-    assert session_runtime.mounted_root(cfg, lane, None) == repo
+    child = repo / ".agent6/worktrees/repo-1/run-p1/child-1"
+    assert session_runtime.mounted_root(cfg, child, None) == repo
     assert (
-        session_runtime.mounted_root(cfg, lane / ".agent6/worktrees/x/panel/lane-2", None) == repo
+        session_runtime.mounted_root(cfg, child / ".agent6/worktrees/x/panel/child-2", None) == repo
     )
 
 

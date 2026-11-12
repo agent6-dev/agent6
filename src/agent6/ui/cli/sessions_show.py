@@ -37,7 +37,7 @@ from agent6.viewmodel import (
     transcript,
     wire,
 )
-from agent6.viewmodel import lanes as vm_lanes
+from agent6.viewmodel import children as vm_children
 from agent6.viewmodel.session import view as state_view
 
 
@@ -70,7 +70,7 @@ def _print_lineage(manifest: sessions_manifest.SessionManifest) -> None:
 def _print_parallel_compare(
     manifest: sessions_manifest.SessionManifest, session_dir: pathlib.Path
 ) -> None:
-    """Print a lane's place in its group; a no-op for any other run.
+    """Print a child's place in its group; a no-op for any other run.
 
     The parent it nests under, then the compare outcome once there is one: its place,
     whether it won, judged or mechanical, and the judge's rationale.
@@ -80,7 +80,7 @@ def _print_parallel_compare(
         session_dir: The run's directory, used to read its parent.
     """
     if (lineage := manifest.parallel) is not None:
-        print(f"lane of:    {lineage.parent} (lane {lineage.lane} of group {lineage.group})")
+        print(f"child of:    {lineage.parent} (child {lineage.number} of group {lineage.group})")
     formatted = format.format_compare(
         manifest.placement, comparison.session_comparison(session_dir)
     )
@@ -92,17 +92,19 @@ def _print_parallel_compare(
         print(f"  judge: {rationale}")
 
 
-def _lanes(layout: sessions_layout.SessionLayout, tips: Mapping[str, str]) -> list[SessionSummary]:
-    """Return the session's lanes by lineage with their unmerged marks.
+def _children(
+    layout: sessions_layout.SessionLayout, tips: Mapping[str, str]
+) -> list[SessionSummary]:
+    """Return the session's children by lineage with their unmerged marks.
 
     Args:
         layout: The session's layout.
         tips: The branch-tips snapshot.
 
     Returns:
-        The lanes in lane order; empty for a session without any.
+        The children in child order; empty for a session without any.
     """
-    return listing.lanes_of(layout.state_dir, layout.session_id, branch_tips=tips)
+    return listing.children_of(layout.state_dir, layout.session_id, branch_tips=tips)
 
 
 def _won(manifest: sessions_manifest.SessionManifest | None) -> bool:
@@ -110,68 +112,68 @@ def _won(manifest: sessions_manifest.SessionManifest | None) -> bool:
     return manifest is not None and manifest.placement is not None and manifest.placement.winner
 
 
-def _lane_manifests(
-    state: pathlib.Path, lanes: list[SessionSummary]
+def _child_manifests(
+    state: pathlib.Path, children: list[SessionSummary]
 ) -> dict[str, sessions_manifest.SessionManifest]:
-    """Return each readable lane manifest, for its route and compare stamp."""
+    """Return each readable child manifest, for its route and compare stamp."""
     manifests: dict[str, sessions_manifest.SessionManifest] = {}
-    for lane in lanes:
-        lane_layout = sessions_layout.session_layout(state, lane.session_id)
-        if lane_layout is not None:
+    for child in children:
+        child_layout = sessions_layout.session_layout(state, child.session_id)
+        if child_layout is not None:
             with contextlib.suppress(sessions_manifest.ManifestError):
-                manifests[lane.session_id] = sessions_manifest.read_manifest(
-                    lane_layout.session_dir
+                manifests[child.session_id] = sessions_manifest.read_manifest(
+                    child_layout.session_dir
                 )
     return manifests
 
 
-def _print_lanes(
+def _print_children(
     manifest: sessions_manifest.SessionManifest,
-    lanes: list[SessionSummary],
-    lane_manifests: Mapping[str, sessions_manifest.SessionManifest],
+    children: list[SessionSummary],
+    child_manifests: Mapping[str, sessions_manifest.SessionManifest],
     outcomes: Mapping[str, str],
 ) -> None:
-    """Print the group line for a group, the lane count otherwise, then one line per lane.
+    """Print the group line for a group, the child count otherwise, then one line per child.
 
     Args:
         manifest: The session's manifest.
-        lanes: Its lanes by lineage.
-        lane_manifests: Each readable lane manifest, for its compare stamp.
-        outcomes: How each recorded lane joined, by session id.
+        children: Its children by lineage.
+        child_manifests: Each readable child manifest, for its compare stamp.
+        outcomes: How each recorded child joined, by session id.
     """
-    if lanes:
-        print(f"lanes:      {len(lanes)}")
+    if children:
+        print(f"children:      {len(children)}")
     idents = {
-        lane.session_id: lane.id_cell(winner=_won(lane_manifests.get(lane.session_id)))
-        for lane in lanes
+        child.session_id: child.id_cell(winner=_won(child_manifests.get(child.session_id)))
+        for child in children
     }
     width = max((len(ident) for ident in idents.values()), default=0)
-    for lane in lanes:
-        lane_manifest = lane_manifests.get(lane.session_id)
-        stamp = lane_manifest.placement if lane_manifest is not None else None
-        place = f"rank {stamp.rank}/{stamp.of}" if stamp is not None else f"lane {lane.lane}"
-        model = lane.model or "?"
-        cost = lane.usage_cell
+    for child in children:
+        child_manifest = child_manifests.get(child.session_id)
+        stamp = child_manifest.placement if child_manifest is not None else None
+        place = f"rank {stamp.rank}/{stamp.of}" if stamp is not None else f"child {child.number}"
+        model = child.model or "?"
+        cost = child.usage_cell
         label = format.listing_status_label(
-            lane.mode, lane.status, lane.detail, unmerged=lane.unmerged
+            child.mode, child.status, child.detail, unmerged=child.unmerged
         )
-        outcome = outcomes.get(lane.session_id, "")
+        outcome = outcomes.get(child.session_id, "")
         joined = f"  {outcome}" if outcome else ""
-        ident = idents[lane.session_id]
+        ident = idents[child.session_id]
         print(f"  {place:<10} {ident:<{width}}  {model}  {label}  {cost}{joined}".rstrip())
 
 
-def lane_outcomes(session_dir: pathlib.Path) -> dict[str, str]:
-    """Return each recorded lane's join as one phrase, by session id.
+def child_outcomes(session_dir: pathlib.Path) -> dict[str, str]:
+    """Return each recorded child's join as one phrase, by session id.
 
     Args:
         session_dir: The session's dir.
 
     Returns:
-        `joined at <sha>`, `no changes` or `<outcome>: <detail>` per lane; empty without records.
+        `joined at <sha>`, `no changes` or `<outcome>: <detail>` per child; empty without records.
     """
     phrases: dict[str, str] = {}
-    for child in vm_lanes.children_of(session_dir):
+    for child in vm_children.children_of(session_dir):
         if child.outcome == "joined":
             phrases[child.session_id] = f"joined at {child.join_sha[:12]}"
         elif child.outcome == "no_changes":
@@ -384,7 +386,7 @@ class StatusJSON(TypedDict):
     placement: dict[str, Any] | None
     comparison: dict[str, Any] | None
     parallel: dict[str, Any] | None
-    lanes: list[listing.SummaryRow]
+    children: list[listing.SummaryRow]
     run_branch: str | None
     base_branch: str | None
     merged_into: str | None
@@ -431,10 +433,10 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         forked_from_turn: The fork's source turn, or null.
         forked_from_sha: The fork's source commit, or null.
         worktree: The linked worktree path, or null.
-        placement: The lane's rank and group id, or null outside a compared lane.
+        placement: The child's rank and group id, or null outside a compared child.
         comparison: The group record on its parent, or null for other sessions.
-        parallel: The ParallelLineage, or null outside a lane.
-        lanes: The parent's summary_row objects.
+        parallel: The ParallelLineage, or null outside a child.
+        children: The parent's summary_row objects.
         run_branch: The existing run branch, or null.
         base_branch: The base branch, or null when unknown.
         merged_into: The merge destination, or null when not merged.
@@ -478,8 +480,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     changes = _changes(target.name, manifest, undone=scan.finished and scan.stop_reason == "undone")
     tips = git_read.run_ref_tips(pathlib.Path.cwd())
     summary = summarize_session_dir(target, branch_tips=tips)
-    lanes = _lanes(layout, tips)
-    lane_manifests = _lane_manifests(layout.state_dir, lanes)
+    children = _children(layout, tips)
+    child_manifests = _child_manifests(layout.state_dir, children)
     status, status_cell, status_detail = _status_state(
         summary,
         scan,
@@ -526,9 +528,9 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             if manifest.comparison
             else None,
             "parallel": manifest.parallel.model_dump(mode="json") if manifest.parallel else None,
-            "lanes": [
-                listing.summary_row(ln, winner=_won(lane_manifests.get(ln.session_id)))
-                for ln in lanes
+            "children": [
+                listing.summary_row(ln, winner=_won(child_manifests.get(ln.session_id)))
+                for ln in children
             ],
             "run_branch": existing_run_branch(manifest, pathlib.Path.cwd()) or None,
             "base_branch": manifest.base_branch or None,
@@ -560,7 +562,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         print(prefix + task.replace("\n", "\n" + " " * 12))
     _print_lineage(manifest)
     _print_parallel_compare(manifest, target)
-    _print_lanes(manifest, lanes, lane_manifests, lane_outcomes(target))
+    _print_children(manifest, children, child_manifests, child_outcomes(target))
     print(
         f"model:      {model}{' (from --model)' if model_from_flag else ''}\n"
         f"preset:     {manifest.harness.preset or '-'}"

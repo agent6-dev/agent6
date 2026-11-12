@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Own a prepared execution environment across executions and sharing lanes.
+"""Own a prepared execution environment across executions and sharing children.
 
 A lease is a host-side record under the repository's state directory, one per selected
 environment (the workspace's discovery under its runtime prefix, or a manual exec prefix).
@@ -232,9 +232,9 @@ def acquire(
     a replacement of an owned container all leave the run a borrower, with the reason said.
 
     Args:
-        state_dir: The repository's state directory; a lane names its origin's, so the
+        state_dir: The repository's state directory; a child names its origin's, so the
             runs sharing one container meet on one lease.
-        host_root: The host workspace the container mounts; a lane's origin, not its clone.
+        host_root: The host workspace the container mounts; a child's origin, not its clone.
         options: The operator's selection, start and stop commands included.
         session_id: The acquiring session.
         execution_id: Its current execution.

@@ -120,8 +120,8 @@ class SessionSummary:
             snapshot, and for an undone run (its /undo child carries the mark).
         verification: The gate verdict from the gate facts, not the status word: the
             compare table and the judge read it.
-        parent: The session that dispatched this lane, the row it nests under.
-        lane: The lane number within its group.
+        parent: The session that dispatched this child, the row it nests under.
+        number: The child number within its group.
         plan_observed_points: The plan movement observed across executions, in points.
         plan_cap: The plan's points cap, `[budget].max_plan_points`.
         plan_used_percent: The account's reading; 0 unless a plan provider answered.
@@ -148,7 +148,7 @@ class SessionSummary:
     unmerged: bool = False
     verification: kinds.Verification | None = None
     parent: str = ""
-    lane: int | None = None
+    number: int | None = None
     plan_observed_points: float = 0.0
     plan_cap: float = 0.0
     plan_used_percent: float = 0.0
@@ -192,39 +192,41 @@ class SessionSummary:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ListingRow:
-    """One listing row: a session and the lanes nested under it, rows themselves."""
+    """One listing row: a session and the children nested under it, rows themselves."""
 
     summary: SessionSummary
-    lanes: tuple[ListingRow, ...] = ()
+    children: tuple[ListingRow, ...] = ()
 
     @property
     def group_last_activity(self) -> float:
-        """The row's last activity: its own or a lane's, whichever is later."""
-        return max((self.summary.last_activity, *(lane.group_last_activity for lane in self.lanes)))
+        """The row's last activity: its own or a child's, whichever is later."""
+        return max(
+            (self.summary.last_activity, *(child.group_last_activity for child in self.children))
+        )
 
 
 def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
-    """Nest each lane under the listed session that dispatched it, newest activity first.
+    """Nest each child under the listed session that dispatched it, newest activity first.
 
     Args:
         summaries: The sessions to list.
 
     Returns:
-        The rows, every session appearing once: a lane whose parent is not listed
-        stays a row of its own; lanes keep lane order under their parent.
+        The rows, every session appearing once: a child whose parent is not listed
+        stays a row of its own; children keep child order under their parent.
     """
     items = [s for s in summaries if not is_reviewer_record(s)]
     by_id = {s.session_id: s for s in items}
-    children: dict[str, list[SessionSummary]] = {}
+    by_parent: dict[str, list[SessionSummary]] = {}
     for s in items:
         if s.parent and s.parent in by_id and s.parent != s.session_id:
-            children.setdefault(s.parent, []).append(s)
+            by_parent.setdefault(s.parent, []).append(s)
     placed: set[str] = set()
 
     def row(s: SessionSummary) -> ListingRow:
         placed.add(s.session_id)
-        lanes = sorted(children.get(s.session_id, ()), key=_lane_order)
-        return ListingRow(s, tuple(row(ln) for ln in lanes if ln.session_id not in placed))
+        children = sorted(by_parent.get(s.session_id, ()), key=_child_order)
+        return ListingRow(s, tuple(row(ln) for ln in children if ln.session_id not in placed))
 
     roots = [s for s in items if not (s.parent in by_id and s.parent != s.session_id)]
     rows = [row(s) for s in roots]
@@ -297,10 +299,10 @@ def rows_for(
 
 
 def is_reviewer_record(summary: SessionSummary) -> bool:
-    """Return whether a session is a bounded read-only conversation its parent dispatched.
+    """Return whether a session is a reviewer its parent dispatched.
 
     A reviewer is evidence of its panel, reached from the receipt and the findings; it
-    has no work to join, so no listing counts it among its parent's lanes or rows.
+    has no work to join, so no listing counts it among its parent's children or rows.
 
     Args:
         summary: The session.
@@ -311,32 +313,32 @@ def is_reviewer_record(summary: SessionSummary) -> bool:
     return bool(summary.parent) and summary.mode == "reviewer"
 
 
-def _lane_order(lane: SessionSummary) -> tuple[int, str]:
-    """Return the sort key placing lanes in lane order, then by id."""
-    return (lane.lane or 0, lane.session_id)
+def _child_order(child: SessionSummary) -> tuple[int, str]:
+    """Return the sort key placing children in child order, then by id."""
+    return (child.number or 0, child.session_id)
 
 
-def lanes_of(
+def children_of(
     state_dir: pathlib.Path, parent: str, *, branch_tips: Mapping[str, str] | None = None
 ) -> list[SessionSummary]:
-    """Return the lanes whose manifests name a parent, in lane order.
+    """Return the children whose manifests name a parent, in child order.
 
     Args:
         state_dir: The repo's state dir.
         parent: The dispatching session's id.
-        branch_tips: The caller's branch-tips snapshot; with it each lane carries its
+        branch_tips: The caller's branch-tips snapshot; with it each child carries its
             unmerged mark.
 
     Returns:
-        The lanes' summaries.
+        The children's summaries.
     """
-    lanes = [
+    children = [
         s
         for d in session_dirs(state_dir)
         if (s := summarize_session_dir(d, branch_tips=branch_tips)).parent == parent
         and not is_reviewer_record(s)
     ]
-    return sorted(lanes, key=_lane_order)
+    return sorted(children, key=_child_order)
 
 
 class SummaryRow(TypedDict):
@@ -365,18 +367,18 @@ class SummaryRow(TypedDict):
     unmerged: bool
     verification: kinds.Verification | None
     winner: bool
-    lane: int | None
+    number: int | None
     parent: str
     worktree: str | None
     branch: str | None
     open_findings: dict[str, int]
     merge_note: str
-    lanes: list[SummaryRow]
+    children: list[SummaryRow]
     group_last_activity: NotRequired[float]
 
 
 def row_json(row: ListingRow, *, winners: Container[str]) -> SummaryRow:
-    """Return a listing row and its nested lanes as JSON.
+    """Return a listing row and its nested children as JSON.
 
     Attributes:
         group_last_activity: The group's latest activity time in epoch seconds.
@@ -392,9 +394,9 @@ def row_json(row: ListingRow, *, winners: Container[str]) -> SummaryRow:
     out = summary_row(
         row.summary,
         winner=row.summary.session_id in winners,
-        lanes=[row_json(ln, winners=winners) for ln in row.lanes],
+        children=[row_json(ln, winners=winners) for ln in row.children],
     )
-    if row.lanes:
+    if row.children:
         out["group_last_activity"] = row.group_last_activity
     out["when"] = format.format_when(row.group_last_activity) if row.group_last_activity else ""
     return out
@@ -404,7 +406,7 @@ def summary_row(
     s: SessionSummary,
     *,
     winner: bool = False,
-    lanes: Sequence[SummaryRow] = (),
+    children: Sequence[SummaryRow] = (),
 ) -> SummaryRow:
     """Return one listing row as JSON, the shape `sessions list --json` and `/api/hub` share.
 
@@ -432,20 +434,20 @@ def summary_row(
         id_cell: The session identifier with winner and worktree marks.
         unmerged: Whether the run holds unmerged work.
         verification: The gate verdict, or null without a verdict.
-        lane: The lane number, or null outside a group.
-        parent: The session that dispatched this lane.
+        number: The child number, or null outside a group.
+        parent: The session that dispatched this child.
         worktree: The linked worktree path, or null in the operator's checkout.
         branch: The run's branch while it exists, or null.
         open_findings: The open grounded findings by severity: `block`, `warn`, `nit`.
         merge_note: The rendered open findings; "" with none open.
 
-        winner: Whether this lane won its comparison.
-        lanes: Nested listing rows for this parent's lanes.
+        winner: Whether this child won its comparison.
+        children: Nested listing rows for this parent's children.
 
     Args:
         s: The row's summary.
         winner: The row is its group's compare winner.
-        lanes: The nested lane rows, as `row_json` builds them.
+        children: The nested child rows, as `row_json` builds them.
 
     Returns:
         The row, with the status cell rendered as `status_label` and `status_level` so a client
@@ -477,13 +479,13 @@ def summary_row(
         "unmerged": s.unmerged,
         "verification": s.verification,
         "winner": winner,
-        "lane": s.lane,
+        "number": s.number,
         "parent": s.parent,
         "worktree": s.worktree or None,
         "branch": s.branch or None,
         "open_findings": dataclasses.asdict(s.open_findings),
         "merge_note": s.merge_note(),
-        "lanes": list(lanes),
+        "children": list(children),
     }
 
 
@@ -555,7 +557,7 @@ def finished_needs_new_work(session_dir: pathlib.Path) -> bool:
 def resume_blocker(session_dir: pathlib.Path) -> str:
     """Return why the session's state cannot be resumed at all, or "".
 
-    A parent has no loop, a lane's tree is no checkout's once its clone is gone,
+    A parent has no loop, a child's tree is no checkout's once its clone is gone,
     a worktree run whose worktree is
     gone continues through `fork`, and a run that never reached a turn has no snapshot.
 
@@ -570,7 +572,7 @@ def resume_blocker(session_dir: pathlib.Path) -> str:
         m = sessions_manifest.read_manifest(session_dir)
         if m.parallel is not None:
             return (
-                f"a lane of the group {m.parallel.parent}, whose work is on its own"
+                f"a child of the group {m.parallel.parent}, whose work is on its own"
                 f' branch; `agent6 fork {session_dir.name} --steer "..."` continues it in a'
                 " worktree of its own"
             )
@@ -586,7 +588,7 @@ def resume_blocker(session_dir: pathlib.Path) -> str:
 def live_sessions_in_checkout(state_dir: pathlib.Path) -> tuple[str, ...]:
     """Return the ids of the live sessions working in the repository's own checkout.
 
-    A worktree run, a fork and a lane work elsewhere and are left out; a session
+    A worktree run, a fork and a child work elsewhere and are left out; a session
     whose manifest cannot be read counts, since nothing says it works elsewhere.
 
     Args:
@@ -743,7 +745,7 @@ def summarize_session_dir(
         last_activity=scan.last_ep if scan.last_ep is not None else session_mtime(session_dir),
         verification=scan.verification,
         parent=lineage.parent if lineage is not None else "",
-        lane=lineage.lane if lineage is not None else None,
+        number=lineage.number if lineage is not None else None,
         plan_observed_points=scan.budget.session.plan_observed_points,
         plan_cap=scan.budget.execution.plan_cap or 0.0,
         plan_used_percent=scan.budget.account.used_percent if scan.budget.account else 0.0,

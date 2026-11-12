@@ -157,7 +157,7 @@ def _stamp(session_dir: pathlib.Path, placement: object) -> None:
 
 
 def test_run_compare_and_is_winner_read_the_manifest_block(tmp_path: pathlib.Path) -> None:
-    """A lane keeps its placement and group reference without the group facts."""
+    """A child keeps its placement and group reference without the group facts."""
     win = tmp_path / "win"
     _stamp(win, {"group": "fan", "rank": 1, "of": 2, "winner": True})
     assert is_winner(win) is True
@@ -172,14 +172,14 @@ def test_run_compare_and_is_winner_read_the_manifest_block(tmp_path: pathlib.Pat
 
 
 def test_group_facts_require_the_recorded_owner_and_group(tmp_path: pathlib.Path) -> None:
-    """A missing or mismatched owner leaves the lane's placement readable without group facts."""
+    """A missing or mismatched owner leaves the child's placement readable without group facts."""
     from agent6.viewmodel import comparison
 
     runs = tmp_path / "sessions" / "runs"
-    lane = runs / "lane"
-    _stamp(lane, {"group": "fan", "rank": 1, "of": 2, "winner": True})
-    placement = session_placement(lane)
-    assert comparison.session_comparison(lane) is None
+    child = runs / "child"
+    _stamp(child, {"group": "fan", "rank": 1, "of": 2, "winner": True})
+    placement = session_placement(child)
+    assert comparison.session_comparison(child) is None
     assert format.format_compare(placement) == ("rank 1/2 · winner", "")
     owner = runs / "fan-longer"
     owner.mkdir()
@@ -187,21 +187,21 @@ def test_group_facts_require_the_recorded_owner_and_group(tmp_path: pathlib.Path
         json.dumps({"comparison": {"group": "fan", "rationale": "not this owner"}}),
         encoding="utf-8",
     )
-    assert comparison.session_comparison(lane) is None
+    assert comparison.session_comparison(child) is None
     owner.rename(runs / "fan")
     owner = runs / "fan"
     (owner / "manifest.json").write_text("{", encoding="utf-8")
-    assert comparison.session_comparison(lane) is None
+    assert comparison.session_comparison(child) is None
     (owner / "manifest.json").write_text(
         json.dumps({"comparison": {"group": "other", "rationale": "not this group"}}),
         encoding="utf-8",
     )
-    assert comparison.session_comparison(lane) is None
+    assert comparison.session_comparison(child) is None
     (owner / "manifest.json").write_text(
         json.dumps({"comparison": {"group": "fan", "rationale": "the group's reason"}}),
         encoding="utf-8",
     )
-    record = comparison.session_comparison(lane)
+    record = comparison.session_comparison(child)
     assert record is not None and record.rationale == "the group's reason"
     assert comparison.session_comparison(owner) == record
 
@@ -761,7 +761,7 @@ def test_summary_running_and_stale(tmp_path: pathlib.Path) -> None:
 def test_summary_unanswered_approval_reads_waiting(tmp_path: pathlib.Path) -> None:
     # A live run whose LAST event is an unanswered approval (or ask_user
     # question) is blocked on the operator; "running" read as busy, and an
-    # approval-parked lane sat invisible in every hub for hours.
+    # approval-parked child sat invisible in every hub for hours.
     rd = _write_run(
         tmp_path,
         "runs",
@@ -1429,7 +1429,7 @@ def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
     assert summarize_session_dir(legacy).status == "failed"
 
 
-def _summary(session_id: str, *, mtime: float, parent: str = "", lane: int | None = None):
+def _summary(session_id: str, *, mtime: float, parent: str = "", number: int | None = None):
     return listing.SessionSummary(
         session_id=session_id,
         mode="run",
@@ -1440,31 +1440,31 @@ def _summary(session_id: str, *, mtime: float, parent: str = "", lane: int | Non
         usd_partial=False,
         last_activity=mtime,
         parent=parent,
-        lane=lane,
+        number=number,
     )
 
 
-def test_a_lane_nests_under_its_parent_and_an_orphan_stays_a_row() -> None:
-    """A lane nests under the session that dispatched it, and the group sorts by its latest lane.
+def test_a_child_nests_under_its_parent_and_an_orphan_stays_a_row() -> None:
+    """A child nests under the session that dispatched it, and the group sorts by its latest child.
 
-    A lane whose parent is not listed has nothing to nest under; a lane that dispatched
-    its own group carries its lanes one level deeper, every session once.
+    A child whose parent is not listed has nothing to nest under; a child that dispatched
+    its own group carries its children one level deeper, every session once.
     """
     rows = listing.nested_rows(
         [
             _summary("other", mtime=50.0),
             _summary("fan", mtime=10.0),
-            _summary("fan-l2", mtime=30.0, parent="fan", lane=2),
-            _summary("fan-l1", mtime=20.0, parent="fan", lane=1),
-            _summary("gone-l1", mtime=40.0, parent="gone", lane=1),
-            _summary("fan-l1-p1-l1", mtime=35.0, parent="fan-l1", lane=1),
+            _summary("fan-l2", mtime=30.0, parent="fan", number=2),
+            _summary("fan-l1", mtime=20.0, parent="fan", number=1),
+            _summary("gone-l1", mtime=40.0, parent="gone", number=1),
+            _summary("fan-l1-p1-l1", mtime=35.0, parent="fan-l1", number=1),
         ]
     )
 
     def shape(row: object) -> object:
 
         assert isinstance(row, listing.ListingRow)
-        return (row.summary.session_id, [shape(ln) for ln in row.lanes])
+        return (row.summary.session_id, [shape(ln) for ln in row.children])
 
     assert [shape(r) for r in rows] == [
         ("other", []),
@@ -1474,12 +1474,12 @@ def test_a_lane_nests_under_its_parent_and_an_orphan_stays_a_row() -> None:
     assert [r.group_last_activity for r in rows] == [50.0, 40.0, 35.0]
     fan = listing.row_json(rows[2], winners={"fan-l2"})
     assert fan.get("group_last_activity") == 35.0  # the group's latest activity, as the row sorts
-    lanes: Any = fan["lanes"]
-    assert [ln["session_id"] for ln in lanes] == ["fan-l1", "fan-l2"]
-    assert lanes[1]["winner"] is True and lanes[1]["lane"] == 2
-    assert lanes[1]["parent"] == "fan" and lanes[1]["lanes"] == []
-    assert lanes[0]["lanes"][0]["session_id"] == "fan-l1-p1-l1"
-    assert fan["lane"] is None and fan["parent"] == ""
+    children: Any = fan["children"]
+    assert [ln["session_id"] for ln in children] == ["fan-l1", "fan-l2"]
+    assert children[1]["winner"] is True and children[1]["number"] == 2
+    assert children[1]["parent"] == "fan" and children[1]["children"] == []
+    assert children[0]["children"][0]["session_id"] == "fan-l1-p1-l1"
+    assert fan["number"] is None and fan["parent"] == ""
 
 
 def test_a_never_started_run_reads_at_the_parked_level() -> None:
@@ -1885,7 +1885,7 @@ def test_older_journal_keeps_raw_task_blocks(tmp_path: pathlib.Path) -> None:
 
 
 def test_a_plan_reading_carries_its_own_time(tmp_path: pathlib.Path) -> None:
-    """A group picked its newest lane reading by journal mtime, which any later event moves."""
+    """A group picked its newest child reading by journal mtime, which any later event moves."""
     window = {"name": "primary", "used_percent": 40.0, "window_minutes": 10080, "resets_at": 1.0}
     events = [
         {"ts": "2026-10-20T10:00:00+00:00", "type": "budget.update", "plan_windows": [window]},

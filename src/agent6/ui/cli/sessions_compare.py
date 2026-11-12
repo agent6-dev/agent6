@@ -115,18 +115,18 @@ def _screen_candidates(
     return candidates, rows, notes
 
 
-def _group_lanes(cwd: pathlib.Path, parallel_id: str) -> tuple[str, ...]:
-    """Return the lane ids of a ranked group in lane order; empty when no run names it.
+def _group_children(cwd: pathlib.Path, parallel_id: str) -> tuple[str, ...]:
+    """Return the child ids of a ranked group in child order; empty when no run names it.
 
     Args:
         cwd: The repo.
-        parallel_id: The group's id as each lane's manifest records it, or the id of the
+        parallel_id: The group's id as each child's manifest records it, or the id of the
             run that ranked it.
 
     Returns:
-        The lane ids; empty when no run names the group.
+        The child ids; empty when no run names the group.
     """
-    lanes: list[tuple[int, str]] = []
+    children: list[tuple[int, str]] = []
     runs = common._runs_dir(cwd)
     # A run that ranked a group names it in its comparison stamp.
     record = comparison.session_comparison(runs / parallel_id) if runs.is_dir() else None
@@ -137,8 +137,8 @@ def _group_lanes(cwd: pathlib.Path, parallel_id: str) -> tuple[str, ...]:
             with contextlib.suppress(sessions_manifest.ManifestError):
                 m = sessions_manifest.read_manifest(d)
                 if m.parallel is not None and m.parallel.group == parallel_id:
-                    lanes.append((m.parallel.lane, d.name))
-    return tuple(name for _, name in sorted(lanes))
+                    children.append((m.parallel.number, d.name))
+    return tuple(name for _, name in sorted(children))
 
 
 def _recorded_outcome(
@@ -155,15 +155,15 @@ def _recorded_outcome(
         The outcome, or None when any candidate lacks an auto-compare stamp (then it is judged).
     """
     ids = {c.session_id for c in candidates}
-    lanes = [(layout, manifest) for layout, manifest in resolved if layout.session_id in ids]
-    if not lanes:
+    children = [(layout, manifest) for layout, manifest in resolved if layout.session_id in ids]
+    if not children:
         return None
-    record = comparison.session_comparison(lanes[0][0].session_dir)
+    record = comparison.session_comparison(children[0][0].session_dir)
     if record is None or not ids.issubset(record.ranking):
         return None
     if any(
         manifest.placement is None or manifest.placement.group != record.group
-        for _, manifest in lanes
+        for _, manifest in children
     ):
         return None
     return compare.RankOutcome(
@@ -197,14 +197,14 @@ def _cmd_compare(
     cwd = pathlib.Path.cwd()
     by_group = False
     if len(session_ids) == 1:
-        # One id is a group's, comparing its lanes; anything else is one run, too few.
-        lanes = _group_lanes(cwd, session_ids[0])
-        by_group = bool(lanes)
-        session_ids = lanes or session_ids
+        # One id is a group's, comparing its children; anything else is one run, too few.
+        children = _group_children(cwd, session_ids[0])
+        by_group = bool(children)
+        session_ids = children or session_ids
     if len(session_ids) < 2:
         common.error(
             "sessions compare needs 2 or more run ids, or one --parallel group id"
-            f" (its lanes); got {len(session_ids)}."
+            f" (its children); got {len(session_ids)}."
         )
         return 2
     resolved: list[tuple[sessions_layout.SessionLayout, sessions_manifest.SessionManifest]] = []
@@ -246,7 +246,8 @@ def _cmd_compare(
     }
     recorded = _recorded_outcome(resolved, candidates) if by_group and not rejudge else None
     if recorded is not None:
-        print(f"[agent6] the recorded verdict for {common.plural(len(candidates), 'lane')}:")
+        count = common.plural(len(candidates), "child", "children")
+        print(f"[agent6] the recorded verdict for {count}:")
         compare.print_ranked_candidates(
             candidates,
             recorded,
@@ -270,7 +271,7 @@ def _cmd_compare(
         committed=committed,
         model_refs=model_refs,
     )
-    # Re-judging one group's lanes can contradict its stamp, which the listings read: say so.
+    # Re-judging one group's children can contradict its stamp, which the listings read: say so.
     groups = {manifest.parallel.group if manifest.parallel else None for _, manifest in resolved}
     if outcome.ranking and len(groups) == 1 and None not in groups:
         stamped = next(

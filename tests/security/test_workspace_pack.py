@@ -155,15 +155,15 @@ def test_a_user_of_a_nested_checkout_stops_a_pack_of_the_workspace_above_it(
 ) -> None:
     """A session in a worktree inside the project read a pack written beside it.
 
-    A lane's clone under `.agent6/worktrees` sits in the workspace a container mounts, so its
+    A child's clone under `.agent6/worktrees` sits in the workspace a container mounts, so its
     commands reach the project's `.agent6/config/`: the pack waits for it as for a run of the
     project itself.
     """
     project = tmp_path / "project"
     (project / ".git").mkdir(parents=True)
-    lane = project / ".agent6/worktrees/project-1/run-p1/lane-1"
-    (lane / ".git").mkdir(parents=True)
-    assert lock.hold_workspace(lane)
+    child = project / ".agent6/worktrees/project-1/run-p1/child-1"
+    (child / ".git").mkdir(parents=True)
+    assert lock.hold_workspace(child)
     with pytest.raises(errors.PackError, match=str(project)):
         pack.pack(project)
     lock.release_workspaces()

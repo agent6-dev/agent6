@@ -312,7 +312,7 @@ def test_run_family_help_explains_actions_in_user_terms() -> None:
     assert (_option(run, "--decompose").help or "").startswith(
         "Make the agent split the task into ordered subtasks before editing"
     )
-    assert (_option(run, "--parallel").help or "").startswith("Run the task in isolated lanes")
+    assert (_option(run, "--parallel").help or "").startswith("Run the task in isolated children")
     assert (_option(run, "--max-plan-points").help or "").startswith(
         "Limit the plan percentage points this command uses"
     )
@@ -377,7 +377,7 @@ def test_sessions_help_matches_each_commands_target_scope() -> None:
         "model",
         "model_from_flag",
         "id_cell",
-        "lanes",
+        "children",
     ):
         assert field in json_help
 

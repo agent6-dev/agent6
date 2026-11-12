@@ -1,4 +1,4 @@
-"""Read lane placements and their parent-owned comparison records."""
+"""Read child placements and their parent-owned comparison records."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from agent6.sessions import manifest as sessions_manifest
 
 
 def session_placement(session_dir: pathlib.Path) -> sessions_manifest.PlacementStamp | None:
-    """Return the placement stamp on a lane's manifest.
+    """Return the placement stamp on a child's manifest.
 
     The event fold does not carry it, so every run view reads it from here.
 
@@ -34,10 +34,10 @@ def is_winner(session_dir: pathlib.Path) -> bool:
 
 
 def session_comparison(session_dir: pathlib.Path) -> sessions_manifest.ComparisonStamp | None:
-    """Read a parent's comparison, directly or through a lane's group reference.
+    """Read a parent's comparison, directly or through a child's group reference.
 
     Args:
-        session_dir: The parent or lane's session directory.
+        session_dir: The parent or child's session directory.
 
     Returns:
         The group record, or None when the owner is missing, unreadable or names another group.

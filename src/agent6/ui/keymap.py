@@ -145,7 +145,7 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "open_files": "F",
         "view_logs": "l",
         "view_findings": "v",
-        "toggle_lanes": "space",
+        "toggle_children": "space",
         "help": "question_mark",
         "command_palette": "ctrl+p",
     },

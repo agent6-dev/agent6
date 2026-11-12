@@ -132,7 +132,7 @@ def test_unknown_no_cache_warns_and_proceeds(cache_home: pathlib.Path) -> None:
     assert "o/totally-made-up" in validate.warning_message(v)
 
 
-def test_none_lanes_skipped(cache_home: pathlib.Path) -> None:
+def test_none_children_skipped(cache_home: pathlib.Path) -> None:
     _write_cache(cache_home, "o", ["gpt-x"])
     v = validate.validate_spec_models([None, None], _cfg())
     assert v.unknown == ()

@@ -49,7 +49,7 @@ class Conversations:
 
     Attributes:
         path: Where the state persists; None keeps it in memory for one process.
-        is_subagent: The session is a lane.
+        is_subagent: The session is a child.
     """
 
     path: pathlib.Path | None = None

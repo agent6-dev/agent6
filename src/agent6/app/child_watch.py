@@ -27,7 +27,7 @@ from agent6.viewmodel.session import log as session_log
 from agent6.viewmodel.session import records as state_types
 from agent6.viewmodel.session import state as session_fold
 
-# The least time between two budget rows the watch writes for running lanes.
+# The least time between two budget rows the watch writes for running children.
 ROW_INTERVAL_S = 10.0
 
 
@@ -54,7 +54,7 @@ class ChildWatch:
         self._parent_dir = parent_dir
         self._budget = budget
         self._emit = emit
-        # Lanes wait on their own threads; the parent's prompts take one caller.
+        # Children wait on their own threads; the parent's prompts take one caller.
         self._lock = threading.Lock()
         self._row_lock = threading.Lock()
         self._journaled: tuple[float, int, float] = (0.0, 0, 0.0)
@@ -65,7 +65,7 @@ class ChildWatch:
 
         Args:
             child_dir: The child's session dir, named for its session id.
-            label: How the parent's operator reads the child, such as `lane 2 <session id>`.
+            label: How the parent's operator reads the child, such as `child 2 <session id>`.
             status: The child's status word at this poll.
 
         Returns:
@@ -91,7 +91,7 @@ class ChildWatch:
         if self._emit is None:
             return
         snap = budget.snapshot()
-        moved = (snap.usd_running_lanes, snap.tokens_running_lanes, snap.plan_observed_points)
+        moved = (snap.usd_running_children, snap.tokens_running_children, snap.plan_observed_points)
         at = time.monotonic()
         with self._row_lock:
             if moved == self._journaled or (not now and at - self._journaled_at < ROW_INTERVAL_S):
@@ -185,7 +185,7 @@ def running_usage(child_dir: pathlib.Path) -> agent6_budget.UsageSettlement:
     return agent6_budget.UsageSettlement(
         usd=usage.usd_so_far,
         usd_partial=usage.session.usd_partial,
-        tokens=usage.session.unmetered_tokens + usage.execution.tokens_running_lanes,
+        tokens=usage.session.unmetered_tokens + usage.execution.tokens_running_children,
         plan_readings=readings,
     )
 

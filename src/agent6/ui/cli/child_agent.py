@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Start one lane from its launch file.
+"""Start one child from its launch file.
 
-Invoked as `python -P -E -m agent6.ui.cli.lane_agent` with `AGENT6_LANE` naming the file:
-validates it and the config snapshot beside it, loads the lane's config and drives
+Invoked as `python -P -E -m agent6.ui.cli.child_agent` with `AGENT6_LAUNCH` naming the file:
+validates it and the config snapshot beside it, loads the child's config and drives
 `agent6.app.run.run_task` through the CLI's session seam. The task reaches the run as the
 file holds it, never parsed as options or directives.
 """
@@ -19,7 +19,7 @@ import time
 from collections.abc import Callable
 
 from agent6 import kinds
-from agent6.app import lane_launch, preflight, stop
+from agent6.app import child_launch, preflight, stop
 from agent6.app import run as app_run
 from agent6.app.session import setup as session_setup
 from agent6.config import ConfigError
@@ -35,14 +35,14 @@ def arm_deadline(
     grace_s: float = stop.KILL_GRACE_S,
     clock: Callable[[], float] = time.time,
 ) -> tuple[threading.Timer, threading.Timer]:
-    """Arm the lane's own backstop: the stop bridges at the deadline, SIGTERM a grace later.
+    """Arm the child's own backstop: the stop bridges at the deadline, SIGTERM a grace later.
 
     The run reads the abort steer and the `now` stop marker as `agent6 stop` writes them;
     a run that is not reading them takes the SIGTERM as a Ctrl-C stop and journals its end.
 
     Args:
-        session_dir: The lane's session dir, which may not exist yet.
-        deadline_at: The wall-clock second the lane must have ended by.
+        session_dir: The child's session dir, which may not exist yet.
+        deadline_at: The wall-clock second the child must have ended by.
         grace_s: From the bridges to the signal.
         clock: The wall clock.
 
@@ -65,32 +65,32 @@ def arm_deadline(
     return timers
 
 
-def trusted_launch() -> lane_launch.LaneLaunch:
-    """Return the launch `AGENT6_LANE` names, its config snapshot checked beside it.
+def trusted_launch() -> child_launch.ChildLaunch:
+    """Return the launch `AGENT6_LAUNCH` names, its config snapshot checked beside it.
 
     Returns:
-        The lane's facts.
+        The child's facts.
 
     Raises:
         LaunchError: The variable is unset, or either file fails the private-file checks.
     """
-    launch = lane_launch.read()
+    launch = child_launch.read()
     if launch is None:
-        raise lane_launch.LaunchError(
-            f"{lane_launch.ENV} is unset: the lane agent starts from a launch file"
+        raise child_launch.LaunchError(
+            f"{child_launch.ENV} is unset: the child agent starts from a launch file"
         )
     # The snapshot is trusted only beside the launch file, under the same private checks.
-    snapshot = pathlib.Path(os.environ[lane_launch.ENV]).parent / launch.config.name
+    snapshot = pathlib.Path(os.environ[child_launch.ENV]).parent / launch.config.name
     if launch.config != snapshot:
-        raise lane_launch.LaunchError(
-            f"invalid lane launch: the config snapshot {launch.config} is not beside it"
+        raise child_launch.LaunchError(
+            f"invalid child launch: the config snapshot {launch.config} is not beside it"
         )
-    lane_launch.read_private(launch.config)
+    child_launch.read_private(launch.config)
     return launch
 
 
 def main() -> int:
-    """Start the lane `AGENT6_LANE` describes.
+    """Start the child `AGENT6_LAUNCH` describes.
 
     Returns:
         The run's exit code; 2 when the launch file, the snapshot or the config refuses.
@@ -116,7 +116,7 @@ def main() -> int:
         else session_setup.BudgetOverrides(max_usd=launch.max_usd)
     )
     sandbox = session_setup.SandboxOverrides(auto_approve=launch.auto_approve)
-    # A contract makes the lane a bounded read-only conversation; without one it is a run.
+    # A contract makes the child a reviewer; without one it is a run.
     mode: kinds.LoopMode = "reviewer" if launch.contract is not None else "run"
     try:
         effective = session_setup.load_session_config(
@@ -129,7 +129,7 @@ def main() -> int:
     except ConfigError as exc:
         common.error(f"{exc}")
         return 2
-    cfg = lane_launch.apply_limits(effective.config, launch.limits)
+    cfg = child_launch.apply_limits(effective.config, launch.limits)
     if launch.limits is not None and launch.limits.deadline_at is not None:
         bucket = sessions_layout.bucket_dir(launch.record_state, kinds.session_bucket(mode))
         arm_deadline(bucket / launch.session_id, launch.limits.deadline_at)

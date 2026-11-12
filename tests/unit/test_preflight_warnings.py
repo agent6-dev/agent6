@@ -25,7 +25,7 @@ def test_a_run_that_cannot_be_asked_refuses_instead_of_hanging(
     """`ask` needs someone to answer.
 
     With no terminal, no TUI and no away-mode the first command waits forever, and since the
-    verify gate is a command too, that is essentially every run, every /parallel lane included. A
+    verify gate is a command too, that is essentially every run, every /parallel child included. A
     note alone does not stop the hang; the run is refused.
     """
     refusal = app_preflight.headless_approval_refusal(

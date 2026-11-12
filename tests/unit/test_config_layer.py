@@ -201,7 +201,7 @@ def test_config_load_refuses_a_settled_stop_of_zero_or_below_minus_one(
         ('[git.commit.checkpoint]\nmessage = "model"\n', "git.commit.checkpoint_message"),
         ('[git.commit.squash]\nmessage = "model"\n', "git.commit.squash_message"),
         ('[prompt]\ndecompose = "on"\n', "[harness.prompt]"),
-        ("[parallel]\nmax_lanes = 2\n", "[harness.parallel]"),
+        ("[parallel]\nmax_children = 2\n", "[harness.parallel]"),
         ('[workspace]\nbase_dir = "/tmp/x"\n', "[git.worktree]"),
         ('[harness]\nverify_command = ["true"]\n', "harness.verify.command"),
         ("[harness]\nverify_infer = false\n", "harness.verify.infer"),
@@ -710,7 +710,7 @@ def test_materialize_selective_keeps_named_models_and_dict_values() -> None:
                     "extra_body": {"nested": {"enabled": True}, "steps": [{"count": 2}]},
                 }
             },
-            "models": {"worker": {"model": "team-provider/lane-model"}},
+            "models": {"worker": {"model": "team-provider/child-model"}},
         }
     )
 

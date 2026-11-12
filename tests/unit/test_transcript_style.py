@@ -24,10 +24,10 @@ def test_multiline_marker_renders_a_headline_plus_indented_detail() -> None:
     # headline; the renderer keeps the first line as the ── … ── divider and
     # indents the rest (one place, so cli/tui/web all show it the same).
     item = transcript_items.TranscriptItem(
-        "marker", body="joined group p1: 2 lane(s)\njoined  l1\nconflict  l2"
+        "marker", body="joined group p1: 2 child(ren)\njoined  l1\nconflict  l2"
     )
     lines = transcript_style.item_lines(item, detail="collapsed")
-    assert lines[0] == [("── joined group p1: 2 lane(s) ──", "marker")]
+    assert lines[0] == [("── joined group p1: 2 child(ren) ──", "marker")]
     assert lines[1] == [("   joined  l1", "marker")]
     assert lines[2] == [("   conflict  l2", "marker")]
 

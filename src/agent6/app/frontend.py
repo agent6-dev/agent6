@@ -15,7 +15,7 @@ import pathlib
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from agent6 import budget, kinds, lane_records, portable
+from agent6 import budget, child_records, kinds, portable
 from agent6.app import compare
 from agent6.config import Config
 from agent6.harness import loop, loop_snapshot
@@ -157,7 +157,7 @@ class SessionFrontend:
         run_ask_repl: Runs the ask REPL.
         save_ask_transcript: Saves an ask's transcript.
         build_parent_spawner: Builds the `/parallel` dispatch spawner, or None; its last
-            argument is this session's side of a lane's wait: it answers the lane's prompts
+            argument is this session's side of a child's wait: it answers the child's prompts
             and counts its spend.
         build_judge_provider: Builds the reviewer provider a rank join's judge sits in; None
             where no dispatch joins by rank.
@@ -203,7 +203,7 @@ class SessionFrontend:
             bool,
             Callable[[pathlib.Path, str, str], bool],
         ],
-        lane_records.GroupLaneSpawner | None,
+        child_records.GroupChildSpawner | None,
     ]
     build_judge_provider: compare.BuildProvider | None
     judging_status: compare.JudgingStatus

@@ -7,7 +7,7 @@ from agent6 import directive
 
 @pytest.mark.parametrize("target", ["", "feature-x", "A..B", "A...B", "SHA^..SHA"])
 def test_review_keeps_the_target_as_typed(target: str) -> None:
-    """The argument is the reviewed side, not a base or a lane specification."""
+    """The argument is the reviewed side, not a base or a child specification."""
     assert directive.parse_review(f"/review {target}") == target
     assert directive.steer_problem(f"/review {target}") is None
 

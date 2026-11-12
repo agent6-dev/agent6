@@ -278,14 +278,14 @@ function focusFinding(host, finding_id) {
 function drawReceipt(host, receipt) {
   host.innerHTML = '';
   host.appendChild(el('pre', null, receipt.text));
-  // Each lane the receipt names opens through the session navigation.
+  // Each child the receipt names opens through the session navigation.
   for (const child of receipt.children || []) {
     const line = el('div', 'sub');
     const link = el('a', null, child.session_id);
     link.href = '#/session/' + encodeURIComponent(child.session_id);
     const reviewer = (receipt.review?.panels || []).flatMap(p => p.reviewers || [])
       .find(s => s.session_id === child.session_id);
-    line.appendChild(el('span', null, reviewer ? `reviewer ${reviewer.reviewer_index + 1} (${reviewer.focus}) ` : `lane ${child.lane} `));
+    line.appendChild(el('span', null, reviewer ? `reviewer ${reviewer.reviewer_index + 1} (${reviewer.focus}) ` : `child ${child.number} `));
     line.appendChild(link);
     host.appendChild(line);
   }

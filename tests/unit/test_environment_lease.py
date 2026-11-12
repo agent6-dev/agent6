@@ -229,7 +229,7 @@ def test_a_prepared_run_journals_its_start_and_its_lease(
 def test_commands_run_in_the_sessions_own_checkout_under_the_mount(
     fake: Fake, workspace: pathlib.Path, state_dir: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A lane's or a worktree run's commands ran in the mounted workspace's root.
+    """A child's or a worktree run's commands ran in the mounted workspace's root.
 
     The file tools worked in the session's checkout while its commands ran in the operator's.
     """
@@ -243,20 +243,20 @@ def test_commands_run_in_the_sessions_own_checkout_under_the_mount(
         return mock.Mock()
 
     monkeypatch.setattr(container, "prepare", prepare)
-    lane = workspace / ".agent6/worktrees/repo-1/run-p1/lane-1"
-    lane.mkdir(parents=True)
+    child = workspace / ".agent6/worktrees/repo-1/run-p1/child-1"
+    child.mkdir(parents=True)
     mounted = container.discover(workspace, fake.options()).target
     access = session_runtime.prepare_container_execution(
         Config(),
         workspace,
         fake.options(),
         state_dir=state_dir,
-        session_id="lane",
+        session_id="child",
         execution_id="e1",
-        checkout=lane,
+        checkout=child,
         reporter=app_reporter.Reporter(out=lambda _s: None, err=lambda _s: None),
     )
-    below = ".agent6/worktrees/repo-1/run-p1/lane-1"
+    below = ".agent6/worktrees/repo-1/run-p1/child-1"
     assert prepared[0].target.host_root == mounted.host_root / below
     assert prepared[0].target.command_root == mounted.command_root / below
     assert access.policy.cwd == mounted.command_root / below
@@ -341,7 +341,7 @@ def test_an_ambiguous_start_owns_nothing(
     assert not (state_dir / environment_lease.LEASES_DIR).exists()
 
 
-def test_the_first_lane_to_finish_cannot_stop_its_siblings(
+def test_the_first_child_to_finish_cannot_stop_its_siblings(
     fake: Fake, workspace: pathlib.Path, state_dir: pathlib.Path
 ) -> None:
     """The owner's stop waits for every live borrower; a borrower's release stops nothing."""
@@ -350,23 +350,23 @@ def test_the_first_lane_to_finish_cannot_stop_its_siblings(
         state_dir, workspace, options, session_id="owner", execution_id="e1"
     )
     _live_session(state_dir, "owner", alive=True)
-    for lane in ("lane-a", "lane-b"):
-        _live_session(state_dir, lane, alive=True)
+    for child in ("child-a", "child-b"):
+        _live_session(state_dir, child, alive=True)
         held = environment_lease.acquire(
-            state_dir, workspace, options, session_id=lane, execution_id="e1"
+            state_dir, workspace, options, session_id=child, execution_id="e1"
         )
         assert held.role == "borrower" and held.reason == "attached; owned by run owner"
     first = environment_lease.release(
-        state_dir, owner.ref, session_id="lane-a", host_root=workspace, options=options
+        state_dir, owner.ref, session_id="child-a", host_root=workspace, options=options
     )
     assert first == kinds.EnvironmentOutcome("left_running", "attached, not owned")
     waiting = environment_lease.release(
         state_dir, owner.ref, session_id="owner", host_root=workspace, options=options
     )
-    assert waiting == kinds.EnvironmentOutcome("left_running", "still attached: lane-b")
+    assert waiting == kinds.EnvironmentOutcome("left_running", "still attached: child-b")
     assert (fake.markers / _ID).exists()
     environment_lease.release(
-        state_dir, owner.ref, session_id="lane-b", host_root=workspace, options=options
+        state_dir, owner.ref, session_id="child-b", host_root=workspace, options=options
     )
     stopped = environment_lease.release(
         state_dir, owner.ref, session_id="owner", host_root=workspace, options=options
@@ -377,18 +377,18 @@ def test_the_first_lane_to_finish_cannot_stop_its_siblings(
 def test_a_borrower_that_died_holds_the_stop(
     fake: Fake, workspace: pathlib.Path, state_dir: pathlib.Path
 ) -> None:
-    """A lane that ended without releasing never settled its jobs: the owner fails closed."""
+    """A child that ended without releasing never settled its jobs: the owner fails closed."""
     options = fake.options(start=_start(fake), stop=_stop(fake))
     owner = environment_lease.acquire(
         state_dir, workspace, options, session_id="owner", execution_id="e1"
     )
-    _live_session(state_dir, "lane", alive=False)
-    environment_lease.acquire(state_dir, workspace, options, session_id="lane", execution_id="e1")
+    _live_session(state_dir, "child", alive=False)
+    environment_lease.acquire(state_dir, workspace, options, session_id="child", execution_id="e1")
     outcome = environment_lease.release(
         state_dir, owner.ref, session_id="owner", host_root=workspace, options=options
     )
     assert outcome == kinds.EnvironmentOutcome(
-        "left_running", "attached runs ended without releasing: lane"
+        "left_running", "attached runs ended without releasing: child"
     )
     assert (fake.markers / _ID).exists()
 

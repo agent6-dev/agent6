@@ -55,11 +55,11 @@ def test_a_rule_that_un_ignores_the_base_refuses_naming_its_key(repo: pathlib.Pa
 
 
 def test_the_mounted_workspace_is_the_checkout_above_every_base(tmp_path: pathlib.Path) -> None:
-    """A lane of a lane sits two bases deep; the container mounts the outermost checkout."""
+    """A child of a child sits two bases deep; the container mounts the outermost checkout."""
     root = tmp_path / "repo"
-    lane = root / ".agent6/worktrees/repo-1/run-p1/lane-1"
-    reviewer = lane / ".agent6/worktrees/lane-2/panel/lane-3"
-    for tree in (lane, reviewer):
+    child = root / ".agent6/worktrees/repo-1/run-p1/child-1"
+    reviewer = child / ".agent6/worktrees/child-2/panel/child-3"
+    for tree in (child, reviewer):
         assert worktrees.mounted_workspace(_CONTAINER, tree) == root
         assert worktrees.holds(_CONTAINER, tree)
     assert worktrees.mounted_workspace(_CONTAINER, root) == root
@@ -69,8 +69,8 @@ def test_the_mounted_workspace_is_the_checkout_above_every_base(tmp_path: pathli
 
 def test_a_local_run_holds_only_trees_under_its_configured_base(tmp_path: pathlib.Path) -> None:
     cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(tmp_path / "wt")}}})
-    assert worktrees.holds(cfg, tmp_path / "wt/repo-1/run-p1/lane-1")
-    assert not worktrees.holds(cfg, tmp_path / "repo/.agent6/worktrees/repo-1/run-p1/lane-1")
+    assert worktrees.holds(cfg, tmp_path / "wt/repo-1/run-p1/child-1")
+    assert not worktrees.holds(cfg, tmp_path / "repo/.agent6/worktrees/repo-1/run-p1/child-1")
 
 
 @pytest.mark.parametrize("value", ["", "/abs/trees", "../trees", ".agent6/../../trees"])
@@ -82,9 +82,9 @@ def test_the_container_base_must_stay_under_the_project_root(value: str) -> None
 
 
 def test_the_symbol_index_skips_the_directory_as_it_skips_git(tmp_path: pathlib.Path) -> None:
-    """A parent's index read every lane's copy of the repository."""
+    """A parent's index read every child's copy of the repository."""
     (tmp_path / "mod.py").write_text("def kept():\n    pass\n", encoding="utf-8")
-    copy = tmp_path / ".agent6/worktrees/repo-1/run-p1/lane-1"
+    copy = tmp_path / ".agent6/worktrees/repo-1/run-p1/child-1"
     copy.mkdir(parents=True)
     (copy / "mod.py").write_text("def kept():\n    pass\n", encoding="utf-8")
     symbols = index.SymbolIndex(path_safety.Workspace(tmp_path))

@@ -119,9 +119,9 @@ async function renderRun(id, opts, gen) {
     cards._plan_btn = planBtn;
   }
   app.appendChild(actions);
-  const lanes = mk("lanes", "Lanes", "", app);
-  delete lanes.parentElement.dataset.w;
-  lanes.parentElement.style.display = "none";
+  const children = mk("children", "Children", "", app);
+  delete children.parentElement.dataset.w;
+  children.parentElement.style.display = "none";
 
   // The heading states the mode; paintRun fills it in from the snapshot.
   mk('head', opts.title || 'Session', ''); // status/summary leads the drawer
@@ -395,8 +395,8 @@ function paintDetails(cards, s, asOf) {
   if (asOf) for (const c of [cards.budget, cards.tasks]) c.prepend(el('div', 'sub muted', `as of turn ${asOf.turn} · ${String(asOf.sha).slice(0, 7)}`));
 }
 
-// One phrase per recorded lane: how it joined, from the session's dispatch records.
-function laneOutcomes(dispatches) {
+// One phrase per recorded child: how it joined, from the session's dispatch records.
+function childOutcomes(dispatches) {
   const out = {};
   for (const d of dispatches) {
     for (const c of d.children || []) {
@@ -409,29 +409,29 @@ function laneOutcomes(dispatches) {
 }
 
 function paintRun(cards, s) {
-  if (cards.lanes) {
-    // Rows come from the session's lanes by lineage.
-    const lanes = s.lanes || [];
-    cards.lanes.parentElement.style.display = lanes.length ? "" : "none";
-    cards.lanes.replaceChildren();
-    if (lanes.length) {
-      cards.lanes.previousSibling.textContent = `lanes: ${lanes.length}`;
-      const outcomes = laneOutcomes(s.dispatches || []);
+  if (cards.children) {
+    // Rows come from the session's children by lineage.
+    const children = s.children || [];
+    cards.children.parentElement.style.display = children.length ? "" : "none";
+    cards.children.replaceChildren();
+    if (children.length) {
+      cards.children.previousSibling.textContent = `children: ${children.length}`;
+      const outcomes = childOutcomes(s.dispatches || []);
       const table = el('table');
       const head = el('tr');
       for (const label of ['id', 'model', 'status', 'usage', 'join']) head.appendChild(el('th', null, label));
       table.appendChild(head);
-      for (const lane of lanes) {
+      for (const child of children) {
         const row = el('tr');
         const cell = el('td');
-        const link = el('a', null, lane.session_id);
-        link.href = '#/session/' + encodeURIComponent(lane.session_id);
+        const link = el('a', null, child.session_id);
+        link.href = '#/session/' + encodeURIComponent(child.session_id);
         cell.appendChild(link); row.appendChild(cell);
-        for (const key of ['model', 'status_label', 'usage']) row.appendChild(el('td', null, lane[key]));
-        row.appendChild(el('td', null, outcomes[lane.session_id] || ''));
+        for (const key of ['model', 'status_label', 'usage']) row.appendChild(el('td', null, child[key]));
+        row.appendChild(el('td', null, outcomes[child.session_id] || ''));
         table.appendChild(row);
       }
-      cards.lanes.appendChild(table);
+      cards.children.appendChild(table);
     }
   }
   paintFindings(cards, s);
@@ -510,8 +510,8 @@ function paintRun(cards, s) {
   if (s.ports && s.ports.length) {
     add('serving', s.ports.join(', ') + ' · agent6 forward ' + (s.session_id || cards._id || '') + ' ' + s.ports[0]);
   }
-  // Compare outcome (stamped into a lane's manifest by --parallel's
-  // auto-compare): where this lane placed and why. Absent for a non-lane run.
+  // Compare outcome (stamped into a child's manifest by --parallel's
+  // auto-compare): where this child placed and why. Absent for a non-child run.
   if (s.placement && s.placement.line) add('compare', s.placement.line); // format_compare, server-side
   cards.head.appendChild(kv);
   // The judge's reason sits under its compare row (as sessions show prints it).

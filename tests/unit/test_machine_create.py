@@ -1500,7 +1500,7 @@ def test_discarding_the_workspace_takes_its_empty_base_with_it(tmp_path: pathlib
     said: list[str] = []
     _create._discard_workspace(workspace, reporter.Reporter(out=said.append, err=said.append))
     assert not base.exists()
-    kept = base / "lane-1"
+    kept = base / "child-1"
     kept.mkdir(parents=True)
     (base / "create-BBBBBB").mkdir()
     _create._discard_workspace(

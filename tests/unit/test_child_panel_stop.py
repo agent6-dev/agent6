@@ -12,11 +12,11 @@ from typing import Any
 
 import pytest
 
-from agent6 import budget, lane_records, paths
-from agent6.app import lanes, parallel_results, stop
-from agent6.sessions import lane_dispatch, layout, process
+from agent6 import budget, child_records, paths
+from agent6.app import children, parallel_results, stop
+from agent6.sessions import child_dispatch, layout, process
 from agent6.viewmodel import receipt
-from tests import child_env, lane_env
+from tests import child_env, launch_env
 
 
 def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
@@ -34,12 +34,12 @@ def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
         entered.set()
         release.wait(60)
 
-    with lane_env.scripted_provider(before_reply=block_reply) as (url, calls):
+    with launch_env.scripted_provider(before_reply=block_reply) as (url, calls):
         cfg = child_env.config(url)
         _path, launch = child_env.launch_worker(repo, clone, cfg, monkeypatch)
         worker = child_env.create_record(repo, launch.session_id, parent="parent")
-        result = lane_records.LaneResult(
-            lane_records.LaneSpec(1, worker.name, clone, None),
+        result = child_records.ChildResult(
+            child_records.ChildSpec(1, worker.name, clone, None),
             worker,
             "",
             False,
@@ -68,7 +68,7 @@ def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
         ):
             try:
                 assert entered.wait(30), log.read_text()
-                record = lane_dispatch.read_records(worker)[0]
+                record = child_dispatch.read_records(worker)[0]
                 assert record.state == "running" and len(calls) == 1
                 leaf = (
                     layout.bucket_dir(paths.state_dir(repo), "reviewers")
@@ -83,14 +83,14 @@ def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
                 assert stopped.ok, stopped.message
                 supervisor.wait(timeout=10)
                 assert all(not process.worker_is_alive(d) for d in (parent, worker, leaf))
-                imported = parallel_results.import_lane(result, repo, None)
+                imported = parallel_results.import_child(result, repo, None)
                 assert imported.session_dir == parent.parent / worker.name
-                persisted = lane_dispatch.read_records(imported.session_dir)[0]
+                persisted = child_dispatch.read_records(imported.session_dir)[0]
                 assert persisted.identity == record.identity
-                usage = lanes.lane_usage(imported.session_dir)
-                ancestor.settle_lane(worker.name, usage)
+                usage = children.child_usage(imported.session_dir)
+                ancestor.settle_child(worker.name, usage)
                 if usage is None:
-                    assert not ancestor.snapshot().settled_lanes
+                    assert not ancestor.snapshot().settled_children
                     assert ancestor.available() == budget.BudgetAllowance(5, 1000, 20)
                 else:
                     assert persisted.state == "complete" and all(
@@ -98,7 +98,7 @@ def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
                     )
                     assert ancestor.snapshot().unmetered_tokens == usage.tokens
                     assert ancestor.estimate_usd()[0] == usage.usd
-                    assert ancestor.snapshot().settled_lanes == frozenset({worker.name})
+                    assert ancestor.snapshot().settled_children == frozenset({worker.name})
                 retained = layout.bucket_dir(paths.state_dir(repo), "reviewers") / leaf.name
                 assert receipt.read_receipt(retained, repo).session_id == leaf.name
             finally:

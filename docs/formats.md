@@ -109,7 +109,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `settled_lanes` | `list, optional` | Child session IDs included in this execution's cumulative spend. |
+| `settled_children` | `list, optional` | Child session IDs included in this execution's cumulative spend. |
 | `usd_total` | `float` | Cumulative USD spend across provider/model routes, including purchased credits. |
 | `input_total` | `int, optional` | Cumulative input tokens. |
 | `output_total` | `int, optional` | Cumulative output tokens. |
@@ -117,9 +117,9 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `cache_write_total` | `int, optional` | Cumulative cache-write tokens. |
 | `usd_partial` | `bool, optional` | Whether unpriced usage makes spend a lower bound. |
 | `usd_cap` | `float, optional` | Spend cap in USD; -1 means unlimited. |
-| `usd_running_lanes` | `float, optional` | USD the lanes still running have spent so far; outside `usd_total` until each settles, inside the cap. |
+| `usd_running_children` | `float, optional` | USD the children still running have spent so far; outside `usd_total` until each settles, inside the cap. |
 | `tokens_unmetered` | `int, optional` | Tokens with no known price. |
-| `tokens_running_lanes` | `int, optional` | Unpriced tokens of the lanes still running; outside `tokens_unmetered`. |
+| `tokens_running_children` | `int, optional` | Unpriced tokens of the children still running; outside `tokens_unmetered`. |
 | `tokens_fallback_cap` | `int, optional` | Token cap used for unpriced usage. |
 | `plan_observed_points` | `float, optional` | The largest observed plan movement in points across providers and windows; account-wide, so includes other consumers. |
 | `plan_cap` | `float, optional` | Subscription points cap. |
@@ -794,33 +794,33 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### parallel.dispatched
 
-**Support: public.** Parallel lanes were dispatched.
+**Support: public.** Parallel children were dispatched.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `group` | `str` | Parallel dispatch group identifier. |
-| `lanes` | `int` | Lane count for dispatch, or lane results for completion. |
-| `tasks` | `list` | Task texts sent to the lanes. |
+| `children` | `int` | Child count for dispatch, or child results for completion. |
+| `tasks` | `list` | Task texts sent to the children. |
 | `source` | `str, optional` | Who dispatched: operator (a steer), model (the tool) or panel. |
 
 ### parallel.failed
 
-**Support: public.** Parallel lane dispatch or execution failed.
+**Support: public.** Parallel child dispatch or execution failed.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `group` | `str` | Parallel dispatch group identifier. |
-| `lanes` | `list, optional` | Lane count for dispatch, or lane results for completion. |
+| `children` | `list, optional` | Child count for dispatch, or child results for completion. |
 | `error` | `str, optional` | The failure diagnostic. |
 
 ### parallel.joined
 
-**Support: public.** Parallel lane results returned.
+**Support: public.** Parallel child results returned.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `group` | `str` | Parallel dispatch group identifier. |
-| `lanes` | `list` | Lane count for dispatch, or lane results for completion. |
+| `children` | `list` | Child count for dispatch, or child results for completion. |
 | `source` | `str, optional` | Who dispatched: operator (a steer), model (the tool) or panel. |
 
 ### pin.added
@@ -1123,7 +1123,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `findings` | `list` | Grounded findings or panel observations. |
 | `summary` | `str` | The result or outcome in words. |
 | `error` | `str, optional` | The failure diagnostic. |
-| `session_id` | `str, optional` | The read-only reviewer session, when assigned. |
+| `session_id` | `str, optional` | The reviewer's session, when assigned. |
 
 ### session.resume
 
@@ -1550,7 +1550,7 @@ Source: [`providers.provider_types.TranscriptAttempt.write`](https://github.com/
 
 `sessions list --json` emits `summary_row` objects with `row_json` additions.
 `sessions show --json` emits one `_cmd_status` object.
-`ps --json` emits an array of `_Row` records, including nested lanes.
+`ps --json` emits an array of `_Row` records, including nested children.
 
 ### `sessions list --json` row
 
@@ -1582,18 +1582,18 @@ Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/b
 | `id_cell` | `str` | The session identifier with winner and worktree marks. |
 | `unmerged` | `bool` | Whether the run holds unmerged work. |
 | `verification` | `Literal['passed', 'failed', 'unverified', 'not_applicable'] \| None` | The gate verdict, or null without a verdict. |
-| `winner` | `bool` | Whether this lane won its comparison. |
-| `lane` | `int \| None` | The lane number, or null outside a group. |
-| `parent` | `str` | The session that dispatched this lane. |
+| `winner` | `bool` | Whether this child won its comparison. |
+| `number` | `int \| None` | The child number, or null outside a group. |
+| `parent` | `str` | The session that dispatched this child. |
 | `worktree` | `str \| None` | The linked worktree path, or null in the operator's checkout. |
 | `branch` | `str \| None` | The run's branch while it exists, or null. |
 | `open_findings` | `dict[str, int]` | The open grounded findings by severity: `block`, `warn`, `nit`. |
 | `merge_note` | `str` | The rendered open findings; "" with none open. |
-| `lanes` | `list[SummaryRow]` | Nested listing rows for this parent's lanes. |
+| `children` | `list[SummaryRow]` | Nested listing rows for this parent's children. |
 
 ### `sessions list --json` group fields
 
-**Support: public.** Return a listing row and its nested lanes as JSON.
+**Support: public.** Return a listing row and its nested children as JSON.
 
 Source: [`viewmodel.listing.row_json`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/listing.py).
 
@@ -1641,10 +1641,10 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `forked_from_turn` | `int \| None` | The fork's source turn, or null. |
 | `forked_from_sha` | `str \| None` | The fork's source commit, or null. |
 | `worktree` | `str \| None` | The linked worktree path, or null. |
-| `placement` | `dict[str, Any] \| None` | The lane's rank and group id, or null outside a compared lane. |
+| `placement` | `dict[str, Any] \| None` | The child's rank and group id, or null outside a compared child. |
 | `comparison` | `dict[str, Any] \| None` | The group record on its parent, or null for other sessions. |
-| `parallel` | `dict[str, Any] \| None` | The ParallelLineage, or null outside a lane. |
-| `lanes` | `list[SummaryRow]` | The parent's summary_row objects. |
+| `parallel` | `dict[str, Any] \| None` | The ParallelLineage, or null outside a child. |
+| `children` | `list[SummaryRow]` | The parent's summary_row objects. |
 | `run_branch` | `str \| None` | The existing run branch, or null. |
 | `base_branch` | `str \| None` | The base branch, or null when unknown. |
 | `merged_into` | `str \| None` | The merge destination, or null when not merged. |
@@ -1743,11 +1743,11 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `git_control` | `JSON` | The launch git-control policy. |
 | `base_sha` | `JSON` | The run chain's base commit. |
 | `unmerged` | `JSON` | Whether the run holds unmerged work, when a repository is supplied. |
-| `lanes` | `JSON` | The session's lanes by lineage, from the same listing as `sessions show`, for every session that has any. |
-| `dispatches` | `JSON` | The session's dispatch records, each with its lanes' outcomes. |
+| `children` | `JSON` | The session's children by lineage, from the same listing as `sessions show`, for every session that has any. |
+| `dispatches` | `JSON` | The session's dispatch records, each with its children's outcomes. |
 | `forked_from` | `JSON` | The rendered fork lineage when recorded. |
-| `comparison` | `JSON` | The group record from the parent, directly or through the lane's group. |
-| `placement` | `JSON` | The lane's PlacementStamp when recorded. |
+| `comparison` | `JSON` | The group record from the parent, directly or through the child's group. |
+| `placement` | `JSON` | The child's PlacementStamp when recorded. |
 | `placement.line` | `JSON` | The rendered comparison placement. |
 | `as_of` | `JSON` | The selected commit's turn and sha, or null for the current snapshot. |
 | `as_of.turn` | `JSON` | The selected commit's turn number. |
@@ -2529,36 +2529,36 @@ Source: [`viewmodel.receipt.as_dict`](https://github.com/agent6-dev/agent6/blob/
 `SessionManifest` is the private, durable `manifest.json` record.
 `HarnessStamp.gate` separates the pinned command and source from execution availability.
 `ComparisonStamp` holds group facts on the parent.
-`PlacementStamp` links each lane to it.
+`PlacementStamp` links each child to it.
 Other records are nested objects used by the CLI and web serializers above.
 Properties are absent unless a serializer adds them explicitly.
 
-### LaneLaunch
+### ChildLaunch
 
-**Support: public.** What a lane needs to start, and what it knows about itself that no config layer holds.
+**Support: public.** What a child needs to start, and what it knows about itself that no config layer holds.
 
-Source: [`agent6.app.lane_launch.LaneLaunch`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lane_launch.py).
+Source: [`agent6.app.child_launch.ChildLaunch`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/child_launch.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `worktree` | `pathlib.Path` | The lane's clone, the run's cwd. |
-| `record_state` | `pathlib.Path` | The state dir of the repository that dispatched the lane, where the lane's record lives from its first event. |
-| `session_id` | `str` | The lane's session id. |
-| `task` | `str` | The task text, exactly as the lane's manifest records it. |
+| `worktree` | `pathlib.Path` | The child's clone, the run's cwd. |
+| `record_state` | `pathlib.Path` | The state dir of the repository that dispatched the child, where the child's record lives from its first event. |
+| `session_id` | `str` | The child's session id. |
+| `task` | `str` | The task text, exactly as the child's manifest records it. |
 | `pins` | `tuple[str, ...]` | The parent's pins, out of band of the task. |
 | `max_usd` | `float \| None` | The parent's forwarded `--max-usd`; None keeps the config's. |
-| `allowance` | `BudgetAllowance \| None` | What the parent had left when the lane started, which sets every cap; None for the config's caps. |
+| `allowance` | `BudgetAllowance \| None` | What the parent had left when the child started, which sets every cap; None for the config's caps. |
 | `auto_approve` | `bool` | Whether the parent ran with `--auto-approve`. |
-| `away` | `Literal['wait', 'deny', 'approve']` | The lane's away mode: `wait` parks a question for `agent6 attach`, `deny` answers it empty. |
-| `config` | `pathlib.Path` | The lane's config snapshot, beside this file; the lane's sole `--config`. |
-| `notes` | `tuple[str, ...]` | The snapshot's serialization loss notes, recorded in the lane's manifest. |
-| `parent` | `str` | The session every listing nests the lane under. |
-| `group` | `str` | The group the lane belongs to. |
-| `lane` | `int` | The lane's number, from 1. |
+| `away` | `Literal['wait', 'deny', 'approve']` | The child's away mode: `wait` parks a question for `agent6 attach`, `deny` answers it empty. |
+| `config` | `pathlib.Path` | The child's config snapshot, beside this file; the child's sole `--config`. |
+| `notes` | `tuple[str, ...]` | The snapshot's serialization loss notes, recorded in the child's manifest. |
+| `parent` | `str` | The session every listing nests the child under. |
+| `group` | `str` | The group the child belongs to. |
+| `number` | `int` | The child's number, from 1. |
 | `gate_source` | `Literal['', 'configured', 'inferred', 'adopted']` | Where the verify gate in the snapshot came from; "" for none. |
 | `operator_task` | `str \| None` | The task's words before composition; None when they are the task. |
-| `limits` | `LaneLimits \| None` | The turn cap and deadline the lane runs under; None for the config's own. |
-| `contract` | `ConversationContract \| None` | The bounded conversation a `reviewer` lane drives; None for a run lane. |
+| `limits` | `ChildLimits \| None` | The turn cap and deadline the child runs under; None for the config's own. |
+| `contract` | `ConversationContract \| None` | The bounded conversation a `reviewer` child drives; None for a run child. |
 
 ### CompletionRecord
 
@@ -2584,20 +2584,20 @@ Source: [`agent6.sessions.completion.CompletionRecord`](https://github.com/agent
 
 **Support: public.** The record of one dispatch.
 
-Source: [`agent6.sessions.lane_dispatch.DispatchRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lane_dispatch.py).
+Source: [`agent6.sessions.child_dispatch.DispatchRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `version` | `int` | The record's shape; a newer one refuses the read. |
 | `identity` | `str` | The dispatch's id, the group id `<parent>-p<n>`. |
 | `source` | `Literal['operator', 'model', 'panel']` | Who asked. |
-| `join_policy` | `Literal['merge', 'record_only', 'rank']` | Ordered work merge, harness-owned record-only import, or the best-ranked lane alone. |
+| `join_policy` | `Literal['merge', 'record_only', 'rank']` | Ordered work merge, harness-owned record-only import, or the best-ranked child alone. |
 | `ranking` | `RankRecord \| None` | A rank join's order; None before it ranked and under the other policies. |
 | `owner` | `str` | The execution that made it. |
 | `turn` | `int` | The turn it was dispatched after. |
-| `base` | `str` | The chain tip the lanes were cut from. |
+| `base` | `str` | The chain tip the children were cut from. |
 | `segments` | `tuple[SegmentRecord, ...]` | The requested tasks. |
-| `children` | `tuple[ChildRecord, ...]` | The lanes, in lane order. |
+| `children` | `tuple[ChildRecord, ...]` | The children, in child order. |
 | `state` | `Literal['prepared', 'running', 'settling', 'joining', 'complete']` | How far the dispatch got. |
 | `message` | `str` | The result delivered for it, "" until complete. |
 | `delivered` | `bool` | Whether the result reached the conversation. |
@@ -2640,8 +2640,8 @@ Source: [`agent6.sessions.manifest.SessionManifest`](https://github.com/agent6-d
 | `worktree_set_up` | `bool` | Whether the setup command ran in the session's own worktree or clone; a resume runs it only while this is False. A fork's new worktree starts False, and an `/undo` fork carries its source's. |
 | `merged` | `MergeStamp \| None` | The merge record, None until the run branch is merged. |
 | `includes` | `IncludedRun \| None` | The unmerged run this run took in under `dirty_tree = "include"`, stamped merged when this run lands; None when it took none, or more than that run's tip. |
-| `parallel` | `ParallelLineage \| None` | A lane's lineage, or None. |
-| `placement` | `PlacementStamp \| None` | A lane's rank and group reference, or None. |
+| `parallel` | `ParallelLineage \| None` | A child's lineage, or None. |
+| `placement` | `PlacementStamp \| None` | A child's rank and group reference, or None. |
 | `comparison` | `ComparisonStamp \| None` | The group's ranking and judge spend on its parent, or None. |
 
 ### `agent6 ps` JSON row
@@ -2660,8 +2660,8 @@ Source: [`agent6.ui.cli.ps_cmd._Row`](https://github.com/agent6-dev/agent6/blob/
 | `status_detail` | `str` | The detail explaining the status, or "" when there is none. |
 | `pid` | `int \| None` | The worker pid, when readable. |
 | `attached` | `bool` | A front end is live on the session. |
-| `parent` | `str` | For a lane, the live parent row it nests under. |
-| `lanes` | `tuple[agent6.ui.cli.ps_cmd._Row, ...]` | The group's live lanes, nested. |
+| `parent` | `str` | For a child, the live parent row it nests under. |
+| `children` | `tuple[agent6.ui.cli.ps_cmd._Row, ...]` | The group's live children, nested. |
 | `worktree` | `str \| None` | The linked worktree the run works in, None for a run in the checkout. |
 
 ### MergeReviewGuard
@@ -2698,29 +2698,29 @@ Source: [`agent6.viewmodel.receipt.ReceiptView`](https://github.com/agent6-dev/a
 | `jobs` | `tuple[JobsObservation, ...]` | Job-settlement observations. |
 | `environments` | `tuple[EnvironmentObservation, ...]` | Environment lifecycle observations. |
 | `acquisitions` | `tuple[AcquisitionObservation, ...]` | The container leases the run's executions acquired. |
-| `children` | `tuple[ChildView, ...]` | The session's lanes, from its dispatch records or its lanes' lineage. |
+| `children` | `tuple[ChildView, ...]` | The session's children, from its dispatch records or its children's lineage. |
 
 ### ChildView
 
-**Support: public.** One lane of a session, as the surfaces show it.
+**Support: public.** One child of a session, as the surfaces show it.
 
-Source: [`agent6.viewmodel.lanes.ChildView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/lanes.py).
+Source: [`agent6.viewmodel.children.ChildView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/children.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `session_id` | `str` | The lane's session id. |
-| `lane` | `int` | Its number in its group. |
+| `session_id` | `str` | The child's session id. |
+| `number` | `int` | Its number in its group. |
 | `group` | `str` | The group it was dispatched in. |
 | `source` | `str` | Who dispatched it: operator, model or panel; "" when no record says. |
 | `task` | `str` | Its task text; "" when unknown. |
 | `model` | `str \| None` | Its selector, None for the worker's own settings. |
 | `route` | `str` | The `provider/model` its manifest records; "" when it never started. |
 | `status` | `str` | Its own status word; "" when it never started. |
-| `outcome` | `str` | How it joined: `joined`, `no_changes`, `conflict` or `failed`; "" when no join is recorded, as for a group's lanes. |
+| `outcome` | `str` | How it joined: `joined`, `no_changes`, `conflict` or `failed`; "" when no join is recorded, as for a group's children. |
 | `join_sha` | `str` | The merge commit, "" when none. |
 | `imported_ref` | `str` | The branch the join read, "" when none. |
 | `error` | `str` | The join's detail, "" when none. |
-| `spend_usd` | `float` | What its parent settled for it; the lane's own cost when no record says. |
+| `spend_usd` | `float` | What its parent settled for it; the child's own cost when no record says. |
 | `usd_partial` | `bool` | Whether unpriced calls make the spend a lower bound. |
 | `settled` | `bool` | Whether the parent charged its usage; False while it is unknown. |
 | `launched` | `bool` | Whether a session dir of its own exists. |
@@ -2729,7 +2729,7 @@ Source: [`agent6.viewmodel.lanes.ChildView`](https://github.com/agent6-dev/agent
 
 **Support: public.** One dispatch record, as the surfaces show it.
 
-Source: [`agent6.viewmodel.lanes.DispatchView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/lanes.py).
+Source: [`agent6.viewmodel.children.DispatchView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/children.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2737,9 +2737,9 @@ Source: [`agent6.viewmodel.lanes.DispatchView`](https://github.com/agent6-dev/ag
 | `source` | `str` | Who dispatched it. |
 | `state` | `str` | The record's state, or `unreadable`. |
 | `turn` | `int` | The turn it was dispatched after. |
-| `base` | `str` | The chain tip the lanes were cut from. |
+| `base` | `str` | The chain tip the children were cut from. |
 | `message` | `str` | The delivered result, or why the record could not be read. |
-| `children` | `tuple[ChildView, ...]` | Its lanes, in lane order. |
+| `children` | `tuple[ChildView, ...]` | Its children, in child order. |
 
 ### FindingAction
 
@@ -3084,16 +3084,16 @@ Source: [`agent6.budget.BudgetAllowance`](https://github.com/agent6-dev/agent6/b
 | `tokens` | `int` | The fallback-token cap, the same way. |
 | `plan_points` | `float` | The plan percentage-point cap, the same way. |
 
-### LaneLimits
+### ChildLimits
 
-**Support: public.** The ceiling a lane runs under.
+**Support: public.** The ceiling a child runs under.
 
-Source: [`agent6.lane_records.LaneLimits`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/lane_records.py).
+Source: [`agent6.child_records.ChildLimits`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/child_records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `max_turns` | `int \| None` | The turn cap the lane's `harness.max_turns` is clamped to; None keeps the config's value. |
-| `deadline_at` | `float \| None` | The wall-clock second (epoch) the lane must have ended by; None for none. Wall-clock, since it crosses the process boundary into the lane. |
+| `max_turns` | `int \| None` | The turn cap the child's `harness.max_turns` is clamped to; None keeps the config's value. |
+| `deadline_at` | `float \| None` | The wall-clock second (epoch) the child must have ended by; None for none. Wall-clock, since it crosses the process boundary into the child. |
 
 ### ConversationContract
 
@@ -3126,41 +3126,41 @@ Source: [`agent6.review_records.ReviewBinding`](https://github.com/agent6-dev/ag
 
 **Support: public.** The order a rank join landed by, written before the first join so no resume ranks twice.
 
-Source: [`agent6.sessions.lane_dispatch.RankRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lane_dispatch.py).
+Source: [`agent6.sessions.child_dispatch.RankRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `order` | `tuple[str, ...]` | The ranked lanes' session ids, best first; empty when no lane had a result. |
+| `order` | `tuple[str, ...]` | The ranked children's session ids, best first; empty when no child had a result. |
 | `ranked_by` | `Literal['judge', 'mechanical']` | `judge` or `mechanical`. |
 | `rationale` | `str` | The judges' words; "" for the mechanical order. |
-| `winner` | `str` | The one lane the join lands; "" when the order crowns none. |
+| `winner` | `str` | The one child the join lands; "" when the order crowns none. |
 
 ### SegmentRecord
 
-**Support: public.** One requested task and its lane spec.
+**Support: public.** One requested task and its child spec.
 
-Source: [`agent6.sessions.lane_dispatch.SegmentRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lane_dispatch.py).
+Source: [`agent6.sessions.child_dispatch.SegmentRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `task` | `str` | The task text. |
-| `spec` | `str` | The lane spec as given. |
-| `lanes` | `int` | How many lanes the segment expanded to. |
+| `spec` | `str` | The child spec as given. |
+| `children` | `int` | How many children the segment expanded to. |
 | `node_id` | `str \| None` | The DAG node the segment got, None without a graph. |
 
 ### ChildRecord
 
-**Support: public.** One lane of the dispatch.
+**Support: public.** One child of the dispatch.
 
-Source: [`agent6.sessions.lane_dispatch.ChildRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lane_dispatch.py).
+Source: [`agent6.sessions.child_dispatch.ChildRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `session_id` | `str` | The lane's session id, fixed before launch. |
-| `lane` | `int` | Its number in the group. |
+| `session_id` | `str` | The child's session id, fixed before launch. |
+| `number` | `int` | Its number in the group. |
 | `task` | `str` | Its task text. |
 | `model` | `str \| None` | Its selector, None for the worker's own settings. |
-| `limits` | `LaneLimits \| None` | Its turn cap and deadline, None for the config's own. |
+| `limits` | `ChildLimits \| None` | Its turn cap and deadline, None for the config's own. |
 | `join` | `JoinRecord \| None` | How it joined, None until it did. |
 | `report` | `str` | What it said at its end, its finish summary; "" until it joined or when it gave none. |
 | `usage` | `UsageRecord \| None` | What it used, None until settled with known usage. |
@@ -3270,28 +3270,28 @@ Source: [`agent6.sessions.manifest.IncludedRun`](https://github.com/agent6-dev/a
 
 ### ParallelLineage
 
-**Support: public.** A lane's place.
+**Support: public.** A child's place.
 
 Source: [`agent6.sessions.manifest.ParallelLineage`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `group` | `str` | The group it was dispatched in: the parent's id for `run --parallel`, `<parent>-p<n>` for a `/parallel` group. |
-| `lane` | `int` | Its number in the group. |
+| `number` | `int` | Its number in the group. |
 | `parent` | `str` | The session that dispatched it, which every listing nests it under. |
-| `config_notes` | `tuple[str, ...]` | Resolved sampling values the lane's TOML snapshot could not preserve. |
+| `config_notes` | `tuple[str, ...]` | Resolved sampling values the child's TOML snapshot could not preserve. |
 
 ### PlacementStamp
 
-**Support: public.** A lane's auto-compare placement.
+**Support: public.** A child's auto-compare placement.
 
 Source: [`agent6.sessions.manifest.PlacementStamp`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `rank` | `int` | The lane's place, 1 first. |
-| `of` | `int` | How many lanes were ranked. |
-| `winner` | `bool` | The lane ranked first. |
+| `rank` | `int` | The child's place, 1 first. |
+| `of` | `int` | How many children were ranked. |
+| `winner` | `bool` | The child ranked first. |
 | `group` | `str` | The comparison group recorded on its parent. |
 
 ### ComparisonStamp
@@ -3303,7 +3303,7 @@ Source: [`agent6.sessions.manifest.ComparisonStamp`](https://github.com/agent6-d
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `group` | `str` | The comparison group id. |
-| `ranking` | `tuple[str, ...]` | The ranked lane ids, best first. |
+| `ranking` | `tuple[str, ...]` | The ranked child ids, best first. |
 | `ranked_by` | `Literal['judge', 'mechanical']` | The ranking method, `judge` or `mechanical`. |
 | `rationale` | `str` | The judge's reason, at most 2000 characters; empty for mechanical ranking. |
 | `judge_cost_usd` | `float` | The group's judge spend in USD, zero when no judge call was made. |
@@ -3704,28 +3704,28 @@ Source: [`agent6.review_records.ReviewTarget`](https://github.com/agent6-dev/age
 
 ### JoinRecord
 
-**Support: public.** How one lane's work joined, with the chain tip on either side of the merge.
+**Support: public.** How one child's work joined, with the chain tip on either side of the merge.
 
-Source: [`agent6.sessions.lane_dispatch.JoinRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lane_dispatch.py).
+Source: [`agent6.sessions.child_dispatch.JoinRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `branch` | `str` | The lane's branch. |
+| `branch` | `str` | The child's branch. |
 | `status` | `Literal['joined', 'no_changes', 'conflict', 'failed', 'ranked']` | The join's outcome. |
 | `sha` | `str` | The merge commit, "" when none. |
-| `detail` | `str` | The failure's reason, or what stopped a lane whose work still joined; "" when neither. |
+| `detail` | `str` | The failure's reason, or what stopped a child whose work still joined; "" when neither. |
 | `target_before` | `str` | The chain tip before the join. |
 | `target_after` | `str` | The chain tip after it; equal to `target_before` when nothing merged. |
 
 ### UsageRecord
 
-**Support: public.** What a lane used, as settled against the parent.
+**Support: public.** What a child used, as settled against the parent.
 
-Source: [`agent6.sessions.lane_dispatch.UsageRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lane_dispatch.py).
+Source: [`agent6.sessions.child_dispatch.UsageRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `usd` | `float` | The lane's metered spend. |
+| `usd` | `float` | The child's metered spend. |
 | `usd_partial` | `bool` | Whether unpriced calls make it a lower bound. |
 | `tokens` | `int` | Its fallback-ledger tokens. |
 
@@ -3870,7 +3870,7 @@ Source: [`agent6.viewmodel.session.records.SessionUsage`](https://github.com/age
 | `usd_partial` | `bool` | Some execution's model had no price, so `usd` is a lower bound. |
 | `plan_observed_points` | `float` | The plan movement observed across every execution, in points. |
 | `unmetered_tokens` | `int` | Fallback tokens across every execution, including settled descendants. |
-| `settled_lanes` | `tuple[str, ...]` | Child sessions whose spend is durably included in the journal. |
+| `settled_children` | `tuple[str, ...]` | Child sessions whose spend is durably included in the journal. |
 
 ### ExecutionUsage
 
@@ -3887,8 +3887,8 @@ Source: [`agent6.viewmodel.session.records.ExecutionUsage`](https://github.com/a
 | `usd` | `float` | The metered spend. |
 | `usd_partial` | `bool` | Some model had no price, so `usd` is a lower bound. |
 | `unmetered_tokens` | `int` | Input and output tokens of calls the meter could not price. |
-| `usd_running_lanes` | `float` | What the lanes still running have spent so far: inside the cap, outside `usd` until each settles. |
-| `tokens_running_lanes` | `int` | Their unpriced tokens so far, outside `unmetered_tokens`. |
+| `usd_running_children` | `float` | What the children still running have spent so far: inside the cap, outside `usd` until each settles. |
+| `tokens_running_children` | `int` | Their unpriced tokens so far, outside `unmetered_tokens`. |
 | `plan_observed_points` | `float` | The plan movement observed, in points. |
 | `usd_cap` | `float \| None` | `[budget].max_usd`. |
 | `tokens_fallback_cap` | `int \| None` | `[budget].max_tokens_fallback`. |
@@ -3950,7 +3950,7 @@ Source: [`agent6.review_records.ReviewVerdict`](https://github.com/agent6-dev/ag
 | `findings` | `tuple[Finding, ...]` | The grounded findings from this reviewer. |
 | `summary` | `str` | The reviewer's closing summary. |
 | `error` | `str \| None` | The failure diagnostic for an abstention, or null. |
-| `session_id` | `str` | The read-only reviewer session, empty in legacy verdicts. |
+| `session_id` | `str` | The reviewer's session, empty in legacy verdicts. |
 
 ### ReviewPanel
 

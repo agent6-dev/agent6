@@ -23,17 +23,17 @@ from typing import Any
 from agent6 import budget as agent6_budget
 from agent6 import directive, errors, kinds, paths, review_records
 from agent6.app import (
+    child_launch,
     child_watch,
     conversation_state,
     finalize,
-    lane_launch,
     notify_hook,
     role_providers,
     stamps,
     worktree_setup,
 )
+from agent6.app import children as app_children
 from agent6.app import frontend as app_frontend
-from agent6.app import lanes as app_lanes
 from agent6.app import reporter as app_reporter
 from agent6.app.review import actions as review_actions
 from agent6.app.review import directive as review_directive
@@ -63,7 +63,7 @@ class ExecutionInputs:
         session_id: The session's id.
         mode: The session mode.
         role: The role driving it.
-        explicit_leaves: The dotted leaves the run's config layers set, inherited by lanes.
+        explicit_leaves: The dotted leaves the run's config layers set, inherited by children.
         isolation: The resolved isolation level.
         tui_enabled: Whether the TUI owns the terminal.
         interactive: Whether an operator is at the terminal.
@@ -80,8 +80,8 @@ class ExecutionInputs:
             dispatcher's approvals share one journal and one id sequence.
         ask_transcript_task: The question a one-shot ask records its answer under; None when
             the REPL saved each turn.
-        budget_overrides: The `--max-*` flags a `/parallel` lane inherits.
-        sandbox_overrides: The `--auto-approve` a `/parallel` lane inherits.
+        budget_overrides: The `--max-*` flags a `/parallel` child inherits.
+        sandbox_overrides: The `--auto-approve` a `/parallel` child inherits.
         standing_goal: The standing goal.
         pins: The pinned notes.
         resuming: Whether this is a resumed execution.
@@ -484,7 +484,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         # environment, so every commit leaves it out as it does the operator's files.
         unready: str | None = None
         untracked_at_start = inputs.untracked_at_start
-        # A reviewer handed `run_command` needs what git does not track, as any lane does.
+        # A reviewer handed `run_command` needs what git does not track, as any child does.
         runs_commands = inputs.contract is None or (
             schema.RunCommandInput.TOOL_NAME in inputs.contract.allowed_tools
             and dispatcher.command_policy() != "deny"
@@ -584,12 +584,12 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 review_preparer=functools.partial(
                     review_directive.live, root=cwd, hide=cfg.sandbox.hide_paths
                 ),
-                lane_authority=lane_launch.dispatch_authority(
+                child_authority=child_launch.dispatch_authority(
                     cfg, mode=mode, session_id=inputs.session_id, root=cwd
                 ),
                 # Child workers retain only harness-panel authority. Every child's
                 # record goes where this session's does: the root repository's state.
-                lane_spawner=frontend.build_parent_spawner(
+                child_spawner=frontend.build_parent_spawner(
                     cfg,
                     inputs.explicit_leaves,
                     cwd,
@@ -604,10 +604,10 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     else False,
                     child_watch.ChildWatch(inputs.prompts, layout.session_dir, budget, events.emit),
                 ),
-                lane_recoverer=app_lanes.build_lane_recoverer(
+                child_recoverer=app_children.build_child_recoverer(
                     cfg, cwd, layout.state_dir, mode=mode, reporter=reporter
                 ),
-                lane_ranker=app_lanes.build_lane_ranker(
+                child_ranker=app_children.build_child_ranker(
                     cfg,
                     cwd,
                     layout.state_dir,
@@ -772,8 +772,8 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                         f"the run's commits could not be copied into {inputs.mirror_into}: {exc};"
                         f" they are in its worktree {cwd}"
                     )
-            # A lane's base branch is its throwaway clone's: its dispatcher lands the work.
-            lands_itself = cfg.git.auto_merge and mode == "run" and not lane_launch.is_lane()
+            # A child's base branch is its throwaway clone's: its dispatcher lands the work.
+            lands_itself = cfg.git.auto_merge and mode == "run" and not child_launch.is_child()
             if not interrupted and result is not None and lands_itself:
                 if finalize.auto_merge_eligible(result):
                     finalize.finalize_auto_merge(

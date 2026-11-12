@@ -312,7 +312,7 @@ def budget_usd_text(
     return f"{text} (unlimited)" if usd_cap == -1 else text
 
 
-# The mark on the lane a group's compare ranked first.
+# The mark on the child a group's compare ranked first.
 WINNER_GLYPH = "★"
 # The mark on a run that works in its own git worktree, not in the checkout.
 WORKTREE_MARK = "(worktree)"
@@ -357,10 +357,10 @@ def format_lineage(parent: str | None, turn: int | None, sha: str | None) -> str
 def format_compare(
     placement: manifest.PlacementStamp | None, comparison: manifest.ComparisonStamp | None = None
 ) -> tuple[str, str] | None:
-    """Word a lane's compare outcome.
+    """Word a child's compare outcome.
 
     Args:
-        placement: The lane's placement stamp, None for a run outside a compared group.
+        placement: The child's placement stamp, None for a run outside a compared group.
         comparison: The group record from its parent, None when unavailable.
 
     Returns:
@@ -396,13 +396,13 @@ _MODE_IMPLIED: dict[str, str] = {"planned": "plan", "answered": "ask"}
 ENDED_WORDS = frozenset({"passed", "failed", "finished", "stopped", "undone"})
 
 
-def lane_count(n: int) -> str:
-    """Return the lane count as every listing words it: "3 lanes", "1 lane"."""
-    return f"{n} lane{'' if n == 1 else 's'}"
+def child_count(n: int) -> str:
+    """Return the child count as every listing words it: "3 children", "1 child"."""
+    return f"{n} {'child' if n == 1 else 'children'}"
 
 
-def lane_id_cell(id_cell: str, depth: int = 1) -> str:
-    """Return a lane's id cell nested under its group's row, stepped in once per depth."""
+def child_id_cell(id_cell: str, depth: int = 1) -> str:
+    """Return a child's id cell nested under its group's row, stepped in once per depth."""
     return f"{'  ' * depth}└ {id_cell}"
 
 

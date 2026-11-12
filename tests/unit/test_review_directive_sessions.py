@@ -18,7 +18,7 @@ from agent6.sessions import manifest
 from agent6.ui import directive_actions
 from agent6.ui.cli import cli_main, session_prompt
 from agent6.viewmodel import transcript
-from tests import review_lane_env
+from tests import review_env
 from tests.unit import test_review_directive_world as world_tests
 
 pytestmark = pytest.mark.usefixtures("linked_worktrees")
@@ -173,9 +173,7 @@ def test_the_panel_sits_on_the_reviewed_branch_and_records_its_findings(
     )
 
     def reviewers(*_args: Any, **_kwargs: Any) -> list[review_gate.Reviewer]:
-        return [
-            review_lane_env.reviewer(focus="correctness", model="p/m", provider=ReviewerProvider())
-        ]
+        return [review_env.reviewer(focus="correctness", model="p/m", provider=ReviewerProvider())]
 
     monkeypatch.setattr(role_providers, "resolve_reviewers", reviewers)
     world_tests.git(repo, "switch", "-q", "main")
@@ -506,5 +504,5 @@ def test_the_system_prompt_carries_the_base_rules_not_the_heads(
 
 
 @pytest.fixture(autouse=True)
-def panel_lanes(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)
+def panel_children(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(review_gate, "run_panel", review_env.run_panel)

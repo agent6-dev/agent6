@@ -168,7 +168,7 @@ def test_parallel_refuses_a_standing_goal(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`--parallel` refuses `--standing`, which reaches no lane."""
+    """`--parallel` refuses `--standing`, which reaches no child."""
     monkeypatch.chdir(tmp_path)
     rc = main(["run", "--parallel", "2", "--standing", "keep tests green", "task"])
     assert rc == 2

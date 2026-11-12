@@ -1,4 +1,4 @@
-"""Lane snapshots preserve resolved sampling without inheriting child model overrides."""
+"""Child snapshots preserve resolved sampling without inheriting child model overrides."""
 
 from __future__ import annotations
 
@@ -7,20 +7,20 @@ import tomllib
 
 import pytest
 
-from agent6 import kinds, lane_records, paths
-from agent6.app import lane_launch, stamps, worktrees
+from agent6 import child_records, kinds, paths
+from agent6.app import child_launch, stamps, worktrees
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, RoleModel
-from tests import lane_env
+from tests import launch_env
 
 
 @pytest.fixture
-def lane(tmp_path: pathlib.Path) -> lane_records.LaneSpec:
-    return lane_records.LaneSpec(
-        lane=1,
+def child(tmp_path: pathlib.Path) -> child_records.ChildSpec:
+    return child_records.ChildSpec(
+        number=1,
         session_id="fan-l1",
-        worktree=tmp_path / "lane-1",
-        settings=kinds.ModelSettings(kinds.ModelRoute("p", "lane")),
+        worktree=tmp_path / "child-1",
+        settings=kinds.ModelSettings(kinds.ModelRoute("p", "child")),
     )
 
 
@@ -46,7 +46,7 @@ def resolved_config() -> Config:
 
 
 def test_four_explicit_routes_without_default_are_not_runnable(
-    lane: lane_records.LaneSpec, monkeypatch: pytest.MonkeyPatch
+    child: child_records.ChildSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """All executable roles configured still require the public default-route baseline."""
     cfg = Config.model_validate(
@@ -57,27 +57,27 @@ def test_four_explicit_routes_without_default_are_not_runnable(
             },
         }
     )
-    written = worktrees.write_lane_config(
-        cfg, lane, explicit_leaves=frozenset(), into=lane.worktree.parent / "launch"
+    written = worktrees.write_child_config(
+        cfg, child, explicit_leaves=frozenset(), into=child.worktree.parent / "launch"
     )
     assert "default" not in tomllib.loads(written.path.read_text())["models"]
-    for name in (lane_launch.ENV, "AGENT6_CHILD"):
+    for name in (child_launch.ENV, "AGENT6_CHILD"):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(ConfigError, match=r"No models\.default\.model configured"):
-        session_setup.load_session_config(lane.worktree, (written.path,), mode="run")
-    lane_env.mark_lane(monkeypatch, written.path.parent, config=written.path)
-    with pytest.raises(ConfigError, match="lane snapshot"):
-        session_setup.load_session_config(lane.worktree, (written.path,), mode="run")
+        session_setup.load_session_config(child.worktree, (written.path,), mode="run")
+    launch_env.mark_child(monkeypatch, written.path.parent, config=written.path)
+    with pytest.raises(ConfigError, match="child snapshot"):
+        session_setup.load_session_config(child.worktree, (written.path,), mode="run")
 
 
-def test_snapshot_writes_resolved_roles(lane: lane_records.LaneSpec) -> None:
-    path = worktrees.write_lane_config(
-        resolved_config(), lane, explicit_leaves=frozenset(), into=lane.worktree.parent / "launch"
+def test_snapshot_writes_resolved_roles(child: child_records.ChildSpec) -> None:
+    path = worktrees.write_child_config(
+        resolved_config(), child, explicit_leaves=frozenset(), into=child.worktree.parent / "launch"
     ).path
     models = tomllib.loads(path.read_text())["models"]
     assert models == {
         "default": {"model": "p/base"},
-        "worker": {"model": "p/lane"},
+        "worker": {"model": "p/child"},
         "planner": {"model": "p/plan", "effort": "off", "temperature": 0.0},
         "reviewer": {"model": "p/base", "effort": "low", "temperature": 0.2},
         "helper": {"model": "p/base", "effort": "high", "temperature": 0.7},
@@ -85,26 +85,26 @@ def test_snapshot_writes_resolved_roles(lane: lane_records.LaneSpec) -> None:
 
 
 def test_snapshot_reloads_resolved_sampling(
-    lane: lane_records.LaneSpec, monkeypatch: pytest.MonkeyPatch
+    child: child_records.ChildSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = resolved_config()
-    path = worktrees.write_lane_config(
-        cfg, lane, explicit_leaves=frozenset(), into=lane.worktree.parent / "launch"
+    path = worktrees.write_child_config(
+        cfg, child, explicit_leaves=frozenset(), into=child.worktree.parent / "launch"
     ).path
-    lane_env.mark_lane(monkeypatch, path.parent, config=path)
-    effective = session_setup.load_session_config(lane.worktree, (path,), mode="run")
+    launch_env.mark_child(monkeypatch, path.parent, config=path)
+    effective = session_setup.load_session_config(child.worktree, (path,), mode="run")
     worker = effective.config.models.resolve("worker")
     assert worker is not None
     assert worker.effort is None
     assert worker.temperature == 0.0  # TOML cannot preserve the selected None.
-    assert worker.model == "lane"
+    assert worker.model == "child"
     for role in ("planner", "reviewer", "helper"):
         assert effective.config.models.resolve(role) == cfg.models.resolve(role)
 
 
 @pytest.mark.parametrize("internal", [True, False])
 def test_only_internal_snapshot_discards_global_model_contributions(
-    lane: lane_records.LaneSpec, monkeypatch: pytest.MonkeyPatch, internal: bool
+    child: child_records.ChildSpec, monkeypatch: pytest.MonkeyPatch, internal: bool
 ) -> None:
     global_path = paths.global_config_path()
     global_path.parent.mkdir(parents=True, exist_ok=True)
@@ -115,7 +115,7 @@ def test_only_internal_snapshot_discards_global_model_contributions(
         "[budget]\nmax_usd = 19.0\n"
     )
     # Already-resolved snapshot shape isolates the loader loss from the writer loss.
-    path = lane.worktree.parent / "lane-1-config.toml"
+    path = child.worktree.parent / "child-1-config.toml"
     path.write_text(
         '[providers.p]\nbackend = "openai"\nbase_url = "http://localhost:1/v1"\n'
         + "".join(f'[models.{r}]\nmodel = "p/base"\n' for r in kinds.MODEL_ROLES)
@@ -123,8 +123,8 @@ def test_only_internal_snapshot_discards_global_model_contributions(
     )
     monkeypatch.setenv("AGENT6_CHILD", "1")
     if internal:
-        lane_env.mark_lane(monkeypatch, path.parent, config=path)
-    effective = session_setup.load_session_config(lane.worktree, (path,), mode="run")
+        launch_env.mark_child(monkeypatch, path.parent, config=path)
+    effective = session_setup.load_session_config(child.worktree, (path,), mode="run")
     worker = effective.config.models.resolve("worker")
     assert worker is not None
     assert worker.effort == (None if internal else "max")
@@ -141,7 +141,7 @@ def test_only_internal_snapshot_discards_global_model_contributions(
 
 @pytest.mark.parametrize("temperature", [None, 0.0, 0.6])
 def test_snapshot_notes_only_unrepresentable_temperatures(
-    lane: lane_records.LaneSpec, temperature: float | None
+    child: child_records.ChildSpec, temperature: float | None
 ) -> None:
     cfg = resolved_config()
     cfg = cfg.model_copy(
@@ -150,10 +150,13 @@ def test_snapshot_notes_only_unrepresentable_temperatures(
         }
     )
     # A route selector keeps the worker's sampling: the selected temperature rides along.
-    routed = lane_records.LaneSpec(
-        lane=1, session_id="fan-l1", worktree=lane.worktree, settings=cfg.lane_settings("p/lane")
+    routed = child_records.ChildSpec(
+        number=1,
+        session_id="fan-l1",
+        worktree=child.worktree,
+        settings=cfg.child_settings("p/child"),
     )
-    written = worktrees.write_lane_config(
+    written = worktrees.write_child_config(
         cfg, routed, explicit_leaves=frozenset(), into=routed.worktree.parent / "launch"
     )
     assert written.notes == (
@@ -164,7 +167,7 @@ def test_snapshot_notes_only_unrepresentable_temperatures(
 
 
 def test_snapshot_discards_preset_models_but_keeps_other_preset_values(
-    lane: lane_records.LaneSpec, monkeypatch: pytest.MonkeyPatch
+    child: child_records.ChildSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     global_path = paths.global_config_path()
     global_path.parent.mkdir(parents=True, exist_ok=True)
@@ -172,11 +175,11 @@ def test_snapshot_discards_preset_models_but_keeps_other_preset_values(
         '[agent6]\npreset = "custom"\n[presets.custom.models.worker]\neffort = "max"\n'
         '[presets.custom.sandbox]\nprotect_git = "off"\n'
     )
-    written = worktrees.write_lane_config(
-        resolved_config(), lane, explicit_leaves=frozenset(), into=lane.worktree.parent / "launch"
+    written = worktrees.write_child_config(
+        resolved_config(), child, explicit_leaves=frozenset(), into=child.worktree.parent / "launch"
     )
-    lane_env.mark_lane(monkeypatch, written.path.parent, config=written.path)
-    effective = session_setup.load_session_config(lane.worktree, (written.path,), mode="run")
+    launch_env.mark_child(monkeypatch, written.path.parent, config=written.path)
+    effective = session_setup.load_session_config(child.worktree, (written.path,), mode="run")
     worker = effective.config.models.resolve("worker")
     assert worker is not None and worker.effort is None
     assert effective.sources["models.worker.effort"] == "default"
@@ -190,41 +193,41 @@ def test_lineage_refuses_malformed_config_notes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, raw: str
 ) -> None:
     """A launch file whose notes are not a list of strings refuses the lineage read."""
-    path = tmp_path / "lane-1.json"
-    lane_launch.write_private(
+    path = tmp_path / "child-1.json"
+    child_launch.write_private(
         path,
-        '{"worktree": "/x/lane-1", "session_id": "fan-l1", "task": "t",'
-        ' "config": "/x/lane-1-config.toml", "parent": "co", "group": "fan", "lane": 1,'
+        '{"worktree": "/x/child-1", "session_id": "fan-l1", "task": "t",'
+        ' "config": "/x/child-1-config.toml", "parent": "co", "group": "fan", "number": 1,'
         f' "notes": {raw}}}',
     )
-    monkeypatch.setenv(lane_launch.ENV, str(path))
-    with pytest.raises(ConfigError, match="lane launch"):
+    monkeypatch.setenv(child_launch.ENV, str(path))
+    with pytest.raises(ConfigError, match="child launch"):
         stamps.parallel_lineage()
 
 
 @pytest.mark.parametrize(
     ("broken", "refusal"),
     [
-        ("path", "lane snapshot"),
-        ("envelope", "lane launch"),
-        ("lineage", "lane launch"),
-        ("models", "lane snapshot"),
-        ("default_sampling", "lane snapshot"),
+        ("path", "child snapshot"),
+        ("envelope", "child launch"),
+        ("lineage", "child launch"),
+        ("models", "child snapshot"),
+        ("default_sampling", "child snapshot"),
     ],
 )
 def test_marked_snapshot_refuses_mismatch_or_malformed_models(
-    lane: lane_records.LaneSpec, monkeypatch: pytest.MonkeyPatch, broken: str, refusal: str
+    child: child_records.ChildSpec, monkeypatch: pytest.MonkeyPatch, broken: str, refusal: str
 ) -> None:
-    path = worktrees.write_lane_config(
-        resolved_config(), lane, explicit_leaves=frozenset(), into=lane.worktree.parent / "launch"
+    path = worktrees.write_child_config(
+        resolved_config(), child, explicit_leaves=frozenset(), into=child.worktree.parent / "launch"
     ).path
-    envelope = lane_env.mark_lane(monkeypatch, path.parent, config=path)
+    envelope = launch_env.mark_child(monkeypatch, path.parent, config=path)
     if broken == "path":
-        lane_env.mark_lane(monkeypatch, path.parent, config=path.with_suffix(".other"))
+        launch_env.mark_child(monkeypatch, path.parent, config=path.with_suffix(".other"))
     elif broken == "envelope":
-        monkeypatch.setenv(lane_launch.ENV, str(path.parent / "missing.json"))
+        monkeypatch.setenv(child_launch.ENV, str(path.parent / "missing.json"))
     elif broken == "lineage":
-        envelope.write_text(envelope.read_text().replace('"lane": 1', '"lane": 0'))
+        envelope.write_text(envelope.read_text().replace('"number": 1', '"number": 0'))
     elif broken == "models":
         path.write_text(
             '[providers.p]\nbackend = "openai"\nbase_url = "http://localhost:1/v1"\n'
@@ -239,4 +242,4 @@ def test_marked_snapshot_refuses_mismatch_or_malformed_models(
             )
         )
     with pytest.raises(ConfigError, match=refusal):
-        session_setup.load_session_config(lane.worktree, (path,), mode="run")
+        session_setup.load_session_config(child.worktree, (path,), mode="run")

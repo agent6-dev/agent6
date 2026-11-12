@@ -229,7 +229,9 @@ def _dispatch_run_task(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
         return 2
     parallel = getattr(args, "parallel", "")
     if parallel and args.standing:
-        common.error("--parallel cannot combine with --standing (the lanes take no standing goal).")
+        common.error(
+            "--parallel cannot combine with --standing (the children take no standing goal)."
+        )
         return 2
     seed_from, source_session_id = getattr(args, "seed_from", ""), ""
     if not args.task and seed_from:
@@ -662,7 +664,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
     )
 
     if args.sessions_command == "list":
-        return sessions_cmds._cmd_list(as_json=args.list_json, lanes=args.list_lanes)
+        return sessions_cmds._cmd_list(as_json=args.list_json, children=args.list_children)
     if args.sessions_command == "findings":
         return sessions_findings.cmd_findings(
             args.session_id, all_findings=args.all, as_json=args.json
@@ -988,7 +990,7 @@ def _dispatch_ps(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 ps`."""
     from agent6.ui.cli import ps_cmd
 
-    return ps_cmd.cmd_ps(as_json=args.json, lanes=args.lanes)
+    return ps_cmd.cmd_ps(as_json=args.json, children=args.children)
 
 
 def _dispatch_telemetry(args: argparse.Namespace) -> int:

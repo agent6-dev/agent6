@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Prepare review messages and parse bound lane completions."""
+"""Prepare review messages and parse bound child completions."""
 
 from __future__ import annotations
 

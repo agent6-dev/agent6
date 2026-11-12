@@ -197,7 +197,7 @@ def test_pause_menu_status_clips_the_task_like_every_listing(
 def test_pause_menu_help_names_parallel(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The mid-run steer help names `/parallel`, the directive the loop dispatches lanes for."""
+    """The mid-run steer help names `/parallel`, the directive the loop dispatches children for."""
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
     assert steer_menu.pause_menu(tmp_path, input_fn=_feed(["/help", "go"])) == "go"
     assert "/parallel" in capsys.readouterr().out

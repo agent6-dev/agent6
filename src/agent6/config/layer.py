@@ -551,7 +551,7 @@ def materialize(
             `Config` holds them, and a fill rewriting the operator's file would otherwise
             delete definitions it cannot see.
         keep_preset_selector: Keep `agent6.preset`. A `--config FILE` layer refuses
-            one (a lane's snapshot drops it); the global config `config fill` writes keeps
+            one (a child's snapshot drops it); the global config `config fill` writes keeps
             it, or the fill would deselect the preset and freeze the current values.
 
     Returns:

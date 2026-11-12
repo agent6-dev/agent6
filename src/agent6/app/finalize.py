@@ -63,12 +63,12 @@ def session_exit_code(
 
     Returns:
         0 for a green, gateless or unjudged finish, 130 an operator stop, 3 budget, 4 red or
-        unverified under a harness gate and a `run --parallel` run whose lanes' gates crowned
+        unverified under a harness gate and a `run --parallel` run whose children's gates crowned
         none, 5 stranded, 1 else.
     """
     if result.reason in session_status.OPERATOR_STOPS:
         return EXIT_OPERATOR_STOP
-    if result.reason == "no_lane_passed":
+    if result.reason == "no_child_passed":
         return EXIT_VERIFY_FAILED
     if result.completed:
         if result.verification == "failed" or (
@@ -125,8 +125,8 @@ def stranded_edits(
 
 
 # The ends `git.auto_merge` may land: the model's own finish, and a `run --parallel` run whose
-# best-ranked lane joined it.
-LANDING_ENDS = ("finish_session", "lanes_ranked")
+# best-ranked child joined it.
+LANDING_ENDS = ("finish_session", "children_ranked")
 
 
 def auto_merge_eligible(result: loop_snapshot.SessionResult) -> bool:
@@ -391,15 +391,15 @@ def settle_budget(budget: agent6_budget.BudgetTracker, events: event_log.EventSi
         events.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(budget)))
 
 
-def print_lane_config_notes(
+def print_child_config_notes(
     session_dir: pathlib.Path, *, reporter: app_reporter.Reporter, prefix: str = ""
 ) -> None:
     """Print recorded snapshot losses without inferring selections from the child config.
 
     Args:
-        session_dir: The lane's current or imported session directory.
+        session_dir: The child's current or imported session directory.
         reporter: Receives the lines.
-        prefix: The lane label in a parent's report.
+        prefix: The child label in a parent's report.
     """
     with contextlib.suppress(sessions_manifest.ManifestError):
         lineage = sessions_manifest.read_manifest(session_dir).parallel
@@ -464,7 +464,7 @@ def print_session_end(
         reporter.out("    - install them into a standard bin dir (~/.local/bin, /usr/local/bin)")
         reporter.out("    - grant their real directories via [sandbox].extra_read_paths")
         reporter.out("    - run with --disable-sandbox")
-    print_lane_config_notes(layout.session_dir, reporter=reporter)
+    print_child_config_notes(layout.session_dir, reporter=reporter)
     _print_next_session(layout, completed=result.completed, reporter=reporter)
     _print_red_gate(result, layout=layout, reporter=reporter)
     _print_unverified(result, layout=layout, cwd=cwd, reporter=reporter, hidden=hidden)
@@ -565,7 +565,7 @@ def _print_model_git_footer(
     reporter: app_reporter.Reporter,
     hidden: frozenset[str],
 ) -> None:
-    """Say where a model-controlled run's work is: an imported lane's ref, else the checkout.
+    """Say where a model-controlled run's work is: an imported child's ref, else the checkout.
 
     Args:
         manifest: The session's manifest.

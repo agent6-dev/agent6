@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "acf340f439c3659ad61aeff6d16ec1ff27a0d770800dadba9cb0efbe8b703962"
+PAGE_SHA256 = "353a5fb38c7b7606d2361fd4dfc9954fb5c002e3262a6dfb21dfd271e8a7116d"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -145,12 +145,12 @@ def test_the_plan_bar_meters_this_executions_points() -> None:
     assert "executionPt / planCap" in client
 
 
-def test_the_sessions_card_folds_a_groups_lanes() -> None:
-    """The hub renders nested lane rows under their group behind a `lanes: N` line."""
+def test_the_sessions_card_folds_a_groups_children() -> None:
+    """The hub renders nested child rows under their group behind a `children: N` line."""
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
-    assert "const lanes = r.lanes || [];" in client
-    assert "lanes: ${lanes.length}" in client and "expandedGroups" in client
-    # Enter toggles the row (its key handler does not swallow it), and a lane row is a button.
+    assert "const children = r.children || [];" in client
+    assert "children: ${children.length}" in client and "expandedGroups" in client
+    # Enter toggles the row (its key handler does not swallow it), and a child row is a button.
     assert "toggle.onkeydown = (e) => e.stopPropagation();" in client
     assert "actionable(li, " in client
 

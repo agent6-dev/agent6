@@ -1,15 +1,15 @@
 {
   "version": 13,
   "agent6_version": "0.1.0",
-  "session_id": "r-lane02",
+  "session_id": "r-child02",
   "mode": "run",
   "start_ts": "2026-07-16T00:00:00.000000+00:00",
-  "user_task": "lane",
+  "user_task": "child",
   "continued_task": "",
   "base_sha": "1111111111111111111111111111111111111111",
   "base_branch": "master",
   "review_base_tree": "",
-  "run_branch": "agent6/r-lane02",
+  "run_branch": "agent6/r-child02",
   "git_control": "agent6",
   "models": {
     "driver": {
@@ -68,7 +68,7 @@
   "includes": null,
   "parallel": {
     "group": "p-abc",
-    "lane": 1,
+    "number": 1,
     "parent": "p-abc",
     "config_notes": []
   },

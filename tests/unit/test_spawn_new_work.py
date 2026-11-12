@@ -93,7 +93,7 @@ def test_run_only_options_are_refused_for_other_modes_and_groups(
     )
     assert spawn.spawn_new_work(tmp_path, "run", "/parallel 2 -- x", options=worktree) == (
         None,
-        "/parallel lanes clone the checkout; drop the worktree and the seed session",
+        "/parallel children clone the checkout; drop the worktree and the seed session",
     )
     assert spawn.spawn_new_work(tmp_path, "ask", "", options=spawn.RunOptions(max_usd=1)) == (
         None,
@@ -128,17 +128,17 @@ def test_detached_env_streams_and_waits(
     assert "PATH" in captured_env
 
 
-# --- the `/parallel` new-work directive: dispatch lanes ------------------------
+# --- the `/parallel` new-work directive: dispatch children ------------------------
 
 
-def test_parallel_lane_count(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_parallel_child_count(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "run", "/parallel 2 -- add a greeting")
     assert captured[-1][1:] == ["run", "--parallel", "2", "--", "add a greeting"]
 
 
 def _configure_worker() -> None:
-    """A worker route in the global config, so a lane's bare model id has a provider to run on."""
+    """A worker route in the global config, so a child's bare model id has a provider to run on."""
     from agent6 import paths
 
     cfg_home = paths.global_config_dir()
@@ -233,7 +233,7 @@ def test_parallel_validation_uses_the_picked_model_provider(
     cache = tmp_path / "cache" / "agent6" / "models"
     cache.mkdir(parents=True)
     (cache / "o.json").write_text(json.dumps({"models": ["o-model"]}), encoding="utf-8")
-    (cache / "q.json").write_text(json.dumps({"models": ["q-lane"]}), encoding="utf-8")
+    (cache / "q.json").write_text(json.dumps({"models": ["q-child"]}), encoding="utf-8")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     cfg = Config.model_validate(
         {
@@ -255,13 +255,15 @@ def test_parallel_validation_uses_the_picked_model_provider(
     monkeypatch.setattr(layer, "load_effective", _eff)
     monkeypatch.setattr(models_validate, "_fresh_listing", _listing)
     captured = _capture_locate(monkeypatch)
-    spawn.spawn_new_work(tmp_path, "run", "/parallel q-lane,q-lane -- fix it", model="q/q-default")
+    spawn.spawn_new_work(
+        tmp_path, "run", "/parallel q-child,q-child -- fix it", model="q/q-default"
+    )
     assert captured[-1][1:] == [
         "run",
         "--model",
         "q/q-default",
         "--parallel",
-        "q-lane,q-lane",
+        "q-child,q-child",
         "--",
         "fix it",
     ]
@@ -270,7 +272,7 @@ def test_parallel_validation_uses_the_picked_model_provider(
 def test_parallel_unknown_model_no_cache_proceeds(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # No cache to validate against -> never block; the detached lane's own
+    # No cache to validate against -> never block; the detached child's own
     # preflight warns. The spawn happens.
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "empty-cache"))
 
@@ -287,16 +289,16 @@ def test_parallel_unknown_model_no_cache_proceeds(
 def test_parallel_only_for_run_mode(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # plan/ask cannot dispatch lanes: the text is a literal task (rides behind `--`).
+    # plan/ask cannot dispatch children: the text is a literal task (rides behind `--`).
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "plan", "/parallel 2 -- add a greeting")
     assert captured[-1][1:] == ["plan", "--", "/parallel 2 -- add a greeting"]
 
 
-def test_parallel_omitted_spec_is_one_lane(
+def test_parallel_omitted_spec_is_one_child(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # No spec -> one isolated lane: --parallel 1 (a clone lane, not an in-place run).
+    # No spec -> one isolated child: --parallel 1 (a clone child, not an in-place run).
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "run", "/parallel refactor the parser")
     assert captured[-1][1:] == ["run", "--parallel", "1", "--", "refactor the parser"]
@@ -317,7 +319,7 @@ def test_parallel_multi_segment_spawns_one_group_per_segment(
 def test_parallel_partial_spawn_failure_surfaces(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """One lane failing to spawn fails the whole message: open the run or show the error."""
+    """One child failing to spawn fails the whole message: open the run or show the error."""
 
     def fake_spawn(
         cwd: pathlib.Path,
@@ -352,9 +354,9 @@ def test_parallel_partial_spawn_failure_surfaces(
     )
     assert session_dir is None
     assert "boom" in err and "task B" in err
-    # The lane that started is named, so a resend of the message does not
+    # The child that started is named, so a resend of the message does not
     # launch it a second time.
-    assert err.index("lane 1 (task A): running as run-A") < err.index("lane 2")  # lane order
+    assert err.index("child 1 (task A): running as run-A") < err.index("child 2")  # child order
 
 
 def test_multi_segment_malformed_spawns_nothing(
@@ -424,7 +426,7 @@ def test_a_timeout_says_what_it_knows(tmp_path: pathlib.Path) -> None:
 def test_argv_carries_the_model_route(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The picker's route rides as `--model` after the preset, on every /parallel lane too."""
+    """The picker's route rides as `--model` after the preset, on every /parallel child too."""
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "plan", "t", preset="no_review", model="o/m")
     assert captured[-1][1:] == ["plan", "--preset", "no_review", "--model", "o/m", "--", "t"]

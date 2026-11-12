@@ -76,8 +76,8 @@ def test_unknown_keys_are_dropped_never_folded(tmp_path: pathlib.Path) -> None:
     assert m.run_branch == "agent6/r"
 
 
-def test_lane_placement_keeps_rank_and_group_only(tmp_path: pathlib.Path) -> None:
-    """A lane keeps its group reference and drops facts owned by the parent."""
+def test_child_placement_keeps_rank_and_group_only(tmp_path: pathlib.Path) -> None:
+    """A child keeps its group reference and drops facts owned by the parent."""
     _write(
         tmp_path,
         {"placement": {"group": "fan", "rank": 1, "of": 2, "winner": True, "ranked_by": "judge"}},
@@ -167,21 +167,21 @@ def test_write_manifest_bytes_fresh(tmp_path: pathlib.Path) -> None:
     )
 
 
-def test_write_manifest_bytes_stamped_lane(tmp_path: pathlib.Path) -> None:
-    # Byte pin of a fully-stamped lane: fork lineage + merge stamp +
+def test_write_manifest_bytes_stamped_child(tmp_path: pathlib.Path) -> None:
+    # Byte pin of a fully-stamped child: fork lineage + merge stamp +
     # parallel lineage + placement, so every optional nested stamp's serialized
     # shape is frozen, not just the fresh subset.
     from agent6.app import stamps
 
     m = sessions_manifest.SessionManifest(
         agent6_version="0.1.0",
-        session_id="r-lane02",
+        session_id="r-child02",
         mode="run",
         start_ts="2026-07-16T00:00:00.000000+00:00",
-        user_task="lane",
+        user_task="child",
         base_sha="1" * 40,
         base_branch="master",
-        run_branch="agent6/r-lane02",
+        run_branch="agent6/r-child02",
         models=sessions_manifest.ModelsBrief(
             driver=sessions_manifest.ModelBrief(provider="openai", model="gpt-z")
         ),
@@ -195,7 +195,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: pathlib.Path) -> None:
             ts="2026-07-16T01:00:00.000000+00:00",
             tip="4" * 40,
         ),
-        parallel=sessions_manifest.ParallelLineage(group="p-abc", lane=1, parent="p-abc"),
+        parallel=sessions_manifest.ParallelLineage(group="p-abc", number=1, parent="p-abc"),
         placement=sessions_manifest.PlacementStamp(
             rank=1,
             of=3,
@@ -249,8 +249,8 @@ def test_rewriting_an_older_manifest_upgrades_it(tmp_path: pathlib.Path) -> None
     assert on_disk["session_id"] == "r-old"
 
 
-def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: pathlib.Path) -> None:
-    """Both rewrite paths degrade on a manifest they may not rewrite, and the lane reports it."""
+def test_merge_and_child_stamps_survive_a_newer_manifest(tmp_path: pathlib.Path) -> None:
+    """Both rewrite paths degrade on a manifest they may not rewrite, and the child reports it."""
     from agent6.app import merge, parallel_results
     from agent6.sessions import layout as sessions_layout
 
@@ -267,7 +267,7 @@ def test_merge_and_lane_stamps_survive_a_newer_manifest(tmp_path: pathlib.Path) 
     merge.record_merge_in_manifest(layout, merged_into="main", merged_sha="abc123")
     assert json.loads((session_dir / "manifest.json").read_text(encoding="utf-8")) == payload
 
-    err = parallel_results.stamp(session_dir, lane=2)
+    err = parallel_results.stamp(session_dir, number=2)
     assert err is not None and f"version {sessions_manifest.MANIFEST_VERSION + 1}" in err
     assert json.loads((session_dir / "manifest.json").read_text(encoding="utf-8")) == payload
 
@@ -508,7 +508,7 @@ def test_the_stamp_records_the_network_the_commands_join(tmp_path: pathlib.Path)
 
 
 def test_write_manifest_bytes_parent(tmp_path: pathlib.Path) -> None:
-    """The parent golden pins group facts without a lane placement."""
+    """The parent golden pins group facts without a child placement."""
     from agent6.app import stamps
 
     m = sessions_manifest.SessionManifest(

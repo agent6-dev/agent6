@@ -117,7 +117,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         contract: The bounded conversation a `reviewer` session drives; None for every
             other mode.
         opening: `run --parallel`'s spec and task: the run dispatches it in place of its
-            first model call, joins the best-ranked lane and ends; None for a run that
+            first model call, joins the best-ranked child and ends; None for a run that
             opens with the model.
 
     Returns:
@@ -223,9 +223,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         return 2
 
     state = paths.state_dir(repo)
-    # A lane's record goes under the state of the repository that dispatched it, so its
-    # listings read the lane from its first event; its memory and rulings stay with its clone.
-    record = stamps.lane_record_state() or state
+    # A child's record goes under the state of the repository that dispatched it, so its
+    # listings read the child from its first event; its memory and rulings stay with its clone.
+    record = stamps.child_record_state() or state
     bucket = kinds.session_bucket(mode)
     # Same-bucket reuse is the resume or park flow below; another bucket's id is a collision.
     if session_id and (held := id.session_id_bucket(record, session_id)) not in (None, bucket):
@@ -265,7 +265,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
 
     if worktree or stamps.parallel_lineage() is not None:
         cfg = worktree_setup.infer_if_unset(cfg, repo, reporter=reporter, at=base_sha)
-    # A new worktree and a lane's clone hold tracked files only: a gate neither can run refuses.
+    # A new worktree and a child's clone hold tracked files only: a gate neither can run refuses.
     if (worktree or opening is not None) and (
         gate_refusal := worktree_setup.gate_refusal(
             cfg,
@@ -273,7 +273,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             cfg.harness.verify.command
             if review_world is not None
             else worktree_setup.origin_gate(cfg, repo),
-            worktree="a new worktree" if worktree else "a lane's clone",
+            worktree="a new worktree" if worktree else "a child's clone",
             at=base_sha,
         )
     ):
@@ -394,8 +394,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         # Written before the gates below, which park rather than refuse; the rewrite keeps
         # the park, which the execution's start clears.
         parked = stamps.parked_stamp(layout.session_dir)
-        # A lane's config carries the gate its parent resolved, origin and all.
-        lane_gate_source = stamps.lane_gate_source()
+        # A child's config carries the gate its parent resolved, origin and all.
+        child_gate_source = stamps.child_gate_source()
         stamps.write_session_manifest(
             layout,
             session_id=effective_session_id,
@@ -411,10 +411,10 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             gate=(
                 sessions_manifest.GateStamp(
                     command=cfg.harness.verify.command,
-                    source=lane_gate_source,
+                    source=child_gate_source,
                     availability="pending",
                 )
-                if lane_gate_source
+                if child_gate_source
                 else None
             ),
             effective_preset=(preset_stamp[0] if preset_stamp else (preset or cfg.agent6.preset)),
@@ -461,7 +461,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                     hint=(
                         "or run it now in its own worktree, beside the live run:\n"
                         '    agent6 run --worktree "<the same task>"\n'
-                        f"or hand it to the live run as an isolated lane by steering"
+                        f"or hand it to the live run as an isolated child by steering"
                         f" {holder!r} with:\n    /parallel 1 -- <the same task>"
                     ),
                 )
@@ -548,7 +548,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 budget=budget,
                 reporter=reporter,
             )
-            source = lane_gate_source or ("configured" if configured_gate else "inferred")
+            source = child_gate_source or ("configured" if configured_gate else "inferred")
             cfg, _withheld = session_prepare.settle_gate(
                 cfg, layout, source=source, events=events, reporter=reporter
             )

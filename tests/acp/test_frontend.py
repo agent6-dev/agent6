@@ -222,10 +222,10 @@ def test_the_steer_seam_is_inert() -> None:
     steer.reset_stage()
 
 
-def test_parallel_lanes_are_not_spawned_into_a_single_pane() -> None:
+def test_parallel_children_are_not_spawned_into_a_single_pane() -> None:
     """`/parallel` fans out sibling runs.
 
-    An ACP client renders ONE session, so lanes would run invisibly.
+    An ACP client renders ONE session, so children would run invisibly.
     """
     from agent6.config import Config
 

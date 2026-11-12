@@ -846,7 +846,7 @@ def test_settle_reads_each_metered_plan_once_more() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Lanes: a parent counts its running lanes' spend against its caps and charges what they used.
+# Children: a parent counts its running children's spend against its caps and charges their use.
 # ---------------------------------------------------------------------------
 
 
@@ -858,10 +858,10 @@ def _usage(usd: float = 0.0, tokens: int = 0, *readings: tuple[str, budget.PlanU
     return budget.UsageSettlement(usd=usd, usd_partial=False, tokens=tokens, plan_readings=readings)
 
 
-def test_running_lanes_share_what_is_left_and_their_sum_trips_the_cap() -> None:
-    """Lanes share the six dollars left: no lane holds a share, and the sum ends the run.
+def test_running_children_share_what_is_left_and_their_sum_trips_the_cap() -> None:
+    """Children share the six dollars left: no child holds a share, and the sum ends the run.
 
-    A reading replaces the lane's last one and is not yet the run's own spend.
+    A reading replaces the child's last one and is not yet the run's own spend.
     """
     t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     t.record(
@@ -880,44 +880,48 @@ def test_running_lanes_share_what_is_left_and_their_sum_trips_the_cap() -> None:
     t.note_running("a", _usage(usd=3.0))
     assert t.available().usd == pytest.approx(3.0)
     assert t.estimate_usd()[0] == pytest.approx(4.0)
-    assert t.snapshot().usd_running_lanes == pytest.approx(3.0)
+    assert t.snapshot().usd_running_children == pytest.approx(3.0)
     t.check()
     t.note_running("b", _usage(usd=3.5))  # 4 + 3 + 3.5 passes the cap by what was in flight
     assert t.available().usd == 0.0 and t.fraction_remaining() == 0.0
-    with pytest.raises(budget.BudgetExceededError, match=r"\$6\.50 of it in running lanes"):
+    with pytest.raises(budget.BudgetExceededError, match=r"\$6\.50 of it in running children"):
         t.check()
 
 
-def test_running_lanes_count_fallback_tokens_the_same_way() -> None:
+def test_running_children_count_fallback_tokens_the_same_way() -> None:
     t = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=100, max_plan_points=-1)
     t.note_running("a", _usage(tokens=40))
-    assert t.available().tokens == 60 and t.snapshot().tokens_running_lanes == 40
+    assert t.available().tokens == 60 and t.snapshot().tokens_running_children == 40
     assert t.snapshot().unmetered_tokens == 0
     t.note_running("b", _usage(tokens=60))
     with pytest.raises(budget.BudgetExceededError, match="fallback token budget exhausted: 100"):
         t.check()
 
 
-def test_settle_charges_a_lanes_final_usage_once() -> None:
-    """A settled lane's usage becomes the run's own; its running reading goes."""
+def test_settle_charges_a_children_final_usage_once() -> None:
+    """A settled child's usage becomes the run's own; its running reading goes."""
     t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_plan_points=-1)
     t.note_running("a", _usage(usd=2.0, tokens=5))
-    t.settle_lane("a", _usage(usd=7.0, tokens=10))
+    t.settle_child("a", _usage(usd=7.0, tokens=10))
     assert t.estimate_usd()[0] == pytest.approx(7.0)
     snap = t.snapshot()
-    assert (snap.unmetered_tokens, snap.usd_running_lanes, snap.tokens_running_lanes) == (10, 0, 0)
-    assert snap.settled_lanes == frozenset({"a"})
+    assert (snap.unmetered_tokens, snap.usd_running_children, snap.tokens_running_children) == (
+        10,
+        0,
+        0,
+    )
+    assert snap.settled_children == frozenset({"a"})
     assert t.available().usd == pytest.approx(3.0)
-    t.settle_lane("b", _usage(usd=1.0))  # a lane no poll ever read
+    t.settle_child("b", _usage(usd=1.0))  # a child no poll ever read
     assert t.estimate_usd()[0] == pytest.approx(8.0)
     # A duplicate settlement, and a reading that arrives after it, change nothing.
-    t.settle_lane("b", _usage(usd=1.0))
+    t.settle_child("b", _usage(usd=1.0))
     t.note_running("b", _usage(usd=5.0))
     assert t.estimate_usd()[0] == pytest.approx(8.0) and t.available().usd == pytest.approx(2.0)
     t.check()
     # Final usage over the cap trips the breaker for the parent's next call.
     over = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
-    over.settle_lane("a", _usage(usd=12.0))
+    over.settle_child("a", _usage(usd=12.0))
     with pytest.raises(budget.BudgetExceededError, match="USD budget exhausted"):
         over.check()
 
@@ -925,18 +929,18 @@ def test_settle_charges_a_lanes_final_usage_once() -> None:
 def test_unknown_usage_leaves_the_last_reading_counted() -> None:
     t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     t.note_running("a", _usage(usd=4.0))
-    t.settle_lane("a", None)  # the lane's record never came back
-    assert t.snapshot().usd_running_lanes == pytest.approx(4.0)
+    t.settle_child("a", None)  # the child's record never came back
+    assert t.snapshot().usd_running_children == pytest.approx(4.0)
     assert t.available().usd == pytest.approx(6.0) and t.estimate_usd()[0] == 0.0
-    assert "in lanes still running: $4.00" in t.format_summary()
-    t.settle_lane("a", _usage(usd=5.0))  # known at last: charged, no longer running
-    assert t.snapshot().usd_running_lanes == 0.0
+    assert "in children still running: $4.00" in t.format_summary()
+    t.settle_child("a", _usage(usd=5.0))  # known at last: charged, no longer running
+    assert t.snapshot().usd_running_children == 0.0
     assert t.estimate_usd()[0] == pytest.approx(5.0)
-    assert "in lanes still running" not in t.format_summary()
+    assert "in children still running" not in t.format_summary()
 
 
-def test_a_running_lanes_plan_reading_moves_the_plan_ledger() -> None:
-    """A lane's account reading counts while it runs: the parent makes no call of its own."""
+def test_a_running_children_plan_reading_moves_the_plan_ledger() -> None:
+    """A child's account reading counts while it runs: the parent makes no call of its own."""
     t = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=3.0)
     t.record_plan_preflight("chatgpt", _plan(40.0))
     t.note_running("a", _usage(0.0, 0, ("chatgpt", _plan(42.0))))
@@ -948,32 +952,32 @@ def test_a_running_lanes_plan_reading_moves_the_plan_ledger() -> None:
 
 
 def test_sibling_plan_readings_count_the_observed_union_once() -> None:
-    """Two lanes that saw the same account movement charge it once; order and jitter add nothing."""
+    """Two children that saw one account movement charge it once; order and jitter add nothing."""
     t = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=10.0)
     t.record_plan_preflight("chatgpt", _plan(40.0))
-    t.settle_lane("a", _usage(0.0, 0, ("chatgpt", _plan(42.0))))  # +2
-    t.settle_lane("b", _usage(0.0, 0, ("chatgpt", _plan(42.0))))  # the same movement: +0
-    t.settle_lane("c", _usage(0.0, 0, ("chatgpt", _plan(41.0))))  # arrived late, lower: +0
+    t.settle_child("a", _usage(0.0, 0, ("chatgpt", _plan(42.0))))  # +2
+    t.settle_child("b", _usage(0.0, 0, ("chatgpt", _plan(42.0))))  # the same movement: +0
+    t.settle_child("c", _usage(0.0, 0, ("chatgpt", _plan(41.0))))  # arrived late, lower: +0
     assert t.snapshot().plan_observed_points == pytest.approx(2.0)
     # Reset-time jitter within a minute is the same window; a later reset is a new one.
-    t.settle_lane("d", _usage(0.0, 0, ("chatgpt", _plan(43.0, resets_at=2e9 + 30))))  # +1
+    t.settle_child("d", _usage(0.0, 0, ("chatgpt", _plan(43.0, resets_at=2e9 + 30))))  # +1
     assert t.snapshot().plan_observed_points == pytest.approx(3.0)
-    t.settle_lane("e", _usage(0.0, 0, ("chatgpt", _plan(3.0, resets_at=2e9 + 7 * 86400))))  # +3
-    t.settle_lane("f", _usage(0.0, 0, ("claude", _plan(10.0))))  # another provider's baseline
+    t.settle_child("e", _usage(0.0, 0, ("chatgpt", _plan(3.0, resets_at=2e9 + 7 * 86400))))  # +3
+    t.settle_child("f", _usage(0.0, 0, ("claude", _plan(10.0))))  # another provider's baseline
     snap = t.snapshot()
     assert snap.plan_observed_points == pytest.approx(6.0)
     assert set(snap.plans) == {"chatgpt", "claude"}
     assert not t.is_exhausted()
 
 
-def test_credit_balance_drops_seen_through_lanes_are_money_once() -> None:
+def test_credit_balance_drops_seen_through_children_are_money_once() -> None:
     t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     t.record_plan_preflight("chatgpt", _plan(40.0, has_credits=True, credits_balance="$5.00"))
-    t.settle_lane(
+    t.settle_child(
         "a",
         _usage(0.0, 0, ("chatgpt", _plan(41.0, has_credits=True, credits_balance="$3.50"))),
     )
-    t.settle_lane(
+    t.settle_child(
         "b",
         _usage(0.0, 0, ("chatgpt", _plan(41.0, has_credits=True, credits_balance="$3.50"))),
     )

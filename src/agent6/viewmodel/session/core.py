@@ -228,15 +228,17 @@ def _usage(
         usd=row.usd_total,
         usd_partial=bool(row.usd_partial),
         unmetered_tokens=row.tokens_unmetered or 0,
-        usd_running_lanes=row.usd_running_lanes,
-        tokens_running_lanes=row.tokens_running_lanes,
+        usd_running_children=row.usd_running_children,
+        tokens_running_children=row.tokens_running_children,
         plan_observed_points=row.plan_observed_points or 0.0,
         usd_cap=row.usd_cap,
         tokens_fallback_cap=row.tokens_fallback_cap,
         plan_cap=row.plan_cap,
     )
     session = state_types.SessionUsage(
-        settled_lanes=tuple(sorted(set(prior.session.settled_lanes).union(row.settled_lanes))),
+        settled_children=tuple(
+            sorted(set(prior.session.settled_children).union(row.settled_children))
+        ),
         unmetered_tokens=(
             prior.session.unmetered_tokens
             - prior.execution.unmetered_tokens

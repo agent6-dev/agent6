@@ -498,7 +498,7 @@ function newWorkDock(presets, presetDefault, sessions) {
   root.appendChild(advanced);
   root.appendChild(row);
   root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask (a run from a plan needs no task) · Shift+Enter newline · '
-    + '/parallel [SPEC --] TASK fans out lanes (SPEC: count or models; repeat to queue more) · Ctrl-K switches sessions'));
+    + '/parallel [SPEC --] TASK dispatches children (SPEC: count or models; repeat to queue more) · Ctrl-K switches sessions'));
   return root;
 }
 
@@ -542,11 +542,11 @@ function listCard(title, entries, empty, paint) {
   return card;
 }
 
-// The groups whose lanes the operator expanded, kept across the hub's repaints.
+// The groups whose children the operator expanded, kept across the hub's repaints.
 const expandedGroups = new Set();
 
-// One session row; a group's lanes (`r.lanes`, the server's nested rows)
-// fold under it behind a `lanes: N` line, and expand to the same rows indented.
+// One session row; a group's children (`r.children`, the server's nested rows)
+// fold under it behind a `children: N` line, and expand to the same rows indented.
 function taskTitle(parent, taskLine) {
   const [task, continued] = taskLine.split('\n');
   parent.appendChild(el('div', 'title', task));
@@ -586,10 +586,10 @@ function paintSession(r, it, g) {
       it.appendChild(merge);
     }
   }
-  const lanes = r.lanes || [];
-  if (!lanes.length) return;
+  const children = r.children || [];
+  if (!children.length) return;
   const open = expandedGroups.has(r.session_id);
-  const toggle = el('button', 'lanes-toggle', `lanes: ${lanes.length} · ${open ? 'hide' : 'show'}`);
+  const toggle = el('button', 'children-toggle', `children: ${children.length} · ${open ? 'hide' : 'show'}`);
   toggle.onclick = (e) => {
     e.stopPropagation();
     if (open) expandedGroups.delete(r.session_id); else expandedGroups.add(r.session_id);
@@ -602,16 +602,16 @@ function paintSession(r, it, g) {
   toggle.onkeydown = (e) => e.stopPropagation();
   g.appendChild(toggle);
   if (!open) return;
-  const nested = el('div', 'list lanes');
-  for (const lane of lanes) {
+  const nested = el('div', 'list children');
+  for (const child of children) {
     const li = el('div', 'item');
     const lg = el('div', 'grow');
     li.appendChild(lg);
-    paintSession(lane, li, lg);
-    // A lane row is a button like every other row: role, tab stop, name.
+    paintSession(child, li, lg);
+    // A child row is a button like every other row: role, tab stop, name.
     actionable(li, (e) => {
       if (e && e.stopPropagation) e.stopPropagation();
-      location.hash = '#/session/' + encodeURIComponent(lane.session_id);
+      location.hash = '#/session/' + encodeURIComponent(child.session_id);
     }, [...lg.children].map(c => c.textContent).join(' · ').slice(0, 120));
     nested.appendChild(li);
   }
@@ -707,7 +707,7 @@ async function renderHub(focus, gen) {
   let statuses = seedStatuses(data.sessions);
   view.appendChild(lists);
   view.appendChild(machinesTab ? createMachineDock() : newWorkDock(data.presets, data.preset_default_label, data.sessions));
-  // Without this the hub paints once, so a lane that finished, failed or
+  // Without this the hub paints once, so a child that finished, failed or
   // crashed keeps its "running" pill until a manual reload; clicking the
   // already-active tab does not re-enter route(). Refresh the lists only: a
   // whole-view repaint would discard text typed into the dock's composer.
@@ -946,7 +946,7 @@ function highlightCmd(text) {
 const STEER_COMMANDS = [
   ['/pin', 'pin an instruction that survives compaction: /pin <text>'],
   ['/compact', 'compact the context now; /compact <focus> steers the summary'],
-  ['/parallel', 'dispatch lanes: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)'],
+  ['/parallel', 'dispatch children: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)'],
   ['/restate', 'restate the conversation since your last message (local, no model call)'],
   ['/review', 'review changes in this session: /review [TARGET] (a ref or A..B or A...B)'],
   ['/undo', 'fork back to before your last message (the text returns to edit and resend)'],
@@ -1116,7 +1116,7 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty, in
 }
 
 // Ctrl-K anywhere: switch to another session. The hub's rows, newest activity first,
-// lanes included, narrowed by what is typed against the id, mode, status, task,
+// children included, narrowed by what is typed against the id, mode, status, task,
 // branch and worktree. A row names where the run works and the ref holding its
 // commits; Enter opens the highlighted one, and Review code and Merge act as the
 // Sessions page's row buttons do. A draft typed in a composer waits for the way back.
@@ -1126,7 +1126,7 @@ async function openSwitcher() {
   let data;
   try { data = await getJSON('/api/hub'); } catch (e) { toast(e.message, true); return; }
   const rows = [];
-  const flatten = (r) => { rows.push(r); for (const lane of (r.lanes || [])) flatten(lane); };
+  const flatten = (r) => { rows.push(r); for (const child of (r.children || [])) flatten(child); };
   for (const r of (data.sessions || [])) flatten(r);
   openPicker({
     title: 'switch session',

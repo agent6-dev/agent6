@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Mark the test process as a lane: write a launch file and point `AGENT6_LANE` at it."""
+"""Mark the test process as a child: write a launch file and point `AGENT6_LAUNCH` at it."""
 
 from __future__ import annotations
 
@@ -15,10 +15,10 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import lane_launch
+from agent6.app import child_launch
 from agent6.sessions import manifest
 
-FINISH: tuple[str, dict[str, Any]] = ("finish_session", {"summary": "Local lane completed."})
+FINISH: tuple[str, dict[str, Any]] = ("finish_session", {"summary": "Local child completed."})
 
 
 @contextlib.contextmanager
@@ -106,20 +106,20 @@ def scripted_provider(
         thread.join(timeout=5)
 
 
-def mark_lane(
+def mark_child(
     monkeypatch: pytest.MonkeyPatch,
     where: pathlib.Path,
     *,
     config: pathlib.Path | None = None,
     parent: str = "co",
     group: str = "fan",
-    lane: int = 1,
+    number: int = 1,
     gate_source: manifest.GateSource = "",
     notes: tuple[str, ...] = (),
     operator_task: str | None = None,
     record_state: pathlib.Path | None = None,
 ) -> pathlib.Path:
-    """Write a lane launch file under `where` and set `AGENT6_LANE` and `AGENT6_CHILD`.
+    """Write a child launch file under `where` and set `AGENT6_LAUNCH` and `AGENT6_CHILD`.
 
     Args:
         monkeypatch: The test's monkeypatch.
@@ -127,31 +127,31 @@ def mark_lane(
         config: The snapshot the launch names; a placeholder path when the test loads none.
         parent: The parent session id.
         group: The group id.
-        lane: The lane number.
+        number: The child number.
         gate_source: The gate's origin.
         notes: The snapshot's loss notes.
         operator_task: The operator's task before composition.
-        record_state: Where the lane's record goes; the lane's own state when None.
+        record_state: Where the child's record goes; the child's own state when None.
 
     Returns:
         The launch file's path.
     """
-    path = lane_launch.write(
+    path = child_launch.write(
         where,
-        lane_launch.LaneLaunch(
-            worktree=where / f"lane-{lane}",
-            record_state=record_state or paths.state_dir(where / f"lane-{lane}"),
-            session_id=f"{group}-l{lane}",
+        child_launch.ChildLaunch(
+            worktree=where / f"child-{number}",
+            record_state=record_state or paths.state_dir(where / f"child-{number}"),
+            session_id=f"{group}-l{number}",
             task="task",
-            config=config if config is not None else where / f"lane-{lane}-config.toml",
+            config=config if config is not None else where / f"child-{number}-config.toml",
             notes=notes,
             parent=parent,
             group=group,
-            lane=lane,
+            number=number,
             gate_source=gate_source,
             operator_task=operator_task,
         ),
     )
-    monkeypatch.setenv(lane_launch.ENV, str(path))
+    monkeypatch.setenv(child_launch.ENV, str(path))
     monkeypatch.setenv("AGENT6_CHILD", "1")
     return path

@@ -195,8 +195,8 @@ def test_conversation_payload_folds_the_event_log(tmp_path: pathlib.Path) -> Non
 
 
 def test_run_snapshot_embeds_the_compare_outcome(tmp_path: pathlib.Path) -> None:
-    """A lane snapshot reads its rationale and cost from the parent's record."""
-    d = _run(tmp_path, "lane1", [{"type": "session.start", "user_task": "x"}])
+    """A child snapshot reads its rationale and cost from the parent's record."""
+    d = _run(tmp_path, "child1", [{"type": "session.start", "user_task": "x"}])
     (d / "manifest.json").write_text(
         json.dumps(
             {"placement": {"group": "fan", "rank": 1, "of": 2, "winner": True,
@@ -210,7 +210,7 @@ def test_run_snapshot_embeds_the_compare_outcome(tmp_path: pathlib.Path) -> None
             {
                 "comparison": {
                     "group": "fan",
-                    "ranking": ["lane1", "lane2"],
+                    "ranking": ["child1", "child2"],
                     "ranked_by": "judge",
                     "rationale": "cleanest diff",
                     "judge_cost_usd": 0.01,
@@ -226,7 +226,7 @@ def test_run_snapshot_embeds_the_compare_outcome(tmp_path: pathlib.Path) -> None
     assert snap["placement"]["winner"] is True and snap["placement"]["rank"] == 1
     assert "rationale" not in snap["placement"]
     assert "judge_cost_usd" not in snap["placement"]
-    # A run with no compare block carries no `compare` key (non-lane runs).
+    # A run with no compare block carries no `compare` key (non-child runs).
     plain = _run(tmp_path, "plain", [{"type": "session.start", "user_task": "y"}])
     assert "placement" not in session_snapshot(plain)
 
@@ -283,7 +283,7 @@ def test_plan_snapshot_carries_the_plan_md(tmp_path: pathlib.Path) -> None:
 
 
 def test_hub_marks_the_group_winner(tmp_path: pathlib.Path) -> None:
-    d = _run(tmp_path, "lane-win", [{"type": "session.start", "mode": "run", "user_task": "t"}])
+    d = _run(tmp_path, "child-win", [{"type": "session.start", "mode": "run", "user_task": "t"}])
     (d / "manifest.json").write_text(
         json.dumps({"placement": {"rank": 1, "of": 2, "winner": True}}), encoding="utf-8"
     )
@@ -668,7 +668,7 @@ def test_config_suggestions_parallel_models_pseudo_key(
 def test_parallel_models_suggestions_span_every_provider(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A lane names its provider, so a sibling provider's catalog is offered too.
+    # A child names its provider, so a sibling provider's catalog is offered too.
     cfg_home = paths.global_config_dir()
     cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
@@ -1041,14 +1041,14 @@ reason = "routed"
     assert "sp.usd ||" not in line, f"a clean $0 is falsy and drops the figure: {line!r}"
 
 
-def test_hub_folds_a_groups_lanes_under_its_row(tmp_path: pathlib.Path) -> None:
-    """The hub's session rows nest a group's lanes under it, as `sessions list --json` prints."""
+def test_hub_folds_a_groups_children_under_its_row(tmp_path: pathlib.Path) -> None:
+    """The hub's session rows nest a group's children under it, as `sessions list --json` prints."""
     start: dict[str, object] = {"type": "session.start", "mode": "run", "user_task": "t"}
     end: dict[str, object] = {"type": "session.stop", "verification": "passed"}
     fan = _run(tmp_path, "fan", [start, end])
     (fan / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
-    lane = _run(tmp_path, "fan-l1", [start, end])
-    (lane / "manifest.json").write_text(
+    child = _run(tmp_path, "fan-l1", [start, end])
+    (child / "manifest.json").write_text(
         json.dumps(
             {
                 "mode": "run",
@@ -1056,16 +1056,16 @@ def test_hub_folds_a_groups_lanes_under_its_row(tmp_path: pathlib.Path) -> None:
                     "driver": {"provider": "openrouter", "model": "moonshotai/kimi-k2.6"},
                     "driver_from_flag": True,
                 },
-                "parallel": {"group": "fan", "lane": 1, "parent": "fan"},
+                "parallel": {"group": "fan", "number": 1, "parent": "fan"},
             }
         ),
         encoding="utf-8",
     )
     (row,) = model.hub_payload(tmp_path)["sessions"]
     assert row["session_id"] == "fan"
-    assert [ln["session_id"] for ln in row["lanes"]] == ["fan-l1"]
-    assert row["lanes"][0]["model"] == "openrouter/moonshotai/kimi-k2.6"
-    assert row["lanes"][0]["model_from_flag"] is True
+    assert [ln["session_id"] for ln in row["children"]] == ["fan-l1"]
+    assert row["children"][0]["model"] == "openrouter/moonshotai/kimi-k2.6"
+    assert row["children"][0]["model_from_flag"] is True
 
 
 def test_hub_continuation_keeps_original_task(tmp_path: pathlib.Path) -> None:

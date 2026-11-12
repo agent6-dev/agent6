@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Import a completed lane, carry its memory back, and stamp a ranking's outcome."""
+"""Import a completed child, carry its memory back, and stamp a ranking's outcome."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ import pathlib
 import threading
 from collections.abc import Sequence
 
-from agent6 import lane_records
+from agent6 import child_records
+from agent6.app import child_wait, finalize, stamps
 from agent6.app import compare as app_compare
-from agent6.app import finalize, lane_watch, stamps
 from agent6.app import reporter as app_reporter
 from agent6.context import memory
 from agent6.harness import child_repo, judge
@@ -20,11 +20,11 @@ from agent6.vcs.git import read as git_read
 
 
 def imported_branch_note(origin: pathlib.Path, branch: str) -> str:
-    """Return the branch a successful import landed, or say the lane made no commit.
+    """Return the branch a successful import landed, or say the child made no commit.
 
     Args:
-        origin: The repository the lane was imported into.
-        branch: The lane's branch.
+        origin: The repository the child was imported into.
+        branch: The child's branch.
 
     Returns:
         "branch imported as <branch>", or "no branch (the run made no commit)" when the
@@ -54,7 +54,7 @@ def stamp(session_dir: pathlib.Path, **updates: object) -> str | None:
     try:
         stamps.write_manifest(mpath, m.model_copy(update=updates))
     except (OSError, sessions_manifest.ManifestError) as exc:
-        # The import stands; the remaining lanes keep importing.
+        # The import stands; the remaining children keep importing.
         return f"could not write {mpath}: {exc}"
     return None
 
@@ -69,13 +69,13 @@ def stamp_compare_outcomes(
     group: str,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
-    """Stamp the group on its parent and each lane's placement on the lane.
+    """Stamp the group on its parent and each child's placement on the child.
 
     Args:
-        candidates: The ranked lanes.
+        candidates: The ranked children.
         outcome: The ranking.
-        winner: The lane the ranking crowns (`ranked_winner`), or "".
-        record_state: The state dir the run's and its lanes' records live under.
+        winner: The child the ranking crowns (`ranked_winner`), or "".
+        record_state: The state dir the run's and its children's records live under.
         parent_dir: The manifest owner for the group's ranking and judge spend.
         group: The comparison group id.
         reporter: Receives a note per stamp failure; the others still land.
@@ -96,23 +96,23 @@ def stamp_compare_outcomes(
         placement = sessions_manifest.PlacementStamp(
             rank=rank_pos, of=of, winner=session_id == winner, group=group
         )
-        # A judged group ranks run lanes.
-        err = stamp(lane_watch.lane_dir(record_state, session_id, mode="run"), placement=placement)
+        # A judged group ranks run children.
+        err = stamp(child_wait.child_dir(record_state, session_id, mode="run"), placement=placement)
         if err is not None:
-            reporter.note(f"lane [{session_id}]: imported, but the placement stamp failed: {err}")
+            reporter.note(f"child [{session_id}]: imported, but the placement stamp failed: {err}")
 
 
 def ranked_winner(
     candidates: list[judge.CandidateBrief], ranking: Sequence[str], *, harness_gate: bool
 ) -> str:
-    """Return the lane a ranking crowns, or "" when it crowns none.
+    """Return the child a ranking crowns, or "" when it crowns none.
 
     The judge's order is model output: rank 1 wins unless a gate ran red and none passed, and
-    only a verified lane wins when any verified. An unverified finish counts as red only under
+    only a verified child wins when any verified. An unverified finish counts as red only under
     a harness gate, the rule one run's exit code follows.
 
     Args:
-        candidates: The ranked lanes.
+        candidates: The ranked children.
         ranking: Their ids, best first.
         harness_gate: Whether the harness runs the gate (`harness.verify.when` is not `never`).
 
@@ -130,34 +130,34 @@ def ranked_winner(
 
 
 def carry_back(
-    lane_state: pathlib.Path,
+    child_state: pathlib.Path,
     origin_state: pathlib.Path,
     dest: pathlib.Path,
     *,
-    lane: int,
+    number: int,
     reporter: app_reporter.Reporter,
 ) -> None:
-    """Carry a lane's recorded decisions and memory into the origin's store.
+    """Carry a child's recorded decisions and memory into the origin's store.
 
-    The lane's state dir is torn down after import, so this runs first; files that
+    The child's state dir is torn down after import, so this runs first; files that
     changed in both stores are held back under the imported dir.
 
     Args:
-        lane_state: The lane's state dir.
+        child_state: The child's state dir.
         origin_state: The origin's state dir.
-        dest: The lane's imported session dir.
-        lane: The lane number the note names.
+        dest: The child's imported session dir.
+        number: The child number the note names.
         reporter: Receives the note.
     """
-    finalize.print_lane_config_notes(dest, reporter=reporter, prefix=f"lane {lane}: ")
-    carried, known = memory.merge_decisions(lane_state, origin_state)
+    finalize.print_child_config_notes(dest, reporter=reporter, prefix=f"child {number}: ")
+    carried, known = memory.merge_decisions(child_state, origin_state)
     if carried or known:
         already = f", {known} already recorded" if known else ""
-        reporter.note(f"lane {lane}: {carried} recorded decision(s) carried over{already}")
+        reporter.note(f"child {number}: {carried} recorded decision(s) carried over{already}")
     held_dir = dest / "memory-held"
-    merge = memory.merge_memory(lane_state, origin_state, held_dir=held_dir)
+    merge = memory.merge_memory(child_state, origin_state, held_dir=held_dir)
     used, read = memory.merge_use(
-        lane_state, origin_state, written=(*merge.carried, *merge.updated)
+        child_state, origin_state, written=(*merge.carried, *merge.updated)
     )
     parts = [
         f"{len(names)} {word}"
@@ -176,21 +176,21 @@ def carry_back(
     if used or read:
         parts.append(f"use record carried for {max(used, read)}")
     if parts:
-        reporter.note(f"lane {lane}: memory {', '.join(parts)}")
+        reporter.note(f"child {number}: memory {', '.join(parts)}")
 
 
-def import_lane(
-    res: lane_records.LaneResult, origin: pathlib.Path, lock: threading.Lock | None
-) -> lane_records.Imported:
-    """Land a finished lane's work in the origin; its record is there from its first event.
+def import_child(
+    res: child_records.ChildResult, origin: pathlib.Path, lock: threading.Lock | None
+) -> child_records.Imported:
+    """Land a finished child's work in the origin; its record is there from its first event.
 
     Args:
-        res: The lane's result.
+        res: The child's result.
         origin: The repository.
         lock: Serializes the import across a group, when one is shared.
 
     Returns:
-        The lane's dir and the ref the work landed in.
+        The child's dir and the ref the work landed in.
 
     Raises:
         ChildRepoError: The import failed; nothing moved.

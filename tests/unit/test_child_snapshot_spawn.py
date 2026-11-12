@@ -1,4 +1,4 @@
-"""The real detached launcher carries lane snapshots and their diagnostic metadata."""
+"""The real detached launcher carries child snapshots and their diagnostic metadata."""
 
 from __future__ import annotations
 
@@ -10,23 +10,23 @@ from typing import Any
 
 import pytest
 
-from agent6 import kinds, lane_records, paths
-from agent6.app import lane_watch, lanes, stop
+from agent6 import child_records, kinds, paths
+from agent6.app import child_wait, children, stop
 from agent6.config import Config, RoleModel
 from agent6.sessions import manifest, process
 from agent6.ui.cli import parallel
 from agent6.viewmodel.session import log as session_log
-from tests import lane_env
+from tests import launch_env
 
 
 @pytest.fixture
 def local_provider() -> Iterator[tuple[str, list[dict[str, Any]]]]:
     """Answer a real child's model call with finish_session, without a paid provider."""
-    with lane_env.scripted_provider() as served:
+    with launch_env.scripted_provider() as served:
         yield served
 
 
-def test_detached_lane_loads_snapshot_and_records_notes(
+def test_detached_child_loads_snapshot_and_records_notes(
     short_repo: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -35,7 +35,7 @@ def test_detached_lane_loads_snapshot_and_records_notes(
     """Dropping either snapshot marker at the launcher changes the child's durable facts."""
     monkeypatch.setenv("AGENT6_ALLOW_ROOT", "1")
     subprocess.run(["git", "init", "-q", "-b", "main", str(short_repo)], check=True)
-    (short_repo / "README.md").write_text("Local lane smoke.\n")
+    (short_repo / "README.md").write_text("Local child smoke.\n")
     subprocess.run(["git", "-C", str(short_repo), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(short_repo), "commit", "-q", "-m", "init"], check=True)
     global_path = paths.global_config_path()
@@ -61,16 +61,16 @@ def test_detached_lane_loads_snapshot_and_records_notes(
             )
         }
     )
-    spec = lane_records.LaneSpec(
-        lane=1,
+    spec = child_records.ChildSpec(
+        number=1,
         session_id="detached-l1",
-        worktree=tmp_path / "lane-1",
+        worktree=tmp_path / "child-1",
         settings=kinds.ModelSettings(kinds.ModelRoute("p", "local-reasoning")),
     )
-    # The lane's record is in the dispatching repository's state from its first event.
+    # The child's record is in the dispatching repository's state from its first event.
     session_dir = paths.state_dir(short_repo) / "sessions" / "runs" / spec.session_id
     try:
-        result = lanes.bridge_spawner(
+        result = children.bridge_spawner(
             spec,
             "Finish immediately without edits.",
             cfg=cfg,
@@ -82,13 +82,13 @@ def test_detached_lane_loads_snapshot_and_records_notes(
             max_usd=None,
             group_id="detached",
             parent="detached",
-            runtime=parallel.lane_runtime(),
+            runtime=parallel.child_runtime(),
         )
         assert result.ok, result.error
         deadline = time.monotonic() + 30
-        assert lane_watch.await_lane(
+        assert child_wait.await_child(
             result, poll_interval_s=0.05, should_stop=lambda: time.monotonic() >= deadline
-        ), "detached lane did not end before the deadline"
+        ), "detached child did not end before the deadline"
         log = session_dir / "logs.jsonl"
         assert session_log.scan_session_log(log).stop_reason == "finish_session", log.read_text()
         record = manifest.read_manifest(session_dir)

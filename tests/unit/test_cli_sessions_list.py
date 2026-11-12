@@ -49,7 +49,7 @@ def test_runs_list_marks_the_group_winner(
     assert sessions_cmds._cmd_list() == 0
     out = capsys.readouterr().out
     assert "fan-l2 ★" in out  # the winner id carries the ★
-    assert "fan-l1 ★" not in out and "solo ★" not in out  # losers / non-lanes do not
+    assert "fan-l1 ★" not in out and "solo ★" not in out  # losers / non-children do not
 
 
 def test_runs_list_json_carries_the_row_facts(
@@ -99,8 +99,8 @@ def test_runs_list_json_carries_the_row_facts(
         "task",
         "task_line",
         "continued_task",
-        "lanes",
-        "lane",
+        "children",
+        "number",
         "parent",
         "worktree",
         "branch",
@@ -611,31 +611,31 @@ def test_the_json_row_carries_the_journal_task(
 
 
 def _group(runs: pathlib.Path) -> None:
-    """A `run --parallel` group as it lands: the parent's record and two lanes naming it."""
+    """A `run --parallel` group as it lands: the parent's record and two children naming it."""
     _run(runs, "fan")
     (runs / "fan" / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
-    for lane in (1, 2):
-        _run(runs, f"fan-l{lane}", winner=lane == 2)
-        (runs / f"fan-l{lane}" / "manifest.json").write_text(
+    for child in (1, 2):
+        _run(runs, f"fan-l{child}", winner=child == 2)
+        (runs / f"fan-l{child}" / "manifest.json").write_text(
             json.dumps(
                 {
                     "mode": "run",
                     "models": {
-                        "driver": {"provider": "openai", "model": f"lane-{lane}"},
+                        "driver": {"provider": "openai", "model": f"child-{child}"},
                         "driver_from_flag": True,
                     },
-                    "parallel": {"group": "fan", "lane": lane, "parent": "fan"},
-                    "placement": {"rank": 3 - lane, "of": 2, "winner": lane == 2},
+                    "parallel": {"group": "fan", "number": child, "parent": "fan"},
+                    "placement": {"rank": 3 - child, "of": 2, "winner": child == 2},
                 }
             ),
             encoding="utf-8",
         )
 
 
-def test_runs_list_folds_a_groups_lanes_under_it(
+def test_runs_list_folds_a_groups_children_under_it(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A group is one row with its lane count; `--lanes` indents the lanes under it.
+    """A group is one row with its child count; `--children` indents the children under it.
 
     The JSON row nests them always.
     """
@@ -647,18 +647,18 @@ def test_runs_list_folds_a_groups_lanes_under_it(
 
     assert sessions_cmds._cmd_list() == 0
     out = capsys.readouterr().out
-    assert "fan (2 lanes)" in out and "fan-l1" not in out
-    assert sessions_cmds._cmd_list(lanes=True) == 0
+    assert "fan (2 children)" in out and "fan-l1" not in out
+    assert sessions_cmds._cmd_list(children=True) == 0
     lines = capsys.readouterr().out.splitlines()
-    assert "fan " in lines[1] and "(2 lanes)" not in lines[1]
+    assert "fan " in lines[1] and "(2 children)" not in lines[1]
     assert "└ fan-l1" in lines[2] and "└ fan-l2 ★" in lines[3]
     assert sessions_cmds._cmd_list(as_json=True) == 0
     (row,) = json.loads(capsys.readouterr().out)
     assert row["session_id"] == "fan"
-    assert [ln["session_id"] for ln in row["lanes"]] == ["fan-l1", "fan-l2"]
-    assert row["lanes"][1]["winner"] is True
-    assert [lane["model"] for lane in row["lanes"]] == ["openai/lane-1", "openai/lane-2"]
-    assert all(lane["model_from_flag"] is True for lane in row["lanes"])
+    assert [ln["session_id"] for ln in row["children"]] == ["fan-l1", "fan-l2"]
+    assert row["children"][1]["winner"] is True
+    assert [child["model"] for child in row["children"]] == ["openai/child-1", "openai/child-2"]
+    assert all(child["model_from_flag"] is True for child in row["children"])
 
 
 def test_a_folded_group_shows_its_latest_activity(
@@ -680,8 +680,8 @@ def test_a_folded_group_shows_its_latest_activity(
     old, mid, new = 1_700_000_000, 1_700_003_600, 1_700_007_200
     os.utime(runs / "fan" / "logs.jsonl", (old, old))
     os.utime(runs / "solo" / "logs.jsonl", (mid, mid))
-    for lane in (1, 2):
-        os.utime(runs / f"fan-l{lane}" / "logs.jsonl", (new, new))
+    for child in (1, 2):
+        os.utime(runs / f"fan-l{child}" / "logs.jsonl", (new, new))
 
     assert sessions_cmds._cmd_list(as_json=True) == 0
     rows = json.loads(capsys.readouterr().out)
@@ -691,7 +691,7 @@ def test_a_folded_group_shows_its_latest_activity(
     lines = capsys.readouterr().out.splitlines()
     from agent6.viewmodel import format
 
-    assert lines[1].startswith(format.format_when(new)) and "fan (2 lanes)" in lines[1]
+    assert lines[1].startswith(format.format_when(new)) and "fan (2 children)" in lines[1]
 
 
 def test_show_names_no_commit_for_a_fork_sitting_on_its_base(

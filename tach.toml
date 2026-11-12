@@ -19,7 +19,7 @@ depends_on = []
 # importing agent6.ui: the run/resume lifecycle and the parallel dispatch and
 # candidate-ranking core. The front-end injects the
 # presentation, process-spawn, and session-dir bridge callables it needs
-# (see app/__init__.py: SessionFrontend, LaneRuntime).
+# (see app/__init__.py: SessionFrontend, ChildRuntime).
 # machine.check shares bundle, config and jail-PATH checks with create and the CLI.
 # execution drains review_actions through sessions.ipc at the worker steer boundary.
 # run and resume share session_runtime; execution, session_runtime and role_providers
@@ -32,7 +32,7 @@ depends_on = [
   "agent6.child_env",
   "agent6.config",
   "agent6.config.io",
-  "agent6.config.lane_snapshot",
+  "agent6.config.child_snapshot",
   "agent6.config.layer",
   "agent6.config.layer_data",
   "agent6.config.secret_store",
@@ -46,7 +46,7 @@ depends_on = [
   "agent6.graph.storage",
   "agent6.harness",
   "agent6.kinds",
-  "agent6.lane_records",
+  "agent6.child_records",
   "agent6.machine",
   "agent6.machine.journal",
   "agent6.media",
@@ -69,7 +69,7 @@ depends_on = [
   "agent6.sessions.id",
   "agent6.sessions.ipc",
   "agent6.sessions.journal",
-  "agent6.sessions.lane_dispatch",
+  "agent6.sessions.child_dispatch",
   "agent6.sessions.layout",
   "agent6.sessions.lineage",
   "agent6.sessions.lock",
@@ -192,7 +192,7 @@ depends_on = [
   "agent6.graph.models",
   "agent6.graph.order",  # the one walk order the frontier and list_tasks share
   "agent6.kinds",
-  "agent6.lane_records",
+  "agent6.child_records",
   "agent6.media",
   "agent6.path_safety",
   "agent6.paths",
@@ -209,10 +209,10 @@ depends_on = [
   "agent6.sessions.event_log",
   # the start-family emitter stamps worker.pid before the event is readable
   "agent6.sessions.ipc",
-  # child_repo lands a finished lane's session dir in the ORIGIN state dir; the
+  # child_repo lands a finished child's session dir in the ORIGIN state dir; the
   # bucket layout has one owner rather than a second spelling here.
   "agent6.sessions.journal",
-  "agent6.sessions.lane_dispatch",
+  "agent6.sessions.child_dispatch",
   "agent6.sessions.layout",
   "agent6.sessions.lineage",
   "agent6.sessions.objects",
@@ -321,7 +321,7 @@ depends_on = ["agent6.app", "agent6.sandbox", "agent6.sessions.event_log", "agen
 # resume). Consumed by the CLI, the TUI, and the web server. Pure stdlib leaf.
 path = "agent6.ui.spawn"
 # The escapee sweep must not mistake a deliberately detached child (a `/btw`
-# ask, a `/parallel` lane) for a jailed command's escapee and kill it.
+# ask, a `/parallel` child) for a jailed command's escapee and kill it.
 # The one new-work spawn every hub makes: it parses the /parallel directive,
 # validates its models, refuses a busy checkout, and locates the new session
 # dir among the listing's.
@@ -491,7 +491,7 @@ depends_on = [
   "agent6.sessions.event_log",
   "agent6.sessions.ipc",
   "agent6.sessions.journal",
-  "agent6.sessions.lane_dispatch",
+  "agent6.sessions.child_dispatch",
   "agent6.sessions.layout",
   "agent6.sessions.manifest",
   "agent6.sessions.objects",
@@ -727,7 +727,7 @@ path = "agent6.config.io"
 depends_on = ["agent6.config.validation", "agent6.errors", "agent6.portable"]
 
 [[modules]]
-path = "agent6.config.lane_snapshot"
+path = "agent6.config.child_snapshot"
 depends_on = ["agent6.config.harness_config", "agent6.config.layer", "agent6.config.layer_data", "agent6.config.layer_presets", "agent6.config.model", "agent6.config.validation", "agent6.kinds"]
 
 [[modules]]
@@ -766,7 +766,7 @@ depends_on = ["agent6.config", "agent6.config.layer", "agent6.config.secret_stor
 
 [[modules]]
 # The values an open-text config leaf can take (a provider's model ids, the
-# /parallel lane ids): one owner behind every editor's picker, the web suggest
+# /parallel child ids): one owner behind every editor's picker, the web suggest
 # route, and TAB completion.
 path = "agent6.models.choices"
 # sessions.manifest: a resume row names the preset and model a run replays.
@@ -797,7 +797,7 @@ path = "agent6.kinds"
 depends_on = ["agent6.review_records"]
 
 [[modules]]
-path = "agent6.lane_records"
+path = "agent6.child_records"
 depends_on = ["agent6.budget", "agent6.kinds"]
 
 [[modules]]
@@ -899,8 +899,8 @@ depends_on = [
 ]
 
 [[modules]]
-path = "agent6.sessions.lane_dispatch"
-depends_on = ["agent6.lane_records", "agent6.portable"]
+path = "agent6.sessions.child_dispatch"
+depends_on = ["agent6.child_records", "agent6.portable"]
 
 [[modules]]
 path = "agent6.sessions.layout"

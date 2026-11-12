@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Rank the candidate lanes of a parallel run.
+"""Rank the candidate children of a parallel run.
 
-One provider call ranks the lanes (same task, independent diffs) best first with a rationale.
+One provider call ranks the children (same task, independent diffs) best first with a rationale.
 A compare needs one authoritative order, so a malformed reply is retried once and the second
 failure raises `JudgeError`; `mechanical_ranking` is the network-free fallback.
 """
@@ -24,7 +24,7 @@ class JudgeError(Exception):
 
 
 class CandidateBrief(pydantic.BaseModel):
-    """One candidate lane run shown to the judge."""
+    """One candidate child run shown to the judge."""
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
@@ -88,7 +88,7 @@ def compare(
     Args:
         provider: The judge's provider.
         model: The judge model, named in errors.
-        candidates: The lanes to rank.
+        candidates: The children to rank.
         max_tokens: The output cap of the call.
 
     Returns:

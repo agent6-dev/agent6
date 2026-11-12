@@ -54,17 +54,17 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             " stop_reason, last_activity, group_last_activity, when,"
             " cost_usd, usd_partial, plan_observed_points,"
             " plan_cap, usage, model, model_from_flag, id_cell, unmerged, verification,"
-            " winner, lane,"
-            " parent, worktree, open_findings, merge_note, and nested lanes."
+            " winner, child,"
+            " parent, worktree, open_findings, merge_note, and nested children."
         ),
     )
     sessions_list.add_argument(
-        "--lanes",
-        dest="list_lanes",
+        "--children",
+        dest="list_children",
         action="store_true",
         help=(
-            "List each group's lanes under its row. Default: show only the count. JSON always"
-            " includes the nested lanes."
+            "List each group's children under its row. Default: show only the count. JSON always"
+            " includes the nested children."
         ),
     )
 
@@ -162,7 +162,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         help=(
             "Rank two or more finished sessions: the [harness.parallel].judges rank their"
             " changes, and with no ranking from a judge the order is verification result, then"
-            " cost. The id of a run that ranked its lanes prints its saved ranking. Nothing is"
+            " cost. The id of a run that ranked its children prints its saved ranking. Nothing is"
             " merged."
         ),
     )
@@ -181,7 +181,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         metavar="SESSION_ID",
         help=(
             "Two or more session ids or unambiguous prefixes. Or give one group id to"
-            " compare its lanes."
+            " compare its children."
         ),
     )
     sessions_compare_ids.completer = completers._complete_session_ids  # type: ignore[attr-defined]
@@ -289,7 +289,7 @@ def _add_prune_parser(sessions_sub: argparse._SubParsersAction[argparse.Argument
         "prune",
         help=(
             "Clean up merged sessions' git data: agent6/* branches and internal commit references"
-            " whose work their target holds, lane clones whose commits are present, and the"
+            " whose work their target holds, child clones whose commits are present, and the"
             " worktrees of sessions that are merged or hold no work. A session whose base branch"
             " already holds its content is recorded as merged first. Unstarted forks stay; kept"
             " clones are reported with their paths and reasons. With --history --older-than DAYS,"

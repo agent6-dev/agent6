@@ -9,9 +9,9 @@
 
 A message is a directive only when it starts with the exact token.
 A whitespace-delimited `/parallel` token starts each segment.
-A segment's spec is a positive lane count or a comma-separated list of
+A segment's spec is a positive child count or a comma-separated list of
 `[provider/]model` entries, followed by a whitespace-delimited `--` token.
-Without `--`, the whole segment is task text for one default lane.
+Without `--`, the whole segment is task text for one default child.
 Task text keeps its internal whitespace and newlines, including later `--` tokens.
 Pure stdlib parsing with no agent6 imports: a leaf both layers sit above.
 """
@@ -27,7 +27,7 @@ _SPEC_SEPARATOR = re.compile(r"(?:\A|(?<=\s))--(?=\s|\Z)")
 
 
 class DirectiveError(ValueError):
-    """A directive or spec is malformed: a bare token, a missing task, a bad lane count."""
+    """A directive or spec is malformed: a bare token, a missing task, a bad child count."""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -35,7 +35,7 @@ class Segment:
     """One parsed `/parallel` task.
 
     Attributes:
-        spec: The lane spec; "" is one default lane.
+        spec: The child spec; "" is one default child.
         task: The task text, internal whitespace and newlines preserved.
     """
 
@@ -44,17 +44,17 @@ class Segment:
 
 
 def parse_spec(spec: str, *, limit: int) -> list[str | None]:
-    """Parse a lane spec into one entry per lane, the grammar the directive and the CLI share.
+    """Parse a child spec into one entry per child, the grammar the directive and the CLI share.
 
     Args:
-        spec: A positive lane count, a comma-separated selector list (an exact role name
+        spec: A positive child count, a comma-separated selector list (an exact role name
             or `[provider/]model`), or "".
-        limit: The caller's `[harness.parallel].max_lanes`; an over-limit count refuses before
+        limit: The caller's `[harness.parallel].max_children`; an over-limit count refuses before
             the list is built.
 
     Returns:
-        One entry per lane: None for the worker's own settings, else the lane's selector
-        text for the caller to resolve. "" is one default lane.
+        One entry per child: None for the worker's own settings, else the child's selector
+        text for the caller to resolve. "" is one default child.
 
     Raises:
         DirectiveError: The count is not positive or over the limit, or the list
@@ -67,7 +67,7 @@ def parse_spec(spec: str, *, limit: int) -> list[str | None]:
     if s.isdecimal():
         n = int(s)
         if n < 1:
-            raise DirectiveError("parallel lane count must be >= 1")
+            raise DirectiveError("parallel child count must be >= 1")
         if n > limit:
             raise DirectiveError(_over_limit(n, limit))
         return [None] * n
@@ -80,10 +80,11 @@ def parse_spec(spec: str, *, limit: int) -> list[str | None]:
 
 
 def _over_limit(requested: int, limit: int) -> str:
-    """Return the refusal for a lane count over the limit."""
+    """Return the refusal for a child count over the limit."""
     return (
-        f"parallel spec requests {requested} lanes but [harness.parallel].max_lanes = {limit}."
-        " Request fewer, or raise [harness.parallel].max_lanes."
+        f"parallel spec requests {requested} children but"
+        f" [harness.parallel].max_children = {limit}."
+        " Request fewer, or raise [harness.parallel].max_children."
     )
 
 
@@ -221,7 +222,7 @@ def spec_fragment(text: str) -> str | None:
 
     Returns:
         The fragment after the last comma, or None when the text is not a directive,
-        the segment contains `--`, or the spec is a lane count.
+        the segment contains `--`, or the spec is a child count.
     """
     body = text.lstrip()
     matches = list(_SEPARATOR.finditer(body))
@@ -347,7 +348,7 @@ STEER_COMMANDS: dict[str, str] = {
     "/pin": "pin an instruction that survives compaction: /pin <text>",
     "/compact": "compact the context now; /compact <focus> steers the summary",
     "/parallel": (
-        "dispatch lanes: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)"
+        "dispatch children: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)"
     ),
     "/restate": "restate the conversation since your last message (local, no model call)",
     "/review": "review changes in this session: /review [TARGET] (a ref or A..B or A...B)",

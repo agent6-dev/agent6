@@ -288,10 +288,10 @@ def test_a_worktree_gets_its_repositorys_home_from_the_recorded_git_dir(
     assert _persistent_home(repo) == paths.jail_cache_home(repo)
 
 
-def test_a_lanes_clone_and_a_machine_clone_share_the_repositorys_home(
+def test_a_children_clone_and_a_machine_clone_share_the_repositorys_home(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A lane's clone and a machine state's clone each got a HOME of their own.
+    """A child's clone and a machine state's clone each got a HOME of their own.
 
     A tool cache warmed for the repository was absent there. Every working tree agent6
     makes for a repository sits under that repository's directory in the workspace base directory,
@@ -300,10 +300,10 @@ def test_a_lanes_clone_and_a_machine_clone_share_the_repositorys_home(
     repo, base = tmp_path / "repo", tmp_path / "work"
     repo.mkdir()
     rid = paths.repo_id(repo)
-    lane = base / rid / "group-AAAAAA" / "lane-1"
+    child = base / rid / "group-AAAAAA" / "child-1"
     state_clone = base / rid / "machine-digest" / "state-0003"
     stranger = tmp_path / "elsewhere" / rid / "x"
-    for made in (lane, state_clone, stranger):
+    for made in (child, state_clone, stranger):
         made.mkdir(parents=True)
     cfg = Config.model_validate(
         {"sandbox": {"home": "cache"}, "git": {"worktree": {"base_dir": str(base)}}}
@@ -312,5 +312,5 @@ def test_a_lanes_clone_and_a_machine_clone_share_the_repositorys_home(
     def home(root: pathlib.Path) -> pathlib.Path | None:
         return policy_module.persistent_jail_home(cfg, "full", root)
 
-    assert home(lane) == home(state_clone) == home(repo) == paths.jail_cache_home(repo)
+    assert home(child) == home(state_clone) == home(repo) == paths.jail_cache_home(repo)
     assert home(stranger) == paths.jail_cache_home(stranger)

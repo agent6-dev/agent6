@@ -1128,12 +1128,12 @@ def test_the_worktree_pane_has_a_hash_that_survives_reload(
     assert errors == [], errors
 
 
-def test_lane_details_read_the_parents_rationale(
+def test_child_details_read_the_parents_rationale(
     port: int,
     tmp_path: pathlib.Path,
     open_page: Callable[[int], tuple[Page, list[str]]],
 ) -> None:
-    """The lane header reads the group record rather than a copied lane rationale."""
+    """The child header reads the group record rather than a copied child rationale."""
     from playwright.sync_api import expect
 
     runs = paths.state_dir(tmp_path) / "sessions" / "runs"
@@ -1141,13 +1141,13 @@ def test_lane_details_read_the_parents_rationale(
         "fan": {
             "comparison": {
                 "group": "fan",
-                "ranking": ["lane"],
+                "ranking": ["child"],
                 "ranked_by": "judge",
                 "rationale": "covers the edge case",
                 "judge_cost_usd": 0.0123,
             }
         },
-        "lane": {"placement": {"group": "fan", "rank": 1, "of": 1, "winner": True}},
+        "child": {"placement": {"group": "fan", "rank": 1, "of": 1, "winner": True}},
     }.items():
         session = runs / sid
         session.mkdir(parents=True)
@@ -1155,12 +1155,12 @@ def test_lane_details_read_the_parents_rationale(
             json.dumps({"mode": "run", **stamp}), encoding="utf-8"
         )
         (session / "logs.jsonl").write_text(
-            json.dumps({"type": "session.start", "mode": "run", "user_task": "Compare lanes"})
+            json.dumps({"type": "session.start", "mode": "run", "user_task": "Compare children"})
             + "\n",
             encoding="utf-8",
         )
     page, errors = open_page(port)
-    page.goto(f"http://127.0.0.1:{port}/#/session/lane")
+    page.goto(f"http://127.0.0.1:{port}/#/session/child")
     expect(page.get_by_text("judge: covers the edge case", exact=True)).to_be_visible()
     expect(page.get_by_text("rank 1/1 · winner · judge ($0.01)", exact=True)).to_be_visible()
     assert not errors

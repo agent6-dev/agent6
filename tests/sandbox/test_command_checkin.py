@@ -274,13 +274,13 @@ def test_a_wait_still_waits_when_nobody_asked_to_stop(tmp_path: pathlib.Path) ->
         d.close()
 
 
-@pytest.mark.parametrize("stop", ["stop now", "lane stop"])
+@pytest.mark.parametrize("stop", ["stop now", "child stop"])
 def test_an_immediate_stop_ends_a_running_command_at_once(
     tmp_path: pathlib.Path, stop: str
 ) -> None:
     """An immediate stop ends a foreground command without leaving a live handle in its result.
 
-    `agent6 stop` writes the abort steer; a group stops its lanes with the marker's `now` urgency.
+    `agent6 stop` writes the abort steer; a group stops its children at the marker's `now` urgency.
     """
     from agent6.sessions import ipc
 

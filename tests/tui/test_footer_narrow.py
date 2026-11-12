@@ -51,7 +51,7 @@ def _hub_with_a_group(a6: pathlib.Path) -> None:
     for name, manifest in (
         ("plain-run-AAAAAA", {"mode": "run"}),
         ("fan", {"mode": "run"}),
-        ("fan-l1", {"mode": "run", "parallel": {"group": "fan", "lane": 1, "parent": "fan"}}),
+        ("fan-l1", {"mode": "run", "parallel": {"group": "fan", "number": 1, "parent": "fan"}}),
     ):
         d = a6 / "sessions" / "runs" / name
         d.mkdir(parents=True)
@@ -59,10 +59,10 @@ def _hub_with_a_group(a6: pathlib.Path) -> None:
         (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
 
-def test_the_hub_footer_shows_lanes_only_on_a_group_and_keeps_logs_and_refresh_off_it(
+def test_the_hub_footer_shows_children_only_on_a_group_and_keeps_logs_and_refresh_off_it(
     tmp_path: pathlib.Path,
 ) -> None:
-    """Lanes, View logs and Refresh stay in the menus, so the row actions fit at 100 columns."""
+    """Children, View logs and Refresh stay in the menus, so the row actions fit at 100 columns."""
     a6 = tmp_path / ".agent6"
     _hub_with_a_group(a6)
 

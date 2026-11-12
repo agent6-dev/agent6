@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Build cumulative budget events for provider calls, lane settlement and finalization."""
+"""Build cumulative budget events for provider calls, child settlement and finalization."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
             credits_balance=plan.credits_balance,
         )
     return dict(
-        settled_lanes=tuple(sorted(snap.settled_lanes)),
+        settled_children=tuple(sorted(snap.settled_children)),
         input_total=snap.input_total,
         output_total=snap.output_total,
         cache_read_total=snap.cache_read_total,
@@ -58,9 +58,9 @@ def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
         usd_total=usd_total,
         usd_partial=usd_partial,
         usd_cap=snap.max_usd,
-        usd_running_lanes=snap.usd_running_lanes,
+        usd_running_children=snap.usd_running_children,
         tokens_unmetered=snap.unmetered_tokens,
-        tokens_running_lanes=snap.tokens_running_lanes,
+        tokens_running_children=snap.tokens_running_children,
         tokens_fallback_cap=snap.max_tokens_fallback,
         plan_observed_points=snap.plan_observed_points,
         plan_cap=snap.max_plan_points,

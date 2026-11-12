@@ -104,7 +104,7 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
             # The sentinel goes even when the tailer raises, or the loop blocks on heartbeats.
             events.put(None)
 
-    # A session's lanes change independently of its own log once it dispatched; the idle
+    # A session's children change independently of its own log once it dispatched; the idle
     # heartbeat re-reads the header for every session.
     header = manifest_header(session_dir, repo=repo)
 
@@ -168,7 +168,7 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
         while True:
             try:
                 ev: dict[str, Any] | None = events.get(
-                    timeout=1.0 if header.get("lanes") else HEARTBEAT_S
+                    timeout=1.0 if header.get("children") else HEARTBEAT_S
                 )
             except queue.Empty:
                 if not chan.ping():
@@ -178,7 +178,7 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
                 if word != "parked" and died_without_end(word):
                     send_frame(dead=True)
                     return
-                # Lanes, merges and shell cleanup change on disk without a log event.
+                # Children, merges and shell cleanup change on disk without a log event.
                 header = manifest_header(session_dir, repo=repo, status=word)
                 if not send_frame():
                     return

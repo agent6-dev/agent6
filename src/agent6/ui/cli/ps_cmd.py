@@ -32,8 +32,8 @@ class _Row:
         status_detail: The detail explaining the status, or "" when there is none.
         pid: The worker pid, when readable.
         attached: A front end is live on the session.
-        parent: For a lane, the live parent row it nests under.
-        lanes: The group's live lanes, nested.
+        parent: For a child, the live parent row it nests under.
+        children: The group's live children, nested.
         worktree: The linked worktree the run works in, None for a run in the checkout.
     """
 
@@ -46,7 +46,7 @@ class _Row:
     pid: int | None
     attached: bool
     parent: str = ""
-    lanes: tuple[_Row, ...] = ()
+    children: tuple[_Row, ...] = ()
     worktree: str | None = None
 
     def cells(self, id_cell: str) -> tuple[str, ...]:
@@ -82,7 +82,7 @@ class _Live:
     machines: list[_Row]
 
     def nested(self) -> list[_Row]:
-        """Return the session rows with a group's live lanes under it, then the machines."""
+        """Return the session rows with a group's live children under it, then the machines."""
         summaries_by_repo: dict[str, list[listing.SessionSummary]] = {}
         rows_by_repo: dict[str, dict[str, _Row]] = {}
         for real, own in self.rows.items():
@@ -90,9 +90,11 @@ class _Live:
             rows_by_repo.setdefault(own.repo_id, {})[own.id] = own
 
         def tree(row: listing.ListingRow, own_rows: dict[str, _Row]) -> _Row:
-            """Return the row with its lanes nested, from the listing fold's tree."""
+            """Return the row with its children nested, from the listing fold's tree."""
             own = own_rows[row.summary.session_id]
-            return dataclasses.replace(own, lanes=tuple(tree(lane, own_rows) for lane in row.lanes))
+            return dataclasses.replace(
+                own, children=tuple(tree(child, own_rows) for child in row.children)
+            )
 
         session_rows: list[tuple[float, _Row]] = []
         for repo_id, summaries in summaries_by_repo.items():
@@ -165,16 +167,16 @@ def _live_rows() -> _Live:
     )
 
 
-def cmd_ps(*, as_json: bool = False, lanes: bool = False) -> int:
+def cmd_ps(*, as_json: bool = False, children: bool = False) -> int:
     """Print one row per live session: directory, id, mode, status, pid, front end, worktree.
 
     Liveness is the worker-pid rule every listing uses (a foreign-owned or reused pid reads
-    dead). A group's live lanes nest under its row: folded into a count, or listed
-    indented with `lanes`; the JSON row always nests them.
+    dead). A group's live children nest under its row: folded into a count, or listed
+    indented with `children`; the JSON row always nests them.
 
     Args:
         as_json: Print the rows as JSON.
-        lanes: List each group's lanes.
+        children: List each group's children.
 
     Returns:
         The exit code, 0.
@@ -190,15 +192,17 @@ def cmd_ps(*, as_json: bool = False, lanes: bool = False) -> int:
     cells: list[tuple[str, ...]] = []
 
     def emit(r: _Row, depth: int) -> None:
-        """Append the row's cells, then its lanes' when listing them."""
+        """Append the row's cells, then its children's when listing them."""
         if depth:
-            cells.append(r.cells(format.lane_id_cell(r.id, depth)))
+            cells.append(r.cells(format.child_id_cell(r.id, depth)))
         else:
-            folded = f" ({format.lane_count(len(r.lanes))})" if r.lanes and not lanes else ""
+            folded = (
+                f" ({format.child_count(len(r.children))})" if r.children and not children else ""
+            )
             cells.append(r.cells(r.id + folded))
-        if lanes:
-            for lane in r.lanes:
-                emit(lane, depth + 1)
+        if children:
+            for child in r.children:
+                emit(child, depth + 1)
 
     for r in rows:
         emit(r, 0)

@@ -143,17 +143,17 @@ def test_record_decision_appends_verbatim_and_the_text_clips_to_the_newest(
     assert "q199" in clipped and "Keep the modal" not in clipped
 
 
-def test_merge_decisions_appends_a_lanes_rulings(tmp_path: pathlib.Path) -> None:
-    """A lane's rulings land in the parent's decisions.md after its own.
+def test_merge_decisions_appends_a_children_rulings(tmp_path: pathlib.Path) -> None:
+    """A child's rulings land in the parent's decisions.md after its own.
 
-    A lane that recorded none writes nothing.
+    A child that recorded none writes nothing.
     """
-    lane, origin = tmp_path / "lane", tmp_path / "origin"
-    assert memory.merge_decisions(lane, origin) == (0, 0)
+    child, origin = tmp_path / "child", tmp_path / "origin"
+    assert memory.merge_decisions(child, origin) == (0, 0)
     assert not memory.decisions_path(origin).exists()
     memory.record_decision(origin, question="q0?", answer="a0", session="run")
-    memory.record_decision(lane, question="q1?", answer="a1\n\nsecond paragraph", session="l1")
-    assert memory.merge_decisions(lane, origin) == (1, 0)
+    memory.record_decision(child, question="q1?", answer="a1\n\nsecond paragraph", session="l1")
+    assert memory.merge_decisions(child, origin) == (1, 0)
     text = memory.decisions_path(origin).read_text(encoding="utf-8")
     assert text.index("Q: q0?") < text.index("Q: q1?")
     assert "[l1]" in text
@@ -161,7 +161,7 @@ def test_merge_decisions_appends_a_lanes_rulings(tmp_path: pathlib.Path) -> None
 
 
 def test_merge_decisions_skips_a_ruling_the_origin_already_holds(tmp_path: pathlib.Path) -> None:
-    """N lanes asked the same question and got the same answer.
+    """N children asked the same question and got the same answer.
 
     One ruling, recorded once, however many session tags it arrived under.
     """
@@ -212,15 +212,15 @@ def test_merge_decisions_skips_a_repeat_within_the_source(tmp_path: pathlib.Path
 
     A ruling the origin recorded long ago, under another session, is a skip too.
     """
-    lane, origin = tmp_path / "lane", tmp_path / "origin"
+    child, origin = tmp_path / "child", tmp_path / "origin"
     memory.record_decision(origin, question="Tabs?", answer="spaces", session="old", when=0)
-    memory.record_decision(lane, question="Tabs?", answer="spaces", session="lane", when=3600)
-    memory.record_decision(lane, question="Lint?", answer="ruff", session="lane", when=3660)
+    memory.record_decision(child, question="Tabs?", answer="spaces", session="child", when=3600)
+    memory.record_decision(child, question="Lint?", answer="ruff", session="child", when=3660)
     # Preserve a duplicate written by an older version or hand edit; the
     # current writer itself dedupes it.
-    with memory.decisions_path(lane).open("a", encoding="utf-8") as fh:
-        fh.write("- 1970-01-01 01:02Z [lane] Q: Lint?\n  A: ruff\n")
-    assert memory.merge_decisions(lane, origin) == (1, 2)
+    with memory.decisions_path(child).open("a", encoding="utf-8") as fh:
+        fh.write("- 1970-01-01 01:02Z [child] Q: Lint?\n  A: ruff\n")
+    assert memory.merge_decisions(child, origin) == (1, 2)
     text = memory.decisions_path(origin).read_text(encoding="utf-8")
     assert text.count("Q: Tabs?") == 1 and text.count("Q: Lint?") == 1
 
@@ -231,52 +231,54 @@ def test_merge_decisions_starts_on_its_own_line(tmp_path: pathlib.Path) -> None:
     A destination cut short of its trailing newline (a partial write, a hand edit) gets one before
     the first appended entry.
     """
-    lane, origin = tmp_path / "lane", tmp_path / "origin"
+    child, origin = tmp_path / "child", tmp_path / "origin"
     path = memory.decisions_path(origin)
     path.parent.mkdir(parents=True)
     path.write_text("- 2026-01-01 00:00Z [x] Q: a?\n  A: b", encoding="utf-8")
-    memory.record_decision(lane, question="c?", answer="d", session="lane", when=0)
-    assert memory.merge_decisions(lane, origin) == (1, 0)
+    memory.record_decision(child, question="c?", answer="d", session="child", when=0)
+    assert memory.merge_decisions(child, origin) == (1, 0)
     assert path.read_text(encoding="utf-8") == (
-        "- 2026-01-01 00:00Z [x] Q: a?\n  A: b\n- 1970-01-01 00:00Z [lane] Q: c?\n  A: d\n"
+        "- 2026-01-01 00:00Z [x] Q: a?\n  A: b\n- 1970-01-01 00:00Z [child] Q: c?\n  A: d\n"
     )
 
 
-def _seeded_lane(tmp_path: pathlib.Path, origin: pathlib.Path, name: str = "lane") -> pathlib.Path:
-    lane = tmp_path / name
-    memory.seed_store(origin, lane)
-    return lane
+def _seeded_child(
+    tmp_path: pathlib.Path, origin: pathlib.Path, name: str = "child"
+) -> pathlib.Path:
+    child = tmp_path / name
+    memory.seed_store(origin, child)
+    return child
 
 
 def test_merge_memory_lands_new_facts_and_leaves_untouched_copies_alone(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A lane's store is a copy of the origin's.
+    """A child's store is a copy of the origin's.
 
-    At import a fact the lane added lands with its rendered entry; the copies it never touched are
+    At import a fact the child added lands with its rendered entry; the copies it never touched are
     nothing to report (every one read as "already recorded" before), and the same content on both
     sides is nothing either.
     """
     origin = tmp_path / "origin"
     memory.add(origin, "repo-fact", "The build needs BUILD_ID set.")
-    lane = _seeded_lane(tmp_path, origin)
-    assert list(json.loads(memory.seed_path(lane).read_text(encoding="utf-8"))) == ["repo-fact"]
-    memory.add(lane, "lane-fact", "The flaky test is test_clock.")
+    child = _seeded_child(tmp_path, origin)
+    assert list(json.loads(memory.seed_path(child).read_text(encoding="utf-8"))) == ["repo-fact"]
+    memory.add(child, "child-fact", "The flaky test is test_clock.")
     held = tmp_path / "held"
-    assert memory.merge_memory(lane, origin, held_dir=held) == memory.MemoryMerge(
-        carried=("lane-fact",)
+    assert memory.merge_memory(child, origin, held_dir=held) == memory.MemoryMerge(
+        carried=("child-fact",)
     )
-    assert "test_clock" in memory.show(origin, "lane-fact")
+    assert "test_clock" in memory.show(origin, "child-fact")
     assert memory.index_text(origin).splitlines() == [
-        "- lane-fact: The flaky test is test_clock.",
+        "- child-fact: The flaky test is test_clock.",
         "- repo-fact: The build needs BUILD_ID set.",
     ]
     assert not held.exists()
-    assert memory.merge_memory(lane, origin, held_dir=held) == memory.MemoryMerge()
+    assert memory.merge_memory(child, origin, held_dir=held) == memory.MemoryMerge()
 
 
-def test_merge_memory_fast_forwards_a_lanes_edit_and_deletion(tmp_path: pathlib.Path) -> None:
-    """A lane's edit and deletion fast-forward over a copy the origin has not touched.
+def test_merge_memory_fast_forwards_a_children_edit_and_deletion(tmp_path: pathlib.Path) -> None:
+    """A child's edit and deletion fast-forward over a copy the origin has not touched.
 
     An edit replaces the file and a deletion removes it, as with the branch.
     """
@@ -284,11 +286,11 @@ def test_merge_memory_fast_forwards_a_lanes_edit_and_deletion(tmp_path: pathlib.
     memory.add(origin, "a-fact", "A first.")
     memory.add(origin, "b-fact", "B first.")
     memory.add(origin, "c-fact", "C first.")
-    lane = _seeded_lane(tmp_path, origin)
-    (memory.memory_dir(lane) / "a-fact.md").write_text("A second, refined.\n", encoding="utf-8")
-    memory.remove(lane, "c-fact")
+    child = _seeded_child(tmp_path, origin)
+    (memory.memory_dir(child) / "a-fact.md").write_text("A second, refined.\n", encoding="utf-8")
+    memory.remove(child, "c-fact")
     held = tmp_path / "held"
-    assert memory.merge_memory(lane, origin, held_dir=held) == memory.MemoryMerge(
+    assert memory.merge_memory(child, origin, held_dir=held) == memory.MemoryMerge(
         updated=("a-fact",), deleted=("c-fact",)
     )
     assert memory.show(origin, "a-fact") == "A second, refined.\n"
@@ -301,39 +303,39 @@ def test_merge_memory_fast_forwards_a_lanes_edit_and_deletion(tmp_path: pathlib.
 
 
 def test_merge_memory_holds_back_a_change_on_both_sides(tmp_path: pathlib.Path) -> None:
-    """Changed in the lane and in the origin since seeding.
+    """Changed in the child and in the origin since seeding.
 
-    The origin keeps its version, the lane's is kept under held_dir, and both names are reported. A
-    lane deletion over an origin edit is held the same way, with nothing to keep.
+    The origin keeps its version, the child's is kept under held_dir, and both names are reported. A
+    child deletion over an origin edit is held the same way, with nothing to keep.
     """
     origin = tmp_path / "origin"
     memory.add(origin, "a-fact", "A first.")
     memory.add(origin, "d-fact", "D first.")
-    lane = _seeded_lane(tmp_path, origin)
-    (memory.memory_dir(lane) / "a-fact.md").write_text("A per the lane.\n", encoding="utf-8")
+    child = _seeded_child(tmp_path, origin)
+    (memory.memory_dir(child) / "a-fact.md").write_text("A per the child.\n", encoding="utf-8")
     (memory.memory_dir(origin) / "a-fact.md").write_text("A per the origin.\n", encoding="utf-8")
-    memory.remove(lane, "d-fact")
+    memory.remove(child, "d-fact")
     (memory.memory_dir(origin) / "d-fact.md").write_text("D per the origin.\n", encoding="utf-8")
     held = tmp_path / "held"
-    assert memory.merge_memory(lane, origin, held_dir=held) == memory.MemoryMerge(
+    assert memory.merge_memory(child, origin, held_dir=held) == memory.MemoryMerge(
         held=("a-fact", "d-fact")
     )
     assert memory.show(origin, "a-fact") == "A per the origin.\n"
     assert memory.show(origin, "d-fact") == "D per the origin.\n"
-    assert (held / "a-fact.md").read_text(encoding="utf-8") == "A per the lane.\n"
+    assert (held / "a-fact.md").read_text(encoding="utf-8") == "A per the child.\n"
     assert not (held / "d-fact.md").exists()
 
 
-def test_merge_memory_holds_back_a_name_two_lanes_invented(tmp_path: pathlib.Path) -> None:
-    """Two lanes recording different facts under one new name.
+def test_merge_memory_holds_back_a_name_two_children_invented(tmp_path: pathlib.Path) -> None:
+    """Two children recording different facts under one new name.
 
     The first lands, the second is held with its version kept, so neither silently overwrites the
     other.
     """
     origin = tmp_path / "origin"
-    l1, l2 = _seeded_lane(tmp_path, origin, "l1"), _seeded_lane(tmp_path, origin, "l2")
-    memory.add(l1, "shared-name", "What lane one saw.")
-    memory.add(l2, "shared-name", "What lane two saw.")
+    l1, l2 = _seeded_child(tmp_path, origin, "l1"), _seeded_child(tmp_path, origin, "l2")
+    memory.add(l1, "shared-name", "What child one saw.")
+    memory.add(l2, "shared-name", "What child two saw.")
     assert memory.merge_memory(l1, origin, held_dir=tmp_path / "h1") == memory.MemoryMerge(
         carried=("shared-name",)
     )
@@ -342,8 +344,8 @@ def test_merge_memory_holds_back_a_name_two_lanes_invented(tmp_path: pathlib.Pat
     )
     assert (tmp_path / "h2" / "shared-name.md").read_text(
         encoding="utf-8"
-    ) == "What lane two saw.\n"
-    assert memory.show(origin, "shared-name") == "What lane one saw.\n"
+    ) == "What child two saw.\n"
+    assert memory.show(origin, "shared-name") == "What child one saw.\n"
 
 
 def test_merge_memory_skips_a_name_outside_the_stores_rule(tmp_path: pathlib.Path) -> None:
@@ -351,20 +353,20 @@ def test_merge_memory_skips_a_name_outside_the_stores_rule(tmp_path: pathlib.Pat
 
     A seed key or a stray file whose name breaks the rule (a path fragment, an upper-case name) is
     not a memory and names no path; a seed key of `../escape` matching a file beside the store would
-    otherwise read as "deleted in the lane" and be unlinked outside the store.
+    otherwise read as "deleted in the child" and be unlinked outside the store.
     """
     origin = tmp_path / "origin"
     memory.add(origin, "a-fact", "A first.")
-    lane = _seeded_lane(tmp_path, origin)
+    child = _seeded_child(tmp_path, origin)
     outside = origin / "escape.md"
     outside.write_text("outside\n", encoding="utf-8")
-    seeds = json.loads(memory.seed_path(lane).read_text(encoding="utf-8"))
+    seeds = json.loads(memory.seed_path(child).read_text(encoding="utf-8"))
     seeds["../escape"] = hashlib.sha256(b"outside\n").hexdigest()
     seeds["Bad Name"] = "0" * 64
-    memory.seed_path(lane).write_text(json.dumps(seeds), encoding="utf-8")
-    (memory.memory_dir(lane) / "Bad Name.md").write_text("stray\n", encoding="utf-8")
+    memory.seed_path(child).write_text(json.dumps(seeds), encoding="utf-8")
+    (memory.memory_dir(child) / "Bad Name.md").write_text("stray\n", encoding="utf-8")
     held = tmp_path / "held"
-    merged = memory.merge_memory(lane, origin, held_dir=held)
+    merged = memory.merge_memory(child, origin, held_dir=held)
     assert outside.read_text(encoding="utf-8") == "outside\n"
     assert merged == memory.MemoryMerge()
     assert not (memory.memory_dir(origin) / "Bad Name.md").exists() and not held.exists()
@@ -378,14 +380,14 @@ def test_seed_store_keeps_the_digests_of_an_earlier_seeding(tmp_path: pathlib.Pa
     """
     origin = tmp_path / "origin"
     memory.add(origin, "a-fact", "A first.")
-    lane = _seeded_lane(tmp_path, origin)
+    child = _seeded_child(tmp_path, origin)
     memory.add(origin, "b-fact", "B first.")
-    memory.seed_store(origin, lane)
-    assert sorted(json.loads(memory.seed_path(lane).read_text(encoding="utf-8"))) == [
+    memory.seed_store(origin, child)
+    assert sorted(json.loads(memory.seed_path(child).read_text(encoding="utf-8"))) == [
         "a-fact",
         "b-fact",
     ]
-    assert memory.merge_memory(lane, origin, held_dir=tmp_path / "held") == memory.MemoryMerge()
+    assert memory.merge_memory(child, origin, held_dir=tmp_path / "held") == memory.MemoryMerge()
 
 
 def test_a_seed_manifest_that_is_not_an_object_reads_as_no_seeds(tmp_path: pathlib.Path) -> None:
@@ -396,26 +398,26 @@ def test_a_seed_manifest_that_is_not_an_object_reads_as_no_seeds(tmp_path: pathl
     """
     origin = tmp_path / "origin"
     memory.add(origin, "a-fact", "A first.")
-    lane = _seeded_lane(tmp_path, origin)
-    memory.seed_path(lane).write_text("[]\n", encoding="utf-8")
+    child = _seeded_child(tmp_path, origin)
+    memory.seed_path(child).write_text("[]\n", encoding="utf-8")
     memory.add(origin, "b-fact", "B first.")
-    memory.seed_store(origin, lane)
-    assert sorted(json.loads(memory.seed_path(lane).read_text(encoding="utf-8"))) == ["b-fact"]
-    memory.seed_path(lane).write_text("[]\n", encoding="utf-8")
-    assert memory.merge_memory(lane, origin, held_dir=tmp_path / "held") == memory.MemoryMerge()
+    memory.seed_store(origin, child)
+    assert sorted(json.loads(memory.seed_path(child).read_text(encoding="utf-8"))) == ["b-fact"]
+    memory.seed_path(child).write_text("[]\n", encoding="utf-8")
+    assert memory.merge_memory(child, origin, held_dir=tmp_path / "held") == memory.MemoryMerge()
 
 
 def test_merge_memory_skips_an_identical_destination_copy(tmp_path: pathlib.Path) -> None:
     """An identical destination copy is visible without another merge write."""
     origin = tmp_path / "origin"
-    lane = _seeded_lane(tmp_path, origin)
-    memory.add(lane, "lane-fact", "The parser is generated.")
+    child = _seeded_child(tmp_path, origin)
+    memory.add(child, "child-fact", "The parser is generated.")
     dst = memory.memory_dir(origin)
     dst.mkdir(parents=True)
-    (dst / "lane-fact.md").write_bytes((memory.memory_dir(lane) / "lane-fact.md").read_bytes())
+    (dst / "child-fact.md").write_bytes((memory.memory_dir(child) / "child-fact.md").read_bytes())
 
-    assert memory.merge_memory(lane, origin, held_dir=tmp_path / "held") == memory.MemoryMerge()
-    assert memory.index_text(origin) == "- lane-fact: The parser is generated."
+    assert memory.merge_memory(child, origin, held_dir=tmp_path / "held") == memory.MemoryMerge()
+    assert memory.index_text(origin) == "- child-fact: The parser is generated."
 
 
 def test_seed_store_recovers_a_copy_published_before_its_digest(tmp_path: pathlib.Path) -> None:
@@ -423,15 +425,15 @@ def test_seed_store_recovers_a_copy_published_before_its_digest(tmp_path: pathli
 
     A crash between copying a seed fact and publishing the manifest must not lose the digest.
     """
-    origin, lane = tmp_path / "origin", tmp_path / "lane"
+    origin, child = tmp_path / "origin", tmp_path / "child"
     memory.add(origin, "a-fact", "A first.")
-    dst = memory.memory_dir(lane)
+    dst = memory.memory_dir(child)
     dst.mkdir(parents=True)
     (dst / "a-fact.md").write_bytes((memory.memory_dir(origin) / "a-fact.md").read_bytes())
 
-    memory.seed_store(origin, lane)
+    memory.seed_store(origin, child)
 
-    assert set(memory.seed_digests(lane)) == {"a-fact"}
+    assert set(memory.seed_digests(child)) == {"a-fact"}
 
 
 def test_add_publishes_a_fact_atomically(
@@ -538,12 +540,12 @@ def test_read_use_tolerates_a_missing_or_misshapen_record(tmp_path: pathlib.Path
     }
 
 
-def test_merge_use_carries_a_lanes_record_into_the_origin(tmp_path: pathlib.Path) -> None:
-    """A --parallel lane's use record died with its state dir.
+def test_merge_use_carries_a_children_record_into_the_origin(tmp_path: pathlib.Path) -> None:
+    """A --parallel child's use record died with its state dir.
 
-    The origin never named the lane as a fact's writer or reader.
+    The origin never named the child as a fact's writer or reader.
     """
-    origin, lane = tmp_path / "origin", tmp_path / "lane"
+    origin, child = tmp_path / "origin", tmp_path / "child"
     memory.record_use(
         origin,
         session="run-o",
@@ -553,47 +555,47 @@ def test_merge_use_carries_a_lanes_record_into_the_origin(tmp_path: pathlib.Path
         when=0.0,
     )
     memory.record_use(
-        lane,
-        session="lane-1",
+        child,
+        session="child-1",
         wrote=("shared", "fresh"),
-        created=("shared", "fresh"),  # the lane's store had neither: both created there
+        created=("shared", "fresh"),  # the child's store had neither: both created there
         read={"shared": 2, "gone": 1},
         when=60.0,
     )
-    merged, reads = memory.merge_use(lane, origin, written=("shared", "fresh"))
+    merged, reads = memory.merge_use(child, origin, written=("shared", "fresh"))
     assert (merged, reads) == (2, 1)  # two writers carried; one fact read (gone was never held)
     use = memory.read_use(origin)
-    assert use["shared"].writers == ("run-o", "lane-1")
+    assert use["shared"].writers == ("run-o", "child-1")
     assert (use["shared"].reads, use["shared"].last_read) == (
         3,
-        memory.Touch("lane-1", "1970-01-01 00:01Z"),
+        memory.Touch("child-1", "1970-01-01 00:01Z"),
     )
     assert use["shared"].created == memory.Touch(
         "run-o", "1970-01-01 00:00Z"
     )  # the origin's stands
-    assert use["fresh"].created == memory.Touch("lane-1", "1970-01-01 00:01Z")
+    assert use["fresh"].created == memory.Touch("child-1", "1970-01-01 00:01Z")
     assert "gone" not in use  # a read of a fact the origin never held travels nowhere
     # Nothing to carry leaves the origin alone.
     assert memory.merge_use(tmp_path / "empty", origin, written=()) == (0, 0)
 
 
-def test_carry_back_lands_a_lanes_use_record(tmp_path: pathlib.Path) -> None:
-    """The lane import carries the use record along with the facts and the rulings.
+def test_carry_back_lands_a_children_use_record(tmp_path: pathlib.Path) -> None:
+    """The child import carries the use record along with the facts and the rulings.
 
-    Otherwise it goes with the lane's state dir.
+    Otherwise it goes with the child's state dir.
     """
     from agent6.app import parallel_results, reporter
 
-    origin, lane, dest = tmp_path / "origin", tmp_path / "lane", tmp_path / "dest"
-    memory.add(lane, "lane-fact", "A fact the lane found.")
-    memory.record_use(lane, session="lane-1", wrote=("lane-fact",), read={"lane-fact": 2})
+    origin, child, dest = tmp_path / "origin", tmp_path / "child", tmp_path / "dest"
+    memory.add(child, "child-fact", "A fact the child found.")
+    memory.record_use(child, session="child-1", wrote=("child-fact",), read={"child-fact": 2})
     said: list[str] = []
     parallel_results.carry_back(
-        lane, origin, dest, lane=1, reporter=reporter.Reporter(out=said.append, err=said.append)
+        child, origin, dest, number=1, reporter=reporter.Reporter(out=said.append, err=said.append)
     )
     use = memory.read_use(origin)
-    assert use["lane-fact"].writers == ("operator", "lane-1")
-    assert use["lane-fact"].reads == 2
+    assert use["child-fact"].writers == ("operator", "child-1")
+    assert use["child-fact"].reads == 2
     assert any("use record carried for 1" in line for line in said)
 
 
@@ -601,47 +603,47 @@ def test_carry_back_deletion_drops_provenance_before_recreation(tmp_path: pathli
     """An imported deletion ends the fact's provenance, as `memory remove` does.
 
     Left in place, the origin's record kept naming the fact's writers and readers after the
-    file was gone, and a lane that later recreated the name inherited them.
+    file was gone, and a child that later recreated the name inherited them.
     """
     from agent6.app import parallel_results, reporter
 
-    origin, lane = tmp_path / "origin", tmp_path / "lane"
+    origin, child = tmp_path / "origin", tmp_path / "child"
     memory.add(origin, "fact", "Original.")
     memory.record_use(origin, session="run-o", wrote=("fact",), read={"fact": 3}, when=0.0)
     assert memory.read_use(origin)["fact"].writers == ("operator", "run-o")
-    memory.seed_store(origin, lane)
-    memory.remove(lane, "fact")
+    memory.seed_store(origin, child)
+    memory.remove(child, "fact")
     parallel_results.carry_back(
-        lane,
+        child,
         origin,
         tmp_path / "imported",
-        lane=1,
+        number=1,
         reporter=reporter.Reporter(out=print, err=print),
     )
     assert "fact" not in memory.read_use(origin)
-    lane = tmp_path / "lane-2"
-    memory.seed_store(origin, lane)
-    memory.memory_dir(lane).joinpath("fact.md").write_text("Another life.\n", encoding="utf-8")
-    memory.record_use(lane, session="lane-2", wrote=("fact",), created=("fact",), read={})
+    child = tmp_path / "child-2"
+    memory.seed_store(origin, child)
+    memory.memory_dir(child).joinpath("fact.md").write_text("Another life.\n", encoding="utf-8")
+    memory.record_use(child, session="child-2", wrote=("fact",), created=("fact",), read={})
     parallel_results.carry_back(
-        lane,
+        child,
         origin,
         tmp_path / "imported-2",
-        lane=2,
+        number=2,
         reporter=reporter.Reporter(out=print, err=print),
     )
-    assert memory.read_use(origin)["fact"].writers == ("lane-2",)
+    assert memory.read_use(origin)["fact"].writers == ("child-2",)
 
 
-def test_reseeding_keeps_a_lanes_deleted_fact_deleted(tmp_path: pathlib.Path) -> None:
-    """Retrying seeding must not resurrect a fact the lane deleted after its first seed."""
-    origin, lane = tmp_path / "origin", tmp_path / "lane"
+def test_reseeding_keeps_a_children_deleted_fact_deleted(tmp_path: pathlib.Path) -> None:
+    """Retrying seeding must not resurrect a fact the child deleted after its first seed."""
+    origin, child = tmp_path / "origin", tmp_path / "child"
     memory.add(origin, "fact", "Original.")
-    memory.seed_store(origin, lane)
-    memory.remove(lane, "fact")
-    assert memory.seed_store(origin, lane) == 0
-    assert not (memory.memory_dir(lane) / "fact.md").exists()
-    assert memory.merge_memory(lane, origin, held_dir=tmp_path / "held").deleted == ("fact",)
+    memory.seed_store(origin, child)
+    memory.remove(child, "fact")
+    assert memory.seed_store(origin, child) == 0
+    assert not (memory.memory_dir(child) / "fact.md").exists()
+    assert memory.merge_memory(child, origin, held_dir=tmp_path / "held").deleted == ("fact",)
 
 
 def _legacy_rulings(state_dir: pathlib.Path, text: str = "- old ruling\n") -> pathlib.Path:
@@ -689,20 +691,20 @@ def test_a_store_write_under_the_old_rulings_name_never_reaches_the_rulings(
     assert "Planted" not in memory.decisions_text(tmp_path)
 
 
-def test_seed_store_copies_the_origins_rulings_beside_the_lanes_store(
+def test_seed_store_copies_the_origins_rulings_beside_the_children_store(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A lane is seeded with the origin's rulings, outside its store and outside the count.
+    """A child is seeded with the origin's rulings, outside its store and outside the count.
 
-    A lane holding rulings keeps its own; an origin with no store leaves the lane storeless.
+    A child holding rulings keeps its own; an origin with no store leaves the child storeless.
     """
-    origin, lane = tmp_path / "origin", tmp_path / "lane"
+    origin, child = tmp_path / "origin", tmp_path / "child"
     memory.record_decision(origin, question="Q?", answer="A", session="s", when=0)
     memory.add(origin, "a-fact", "A first.")
-    assert memory.seed_store(origin, lane) == 1  # the fact
-    assert memory.decisions_text(lane) == memory.decisions_text(origin)
-    assert stat.S_IMODE(memory.decisions_path(lane).stat().st_mode) == 0o600
-    assert set(memory.seed_digests(lane)) == {"a-fact"}
+    assert memory.seed_store(origin, child) == 1  # the fact
+    assert memory.decisions_text(child) == memory.decisions_text(origin)
+    assert stat.S_IMODE(memory.decisions_path(child).stat().st_mode) == 0o600
+    assert set(memory.seed_digests(child)) == {"a-fact"}
     other = tmp_path / "other"
     memory.record_decision(other, question="Mine?", answer="B", session="s", when=0)
     assert memory.seed_store(origin, other) == 1
@@ -717,19 +719,21 @@ def test_seed_store_copies_the_origins_rulings_beside_the_lanes_store(
     assert not (tmp_path / "untouched").exists()
 
 
-def test_merge_memory_skips_a_stray_rulings_file_in_the_lanes_store(tmp_path: pathlib.Path) -> None:
-    """`DECISIONS` fails the name rule: a lane's `memory/DECISIONS.md` never travels as a fact."""
+def test_merge_memory_skips_a_stray_rulings_file_in_the_children_store(
+    tmp_path: pathlib.Path,
+) -> None:
+    """`DECISIONS` fails the name rule: a child's `memory/DECISIONS.md` never travels as a fact."""
     assert not memory.is_memory_name("DECISIONS")
     origin = tmp_path / "origin"
-    lane = _seeded_lane(tmp_path, origin)
-    memory.add(lane, "lane-fact", "A lane fact.")
-    stray = _legacy_rulings(lane, "- planted\n")
-    assert memory.merge_memory(lane, origin, held_dir=tmp_path / "held") == memory.MemoryMerge(
-        carried=("lane-fact",)
+    child = _seeded_child(tmp_path, origin)
+    memory.add(child, "child-fact", "A child fact.")
+    stray = _legacy_rulings(child, "- planted\n")
+    assert memory.merge_memory(child, origin, held_dir=tmp_path / "held") == memory.MemoryMerge(
+        carried=("child-fact",)
     )
     assert stray.exists()
     assert not (memory.memory_dir(origin) / "DECISIONS.md").exists()
-    assert memory.merge_decisions(lane, origin) == (0, 0)
+    assert memory.merge_decisions(child, origin) == (0, 0)
     assert memory.decisions_text(origin) == ""
 
 
@@ -817,17 +821,17 @@ def test_a_store_that_cannot_be_listed_reads_as_empty(tmp_path: pathlib.Path) ->
 
 
 def test_seed_and_merge_share_the_fact_rule(tmp_path: pathlib.Path) -> None:
-    """Only fact files are seeded into a lane, and only fact files travel back at import."""
+    """Only fact files are seeded into a child, and only fact files travel back at import."""
     origin = tmp_path / "origin"
     memory.add(origin, "a-fact", "A first.")
     (memory.memory_dir(origin) / "MEMORY.md").write_text("- a-fact: stale\n", encoding="utf-8")
     (memory.memory_dir(origin) / "linked.md").symlink_to(memory.memory_dir(origin) / "a-fact.md")
-    lane = _seeded_lane(tmp_path, origin)
-    assert sorted(p.name for p in memory.memory_dir(lane).iterdir()) == ["a-fact.md"]
-    assert set(memory.seed_digests(lane)) == {"a-fact"}
-    (memory.memory_dir(lane) / "lane-link.md").symlink_to(memory.memory_dir(lane) / "a-fact.md")
-    assert memory.merge_memory(lane, origin, held_dir=tmp_path / "held") == memory.MemoryMerge()
-    assert not (memory.memory_dir(origin) / "lane-link.md").exists()
+    child = _seeded_child(tmp_path, origin)
+    assert sorted(p.name for p in memory.memory_dir(child).iterdir()) == ["a-fact.md"]
+    assert set(memory.seed_digests(child)) == {"a-fact"}
+    (memory.memory_dir(child) / "child-link.md").symlink_to(memory.memory_dir(child) / "a-fact.md")
+    assert memory.merge_memory(child, origin, held_dir=tmp_path / "held") == memory.MemoryMerge()
+    assert not (memory.memory_dir(origin) / "child-link.md").exists()
 
 
 def test_the_rulings_file_init_never_truncates_a_file_another_session_just_wrote(

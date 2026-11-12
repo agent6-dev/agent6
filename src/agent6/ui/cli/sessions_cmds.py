@@ -29,18 +29,18 @@ from agent6.viewmodel import listing as viewmodel_listing
 from agent6.viewmodel.session import status as session_status
 
 
-def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
+def _cmd_list(*, as_json: bool = False, children: bool = False) -> int:
     """List this repo's sessions, newest activity first.
 
     Columns: updated, status (the mode folded in when the word does not imply it, the
-    failure reason, the unmerged mark), usage, id, task. A group's lanes nest under
-    its row: folded into a count, or listed indented with `lanes`; the JSON row always
+    failure reason, the unmerged mark), usage, id, task. A group's children nest under
+    its row: folded into a count, or listed indented with `children`; the JSON row always
     nests them. Every bucket, unlike the TUI and web hubs, which give `machine create`
     drafts their own card.
 
     Args:
         as_json: Print the rows as JSON.
-        lanes: List each group's lanes.
+        children: List each group's children.
 
     Returns:
         The exit code, 0.
@@ -82,17 +82,17 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
     rows: list[tuple[str, str, str, str, str, session_status.TaskLabel]] = []
 
     def emit(row: viewmodel_listing.ListingRow, depth: int) -> None:
-        """Append the row's cells, then its lanes' when listing them."""
+        """Append the row's cells, then its children's when listing them."""
         s = row.summary
         id_cell = s.id_cell(winner=s.session_id in winners)
         if depth:
-            id_cell = format.lane_id_cell(id_cell, depth)
-        elif row.lanes and not lanes:
-            id_cell += f" ({format.lane_count(len(row.lanes))})"
+            id_cell = format.child_id_cell(id_cell, depth)
+        elif row.children and not children:
+            id_cell += f" ({format.child_count(len(row.children))})"
         rows.append(cells(row, id_cell))
-        if lanes:
-            for lane in row.lanes:
-                emit(lane, depth + 1)
+        if children:
+            for child in row.children:
+                emit(child, depth + 1)
 
     for row in listing:
         emit(row, 0)
@@ -490,7 +490,7 @@ def _remove_refusal(
         tips: The branch tips the worktree's commits must reach.
 
     Returns:
-        The refusal when the session or a lane of it is live, or its worktree holds work
+        The refusal when the session or a child of it is live, or its worktree holds work
         no commit has.
     """
     for live in (layout.session_dir, *lineage.descendants_of(layout.session_dir)):
@@ -513,7 +513,7 @@ def _remove_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) ->
         layout: The session.
 
     Returns:
-        The id, task and state lines, its lane count, then for unmerged commits whether a
+        The id, task and state lines, its child count, then for unmerged commits whether a
         branch keeps them.
     """
     tips = git_read.run_ref_tips(cwd)
@@ -524,13 +524,13 @@ def _remove_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) ->
         f"  task:    {task}",
         f"  state:   {format.status_label(summary.status, summary.detail)}",
     ]
-    lanes = [
+    children = [
         child
         for child in lineage.descendants_of(layout.session_dir)
         if child.parent.name != sessions_layout.EVIDENCE_BUCKET
     ]
-    if lanes:
-        lines.append(f"  lanes:   {len(lanes)} go with it")
+    if children:
+        lines.append(f"  children:   {len(children)} go with it")
     if summary.unmerged:
         branch = git_read.run_branch_for(layout.session_id)
         kept = f"branch {branch} keeps them" if branch in tips else "they go with it"
@@ -614,10 +614,10 @@ def _remove_session(
     sharing: list[str],
     tips: tuple[str, ...],
 ) -> int:
-    """Delete one session's record with its lanes' and reviewers', then its worktree and owned refs.
+    """Delete one session's record with its children's, then its worktree and owned refs.
 
-    The listings fold a run's lanes under it and show no reviewer, so they go with the run. A
-    lane's branch stays, as the run's does.
+    The listings fold a run's working children under it and show no reviewer, so both go with
+    the run. A child's branch stays, as the run's does.
 
     Args:
         cwd: The checkout git runs from.
@@ -631,7 +631,7 @@ def _remove_session(
     """
     children = lineage.descendants_of(layout.session_dir)
     reviewers = [c for c in children if c.parent.name == sessions_layout.EVIDENCE_BUCKET]
-    lanes = [c for c in children if c not in reviewers]
+    workers = [c for c in children if c not in reviewers]
     try:
         shutil.rmtree(layout.session_dir)
         for child in children:
@@ -641,8 +641,8 @@ def _remove_session(
         common.error(f"could not remove {layout.session_dir}: {exc}")
         return 1
     went: list[str] = []  # what went with the record
-    if lanes:
-        went.append(f"its {len(lanes)} lane{'' if len(lanes) == 1 else 's'}")
+    if workers:
+        went.append(f"its {len(workers)} {'child' if len(workers) == 1 else 'children'}")
     if reviewers:
         went.append(f"{len(reviewers)} reviewer record{'' if len(reviewers) == 1 else 's'}")
     stays = ""

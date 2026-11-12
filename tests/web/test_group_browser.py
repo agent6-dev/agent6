@@ -26,7 +26,7 @@ def fan_port(group: pathlib.Path) -> Iterator[int]:
     yield from test_web_browser._serve(group)
 
 
-def test_group_lanes_refresh_and_link(
+def test_group_children_refresh_and_link(
     group: pathlib.Path,
     fan_port: int,
     open_page: Callable[[int], tuple[Page, list[str]]],
@@ -35,13 +35,13 @@ def test_group_lanes_refresh_and_link(
 
     page, errors = open_page(fan_port)
     page.goto(f"http://127.0.0.1:{fan_port}/#/session/fan")
-    block = page.locator(".card-lanes")
+    block = page.locator(".card-children")
     expect(block).to_be_visible()
-    expect(block.locator("h2")).to_have_text("lanes: 2")
+    expect(block.locator("h2")).to_have_text("children: 2")
     expect(block.locator("tr")).to_have_count(3)
-    expect(block).to_contain_text("openai/lane-1")
-    lane = layout.SessionLayout(state_dir=paths.state_dir(group), session_id="fan-l1")
-    with lane.logs_path.open("a") as log:
+    expect(block).to_contain_text("openai/child-1")
+    child = layout.SessionLayout(state_dir=paths.state_dir(group), session_id="fan-l1")
+    with child.logs_path.open("a") as log:
         log.write('{"type":"budget.update","usd_total":1.25}\n')
         log.write('{"type":"session.stop","reason":"steer_abort"}\n')
     expect(block).to_contain_text("$1.25", timeout=10000)
@@ -59,25 +59,25 @@ def parent_port(ordinary_parent: pathlib.Path) -> Iterator[int]:
     yield from test_web_browser._serve(ordinary_parent)
 
 
-def test_an_ordinary_parent_shows_its_lanes_and_the_receipt_links_them(
+def test_an_ordinary_parent_shows_its_children_and_the_receipt_links_them(
     ordinary_parent: pathlib.Path,
     parent_port: int,
     open_page: Callable[[int], tuple[Page, list[str]]],
 ) -> None:
-    """A `/parallel` run's page lists its lanes with their joins and keeps its own actions."""
+    """A `/parallel` run's page lists its children with their joins and keeps its own actions."""
     import json
 
     from playwright.sync_api import expect
 
     page, errors = open_page(parent_port)
     page.goto(f"http://127.0.0.1:{parent_port}/#/session/co")
-    block = page.locator(".card-lanes")
+    block = page.locator(".card-children")
     expect(block).to_be_visible()
-    expect(block.locator("h2")).to_have_text("lanes: 2")
+    expect(block.locator("h2")).to_have_text("children: 2")
     expect(block).to_contain_text("joined at bbbbbbbbbbbb")
     expect(block).to_contain_text("no changes")
     expect(page.get_by_role("button", name="Fork", exact=True)).to_be_enabled()
-    # A third lane appears on disk while the page is open: the card follows it.
+    # A third child appears on disk while the page is open: the card follows it.
     third = layout.SessionLayout(state_dir=paths.state_dir(ordinary_parent), session_id="co-p2-l1")
     third.ensure()
     third.manifest_path.write_text(
@@ -86,8 +86,8 @@ def test_an_ordinary_parent_shows_its_lanes_and_the_receipt_links_them(
                 "version": 3,
                 "session_id": "co-p2-l1",
                 "mode": "run",
-                "models": {"driver": {"provider": "openai", "model": "lane-3"}},
-                "parallel": {"group": "co-p2", "lane": 1, "parent": "co"},
+                "models": {"driver": {"provider": "openai", "model": "child-3"}},
+                "parallel": {"group": "co-p2", "number": 1, "parent": "co"},
             }
         ),
         encoding="utf-8",
@@ -96,13 +96,13 @@ def test_an_ordinary_parent_shows_its_lanes_and_the_receipt_links_them(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "more"}) + "\n",
         encoding="utf-8",
     )
-    expect(block.locator("h2")).to_have_text("lanes: 3", timeout=20000)
-    expect(block).to_contain_text("openai/lane-3")
-    # The receipt names each lane and links it through the session navigation.
+    expect(block.locator("h2")).to_have_text("children: 3", timeout=20000)
+    expect(block).to_contain_text("openai/child-3")
+    # The receipt names each child and links it through the session navigation.
     page.get_by_role("button", name="Receipt", exact=True).click()
     receipt = page.locator(".receipt")
-    expect(receipt).to_contain_text("Lanes")
-    expect(receipt).to_contain_text("lane 1 co-p1-l1: joined at bbbbbbbbbbbb, $0.50")
+    expect(receipt).to_contain_text("Children")
+    expect(receipt).to_contain_text("child 1 co-p1-l1: joined at bbbbbbbbbbbb, $0.50")
     receipt.get_by_role("link", name="co-p1-l1", exact=True).click()
     expect(page).to_have_url(f"http://127.0.0.1:{parent_port}/#/session/co-p1-l1")
     assert not errors

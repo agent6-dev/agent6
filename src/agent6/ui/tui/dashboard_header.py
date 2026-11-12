@@ -4,7 +4,7 @@
 
 The status, the task count, the cost, the budget and the context on line one;
 the role and the task on line two; then the manifest's lines as they appear
-(lineage, branch, pins, serving, a lane's compare), each cached as long as it
+(lineage, branch, pins, serving, a child's compare), each cached as long as it
 can hold. Every line ends in an ellipsis rather than wraps, so a long model id
 never pushes the status onto a line of its own.
 """
@@ -43,7 +43,7 @@ class RunHeader(widgets.Static):
     def __init__(self) -> None:
         """Create the header with every cached line empty."""
         super().__init__("", id="top")
-        self._compare_line: str | None = None  # a lane's compare header, once stamped
+        self._compare_line: str | None = None  # a child's compare header, once stamped
         self._branch_line: str | None = None
         self._branch_finished = False  # the run state the branch line was read under
         self._branch_recheck_at = 0.0  # a finished run re-reads every few seconds
@@ -149,7 +149,7 @@ class RunHeader(widgets.Static):
         return f"[b {theme.status_style(word)}]{markup.escape(self._tui.status_label)}[/]"
 
     def _compare_top(self) -> str:
-        """Return a lane's compare line, cached once stamped; "" for a non-lane run."""
+        """Return a child's compare line, cached once stamped; "" for a non-child run."""
         if self._compare_line is not None:
             return self._compare_line
         formatted = format.format_compare(
@@ -157,7 +157,7 @@ class RunHeader(widgets.Static):
             comparison.session_comparison(self._tui.session_dir),
         )
         if formatted is None:
-            return ""  # not cached: a live lane is stamped after its import
+            return ""  # not cached: a live child is stamped after its import
         headline, rationale = formatted
         rat = f": {rationale[:100]}" if rationale else ""
         self._compare_line = f"\ncompare: {headline}{rat}"

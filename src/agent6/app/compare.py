@@ -90,7 +90,7 @@ def rank(
         transcript_dir: Where the judges' transcripts are written.
         build_provider: Builds the reviewer provider.
         judging_status: Shown around the judge calls.
-        max_usd: Caps the judging like one more lane; None uses the config budget.
+        max_usd: Caps the judging like one more child; None uses the config budget.
         budget: The run's own tracker, which the judges then bill; None gives them one of
             their own under `max_usd`.
         events: The parent's journal; when present, a judge streams role events into it.
@@ -113,7 +113,7 @@ def rank(
         for selector in selectors:
             try:
                 # The judge sits in the reviewer role, the one `build_provider` builds.
-                seated = cfg.with_model_settings("reviewer", cfg.lane_settings(selector))
+                seated = cfg.with_model_settings("reviewer", cfg.child_settings(selector))
                 verdicts.append(
                     (
                         selector,
@@ -219,7 +219,7 @@ def print_ranked_candidates(
         merged_into: Where a candidate is already merged, by session id.
         committed: Whether a candidate's branch holds a commit, by session id; one named
             False has nothing to merge.
-        model_refs: Imported work locations for model-controlled lanes.
+        model_refs: Imported work locations for model-controlled children.
         joins: The run the first-ranked candidate joins, when a rank join lands it; "" when
             nothing lands by this ranking.
         reporter: The output channels.

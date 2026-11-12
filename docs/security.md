@@ -37,7 +37,7 @@ The holds below describe the local jail, `full` and `partial` `sandbox.isolation
     - `full` `sandbox.isolation`: `/tmp/agent6-home`, created inside the private tmpfs and gone with the run; `[sandbox].home = "cache"` swaps in the persistent dir below, bind-mounted read-write at its real path
     - `partial` `sandbox.isolation`: `$XDG_CACHE_HOME/agent6/homes/<repo-id>` (default `~/.cache/agent6/homes/<repo-id>`), one directory per repository, created `0700` by agent6 and Landlock-granted read-write like the workspace; every other repository's directory stays ungranted
     - `none` `sandbox.isolation`: the operator's own HOME (`[sandbox].home = "host"`, what `auto` resolves to there); `[sandbox].home = "cache"` gives that persistent directory by convention only, since nothing confines the commands, and the start warning says so
-    - a linked worktree (`run --worktree`, a fork) gets its repository's directory, named by the git dir the session recorded and never by the worktree's own `.git` pointer; a lane's clone and a machine state's clone get it too, named by the first directory below the workspace base directory, the owning repository's id
+    - a linked worktree (`run --worktree`, a fork) gets its repository's directory, named by the git dir the session recorded and never by the worktree's own `.git` pointer; a child's clone and a machine state's clone get it too, named by the first directory below the workspace base directory, the owning repository's id
     - a symlink, another user's directory, a mode open to group or others, or a path inside agent6's private dirs at that location refuses the run.
       The mode is checked on every run (a jailed command can `chmod` its own HOME), and the refusal names `chmod 700`; nothing restores it silently
 - agent6's own git never pushes, force-pushes, rewrites history, or `reset --hard` ([Git](#7-git))
@@ -204,7 +204,7 @@ Each `--security-opt` flag on this page turns off a protection of the container 
       The row names each refusal
     - a session started in a linked worktree also grants the repository git dir, including its `worktrees/<name>` admin entry with HEAD and index, at their real paths: a read-only bind under `full` `sandbox.isolation`, a Landlock read+exec rule under `partial`, in both cases whatever `protect_git` says.
       The main checkout's `.git` is read-only only under `full` `sandbox.isolation` with `protect_git`, so a worktree's is the more confined of the two.
-    - a session in a clone (`git.worktree.kind = "clone"`, the default for a fork and a `--worktree` run) is granted nothing beyond its worktree: its `.git` is its own, and agent6 copies its commits into the repository with a host-side `git fetch` from the clone, through the hardened git runner a lane's import uses
+    - a session in a clone (`git.worktree.kind = "clone"`, the default for a fork and a `--worktree` run) is granted nothing beyond its worktree: its `.git` is its own, and agent6 copies its commits into the repository with a host-side `git fetch` from the clone, through the hardened git runner a child's import uses
       A write grant inside the recorded git dir refuses the start: the jail protects paths under the workspace only, so no grant lifts the bind's read-only mode.
     - the granted dir is the manifest's `worktree_git_dir`, recorded when agent6 adds a worktree or validates the checkout's pointer at session start, before any model command.
       A pointer outside a valid repository refuses startup in one line naming `.git`.
@@ -225,7 +225,7 @@ Each `--security-opt` flag on this page turns off a protection of the container 
     - run preflight scans the project tree once for nested packs, without following symlinks or entering `.git`, and refuses with every pack's path.
       Trees reached through `extra_read_paths` grants are not scanned: unpack or delete a pack before granting the tree that holds it
     - a `hide_paths` entry that is the workspace or a directory above it refuses at every level, before anything runs: drop the entry, or work in a directory outside it
-    - a `hide_paths` entry hides a path, not content git tracks: a tracked file still reads through git's objects (`git show HEAD:<file>`) and in every clone or worktree a lane, a fork, a `run --worktree` run or a machine state works in
+    - a `hide_paths` entry hides a path, not content git tracks: a tracked file still reads through git's objects (`git show HEAD:<file>`) and in every clone or worktree a child, a fork, a `run --worktree` run or a machine state works in
     - a `hide_paths` entry inside the workspace stays out of every tree agent6 writes or compares (chain commits, review diffs, dirty checks, undo, resume) and out of the run's pre-run stash, whose change stays in place: no blob of it enters the object store through agent6
     - `XDG_CONFIG_HOME` and `XDG_STATE_HOME` relocate those two dirs, `XDG_CACHE_HOME` the persistent `HOME`; the mask, the grant validator, and the tool-mount scan all read the relocated path
 - `/dev` (`full` `sandbox.isolation`): `/dev/null`, `/dev/zero`, `/dev/urandom`, `/dev/random`, `/dev/full`, a private `/dev/shm`, a private devpts at `/dev/pts` with `/dev/ptmx` pointing into it; no `/dev/tty`
@@ -376,8 +376,8 @@ Capture preserves the target's exclusions and hidden paths; it does not add excl
 A snapshot does not widen read permissions: historical hidden files already in git remain subject to the configured hidden-path boundary.
 Preparation refuses an unreadable target or failed retention rather than reviewing an older committed tree.
 Only the parent binds the panel ID, target, rules, prior findings and verification evidence; reviewer text cannot replace that binding.
-Panel reviewers run as read-only lanes, each its own process and session, not as calls through the parent's editing dispatcher.
-A reviewer's tools are the ones its parent hands down, never an edit, checked at both tool advertisement and dispatch; [Parallel lanes](#10-parallel-lanes) lists them.
+Panel reviewers run as children, each its own process and session, not as calls through the parent's editing dispatcher.
+A reviewer's tools are the ones its parent hands down, never an edit, checked at both tool advertisement and dispatch; [Parallel children](#10-parallel-children) lists them.
 The parent validates the completion artifact's session, panel, reviewer and exact target before parsing or grounding a verdict.
 Failed, timed-out, missing, mismatched and unparseable evidence abstains with its diagnostic; a verdict in the last allowed turn still counts.
 Neither child prose nor a successful process exit certifies the parent's tree.
@@ -420,7 +420,7 @@ The agent works within the environment it is given:
            The reinstall fetches every locked package; a plain `uv sync` over a checkout whose `.venv` is complete fetches nothing, and step 3 then fails offline.
         3. `agent6 config set --repo git.worktree.setup_command '["uv", "sync", "--offline", "--link-mode=copy"]'`: a new worktree's `.venv` is then built from the cache with no route out (1.2 s for a two-package project), importing the worktree's own source.
            `--link-mode=copy` on both steps: the jail binds the cache `HOME` and the working tree as separate mounts, so uv cannot hardlink between them and warns on every install without it
-    - the warmed cache serves every working tree agent6 makes for the repository: a `run --worktree` worktree, a fork's, a `--parallel` lane's clone and a machine state's clone all get the repository's `HOME`
+    - the warmed cache serves every working tree agent6 makes for the repository: a `run --worktree` worktree, a fork's, a `--parallel` child's clone and a machine state's clone all get the repository's `HOME`
 - Running agent6 as root needs `--allow-root` / `AGENT6_ALLOW_ROOT=1` (plus a banner) and weakens the boundary
     - jailed children run as real root (uid 0), even under `full` `sandbox.isolation`: the uid is no boundary, and the level's layers (the table in [Sandbox](#2-sandbox)) are the whole confinement
     - a setuid bit planted through `openat2` (the one create path seccomp cannot filter) then lands on a root-owned file in the workspace.
@@ -563,8 +563,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - `sandbox.isolation = "none"` with auto-approved `run_command` adds a one-time gate: `Continue? [y/N]` interactively, a warning in CI and `machine run`.
 - A prompt with no operator to answer it: a headless run refuses to start under `ask` unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park it for a front-end) or `approve` (grant every scope).
   An unattended machine auto-denies.
-- A lane or reviewer a run dispatched puts its approval, or the question it waits on, to that run's operator: the prompt shows on the run, named for the lane, and the answer goes back over the session's file bridge, which no jail can reach.
-  An "allow all" or "deny all" given on the run covers its lanes for that scope.
+- A child or reviewer a run dispatched puts its approval, or the question it waits on, to that run's operator: the prompt shows on the run, named for the child, and the answer goes back over the session's file bridge, which no jail can reach.
+  An "allow all" or "deny all" given on the run covers its children for that scope.
 - `agent6 mcp serve` has no operator at all, so the tools that would prompt are not published.
   Under `run_commands = "ask"` or `"deny"` its command tools are absent from `tools/list`, and a client that names one is told which setting withheld it ([the tools](acp.md#as-an-mcp-server)).
 
@@ -695,7 +695,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
 
 ### 9. State and locks
 
-- A live run's lane dispatches are recorded under its session dir (`dispatch/<group>.json`), written by the harness alone before any lane launches and advanced at each boundary; a resume reads them to finish or diagnose an interrupted dispatch without launching a lane again, reserving twice or merging twice; no UI writes them.
+- A live run's child dispatches are recorded under its session dir (`dispatch/<group>.json`), written by the harness alone before any child launches and advanced at each boundary; a resume reads them to finish or diagnose an interrupted dispatch without launching a child again, reserving twice or merging twice; no UI writes them.
 
 - An in-process `GraphCurator` owns the task graph ([the curator and its locks](architecture.md#the-curator-and-its-locks))
     - every mutation validates against a pydantic schema before writing
@@ -706,35 +706,35 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - publishes are atomic: a torn config is impossible with or without it
     - it fails open (`O_NOFOLLOW` refuses a planted symlink; a stale root-owned lock is ignored): see [config write behavior](config.md#creating-and-inspecting)
 
-### 10. Parallel lanes
+### 10. Parallel children
 
 `agent6 run --parallel` and a live run's `/parallel` steer directive (see [architecture.md, Parallel runs](architecture.md#parallel-runs)) each dispatch children.
 
-- Every work lane is an ordinary run on its own clone, its own jail per `sandbox.isolation`, its own `run_commands` policy, started by the fixed bootstrap `python -P -E -m agent6.ui.cli.lane_agent`
-    - the task, pins, caps, away mode and lineage travel in a launch file under the origin's state dir (`<state>/launch/<group>/lane-<n>.json`, `0600` in a `0700` dir, the config snapshot beside it); nothing model-written reaches the host argv
-    - the bootstrap reads the file `AGENT6_LANE` names through `O_NOFOLLOW` and refuses a symlink, a foreign owner, a mode others can read or a dir others can write; `-P` keeps the clone off `sys.path` and `-E` ignores `PYTHONPATH`, so a planted `agent6/` or `sitecustomize.py` never imports (`tests/security/test_lane_launch_boundary.py`)
-    - a detached lane has no terminal: its `run_commands = "ask"` prompt is asked on its parent, whose operator answers it; with no parent watching, the launch file's away mode parks it (`wait`) or answers it empty (`deny`), never approves it
-    - a lane is tied to its parent with PDEATHSIG (SIGTERM), so a parent that dies cannot leave a model child running; a lane that does not stop when asked is TERMed, KILLed after the grace and reaped by its recorded pid; a dispatch's deadline is enforced by the parent's await and by the lane's own backstop
-- A lane whose launch file carries a conversation contract is a `reviewer` session: the same bootstrap and jail over its own clone of the reviewed snapshot, with the tool surface cut at both boundaries
+- Every work child is an ordinary run on its own clone, its own jail per `sandbox.isolation`, its own `run_commands` policy, started by the fixed bootstrap `python -P -E -m agent6.ui.cli.child_agent`
+    - the task, pins, caps, away mode and lineage travel in a launch file under the origin's state dir (`<state>/launch/<group>/child-<n>.json`, `0600` in a `0700` dir, the config snapshot beside it); nothing model-written reaches the host argv
+    - the bootstrap reads the file `AGENT6_LAUNCH` names through `O_NOFOLLOW` and refuses a symlink, a foreign owner, a mode others can read or a dir others can write; `-P` keeps the clone off `sys.path` and `-E` ignores `PYTHONPATH`, so a planted `agent6/` or `sitecustomize.py` never imports (`tests/security/test_child_launch_boundary.py`)
+    - a detached child has no terminal: its `run_commands = "ask"` prompt is asked on its parent, whose operator answers it; with no parent watching, the launch file's away mode parks it (`wait`) or answers it empty (`deny`), never approves it
+    - a child is tied to its parent with PDEATHSIG (SIGTERM), so a parent that dies cannot leave a model child running; a child that does not stop when asked is TERMed, KILLed after the grace and reaped by its recorded pid; a dispatch's deadline is enforced by the parent's await and by the child's own backstop
+- A child whose launch file carries a conversation contract is a `reviewer` session: the same bootstrap and jail over its own clone of the reviewed snapshot, with the tool surface cut at both boundaries
     - the contract lists the tools the parent hands down: the ones the parent's model is offered, within the reading tools, `run_command` with `read_background` and `stop_background`, `run_verify_command`, `fetch`, `read_session` and `use_skill`; the tool list offers exactly those, and the dispatcher refuses every other name that slips past the list (an edit, the task list, `parallel`, an MCP tool); no MCP server starts
-    - a reviewer's command runs under the lane's own `run_commands` policy, jail and `sandbox.network`, as a work lane's does: `"deny"` on the parent withholds the command tools from the reviewer's list and from its dispatcher, and an `"ask"` prompt is asked on the parent; `git.worktree.setup_command` runs first only where the reviewer may run commands
-    - a command can change the reviewer's clone, which is removed with the lane; a reviewer's join is record-only, so nothing from the clone merges into the parent's chain
+    - a reviewer's command runs under the child's own `run_commands` policy, jail and `sandbox.network`, as a work child's does: `"deny"` on the parent withholds the command tools from the reviewer's list and from its dispatcher, and an `"ask"` prompt is asked on the parent; `git.worktree.setup_command` runs first only where the reviewer may run commands
+    - a command can change the reviewer's clone, which is removed with the child; a reviewer's join is record-only, so nothing from the clone merges into the parent's chain
     - the loop ends the session at the contract's turn limit without executing that response's tool calls; a background command dies with the session
 - A child's model and its operator work entry points (`parallel`, `/parallel`, `--parallel`) cannot dispatch work, even with `harness.parallel.tool = true`.
-    - a worker lane retains its configured harness-panel authority, independent of `harness.parallel.tool`; the internal record-only dispatch seam uses the same executor, never a tool-supplied purpose or authority argument
+    - a worker child retains its configured harness-panel authority, independent of `harness.parallel.tool`; the internal record-only dispatch seam uses the same executor, never a tool-supplied purpose or authority argument
     - authority comes from the private launch's session id, checkout and conversation contract, checked against the execution; `AGENT6_CHILD` without a matching worker launch grants no panel authority, including in unrelated machine states
-    - a read-only review lane has neither work nor panel authority, so the allowed structure ends at that leaf
+    - a read-only review child has neither work nor panel authority, so the allowed structure ends at that leaf
     - panel costs sub-reserve the owning worker's remaining allowance; a reviewer's deadline is the earlier of its batch's 30 minutes and its ancestor's deadline
 - Import retains descendant session directories, dispatch records, objects, lineage and hidden target refs before worker-clone cleanup; stop follows live links across state directories and session buckets, including through a dead worker.
-    - ancestor settlement keeps the allowance held until cumulative `budget.update` rows confirm every panel child's charge through `settled_lanes`; importing descendant records does not charge that inclusive spend again
+    - ancestor settlement keeps the allowance held until cumulative `budget.update` rows confirm every panel child's charge through `settled_children`; importing descendant records does not charge that inclusive spend again
     - child evidence binds only the child's retained review target, never the top-level checkout after a merge or later edit
-- The model's `parallel` tool is off by default (`[harness.parallel].tool`) and gated twice: the tool list offers it only under the knob, in run mode, outside a lane and with a lane dispatcher installed, and the dispatcher refuses a call that slips past the list on the same grounds; the knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel; a lane the model dispatches is an ordinary run that may edit its clone, under 200 turns, 30 minutes and the parent's remaining budget, which its lanes share, and its commits join the parent's chain
-- A lane's config carries key references, never secret values
-    - the parent writes each lane's config snapshot beside its launch file (the resolved `Config`: provider `base_url`, `api_key_env` names)
-    - the lane reads the same `secrets.toml` or provider env var as any other run
-- Lane git plumbing (clone, fetch, merge) goes through `git_ops.py` and its private runner; lane spawning goes through `ui/spawn.py` (see the [subprocess allowlist](#12-host-side-subprocess-allowlist)).
-- A lane starts from committed state only
-    - a dispatch cuts lanes at the run's chain tip after chain-committing changes
+- The model's `parallel` tool is off by default (`[harness.parallel].tool`) and gated twice: the tool list offers it only under the knob, in run mode, outside a child and with a child dispatcher installed, and the dispatcher refuses a call that slips past the list on the same grounds; the knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel; a child the model dispatches is an ordinary run that may edit its clone, under 200 turns, 30 minutes and the parent's remaining budget, which its children share, and its commits join the parent's chain
+- A child's config carries key references, never secret values
+    - the parent writes each child's config snapshot beside its launch file (the resolved `Config`: provider `base_url`, `api_key_env` names)
+    - the child reads the same `secrets.toml` or provider env var as any other run
+- Child git plumbing (clone, fetch, merge) goes through `git_ops.py` and its private runner; child spawning goes through `ui/spawn.py` (see the [subprocess allowlist](#12-host-side-subprocess-allowlist)).
+- A child starts from committed state only
+    - a dispatch cuts children at the run's chain tip after chain-committing changes
     - `run --parallel` settles uncommitted tracked changes first, as every run does (`git.dirty_tree`)
 
 ### 11. State machines
@@ -884,7 +884,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `ui/btw.py`: spawns `agent6 ask` detached for `/btw` (every composer).
   Argv is the agent6 exe plus the question the operator typed, with `--` before it.
 - `ui/spawn.py`: the shared front-end spawn helper.
-  Spawns the agent6 CLI detached for run and machine launches (`machine create` and `machine run`) and the fixed lane bootstrap (`spawn_lane`, which keeps the child's pid), and captures `sessions prune` / `remove` / `review` and `config set` / `unset`.
+  Spawns the agent6 CLI detached for run and machine launches (`machine create` and `machine run`) and the fixed child bootstrap (`spawn_child`, which keeps the child's pid), and captures `sessions prune` / `remove` / `review` and `config set` / `unset`.
 - `ui/notify.py`: `notify-send` with fixed argv (exe, `--`, two positional data args, no shell) for the device-present notices: a machine's notify, a session that waits or ends.
 - `ui/cli/` helpers:
     - `connect_oauth.py`: the platform's URL opener (`xdg-open`, `open`) for a sign-in URL built from the operator's configuration, with the curated environment; never `$BROWSER`'s command template
@@ -927,7 +927,7 @@ The structural defenses above confine a model that follows an injection.
 
 ## Known limitations
 
-- A budget cap bounds the next call, not the bill: provider metering can report an overshoot after a call, and a lane's reserved share promises no exact upstream monetary cutoff.
+- A budget cap bounds the next call, not the bill: provider metering can report an overshoot after a call, and a child's reserved share promises no exact upstream monetary cutoff.
 
 - seccomp is required; kernels that block it from unprivileged callers make the jail fail closed.
 - Under `full` `sandbox.isolation` in a Docker or Podman container, the jail's `/proc` is empty and `ps` fails.

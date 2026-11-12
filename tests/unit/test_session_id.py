@@ -123,14 +123,14 @@ def test_resolve_ambiguous_prefix(tmp_path: pathlib.Path) -> None:
 
 
 def test_resolve_group_prefix(tmp_path: pathlib.Path) -> None:
-    """A parent's prefix resolves despite its lanes, which remain addressable."""
+    """A parent's prefix resolves despite its children, which remain addressable."""
     parent = "sweet-marsh-DFQQ4G"
     _bucket(tmp_path, parent, f"{parent}-l1", f"{parent}-l2", bucket="runs")
     for query in ("sweet-marsh", parent):
         resolved = id.resolve_session(tmp_path, query)
         assert (resolved.session_id, resolved.subdir) == (parent, "runs")
-    for lane in (1, 2):
-        sid = f"{parent}-l{lane}"
+    for child in (1, 2):
+        sid = f"{parent}-l{child}"
         assert id.resolve_session(tmp_path, sid).session_id == sid
     with pytest.raises(id.SessionIdError, match="ambiguous"):
         id.resolve_session(tmp_path, f"{parent}-l")

@@ -184,7 +184,7 @@ def jail_cache_home_of(repo: str, user: RealUser | None = None) -> pathlib.Path:
 def worktree_base(base_dir: str) -> pathlib.Path:
     """Return the base directory for the worktrees agent6 makes, every repository's.
 
-    Each repository has one directory in it, named by its `repo_id`, for its worktrees, lane
+    Each repository has one directory in it, named by its `repo_id`, for its worktrees, child
     clones and machine clones.
 
     Args:

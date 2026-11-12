@@ -13,7 +13,7 @@ from agent6.sessions import event_log, layout
 from agent6.vcs import review
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
-from tests import review_helpers, review_lane_env
+from tests import review_env, review_helpers
 from tests.unit import test_review_gate
 
 
@@ -47,13 +47,11 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
 
     provider.call.side_effect = reviewer
     gate = review_gate.ReviewGate(
-        settings=review_gate.ReviewSettings(
-            reviewers=[review_lane_env.reviewer("s", "m", provider)]
-        ),
+        settings=review_gate.ReviewSettings(reviewers=[review_env.reviewer("s", "m", provider)]),
         chain=chain,
         hide=(),
         executor=mock.MagicMock,
-        tools=lambda: review_lane_env.READING_TOOLS,
+        tools=lambda: review_env.READING_TOOLS,
         budget_remaining=lambda: None,
         log=lambda _s: None,
         emit=sink.emit,
@@ -106,12 +104,12 @@ def test_a_panel_over_unchanged_trees_is_reused_not_sat_again(tmp_path: pathlib.
     )
     gate = review_gate.ReviewGate(
         settings=review_gate.ReviewSettings(
-            reviewers=[review_lane_env.reviewer("s", "m", provider)], block_on="any"
+            reviewers=[review_env.reviewer("s", "m", provider)], block_on="any"
         ),
         chain=chain,
         hide=(),
         executor=mock.MagicMock,
-        tools=lambda: review_lane_env.READING_TOOLS,
+        tools=lambda: review_env.READING_TOOLS,
         budget_remaining=lambda: None,
         log=lambda _s: None,
         emit=sink.emit,
@@ -164,11 +162,11 @@ def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Pat
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     sink.subscribe(rows.append)
     gate = review_gate.ReviewGate(
-        review_gate.ReviewSettings(reviewers=[review_lane_env.reviewer("s", "m", provider)]),
+        review_gate.ReviewSettings(reviewers=[review_env.reviewer("s", "m", provider)]),
         chain,
         (),
         mock.MagicMock,
-        lambda: review_lane_env.READING_TOOLS,
+        lambda: review_env.READING_TOOLS,
         lambda: None,
         lambda _s: None,
         sink.emit,
@@ -244,7 +242,7 @@ def test_session_panel_retains_cloneable_bytes_without_checkpointing(
         repo,
         chain=chain,
         events=sink,
-        review=review_gate.ReviewSettings(reviewers=[review_lane_env.reviewer("s", "m", provider)]),
+        review=review_gate.ReviewSettings(reviewers=[review_env.reviewer("s", "m", provider)]),
     )
     gate = dataclasses.replace(harness.review_gate, hide=(str(repo / "hidden"),))
     state = loop_state.LoopState(original_task="t", tool_calls=0)
@@ -341,7 +339,7 @@ def test_review_session_retains_its_supplied_target_not_the_checkout(
     harness = test_review_gate._wf(
         repo,
         events=sink,
-        review=review_gate.ReviewSettings(reviewers=[review_lane_env.reviewer("s", "m", provider)]),
+        review=review_gate.ReviewSettings(reviewers=[review_env.reviewer("s", "m", provider)]),
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     if reuse:
@@ -371,5 +369,5 @@ def test_review_session_retains_its_supplied_target_not_the_checkout(
 
 
 @pytest.fixture(autouse=True)
-def panel_lanes(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)
+def panel_children(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(review_gate, "run_panel", review_env.run_panel)

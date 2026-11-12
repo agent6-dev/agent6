@@ -298,7 +298,7 @@ def test_openai_budgeted_response_requires_usage_tokens() -> None:
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     # Retryable (no status): a usage-less reply is stream/gateway integrity
-    # failure; the loop's bounded retry lane owns it, and a fake 422 here
+    # failure; the loop's bounded retry child owns it, and a fake 422 here
     # made ONE mangled stream kill a budgeted run.
     assert ei.value.status_code is None
     assert "usage accounting" in str(ei.value)
@@ -326,7 +326,7 @@ def test_anthropic_budgeted_response_requires_usage_tokens() -> None:
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     # Retryable (no status): a usage-less reply is stream/gateway integrity
-    # failure; the loop's bounded retry lane owns it, and a fake 422 here
+    # failure; the loop's bounded retry child owns it, and a fake 422 here
     # made ONE mangled stream kill a budgeted run.
     assert ei.value.status_code is None
     assert "usage accounting" in str(ei.value)
@@ -353,7 +353,7 @@ def test_openai_budgeted_response_rejects_zero_token_usage() -> None:
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     # Retryable (no status): a usage-less reply is stream/gateway integrity
-    # failure; the loop's bounded retry lane owns it, and a fake 422 here
+    # failure; the loop's bounded retry child owns it, and a fake 422 here
     # made ONE mangled stream kill a budgeted run.
     assert ei.value.status_code is None
     assert "usage accounting" in str(ei.value)
@@ -381,7 +381,7 @@ def test_anthropic_budgeted_response_rejects_zero_token_usage() -> None:
     ):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     # Retryable (no status): a usage-less reply is stream/gateway integrity
-    # failure; the loop's bounded retry lane owns it, and a fake 422 here
+    # failure; the loop's bounded retry child owns it, and a fake 422 here
     # made ONE mangled stream kill a budgeted run.
     assert ei.value.status_code is None
     assert "usage accounting" in str(ei.value)

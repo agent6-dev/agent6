@@ -718,7 +718,7 @@ def test_closing_a_network_releases_every_descriptor(tmp_path: pathlib.Path) -> 
 def test_one_runs_network_cannot_reach_another_runs(tmp_path: pathlib.Path) -> None:
     """Runs are isolated from each other, not just from the machine.
 
-    Two runs on one box (two `--parallel` lanes, or two terminals) each get a network of
+    Two runs on one box (two `--parallel` children, or two terminals) each get a network of
     their own, so a server in one cannot reach a dev server in the other even though both are
     agent6 and the same user.
     """

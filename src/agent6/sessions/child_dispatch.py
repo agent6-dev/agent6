@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The durable record of one lane dispatch: what was granted, launched, joined and settled.
+"""The durable record of one child dispatch: what was granted, launched, joined and settled.
 
-Written atomically before any lane launches and advanced at each boundary, so a resumed
+Written atomically before any child launches and advanced at each boundary, so a resumed
 execution finishes or diagnoses a dispatch its predecessor left behind: one file per
 dispatch under `<session_dir>/dispatch/`. The harness writes it; every other reader reads.
 """
@@ -15,7 +15,7 @@ from typing import Literal
 
 import pydantic
 
-from agent6 import lane_records, portable
+from agent6 import child_records, portable
 
 RECORD_VERSION = 5
 DIR_NAME = "dispatch"
@@ -27,36 +27,36 @@ class DispatchRecordError(Exception):
 
 
 class SegmentRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """One requested task and its lane spec.
+    """One requested task and its child spec.
 
     Attributes:
         task: The task text.
-        spec: The lane spec as given.
-        lanes: How many lanes the segment expanded to.
+        spec: The child spec as given.
+        children: How many children the segment expanded to.
         node_id: The DAG node the segment got, None without a graph.
     """
 
     task: str
     spec: str = ""
-    lanes: int = 1
+    children: int = 1
     node_id: str | None = None
 
 
 class JoinRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """How one lane's work joined, with the chain tip on either side of the merge.
+    """How one child's work joined, with the chain tip on either side of the merge.
 
     Attributes:
-        branch: The lane's branch.
+        branch: The child's branch.
         status: The join's outcome.
         sha: The merge commit, "" when none.
-        detail: The failure's reason, or what stopped a lane whose work still joined; "" when
+        detail: The failure's reason, or what stopped a child whose work still joined; "" when
             neither.
         target_before: The chain tip before the join.
         target_after: The chain tip after it; equal to `target_before` when nothing merged.
     """
 
     branch: str = ""
-    status: lane_records.JoinStatus
+    status: child_records.JoinStatus
     sha: str = ""
     detail: str = ""
     target_before: str = ""
@@ -64,10 +64,10 @@ class JoinRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
 
 
 class UsageRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """What a lane used, as settled against the parent.
+    """What a child used, as settled against the parent.
 
     Attributes:
-        usd: The lane's metered spend.
+        usd: The child's metered spend.
         usd_partial: Whether unpriced calls make it a lower bound.
         tokens: Its fallback-ledger tokens.
     """
@@ -81,10 +81,10 @@ class RankRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     """The order a rank join landed by, written before the first join so no resume ranks twice.
 
     Attributes:
-        order: The ranked lanes' session ids, best first; empty when no lane had a result.
+        order: The ranked children's session ids, best first; empty when no child had a result.
         ranked_by: `judge` or `mechanical`.
         rationale: The judges' words; "" for the mechanical order.
-        winner: The one lane the join lands; "" when the order crowns none.
+        winner: The one child the join lands; "" when the order crowns none.
     """
 
     order: tuple[str, ...]
@@ -94,11 +94,11 @@ class RankRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
 
 
 class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """One lane of the dispatch.
+    """One child of the dispatch.
 
     Attributes:
-        session_id: The lane's session id, fixed before launch.
-        lane: Its number in the group.
+        session_id: The child's session id, fixed before launch.
+        number: Its number in the group.
         task: Its task text.
         model: Its selector, None for the worker's own settings.
         limits: Its turn cap and deadline, None for the config's own.
@@ -110,10 +110,10 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     """
 
     session_id: str
-    lane: int
+    number: int
     task: str
     model: str | None = None
-    limits: lane_records.LaneLimits | None = None
+    limits: child_records.ChildLimits | None = None
     join: JoinRecord | None = None
     report: str = ""
     usage: UsageRecord | None = None
@@ -130,13 +130,13 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         identity: The dispatch's id, the group id `<parent>-p<n>`.
         source: Who asked.
         join_policy: Ordered work merge, harness-owned record-only import, or the
-            best-ranked lane alone.
+            best-ranked child alone.
         ranking: A rank join's order; None before it ranked and under the other policies.
         owner: The execution that made it.
         turn: The turn it was dispatched after.
-        base: The chain tip the lanes were cut from.
+        base: The chain tip the children were cut from.
         segments: The requested tasks.
-        children: The lanes, in lane order.
+        children: The children, in child order.
         state: How far the dispatch got.
         message: The result delivered for it, "" until complete.
         delivered: Whether the result reached the conversation.
@@ -145,8 +145,8 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
 
     version: int = RECORD_VERSION
     identity: str
-    source: lane_records.DispatchSource
-    join_policy: lane_records.JoinPolicy = "merge"
+    source: child_records.DispatchSource
+    join_policy: child_records.JoinPolicy = "merge"
     ranking: RankRecord | None = None
     owner: str
     turn: int
@@ -159,16 +159,16 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     written_at: float = 0.0
 
     def child(self, session_id: str) -> ChildRecord:
-        """Return the lane with this session id.
+        """Return the child with this session id.
 
         Args:
-            session_id: The lane's session id.
+            session_id: The child's session id.
 
         Returns:
             Its record.
 
         Raises:
-            KeyError: No lane has it.
+            KeyError: No child has it.
         """
         for child in self.children:
             if child.session_id == session_id:
@@ -176,7 +176,7 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         raise KeyError(session_id)
 
     def with_child(self, child: ChildRecord) -> DispatchRecord:
-        """Return the record with this lane's entry replaced."""
+        """Return the record with this child's entry replaced."""
         return self.model_copy(
             update={
                 "children": tuple(

@@ -125,14 +125,14 @@ class GitWorktreeConfig(pydantic.BaseModel):
 
     model_config = validation.MODEL_CONFIG
 
-    # A lane: `<base_dir>/<repo-id>/<group-id>/lane-<i>`; a fork or a `run --worktree` run:
+    # A child: `<base_dir>/<repo-id>/<group-id>/child-<i>`; a fork or a `run --worktree` run:
     # `<base_dir>/<repo-id>/<session-id>`.
     base_dir: str = pydantic.Field(
         default="",
         description=(
-            "base directory for the worktrees agent6 makes, grouped by repository: lane and "
+            "base directory for the worktrees agent6 makes, grouped by repository: child and "
             "machine-state clones, fork and `run --worktree` worktrees; empty: "
-            "`<cache_dir>/worktrees`; lane clone removed after work import; fork and `run "
+            "`<cache_dir>/worktrees`; child clone removed after work import; fork and `run "
             "--worktree` worktrees removed by `sessions prune` once merged or holding no work"
         ),
     )
@@ -151,14 +151,14 @@ class GitWorktreeConfig(pydantic.BaseModel):
             "any container, and agent6 copies its commits into the repository as the run makes "
             "them; a linked worktree is smaller for a large repository whose base is on "
             "another filesystem, commits straight into the repository, and under a container "
-            "needs the workspace mounted at its host path; lanes and reviewers are clones."
+            "needs the workspace mounted at its host path; children and reviewers are clones."
         ),
     )
     setup_command: validation.Argv = pydantic.Field(
         default=(),
         description=(
             "environment-setup command for a new worktree as argv, no shell (pipeline "
-            'form: `["sh", "-c", "a && b"]`); `run --worktree` and fork worktrees, lane and '
+            'form: `["sh", "-c", "a && b"]`); `run --worktree` and fork worktrees, child and '
             "machine-state clones: tracked files only, no untracked `.venv` or `node_modules`; "
             "command run once in each worktree before the first turn, under the run's command "
             "sandbox (same isolation, network and grants); nonzero exit or 600-second timeout: "
@@ -227,7 +227,7 @@ class GitConfig(pydantic.BaseModel):
         description=(
             "visible `agent6/<run-id>` branch advanced to the run's chain tip; "
             "`git.branch_per_run = false`: only the hidden `refs/agent6/<run-id>/head` ref; "
-            "forced on for `--parallel` lanes, whose work is imported by branch"
+            "forced on for `--parallel` children, whose work is imported by branch"
         ),
     )
     # Off, resume still works from snapshots; the step-history surfaces degrade.
@@ -267,8 +267,8 @@ class GitConfig(pydantic.BaseModel):
         default=False,
         description=(
             "automatic merge into the base branch only for end reason `finish_session`, or "
-            "`lanes_ranked` for a `run --parallel` run that joined its best-ranked lane, with a "
-            "passed or absent verify gate; other ends: no auto-merge, reason printed; hidden "
+            "`children_ranked` for a `run --parallel` run that joined its best-ranked child, with "
+            "a passed or absent verify gate; other ends: no auto-merge, reason printed; hidden "
             "chain ref merged with `git.branch_per_run = false`; conflict: nothing moved, "
             "instructions printed"
         ),

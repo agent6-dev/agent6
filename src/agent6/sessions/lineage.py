@@ -59,7 +59,7 @@ def descendants_of(session_dir: pathlib.Path) -> tuple[pathlib.Path, ...]:
 
 
 def reviewer_records(state_dir: pathlib.Path, parents: Collection[str]) -> tuple[pathlib.Path, ...]:
-    """Find the bounded read-only conversations the named sessions dispatched.
+    """Find the reviewers the named sessions dispatched.
 
     No listing shows a reviewer's record, so whatever removes its parent removes it too.
 

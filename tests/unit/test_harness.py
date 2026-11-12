@@ -20,7 +20,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import kinds, lane_records
+from agent6 import child_records, kinds
 from agent6.config import Config
 from agent6.harness import (
     advice,
@@ -171,7 +171,7 @@ def _wf(
                 stagnation_notice_after_s=300.0,
                 verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
-                parallel=types.SimpleNamespace(max_lanes=4),
+                parallel=types.SimpleNamespace(max_children=4),
             ),
         ),
         "provider": mock.MagicMock(),
@@ -7713,15 +7713,15 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: pat
     snap = tmp_path / "loop_state.json"
     at_spawn: dict[str, Any] = {}
 
-    def spawner(lanes: Any, group: str, *, at: str | None = None) -> list[Any]:
+    def spawner(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         at_spawn["group"] = group
         at_spawn["persisted"] = json.loads(snap.read_text(encoding="utf-8"))[
             "parallel_groups_dispatched"
         ]
         return [
-            lane_records.LaneResult(
-                spec=lane_records.LaneSpec(
-                    lane=i,
+            child_records.ChildResult(
+                spec=child_records.ChildSpec(
+                    number=i,
                     session_id=f"run-{group}-l{i}",
                     worktree=tmp_path,
                     settings=None,
@@ -7729,15 +7729,15 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: pat
                 session_dir=tmp_path,
                 branch="b",
                 ok=False,
-                error="lane failed",
+                error="child failed",
             )
-            for i in range(1, len(lanes) + 1)
+            for i in range(1, len(children) + 1)
         ]
 
     wf = _wf(
         root=tmp_path,
         mode="run",
-        bridge=operator_bridge.OperatorBridge(lane_spawner=spawner),
+        bridge=operator_bridge.OperatorBridge(child_spawner=spawner),
         resume_state_path=snap,
     )
     conversation = loop_conversation.Conversation.from_wire(
@@ -7758,21 +7758,21 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: pat
 def test_dispatch_returns_a_typed_result_and_injects_no_notice(tmp_path: pathlib.Path) -> None:
     """`dispatch` returns what happened and leaves delivery to its caller.
 
-    The result names the group, the lanes' outcomes and the summary; the conversation gains no
+    The result names the group, the children's outcomes and the summary; the conversation gains no
     message. The journal row and the DAG rationale name the source the caller gave.
     """
     from agent6 import directive
 
-    def spawner(lanes: Any, group: str, *, at: str | None = None) -> list[Any]:
+    def spawner(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         return [
-            lane_records.LaneResult(
-                spec=lane_records.LaneSpec(
-                    lane=1, session_id=f"run-{group}-l1", worktree=tmp_path, settings=None
+            child_records.ChildResult(
+                spec=child_records.ChildSpec(
+                    number=1, session_id=f"run-{group}-l1", worktree=tmp_path, settings=None
                 ),
                 session_dir=tmp_path,
                 branch="b",
                 ok=False,
-                error="lane failed",
+                error="child failed",
             )
         ]
 
@@ -7781,7 +7781,7 @@ def test_dispatch_returns_a_typed_result_and_injects_no_notice(tmp_path: pathlib
     wf = _wf(
         root=tmp_path,
         mode="run",
-        bridge=operator_bridge.OperatorBridge(lane_spawner=spawner),
+        bridge=operator_bridge.OperatorBridge(child_spawner=spawner),
         resume_state_path=tmp_path / "run" / "loop_state.json",
         events=ev,
     )
@@ -7792,23 +7792,23 @@ def test_dispatch_returns_a_typed_result_and_injects_no_notice(tmp_path: pathlib
     result = wf.parallel.dispatch(
         conversation, 3, _state(), [directive.Segment(spec="", task="consult")], source="model"
     )
-    assert isinstance(result, lane_records.DispatchResult)
+    assert isinstance(result, child_records.DispatchResult)
     assert result.dispatched and result.group == "run-p1"
-    assert [j.status for j in result.lanes] == ["failed"]
-    assert result.message.startswith("[parallel] group run-p1 complete (1 lane(s))")
-    assert "FAILED -- lane failed" in result.message
+    assert [j.status for j in result.children] == ["failed"]
+    assert result.message.startswith("[parallel] group run-p1 complete (1 child(ren))")
+    assert "FAILED -- child failed" in result.message
     assert len(conversation.messages) == before
     dispatched = [e for e in ev.events if e["type"] == "parallel.dispatched"]
     assert dispatched and dispatched[0]["source"] == "model"
-    # A refusal before any lane names itself and dispatches nothing.
+    # A refusal before any child names itself and dispatches nothing.
     refused = wf.parallel.dispatch(
         conversation,
         4,
         _state(),
         [directive.Segment(spec="3", task="a"), directive.Segment(spec="3", task="b")],
     )
-    assert not refused.dispatched and refused.lanes == ()
-    assert "request 6 lanes together but [harness.parallel].max_lanes = 4" in refused.message
+    assert not refused.dispatched and refused.children == ()
+    assert "request 6 children together but [harness.parallel].max_children = 4" in refused.message
     assert len(conversation.messages) == before
 
 

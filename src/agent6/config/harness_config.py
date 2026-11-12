@@ -198,7 +198,7 @@ class MetricConfig(pydantic.BaseModel):
 
 
 class ParallelConfig(pydantic.BaseModel):
-    """The `[harness.parallel]` table: the lane limit and the model's `parallel` tool."""
+    """The `[harness.parallel]` table: the child limit and the model's `parallel` tool."""
 
     model_config = validation.MODEL_CONFIG
 
@@ -206,22 +206,22 @@ class ParallelConfig(pydantic.BaseModel):
         default=False,
         description=(
             "offer a run's model the `parallel` tool, which dispatches a task to isolated "
-            "lanes (fresh clones of the committed tree, each an ordinary run that may edit) "
-            "and joins their commits back in order; each lane runs under 200 turns, 30 minutes "
-            "and the run's remaining budget, which the lanes share; `harness.parallel.tool = "
+            "children (fresh clones of the committed tree, each an ordinary run that may edit) "
+            "and joins their commits back in order; each child runs under 200 turns, 30 minutes "
+            "and the run's remaining budget, which the children share; `harness.parallel.tool = "
             "false`: no run is offered it; neither value changes `run --parallel`, the "
             "`/parallel` steer or the review panel"
         ),
     )
 
-    # `le` bounds the cap itself, or a huge max_lanes re-opens the allocation parse_spec refuses.
-    # Static, not CPU-derived: lanes are I/O-bound and the same config must load on every box.
-    max_lanes: int = pydantic.Field(
+    # `le` bounds the cap itself, or a huge max_children re-opens the allocation parse_spec refuses.
+    # Static, not CPU-derived: children are I/O-bound and the same config must load on every box.
+    max_children: int = pydantic.Field(
         ge=1,
         le=1024,
         default=4,
         description=(
-            "The most lanes one `--parallel` group may run, `1` to `1024`; a spec asking for "
+            "The most children one `--parallel` group may run, `1` to `1024`; a spec asking for "
             "more is refused before anything is cloned; a review roster longer than this "
             "runs in batches of this width, with no reviewer dropped."
         ),
@@ -241,7 +241,7 @@ class ParallelConfig(pydantic.BaseModel):
     @pydantic.field_validator("judges")
     @classmethod
     def _each_judge_is_named(cls, v: tuple[str, ...]) -> tuple[str, ...]:
-        """Refuse a blank judge, which the lane grammar would read as the worker's own model.
+        """Refuse a blank judge, which the child grammar would read as the worker's own model.
 
         Args:
             v: The configured judges.
@@ -633,7 +633,7 @@ class ReviewConfig(pydantic.BaseModel):
             "In-loop panel over the diff so far, with findings sent to the model; only "
             "finish-time review can gate finish; periodic review uses "
             "`review.interval_turns`; without `review.reviewers`, one reviewer uses "
-            "`[models.reviewer]`; each reviewer runs as a read-only lane with its own session."
+            "`[models.reviewer]`; each reviewer runs as a child with its own session."
         ),
     )
     interval_turns: int = pydantic.Field(
@@ -700,7 +700,7 @@ class ReviewConfig(pydantic.BaseModel):
         ge=1,
         default=1,
         description=(
-            "simultaneous reviewers, at most `harness.parallel.max_lanes`; a longer roster "
+            "simultaneous reviewers, at most `harness.parallel.max_children`; a longer roster "
             "runs in batches, in roster order; `review.concurrency = 1`: one after another"
         ),
     )

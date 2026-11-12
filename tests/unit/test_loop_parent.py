@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Parent dispatch: `/parallel` steer dispatches lanes.
+"""Parent dispatch: `/parallel` steer dispatches children.
 
 A fake provider fires the steer once, and a fake group spawner fabricates real mergeable branches in
 the parent's tmp repo, so parse, the dirty-tree gate, the sequential join, DAG stamping, events
@@ -20,13 +20,13 @@ from unittest import mock
 
 import pytest
 
-from agent6 import directive, lane_records
-from agent6.app import finalize, lanes
+from agent6 import child_records, directive
+from agent6.app import children, finalize
 from agent6.config import Config
 from agent6.graph import curator, models
 from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.providers import ProviderResponse
-from agent6.sessions import journal, lane_dispatch
+from agent6.sessions import child_dispatch, journal
 from agent6.tools import results as tools_results
 from agent6.ui.cli import parallel as cli_parallel
 from agent6.vcs.git import ops as git_ops
@@ -173,9 +173,9 @@ def _make_branch(
 
 
 class _FakeGroupSpawner:
-    """A synchronous GroupLaneSpawner stand-in that fabricates a mergeable branch per lane.
+    """A synchronous GroupChildSpawner stand-in that fabricates a mergeable branch per child.
 
-    Records the (lanes, group) it was handed so a test can assert the parse and expansion.
+    Records the (children, group) it was handed so a test can assert the parse and expansion.
     """
 
     def __init__(
@@ -186,7 +186,7 @@ class _FakeGroupSpawner:
         *,
         fail: set[int] | None = None,
         conflict: set[int] | None = None,
-        base_by_lane: dict[int, str] | None = None,
+        base_by_child: dict[int, str] | None = None,
         empty: set[int] | None = None,
     ) -> None:
         self.repo = repo
@@ -194,62 +194,72 @@ class _FakeGroupSpawner:
         self.wt_root = wt_root
         self.fail = fail or set()
         self.conflict = conflict or set()
-        self.base_by_lane = base_by_lane or {}
+        self.base_by_child = base_by_child or {}
         self.empty = empty or set()
-        self.calls: list[tuple[list[lane_records.LaneTask], str]] = []
+        self.calls: list[tuple[list[child_records.ChildTask], str]] = []
 
     def tasks(self, call: int = 0) -> list[str]:
-        return [lane.task for lane in self.calls[call][0]]
+        return [child.task for child in self.calls[call][0]]
 
     def __call__(
-        self, lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
-    ) -> list[lane_records.LaneResult]:
-        self.calls.append((list(lanes), group))
-        results: list[lane_records.LaneResult] = []
-        for i in range(1, len(lanes) + 1):
+        self, children: list[child_records.ChildTask], group: str, *, at: str | None = None
+    ) -> list[child_records.ChildResult]:
+        self.calls.append((list(children), group))
+        results: list[child_records.ChildResult] = []
+        for i in range(1, len(children) + 1):
             session_id = f"{self.parent_id}-{group}-l{i}"
             branch = f"agent6/{session_id}"
-            spec = lane_records.LaneSpec(
-                lane=i,
+            spec = child_records.ChildSpec(
+                number=i,
                 session_id=session_id,
                 worktree=self.wt_root / session_id,
                 settings=None,
             )
             if i in self.fail:
                 results.append(
-                    lane_records.LaneResult(
+                    child_records.ChildResult(
                         spec=spec,
                         session_dir=spec.worktree,
                         branch=branch,
                         ok=False,
-                        error="lane boom",
+                        error="child boom",
                     )
                 )
                 continue
-            base = self.base_by_lane.get(i, _head(self.repo))
+            base = self.base_by_child.get(i, _head(self.repo))
             if i in self.empty:
                 # Ended with a result and committed nothing: the import landed only its record.
                 results.append(
-                    lane_records.LaneResult(
+                    child_records.ChildResult(
                         spec=spec,
                         session_dir=spec.worktree,
                         branch=branch,
                         ok=True,
                         error="",
-                        report=f"lane {i} found nothing to change",
+                        report=f"child {i} found nothing to change",
                     )
                 )
                 continue
             if i in self.conflict:
                 _make_branch(
-                    self.repo, branch, base, "conflict.txt", "lane version", self.wt_root / f"wt{i}"
+                    self.repo,
+                    branch,
+                    base,
+                    "conflict.txt",
+                    "child version",
+                    self.wt_root / f"wt{i}",
                 )
             else:
                 _make_branch(
-                    self.repo, branch, base, f"lane{i}.txt", f"lane {i}\n", self.wt_root / f"wt{i}"
+                    self.repo,
+                    branch,
+                    base,
+                    f"child{i}.txt",
+                    f"child {i}\n",
+                    self.wt_root / f"wt{i}",
                 )
             results.append(
-                lane_records.LaneResult(
+                child_records.ChildResult(
                     spec=spec,
                     session_dir=spec.worktree,
                     branch=branch,
@@ -268,7 +278,7 @@ def _build_wf(
     provider: mock.MagicMock,
     *,
     steer_text: str,
-    lane_spawner: Any = None,
+    child_spawner: Any = None,
     graph: Any = None,
     events: Any = None,
     dispatcher: mock.MagicMock | None = None,
@@ -308,9 +318,9 @@ def _build_wf(
                     command=verify_command, when=verify_when, at_start=True, retries=2
                 ),
                 prompt=mock.MagicMock(system_prompt_file=""),
-                parallel=types.SimpleNamespace(max_lanes=4),
+                parallel=types.SimpleNamespace(max_children=4),
             ),
-            # A real int, not a Mock: segment_lanes compares the lane count against this cap.
+            # A real int, not a Mock: segment_children compares the child count against this cap.
         ),
         provider=provider,
         dispatcher=disp,
@@ -318,7 +328,7 @@ def _build_wf(
         events=events,
         curator=graph,
         bridge=operator_bridge.OperatorBridge(
-            lane_spawner=lane_spawner,
+            child_spawner=child_spawner,
             steer_requested=steer.requested,
             steer_prompt=steer.prompt,
             steer_clear=steer.clear,
@@ -383,7 +393,7 @@ def test_a_root_title_cut_at_the_cap_ends_in_an_ellipsis(tmp_path: pathlib.Path)
 
 
 def test_none_spawner_answers_with_feedback_and_continues(tmp_path: pathlib.Path) -> None:
-    """Without a lane spawner the directive is answered with a notice and the run continues."""
+    """Without a child spawner the directive is answered with a notice and the run continues."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = mock.MagicMock()
@@ -391,7 +401,7 @@ def test_none_spawner_answers_with_feedback_and_continues(tmp_path: pathlib.Path
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
     ]
-    wf = _build_wf(repo, provider, steer_text="/parallel do a thing", lane_spawner=None)
+    wf = _build_wf(repo, provider, steer_text="/parallel do a thing", child_spawner=None)
     result = wf.run("start")
 
     assert provider.call.call_count == 2  # ran to max_turns, no crash
@@ -410,7 +420,7 @@ def test_parallel_lookalike_steer_flows_through_as_plain_steer(tmp_path: pathlib
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
     ]
-    wf = _build_wf(repo, provider, steer_text="/parallelfoo do x", lane_spawner=spawner)
+    wf = _build_wf(repo, provider, steer_text="/parallelfoo do x", child_spawner=spawner)
     wf.run("start")
 
     assert spawner.calls == []  # never parsed as a directive
@@ -420,7 +430,7 @@ def test_parallel_lookalike_steer_flows_through_as_plain_steer(tmp_path: pathlib
 
 
 def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
-    """Two clean lanes join in dispatch order with their DAG nodes passed and events fired."""
+    """Two clean children join in dispatch order with their DAG nodes passed and events fired."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     parent_id = "run-abc"
@@ -437,7 +447,7 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
         repo,
         provider,
         steer_text="/parallel task one\n/parallel task two",
-        lane_spawner=spawner,
+        child_spawner=spawner,
         graph=graph,
         events=events,
     )
@@ -446,7 +456,7 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
     # The spawner saw the parsed sibling group under a p1 group id.
     assert spawner.tasks() == ["task one", "task two"]
     assert spawner.calls[0][1] == "p1"
-    # Both lane branches merged onto the chain, in order; the operator's HEAD never moves.
+    # Both child branches merged onto the chain, in order; the operator's HEAD never moves.
     log = _git(repo, "log", "--oneline", "refs/agent6/parent")
     assert "agent6/run-abc-p1-l1" in log
     assert "agent6/run-abc-p1-l2" in log
@@ -458,21 +468,21 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
     assert all(n.status == "passed" and n.commit_sha for n in steering)
     assert all(n.rationale == "dispatched through /parallel by the operator" for n in steering)
     assert len(graph.commit_calls) == 2
-    # dispatched carries tasks and group (no lane ids yet); joined names the real ids.
+    # dispatched carries tasks and group (no child ids yet); joined names the real ids.
     dispatched = events.of("parallel.dispatched")
     joined = events.of("parallel.joined")
     assert dispatched and dispatched[0] == {
         "group": "p1",
-        "lanes": 2,
+        "children": 2,
         "tasks": ["task one", "task two"],
         "source": "operator",
     }
-    assert joined and [ln["status"] for ln in joined[0]["lanes"]] == ["joined", "joined"]
-    assert [ln["session_id"] for ln in joined[0]["lanes"]] == ["run-abc-p1-l1", "run-abc-p1-l2"]
-    # The join names the group the lanes were stamped with, the id `sessions compare` takes.
+    assert joined and [ln["status"] for ln in joined[0]["children"]] == ["joined", "joined"]
+    assert [ln["session_id"] for ln in joined[0]["children"]] == ["run-abc-p1-l1", "run-abc-p1-l2"]
+    # The join names the group the children were stamped with, the id `sessions compare` takes.
     assert joined[0]["group"] == "run-abc-p1"
     assert not events.of("parallel.failed")
-    # One summary message names both joined lanes.
+    # One summary message names both joined children.
     summary = [
         t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel] group")
     ]
@@ -480,8 +490,8 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
     assert "joined at" in summary[0]
 
 
-def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: pathlib.Path) -> None:
-    """`/parallel a/b,c -- task` runs one lane per model under a single segment node."""
+def test_model_list_spec_expands_to_one_child_per_model(tmp_path: pathlib.Path) -> None:
+    """`/parallel a/b,c -- task` runs one child per model under a single segment node."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     parent_id = "run-mdl"
@@ -497,34 +507,34 @@ def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: pathlib.Path) -
         repo,
         provider,
         steer_text="/parallel a/b,c -- refactor the parser",
-        lane_spawner=spawner,
+        child_spawner=spawner,
         graph=graph,
         events=events,
     )
     wf.run("start")
 
-    # Two lanes, same task, one per model, in list order.
-    lanes = spawner.calls[0][0]
-    assert [(ln.task, ln.model) for ln in lanes] == [
+    # Two children, same task, one per model, in list order.
+    children = spawner.calls[0][0]
+    assert [(ln.task, ln.model) for ln in children] == [
         ("refactor the parser", "a/b"),
         ("refactor the parser", "c"),
     ]
-    # One DAG node for the segment, passed with a join sha, its note naming both lanes.
+    # One DAG node for the segment, passed with a join sha, its note naming both children.
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 1
     assert steering[0].status == "passed" and steering[0].commit_sha
     note = next(note for _id, _status, note in graph.status_calls)
     assert f"{parent_id}-p1-l1" in note and f"{parent_id}-p1-l2" in note
-    # Both lanes still surface per-lane in the joined event.
+    # Both children still surface per-child in the joined event.
     joined = events.of("parallel.joined")[0]
-    assert [ln["session_id"] for ln in joined["lanes"]] == [
+    assert [ln["session_id"] for ln in joined["children"]] == [
         f"{parent_id}-p1-l1",
         f"{parent_id}-p1-l2",
     ]
 
 
-def test_lane_count_spec_expands_to_n_default_lanes(tmp_path: pathlib.Path) -> None:
-    """`/parallel 2 -- task` runs two default lanes under one segment node."""
+def test_child_count_spec_expands_to_n_default_children(tmp_path: pathlib.Path) -> None:
+    """`/parallel 2 -- task` runs two default children under one segment node."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     parent_id = "run-cnt"
@@ -539,22 +549,22 @@ def test_lane_count_spec_expands_to_n_default_lanes(tmp_path: pathlib.Path) -> N
         repo,
         provider,
         steer_text="/parallel 2 -- tidy the imports",
-        lane_spawner=spawner,
+        child_spawner=spawner,
         graph=graph,
     )
     wf.run("start")
 
-    lanes = spawner.calls[0][0]
-    assert [(ln.task, ln.model) for ln in lanes] == [("tidy the imports", None)] * 2
+    children = spawner.calls[0][0]
+    assert [(ln.task, ln.model) for ln in children] == [("tidy the imports", None)] * 2
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 1  # one node for the segment, not two
 
 
 @pytest.mark.parametrize("task", ["src/x.py: add a test", "2 task", "5 task"])
-def test_task_without_separator_dispatches_one_default_lane(
+def test_task_without_separator_dispatches_one_default_child(
     tmp_path: pathlib.Path, task: str
 ) -> None:
-    """A task's path or count prefix cannot select a lane model or exceed the lane cap."""
+    """A task's path or count prefix cannot select a child model or exceed the child cap."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "run-default", tmp_path / "wt")
@@ -563,14 +573,14 @@ def test_task_without_separator_dispatches_one_default_lane(
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
     ]
-    wf = _build_wf(repo, provider, steer_text=f"/parallel {task}", lane_spawner=spawner)
+    wf = _build_wf(repo, provider, steer_text=f"/parallel {task}", child_spawner=spawner)
     wf.run("start")
 
-    assert [(lane.task, lane.model) for lane in spawner.calls[0][0]] == [(task, None)]
+    assert [(child.task, child.model) for child in spawner.calls[0][0]] == [(task, None)]
 
 
 def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path) -> None:
-    """A conflicting lane fails its node, the summary says merge by hand, and the run continues."""
+    """A conflicting child fails its node, the summary says merge by hand, and the run continues."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     base = _head(repo)  # before conflict.txt exists
@@ -581,9 +591,9 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path)
     parent_id = "run-cf"
     events = _FakeEvents(tmp_path / parent_id / "logs.jsonl")
     graph = _FakeGraph()
-    # Lane 1 clean; lane 2 conflicts (cut from `base`, before conflict.txt).
+    # Child 1 clean; child 2 conflicts (cut from `base`, before conflict.txt).
     spawner = _FakeGroupSpawner(
-        repo, parent_id, tmp_path / "wt", conflict={2}, base_by_lane={2: base}
+        repo, parent_id, tmp_path / "wt", conflict={2}, base_by_child={2: base}
     )
     provider = mock.MagicMock()
     provider.call.side_effect = [
@@ -593,8 +603,8 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path)
     wf = _build_wf(
         repo,
         provider,
-        steer_text="/parallel clean lane\n/parallel conflicting lane",
-        lane_spawner=spawner,
+        steer_text="/parallel clean child\n/parallel conflicting child",
+        child_spawner=spawner,
         graph=graph,
         events=events,
     )
@@ -602,13 +612,13 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path)
 
     assert provider.call.call_count == 2  # run continued past the conflict
     assert result.reason == "max_turns"
-    # The clean lane's file reached the worktree; the conflicted merge touched nothing.
-    assert (repo / "lane1.txt").read_text(encoding="utf-8") == "lane 1\n"
+    # The clean child's file reached the worktree; the conflicted merge touched nothing.
+    assert (repo / "child1.txt").read_text(encoding="utf-8") == "child 1\n"
     assert (repo / "conflict.txt").read_text(encoding="utf-8") == "main version"
     joined = events.of("parallel.joined")[0]
-    assert [ln["status"] for ln in joined["lanes"]] == ["joined", "conflict"]
+    assert [ln["status"] for ln in joined["children"]] == ["joined", "conflict"]
     failed = events.of("parallel.failed")
-    assert failed and [ln["session_id"] for ln in failed[0]["lanes"]] == [f"{parent_id}-p1-l2"]
+    assert failed and [ln["session_id"] for ln in failed[0]["children"]] == [f"{parent_id}-p1-l2"]
     # The conflicting node is marked failed (NodeStatus has no "blocked").
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert sorted(n.status for n in steering) == ["failed", "passed"]
@@ -617,8 +627,8 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path)
     assert "git merge agent6/run-cf-p1-l2" in summary
 
 
-def test_a_group_of_no_change_lanes_passes_without_merging(tmp_path: pathlib.Path) -> None:
-    """Lanes that ended with a result and no commit pass their nodes; nothing merges.
+def test_a_group_of_no_change_children_passes_without_merging(tmp_path: pathlib.Path) -> None:
+    """Children that ended with a result and no commit pass their nodes; nothing merges.
 
     The chain ref, HEAD and the index stay where they were, the join names `no_changes`, no
     `parallel.failed` fires and the summary says so.
@@ -638,7 +648,7 @@ def test_a_group_of_no_change_lanes_passes_without_merging(tmp_path: pathlib.Pat
         repo,
         provider,
         steer_text="/parallel audit one\n/parallel audit two",
-        lane_spawner=spawner,
+        child_spawner=spawner,
         graph=graph,
         events=events,
     )
@@ -650,27 +660,27 @@ def test_a_group_of_no_change_lanes_passes_without_merging(tmp_path: pathlib.Pat
     assert _git(repo, "log", "--merges", "--oneline", "--all") == ""  # no ref gained a merge
     assert _git(repo, "status", "--porcelain") == ""
     joined = events.of("parallel.joined")[0]
-    assert [ln["status"] for ln in joined["lanes"]] == ["no_changes", "no_changes"]
+    assert [ln["status"] for ln in joined["children"]] == ["no_changes", "no_changes"]
     assert not events.of("parallel.failed")
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert [n.status for n in steering] == ["passed", "passed"]
     assert all(not n.commit_sha for n in steering)
     summary = next(t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel]"))
     assert summary.count("finished with no changes to join") == 2
-    # Each lane's finish summary reaches the conversation, and the record a resume delivers.
-    assert "    summary: lane 1 found nothing to change" in summary
-    assert "    summary: lane 2 found nothing to change" in summary
-    (record,) = lane_dispatch.read_records(tmp_path / parent_id)
+    # Each child's finish summary reaches the conversation, and the record a resume delivers.
+    assert "    summary: child 1 found nothing to change" in summary
+    assert "    summary: child 2 found nothing to change" in summary
+    (record,) = child_dispatch.read_records(tmp_path / parent_id)
     assert [child.report for child in record.children] == [
-        "lane 1 found nothing to change",
-        "lane 2 found nothing to change",
+        "child 1 found nothing to change",
+        "child 2 found nothing to change",
     ]
     assert record.message == summary
     assert "FAILED" not in summary and "CONFLICT" not in summary
 
 
-def test_a_mixed_group_merges_only_the_lanes_that_committed(tmp_path: pathlib.Path) -> None:
-    """One lane committed, one ended clean, one failed: the segment stamps follow each lane."""
+def test_a_mixed_group_merges_only_the_children_that_committed(tmp_path: pathlib.Path) -> None:
+    """One child committed, one ended clean, one failed: the segment stamps follow each child."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     parent_id = "run-mx"
@@ -686,17 +696,17 @@ def test_a_mixed_group_merges_only_the_lanes_that_committed(tmp_path: pathlib.Pa
         repo,
         provider,
         steer_text="/parallel edit\n/parallel audit\n/parallel doomed",
-        lane_spawner=spawner,
+        child_spawner=spawner,
         graph=graph,
         events=events,
     )
     wf.run("start")
 
     joined = events.of("parallel.joined")[0]
-    assert [ln["status"] for ln in joined["lanes"]] == ["joined", "no_changes", "failed"]
+    assert [ln["status"] for ln in joined["children"]] == ["joined", "no_changes", "failed"]
     failed = events.of("parallel.failed")
-    assert failed and [ln["session_id"] for ln in failed[0]["lanes"]] == [f"{parent_id}-p1-l3"]
-    assert (repo / "lane1.txt").read_text(encoding="utf-8") == "lane 1\n"
+    assert failed and [ln["session_id"] for ln in failed[0]["children"]] == [f"{parent_id}-p1-l3"]
+    assert (repo / "child1.txt").read_text(encoding="utf-8") == "child 1\n"
     assert "agent6/run-mx-p1-l1" in _git(repo, "log", "--oneline", "refs/agent6/parent")
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert [n.status for n in steering] == ["passed", "passed", "failed"]
@@ -704,7 +714,7 @@ def test_a_mixed_group_merges_only_the_lanes_that_committed(tmp_path: pathlib.Pa
 
 
 def test_repeated_segments_are_capped_as_one_group(tmp_path: pathlib.Path) -> None:
-    """Three segments of two lanes each ask for six against max_lanes 4 and are refused.
+    """Three segments of two children each ask for six against max_children 4 and are refused.
 
     The refusal comes before any clone, checkpoint or DAG node and names the total and the knob.
     """
@@ -721,7 +731,7 @@ def test_repeated_segments_are_capped_as_one_group(tmp_path: pathlib.Path) -> No
         repo,
         provider,
         steer_text="/parallel 2 -- a\n/parallel 2 -- b\n/parallel 2 -- c",
-        lane_spawner=spawner,
+        child_spawner=spawner,
         graph=graph,
     )
     wf.run("start")
@@ -729,14 +739,14 @@ def test_repeated_segments_are_capped_as_one_group(tmp_path: pathlib.Path) -> No
     assert not [n for n in graph.entries.values() if n.created_by == "steering"]
     texts = _user_texts(_final_messages(provider))
     assert any(
-        "request 6 lanes together but [harness.parallel].max_lanes = 4" in t
+        "request 6 children together but [harness.parallel].max_children = 4" in t
         and "nothing dispatched" in t
         for t in texts
     )
 
 
-def test_failed_lane_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
-    """A lane the spawner could not run fails its node with the reason; the run continues."""
+def test_failed_child_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
+    """A child the spawner could not run fails its node with the reason; the run continues."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     parent_id = "run-fl"
@@ -751,8 +761,8 @@ def test_failed_lane_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
     wf = _build_wf(
         repo,
         provider,
-        steer_text="/parallel doomed lane\n/parallel good lane",
-        lane_spawner=spawner,
+        steer_text="/parallel doomed child\n/parallel good child",
+        child_spawner=spawner,
         graph=graph,
         events=events,
     )
@@ -760,18 +770,18 @@ def test_failed_lane_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
 
     assert result.reason == "max_turns"  # did not crash
     joined = events.of("parallel.joined")[0]
-    assert [ln["status"] for ln in joined["lanes"]] == ["failed", "joined"]
-    assert joined["lanes"][0]["detail"] == "lane boom"
+    assert [ln["status"] for ln in joined["children"]] == ["failed", "joined"]
+    assert joined["children"][0]["detail"] == "child boom"
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert sorted(n.status for n in steering) == ["failed", "passed"]
     failed_note = next(note for _id, status, note in graph.status_calls if status == "failed")
-    assert "lane boom" in failed_note
+    assert "child boom" in failed_note
     transcript = viewmodel_transcript.fold_transcript(
         [{"type": event_type, **fields} for event_type, fields in events.emitted]
     )
-    assert any(item.kind == "marker" and "lane boom" in item.body for item in transcript)
+    assert any(item.kind == "marker" and "child boom" in item.body for item in transcript)
     summary = next(t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel]"))
-    assert "FAILED -- lane boom" in summary
+    assert "FAILED -- child boom" in summary
 
 
 def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) -> None:
@@ -789,10 +799,10 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) 
     calls: list[str] = []
 
     def exploding_spawner(
-        lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
-    ) -> list[lane_records.LaneResult]:
+        children: list[child_records.ChildTask], group: str, *, at: str | None = None
+    ) -> list[child_records.ChildResult]:
         calls.append(group)
-        raise OSError("disk full while cloning lane 2")
+        raise OSError("disk full while cloning child 2")
 
     provider = mock.MagicMock()
     provider.call.side_effect = [
@@ -803,7 +813,7 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) 
         repo,
         provider,
         steer_text="/parallel task one\n/parallel task two",
-        lane_spawner=exploding_spawner,
+        child_spawner=exploding_spawner,
         graph=graph,
         events=events,
     )
@@ -817,7 +827,7 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) 
     assert failed and failed[0]["group"] == "run-boom-p1"  # the stamped group id
     assert "disk full" in str(failed[0])
     texts = _user_texts(_final_messages(provider))
-    assert any("disk full while cloning lane 2" in t for t in texts)
+    assert any("disk full while cloning child 2" in t for t in texts)
     # No steering node is orphaned as pending.
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 2
@@ -830,7 +840,7 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) 
         ("/parallel", "needs a task"),
         ("/parallel -- task", "needs a spec before --"),
         ("/parallel 2 --", "needs a task after --"),
-        ("/parallel 5 -- task", "requests 5 lanes but [harness.parallel].max_lanes = 4"),
+        ("/parallel 5 -- task", "requests 5 children but [harness.parallel].max_children = 4"),
     ],
 )
 def test_invalid_parallel_directive_dispatches_nothing_and_names_the_reason(
@@ -844,7 +854,7 @@ def test_invalid_parallel_directive_dispatches_nothing_and_names_the_reason(
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
         _resp_tool("read_file", {"path": "README.md"}, "t2"),
     ]
-    wf = _build_wf(repo, provider, steer_text=text, lane_spawner=spawner)
+    wf = _build_wf(repo, provider, steer_text=text, child_spawner=spawner)
     wf.run("start")
     assert spawner.calls == []  # nothing dispatched
     texts = _user_texts(_final_messages(provider))
@@ -852,7 +862,7 @@ def test_invalid_parallel_directive_dispatches_nothing_and_names_the_reason(
 
 
 def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: pathlib.Path) -> None:
-    """A changed worktree is chain-committed at its turn, and dispatch cuts the lanes from it."""
+    """A changed worktree is chain-committed at its turn, and dispatch cuts the children from it."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     parent_id = "run-dirty"
@@ -881,7 +891,7 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: pathlib.Path) ->
         repo,
         provider,
         steer_text="/parallel keep going",
-        lane_spawner=spawner,
+        child_spawner=spawner,
         events=events,
         dispatcher=dispatcher,
         # A model-run gate the model never ran: the editing turn is checkpointed all the same.
@@ -891,7 +901,7 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: pathlib.Path) ->
     wf.run("start")
 
     assert spawner.calls and spawner.calls[0][1] == "p1"  # dispatched
-    # The wip edit reached the chain before the lanes were cut from it.
+    # The wip edit reached the chain before the children were cut from it.
     assert _git(repo, "show", "refs/agent6/parent:wip.txt") == "uncommitted work"
     commits = events.of("checkpoint.committed")
     diffs = events.of("diff.updated")
@@ -940,7 +950,7 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
         repo,
         provider,
         steer_text="/parallel keep going",
-        lane_spawner=spawner,
+        child_spawner=spawner,
         dispatcher=dispatcher,
         verify_command=("true",),  # a model-run gate: the wip edit stays uncommitted
         verify_when="never",
@@ -960,42 +970,42 @@ def test_parent_spawner_gate_in_a_child(
 ) -> None:
     cfg = Config()
     monkeypatch.delenv("AGENT6_CHILD", raising=False)
-    # A write run outside a lane gets a real dispatcher.
+    # A write run outside a child gets a real dispatcher.
     assert callable(
-        lanes.build_parent_spawner(
+        children.build_parent_spawner(
             cfg,
             tmp_path,
             tmp_path,
             explicit_leaves=frozenset(),
             mode="run",
             session_id="r",
-            runtime=cli_parallel.lane_runtime(),
+            runtime=cli_parallel.child_runtime(),
         )
     )
     # plan/ask make no commits to clone -> no dispatcher.
     assert (
-        lanes.build_parent_spawner(
+        children.build_parent_spawner(
             cfg,
             tmp_path,
             tmp_path,
             explicit_leaves=frozenset(),
             mode="plan",
             session_id="r",
-            runtime=cli_parallel.lane_runtime(),
+            runtime=cli_parallel.child_runtime(),
         )
         is None
     )
-    # Inside a lane -> no dispatcher (depth 1).
+    # Inside a child -> no dispatcher (depth 1).
     monkeypatch.setenv("AGENT6_CHILD", "1")
     assert (
-        lanes.build_parent_spawner(
+        children.build_parent_spawner(
             cfg,
             tmp_path,
             tmp_path,
             explicit_leaves=frozenset(),
             mode="run",
             session_id="r",
-            runtime=cli_parallel.lane_runtime(),
+            runtime=cli_parallel.child_runtime(),
         )
         is None
     )
@@ -1005,14 +1015,14 @@ def test_parent_spawner_gate_in_a_child(
 
 
 def _ranker(order: tuple[int, ...], *, crowns: bool = True) -> Any:
-    """Rank a group's lanes in the given lane order, by number; `crowns` off names no winner."""
+    """Rank a group's children in the given child order, by number; `crowns` off names no winner."""
 
     def rank(
-        results: Sequence[lane_records.LaneResult], *, group: str, base: str
-    ) -> lane_records.Ranking:
-        by_lane = {res.spec.lane: res.spec.session_id for res in results}
-        ranked = tuple(by_lane[n] for n in order if n in by_lane)
-        return lane_records.Ranking(
+        results: Sequence[child_records.ChildResult], *, group: str, base: str
+    ) -> child_records.Ranking:
+        by_child = {res.spec.number: res.spec.session_id for res in results}
+        ranked = tuple(by_child[n] for n in order if n in by_child)
+        return child_records.Ranking(
             order=ranked, ranked_by="judge", winner=ranked[0] if ranked and crowns else ""
         )
 
@@ -1034,38 +1044,38 @@ def _opening_wf(
         repo,
         provider,
         steer_text=steer_text,
-        lane_spawner=spawner,
+        child_spawner=spawner,
         events=events,
         verify_command=verify_command,
     )
-    wf.opening = directive.Segment(task="add a lane file", spec="3")
-    wf.bridge = dataclasses.replace(wf.bridge, lane_ranker=_ranker(order, crowns=crowns))
+    wf.opening = directive.Segment(task="add a child file", spec="3")
+    wf.bridge = dataclasses.replace(wf.bridge, child_ranker=_ranker(order, crowns=crowns))
     return wf, provider
 
 
 def test_a_run_that_opens_with_a_ranked_dispatch_lands_the_winner_and_calls_no_model(
     tmp_path: pathlib.Path,
 ) -> None:
-    """`run --parallel` is a run: its chain holds the winner's work and it ends `lanes_ranked`."""
+    """`run --parallel` is a run: its chain holds the winner's work; it ends `children_ranked`."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "session", tmp_path / "wt")
     events = _FakeEvents(tmp_path / "session" / "logs.jsonl")
     wf, provider = _opening_wf(repo, spawner, events, order=(2, 1, 3))
 
-    result = wf.run("add a lane file")
+    result = wf.run("add a child file")
 
     assert provider.call.call_count == 0
-    assert (result.reason, result.completed, result.turns) == ("lanes_ranked", True, 1)
-    assert spawner.tasks() == ["add a lane file"] * 3
+    assert (result.reason, result.completed, result.turns) == ("children_ranked", True, 1)
+    assert spawner.tasks() == ["add a child file"] * 3
     files = _git(repo, "ls-tree", "--name-only", "refs/agent6/parent").split()
-    assert files == ["README.md", "lane2.txt"]
+    assert files == ["README.md", "child2.txt"]
     (joined,) = events.of("parallel.joined")
-    assert [lane["status"] for lane in joined["lanes"]] == ["ranked", "joined", "ranked"]
+    assert [child["status"] for child in joined["children"]] == ["ranked", "joined", "ranked"]
     (stop,) = events.of("session.stop")
-    assert stop["reason"] == "lanes_ranked"
+    assert stop["reason"] == "children_ranked"
     assert stop["summary"].splitlines() == [
-        "3 of 3 lane(s) ranked:",
+        "3 of 3 child(ren) ranked:",
         "  session-p1-l1: 2 of 3; agent6/session-p1-l1 holds its work",
         "  session-p1-l2: first; joined at " + _git(repo, "rev-parse", "refs/agent6/parent")[:12],
         "  session-p1-l3: 3 of 3; agent6/session-p1-l3 holds its work",
@@ -1083,7 +1093,7 @@ def test_a_steer_sent_while_the_opening_ran_is_the_runs_next_work(tmp_path: path
     )
     provider.call.side_effect = [_resp_tool("finish_session", {"summary": "added it"}, "t1")]
 
-    result = wf.run("add a lane file")
+    result = wf.run("add a child file")
 
     assert provider.call.call_count == 1 and result.reason == "finish_session"
     texts = _user_texts(_final_messages(provider))
@@ -1091,10 +1101,10 @@ def test_a_steer_sent_while_the_opening_ran_is_the_runs_next_work(tmp_path: path
     steered = next(i for i, t in enumerate(texts) if "also add a changelog line" in t)
     assert joined < steered
     # The model works from the winner's tree.
-    assert "lane2.txt" in _git(repo, "ls-tree", "--name-only", "refs/agent6/parent").split()
+    assert "child2.txt" in _git(repo, "ls-tree", "--name-only", "refs/agent6/parent").split()
 
 
-def test_an_opening_whose_lanes_all_fail_ends_with_no_lane_result(
+def test_an_opening_whose_children_all_fail_ends_with_no_child_result(
     tmp_path: pathlib.Path,
 ) -> None:
     """Nothing is joined and nothing is passed off as a result."""
@@ -1104,15 +1114,15 @@ def test_an_opening_whose_lanes_all_fail_ends_with_no_lane_result(
     events = _FakeEvents(tmp_path / "session" / "logs.jsonl")
     wf, provider = _opening_wf(repo, spawner, events, order=(1, 2, 3))
 
-    result = wf.run("add a lane file")
+    result = wf.run("add a child file")
 
     assert provider.call.call_count == 0
-    assert (result.reason, result.completed) == ("no_lane_result", False)
+    assert (result.reason, result.completed) == ("no_child_result", False)
     assert git_read.chain_tip(repo, "refs/agent6/parent") is None
 
 
 def test_an_opening_the_budget_ended_reads_budget_exhausted(tmp_path: pathlib.Path) -> None:
-    """Lanes that all stopped at the run's budget end the run at exit 3, not `no_lane_result`."""
+    """Children all stopped at the run's budget end the run at exit 3, not `no_child_result`."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "session", tmp_path / "wt", fail={1, 2, 3})
@@ -1121,7 +1131,7 @@ def test_an_opening_the_budget_ended_reads_budget_exhausted(tmp_path: pathlib.Pa
     wf.budget = mock.MagicMock()
     wf.budget.is_exhausted.return_value = True
 
-    result = wf.run("add a lane file")
+    result = wf.run("add a child file")
 
     assert provider.call.call_count == 0
     assert (result.reason, result.completed) == ("budget_exhausted", False)
@@ -1131,7 +1141,7 @@ def test_an_opening_the_budget_ended_reads_budget_exhausted(tmp_path: pathlib.Pa
 def test_a_stop_asked_while_the_opening_ran_ends_the_run_as_a_stop(
     tmp_path: pathlib.Path,
 ) -> None:
-    """The operator's stop outranks the ranking: the run reads stopped, not `lanes_ranked`."""
+    """The operator's stop outranks the ranking: the run reads stopped, not `children_ranked`."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "session", tmp_path / "wt")
@@ -1144,38 +1154,38 @@ def test_a_stop_asked_while_the_opening_ran_ends_the_run_as_a_stop(
     asked: list[str] = []
 
     def rank(
-        results: Sequence[lane_records.LaneResult], *, group: str, base: str
-    ) -> lane_records.Ranking:
+        results: Sequence[child_records.ChildResult], *, group: str, base: str
+    ) -> child_records.Ranking:
         asked.append(group)
-        return lane_records.Ranking(order=())
+        return child_records.Ranking(order=())
 
-    wf.bridge = dataclasses.replace(wf.bridge, lane_ranker=rank)
+    wf.bridge = dataclasses.replace(wf.bridge, child_ranker=rank)
 
-    result = wf.run("add a lane file")
+    result = wf.run("add a child file")
 
     assert provider.call.call_count == 0
     assert (result.reason, result.completed) == ("steer_abort", False)
     assert [stop["reason"] for stop in events.of("session.stop")] == ["steer_abort"]
     # No judge is asked and nothing joins after the stop: a resume ranks from the record.
     assert asked == [] and git_read.chain_tip(repo, "refs/agent6/parent") is None
-    (record,) = lane_dispatch.read_records(tmp_path / "session")
+    (record,) = child_dispatch.read_records(tmp_path / "session")
     assert (record.state, record.ranking, record.delivered) == ("settling", None, False)
 
 
-def test_an_opening_whose_ranking_crowns_no_lane_ends_no_lane_passed(
+def test_an_opening_whose_ranking_crowns_no_child_ends_no_child_passed(
     tmp_path: pathlib.Path,
 ) -> None:
-    """Every lane is placed, none is joined, and the run does not read as ranked work."""
+    """Every child is placed, none is joined, and the run does not read as ranked work."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "session", tmp_path / "wt")
     events = _FakeEvents(tmp_path / "session" / "logs.jsonl")
     wf, provider = _opening_wf(repo, spawner, events, order=(1, 2, 3), crowns=False)
 
-    result = wf.run("add a lane file")
+    result = wf.run("add a child file")
 
     assert provider.call.call_count == 0
-    assert (result.reason, result.completed) == ("no_lane_passed", False)
+    assert (result.reason, result.completed) == ("no_child_passed", False)
     assert git_read.chain_tip(repo, "refs/agent6/parent") is None
     (joined,) = events.of("parallel.joined")
-    assert [lane["status"] for lane in joined["lanes"]] == ["ranked", "ranked", "ranked"]
+    assert [child["status"] for child in joined["children"]] == ["ranked", "ranked", "ranked"]

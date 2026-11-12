@@ -414,7 +414,7 @@ def mounted_root(
 ) -> pathlib.Path:
     """Return the workspace a dev container mounts for a checkout.
 
-    A linked worktree's is its repository's; a lane's clone's is the checkout its base sits in.
+    A linked worktree's is its repository's; a child's clone's is the checkout its base sits in.
 
     Args:
         cfg: The resolved config.
@@ -485,9 +485,9 @@ def prepare_container_execution(
 
     Args:
         cfg: The resolved config.
-        root: The host workspace the container mounts; a lane's origin, not its clone.
+        root: The host workspace the container mounts; a child's origin, not its clone.
         options: The operator's container selection, start and stop commands included.
-        state_dir: The repository's state directory, where the lease lives; a lane's origin's.
+        state_dir: The repository's state directory, where the lease lives; a child's origin's.
         session_id: The acquiring session.
         execution_id: Its current execution.
         checkout: The checkout commands run in; None means the workspace itself.

@@ -25,8 +25,8 @@
 {"ts": "2026-07-14T10:00:11.000000+00:00", "type": "steer.signalled", "source": "sigint"}
 {"ts": "2026-07-14T10:00:11.500000+00:00", "type": "steer.injected", "chars": 18, "text": "also add a -n alias"}
 {"ts": "2026-07-14T10:00:12.000000+00:00", "type": "parallel.dispatched", "group": "p1", "tasks": ["fix the race", "add a test"]}
-{"ts": "2026-07-14T10:00:13.000000+00:00", "type": "parallel.joined", "group": "p1", "lanes": [{"session_id": "co-p1-l1", "branch": "agent6/co-p1-l1", "status": "joined", "sha": "abcdef1234567890"}, {"session_id": "co-p1-l2", "branch": "agent6/co-p1-l2", "status": "conflict", "sha": ""}]}
-{"ts": "2026-07-14T10:00:13.500000+00:00", "type": "parallel.failed", "group": "p1", "lanes": [{"session_id": "co-p1-l2", "status": "conflict"}]}
+{"ts": "2026-07-14T10:00:13.000000+00:00", "type": "parallel.joined", "group": "p1", "children": [{"session_id": "co-p1-l1", "branch": "agent6/co-p1-l1", "status": "joined", "sha": "abcdef1234567890"}, {"session_id": "co-p1-l2", "branch": "agent6/co-p1-l2", "status": "conflict", "sha": ""}]}
+{"ts": "2026-07-14T10:00:13.500000+00:00", "type": "parallel.failed", "group": "p1", "children": [{"session_id": "co-p1-l2", "status": "conflict"}]}
 {"ts": "2026-07-14T10:00:14.000000+00:00", "type": "totally.new", "x": 1, "y": "z"}
 {"ts": "2026-07-14T10:00:14.500000+00:00", "foo": 42}
 {"ts": "2026-07-14T10:00:15.000000+00:00", "type": "graph.update", "nodes": null, "cursor": null}

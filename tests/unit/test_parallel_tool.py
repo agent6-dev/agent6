@@ -15,11 +15,11 @@ from unittest import mock
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import lane_records
+from agent6 import child_records
 from agent6.config import Config
 from agent6.harness import loop, operator_bridge, provider_call, run_chain, toolset
 from agent6.providers import ProviderResponse
-from agent6.sessions import journal, lane_dispatch
+from agent6.sessions import child_dispatch, journal
 from agent6.tools import dispatch, tool_errors
 from agent6.tools import results as tools_results
 
@@ -123,16 +123,16 @@ def test_other_modes_never_offer_or_run_the_tool(tmp_path: pathlib.Path, mode: s
 def test_a_child_and_a_front_end_without_a_dispatcher_refuse(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Depth stays one, and a harness with no lane dispatcher cannot pretend otherwise."""
+    """Depth stays one, and a harness with no child dispatcher cannot pretend otherwise."""
     monkeypatch.setenv("AGENT6_CHILD", "1")
     inside = _dispatcher(tmp_path, _config(tool=True), handler=_handler)
     assert "parallel" not in _names(inside)
-    with pytest.raises(tool_errors.ToolError, match="inside a lane"):
+    with pytest.raises(tool_errors.ToolError, match="inside a child"):
         inside.dispatch("parallel", {"task": "consult"})
     monkeypatch.delenv("AGENT6_CHILD")
     headless = _dispatcher(tmp_path, _config(tool=True), handler=None)
     assert "parallel" not in _names(headless)
-    with pytest.raises(tool_errors.ToolError, match="no lane dispatcher"):
+    with pytest.raises(tool_errors.ToolError, match="no child dispatcher"):
         headless.dispatch("parallel", {"task": "consult"})
 
 
@@ -163,7 +163,7 @@ def test_the_description_names_every_role_the_providers_and_the_ceilings(
     assert "reviewer: q/critic, effort max, temperature 0.7 (temperature from default)" in text
     assert "Configured providers: p, q" in text
     assert "200 turns" in text and "30 minutes" in text
-    assert "edit" in text and "this run's remaining budget, which the lanes share" in text
+    assert "edit" in text and "this run's remaining budget, which the children share" in text
     assert "gives the summary it finished with" in text
     assert "secret" not in text and "localhost" not in text
 
@@ -219,10 +219,10 @@ class _Graph:
         return types.SimpleNamespace(id=intent.id)
 
 
-def _lane_result(sid: str, workdir: pathlib.Path, *, branch: str, tip: str, usd: float) -> Any:
-    lane = int(sid.rsplit("-l", 1)[1])
-    return lane_records.LaneResult(
-        spec=lane_records.LaneSpec(lane, sid, workdir, None),
+def _child_result(sid: str, workdir: pathlib.Path, *, branch: str, tip: str, usd: float) -> Any:
+    child = int(sid.rsplit("-l", 1)[1])
+    return child_records.ChildResult(
+        spec=child_records.ChildSpec(child, sid, workdir, None),
         session_dir=workdir,
         branch=branch,
         ok=True,
@@ -234,25 +234,25 @@ def _lane_result(sid: str, workdir: pathlib.Path, *, branch: str, tip: str, usd:
     )
 
 
-def test_the_model_dispatches_lanes_and_reads_the_result_as_the_tools_answer(
+def test_the_model_dispatches_children_and_reads_the_result_as_the_tools_answer(
     tmp_path: pathlib.Path,
 ) -> None:
-    """One call: the lanes run under the model's ceilings, join in order, and the result returns."""
+    """One call: the children run under the model's ceilings, join in order, the result returns."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     base = _head(repo)
     session_dir = tmp_path / "run-abc"
     session_dir.mkdir()
-    seen: list[lane_records.LaneTask] = []
+    seen: list[child_records.ChildTask] = []
 
-    def spawner(lanes: Any, group: str, *, at: str | None = None) -> list[Any]:
-        seen.extend(lanes)
+    def spawner(children: Any, group: str, *, at: str | None = None) -> list[Any]:
+        seen.extend(children)
         out = []
-        for i in range(1, len(lanes) + 1):
+        for i in range(1, len(children) + 1):
             sid = f"run-abc-{group}-l{i}"
-            tip = _make_branch(repo, f"agent6/{sid}", base, f"lane{i}.txt", tmp_path / f"wt{i}")
+            tip = _make_branch(repo, f"agent6/{sid}", base, f"child{i}.txt", tmp_path / f"wt{i}")
             out.append(
-                _lane_result(sid, tmp_path / f"w{i}", branch=f"agent6/{sid}", tip=tip, usd=0.5)
+                _child_result(sid, tmp_path / f"w{i}", branch=f"agent6/{sid}", tip=tip, usd=0.5)
             )
         return out
 
@@ -278,7 +278,7 @@ def test_the_model_dispatches_lanes_and_reads_the_result_as_the_tools_answer(
         curator=graph,  # type: ignore[arg-type]
         budget=budget,
         resume_state_path=session_dir / "loop_state.json",
-        bridge=operator_bridge.OperatorBridge(lane_spawner=spawner),
+        bridge=operator_bridge.OperatorBridge(child_spawner=spawner),
         call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_turns=2,
     )
@@ -288,24 +288,25 @@ def test_the_model_dispatches_lanes_and_reads_the_result_as_the_tools_answer(
     messages = second.kwargs.get("messages") or second.args[1]
     wire = json.dumps(messages)
     assert "tool_result" in wire and "joined at" in wire, wire[-2500:]
-    assert [lane.model for lane in seen] == ["reviewer", "default"]
+    assert [child.model for child in seen] == ["reviewer", "default"]
     assert all(
-        lane.limits == lane_records.LaneLimits(max_turns=200, deadline_at=lane.limits.deadline_at)
-        for lane in seen
-        if lane.limits
+        child.limits
+        == child_records.ChildLimits(max_turns=200, deadline_at=child.limits.deadline_at)
+        for child in seen
+        if child.limits
     )
-    assert all(lane.limits is not None and lane.limits.deadline_at is not None for lane in seen)
+    assert all(child.limits is not None and child.limits.deadline_at is not None for child in seen)
     assert all(
-        lane.allowance is not None and lane.allowance.usd == pytest.approx(10.0) for lane in seen
+        child.allowance is not None and child.allowance.usd == pytest.approx(10.0) for child in seen
     )
-    (record,) = lane_dispatch.read_records(session_dir)
+    (record,) = child_dispatch.read_records(session_dir)
     assert record.source == "model" and record.state == "complete" and record.delivered
     assert all(c.limits is not None and c.limits.max_turns == 200 for c in record.children)
     assert graph.rationales[-1] == "dispatched through /parallel by the model"
     assert budget.estimate_usd()[0] == pytest.approx(1.0)
     log = _git(repo, "log", "--oneline", "refs/agent6/parent")
     assert "run-abc-p1-l1 work" in log and "run-abc-p1-l2 work" in log
-    # Lane 1 joined first: the chain tip was its tip when lane 2's merge was made.
+    # Child 1 joined first: the chain tip was its tip when child 2's merge was made.
     l1, l2 = record.children
     assert l1.join is not None and l2.join is not None
     assert l2.join.target_before == _git(repo, "rev-parse", "agent6/run-abc-p1-l1")

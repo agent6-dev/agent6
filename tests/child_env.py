@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Real repositories and private launches for lane tests."""
+"""Real repositories and private launches for child tests."""
 
 from __future__ import annotations
 
@@ -14,10 +14,10 @@ from typing import Any
 
 import pytest
 
-from agent6 import budget, kinds, lane_records, paths
+from agent6 import budget, child_records, kinds, paths
 from agent6.app import (
-    lane_launch,
-    lanes,
+    child_launch,
+    children,
     worktrees,
 )
 from agent6.config import Config
@@ -57,7 +57,7 @@ def create_record(
     dest.mkdir(parents=True)
     data: dict[str, Any] = {"version": 2, "session_id": sid, "mode": mode, "user_task": "t"}
     if parent:
-        data["parallel"] = {"parent": parent, "group": parent + "-p1", "lane": 1}
+        data["parallel"] = {"parent": parent, "group": parent + "-p1", "number": 1}
     (dest / "manifest.json").write_text(json.dumps(data))
     (dest / "logs.jsonl").write_text(json.dumps({"type": "session.start", "mode": mode}) + "\n")
     return dest
@@ -78,14 +78,14 @@ def config(url: str = "http://127.0.0.1:1/v1", *, tool: bool = False) -> Config:
 
 def launch_worker(
     repo: pathlib.Path, clone: pathlib.Path, cfg: Config, monkeypatch: pytest.MonkeyPatch
-) -> tuple[pathlib.Path, lane_launch.LaneLaunch]:
+) -> tuple[pathlib.Path, child_launch.ChildLaunch]:
     """Create a private worker launch and install its provenance in the environment."""
     child_repo.clone_worktree(repo, clone)
     sid = "parent-p1-l1"
-    spec = lane_records.LaneSpec(1, sid, clone, None)
-    into = lane_launch.launch_dir(paths.state_dir(repo), "parent-p1")
-    config = worktrees.write_lane_config(cfg, spec, explicit_leaves=frozenset(), into=into)
-    launch = lane_launch.LaneLaunch(
+    spec = child_records.ChildSpec(1, sid, clone, None)
+    into = child_launch.launch_dir(paths.state_dir(repo), "parent-p1")
+    config = worktrees.write_child_config(cfg, spec, explicit_leaves=frozenset(), into=into)
+    launch = child_launch.ChildLaunch(
         worktree=clone,
         record_state=paths.state_dir(repo),
         session_id=sid,
@@ -93,11 +93,11 @@ def launch_worker(
         config=config.path,
         parent="parent",
         group="parent-p1",
-        lane=1,
-        limits=lane_records.LaneLimits(max_turns=20, deadline_at=time.time() + 90),
+        number=1,
+        limits=child_records.ChildLimits(max_turns=20, deadline_at=time.time() + 90),
     )
-    path = lane_launch.write(into, launch)
-    monkeypatch.setenv(lane_launch.ENV, str(path))
+    path = child_launch.write(into, launch)
+    monkeypatch.setenv(child_launch.ENV, str(path))
     monkeypatch.setenv("AGENT6_CHILD", "1")
     return path, launch
 
@@ -106,7 +106,7 @@ def dispatcher(
     repo: pathlib.Path, session_dir: pathlib.Path, cfg: Config, meter: budget.BudgetTracker
 ) -> parallel_dispatch.ParallelDispatcher:
     """Build the common dispatcher with the worker launch authority."""
-    spawner = lanes.build_parent_spawner(
+    spawner = children.build_parent_spawner(
         cfg,
         repo,
         # A session's children keep their records where its own is.
@@ -114,7 +114,7 @@ def dispatcher(
         explicit_leaves=frozenset(),
         mode="run",
         session_id=session_dir.name,
-        runtime=parallel.lane_runtime(),
+        runtime=parallel.child_runtime(),
     )
     assert spawner is not None, "a trusted worker retains the common executor for its panel"
     return parallel_dispatch.ParallelDispatcher(
@@ -124,8 +124,8 @@ def dispatcher(
             fallback_parent=git(repo, "rev-parse", "HEAD"),
         ),
         curator=None,
-        max_lanes=4,
-        lane_spawner=spawner,
+        max_children=4,
+        child_spawner=spawner,
         save_snapshot=lambda *_a, **_k: None,
         log=lambda _m: None,
         emit=event_log.EventSink(session_dir / "logs.jsonl").emit,
@@ -134,7 +134,7 @@ def dispatcher(
         execution_id="worker-execution",
         budget=meter,
         session_dir=session_dir,
-        authority=lane_launch.dispatch_authority(
+        authority=child_launch.dispatch_authority(
             cfg, mode="run", session_id=session_dir.name, root=repo
         ),
     )
@@ -142,7 +142,7 @@ def dispatcher(
 
 def run_panel_worker(url: str) -> None:
     """Run the internal panel seam in a worker process with real private launch provenance."""
-    launch = lane_launch.read()
+    launch = child_launch.read()
     assert launch is not None
     directory = layout.bucket_dir(launch.record_state, "runs") / launch.session_id
     process.write_worker_pid(directory, os.getpid())
@@ -150,7 +150,7 @@ def run_panel_worker(url: str) -> None:
     executor = dispatcher(launch.worktree, directory, config(url), meter)
     executor.dispatch_panel(
         [
-            lane_records.LaneTask(
+            child_records.ChildTask(
                 "review",
                 "reviewer",
                 contract=kinds.ConversationContract(

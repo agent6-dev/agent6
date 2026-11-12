@@ -13,22 +13,22 @@ from tests.unit import test_sessions_show_group
 group = test_sessions_show_group.group
 
 
-def test_dashboard_lanes_refresh_and_open(group: pathlib.Path) -> None:
+def test_dashboard_children_refresh_and_open(group: pathlib.Path) -> None:
     asyncio.run(_scenario(group))
 
 
 async def _scenario(repo: pathlib.Path) -> None:
     parent = layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="fan")
-    lane = layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="fan-l1")
+    child = layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="fan-l1")
     tui = app.Agent6TUI(parent.session_dir)
     async with tui.run_test(size=(140, 45)) as pilot:
         tui.action_toggle_dashboard()
         await pilot.pause()
-        table = tui.screen.query_one("#lanes", widgets.DataTable)
+        table = tui.screen.query_one("#children", widgets.DataTable)
         assert table.display and table.row_count == 2
-        assert table.border_title == "lanes: 2"
-        assert str(table.get_row_at(0)[1]) == "openai/lane-1"
-        with lane.logs_path.open("a") as log:
+        assert table.border_title == "children: 2"
+        assert str(table.get_row_at(0)[1]) == "openai/child-1"
+        with child.logs_path.open("a") as log:
             log.write('{"type":"budget.update","usd_total":1.25}\n')
             log.write('{"type":"session.stop","reason":"steer_abort"}\n')
         await pilot.pause(1.2)
@@ -37,20 +37,20 @@ async def _scenario(repo: pathlib.Path) -> None:
         assert isinstance(tui.screen, dashboard.DashboardScreen)
         table.focus()
         await pilot.press("enter")
-    assert tui.return_value == app.TuiExit(open_next=lane.session_dir)
+    assert tui.return_value == app.TuiExit(open_next=child.session_dir)
 
 
 ordinary_parent = test_sessions_show_group.ordinary_parent
 
 
-def test_dashboard_shows_a_lane_that_appears_after_the_view_opens(
+def test_dashboard_shows_a_child_that_appears_after_the_view_opens(
     tmp_path: pathlib.Path, monkeypatch: object
 ) -> None:
     asyncio.run(_ordinary_scenario(tmp_path))
 
 
 async def _ordinary_scenario(tmp_path: pathlib.Path) -> None:
-    """An ordinary live run has no lanes at mount; its first lane appears while it waits."""
+    """An ordinary live run has no children at mount; its first child appears while it waits."""
     import json
     import os
 
@@ -75,35 +75,35 @@ async def _ordinary_scenario(tmp_path: pathlib.Path) -> None:
     async with tui.run_test(size=(140, 45)) as pilot:
         tui.action_toggle_dashboard()
         await pilot.pause()
-        table = tui.screen.query_one("#lanes", widgets.DataTable)
+        table = tui.screen.query_one("#children", widgets.DataTable)
         assert not table.display
-        lane = layout.SessionLayout(state_dir=state, session_id="solo-p1-l1")
-        lane.ensure()
-        lane.manifest_path.write_text(
+        child = layout.SessionLayout(state_dir=state, session_id="solo-p1-l1")
+        child.ensure()
+        child.manifest_path.write_text(
             json.dumps(
                 {
                     "version": 3,
                     "session_id": "solo-p1-l1",
                     "mode": "run",
-                    "models": {"driver": {"provider": "openai", "model": "lane-1"}},
-                    "parallel": {"group": "solo-p1", "lane": 1, "parent": "solo"},
+                    "models": {"driver": {"provider": "openai", "model": "child-1"}},
+                    "parallel": {"group": "solo-p1", "number": 1, "parent": "solo"},
                 }
             ),
             encoding="utf-8",
         )
-        lane.logs_path.write_text(
+        child.logs_path.write_text(
             json.dumps({"type": "session.start", "mode": "run", "user_task": "audit"}) + "\n",
             encoding="utf-8",
         )
         await pilot.pause(1.3)
         assert table.display and table.row_count == 1
-        assert table.border_title == "lanes: 1"
-        assert str(table.get_row_at(0)[1]) == "openai/lane-1"
-        with lane.logs_path.open("a") as log:
+        assert table.border_title == "children: 1"
+        assert str(table.get_row_at(0)[1]) == "openai/child-1"
+        with child.logs_path.open("a") as log:
             log.write('{"type":"budget.update","usd_total":0.75}\n')
             log.write('{"type":"session.stop","reason":"finish_session"}\n')
         await pilot.pause(1.3)
         assert str(table.get_row_at(0)[3]) == "$0.75"
         table.focus()
         await pilot.press("enter")
-    assert tui.return_value == app.TuiExit(open_next=lane.session_dir)
+    assert tui.return_value == app.TuiExit(open_next=child.session_dir)

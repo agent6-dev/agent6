@@ -15,8 +15,8 @@ import sys
 import time
 
 from agent6 import directive, errors, kinds, portable
+from agent6.app import children as app_children
 from agent6.app import frontend, preflight, run
-from agent6.app import lanes as app_lanes
 from agent6.app.session import setup as session_setup
 from agent6.config import (
     Config,
@@ -185,26 +185,26 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
         ),
         build_parent_spawner=(
             lambda cfg, leaves, cwd, state_dir, mode, session_id, max_usd, auto_approve, watch: (
-                app_lanes.build_parent_spawner(
+                app_children.build_parent_spawner(
                     cfg,
                     cwd,
                     state_dir,
                     explicit_leaves=leaves,
                     mode=mode,
                     session_id=session_id,
-                    runtime=cli_parallel.lane_runtime(),
+                    runtime=cli_parallel.child_runtime(),
                     max_usd=max_usd,
                     auto_approve=auto_approve,
-                    lane_away=interact.lane_away_mode(),
+                    child_away=interact.child_away_mode(),
                     watch=watch,
                 )
             )
         ),
-        # The lane runtime owns the judge's two pieces; read at the call, as the spawner is.
+        # The child runtime owns the judge's two pieces; read at the call, as the spawner is.
         build_judge_provider=lambda cfg, sink, budget, events: (
-            cli_parallel.lane_runtime().build_provider(cfg, sink, budget, events)
+            cli_parallel.child_runtime().build_provider(cfg, sink, budget, events)
         ),
-        judging_status=lambda: cli_parallel.lane_runtime().judging_status(),
+        judging_status=lambda: cli_parallel.child_runtime().judging_status(),
         agent6_exe=spawn.agent6_exe,
         spawn_detached_resume=lambda cwd, sid, flags: spawn.spawn_detached_resume(
             cwd, sid, config_paths=config_paths, flags=flags
@@ -302,7 +302,7 @@ def _cmd_run(
         budget_overrides: The budget flags.
         sandbox_overrides: The sandbox flags.
         preset: The `--preset` name.
-        parallel_spec: The `--parallel` lane spec, or "".
+        parallel_spec: The `--parallel` child spec, or "".
         worktree: Give the run its own git worktree.
         standing_goal: The `--standing` goal, or "".
         pins: The pinned session ids.
@@ -345,7 +345,7 @@ def _cmd_run(
     # `--parallel` is a run that opens with a dispatch joined by rank; run mode only.
     opening: directive.Segment | None = None
     if parallel_spec and mode == "run":
-        # Depth 1: a lane (AGENT6_CHILD) never dispatches work itself.
+        # Depth 1: a child (AGENT6_CHILD) never dispatches work itself.
         if os.environ.get("AGENT6_CHILD"):
             common.refuse(
                 "--parallel is unavailable inside a child (parallel dispatch is depth 1)."

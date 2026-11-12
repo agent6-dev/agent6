@@ -19,10 +19,10 @@ from unittest import mock
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import lane_records
+from agent6 import child_records
 from agent6.harness import loop, operator_bridge, parallel_dispatch, provider_call, run_chain
 from agent6.providers import ProviderResponse
-from agent6.sessions import journal, lane_dispatch
+from agent6.sessions import child_dispatch, journal
 from agent6.tools import results as tools_results
 
 
@@ -111,7 +111,7 @@ def _silent(_msg: str) -> None:
     return None
 
 
-def _lane_result(
+def _child_result(
     spec_id: str,
     workdir: pathlib.Path,
     *,
@@ -120,10 +120,10 @@ def _lane_result(
     ok: bool = True,
     error: str = "",
     usd: float = 0.0,
-) -> lane_records.LaneResult:
-    lane = int(spec_id.rsplit("-l", 1)[1])
-    return lane_records.LaneResult(
-        spec=lane_records.LaneSpec(lane, spec_id, workdir, None),
+) -> child_records.ChildResult:
+    child = int(spec_id.rsplit("-l", 1)[1])
+    return child_records.ChildResult(
+        spec=child_records.ChildSpec(child, spec_id, workdir, None),
         session_dir=workdir,
         branch=branch or f"agent6/{spec_id}",
         ok=ok,
@@ -141,8 +141,8 @@ def _build_wf(
     provider: mock.MagicMock,
     *,
     steer_text: str = "",
-    lane_spawner: Any = None,
-    lane_recoverer: Any = None,
+    child_spawner: Any = None,
+    child_recoverer: Any = None,
     budget: agent6_budget.BudgetTracker | None = None,
 ) -> loop.Harness:
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -173,7 +173,7 @@ def _build_wf(
                 stagnation_notice_after_s=300.0,
                 verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
-                parallel=types.SimpleNamespace(max_lanes=4),
+                parallel=types.SimpleNamespace(max_children=4),
             ),
         ),
         provider=provider,
@@ -183,8 +183,8 @@ def _build_wf(
         budget=budget,
         resume_state_path=session_dir / "loop_state.json",
         bridge=operator_bridge.OperatorBridge(
-            lane_spawner=lane_spawner,
-            lane_recoverer=lane_recoverer,
+            child_spawner=child_spawner,
+            child_recoverer=child_recoverer,
             steer_requested=steer.requested,
             steer_prompt=steer.prompt,
             steer_clear=steer.clear,
@@ -210,11 +210,11 @@ def _first_call_texts(provider: mock.MagicMock) -> list[str]:
     return out
 
 
-def _records(session_dir: pathlib.Path) -> tuple[lane_dispatch.DispatchRecord, ...]:
-    return lane_dispatch.read_records(session_dir)
+def _records(session_dir: pathlib.Path) -> tuple[child_dispatch.DispatchRecord, ...]:
+    return child_dispatch.read_records(session_dir)
 
 
-def _no_lanes(group: str, children: Sequence[str]) -> list[lane_records.LaneResult]:
+def _no_children(group: str, children: Sequence[str]) -> list[child_records.ChildResult]:
     del group, children
     return []
 
@@ -231,14 +231,14 @@ def test_a_failed_record_write_launches_nothing(
     _init_repo(repo)
     calls: list[str] = []
 
-    def spawner(lanes: Any, group: str, *, at: str | None = None) -> list[Any]:
+    def spawner(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         calls.append(group)
         return []
 
     def refuse(*_a: Any, **_k: Any) -> None:
         raise OSError("disk full")
 
-    monkeypatch.setattr(lane_dispatch, "write_record", refuse)
+    monkeypatch.setattr(child_dispatch, "write_record", refuse)
     provider = _provider()
     budget = _tracker()
     wf = _build_wf(
@@ -246,7 +246,7 @@ def test_a_failed_record_write_launches_nothing(
         tmp_path / "run-abc",
         provider,
         steer_text="/parallel a",
-        lane_spawner=spawner,
+        child_spawner=spawner,
         budget=budget,
     )
     wf.run("start")
@@ -275,7 +275,7 @@ def test_a_crash_before_launch_resumes_to_nothing_ran(tmp_path: pathlib.Path) ->
     _init_repo(repo)
     session_dir = tmp_path / "run-abc"
 
-    def crashing(lanes: Any, group: str, *, at: str | None = None) -> list[Any]:
+    def crashing(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         raise _Crash
 
     budget = _tracker()
@@ -285,23 +285,23 @@ def test_a_crash_before_launch_resumes_to_nothing_ran(tmp_path: pathlib.Path) ->
             session_dir,
             _provider(),
             steer_text="/parallel 2 -- a",
-            lane_spawner=crashing,
+            child_spawner=crashing,
             budget=budget,
         ).run("start")
     (record,) = _records(session_dir)
     assert record.state == "running"  # written before the launch was attempted
     assert [c.session_id for c in record.children] == ["run-abc-p1-l1", "run-abc-p1-l2"]
-    assert budget.available().usd == 10.0  # no lane holds a share of it
+    assert budget.available().usd == 10.0  # no child holds a share of it
 
     seen: list[tuple[str, Sequence[str]]] = []
 
-    def recoverer(group: str, children: Sequence[str]) -> list[lane_records.LaneResult]:
-        seen.append((group, tuple(children)))
+    def recoverer(group: str, ids: Sequence[str]) -> list[child_records.ChildResult]:
+        seen.append((group, tuple(ids)))
         return []
 
     provider2 = _provider()
     budget2 = _tracker()
-    wf2 = _build_wf(repo, session_dir, provider2, lane_recoverer=recoverer, budget=budget2)
+    wf2 = _build_wf(repo, session_dir, provider2, child_recoverer=recoverer, budget=budget2)
     wf2.resume()
     assert seen == [("run-abc-p1", ("run-abc-p1-l1", "run-abc-p1-l2"))]
     (record,) = _records(session_dir)
@@ -311,20 +311,20 @@ def test_a_crash_before_launch_resumes_to_nothing_ran(tmp_path: pathlib.Path) ->
     assert any("nothing ran" in t for t in _first_call_texts(provider2))
     # A third execution has nothing left to reconcile and delivers nothing again.
     provider3 = _provider()
-    _build_wf(repo, session_dir, provider3, lane_recoverer=recoverer, budget=_tracker()).resume()
+    _build_wf(repo, session_dir, provider3, child_recoverer=recoverer, budget=_tracker()).resume()
     assert len(seen) == 1
     assert sum("nothing ran" in t for t in _first_call_texts(provider3)) == 1  # history, once
 
 
 def test_a_crash_after_one_child_started_recovers_it_once(tmp_path: pathlib.Path) -> None:
-    """The lane that finished joins once and is settled once; the one that never ran reads so."""
+    """The child that finished joins once and is settled once; the one that never ran reads so."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     session_dir = tmp_path / "run-abc"
     base = _head(repo)
-    tip = _make_branch(repo, "agent6/run-abc-p1-l1", base, "lane1.txt", tmp_path / "wt1")
+    tip = _make_branch(repo, "agent6/run-abc-p1-l1", base, "child1.txt", tmp_path / "wt1")
 
-    def crashing(lanes: Any, group: str, *, at: str | None = None) -> list[Any]:
+    def crashing(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         raise _Crash
 
     with pytest.raises(_Crash):
@@ -333,21 +333,19 @@ def test_a_crash_after_one_child_started_recovers_it_once(tmp_path: pathlib.Path
             session_dir,
             _provider(),
             steer_text="/parallel 2 -- a",
-            lane_spawner=crashing,
+            child_spawner=crashing,
             budget=_tracker(),
         ).run("start")
 
-    def recoverer(group: str, children: Sequence[str]) -> list[lane_records.LaneResult]:
+    def recoverer(group: str, ids: Sequence[str]) -> list[child_records.ChildResult]:
         return [
-            _lane_result(
-                children[0], tmp_path / "w1", branch="agent6/run-abc-p1-l1", tip=tip, usd=1.5
-            ),
-            _lane_result(children[1], tmp_path / "w2", ok=False, error="never started"),
+            _child_result(ids[0], tmp_path / "w1", branch="agent6/run-abc-p1-l1", tip=tip, usd=1.5),
+            _child_result(ids[1], tmp_path / "w2", ok=False, error="never started"),
         ]
 
     provider2 = _provider()
     budget2 = _tracker()
-    _build_wf(repo, session_dir, provider2, lane_recoverer=recoverer, budget=budget2).resume()
+    _build_wf(repo, session_dir, provider2, child_recoverer=recoverer, budget=budget2).resume()
     log = _git(repo, "log", "--oneline", "refs/agent6/parent")
     assert log.count("run-abc-p1-l1 work") == 1, log
     (record,) = _records(session_dir)
@@ -356,7 +354,7 @@ def test_a_crash_after_one_child_started_recovers_it_once(tmp_path: pathlib.Path
     assert l1.join is not None and l1.join.status == "joined" and l1.settled
     assert l2.join is not None and l2.join.status == "failed" and not l2.settled
     assert budget2.estimate_usd()[0] == pytest.approx(1.5)
-    assert budget2.available().usd == pytest.approx(8.5)  # the unknown lane holds nothing
+    assert budget2.available().usd == pytest.approx(8.5)  # the unknown child holds nothing
     texts = _first_call_texts(provider2)
     assert any("joined at" in t and "never started" in t for t in texts)
 
@@ -371,21 +369,21 @@ def test_a_merge_landed_before_the_record_is_not_merged_twice(
     base = _head(repo)
     tips: dict[str, str] = {}
 
-    def spawner(lanes: Any, group: str, *, at: str | None = None) -> list[Any]:
+    def spawner(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         out = []
-        for i in range(1, len(lanes) + 1):
+        for i in range(1, len(children) + 1):
             sid = f"run-abc-{group}-l{i}"
             tips[sid] = _make_branch(
-                repo, f"agent6/{sid}", base, f"lane{i}.txt", tmp_path / f"wt{i}"
+                repo, f"agent6/{sid}", base, f"child{i}.txt", tmp_path / f"wt{i}"
             )
             out.append(
-                _lane_result(
+                _child_result(
                     sid, tmp_path / f"w{i}", branch=f"agent6/{sid}", tip=tips[sid], usd=1.0
                 )
             )
         return out
 
-    real_write = lane_dispatch.write_record
+    real_write = child_dispatch.write_record
     writes: list[str] = []
 
     def crash_after_first_join(session_dir: pathlib.Path, record: Any, *, now: float) -> None:
@@ -394,28 +392,28 @@ def test_a_merge_landed_before_the_record_is_not_merged_twice(
             raise _Crash  # the merge is on the chain, the record is not
         real_write(session_dir, record, now=now)
 
-    monkeypatch.setattr(lane_dispatch, "write_record", crash_after_first_join)
+    monkeypatch.setattr(child_dispatch, "write_record", crash_after_first_join)
     with pytest.raises(_Crash):
         _build_wf(
             repo,
             session_dir,
             _provider(),
             steer_text="/parallel 2 -- a",
-            lane_spawner=spawner,
+            child_spawner=spawner,
             budget=_tracker(),
         ).run("start")
-    monkeypatch.setattr(lane_dispatch, "write_record", real_write)
+    monkeypatch.setattr(child_dispatch, "write_record", real_write)
     log = _git(repo, "log", "--oneline", "refs/agent6/parent")
     assert log.count("run-abc-p1-l1 work") == 1 and "run-abc-p1-l2" not in log, log
 
-    def recoverer(group: str, children: Sequence[str]) -> list[lane_records.LaneResult]:
+    def recoverer(group: str, ids: Sequence[str]) -> list[child_records.ChildResult]:
         return [
-            _lane_result(sid, tmp_path / f"w{i}", branch=f"agent6/{sid}", tip=tips[sid], usd=1.0)
-            for i, sid in enumerate(children, start=1)
+            _child_result(sid, tmp_path / f"w{i}", branch=f"agent6/{sid}", tip=tips[sid], usd=1.0)
+            for i, sid in enumerate(ids, start=1)
         ]
 
     budget2 = _tracker()
-    _build_wf(repo, session_dir, _provider(), lane_recoverer=recoverer, budget=budget2).resume()
+    _build_wf(repo, session_dir, _provider(), child_recoverer=recoverer, budget=budget2).resume()
     log = _git(repo, "log", "--oneline", "refs/agent6/parent")
     assert log.count("run-abc-p1-l1 work") == 1 and log.count("run-abc-p1-l2 work") == 1, log
     (record,) = _records(session_dir)
@@ -423,7 +421,7 @@ def test_a_merge_landed_before_the_record_is_not_merged_twice(
     assert all(
         c.join is not None and c.join.status == "joined" and c.settled for c in record.children
     )
-    # The first execution settled both lanes; settled usage stays with it.
+    # The first execution settled both children; settled usage stays with it.
     assert budget2.estimate_usd()[0] == pytest.approx(0.0)
     assert budget2.available().usd == 10.0
 
@@ -436,10 +434,10 @@ def test_a_result_completed_but_undelivered_is_delivered_once(
     session_dir = tmp_path / "run-abc"
     base = _head(repo)
 
-    def spawner(lanes: Any, group: str, *, at: str | None = None) -> list[Any]:
+    def spawner(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         sid = f"run-abc-{group}-l1"
-        tip = _make_branch(repo, f"agent6/{sid}", base, "lane1.txt", tmp_path / "wt1")
-        return [_lane_result(sid, tmp_path / "w1", branch=f"agent6/{sid}", tip=tip, usd=1.0)]
+        tip = _make_branch(repo, f"agent6/{sid}", base, "child1.txt", tmp_path / "wt1")
+        return [_child_result(sid, tmp_path / "w1", branch=f"agent6/{sid}", tip=tip, usd=1.0)]
 
     real_deliver = parallel_dispatch.ParallelDispatcher.deliver
 
@@ -453,14 +451,16 @@ def test_a_result_completed_but_undelivered_is_delivered_once(
             session_dir,
             _provider(),
             steer_text="/parallel a",
-            lane_spawner=spawner,
+            child_spawner=spawner,
             budget=_tracker(),
         ).run("start")
     monkeypatch.setattr(parallel_dispatch.ParallelDispatcher, "deliver", real_deliver)
     (record,) = _records(session_dir)
     assert record.state == "complete" and not record.delivered
     provider2 = _provider()
-    _build_wf(repo, session_dir, provider2, lane_recoverer=_no_lanes, budget=_tracker()).resume()
+    _build_wf(
+        repo, session_dir, provider2, child_recoverer=_no_children, budget=_tracker()
+    ).resume()
     assert sum("joined at" in t for t in _first_call_texts(provider2)) == 1
     (record,) = _records(session_dir)
     assert record.delivered
@@ -468,14 +468,14 @@ def test_a_result_completed_but_undelivered_is_delivered_once(
 
 
 def test_child_spend_exhausts_the_parent_before_its_next_call(tmp_path: pathlib.Path) -> None:
-    """A lane that spent past the parent's cap stops the parent at its next provider call."""
+    """A child that spent past the parent's cap stops the parent at its next provider call."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     session_dir = tmp_path / "run-abc"
     base = _head(repo)
-    tip = _make_branch(repo, "agent6/run-abc-p1-l1", base, "lane1.txt", tmp_path / "wt1")
+    tip = _make_branch(repo, "agent6/run-abc-p1-l1", base, "child1.txt", tmp_path / "wt1")
 
-    def crashing(lanes: Any, group: str, *, at: str | None = None) -> list[Any]:
+    def crashing(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         raise _Crash
 
     with pytest.raises(_Crash):
@@ -484,20 +484,18 @@ def test_child_spend_exhausts_the_parent_before_its_next_call(tmp_path: pathlib.
             session_dir,
             _provider(),
             steer_text="/parallel a",
-            lane_spawner=crashing,
+            child_spawner=crashing,
             budget=_tracker(),
         ).run("start")
 
-    def recoverer(group: str, children: Sequence[str]) -> list[lane_records.LaneResult]:
+    def recoverer(group: str, ids: Sequence[str]) -> list[child_records.ChildResult]:
         return [
-            _lane_result(
-                children[0], tmp_path / "w1", branch="agent6/run-abc-p1-l1", tip=tip, usd=50.0
-            )
+            _child_result(ids[0], tmp_path / "w1", branch="agent6/run-abc-p1-l1", tip=tip, usd=50.0)
         ]
 
     budget2 = _tracker()
     result = _build_wf(
-        repo, session_dir, _provider(), lane_recoverer=recoverer, budget=budget2
+        repo, session_dir, _provider(), child_recoverer=recoverer, budget=budget2
     ).resume()
     assert result.reason == "budget_exhausted"
     assert budget2.estimate_usd()[0] == pytest.approx(50.0)
@@ -512,14 +510,14 @@ def test_a_fresh_dispatch_records_every_boundary(tmp_path: pathlib.Path) -> None
 
     ceilings: list[float] = []
 
-    def spawner(lanes: Any, group: str, *, at: str | None = None) -> list[Any]:
+    def spawner(children: Any, group: str, *, at: str | None = None) -> list[Any]:
         out = []
-        ceilings.extend(lane.allowance.usd for lane in lanes)
-        for i in range(1, len(lanes) + 1):
+        ceilings.extend(child.allowance.usd for child in children)
+        for i in range(1, len(children) + 1):
             sid = f"run-abc-{group}-l{i}"
-            tip = _make_branch(repo, f"agent6/{sid}", base, f"lane{i}.txt", tmp_path / f"wt{i}")
+            tip = _make_branch(repo, f"agent6/{sid}", base, f"child{i}.txt", tmp_path / f"wt{i}")
             out.append(
-                _lane_result(sid, tmp_path / f"w{i}", branch=f"agent6/{sid}", tip=tip, usd=0.5)
+                _child_result(sid, tmp_path / f"w{i}", branch=f"agent6/{sid}", tip=tip, usd=0.5)
             )
         return out
 
@@ -529,20 +527,20 @@ def test_a_fresh_dispatch_records_every_boundary(tmp_path: pathlib.Path) -> None
         session_dir,
         _provider(),
         steer_text="/parallel 2 -- a",
-        lane_spawner=spawner,
+        child_spawner=spawner,
         budget=budget,
     )
     events_wf.run("start")
     (record,) = _records(session_dir)
     assert record.state == "complete" and record.delivered
     assert record.owner and record.source == "operator" and record.base == _head(repo)
-    assert ceilings == [10.0, 10.0]  # each lane starts under all the run has left
-    for child in record.children:
-        assert child.join is not None and child.join.status == "joined"
-        assert child.join.target_before and child.join.target_after == child.join.sha
-        assert child.usage == lane_dispatch.UsageRecord(usd=0.5) and child.settled
+    assert ceilings == [10.0, 10.0]  # each child starts under all the run has left
+    for entry in record.children:
+        assert entry.join is not None and entry.join.status == "joined"
+        assert entry.join.target_before and entry.join.target_after == entry.join.sha
+        assert entry.usage == child_dispatch.UsageRecord(usd=0.5) and entry.settled
     assert budget.estimate_usd()[0] == pytest.approx(1.0)
     assert budget.available().usd == pytest.approx(9.0)
-    stored = json.loads(lane_dispatch.record_path(session_dir, "run-abc-p1").read_text())
+    stored = json.loads(child_dispatch.record_path(session_dir, "run-abc-p1").read_text())
     assert stored["version"] == 5
     assert stored["join_policy"] == "merge"

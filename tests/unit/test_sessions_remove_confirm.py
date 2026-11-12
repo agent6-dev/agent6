@@ -372,7 +372,7 @@ def _reviewer(state: pathlib.Path, reviewer_id: str, parent: str) -> pathlib.Pat
                 "session_id": reviewer_id,
                 "mode": "reviewer",
                 "user_task": "Review: security",
-                "parallel": {"group": f"{parent}-rpanel", "lane": 1, "parent": parent},
+                "parallel": {"group": f"{parent}-rpanel", "number": 1, "parent": parent},
             }
         )
         + "\n",
@@ -414,70 +414,70 @@ def test_remove_asks_takes_their_review_reviewer_records(
     assert not asked.exists() and kept.exists()
 
 
-def _lane(state: pathlib.Path, lane_id: str, parent: str) -> pathlib.Path:
-    lane = state / "sessions" / "runs" / lane_id
-    lane.mkdir(parents=True)
-    (lane / "manifest.json").write_text(
+def _child(state: pathlib.Path, child_id: str, parent: str) -> pathlib.Path:
+    child = state / "sessions" / "runs" / child_id
+    child.mkdir(parents=True)
+    (child / "manifest.json").write_text(
         json.dumps(
             {
                 "version": 2,
-                "session_id": lane_id,
+                "session_id": child_id,
                 "mode": "run",
                 "user_task": "t",
-                "parallel": {"group": f"{parent}-p1", "lane": 1, "parent": parent},
+                "parallel": {"group": f"{parent}-p1", "number": 1, "parent": parent},
             }
         )
         + "\n",
         encoding="utf-8",
     )
-    (lane / "logs.jsonl").write_text(
+    (child / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
         + "\n"
         + json.dumps({"type": "session.stop", "reason": "finish_session"})
         + "\n",
         encoding="utf-8",
     )
-    return lane
+    return child
 
 
-def test_remove_takes_the_runs_lanes_with_it(
+def test_remove_takes_the_runs_children_with_it(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A removed run left its lanes' records, and a run reusing its id then failed to dispatch."""
+    """A removed run left its children's records; a run reusing its id then failed to dispatch."""
     monkeypatch.chdir(tmp_path)
     _ended_unmerged_run(tmp_path)
     state = paths.state_dir(tmp_path)
-    lane = _lane(state, f"{_ID}-p1-l1", _ID)
-    lane_reviewer = _reviewer(state, f"{lane.name}-rpanel-l1", lane.name)
-    other = _lane(state, "other-p1-l1", "other")
-    chain = git_read.chain_ref_for(lane.name)
+    child = _child(state, f"{_ID}-p1-l1", _ID)
+    child_reviewer = _reviewer(state, f"{child.name}-rpanel-l1", child.name)
+    other = _child(state, "other-p1-l1", "other")
+    chain = git_read.chain_ref_for(child.name)
     _git(tmp_path, "update-ref", chain, "HEAD")
-    _git(tmp_path, "branch", f"agent6/{lane.name}", "HEAD")
+    _git(tmp_path, "branch", f"agent6/{child.name}", "HEAD")
 
     assert main(["sessions", "remove", _ID]) == 0
 
-    assert not lane.exists() and not lane_reviewer.exists() and other.exists()
+    assert not child.exists() and not child_reviewer.exists() and other.exists()
     assert git_read.chain_tip(tmp_path, chain) is None
-    # A lane's branch is git's, as a run's is: prune is the branch verb.
-    assert git_read.branch_exists(tmp_path, f"agent6/{lane.name}")
+    # A child's branch is git's, as a run's is: prune is the branch verb.
+    assert git_read.branch_exists(tmp_path, f"agent6/{child.name}")
     out = capsys.readouterr().out
-    assert "1 lane" in out and "1 reviewer record" in out
+    assert "1 child" in out and "1 reviewer record" in out
 
 
-def test_remove_refuses_while_a_lane_of_the_run_is_live(
+def test_remove_refuses_while_a_child_of_the_run_is_live(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A dead run's live lane keeps its record: removing the run would orphan it."""
+    """A dead run's live child keeps its record: removing the run would orphan it."""
     monkeypatch.chdir(tmp_path)
     layout = _ended_unmerged_run(tmp_path)
-    lane = _lane(paths.state_dir(tmp_path), f"{_ID}-p1-l1", _ID)
-    process.write_worker_pid(lane, os.getpid())
+    child = _child(paths.state_dir(tmp_path), f"{_ID}-p1-l1", _ID)
+    process.write_worker_pid(child, os.getpid())
 
     assert main(["sessions", "remove", _ID]) == 2
 
-    assert layout.session_dir.exists() and lane.exists()
-    assert f"{lane.name} is still live" in capsys.readouterr().err
+    assert layout.session_dir.exists() and child.exists()
+    assert f"{child.name} is still live" in capsys.readouterr().err

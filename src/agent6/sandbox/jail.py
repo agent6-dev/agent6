@@ -559,7 +559,7 @@ _PR_SET_CHILD_SUBREAPER = 36
 _SWEEP_DEADLINE_S = 5.0
 sweep_lock = threading.Lock()
 live_launchers: set[int] = set()
-# Children started on purpose in their own session (a `/btw` ask, a lane, the claude_code
+# Children started on purpose in their own session (a `/btw` ask, a child, the claude_code
 # provider's child): they look exactly like an escapee, so every such spawn registers here.
 _own_detached: set[int] = set()
 

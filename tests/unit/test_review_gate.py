@@ -33,7 +33,7 @@ from agent6.harness.review import gate as review_gate
 from agent6.providers import ProviderResponse
 from agent6.sessions import event_log, journal
 from agent6.tools import results
-from tests import review_lane_env
+from tests import review_env
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
 # identity (`commit_identity`), empty as a real Config carries it unset.
@@ -875,7 +875,7 @@ def _target_reviewer(
     """Return a reviewer with one scripted reviewer and no git behind its grounding."""
     provider = mock.MagicMock()
     provider.call.return_value = _resp(_REVIEWER_REPLY)
-    reviewer = review_lane_env.reviewer(focus="correctness", model="p/m", provider=provider)
+    reviewer = review_env.reviewer(focus="correctness", model="p/m", provider=provider)
 
     def rules(*_args: Any, **_kwargs: Any) -> review_records.ReviewRules:
         return review_records.ReviewRules()
@@ -901,7 +901,7 @@ def _target_reviewer(
         chain=mock.MagicMock(root=tmp_path),
         hide=(),
         executor=mock.MagicMock,
-        tools=lambda: review_lane_env.READING_TOOLS,
+        tools=lambda: review_env.READING_TOOLS,
         budget_remaining=lambda: None,
         log=_silent,
         emit=events.append,
@@ -957,5 +957,5 @@ def test_a_review_target_without_a_diff_is_skipped(
 
 
 @pytest.fixture(autouse=True)
-def panel_lanes(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)
+def panel_children(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(review_gate, "run_panel", review_env.run_panel)

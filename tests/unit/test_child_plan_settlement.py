@@ -8,8 +8,8 @@ import pathlib
 import pytest
 
 from agent6 import budget, paths
-from agent6.app import lanes
-from agent6.sessions import budget_events, event_log, journal, lane_dispatch, layout
+from agent6.app import children
+from agent6.sessions import budget_events, child_dispatch, event_log, journal, layout
 
 
 def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
@@ -28,7 +28,7 @@ def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
                     "session_id": directory.name,
                     "mode": "run" if directory == worker else "reviewer",
                     "models": {"driver": {"provider": provider, "model": "base"}},
-                    "parallel": {"parent": parent, "group": "g", "lane": 1},
+                    "parallel": {"parent": parent, "group": "g", "number": 1},
                 }
             )
         )
@@ -45,9 +45,9 @@ def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
     panel.record_plan_preflight("b", b1)
     leaf_sink = event_log.EventSink(leaf / "logs.jsonl")
     leaf_sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(panel)))
-    leaf_usage = lanes.lane_usage(leaf)
+    leaf_usage = children.child_usage(leaf)
     assert leaf_usage is not None
-    owner.settle_lane(leaf.name, leaf_usage)
+    owner.settle_child(leaf.name, leaf_usage)
     owner.record_plan_preflight("a", a1)
     sink = event_log.EventSink(worker / "logs.jsonl")
     sink.emit(
@@ -55,9 +55,9 @@ def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
             **budget_events.budget_update_fields(owner),
         )
     )
-    lane_dispatch.write_record(
+    child_dispatch.write_record(
         worker,
-        lane_dispatch.DispatchRecord(
+        child_dispatch.DispatchRecord(
             identity="panel",
             source="panel",
             join_policy="record_only",
@@ -66,22 +66,22 @@ def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
             base="",
             segments=(),
             children=(
-                lane_dispatch.ChildRecord(
+                child_dispatch.ChildRecord(
                     session_id=leaf.name,
-                    lane=1,
+                    number=1,
                     task="review",
                     settled=True,
-                    usage=lane_dispatch.UsageRecord(usd=0),
+                    usage=child_dispatch.UsageRecord(usd=0),
                 ),
             ),
             state="complete",
         ),
         now=1,
     )
-    usage = lanes.lane_usage(worker)
+    usage = children.child_usage(worker)
     assert usage is not None
-    parent.settle_lane(worker.name, usage)
-    parent.settle_lane(worker.name, usage)
+    parent.settle_child(worker.name, usage)
+    parent.settle_child(worker.name, usage)
     assert parent.snapshot().plan_observed_points == pytest.approx(4)
     assert parent.snapshot().plans["a"].usage == a1
     assert parent.snapshot().plans["b"].usage == b1

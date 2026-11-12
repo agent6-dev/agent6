@@ -64,7 +64,7 @@ def persistent_jail_home(
     `partial` gets the repository's `agent6.paths.jail_cache_home`; `full` (a private /tmp) and
     `none` (the operator's own HOME) opt into it with `[sandbox].home = "cache"`. `jail_policy`
     creates it and grants it read-write at its real
-    path. A working tree agent6 made for a repository (a worktree, a lane's clone, a machine
+    path. A working tree agent6 made for a repository (a worktree, a child's clone, a machine
     state's clone) gets that repository's HOME, so a warmed tool cache serves all of them.
 
     Args:

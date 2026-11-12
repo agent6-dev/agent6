@@ -327,9 +327,9 @@ def test_a_conversation_persists_across_a_resume_and_starts_new_on_a_fork(
     assert other.conversation_id != ctx.conversation_id and other.is_first_turn
     forked = conversation_state.Conversations(path=tmp_path / "s2" / conversation_state.FILE_NAME)
     assert forked.context("worker", "work", initiator="user").conversation_id != ctx.conversation_id
-    lane = conversation_state.Conversations(is_subagent=True)
-    assert lane.context("worker", "work", initiator="user").is_subagent
-    assert lane.path is None  # a path-less state writes nothing
+    child = conversation_state.Conversations(is_subagent=True)
+    assert child.context("worker", "work", initiator="user").is_subagent
+    assert child.path is None  # a path-less state writes nothing
 
 
 class _Inner:

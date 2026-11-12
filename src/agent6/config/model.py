@@ -430,8 +430,8 @@ class Config(pydantic.BaseModel):
             temperature=resolved.temperature,
         )
 
-    def lane_settings(self, selector: str | None) -> kinds.ModelSettings | None:
-        """Resolve one lane selector, the grammar `run --parallel`, `/parallel` and the tool share.
+    def child_settings(self, selector: str | None) -> kinds.ModelSettings | None:
+        """Resolve one child selector, the grammar `run --parallel`, `/parallel` and the tool share.
 
         Args:
             selector: None or "" for the worker's own settings, unchanged; an exact role name
@@ -441,7 +441,7 @@ class Config(pydantic.BaseModel):
                 role is written `provider/reviewer`.
 
         Returns:
-            The lane's complete settings, or None for the worker's own.
+            The child's complete settings, or None for the worker's own.
 
         Raises:
             ConfigError: The selector names no model, or the role it needs has no route.
@@ -463,7 +463,7 @@ class Config(pydantic.BaseModel):
     ) -> Config:
         """Return a copy whose role runs the settings as selected, inheriting nothing.
 
-        The entry is replaced in memory, so a selected None stays None until the lane
+        The entry is replaced in memory, so a selected None stays None until the child
         snapshot writes it (and notes what TOML cannot spell).
 
         Args:
@@ -731,6 +731,7 @@ _REPLACED_KEYS = {
     "context": "rename the context table to [compaction]; keep its keys and values",
     "git.commit.checkpoint": "moved config key; use git.commit.checkpoint_message",
     "git.commit.squash": "moved config key; use git.commit.squash_message",
+    "harness.parallel.max_lanes": "renamed config key; use harness.parallel.max_children",
     "harness.verify_at_start": "moved config key; use harness.verify.at_start",
     "harness.verify_command": "moved config key; use harness.verify.command",
     "harness.verify_infer": "moved config key; use harness.verify.infer",

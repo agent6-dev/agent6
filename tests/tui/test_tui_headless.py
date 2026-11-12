@@ -2156,14 +2156,14 @@ def test_a_waiting_question_of_a_dead_run_is_answered_for_the_resume(
     asyncio.run(scenario())
 
 
-def test_lane_header_reads_the_parents_rationale(tmp_path: pathlib.Path) -> None:
-    """The rendered lane header reads group facts from the parent's manifest."""
+def test_child_header_reads_the_parents_rationale(tmp_path: pathlib.Path) -> None:
+    """The rendered child header reads group facts from the parent's manifest."""
     runs = tmp_path / "sessions" / "runs"
-    lane = runs / "lane"
+    child = runs / "child"
     parent = runs / "fan"
-    lane.mkdir(parents=True)
+    child.mkdir(parents=True)
     parent.mkdir()
-    (lane / "manifest.json").write_text(
+    (child / "manifest.json").write_text(
         json.dumps(
             {
                 "mode": "run",
@@ -2177,7 +2177,7 @@ def test_lane_header_reads_the_parents_rationale(tmp_path: pathlib.Path) -> None
             {
                 "comparison": {
                     "group": "fan",
-                    "ranking": ["lane", "other"],
+                    "ranking": ["child", "other"],
                     "ranked_by": "judge",
                     "rationale": "covers the edge case",
                     "judge_cost_usd": 0.0123,
@@ -2186,10 +2186,10 @@ def test_lane_header_reads_the_parents_rationale(tmp_path: pathlib.Path) -> None
         ),
         encoding="utf-8",
     )
-    (lane / "logs.jsonl").write_text("", encoding="utf-8")
+    (child / "logs.jsonl").write_text("", encoding="utf-8")
 
     async def scenario() -> None:
-        app = tui_app.Agent6TUI(lane)
+        app = tui_app.Agent6TUI(child)
         async with app.run_test(size=(140, 40)) as pilot:
             await _show_dashboard(pilot)
             app._tick()

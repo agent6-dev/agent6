@@ -20,7 +20,7 @@ A coding agent with sandboxed commands, resumable sessions, and editable workflo
 - Resumes or forks a saved session from an earlier turn.
 - Runs your verification command and marks an unverified tree.
 - Reviews the diff with a model panel; blocking findings stop the merge.
-- Runs in a worktree, or as [parallel attempts][parallel-runs] in clones, ranked for you; a top-level run may dispatch lanes itself when `harness.parallel.tool` is on.
+- Runs in a worktree, or as [parallel attempts][parallel-runs] in clones, ranked for you; a top-level run may dispatch children itself when `harness.parallel.tool` is on.
 - Defines workflows as [TOML state machines][state-machines] with recovery and replay.
 - Follows `AGENTS.md` and [SKILL.md packs][skills]; [MCP servers][mcp] are opt-in.
 - No telemetry unless you [export it][telemetry], and no automatic updates.
@@ -76,7 +76,7 @@ Other commands:
 | `agent6 attach <id>` | follow a live session |
 | `agent6 steer <id> "instruction"` | direct the next steps |
 | `agent6 sessions findings <id>` | list a session's review findings |
-| `agent6 sessions receipt <id>` | print the recorded tests, execution environments, review outcome, the lanes it dispatched and how to revert |
+| `agent6 sessions receipt <id>` | print the recorded tests, execution environments, review outcome, the children it dispatched and how to revert |
 | `agent6 stop <id> --after-turn` | stop after the current turn |
 | `agent6 resume <id>` | continue an interrupted run |
 | `agent6 fork <id> --at-turn 7` | fork a coding run from an earlier turn into a separate worktree |

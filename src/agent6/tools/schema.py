@@ -310,10 +310,10 @@ class ParallelInput(_ToolInput):
     TOOL_NAME: ClassVar[str] = "parallel"
     # The toolset replaces this with the run's resolved roles and providers.
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Run a task in isolated lanes (fresh clones of the committed tree) and join their"
-        " commits back in order; blocks until they return. `spec` is a lane count or a"
-        " comma-separated list of selectors: a role name brings its model, effort and"
-        " temperature, `[provider/]model` runs with the worker's."
+        "Run a task in isolated child sessions (subagents), each on a fresh clone of the"
+        " committed tree, and join their commits back in order; blocks until they return."
+        " `spec` is a count of children or a comma-separated list of selectors: a role name"
+        " brings its model, effort and temperature, `[provider/]model` runs with the worker's."
     )
 
     task: str = pydantic.Field(min_length=1, max_length=20_000)
@@ -642,7 +642,7 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     FinishSessionInput,
     AskUserInput,
     ListFindingsInput,
-    # Offered only under `[harness.parallel].tool` in a run that has a lane dispatcher.
+    # Offered only under `[harness.parallel].tool` in a run that has a child dispatcher.
     ParallelInput,
     DagAddTaskInput,
     DagUpdateTaskInput,

@@ -134,7 +134,7 @@ def unused_session_id(state_dir: pathlib.Path, bucket: str) -> str:
 def resolve_session(
     state_dir: pathlib.Path, query: str, *, buckets: Sequence[str] = layout.SESSION_BUCKETS
 ) -> layout.SessionLayout:
-    """Resolve an id or prefix, preferring a parent over its own lanes and reviewers.
+    """Resolve an id or prefix, preferring a parent over its own children and reviewers.
 
     A parent wins only over matches in its own bucket and over the read-only bucket, where
     its reviewers' records live under ids that extend its own.

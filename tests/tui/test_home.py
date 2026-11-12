@@ -1065,7 +1065,7 @@ def test_merge_is_greyed_out_for_a_live_run(tmp_path: pathlib.Path) -> None:
 def test_hub_folded_group_shows_its_latest_activity(tmp_path: pathlib.Path) -> None:
     """A folded group's row time is the group's latest activity, as `sessions list` shows it.
 
-    The parent's own journal is quiet while its lanes run.
+    The parent's own journal is quiet while its children run.
     """
     import asyncio
 
@@ -1079,23 +1079,23 @@ def test_hub_folded_group_shows_its_latest_activity(tmp_path: pathlib.Path) -> N
         a6, "runs", "fan", [{"type": "session.start", "mode": "run", "user_task": "t"}]
     )
     (parent / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
-    for lane in (1, 2):
+    for child in (1, 2):
         ld = _write_run(
             a6,
             "runs",
-            f"fan-l{lane}",
+            f"fan-l{child}",
             [{"type": "session.start", "mode": "run", "user_task": "t"}],
         )
         (ld / "manifest.json").write_text(
             json.dumps(
-                {"mode": "run", "parallel": {"group": "fan", "lane": lane, "parent": "fan"}}
+                {"mode": "run", "parallel": {"group": "fan", "number": child, "parent": "fan"}}
             ),
             encoding="utf-8",
         )
     old, new = 1_700_000_000, 1_700_007_200
     os.utime(parent / "logs.jsonl", (old, old))
-    for lane in (1, 2):
-        os.utime(a6 / "sessions" / "runs" / f"fan-l{lane}" / "logs.jsonl", (new, new))
+    for child in (1, 2):
+        os.utime(a6 / "sessions" / "runs" / f"fan-l{child}" / "logs.jsonl", (new, new))
 
     async def scenario() -> None:
         app = tui_home.Agent6HomeApp(a6, tmp_path)
@@ -1252,8 +1252,8 @@ def test_prune_and_clear_asks_are_hub_actions_that_shell_the_cli(
     asyncio.run(scenario())
 
 
-def test_the_hub_folds_a_groups_lanes_and_space_expands_them(tmp_path: pathlib.Path) -> None:
-    """A group is one row with its lane count; Space lists its lanes, Space again folds."""
+def test_the_hub_folds_a_groups_children_and_space_expands_them(tmp_path: pathlib.Path) -> None:
+    """A group is one row with its child count; Space lists its children, Space again folds."""
     import asyncio
 
     from textual import widgets
@@ -1264,11 +1264,11 @@ def test_the_hub_folds_a_groups_lanes_and_space_expands_them(tmp_path: pathlib.P
     start: dict[str, object] = {"type": "session.start", "mode": "run", "user_task": "t"}
     fan = _write_run(a6, "runs", "fan", [start])
     (fan / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
-    for lane in (1, 2):
-        d = _write_run(a6, "runs", f"fan-l{lane}", [start])
+    for child in (1, 2):
+        d = _write_run(a6, "runs", f"fan-l{child}", [start])
         (d / "manifest.json").write_text(
             json.dumps(
-                {"mode": "run", "parallel": {"group": "fan", "lane": lane, "parent": "fan"}}
+                {"mode": "run", "parallel": {"group": "fan", "number": child, "parent": "fan"}}
             ),
             encoding="utf-8",
         )
@@ -1283,14 +1283,14 @@ def test_the_hub_folds_a_groups_lanes_and_space_expands_them(tmp_path: pathlib.P
             runs = screen._runs  # pyright: ignore[reportPrivateUsage]
             assert table.row_count == 1 and [rd.name for rd in runs] == ["fan"]
             ids = [str(c.label) for c in table.columns.values()].index("id")
-            assert "(2 lanes)" in str(table.get_row_at(0)[ids])
-            screen.action_toggle_lanes()
+            assert "(2 children)" in str(table.get_row_at(0)[ids])
+            screen.action_toggle_children()
             await pilot.pause()
             runs = screen._runs  # pyright: ignore[reportPrivateUsage]
             assert [rd.name for rd in runs] == ["fan", "fan-l1", "fan-l2"]
-            assert "(2 lanes)" not in str(table.get_row_at(0)[ids])
+            assert "(2 children)" not in str(table.get_row_at(0)[ids])
             assert "└ fan-l1" in str(table.get_row_at(1)[ids])
-            screen.action_toggle_lanes()
+            screen.action_toggle_children()
             await pilot.pause()
             assert table.row_count == 1
 
