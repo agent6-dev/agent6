@@ -68,6 +68,7 @@ include = [
     "README.md",
     "docs/acp.md",
     "docs/architecture.md",
+    "docs/cli.md",
     "docs/config.md",
     "docs/formats.md",
     "docs/installation.md",

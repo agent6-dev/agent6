@@ -27,6 +27,22 @@ def test_every_bundled_doc_source_exists() -> None:
         assert dest.startswith("agent6/_docs/"), f"{src} bundles outside _docs: {dest}"
 
 
+def test_the_sdist_carries_every_file_the_wheel_force_includes() -> None:
+    """A wheel built from the sdist alone finds each force-included source there.
+
+    Building both from the checkout never sees a file the sdist lacks: the wheel build from
+    the sdist fails with "Forced include not found".
+    """
+    data = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    carried = data["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
+    missing = [
+        src
+        for src in _bundled()
+        if not any(src == entry or src.startswith(entry.rstrip("/") + "/") for entry in carried)
+    ]
+    assert not missing, f"force-included in the wheel but absent from the sdist: {missing}"
+
+
 def test_the_advertised_docs_are_bundled() -> None:
     """Every doc name the tool description offers as an example ships."""
     names = {pathlib.Path(dest).stem for dest in _bundled().values()}
