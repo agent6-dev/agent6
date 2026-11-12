@@ -735,6 +735,7 @@ _DONE_LABELS = {
     "no_lane_result": "failed · no lane result",
     "no_lane_passed": "failed · no lane passed",
     "setup_command_failed": "failed · setup command failed",
+    "sandbox_unavailable": "failed · sandbox unavailable",
 }
 
 
