@@ -129,8 +129,8 @@ Define immutable review evidence and validate review boundary payloads.
 Public fields: [Formats](formats.md#typed-records).
 
 - **Written by:** app/review_actions, harness/{review_gate, review_history, review_panel, review_seat}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
-- **Read by:** app/review_directive, harness/{loop_state, repo_context, run_chain}, ui/acp/review, ui/tui/{diff_pane, review}, vcs/review_rule_reader, viewmodel/review
-- **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (19 test files exercise it)
+- **Read by:** app/{execution, review_directive}, harness/{loop, loop_state, repo_context, run_chain}, ui/acp/review, ui/tui/{diff_pane, review}, vcs/review_rule_reader, viewmodel/review
+- **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (20 test files exercise it)
 
 ## Conversation
 
@@ -155,8 +155,8 @@ The manifest.json shape and its one reader; `app.stamps` is the writer.
 Public fields: [Formats](formats.md#sessionmanifest).
 
 - **Written by:** app/stamps
-- **Read by:** app/{compare, execution, finalize, fork, fork_worktrees, lane_envelope, lanes, merge, merge_message, parallel, parallel_results, preflight, resume, resume_chain, run, session_prepare, session_setup, stop, undo, workdirs, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/{directive_actions, mcp_server}, ui/acp/session, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/model, viewmodel/{comparison, format, listing, policy, receipt, session_status, state_view, wire}
-- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (44 test files exercise it)
+- **Read by:** app/{compare, execution, finalize, fork, fork_worktrees, lane_envelope, lanes, merge, merge_message, parallel, parallel_results, preflight, resume, resume_chain, review_actions, run, session_prepare, session_setup, stop, undo, workdirs, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/{directive_actions, mcp_server}, ui/acp/session, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/model, viewmodel/{comparison, format, listing, policy, receipt, session_status, state_view, wire}
+- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (45 test files exercise it)
 
 ## SessionSnapshot
 

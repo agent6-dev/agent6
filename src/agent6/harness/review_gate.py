@@ -541,7 +541,7 @@ class Reviewer:
             trigger: What called the panel.
 
         Returns:
-            The critique; None when the panel was skipped or reused the prior one.
+            The critique, a reuse's included; None when the panel was skipped.
         """
         panel_id = str(identity["panel_id"])
         roster = tuple(
