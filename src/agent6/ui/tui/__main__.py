@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `python -m agent6.ui.tui --watch <run-dir>` entry point."""
+"""The `python -m agent6.ui.tui --watch <session-dir>` entry point."""
 
 from __future__ import annotations
 
@@ -16,10 +16,10 @@ def main(argv: list[str] | None = None) -> int:
         argv: The command line; None reads the process's own.
 
     Returns:
-        The exit code: 2 for a missing run dir, 3 when textual is not installed.
+        The exit code: 2 for a missing session dir, 3 when textual is not installed.
     """
     parser = argparse.ArgumentParser(prog="python -m agent6.ui.tui")
-    parser.add_argument("--watch", required=True, help="Run directory to tail (<run-dir>)")
+    parser.add_argument("--watch", required=True, help="Run directory to tail (<session-dir>)")
     parser.add_argument(
         "--exit-on-end",
         action="store_true",
@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
 
     session_dir = pathlib.Path(args.watch).expanduser().resolve()
     if not session_dir.exists():
-        print(f"agent6 tui: run dir does not exist: {session_dir}", file=sys.stderr)
+        print(f"agent6 tui: session dir does not exist: {session_dir}", file=sys.stderr)
         return 2
 
     try:

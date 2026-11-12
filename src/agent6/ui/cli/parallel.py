@@ -24,7 +24,7 @@ def lane_runtime() -> app_lanes.LaneRuntime:
     """Return the front-end primitives the parallel pipeline drives.
 
     Injected so `agent6.app` never imports `agent6.ui`. Lane liveness and stop are the
-    run-dir bridge, which `agent6.app.lanes` imports directly.
+    session-dir bridge, which `agent6.app.lanes` imports directly.
 
     Returns:
         The primitives.

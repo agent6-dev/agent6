@@ -415,7 +415,7 @@ class SteerInput(widgets.TextArea):
         self.set_mode(mode=self.mode)
         self._resize()
 
-    policy = ""  # the session policy's short form, set once the run dir is known
+    policy = ""  # the session policy's short form, set once the session dir is known
     mode: ComposerMode = "steer"
     allow_empty = False  # Enter on an empty bar submits "": a seeded run needs no task
 

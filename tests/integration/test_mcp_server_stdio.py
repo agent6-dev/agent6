@@ -59,7 +59,7 @@ def _send_recv(
 def test_mcp_serve_roundtrip(tmp_path: pathlib.Path) -> None:
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(_VALID_TOML, encoding="utf-8")
-    # Seed a run dir so list_sessions has something to enumerate.
+    # Seed a session dir so list_sessions has something to enumerate.
     (paths.state_dir(tmp_path) / "sessions" / "runs" / "demo").mkdir(parents=True)
     (paths.state_dir(tmp_path) / "sessions" / "runs" / "demo" / "manifest.json").write_text(
         json.dumps({"user_task": "demo-task"}), encoding="utf-8"

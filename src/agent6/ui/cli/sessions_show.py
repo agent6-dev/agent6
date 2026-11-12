@@ -394,7 +394,7 @@ class StatusJSON(TypedDict):
 def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     """Print a one-shot liveness and progress summary for a run.
 
-    Answered from the run dir alone: worker.pid probed with signal 0, so liveness is known
+    Answered from the session dir alone: worker.pid probed with signal 0, so liveness is known
     even while the worker is blocked in a long provider call, plus the last event, the
     turn and the elapsed time from logs.jsonl. `agent6 attach` is the live follower.
 

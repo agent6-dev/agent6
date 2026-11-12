@@ -865,7 +865,7 @@ def test_run_is_live_dead_worker_is_not_live(tmp_path: pathlib.Path) -> None:
 
 
 def test_run_is_live_unstarted_dirs(tmp_path: pathlib.Path) -> None:
-    # A parked submission or fork --no-run dir: nothing polls markers -> not
+    # A parked submission or fork --no-session dir: nothing polls markers -> not
     # live (resume is the offer). A launching worker (pid, no events yet) is.
     rd = tmp_path / "sessions" / "runs" / "parked"
     rd.mkdir(parents=True)

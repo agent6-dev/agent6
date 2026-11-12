@@ -491,7 +491,7 @@ def recorded_result(
     Args:
         spec: The lane.
         branch: Its branch.
-        dest: Its imported run dir.
+        dest: Its imported session dir.
         imported: What the import landed.
         origin: The repository.
         stopped_by: What ended the lane when the parent stopped it, "" otherwise.
@@ -545,7 +545,7 @@ def lane_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement | Non
     """Read what a lane used from its journal, as its parent settles it.
 
     Args:
-        session_dir: The lane's imported run dir.
+        session_dir: The lane's imported session dir.
 
     Returns:
         The inclusive spend and per-provider plan observations; None when descendant
@@ -698,7 +698,7 @@ def lane_has_commits(session_dir: pathlib.Path, imported: lane_records.Imported)
     """Return whether the imported tip holds a commit beyond the lane's recorded base.
 
     Args:
-        session_dir: The imported lane's run dir, whose manifest records its base.
+        session_dir: The imported lane's session dir, whose manifest records its base.
         imported: What the import landed.
 
     Returns:

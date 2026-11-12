@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""One authoritative writer per run dir.
+"""One authoritative writer per session dir.
 
 `agent6 run`/`resume`/`fork` drive one run's shared state (loop_state,
 checkpoints, the curator DAG, the run branch). A second process on the same run

@@ -71,7 +71,7 @@ class ParallelDispatcher:
         session_id: The run's session id, the prefix of every lane's.
         execution_id: This execution's id, the owner of its grants and records.
         budget: The run's meter; None without one.
-        session_dir: Where the dispatch records live; None for a harness without a run dir.
+        session_dir: Where the dispatch records live; None for a harness without a session dir.
         lane_recoverer: Finds an interrupted dispatch's lanes on resume; None when none can.
         ranker: Orders a rank join's lanes; None where no dispatch joins by rank.
         stop_pending: Whether the operator asked the run to stop.

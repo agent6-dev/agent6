@@ -15,7 +15,7 @@ CLAUDE_MODEL="${AGENTBENCH_CLAUDE_MODEL:-claude-haiku-4-5}"
 # agent6 rows: pin the worker to a provider/model instead of the global config.
 A6_PROVIDER="${AGENTBENCH_AGENT6_PROVIDER:-}"
 A6_MODEL="${AGENTBENCH_AGENT6_MODEL:-}"
-# The run dir is keyed by (task, agent, MODEL): two chains sweeping different
+# The session dir is keyed by (task, agent, MODEL): two chains sweeping different
 # models in parallel must never share a working directory (observed: the
 # anthropic and openrouter chains clobbering each other's agent6 runs).
 case "$AGENT" in

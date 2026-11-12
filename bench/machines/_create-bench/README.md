@@ -6,7 +6,7 @@ whether the drafted bundle passes `machine check` + `machine test`.
 
 Each model runs in its own throwaway repo with an isolated `XDG_STATE_HOME`
 and its worker model pinned via per-repo config; provider keys come from the
-global secrets store. The generated per-model run dirs are gitignored
+global secrets store. The generated per-model session dirs are gitignored
 (reproducible via `run.sh`); only this README, `run.sh`, and `results.jsonl` are
 tracked.
 

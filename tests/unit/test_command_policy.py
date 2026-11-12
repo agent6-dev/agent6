@@ -55,7 +55,7 @@ def test_a_front_end_that_can_ask_is_not_away(
     """A launcher's AGENT6_DETACHED_AWAY=deny withheld every command from an ACP client.
 
     The marker is the policy of a run nobody can answer for; a front-end that can ask
-    answers every prompt itself, and a stale marker on the run dir goes with it.
+    answers every prompt itself, and a stale marker on the session dir goes with it.
     """
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
     ipc.set_away_mode(tmp_path, "deny")

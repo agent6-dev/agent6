@@ -49,7 +49,7 @@ def _reaped(pid: int) -> bool:
 
 
 def _live_forever(tmp_path: pathlib.Path, name: str) -> pathlib.Path:
-    """A lane run dir that reads running for as long as this test process lives."""
+    """A lane session dir that reads running for as long as this test process lives."""
     d = tmp_path / "lane-state" / "sessions" / "runs" / name
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(

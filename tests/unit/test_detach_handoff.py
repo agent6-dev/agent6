@@ -88,7 +88,7 @@ def test_a_failed_spawn_is_reported_and_never_called_a_continuation(tmp_path: pa
 def test_a_recorded_away_mode_is_the_runs_away_answer(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The detached run's away mode is read from the run dir, not only the environment.
+    """The detached run's away mode is read from the session dir, not only the environment.
 
     A run detached from a terminal carries the operator's choice in `approvals/away.mode`; a later
     resume from cron or a script reads it there, as the approver does.

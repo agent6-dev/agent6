@@ -18,7 +18,7 @@ depends_on = []
 # Application pipelines composed over the engine, never a front-end and never
 # importing agent6.ui: the run/resume lifecycle and the parallel dispatch and
 # candidate-ranking core. The front-end injects the
-# presentation, process-spawn, and run-dir bridge callables it needs
+# presentation, process-spawn, and session-dir bridge callables it needs
 # (see app/__init__.py: SessionFrontend, LaneRuntime).
 # machine.check shares bundle, config and jail-PATH checks with create and the CLI.
 # execution drains review_actions through sessions.ipc at the worker steer boundary.
@@ -915,13 +915,13 @@ path = "agent6.sessions.manifest"
 depends_on = ["agent6.kinds"]
 
 [[modules]]
-# One authoritative writer per run dir: the worker.lock flock run/resume/fork
+# One authoritative writer per session dir: the worker.lock flock run/resume/fork
 # take before touching a run's shared state.
 path = "agent6.sessions.lock"
 depends_on = ["agent6.paths", "agent6.portable"]
 
 [[modules]]
-# The run-dir answer-file contract the harness polls and front-ends write:
+# The session-dir answer-file contract the harness polls and front-ends write:
 # approvals, questions, steer/stop/compact markers and detach away-mode.
 # Process liveness comes from sessions.process, without a UI edge.
 path = "agent6.sessions.ipc"

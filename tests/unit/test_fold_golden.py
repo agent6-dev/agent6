@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Golden compatibility pin for the logs.jsonl folds.
 
-logs.jsonl is append-only history: every run dir ever written must keep folding identically. A
+logs.jsonl is append-only history: every session dir ever written must keep folding identically. A
 frozen fixture of real-shaped event bytes (every state-folded family, the transcript-only families,
 loop telemetry, unknown types, adversarial edge cases, then malformed lines the tail layer drops)
 goes through the production read path and folds two ways, byte-for-byte against committed

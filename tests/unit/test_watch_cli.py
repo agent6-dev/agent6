@@ -622,7 +622,7 @@ def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
 def test_attach_raw_returns_when_the_run_dir_is_deleted_mid_follow(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The raw tail returns on EOF when the run dir is gone, instead of polling the path forever."""
+    """The raw tail returns on EOF when the session dir is gone, not polling the path forever."""
     import shutil
     import threading
 
@@ -636,7 +636,7 @@ def test_attach_raw_returns_when_the_run_dir_is_deleted_mid_follow(
     time.sleep(1.0)
     shutil.rmtree(run_dir)
     t.join(timeout=5)
-    assert not t.is_alive(), "the raw tail is still polling the deleted run dir"
+    assert not t.is_alive(), "the raw tail is still polling the deleted session dir"
     assert rcs == [1]
 
 

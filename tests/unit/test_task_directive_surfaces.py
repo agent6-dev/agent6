@@ -71,7 +71,7 @@ def test_the_web_composer_refuses_a_bare_directive(
 
 
 def _paused(tmp_path: pathlib.Path) -> pathlib.Path:
-    """A run dir mid-pause: the menu reads its state off disk."""
+    """A session dir mid-pause: the menu reads its state off disk."""
     (tmp_path / "logs.jsonl").write_text(
         '{"type": "session.start", "user_task": "t", "mode": "run"}\n', encoding="utf-8"
     )

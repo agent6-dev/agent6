@@ -498,7 +498,7 @@ def _materialize_fork(
     """
     src, dst = plan.src, plan.dst
     if dst.session_dir.exists():
-        reporter.error(f"target run dir already exists: {dst.session_dir}")
+        reporter.error(f"target session dir already exists: {dst.session_dir}")
         return 2
     dst.ensure()
 

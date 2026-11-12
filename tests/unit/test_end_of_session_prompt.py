@@ -19,7 +19,7 @@ from agent6.ui.cli import entry, resume, session_prompt
 def _seed_session(
     repo_root: pathlib.Path, monkeypatch: pytest.MonkeyPatch, session_id: str = "test-run-AAAAAA"
 ) -> sessions_layout.SessionLayout:
-    """A real run dir under repo_root's state home, so resolution reaches the tty guard."""
+    """A real session dir under repo_root's state home, so resolution reaches the tty guard."""
     monkeypatch.setenv("XDG_STATE_HOME", str(repo_root / ".state"))
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(repo_root), session_id=session_id, subdir="runs"

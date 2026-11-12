@@ -2042,7 +2042,7 @@ class Harness:
 
     @property
     def session_id(self) -> str:
-        """Return the session id, the run dir's name; "" without a log."""
+        """Return the session id, the session dir's name; "" without a log."""
         return self.events.path.parent.name if self.events is not None else ""
 
     def log(self, msg: str) -> None:

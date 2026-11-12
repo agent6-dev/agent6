@@ -656,7 +656,7 @@ def test_no_one_to_ask_withdraws_rather_than_breaks(configured: str, offered: bo
 
 def test_most_recent_run_id_uses_log_activity_not_name_or_dir_touch(tmp_path: pathlib.Path) -> None:
     # Run ids start with a random adjective-noun, so a name sort is not
-    # chronological. Front-ends also write frontend.pid into run dirs, so
+    # chronological. Front-ends also write frontend.pid into session dirs, so
     # directory mtime is not chronological either. The newest log activity wins.
     import os
 

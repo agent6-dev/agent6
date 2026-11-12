@@ -346,7 +346,7 @@ def test_compact_request_reports_a_failed_write(tmp_path: pathlib.Path) -> None:
     compacted.
     """
     assert sessions_ipc.request_compact(tmp_path) is True
-    # A run dir that is really a file: the publish cannot succeed.
+    # A session dir that is really a file: the publish cannot succeed.
     blocked = tmp_path / "not-a-dir"
     blocked.write_text("x", encoding="utf-8")
     assert sessions_ipc.request_compact(blocked) is False

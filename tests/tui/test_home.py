@@ -101,7 +101,7 @@ def test_clear_pending_answers_wipes_stale_state(tmp_path: pathlib.Path) -> None
 def test_refresh_keeps_runs_list_aligned_with_table_when_a_run_vanishes(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A run dir that vanishes between the listing and its stat() leaves both the table and `_runs`.
+    """A session dir gone between the listing and its stat() leaves both the table and `_runs`.
 
     Desynced, every cursor_row-indexed action maps to the wrong run past the gap.
     """

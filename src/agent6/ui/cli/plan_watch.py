@@ -181,7 +181,7 @@ def _cmd_watch(
     if not session_id:
         print(f"[agent6] attached to most recent run: {target.name}", file=sys.stderr)
     if not target.is_dir():
-        common.error(f"no such run dir: {target}")
+        common.error(f"no such session dir: {target}")
         return 2
     if not tui:
         return _cmd_watch_plain(target, since=since) if raw else _watch_transcript(target)

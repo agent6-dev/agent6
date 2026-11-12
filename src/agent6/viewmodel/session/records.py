@@ -27,7 +27,7 @@ class TaskNodeView:
         status: The task's status word.
         depth: The nesting depth, for tree rendering.
         is_cursor: The worker is on this task.
-        created_by: Who added the task; "" for a run dir written before the field existed.
+        created_by: Who added the task; "" for a session dir written before the field existed.
         standing: The task is the standing goal.
         note: The operator's mark beside a task they own ("queued by you", "standing
             goal"), or "".

@@ -88,7 +88,7 @@ class _Wire:
 def _ignore(
     path: pathlib.Path, *, after_turn: bool = False, request_only: bool = False
 ) -> stop.StopOutcome:
-    """A cancel whose requests landed (nothing here reads the run dir)."""
+    """A cancel whose requests landed (nothing here reads the session dir)."""
     return stop.StopOutcome(path.name, True, "requested", f"{path.name} stop requested")
 
 

@@ -5,7 +5,7 @@
 `agent6.app` sits below `ui/` and never imports it: the lifecycles (`run`, `resume`, `fork`,
 `machine`) and the `--parallel` dispatch (`parallel`, `lanes`, `compare`) drive `harness`,
 `git_ops`, `sessions` and the headless `viewmodel`. What needs a terminal, a live view, a detached
-`agent6` process or the run-dir bridge is injected by `ui/cli` as frozen values of callables
+`agent6` process or the session-dir bridge is injected by `ui/cli` as frozen values of callables
 (`frontend.SessionFrontend`, `lanes.LaneRuntime`). Output goes through the injected
 `reporter.Reporter` (default `STDIO_REPORTER`), never a direct `print`.
 """

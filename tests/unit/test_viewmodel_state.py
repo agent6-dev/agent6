@@ -213,7 +213,7 @@ def test_run_start_records_task() -> None:
 
 
 def test_run_start_records_run_id() -> None:
-    # The loop now stamps the run dir name into session.start; the fold picks it up,
+    # The loop now stamps the session dir name into session.start; the fold picks it up,
     # so watch --json / the web snapshot report a real id, not "".
     s = viewmodel_state.apply_event(
         viewmodel_state.initial_state(),

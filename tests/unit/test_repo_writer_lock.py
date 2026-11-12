@@ -244,7 +244,7 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
     )
     assert rc == 0
     assert called == {"task": "do the saved thing", "session_id": "run-PARKED2", "mode": "run"}
-    # The delegation released the run-dir lock before handing off, so a real
+    # The delegation released the session-dir lock before handing off, so a real
     # run_task can re-acquire it: prove the lock is free.
 
     fd = lock.acquire_single_writer(layout.session_dir)
@@ -535,7 +535,7 @@ def test_teardown_raise_still_releases_both_writer_locks(
     fd = lock.acquire_repo_writer(state, repo, "run-NEXT")
     assert fd is not None
     lock.release_single_writer(fd)
-    # ...and the run dir's.
+    # ...and the session dir's.
     fd2 = lock.acquire_single_writer(
         sessions_layout.SessionLayout(state_dir=state, session_id="run-TD").session_dir
     )

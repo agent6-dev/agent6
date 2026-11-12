@@ -76,7 +76,7 @@ def test_ps_reads_a_live_machine_through_the_shared_status_word(
 def test_ps_lists_a_linked_lane_once(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A lane's run dir is linked under the parent repo as well as its own state dir.
+    """A lane's session dir is linked under the parent repo as well as its own state dir.
 
     One live session, one row.
     """

@@ -159,7 +159,7 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path, with_i
         wf, state, conversation.to_wire(), next_turn=3, write_checkpoint=True
     )
 
-    # checkpoints live next to loop_state.json (the run dir).
+    # checkpoints live next to loop_state.json (the session dir).
     cp = session_dir / "checkpoints" / "0003.json"
     assert snap.is_file()
     assert cp.is_file(), "per-turn checkpoint must be written"
@@ -280,7 +280,7 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: pathlib
 
 
 def test_list_checkpoint_turns_empty_for_old_run(tmp_path: pathlib.Path) -> None:
-    """A run dir with no checkpoints/ dir lists no turns (old-run detection)."""
+    """A session dir with no checkpoints/ dir lists no turns (old-run detection)."""
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="old")
     (tmp_path / "sessions" / "runs" / "old").mkdir(parents=True)
     assert storage.list_checkpoint_turns(layout) == []
@@ -669,7 +669,7 @@ def test_fork_fails_loud_on_a_bad_source_manifest(
 def test_fork_cleans_up_run_dir_when_branch_cut_fails(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A fork branch at a different sha refuses (a branch never moves) and the run dir is cleaned up.
+    # A fork branch at another sha refuses (a branch never moves) and the session dir is cleaned up.
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)

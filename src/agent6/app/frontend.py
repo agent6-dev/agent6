@@ -86,7 +86,7 @@ def settle_away_mode(session_dir: pathlib.Path, cfg: Config, *, can_ask: bool) -
     answer afresh. An editor's grant covers its session's later prompts, so an ACP turn keeps it.
 
     Args:
-        session_dir: The run dir holding the away marker and the grants.
+        session_dir: The session dir holding the away marker and the grants.
         cfg: The resolved config, for the scopes `AGENT6_DETACHED_AWAY=approve` grants.
         can_ask: Whether approvals and questions reach a human.
     """
@@ -102,11 +102,11 @@ def apply_spawned_away_default(session_dir: pathlib.Path, scopes: tuple[str, ...
     """Honor AGENT6_DETACHED_AWAY, set by a launcher that spawns a run detached.
 
     Without it a spawned run with no terminal waits on every approval for a viewer; `deny`
-    answers them. An away mode already on the run dir is the operator's own detach answer and wins:
+    answers them. An away mode on the session dir is the operator's own detach answer and wins:
     overwriting a chosen 'deny' with 'wait' would block the run on an approval nobody answers.
 
     Args:
-        session_dir: The run dir.
+        session_dir: The session dir.
         scopes: The approval scopes `AGENT6_DETACHED_AWAY=approve` grants.
     """
     away = os.environ.get("AGENT6_DETACHED_AWAY", "")
@@ -136,7 +136,7 @@ class SessionFrontend:
     """Hold the presentation and process-spawn callables `ui/cli` injects into the lifecycles.
 
     The console view lives cli-side and the lifecycle only signals attach and close; the
-    lifecycle owns the run-dir bridge. One value serves both `run_task` and `resume_task`;
+    lifecycle owns the session-dir bridge. One value serves both `run_task` and `resume_task`;
     resume never calls the run-only fields.
 
     Attributes:
@@ -147,9 +147,9 @@ class SessionFrontend:
         close_console_view: Closes the console view.
         loop_logger: Builds the loop's logger for a run id.
         tui_session: The context a TUI-backed run runs inside.
-        build_approver: Answers the approvals the gate journals on the run dir's bridge.
-        build_questioner: Answers the questions the gate journals on the run dir's bridge.
-        make_steer_state: Builds the steer state over the sink, the run dir and the facts.
+        build_approver: Answers the approvals the gate journals on the session dir's bridge.
+        build_questioner: Answers the questions the gate journals on the session dir's bridge.
+        make_steer_state: Builds the steer state over the sink, the session dir and the facts.
         confirm_unconfined_autorun: Confirms running commands unconfined.
         confirm_run_on_run_branch: Confirms starting on a run branch.
         prompt_detach_away_mode: Asks the away mode when the run detaches.

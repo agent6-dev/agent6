@@ -3333,7 +3333,7 @@ Source: [`agent6.viewmodel.session.records.TaskNodeView`](https://github.com/age
 | `status` | `Literal['pending', 'in_progress', 'passed', 'failed', 'skipped', 'obsolete']` | The task's status word. |
 | `depth` | `int` | The nesting depth, for tree rendering. |
 | `is_cursor` | `bool` | The worker is on this task. |
-| `created_by` | `str` | Who added the task; "" for a run dir written before the field existed. |
+| `created_by` | `str` | Who added the task; "" for a session dir written before the field existed. |
 | `standing` | `bool` | The task is the standing goal. |
 | `note` | `str` | The operator's mark beside a task they own ("queued by you", "standing goal"), or "". |
 | `short_id` | `str` | The id as the operator reads and types it. |

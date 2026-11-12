@@ -38,9 +38,9 @@ def lane_terminal(
     lane that dies without a `session.stop` cannot hang the gate: the fold reads it "stale".
 
     Args:
-        session_dir: The lane's run dir.
+        session_dir: The lane's session dir.
         status: The lane's status as the fold reads it.
-        worker_is_alive: The liveness check for the run dir's worker.
+        worker_is_alive: The liveness check for the session dir's worker.
 
     Returns:
         True when the status is not "running" and the worker is gone.
@@ -60,7 +60,7 @@ def await_lane(
     """Block until the lane is terminal, or until a stop or the deadline ends the wait.
 
     Args:
-        res: The started lane, awaited on its real run dir.
+        res: The started lane, awaited on its real session dir.
         poll_interval_s: How often to poll.
         should_stop: The parent's abort channel, read between polls.
         deadline_at: The wall-clock second the wait ends at; None for no deadline.

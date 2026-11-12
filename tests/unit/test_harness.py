@@ -4137,7 +4137,7 @@ def test_graph_update_snapshot_payload_is_wire_stable(tmp_path: pathlib.Path) ->
     """The `graph.update` event's node projection is a frozen wire surface.
 
     Each node is exactly {title, status, parent_id, children, created_by, standing} plus a top-level
-    cursor; a run dir written before a field existed lacks it and every reader defaults it. Driven
+    cursor; a session dir from before a field existed lacks it and every reader defaults it. Driven
     with a real curator and Harness, so the emitted bytes are pinned.
     """
     from agent6.graph import curator as graph_curator
@@ -4193,7 +4193,7 @@ def test_graph_update_snapshot_payload_is_wire_stable(tmp_path: pathlib.Path) ->
         },
         "cursor": child.id,
     }
-    # children serialize as a JSON list, the on-disk contract old run dirs hold.
+    # children serialize as a JSON list, the on-disk contract old session dirs hold.
     assert isinstance(fields["nodes"][root.id]["children"], list)
 
 

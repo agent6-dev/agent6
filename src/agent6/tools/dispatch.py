@@ -175,7 +175,7 @@ class ToolDispatcher:
         self._mcp_manager = mcp_manager
         self._state_dir = state_dir
         self._findings = findings
-        # Background commands live under the run dir so they die with the run.
+        # Background commands live under the session dir so they die with the run.
         self._shells = (
             background.BackgroundShells(session_dir / shells.SHELLS_DIR)
             if session_dir is not None
@@ -278,7 +278,7 @@ class ToolDispatcher:
 
         Returns:
             `[sandbox].run_commands` as `ipc.effective_run_commands` resolves it for the
-            session, or as configured when no run dir is wired.
+            session, or as configured when no session dir is wired.
         """
         configured = self._config.sandbox.run_commands
         if self._session_dir is None:
@@ -355,7 +355,7 @@ class ToolDispatcher:
             server: The server's name in config.
 
         Returns:
-            Whether its session deny marker is set; False when no run dir is wired.
+            Whether its session deny marker is set; False when no session dir is wired.
         """
         if self._session_dir is None:
             return False
@@ -622,7 +622,7 @@ class ToolDispatcher:
 
         A server's tools are asked about like a command, on their own scope: "allow all" for one
         server grants that server alone. The prompt holds the arguments whole. In a run, past
-        `_APPROVAL_PROMPT_MAX_CHARS`, it shows their start and names the run-dir file that holds
+        `_APPROVAL_PROMPT_MAX_CHARS`, it shows their start and names the session-dir file that holds
         them all: a clipped argument is consent to an operation the operator never saw.
 
         Args:

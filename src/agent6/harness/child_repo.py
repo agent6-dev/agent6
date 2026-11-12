@@ -53,11 +53,11 @@ def import_run(
         origin: The parent's repo.
         lane_repo: The lane's workspace clone.
         branch: The lane's branch.
-        lane_session_dir: The lane's run dir, under the origin's state.
+        lane_session_dir: The lane's session dir, under the origin's state.
         model_control: Import HEAD instead of a harness-owned branch.
 
     Returns:
-        The run dir and the ref the work landed in, with its tip; a lane that committed
+        The session dir and the ref the work landed in, with its tip; a lane that committed
         nothing lands no ref.
 
     Raises:

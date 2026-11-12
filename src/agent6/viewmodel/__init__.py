@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Fold the JSONL event stream into the render-ready state every front-end paints.
 
-The CLI, the TUI, the web UI and ACP read the same `<run-dir>/logs.jsonl`, fold it
+The CLI, the TUI, the web UI and ACP read the same `<session-dir>/logs.jsonl`, fold it
 through the same pure functions here, and differ only in how they paint the result.
 The folds do no I/O and hold no async: frozen dataclasses and pure functions, so a
 viewer in any language mirrors `SessionState` and `MachineState` field for field.

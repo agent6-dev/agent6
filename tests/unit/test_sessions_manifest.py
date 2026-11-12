@@ -3,7 +3,7 @@
 """runs.manifest: the typed SessionManifest reader.
 
 Every failure shape (missing, unreadable, corrupt JSON, torn UTF-8, non-object) degrades through the
-typed ManifestError; every historical run dir (old ``version: 1`` shapes, the pre-v2 flat merged_*
+typed ManifestError; every older session dir (old ``version: 1`` shapes, the pre-v2 flat merged_*
 keys, a placement with a parent's facts) still parses for rendering; and the fork/resume
 ``session_mode`` gate refuses an unknown mode rather than falling open to write access.
 """

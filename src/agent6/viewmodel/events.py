@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Read logs.jsonl rows into the journal's records, with the coercions old run dirs need.
+"""Read logs.jsonl rows into the journal's records, with the coercions old session dirs need.
 
 The vocabulary is `agent6.sessions.journal`; this module is its tolerant reader. Each
-family keeps the exact coercion old run dirs were written against (`str()`, `int()`,
+family keeps the exact coercion old session dirs were written against (`str()`, `int()`,
 `bool()` with per-field defaults, `as_int`'s swallow-to-zero, the isinstance guards), so a
-run dir folds without a crash whatever it holds. Every other row is a `RawEvent`, which
+session dir folds without a crash whatever it holds. Every other row is a `RawEvent`, which
 the fold drops.
 """
 

@@ -41,7 +41,7 @@ def arm_deadline(
     a run that is not reading them takes the SIGTERM as a Ctrl-C stop and journals its end.
 
     Args:
-        session_dir: The lane's run dir, which may not exist yet.
+        session_dir: The lane's session dir, which may not exist yet.
         deadline_at: The wall-clock second the lane must have ended by.
         grace_s: From the bridges to the signal.
         clock: The wall clock.

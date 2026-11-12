@@ -237,7 +237,7 @@ def test_a_namespace_local_shell_has_no_host_target(tmp_path: pathlib.Path) -> N
 def test_a_stop_does_not_kill_a_worker_from_a_new_resume(tmp_path: pathlib.Path) -> None:
     """The worker that received the request can end before the wait polls it.
 
-    A new resume is a different process even though it owns the same run dir.
+    A new resume is a different process even though it owns the same session dir.
     """
     from agent6.app import stop as stop_mod
 

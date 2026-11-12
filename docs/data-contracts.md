@@ -224,7 +224,7 @@ Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ReadMediaRes
 
 [`agent6.viewmodel.events`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/events.py) &middot; mutable container + 2 frozen turn types
 
-Read logs.jsonl rows into the journal's records, with the coercions old run dirs need.
+Read logs.jsonl rows into the journal's records, with the coercions old session dirs need.
 
 Public fields: [Formats](formats.md#journal).
 

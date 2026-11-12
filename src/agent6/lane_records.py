@@ -119,7 +119,7 @@ class Imported:
     """What a lane's import landed in the origin.
 
     Attributes:
-        session_dir: The lane's run dir under the origin's state.
+        session_dir: The lane's session dir under the origin's state.
         ref: The ref the import fetched the lane's work into; "" when only the record came.
         tip: That ref's commit; "" with no ref.
     """

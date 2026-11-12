@@ -385,7 +385,7 @@ def test_the_next_prompt_is_not_refused_by_the_reply_it_just_read() -> None:
 def test_eof_lets_a_live_execution_reach_a_boundary() -> None:
     """Closing the editor is the ordinary way EOF arrives.
 
-    A daemon worker torn down mid-git holds the repo and worker locks and the run-dir pid.
+    A daemon worker torn down mid-git holds the repo and worker locks and the session-dir pid.
     """
     started = threading.Event()
     finished = threading.Event()

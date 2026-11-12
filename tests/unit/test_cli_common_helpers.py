@@ -17,7 +17,7 @@ from agent6.ui.cli import common
 def _session_dir(
     state: pathlib.Path, bucket: str, session_id: str, *, log_mtime: float
 ) -> pathlib.Path:
-    """Seed a run dir with a logs.jsonl at a controlled mtime (what newest_session_dir sorts by)."""
+    """Seed a session dir with a logs.jsonl at a set mtime (what newest_session_dir sorts by)."""
     d = state / "sessions" / bucket / session_id
     d.mkdir(parents=True)
     log = d / "logs.jsonl"

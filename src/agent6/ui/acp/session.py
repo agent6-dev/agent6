@@ -326,7 +326,7 @@ class Sessions:
     def wait_for_executions(self, *, timeout_s: float) -> None:
         """Cancel live executions and let them finish before the process goes.
 
-        A daemon worker torn down mid-git holds the repo locks and the run-dir pid.
+        A daemon worker torn down mid-git holds the repo locks and the session-dir pid.
 
         Args:
             timeout_s: One deadline across every join.

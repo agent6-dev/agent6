@@ -323,7 +323,7 @@ def read_live_worker_identity(session_dir: pathlib.Path) -> ProcessIdentity | No
     """Return the live worker's recorded identity, or None.
 
     The identity comes from the same read that validates it, so a caller keeps targeting one
-    worker while another resume takes over the run dir.
+    worker while another resume takes over the session dir.
 
     Args:
         session_dir: The session directory.

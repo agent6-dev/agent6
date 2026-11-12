@@ -3,7 +3,7 @@
 """A lane's life under its parent: spawn, wait, import, landing and cleanup (app/lanes.py).
 
 Driven with a fake spawner that, for each LaneSpec, really clones the origin,
-commits on the lane's `agent6/<id>` branch, and fabricates a finished run dir
+commits on the lane's `agent6/<id>` branch, and fabricates a finished session dir
 (manifest.json + logs.jsonl), so the clone-independent behavior (symlink live view,
 import, lineage stamp, resilience to a failed lane) is exercised on real tmp git repos
 without spawning real runs.
@@ -164,7 +164,7 @@ _READ_AT = 1_800_000_000.0
 class _FakeSpawner:
     """A synchronous stand-in for the bridge spawner.
 
-    Clone, commit on the lane branch, and fabricate a finished run dir in the origin's state.
+    Clone, commit on the lane branch, and fabricate a finished session dir in the origin's state.
     """
 
     def __init__(
@@ -195,7 +195,7 @@ class _FakeSpawner:
         self.fail = fail or set()
         self.status_by_lane = status_by_lane or {}
         self.cost_by_lane = cost_by_lane or {}
-        # Lanes whose fabricated run dir carries a LIVE worker.pid (this test
+        # Lanes whose fabricated session dir carries a LIVE worker.pid (this test
         # process), simulating the teardown window where session.stop is already in
         # logs.jsonl but the lane process has not yet cleared its pid.
         self.pid_lanes = pid_lanes or set()
@@ -261,7 +261,7 @@ def runtime() -> app_lanes.LaneRuntime:
     """The real front-end LaneRuntime the pipeline drives: detached spawn, reviewer and judging.
 
     A test faking one primitive uses `dataclasses.replace` on it (a fake `spawn`), or monkeypatches
-    the module-level `worker_is_alive` (the run-dir bridge, imported directly).
+    the module-level `worker_is_alive` (the session-dir bridge, imported directly).
     """
     return parallel_cmd.lane_runtime()
 
@@ -899,7 +899,7 @@ def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
     The harness nudges a lane to write memory like any run; an import that carries only its rulings
     before tearing the lane's state dir down loses every memory file the lane wrote.
     A name the origin already holds with other content (written before the lane was seeded, so not a
-    seeded copy) is held back in the lane's imported run dir, and the note says where.
+    seeded copy) is held back in the lane's imported session dir, and the note says where.
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -1166,7 +1166,7 @@ def test_await_waits_for_worker_pid_to_clear(
     lanes = _specs(tmp_path, cfg, "fan", "1")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", pid_lanes={1})
 
-    # Clear the live pid only on the SECOND status poll of the lane's run dir,
+    # Clear the live pid only on the SECOND status poll of the lane's session dir,
     # so poll 1 exercises the race window deterministically.
     real_summarize = lane_watch.summarize_session_dir
     polls = {"n": 0}

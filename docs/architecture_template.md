@@ -545,7 +545,7 @@ The primitive is git plumbing in [child_repo.py](https://github.com/agent6-dev/a
 [app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) implements those Protocols: it holds the front-end's `LaneRuntime`, plans the lanes, clones, spawns, awaits and imports one lane, and builds the parent's `/parallel` dispatcher.
 [app/parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel_results.py) imports a finished lane, carries its memory and decisions back, and stamps a ranking on the run and its lanes.
 [app/worktrees.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/worktrees.py) places clones and linked worktrees (`[git.worktree].base_dir`; `[container].worktree_base_dir` under a container), keeps a base inside the repository out of its git, writes lane configs, recovers orphaned lanes and removes imported or safely swept clones.
-The detached spawn `app/lanes.py` drives (`ui.spawn`'s `spawn_lane`: the fixed `python -P -E -m agent6.ui.cli.lane_agent` argv, the child's pid kept) is injected as a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`; liveness probes use `sessions.process` and stop requests use the run-dir bridge (`sessions.ipc`).
+The detached spawn `app/lanes.py` drives (`ui.spawn`'s `spawn_lane`: the fixed `python -P -E -m agent6.ui.cli.lane_agent` argv, the child's pid kept) is injected as a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`; liveness probes use `sessions.process` and stop requests use the session-dir bridge (`sessions.ipc`).
 A lane's task, pins, caps, away mode and lineage travel in its launch file (`app/lane_launch.py`, `0600` under `<origin_state>/launch/<group>/`), beside its config snapshot; the bootstrap validates both and drives `app.run.run_task` with the CLI's session seam.
 A launch file that carries a `kinds.ConversationContract` starts a `reviewer` session instead of a run: the same bootstrap, `run_task` and `Harness`, with the contract's system prompt and opening in place of the task block, the turn limit `ConversationContract.max_turns`, the tools its parent hands down (`ConversationContract.allowed_tools`, within the `reviewer` mode's surface), and no baseline, MCP server, advisor, review trigger or finish gate; `git.worktree.setup_command` runs only where the session may run commands.
 A response with no tool call ends it `answered`, on the last allowed turn too; a last allowed turn that still asks for tools ends it `max_turns` with that response's text and those tools not run; either way `completion.json` (`sessions/completion.py`) holds the text, the stop reason, the provider calls made and what the limit cut.
@@ -647,7 +647,7 @@ flowchart LR
 
 One curator per run is an invariant (two live curators cache independently; the second write drops the first's parent-child links).
 
-- `run`/`resume`/`fork` take a single-writer flock on `<run-dir>/worker.lock`; a second process refuses
+- `run`/`resume`/`fork` take a single-writer flock on `<session-dir>/worker.lock`; a second process refuses
 - a crashed writer releases on death: resume-after-crash never blocks
 - a per-mutation flock on the session dir guards a concurrent `fork`'s read of the graph
 - a write-path fault after the in-memory update reloads from disk before surfacing: no read ever observes an unpersisted node

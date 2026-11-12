@@ -18,7 +18,7 @@ from agent6 import paths, portable
 def acquire_single_writer(session_dir: pathlib.Path) -> int | None:
     """Take a non-blocking exclusive lock on `<session-dir>/worker.lock`.
 
-    A second writer of the same run dir would spawn a second curator whose in-memory cache
+    A second writer of the same session dir would spawn a second curator whose in-memory cache
     clobbers the first's parent-child links, and interleave commits on the run branch.
     flock releases on process death, so a crashed writer leaves no lock to block a resume.
 

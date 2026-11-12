@@ -164,7 +164,7 @@ __PLAN_VERIFY_RULE____READONLY_COMMAND_RULE__- The task DAG is a scratchpad here
 
 <plan-output>
 The markdown passed to `finish_planning(plan_markdown=...)` is written to
-`<run-dir>/plan.md` and fed verbatim to `agent6 run --from <run-id>`
+`<session-dir>/plan.md` and fed verbatim to `agent6 run --from <run-id>`
 as the new run's task description. The skeleton that pass reads:
 
 ```
