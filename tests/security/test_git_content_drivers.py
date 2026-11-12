@@ -26,7 +26,7 @@ from agent6.vcs.git import policy as git_policy
 @pytest.fixture(autouse=True)
 def _reset() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
     yield
-    git_policy.set_repo_driver_policy(False)
+    git_policy.set_policy(git_policy.GitPolicy())
 
 
 def _git(root: pathlib.Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -63,7 +63,7 @@ def test_the_auto_commit_does_not_run_a_repo_clean_filter(tmp_path: pathlib.Path
     root = _repo(tmp_path / "r")
     base = _git(root, "rev-parse", "HEAD").stdout.strip()
     _poison_clean_filter(root, marker)
-    git_policy.set_repo_driver_policy(False)
+    git_policy.set_policy(git_policy.GitPolicy())
     sha = git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
     assert sha is not None, "the commit did not happen"
     assert not marker.exists(), "the repo's clean filter ran a host command"
@@ -77,7 +77,7 @@ def test_run_repo_drivers_true_honors_the_driver(tmp_path: pathlib.Path) -> None
     marker = tmp_path / "pwned"
     root = _repo(tmp_path / "r")
     _poison_clean_filter(root, marker)
-    git_policy.set_repo_driver_policy(True)
+    git_policy.set_policy(git_policy.GitPolicy(honor_repo_drivers=True))
     git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=None)
     assert marker.exists(), "the driver was neutralized even though the operator opted in"
 
@@ -105,7 +105,7 @@ def test_the_chain_merge_does_not_run_a_repo_merge_driver(tmp_path: pathlib.Path
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "m")
     mine = _git(root, "rev-parse", "HEAD").stdout.strip()
-    git_policy.set_repo_driver_policy(False)
+    git_policy.set_policy(git_policy.GitPolicy())
     result = git_ops.chain_merge(root, other, "merge", ref="refs/agent6/t", fallback_parent=mine)
     assert not marker.exists(), "the repo's merge driver ran a host command"
     assert result is None, "a conflicting neutralized merge should not produce a merge commit"
@@ -118,7 +118,7 @@ def test_a_clean_repo_commits_normally_with_drivers_off(tmp_path: pathlib.Path) 
     """
     root = _repo(tmp_path / "r")
     (root / "new.txt").write_text("hello\n", encoding="utf-8")
-    git_policy.set_repo_driver_policy(False)
+    git_policy.set_policy(git_policy.GitPolicy())
     sha = git_ops.chain_commit(root, "c", ref="refs/agent6/t", fallback_parent=None)
     assert sha is not None
 
@@ -136,12 +136,12 @@ def test_driver_names_enumerate_and_dedup(tmp_path: pathlib.Path) -> None:
         + '\n[merge "a.b"]\n\tdriver = custom %O %A %B\n',
         encoding="utf-8",
     )
-    git_policy.set_repo_driver_policy(False)
+    git_policy.set_policy(git_policy.GitPolicy())
     overrides = git_policy.repo_driver_overrides(root)
     assert overrides.count("filter.lfs.clean=") == 1, overrides
     assert "filter.lfs.smudge=" in overrides and "filter.lfs.process=" in overrides
     assert "merge.a.b.driver=" in overrides, "a dotted merge-driver name was mis-split"
-    git_policy.set_repo_driver_policy(True)
+    git_policy.set_policy(git_policy.GitPolicy(honor_repo_drivers=True))
     assert git_policy.repo_driver_overrides(root) == ()
 
 
@@ -161,7 +161,7 @@ def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: pathli
     cfg.write_text(cfg.read_text() + "\n[include]\n\tpath = evil.cfg\n", encoding="utf-8")
     (root / ".gitattributes").write_text("* filter=pwn\n", encoding="utf-8")
     (root / "f.txt").write_text("v2\n", encoding="utf-8")
-    git_policy.set_repo_driver_policy(False)
+    git_policy.set_policy(git_policy.GitPolicy())
     assert "filter.pwn.clean=" in git_policy.repo_driver_overrides(root)
     git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
     assert not marker.exists(), "an include-hidden clean filter ran a host command"
@@ -181,7 +181,7 @@ def test_blame_and_the_other_diff_family_verbs_do_not_run_a_repo_textconv(
     marker = tmp_path / "pwned"
     _git(root, "config", "diff.pwn.textconv", f"touch {marker}; cat")
     (root / ".gitattributes").write_text("*.txt diff=pwn\n", encoding="utf-8")
-    git_policy.set_repo_driver_policy(False)
+    git_policy.set_policy(git_policy.GitPolicy())
     head = _git(root, "rev-parse", "HEAD").stdout.strip()
     rows = git_files.blame_lines(root, head, "f.txt", b"v1\n", lines=1)
     assert rows and rows[0].sha == head
@@ -220,7 +220,7 @@ def test_blame_refuses_an_ignore_revs_file_outside_the_repository(tmp_path: path
     secret = tmp_path / "token.txt"
     secret.write_text("TOKEN-4711\n", encoding="utf-8")
     _git(root, "config", "blame.ignoreRevsFile", str(secret))
-    git_policy.set_repo_driver_policy(False)
+    git_policy.set_policy(git_policy.GitPolicy())
     head = _git(root, "rev-parse", "HEAD").stdout.strip()
     with pytest.raises(errors.GitError) as caught:
         git_files.blame_lines(root, head, "f.txt", b"v1\n", lines=1)
@@ -239,7 +239,7 @@ def test_blame_honours_an_ignore_revs_file_inside_the_repository(tmp_path: pathl
     second = _git(root, "rev-parse", "HEAD").stdout.strip()
     (root / ".git-blame-ignore-revs").write_text(second + "\n", encoding="utf-8")
     _git(root, "config", "blame.ignoreRevsFile", ".git-blame-ignore-revs")
-    git_policy.set_repo_driver_policy(False)
+    git_policy.set_policy(git_policy.GitPolicy())
     rows = git_files.blame_lines(root, second, "f.txt", b"v2\n", lines=1)
     assert rows[0].sha == first
 
@@ -261,7 +261,7 @@ def test_blame_refuses_an_ignore_revs_file_whose_name_holds_a_newline(
     (root / "b").write_text("y\n", encoding="utf-8")
     (root / "a\nb").symlink_to(secret)
     _git(root, "config", "blame.ignoreRevsFile", "a\nb")
-    git_policy.set_repo_driver_policy(False)
+    git_policy.set_policy(git_policy.GitPolicy())
     head = _git(root, "rev-parse", "HEAD").stdout.strip()
     with pytest.raises(errors.GitError) as caught:
         git_files.blame_lines(root, head, "f.txt", b"v1\n", lines=1)
@@ -286,7 +286,7 @@ def test_blame_reads_a_private_copy_of_the_ignore_revs_file(
     first = _git(root, "rev-parse", "HEAD").stdout.strip()
     (root / "ignore.txt").write_text(first + "\n", encoding="utf-8")
     _git(root, "config", "blame.ignoreRevsFile", "ignore.txt")
-    git_policy.set_repo_driver_policy(False)
+    git_policy.set_policy(git_policy.GitPolicy())
     real_run = git_command.run
 
     def swapping(cwd: pathlib.Path, *args: str, **kwargs: object) -> object:

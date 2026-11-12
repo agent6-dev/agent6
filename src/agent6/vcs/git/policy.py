@@ -4,12 +4,16 @@
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
+import dataclasses
 import functools
 import os
 import pathlib
 import re
 import shutil
 import subprocess
+from collections.abc import Generator
 
 from agent6 import child_env, errors
 
@@ -93,24 +97,57 @@ _GIT_HARDENING: tuple[str, ...] = (
     "diff.dstPrefix=b/",
 )
 
-# A repo hook is repo-controlled host code, so honoring one on agent6's own commit is an RCE
-# vector; set once from `git.run_repo_hooks` at startup. Mutated, never rebound.
-_hook_policy: dict[str, bool] = {"honor_repo_hooks": False}
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class GitPolicy:
+    """Which repo-controlled host code agent6's own git operations may run; neither by default.
+
+    Attributes:
+        honor_repo_hooks: `git.run_repo_hooks`: fire the repository's `.git/hooks/*`. A hook is
+            repo-controlled host code, so honoring one on agent6's own commit is an RCE vector.
+        honor_repo_drivers: `git.run_repo_drivers`: honor the content drivers in the
+            repository's `.git/config`, the Git-LFS opt-in and an RCE vector for a poisoned clone.
+    """
+
+    honor_repo_hooks: bool = False
+    honor_repo_drivers: bool = False
 
 
-def set_repo_hook_policy(honor: bool) -> None:
-    """Configure whether agent6's own git ops fire the repo's `.git/hooks/*`."""
-    _hook_policy["honor_repo_hooks"] = honor
+# The process's policy, set once at startup from `[git]`. Mutated, never rebound.
+_process: dict[str, GitPolicy] = {"policy": GitPolicy()}
+# One request of a long-lived process (the web server) under the config that request loaded.
+_request: contextvars.ContextVar[GitPolicy | None] = contextvars.ContextVar(
+    "agent6_git_policy", default=None
+)
 
 
-# A driver in `.git/config` is a host command, an RCE vector for a cloned poisoned repo;
-# honoring them is the Git-LFS opt-in. Set once from `git.run_repo_drivers` at startup.
-_driver_policy: dict[str, bool] = {"honor_repo_drivers": False}
+def set_policy(policy: GitPolicy) -> None:
+    """Set the policy every git operation of this process runs under."""
+    _process["policy"] = policy
 
 
-def set_repo_driver_policy(honor: bool) -> None:
-    """Configure whether agent6's git ops honor the repo's own content drivers."""
-    _driver_policy["honor_repo_drivers"] = honor
+def current_policy() -> GitPolicy:
+    """Return the policy in force: the request's inside `use`, else the process's."""
+    return _request.get() or _process["policy"]
+
+
+@contextlib.contextmanager
+def use(policy: GitPolicy) -> Generator[None]:
+    """Run the calling context's git operations under a policy of its own.
+
+    A thread started inside it does not inherit it and runs under the process's policy.
+
+    Args:
+        policy: The policy of the config this request loaded.
+
+    Yields:
+        Nothing; the override ends with the block.
+    """
+    token = _request.set(policy)
+    try:
+        yield
+    finally:
+        _request.reset(token)
 
 
 # The config keys that name a driver command.
@@ -131,7 +168,7 @@ def repo_driver_overrides(cwd: pathlib.Path) -> tuple[str, ...]:
     Returns:
         The flags; empty when the policy honors drivers or the repo defines none.
     """
-    if _driver_policy["honor_repo_drivers"]:
+    if current_policy().honor_repo_drivers:
         return ()
     try:
         proc = subprocess.run(
@@ -198,7 +235,7 @@ def git_hardening_flags(cwd: pathlib.Path) -> tuple[str, ...]:
         override per content driver the repo defines.
     """
     # /dev/null is not a directory, so git finds no hooks there.
-    hooks = () if _hook_policy["honor_repo_hooks"] else ("-c", "core.hooksPath=/dev/null")
+    hooks = () if current_policy().honor_repo_hooks else ("-c", "core.hooksPath=/dev/null")
     return (*_GIT_HARDENING, *hooks, *repo_driver_overrides(cwd))
 
 

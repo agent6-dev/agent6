@@ -188,7 +188,7 @@ def _add_pre_commit_hook(repo: pathlib.Path, marker: pathlib.Path) -> None:
 def test_git_ops_skips_repo_hooks_by_default(tmp_path: pathlib.Path) -> None:
     """agent6's own commit never fires a repo `.git/hooks/*`, on the untouched defaults too.
 
-    Calling set_repo_hook_policy(False) first would pin only the explicit path.
+    Calling set_policy first would pin only the explicit path.
     """
     from agent6.config import Config
 
@@ -200,7 +200,7 @@ def test_git_ops_skips_repo_hooks_by_default(tmp_path: pathlib.Path) -> None:
     _add_pre_commit_hook(tmp_path, marker)
     (tmp_path / "n.txt").write_text("x\n", encoding="utf-8")
     git_command.run(tmp_path, "add", "-A")
-    git_command.run(tmp_path, "commit", "-m", "c")  # no set_repo_hook_policy: the default governs
+    git_command.run(tmp_path, "commit", "-m", "c")  # no set_policy: the default governs
     assert not marker.exists()
 
 
@@ -210,12 +210,14 @@ def test_git_ops_runs_repo_hooks_when_enabled(tmp_path: pathlib.Path) -> None:
     _add_pre_commit_hook(tmp_path, marker)
     (tmp_path / "n.txt").write_text("x\n", encoding="utf-8")
     try:
-        git_policy.set_repo_hook_policy(True)  # git.run_repo_hooks = true
+        git_policy.set_policy(
+            git_policy.GitPolicy(honor_repo_hooks=True)
+        )  # git.run_repo_hooks = true
         git_command.run(tmp_path, "add", "-A")
         git_command.run(tmp_path, "commit", "-m", "c")
         assert marker.exists()
     finally:
-        git_policy.set_repo_hook_policy(False)  # reset process-wide policy for other tests
+        git_policy.set_policy(git_policy.GitPolicy())  # reset process-wide policy for other tests
 
 
 def test_git_ops_neutralizes_repo_diff_external(tmp_path: pathlib.Path) -> None:
@@ -417,6 +419,29 @@ def test_create_branch_at_idempotent_and_refuses_move(tmp_path: pathlib.Path) ->
     other = _rev(tmp_path, "HEAD")
     with pytest.raises(errors.GitError):
         git_ops.create_branch_at(tmp_path, "agent6/fork", other)
+
+
+def test_a_requests_policy_is_its_own_and_ends_with_it() -> None:
+    """One request of a long-lived process runs git under the config it loaded.
+
+    Process state alone made the web server's merges share whatever policy was set last.
+    """
+    import threading
+
+    assert git_policy.current_policy() == git_policy.GitPolicy()
+    seen: list[git_policy.GitPolicy] = []
+    with git_policy.use(git_policy.GitPolicy(honor_repo_hooks=True)):
+        assert git_policy.current_policy().honor_repo_hooks
+        assert "core.hooksPath=/dev/null" not in git_policy.git_hardening_flags(pathlib.Path("/"))
+        with git_policy.use(git_policy.GitPolicy(honor_repo_drivers=True)):
+            assert git_policy.current_policy() == git_policy.GitPolicy(honor_repo_drivers=True)
+        assert git_policy.current_policy().honor_repo_hooks
+        other = threading.Thread(target=lambda: seen.append(git_policy.current_policy()))
+        other.start()
+        other.join()
+    assert seen == [git_policy.GitPolicy()], "another thread took a request's policy"
+    assert git_policy.current_policy() == git_policy.GitPolicy()
+    assert "core.hooksPath=/dev/null" in git_policy.git_hardening_flags(pathlib.Path("/"))
 
 
 def test_only_the_vcs_package_imports_the_runner() -> None:

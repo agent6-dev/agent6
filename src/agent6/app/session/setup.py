@@ -225,8 +225,7 @@ def apply_git_ops_policy(cfg: Config) -> None:
     Args:
         cfg: The resolved config.
     """
-    git_policy.set_repo_hook_policy(cfg.git.run_repo_hooks)
-    git_policy.set_repo_driver_policy(cfg.git.run_repo_drivers)
+    git_policy.set_policy(git_policy.GitPolicy(cfg.git.run_repo_hooks, cfg.git.run_repo_drivers))
 
 
 def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = None) -> Config:
