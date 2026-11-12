@@ -412,3 +412,23 @@ def test_the_apps_ranker_judges_the_imported_work_and_records_the_outcome(
     assert [lane["session_id"] for lane in compared["ranking"]] == ["root-p1-l2", "root-p1-l1"]
     assert said[0] == "ranked candidates (best first):"
     assert said[1].startswith("  1. root-p1-l2  passed  ")
+
+
+def test_the_rank_summary_states_a_failed_lanes_reason_once() -> None:
+    """A failed lane's line read `no result: no result (...)`."""
+    text = parallel_join.rank_summary(
+        [
+            lane_records.LaneJoin(
+                "root-p1-l1",
+                "agent6/root-p1-l1",
+                "failed",
+                "",
+                "no result (failed · crashed); no branch (the run made no commit)",
+            )
+        ]
+    )
+
+    assert text.splitlines() == [
+        "0 of 1 lane(s) ranked:",
+        "  root-p1-l1: no result (failed · crashed); no branch (the run made no commit)",
+    ]

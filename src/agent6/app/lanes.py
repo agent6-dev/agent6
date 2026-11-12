@@ -438,8 +438,13 @@ def run_lane_to_completion(
     try:
         imported = parallel_results.import_lane(res, origin, origin_state, import_lock)
     except subrun.SubrunError as exc:
+        # The clone holds the only copy of the lane's work: say where it is.
         return lane_records.LaneResult(
-            spec=res.spec, session_dir=res.session_dir, branch=res.branch, ok=False, error=str(exc)
+            spec=res.spec,
+            session_dir=res.session_dir,
+            branch=res.branch,
+            ok=False,
+            error=f"{exc}; its work is kept in {res.spec.workdir}",
         )
     return land_lane(
         res,
@@ -504,9 +509,13 @@ def land_lane(
         launch_dir=lane_launch.launch_dir(origin_state, group),
         cfg=cfg,
     )
-    return recorded_result(
+    result = recorded_result(
         res.spec, res.branch, dest, imported, origin=origin, stopped_by=stopped_by
     )
+    scan = session_log.scan_session_log(dest / sessions_layout.LOGS_NAME)
+    if scan.stop_reason == "setup_command_failed" and scan.setup_output:
+        reporter.note(f"lane {res.spec.lane} [{res.spec.session_id}]: {scan.setup_output}")
+    return result
 
 
 def recorded_result(

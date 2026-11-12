@@ -163,7 +163,7 @@ def rank_summary(lanes: Sequence[lane_records.LaneJoin]) -> str:
         elif j.status == "conflict":
             what = f"first; its merge conflicted, {j.branch} holds its work"
         else:
-            what = f"no result: {j.detail}"
+            what = j.detail or "no result"
         lines.append(f"  {j.session_id}: {what}")
     return "\n".join(lines)
 
