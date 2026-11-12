@@ -10,7 +10,7 @@ import pathlib
 from agent6 import budget_reservations
 from agent6.sessions import lane_dispatch
 from agent6.viewmodel import lanes as vm_lanes
-from agent6.viewmodel import receipt, wire
+from agent6.viewmodel import listing, receipt, wire
 
 
 def _session(
@@ -212,3 +212,35 @@ def test_the_receipt_lists_its_lanes_and_labels_the_inclusive_spend(tmp_path: pa
     # A session with no children renders no section and the review fields are untouched.
     alone = receipt.read_receipt(_session(state, "alone"), tmp_path)
     assert alone.children == () and "Lanes" not in receipt.render(alone)
+
+
+def test_a_panel_seat_is_evidence_of_its_panel_and_no_lane(tmp_path: pathlib.Path) -> None:
+    """A reviewed run read `(2 lanes)` and listed its passing seats as lanes with no changes."""
+    state = tmp_path / "state"
+    parent = _session(state, "run-abc", usd=1.0)
+    seat_id = "run-abc-rpanel-l1"
+    runs_dir = _session(state, seat_id, coordinator="run-abc", lane=1, group="run-abc-rpanel")
+    seat_dir = state / "sessions" / "read_only" / seat_id
+    seat_dir.parent.mkdir()
+    runs_dir.rename(seat_dir)
+    for name in ("manifest.json", "logs.jsonl"):
+        text = (seat_dir / name).read_text(encoding="utf-8")
+        (seat_dir / name).write_text(
+            text.replace('"mode": "run"', '"mode": "read_only"'), encoding="utf-8"
+        )
+    record = _record("run-abc-rpanel", [(seat_id, None, 0.25)])
+    lane_dispatch.write_record(
+        parent,
+        record.model_copy(update={"source": "panel", "join_policy": "record_only"}),
+        now=1.0,
+    )
+    summaries = [listing.summarize_session_dir(d) for d in (parent, seat_dir)]
+    (row,) = listing.nested_rows(summaries)
+    assert row.summary.session_id == "run-abc" and row.lanes == ()
+    assert listing.lanes_of(state, "run-abc") == []
+    assert "lanes" not in wire.manifest_header(parent)
+    # The record still names the seat, found in its own bucket, for the panel's surfaces.
+    (child,) = vm_lanes.children_of(parent)
+    assert child.source == "panel" and child.launched and child.settled
+    text = receipt.render(receipt.read_receipt(parent, tmp_path))
+    assert "Lanes" not in text and "lane 1" not in text

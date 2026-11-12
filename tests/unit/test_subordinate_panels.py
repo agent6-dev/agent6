@@ -32,6 +32,7 @@ from agent6.sessions import (
     journal,
     lane_dispatch,
     layout,
+    lineage,
     process,
 )
 from agent6.sessions import manifest as session_manifest
@@ -429,7 +430,9 @@ def test_import_retains_descendant_records_receipts_and_target_objects(
         subordinate_env.git(repo, "show", f"{target.snapshot_commit}:README.md")
         == "reviewed dirty tree"
     )
-    assert listing.lanes_of(paths.state_dir(repo), worker.name)[0].session_id == leaf.name
+    # The seat is the worker's child by lineage and none of its lanes.
+    assert [child.name for child in lineage.children_of(imported.session_dir)] == [leaf.name]
+    assert listing.lanes_of(paths.state_dir(repo), worker.name) == []
     assert receipt.read_receipt(dest, repo).session_id == leaf.name
 
 

@@ -325,7 +325,7 @@ def test_a_real_read_only_lane_cannot_write_run_or_start_anything(
     record = completion.read_completion(session_dir)
     assert record is not None and record.stop_reason == "finish_session"
     assert manifest["parallel"]["coordinator"] == "leaf"
-    # Listed like any session, nested under its coordinator; the resume gate refuses it.
+    # Found by its bucket and its id; the resume gate refuses it.
     state = paths.state_dir(clone)
     assert session_dir in listing.session_dirs(state)
     summary = listing.summarize_session_dir(session_dir)

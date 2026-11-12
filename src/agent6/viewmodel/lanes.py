@@ -96,7 +96,7 @@ def dispatches_of(session_dir: pathlib.Path) -> tuple[DispatchView, ...]:
     directory = lane_dispatch.records_dir(session_dir)
     if not directory.is_dir():
         return ()
-    runs = layout.bucket_dir(layout.layout_of(session_dir).state_dir, "runs")
+    state_dir = layout.layout_of(session_dir).state_dir
     views: list[DispatchView] = []
     for path in sorted(directory.glob("*.json"), key=lambda p: lane_dispatch.order_key(p.stem)):
         try:
@@ -112,7 +112,17 @@ def dispatches_of(session_dir: pathlib.Path) -> tuple[DispatchView, ...]:
                 turn=record.turn,
                 base=record.base,
                 message=record.message,
-                children=tuple(_recorded_child(record, child, runs) for child in record.children),
+                # A panel's children are read-only conversations, in that kind's bucket.
+                children=tuple(
+                    _recorded_child(
+                        record,
+                        child,
+                        layout.bucket_dir(
+                            state_dir, "read_only" if record.source == "panel" else "runs"
+                        ),
+                    )
+                    for child in record.children
+                ),
             )
         )
     return tuple(views)
@@ -144,9 +154,9 @@ def children_of(session_dir: pathlib.Path) -> tuple[ChildView, ...]:
 
 
 def _recorded_child(
-    record: lane_dispatch.DispatchRecord, child: lane_dispatch.ChildRecord, runs: pathlib.Path
+    record: lane_dispatch.DispatchRecord, child: lane_dispatch.ChildRecord, bucket: pathlib.Path
 ) -> ChildView:
-    lane_dir = runs / child.session_id
+    lane_dir = bucket / child.session_id
     launched = lane_dir.exists() or lane_dir.is_symlink()
     status = route = ""
     if launched:

@@ -370,14 +370,15 @@ def environment_summary(view: ReceiptView | session_log.LogScan) -> str:
 
 
 def lanes_section(children: tuple[lanes.ChildView, ...]) -> list[str]:
-    """Return the receipt's `Lanes` lines: one per child, then the spend they add to the total.
+    """Return the receipt's `Lanes` lines: one per lane, then the spend they add to the total.
 
     Args:
-        children: The session's children.
+        children: The session's children; a panel's seats are listed with their panel.
 
     Returns:
-        The lines; none for a session without children.
+        The lines; none for a session without lanes.
     """
+    children = tuple(child for child in children if child.source != "panel")
     if not children:
         return []
     lines = ["", "Lanes"]
@@ -465,7 +466,15 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
     for panel_id, seat in seats:
         lines.append(f"{panel_id} / {seat.model_route}:\n{seat.risk or 'not recorded'}")
         if seat.session_id:
-            lines.append(f"Seat {seat.seat_index + 1} ({seat.focus}): {seat.session_id}")
+            spend = next(
+                (
+                    f", {budget.format_usd(child.spend_usd)}"
+                    for child in view.children
+                    if child.session_id == seat.session_id and child.settled
+                ),
+                "",
+            )
+            lines.append(f"Seat {seat.seat_index + 1} ({seat.focus}): {seat.session_id}{spend}")
         if seat.risk_truncated:
             lines.append("Risk truncated at 1000 characters.")
     if not seats:
