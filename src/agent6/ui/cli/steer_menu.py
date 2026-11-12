@@ -18,12 +18,11 @@ import functools
 import pathlib
 from collections.abc import Callable
 
-from agent6 import budget, directive, paths
+from agent6 import budget, directive
 from agent6.config import layer
-from agent6.context import skills as agent6_skills
 from agent6.graph import order
 from agent6.sessions import ipc, layout, manifest, shells
-from agent6.tools import schema
+from agent6.tools import schema, skill_tools
 from agent6.ui import directive_actions
 from agent6.ui.cli import common, menu_input
 from agent6.viewmodel import (
@@ -96,13 +95,7 @@ def skill_menu_table(config_paths: tuple[pathlib.Path, ...] = ()) -> dict[str, t
     """
     try:
         cfg = layer.load_effective(pathlib.Path.cwd(), config_paths).config
-        resolved = agent6_skills.operator_skills(
-            cfg.skills.enabled,
-            cfg.skills.extra_dirs,
-            cfg.skills.state,
-            paths.data_dir() / "skills",
-            hidden=paths.hidden_paths(pathlib.Path(p) for p in cfg.sandbox.hide_paths),
-        )
+        resolved = skill_tools.configured_skills(cfg)
     except Exception as exc:  # the pause prompt survives any config error
         print(f"[agent6] skill commands unavailable: {exc}")
         return {}

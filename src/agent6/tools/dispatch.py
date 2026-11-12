@@ -1097,13 +1097,7 @@ class ToolDispatcher:
             The skills; empty when `[skills].enabled` is false.
         """
         if self._skills_cache is None:
-            self._skills_cache = skills.operator_skills(
-                self._config.skills.enabled,
-                self._config.skills.extra_dirs,
-                self._config.skills.state,
-                paths.data_dir() / "skills",
-                hidden=paths.hidden_paths(pathlib.Path(p) for p in self._config.sandbox.hide_paths),
-            )
+            self._skills_cache = skill_tools.configured_skills(self._config)
         return self._skills_cache
 
     def skills_available(self) -> bool:

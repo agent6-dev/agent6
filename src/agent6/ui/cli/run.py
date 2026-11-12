@@ -14,16 +14,15 @@ import pathlib
 import sys
 import time
 
-from agent6 import directive, errors, kinds, paths, portable
+from agent6 import directive, errors, kinds, portable
 from agent6.app import frontend, preflight, run
 from agent6.app import lanes as app_lanes
 from agent6.app.session import setup as session_setup
 from agent6.config import (
     Config,
 )
-from agent6.context import skills as agent6_skills
 from agent6.sessions import event_log
-from agent6.tools import operator_prompts
+from agent6.tools import operator_prompts, skill_tools
 from agent6.ui import btw, spawn, steer
 from agent6.ui.cli import (
     ask,
@@ -46,13 +45,7 @@ crash_session: contextvars.ContextVar[pathlib.Path | None] = contextvars.Context
 
 def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
     """Return the task-prompt prefix for the `--skill` names, and an error text or ""."""
-    resolved = agent6_skills.operator_skills(
-        cfg.skills.enabled,
-        cfg.skills.extra_dirs,
-        cfg.skills.state,
-        paths.data_dir() / "skills",
-        hidden=paths.hidden_paths(pathlib.Path(p) for p in cfg.sandbox.hide_paths),
-    )
+    resolved = skill_tools.configured_skills(cfg)
     by_name = {s.name: s for s in (*resolved.enabled, *resolved.always)}
     blocks: list[str] = []
     for n in names:

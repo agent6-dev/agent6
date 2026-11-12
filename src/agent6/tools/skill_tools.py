@@ -15,9 +15,28 @@ import pathlib
 from collections.abc import Callable
 from typing import Any
 
-from agent6 import path_safety
+from agent6 import path_safety, paths
+from agent6.config import Config
 from agent6.context import skills
 from agent6.tools import results, schema, tool_errors
+
+
+def configured_skills(cfg: Config) -> skills.ResolvedSkills:
+    """Return the skills a session under this config has, hidden trees left out.
+
+    Args:
+        cfg: The effective config: `[skills]` and `sandbox.hide_paths`.
+
+    Returns:
+        The enabled and always-on skills; none when `[skills].enabled` is false.
+    """
+    return skills.operator_skills(
+        cfg.skills.enabled,
+        cfg.skills.extra_dirs,
+        cfg.skills.state,
+        paths.data_dir() / "skills",
+        hidden=paths.hidden_paths(pathlib.Path(p) for p in cfg.sandbox.hide_paths),
+    )
 
 
 def use_skill(
