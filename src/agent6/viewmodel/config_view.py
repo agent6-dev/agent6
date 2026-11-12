@@ -284,12 +284,12 @@ def build_config_view(
     by_section: dict[str, list[str]] = {}
     for leaf in leaves:
         by_section.setdefault(io.split_key(leaf)[0], []).append(leaf)
-    ordered = [s for s in config_layer.SECTION_ORDER if s in by_section]
-    ordered += [s for s in by_section if s not in config_layer.SECTION_ORDER]
+    scalars = [s for s in by_section if all("." not in leaf for leaf in by_section[s])]
+    ordered = config_layer.section_order(scalars, (s for s in by_section if s not in scalars))
 
     settings: list[ConfigSetting] = []
     for section in ordered:
-        for leaf in by_section[section]:
+        for leaf in sorted(by_section[section]):
             value = leaves[leaf]
             source = eff.sources.get(leaf, "default")
             schema = field_schema(eff.config.__class__, io.split_key(leaf)) or FieldSchema()
@@ -472,9 +472,7 @@ def render_key_detail(
             raise KeyError(key)
         matched.extend(s for s in hits if s not in matched)
     if as_json:
-        return json.dumps(
-            {s.key: _leaf_json(s) for s in matched}, indent=2, sort_keys=True, default=str
-        )
+        return json.dumps({s.key: _leaf_json(s) for s in matched}, indent=2, default=str)
     lines: list[str] = []
     for s in matched:
         value = display_value(s)
@@ -520,7 +518,7 @@ def render_show(
     view = build_config_view(eff, resolved=resolved)
     if as_json:
         payload = {s.key: _leaf_json(s) for s in view.settings}
-        return json.dumps(payload, indent=2, sort_keys=True, default=str)
+        return json.dumps(payload, indent=2, default=str)  # the view's order, which the web keeps
 
     by_section: dict[str, list[ConfigSetting]] = {}
     for s in view.settings:

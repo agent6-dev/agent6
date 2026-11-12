@@ -1068,7 +1068,7 @@ def test_filter_down_stops_on_a_collapsed_first_section(repo: pathlib.Path) -> N
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, config_page.ConfigScreen)
-            first = screen.query_one("#sec-agent6", widgets.Collapsible)
+            first = screen.query_one("#sec-preset", widgets.Collapsible)
             first.collapsed = True
             screen.action_search()
             await pilot.pause()
@@ -1743,14 +1743,14 @@ def test_up_off_first_setting_reveals_top_header_then_filter(repo: pathlib.Path)
                 await pilot.press("down")
                 await pilot.pause()
             header = None
-            for _ in range(20):  # walk back up to the [agent6] header
+            for _ in range(20):  # walk back up to the first section's header (`preset`)
                 await pilot.press("up")
                 await pilot.pause()
                 f = screen.focused
-                if isinstance(f, CollapsibleTitle) and getattr(f.parent, "id", "") == "sec-agent6":
+                if isinstance(f, CollapsibleTitle) and getattr(f.parent, "id", "") == "sec-preset":
                     header = f
                     break
-            assert header is not None, "never reached the [agent6] header going up"
+            assert header is not None, "never reached the first header going up"
             top, bottom = settings.region.y, settings.region.y + settings.region.height
             assert top <= header.region.y < bottom, "top header focused but scrolled off-screen"
             await pilot.press("up")

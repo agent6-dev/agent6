@@ -66,7 +66,7 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
     - the composer steers a live run or resumes an ended one under the preset and model picked above it, and takes the [steer directives](usage.md#follow-and-steer-a-run); Ctrl+Enter sends a live steer as `/now`, Ctrl-R searches past messages
     - a click on a line number in the diff card quotes that line into the composer, with its path, side and commit; write your words beneath the quote and send it
 - **Machine view**: the state overview, the path taken and the current agent state's conversation; the entry submits as **Steer** (into the current state) or **Message** (a `poke` a waiting machine's next tool reads); **Stop** parks the instance at its next transition and `machine run` resumes it
-- **Config page**: every setting with value and source, filterable; click a row to set it, with the choices an enum or a provider's model listing offers; secrets never shown
+- **Config page**: every setting with value and source, one collapsible section per table in the order every surface shares (the top-level `preset`, `[providers]`, `[models]`, the rest by name, `[agent6]` last), filterable; click a row to set it, with the choices an enum or a provider's model listing offers; secrets never shown
 
 - **Git page**: the repository's commit graph, a commit's files and diffs, and a compare of any two revisions; it reads the repository `agent6 web` was started in and writes nothing
     - **blame** uses each line's own side: removed lines use the base, added and inline context lines use the head, split cells use their column, and old/new views use their selected side

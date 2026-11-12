@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
+from collections.abc import Iterable
 from typing import Any
 
 import pydantic
@@ -22,8 +23,27 @@ from agent6 import paths
 from agent6.config import io, layer_data, layer_presets, validation
 from agent6.config import model as config_model
 
-# The `config show` and `config fill` order, from the model so a new section is never omitted.
-SECTION_ORDER = tuple(config_model.Config.model_fields)
+# The display order every surface shares (`config show`, `config fill`, the TUI and the web):
+# top-level scalars first (a TOML paste needs them before any table), then `providers` and
+# `models`, then the rest by name, the version stamp last. Leaves inside a section sort by name.
+FIRST_SECTIONS = ("providers", "models")
+LAST_SECTION = "agent6"
+
+
+def section_order(scalars: Iterable[str], tables: Iterable[str]) -> list[str]:
+    """Return the config sections in the shared display order.
+
+    Args:
+        scalars: The top-level scalar keys.
+        tables: The section tables.
+
+    Returns:
+        The scalars by name, the first sections, the rest by name, the version stamp last.
+    """
+    present = set(tables)
+    rest = sorted(t for t in present if t not in FIRST_SECTIONS and t != LAST_SECTION)
+    last = [LAST_SECTION] if LAST_SECTION in present else []
+    return [*sorted(scalars), *(t for t in FIRST_SECTIONS if t in present), *rest, *last]
 
 
 def load_effective(
@@ -570,8 +590,8 @@ def materialize(
         "# Every value below is explicit; edit freely.",
         "",
     ]
-    ordered = [s for s in SECTION_ORDER if s in data]
-    ordered += [s for s in data if s not in SECTION_ORDER]
+    tables = [k for k, v in data.items() if isinstance(v, dict) or _is_table_array(v)]
+    ordered = section_order((k for k in data if k not in tables), tables)
     # A top-level scalar (`preset`) must precede every `[section]` in TOML.
     for section in ordered:
         value = data[section]

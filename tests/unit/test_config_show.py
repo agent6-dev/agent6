@@ -492,3 +492,27 @@ def test_the_view_marks_the_model_picker_for_every_role(tmp_path: pathlib.Path) 
         json.loads(config_view.render_show(eff, as_json=True))["models.helper"]["model_role"]
         == "helper"
     )
+
+
+def test_the_shared_order_puts_scalars_then_first_tables_then_names_then_the_stamp() -> None:
+    """`config show`, `config fill`, the TUI and the web read one order from `section_order`."""
+    order = layer.section_order(["preset"], ["web", "agent6", "models", "providers", "budget"])
+    assert order == ["preset", "providers", "models", "budget", "web", "agent6"]
+
+
+def test_the_view_orders_sections_and_leaves_by_the_shared_rule(tmp_path: pathlib.Path) -> None:
+    """The web sorted dotted keys by itself and the TUI followed the model's field order."""
+    eff = _effort_config(
+        tmp_path,
+        '[providers.openrouter]\nbackend = "openai"\nbase_url = "https://openrouter.ai/api/v1"\n'
+        '[models.worker]\nmodel = "openrouter/moonshotai/kimi-k2.6"\n',
+    )
+    view = config_view.build_config_view(eff)
+    assert view.sections[:3] == ("preset", "providers", "models")
+    assert view.sections[-1] == "agent6"
+    rest = list(view.sections[3:-1])
+    assert rest == sorted(rest)
+    models = [s.key for s in view.settings if s.section == "models"]
+    assert models == sorted(models) and models[0] == "models.default"
+    payload = json.loads(config_view.render_show(eff, as_json=True))
+    assert list(payload) == [s.key for s in view.settings]

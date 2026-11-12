@@ -39,12 +39,21 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
   reviewerBtn.onclick = () => addReviewer(refresh);
   bar.appendChild(reviewerBtn);
   card.appendChild(bar);
-  const tbl = el('table', 'cfg');
-  const head = el('tr'); ['setting','value','source'].forEach(h => head.appendChild(el('th', null, h))); tbl.appendChild(head);
-  const keys = Object.keys(data).sort();
-  const rows = [];
-  for (const k of keys) {
+  // The payload comes in the order every surface shares (`config_view`); one collapsible
+  // section per table, as the TUI's page shows them.
+  const rows = [], sections = [];
+  let section = null, tbl = null;
+  for (const k of Object.keys(data)) {
     const s = data[k];
+    const name = k.includes('.') ? k.slice(0, k.indexOf('.')) : k;
+    if (name !== section) {
+      section = name;
+      const box = el('details', 'cfg-section'); box.open = true;
+      box.appendChild(el('summary', null, section));
+      tbl = el('table', 'cfg');
+      const head = el('tr'); ['setting','value','source'].forEach(h => head.appendChild(el('th', null, h))); tbl.appendChild(head);
+      box.appendChild(tbl); card.appendChild(box); sections.push(box);
+    }
     const tr = el('tr', s.modified ? 'mod' : '');
     tr.appendChild(el('td', 'key', k));
     tr.appendChild(el('td', 'val', s.display)); // the one shared value column (viewmodel.display_value)
@@ -55,14 +64,17 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     tr.style.cursor = 'pointer';
     tr.setAttribute('data-key', k);
     actionable(tr, () => { tr.focus({preventScroll: true}); editConfig(k, s, registry.tables, refresh, data); }, 'edit ' + k);
-    tbl.appendChild(tr); rows.push([k.toLowerCase(), tr, s.modified]);
+    tbl.appendChild(tr); rows.push([k.toLowerCase(), tr, s.modified, sections.at(-1)]);
   }
-  card.appendChild(tbl);
   filter.oninput = () => {
     const q = filter.value.toLowerCase();
-    for (const [key, tr, isModified] of rows) {
-      tr.style.display = key.includes(q) && (!modified || isModified) ? '' : 'none';
+    const shown = new Set();
+    for (const [key, tr, isModified, box] of rows) {
+      const show = key.includes(q) && (!modified || isModified);
+      tr.style.display = show ? '' : 'none';
+      if (show) shown.add(box);
     }
+    for (const box of sections) box.style.display = shown.has(box) ? '' : 'none';
   };
   view.appendChild(card);
   filter.oninput();

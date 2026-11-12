@@ -275,6 +275,8 @@ button.mini { min-height: 26px; padding: 2px 10px; font-size: 12px; border-radiu
 .cfg-bar input.filter { flex: 1 1 auto; width: auto; min-width: 0; }
 .cfg-bar button { flex: none; white-space: nowrap; }
 .cfg-bar button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
+.cfg-section { margin-top: 10px; }
+.cfg-section > summary { cursor: pointer; font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 4px 0; }
 .cfg { width: 100%; border-collapse: collapse; font-size: 13px; }
 .cfg td, .cfg th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .cfg .key { font-family: var(--mono); word-break: break-all; }
