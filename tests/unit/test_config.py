@@ -286,7 +286,7 @@ def test_memory_limit_defaults_off(tmp_path: pathlib.Path) -> None:
     A memory bomb is the kernel's problem and a cap costs real builds.
     """
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    assert cfg.sandbox.memory_limit_mib == 0
+    assert cfg.sandbox.memory_limit_mib == -1
 
 
 def test_memory_limit_accepts_a_cap(tmp_path: pathlib.Path) -> None:
@@ -294,8 +294,12 @@ def test_memory_limit_accepts_a_cap(tmp_path: pathlib.Path) -> None:
     assert load_config(_write(tmp_path, body)).sandbox.memory_limit_mib == 2048
 
 
-def test_memory_limit_rejects_negative(tmp_path: pathlib.Path) -> None:
-    body = _VALID_TOML.replace('protect_git = "on"', 'protect_git = "on"\nmemory_limit_mib = -1')
+@pytest.mark.parametrize("limit", [0, -2])
+def test_memory_limit_rejects_zero_and_below_minus_one(tmp_path: pathlib.Path, limit: int) -> None:
+    """Only -1 spells no cap: 0 and other negatives are refused with the key named."""
+    body = _VALID_TOML.replace(
+        'protect_git = "on"', f'protect_git = "on"\nmemory_limit_mib = {limit}'
+    )
     with pytest.raises(ConfigError, match=r"memory_limit_mib"):
         load_config(_write(tmp_path, body))
 
