@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Clone a lane's workspace and import its finished branch and run dir.
 
-Git plumbing over `agent6.vcs.git.ops`, with no model, UI or process spawning; `app.parallel`
+Git plumbing over `agent6.vcs.git.ops`, with no model, UI or process spawning; `app.lanes`
 drives a `LaneSpawner` over it.
 """
 

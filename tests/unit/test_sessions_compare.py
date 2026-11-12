@@ -996,20 +996,6 @@ def test_an_empty_judges_list_is_the_mechanical_order_with_no_call(
     assert capsys.readouterr() == ("", "")
 
 
-def test_parallel_and_runs_compare_share_one_rank_implementation() -> None:
-    """The fan-out auto-compare and `sessions compare` route through the one core in `app.compare`.
-
-    The CLI side only injects the console spinner and the reviewer-provider wiring.
-    """
-    from agent6.app import compare as app_compare
-    from agent6.app import parallel
-
-    # The fan-out's auto-compare calls the core directly, through the module.
-    assert parallel.app_compare is app_compare
-    # `sessions compare` goes through the CLI wrapper, which delegates to that core.
-    assert compare_ranking.rank is compare_ranking.rank
-
-
 def test_compare_reads_a_pruned_runs_change_from_the_recorded_merge(
     repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

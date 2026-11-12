@@ -1,28 +1,22 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Import completed lanes and report their comparison outcomes."""
+"""Import a completed lane, carry its memory back, and stamp a ranking's outcome."""
 
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import pathlib
 import threading
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 
-from agent6 import budget as agent6_budget
-from agent6 import kinds, lane_records, paths
+from agent6 import lane_records
 from agent6.app import compare as app_compare
 from agent6.app import finalize, lane_watch, stamps
 from agent6.app import reporter as app_reporter
 from agent6.context import memory
 from agent6.harness import judge, subrun
-from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.sessions import process
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import format, listing, produced_result, summarize_session_dir
-from agent6.viewmodel.session import log as session_log
 
 
 def imported_branch_note(origin: pathlib.Path, branch: str) -> str:
@@ -125,11 +119,10 @@ def ranked_winner(candidates: list[judge.CandidateBrief], ranking: Sequence[str]
     if not ranking:
         return ""
     first = next(c for c in candidates if c.session_id == ranking[0])
-    crown = fanout_exit_code(candidates) != finalize.EXIT_VERIFY_FAILED
-    any_verified = any(c.verification == "passed" for c in candidates)
-    return (
-        first.session_id if crown and (not any_verified or first.verification == "passed") else ""
-    )
+    verdicts = {c.verification for c in candidates}
+    if "passed" in verdicts:
+        return first.session_id if first.verification == "passed" else ""
+    return "" if verdicts & {"failed", "unverified"} else first.session_id
 
 
 def carry_back(
@@ -234,233 +227,3 @@ def import_lane(
         if had_link:
             lane_watch.symlink_lane(origin_state, res)
         raise
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class ImportedLanes:
-    """The imported candidates, failures, cleanup specs and all-lane budget outcome."""
-
-    candidates: list[judge.CandidateBrief]
-    rows: dict[str, listing.SessionSummary]
-    failed: list[tuple[lane_records.LaneResult, str]]
-    imported: list[lane_records.LaneSpec]
-    all_budget_exhausted: bool
-    plan_lines: list[str]
-
-
-def import_lanes(
-    results: list[lane_records.LaneResult],
-    *,
-    origin: pathlib.Path,
-    origin_state: pathlib.Path,
-    base_sha: str,
-    task: str,
-    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-) -> ImportedLanes:
-    """Import each finished lane into the origin and build the candidate briefs.
-
-    A lane that failed to start is recorded as failed and keeps what it created.
-    One still running or whose import was refused is also recorded as failed and keeps its
-    clone, state and symlink.
-    An imported lane without a result is recorded as failed too, its work safe in the origin.
-
-    Args:
-        results: The spawned lanes.
-        origin: The repository.
-        origin_state: The origin's state dir.
-        base_sha: The commit the candidate diffs are taken from.
-        task: The fan-out's task, for a candidate whose manifest names none.
-        reporter: Receives the notes.
-
-    Returns:
-        The candidates, listing rows, failures, cleanup specs and whether every lane
-        ended at its budget and imported successfully.
-    """
-    candidates: list[judge.CandidateBrief] = []
-    rows: dict[str, listing.SessionSummary] = {}
-    budget_stops = 0
-    failed: list[tuple[lane_records.LaneResult, str]] = []
-    imported: list[lane_records.LaneSpec] = []
-    # A reading is account-wide, so each provider's newest one among the lanes is the fan-out's.
-    readings: dict[str, tuple[float, agent6_budget.PlanUsage]] = {}
-    for res in results:
-        if not res.ok:
-            failed.append((res, f"failed to start: {res.error}"))
-            continue
-        if process.worker_is_alive(res.session_dir):
-            failed.append(
-                (
-                    res,
-                    "still running; left in place"
-                    f" (watch: agent6 attach {res.spec.session_id};"
-                    f" stop: agent6 stop {res.spec.session_id})",
-                )
-            )
-            continue
-        try:
-            dest = import_lane(res, origin, origin_state, None).session_dir
-        except subrun.SubrunError as exc:
-            failed.append((res, str(exc)))
-            continue
-        landed = dataclasses.replace(res, session_dir=dest)
-        imported.append(res.spec)
-        carry_back(
-            paths.state_dir(res.spec.workdir),
-            origin_state,
-            dest,
-            lane=res.spec.lane,
-            reporter=reporter,
-        )
-        summary = summarize_session_dir(dest)
-        scan = session_log.scan_session_log(dest / sessions_layout.LOGS_NAME)
-        budget_stops += scan.stop_reason == "budget_exhausted"
-        account = scan.budget.account
-        if account is not None and account.windows and (provider := lane_provider(dest)):
-            seen = (account.observed_at, agent6_budget.PlanUsage(windows=account.windows))
-            readings[provider] = max(readings.get(provider, seen), seen, key=lambda r: r[0])
-        if not produced_result(summary.status):
-            # Only a deliberate end is rankable work.
-            failed.append(
-                (
-                    landed,
-                    f"no result ({format.status_label(summary.status, summary.detail)});"
-                    f" {imported_branch_note(origin, res.branch)}, not ranked",
-                )
-            )
-            continue
-        if scan.setup_output:
-            reporter.note(f"lane {res.spec.lane} [{res.spec.session_id}]: {scan.setup_output}")
-        rows[res.spec.session_id] = summary
-        candidates.append(
-            judge.CandidateBrief(
-                session_id=res.spec.session_id,
-                task=app_compare.manifest_task(dest, task),
-                diff=git_read.diff_since(res.spec.workdir, base_sha),
-                verification=summary.verification,
-                cost_usd=summary.cost_usd,
-            )
-        )
-    return ImportedLanes(
-        candidates,
-        rows,
-        failed,
-        imported,
-        all_budget_exhausted=bool(results) and budget_stops == len(results),
-        plan_lines=[
-            agent6_budget.format_plan_reading(provider, usage)
-            for provider, (_at, usage) in sorted(readings.items())
-        ],
-    )
-
-
-def lane_provider(session_dir: pathlib.Path) -> str:
-    """Return the provider entry that drove a lane, "" when its manifest names none."""
-    try:
-        driver = sessions_manifest.read_manifest(session_dir).models.driver
-    except sessions_manifest.ManifestError:
-        return ""
-    return driver.provider if driver is not None else ""
-
-
-def fanout_exit_code(
-    candidates: list[judge.CandidateBrief], *, all_budget_exhausted: bool = False
-) -> int:
-    """Map the lanes' gate verdicts and budget stops to the fan-out's exit code.
-
-    Args:
-        candidates: The rankable lanes.
-        all_budget_exhausted: Every lane ended at its budget and imported successfully.
-
-    Returns:
-        3 every lane ended at its budget, 1 nothing rankable otherwise, 0 a lane
-        verified green or none had a gate, 4 gates ran and none passed.
-    """
-    if not candidates:
-        return 3 if all_budget_exhausted else 1
-    if any(c.verification == "passed" for c in candidates):
-        return 0
-    return (
-        finalize.EXIT_VERIFY_FAILED
-        if any(c.verification in ("failed", "unverified") for c in candidates)
-        else 0
-    )
-
-
-def print_report(
-    candidates: list[judge.CandidateBrief],
-    outcome: app_compare.RankOutcome,
-    failed: list[tuple[lane_records.LaneResult, str]],
-    *,
-    rows: Mapping[str, listing.SessionSummary],
-    committed: Mapping[str, bool],
-    model_refs: Mapping[str, str] | None = None,
-    fanout_id: str,
-    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-) -> None:
-    """Print the ranked candidate table, a merge line per candidate and the failed lanes.
-
-    Args:
-        candidates: The ranked lanes.
-        outcome: The ranking.
-        failed: The failed lanes with their reasons.
-        rows: Each candidate's listing row, by session id.
-        committed: Whether each lane's import landed a branch, by session id.
-        model_refs: Imported work locations for model-controlled lanes.
-        fanout_id: The fan-out's session id.
-        reporter: Receives the lines.
-    """
-    reporter.out(
-        f"\n[agent6] parallel fan-out {fanout_id} complete: {len(candidates)} candidate(s)"
-    )
-    app_compare.print_ranked_candidates(
-        candidates,
-        outcome,
-        rows=rows,
-        committed=committed,
-        model_refs=model_refs,
-        reporter=reporter,
-    )
-    if failed:
-        reporter.out("\nfailed lanes:")
-        for res, err in failed:
-            reporter.out(f"  - lane {res.spec.lane} [{res.spec.session_id}]: {err}")
-            finalize.print_lane_config_notes(res.session_dir, reporter=reporter)
-            scan = session_log.scan_session_log(res.session_dir / sessions_layout.LOGS_NAME)
-            for line in scan.setup_output.splitlines():
-                reporter.out(f"    {line}")
-            if scan.stop_reason == "budget_exhausted":
-                reporter.out(
-                    "    raise the cap on the fork (--max-usd, --max-plan-points or"
-                    " --max-tokens-fallback), then continue with:"
-                    f" agent6 fork {res.spec.session_id}"
-                )
-            kept = [p for p in (res.spec.workdir, res.session_dir) if p.exists()]
-            if kept:
-                reporter.out(f"    kept: {', '.join(str(p) for p in kept)}")
-
-
-def fanout_end(
-    rc: int, candidates: list[judge.CandidateBrief]
-) -> tuple[str, kinds.Verification | None]:
-    """Map the fan-out's exit code to its `session.stop` reason and gate verdict.
-
-    Args:
-        rc: The exit code.
-        candidates: The rankable lanes.
-
-    Returns:
-        The reason and final verification word, or None without a recorded verdict.
-    """
-    if rc == 130:
-        return "interrupted", None
-    if rc == 3:
-        return "budget_exhausted", None
-    if rc == 0:
-        return "lanes_ranked", "passed" if any(
-            c.verification == "passed" for c in candidates
-        ) else "not_applicable"
-    return (
-        ("no_lane_passed", "failed")
-        if rc == finalize.EXIT_VERIFY_FAILED
-        else ("no_lane_result", None)
-    )

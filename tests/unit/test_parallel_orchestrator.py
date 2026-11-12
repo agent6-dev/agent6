@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `agent6 run --parallel` fan-out orchestrator (ui/cli/parallel.py).
+"""A lane's life under its coordinator: spawn, wait, import, landing and cleanup (app/lanes.py).
 
 Driven with a fake spawner that, for each LaneSpec, really clones the origin,
 commits on the lane's `agent6/<id>` branch, and fabricates a finished run dir
-(manifest.json + logs.jsonl), so the orchestrator's clone-independent behavior
-(symlink live view, import, lineage stamp, ranked report, resilience to a failed
-lane) is exercised on real tmp git repos without spawning real runs.
+(manifest.json + logs.jsonl), so the clone-independent behavior (symlink live view,
+import, lineage stamp, resilience to a failed lane) is exercised on real tmp git repos
+without spawning real runs.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import pathlib
 import threading
 import time
 import types
-from collections.abc import Callable, Generator, Mapping
+from collections.abc import Callable, Generator
 from typing import Any
 
 import pytest
@@ -31,7 +31,6 @@ from agent6.app import (
     compare,
     lane_launch,
     lane_watch,
-    parallel,
     parallel_results,
     reporter,
     role_providers,
@@ -39,19 +38,17 @@ from agent6.app import (
     workdirs,
 )
 from agent6.app import lanes as app_lanes
-from agent6.config import Config, ConfigError
+from agent6.config import Config
 from agent6.context import memory
-from agent6.harness import subrun
+from agent6.harness import judge, subrun
 from agent6.providers import ProviderResponse
 from agent6.sessions import ipc, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import cli_main, lane_agent, main
+from agent6.ui.cli import cli_main, interact, lane_agent, main
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing
-from agent6.viewmodel.session import log as session_log
-from agent6.viewmodel.session import status as session_status
 
 
 def _launch_of(env: dict[str, str]) -> lane_launch.LaneLaunch:
@@ -270,75 +267,50 @@ def runtime() -> app_lanes.LaneRuntime:
 
 
 def _specs(
-    tmp_path: pathlib.Path, cfg: Config, fanout_id: str, spec: str
+    tmp_path: pathlib.Path, cfg: Config, group: str, spec: str
 ) -> list[lane_records.LaneSpec]:
-    return app_lanes.build_lane_specs(
-        spec,
-        cfg=cfg,
-        origin=tmp_path,
-        fanout_id=fanout_id,
-        workdir_root=tmp_path / "work" / fanout_id,
+    """Plan a group's lanes as the dispatcher does: one per selector, numbered from 1."""
+    settings = app_lanes.lane_settings(
+        cfg, directive.parse_spec(spec, limit=cfg.harness.parallel.max_lanes)
     )
-
-
-# ---------------------------------------------------------------------------
-# Lane planning
-# ---------------------------------------------------------------------------
-
-
-def test_build_lane_specs_int_layout(tmp_path: pathlib.Path) -> None:
-    """A count runs the worker's own settings: no selection, the lane's config unchanged."""
-    lanes = _specs(tmp_path, Config(), "fan", "3")
-    assert [(ln.lane, ln.session_id, ln.settings) for ln in lanes] == [
-        (1, "fan-l1", None),
-        (2, "fan-l2", None),
-        (3, "fan-l3", None),
+    return [
+        lane_records.LaneSpec(
+            lane=i,
+            session_id=f"{group}-l{i}",
+            workdir=tmp_path / "work" / group / f"lane-{i}",
+            settings=chosen,
+        )
+        for i, chosen in enumerate(settings, start=1)
     ]
-    assert lanes[0].workdir == tmp_path / "work" / "fan" / "lane-1"
 
 
-def test_build_lane_specs_model_list(tmp_path: pathlib.Path) -> None:
-    """Each entry resolves once.
-
-    `provider/model` names its provider, a bare id runs on the worker's.
-    """
-    cfg = _provider_cfg().model_copy(
-        update={
-            "providers": {
-                **_provider_cfg().providers,
-                "p": _provider_cfg().providers["o"],
-            }
-        }
-    )
-    lanes = _specs(tmp_path, cfg, "fan", "kimi,p/glm")
-    chosen = [ln.settings for ln in lanes]
-    assert all(c is not None for c in chosen)
-    settings = [c for c in chosen if c is not None]
-    assert [(ln.lane, c.route) for ln, c in zip(lanes, settings, strict=True)] == [
-        (1, kinds.ModelRoute("o", "kimi")),
-        (2, kinds.ModelRoute("p", "glm")),
+def _run_lanes(
+    task: str,
+    lanes: list[lane_records.LaneSpec],
+    *,
+    cfg: Config,
+    origin: pathlib.Path,
+    runtime: app_lanes.LaneRuntime,
+    group: str,
+    spawner: lane_records.LaneSpawner | None = None,
+) -> list[lane_records.LaneResult]:
+    """Run each lane to its end under one group, in lane order."""
+    return [
+        app_lanes.run_lane_to_completion(
+            spec,
+            task,
+            cfg=cfg,
+            explicit_leaves=frozenset(),
+            origin=origin,
+            origin_state=paths.state_dir(origin),
+            group=group,
+            coordinator=group,
+            runtime=runtime,
+            spawner=spawner,
+            poll_interval_s=0.01,
+        )
+        for spec in lanes
     ]
-    # A route-named lane runs the worker's effort and temperature.
-    worker = cfg.role_settings("worker")
-    assert {(c.effort, c.temperature) for c in settings} == {(worker.effort, worker.temperature)}
-
-
-def test_build_lane_specs_refuses_an_entry_naming_no_model(tmp_path: pathlib.Path) -> None:
-    with pytest.raises(ConfigError, match="no model id"):
-        _specs(tmp_path, _provider_cfg(), "fan", "kimi,o/")
-
-
-def test_build_lane_specs_over_cap_refused(tmp_path: pathlib.Path) -> None:
-    cfg = Config.model_validate({"harness": {"parallel": {"max_lanes": 2}}})
-    with pytest.raises(directive.DirectiveError, match="max_lanes"):
-        _specs(tmp_path, cfg, "fan", "5")
-
-
-def test_build_lane_specs_rejects_zero(tmp_path: pathlib.Path) -> None:
-    # Every spec-shape error, the cap included, comes from the shared grammar:
-    # parse_spec refuses over-limit BEFORE building the lane list.
-    with pytest.raises(directive.DirectiveError):
-        _specs(tmp_path, Config(), "fan", "0")
 
 
 # ---------------------------------------------------------------------------
@@ -353,9 +325,6 @@ def _write_models_cache(cache_home: pathlib.Path, provider: str, models: list[st
 
 
 def _provider_cfg(model: str = "moonshotai/kimi-k2.6", run_commands: str = "allow") -> Config:
-    # run_commands defaults to "allow" here: `--parallel` refuses under "ask",
-    # since nobody can answer a detached lane, and these tests are about the
-    # dispatch itself. The refusal has its own test.
     return Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
@@ -365,19 +334,15 @@ def _provider_cfg(model: str = "moonshotai/kimi-k2.6", run_commands: str = "allo
     )
 
 
-def test_dispatch_parallel_refuses_unknown_model_before_any_clone(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+def test_a_parallel_spec_naming_an_unknown_model_is_refused_before_any_session(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A typo in `--parallel` refuses with the closest id when a fresh listing confirms it."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     _write_models_cache(
         tmp_path / "cache" / "agent6", "o", ["moonshotai/kimi-k2.6", "z-ai/glm-4.6"]
     )
-
-    # The miss now re-checks the live listing before refusing; stub it with the
-    # same ids so the refusal rests on "fresh" evidence (no real network).
+    # A miss re-checks the live listing before refusing; stub it with the same ids.
     from agent6.models import validate as models_validate
 
     def _listing(*_a: object) -> list[str] | None:
@@ -385,137 +350,44 @@ def test_dispatch_parallel_refuses_unknown_model_before_any_clone(
 
     monkeypatch.setattr(models_validate, "_fresh_listing", _listing)
 
-    def _boom(*_a: object, **_k: object) -> int:
-        raise AssertionError("run_parallel must not be reached on a refusal")
+    refusal = parallel_cmd.spec_refusal(_provider_cfg(), "moonshotai/kimi-k2.7")
 
-    monkeypatch.setattr(parallel, "run_parallel", _boom)
-    rc = parallel_cmd.dispatch_parallel(
-        _provider_cfg(),
-        "fix the bug",
-        "moonshotai/kimi-k2.7",
-        explicit_leaves=frozenset(),
-        cwd=origin,
-    )
-    assert rc == 2
-    err = capsys.readouterr().err
-    assert "REFUSING" in err
-    assert "unknown model 'o/moonshotai/kimi-k2.7'" in err
-    assert "closest: o/moonshotai/kimi-k2.6" in err
+    assert refusal is not None
+    assert "unknown model 'o/moonshotai/kimi-k2.7'" in refusal
+    assert "closest: o/moonshotai/kimi-k2.6" in refusal
 
 
-def test_dispatch_parallel_unknown_model_no_cache_warns_and_proceeds(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+def test_a_parallel_spec_no_cache_can_check_warns_and_proceeds(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """An offline machine is never blocked on a model cache it can regenerate."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))  # empty: no snapshot
 
-    reached: list[str] = []
-
-    def _fake_run(task: str, lanes: object, **_k: object) -> int:
-        reached.append(task)
-        return 0
-
-    monkeypatch.setattr(parallel, "run_parallel", _fake_run)
-    rc = parallel_cmd.dispatch_parallel(
-        _provider_cfg(), "fix the bug", "made-up/model", explicit_leaves=frozenset(), cwd=origin
-    )
-    assert rc == 0
-    assert reached == ["fix the bug"]  # not blocked offline
+    assert parallel_cmd.spec_refusal(_provider_cfg(), "made-up/model") is None
     assert "WARNING: unvalidated model" in capsys.readouterr().err
 
 
-def test_dispatch_parallel_forwards_auto_approve_to_run_parallel(
-    origin: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The CLI's `--auto-approve` must reach `run_parallel`, same as --max-usd."""
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    captured: list[object] = []
+def test_a_parallel_spec_over_the_lane_cap_is_refused() -> None:
+    """A count over `[harness.parallel].max_lanes` refuses before any session exists."""
+    cfg = Config.model_validate({"harness": {"parallel": {"max_lanes": 2}}})
 
-    def _fake_run(task: str, lanes: object, **kw: object) -> int:
-        captured.append(kw.get("auto_approve"))
-        return 0
+    refusal = parallel_cmd.spec_refusal(cfg, "3")
 
-    monkeypatch.setattr(parallel, "run_parallel", _fake_run)
-    parallel_cmd.dispatch_parallel(
-        _provider_cfg(),
-        "fix the bug",
-        "made-up/model",
-        explicit_leaves=frozenset(),
-        cwd=origin,
-        auto_approve=True,
-    )
-    parallel_cmd.dispatch_parallel(
-        _provider_cfg(), "fix the bug", "made-up/model", explicit_leaves=frozenset(), cwd=origin
-    )
-
-    assert captured == [True, False]
+    assert refusal is not None and "max_lanes = 2" in refusal
 
 
-def test_dispatch_parallel_gives_the_lanes_the_coordinators_away_mode(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
+def test_lanes_take_the_coordinators_away_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     """One owner decides a lane's away-mode.
 
-    A hub's marker on the coordinator (a hub-spawned fan-out has no terminal but a hub that
-    answers), else a terminal to attach from means `wait`, else `deny` with a warning that names
-    what a lane loses.
+    A hub's marker on the coordinator, else `wait` with a terminal to attach from, else `deny`.
     """
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    captured: list[object] = []
-
-    def _fake_run(task: str, lanes: object, **kw: object) -> int:
-        captured.append(kw.get("lane_away"))
-        return 0
-
-    monkeypatch.setattr(parallel, "run_parallel", _fake_run)
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
-    parallel_cmd.dispatch_parallel(
-        _provider_cfg(), "fix the bug", "made-up/model", explicit_leaves=frozenset(), cwd=origin
-    )
+    assert interact.lane_away_mode() == "wait"
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
-    parallel_cmd.dispatch_parallel(
-        _provider_cfg(), "fix the bug", "made-up/model", explicit_leaves=frozenset(), cwd=origin
-    )
+    assert interact.lane_away_mode() == "deny"
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "wait")
-    parallel_cmd.dispatch_parallel(
-        _provider_cfg(), "fix the bug", "made-up/model", explicit_leaves=frozenset(), cwd=origin
-    )
-    assert captured == ["wait", "deny", "wait"]
-    err = capsys.readouterr().err
-    assert err.count("fetch and MCP approvals are denied") == 1
-
-
-def test_dispatch_parallel_forwards_pins_to_run_parallel(
-    origin: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`run --parallel --pin X` must reach run_parallel.
-
-    The CLI fan-out returns before run_task, so my C5 threaded --pin only through the in-loop
-    /parallel path, the flag's own help promised the CLI fan-out.
-    """
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
-    captured: list[object] = []
-
-    def _fake_run(task: str, lanes: object, **kw: object) -> int:
-        captured.append(kw.get("pins"))
-        return 0
-
-    monkeypatch.setattr(parallel, "run_parallel", _fake_run)
-    parallel_cmd.dispatch_parallel(
-        _provider_cfg(),
-        "fix",
-        "made-up/model",
-        explicit_leaves=frozenset(),
-        cwd=origin,
-        pins=("never touch schema",),
-    )
-    assert captured == [("never touch schema",)]
+    assert interact.lane_away_mode() == "wait"
 
 
 def test_coordinator_dispatch_refuses_unknown_model(
@@ -816,15 +688,15 @@ def test_bridge_spawner_launch_omits_auto_approve_by_default(
     assert captured[-1].auto_approve is False and captured[-1].max_usd is None
 
 
-def test_run_lane_to_completion_forwards_auto_approve_to_the_default_spawner(
+def test_run_lane_to_completion_forwards_auto_approve_and_pins_to_the_default_spawner(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     runtime: app_lanes.LaneRuntime,
 ) -> None:
-    """`run_lane_to_completion` forwards auto_approve to the default spawner it builds.
+    """`run_lane_to_completion` forwards auto_approve and the pins to the spawner it builds.
 
-    With no spawner injected (the coordinator's path), auto_approve reaches the real bridge spawner
+    With no spawner injected (the coordinator's path), both reach the real bridge spawner
     exactly like max_usd does.
     """
     captured: list[dict[str, object]] = []
@@ -857,39 +729,10 @@ def test_run_lane_to_completion_forwards_auto_approve_to_the_default_spawner(
         coordinator="co",
         runtime=runtime,
         auto_approve=True,
+        pins=("keep it",),
     )
 
     assert captured[-1]["auto_approve"] is True
-
-
-def test_run_parallel_forwards_pins_to_the_default_spawner(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    runtime: app_lanes.LaneRuntime,
-) -> None:
-    """`run_parallel` carries `--pin` into every lane's bridge spawner.
-
-    The spawner turns them into repeatable `--pin` argv.
-    """
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "fan", "1")
-    captured: list[dict[str, object]] = []
-
-    def fake_bridge(
-        spec: lane_records.LaneSpec, task: str, **kw: object
-    ) -> lane_records.LaneResult:
-        captured.append(kw)
-        return lane_records.LaneResult(
-            spec=spec, session_dir=spec.workdir, branch="agent6/x", ok=False, error="s"
-        )
-
-    monkeypatch.setattr(app_lanes, "bridge_spawner", fake_bridge)
-    parallel.run_parallel(
-        "t", lanes, explicit_leaves=frozenset(), cfg=cfg, origin=origin, origin_state=origin_state,
-        runtime=runtime, fanout_id="fan", pins=("keep it",),
-    )  # fmt: skip
     assert captured[-1]["pins"] == ("keep it",)
 
 
@@ -898,253 +741,13 @@ def test_run_parallel_forwards_pins_to_the_default_spawner(
 # ---------------------------------------------------------------------------
 
 
-def _lane_logs(session_dir: pathlib.Path, *events: Mapping[str, object]) -> None:
-    session_dir.mkdir(parents=True, exist_ok=True)
-    (session_dir / "logs.jsonl").write_text(
-        "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
-    )
-
-
-def test_pending_prompt_reads_last_prompt_answer_event(tmp_path: pathlib.Path) -> None:
-    start = {"type": "session.start", "mode": "run", "user_task": "t"}
-    q = tmp_path / "q"
-    _lane_logs(q, start, {"type": "question.prompt", "id": "question-1"})
-    assert lane_watch.pending_prompt(q) == "a question"
-
-    a = tmp_path / "a"
-    _lane_logs(a, start, {"type": "approval.prompt", "id": "approval-1"})
-    assert lane_watch.pending_prompt(a) == "approval"
-
-    # answered -> not waiting; and a dir with no prompt events -> "".
-    answered = tmp_path / "answered"
-    _lane_logs(
-        answered,
-        start,
-        {"type": "question.prompt", "id": "question-1"},
-        {"type": "question.answer", "id": "question-1", "answers": ["yes"]},
-    )
-    assert lane_watch.pending_prompt(answered) == ""
-    plain = tmp_path / "plain"
-    _lane_logs(plain, start, {"type": "tool.call", "name": "read_file"})
-    assert lane_watch.pending_prompt(plain) == ""
-    # A queued question pauses nothing: the lane is not waiting on it.
-    queued = tmp_path / "queued"
-    _lane_logs(queued, start, {"type": "question.prompt", "id": "question-2", "wait": False})
-    assert lane_watch.pending_prompt(queued) == ""
-
-
-def test_await_lanes_status_line_flags_a_waiting_lane(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    runtime: app_lanes.LaneRuntime,
-) -> None:
-    """The await's status line flags a lane blocked on a prompt by its real word, "waiting".
-
-    A hint keyed on "running" leaves the fan-out on a bare "waiting" forever with no pointer at the
-    hub; `pending_prompt` supplies only the approval-versus-question wording.
-    """
-    from agent6.viewmodel import SessionSummary
-
-    lane = tmp_path / "lane"
-    _lane_logs(
-        lane,
-        {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "question.prompt", "id": "question-1"},
-    )
-    spec = lane_records.LaneSpec(
-        lane=1,
-        session_id="fan-l1",
-        workdir=tmp_path / "wd",
-        settings=None,
-    )
-    res = lane_records.LaneResult(
-        spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error=""
-    )
-
-    # One poll only: "waiting" prints the hint, and the dead worker makes that
-    # same poll terminal (lane_terminal), so a second status is never read.
-    statuses = iter(["waiting"])
-
-    def fake_summary(rd: pathlib.Path) -> SessionSummary:
-        return SessionSummary(
-            session_id=rd.name, mode="run", task_label=session_status.TaskLabel("t"),
-            status=next(statuses),
-            detail="", cost_usd=0.0, usd_partial=False, last_activity=0.0,
-        )  # fmt: skip
-
-    def fake_worker_is_alive(_session_dir: pathlib.Path) -> bool:
-        return False
-
-    def fake_sleep(*_args: object) -> None:
-        return None
-
-    monkeypatch.setattr(lane_watch, "summarize_session_dir", fake_summary)
-    monkeypatch.setattr(lane_watch.time, "sleep", fake_sleep)
-    monkeypatch.setattr(process, "worker_is_alive", fake_worker_is_alive)
-
-    assert lane_watch.await_lanes([res]) is False
-    assert "waiting on a question (answer via agent6 attach" in capsys.readouterr().err
-
-
-def _always_alive(_session_dir: pathlib.Path) -> bool:
-    return True
-
-
-def _never_written(_session_dir: pathlib.Path, *, now: bool = False) -> bool:
-    return False
-
-
-def test_a_stop_that_cannot_be_written_ends_the_wait_after_the_grace(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """A lane whose plain stop marker fails to land is waited on for the grace, not forever."""
-    from agent6.viewmodel import SessionSummary
-
-    lane = tmp_path / "lane"
-    _lane_logs(lane, {"type": "session.start", "mode": "run", "user_task": "t"})
-    spec = lane_records.LaneSpec(
-        lane=1,
-        session_id="fan-l1",
-        workdir=tmp_path / "wd",
-        settings=None,
-    )
-    res = lane_records.LaneResult(
-        spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error=""
-    )
-    polls = 0
-
-    def fake_summary(rd: pathlib.Path) -> SessionSummary:
-        return SessionSummary(
-            session_id=rd.name, mode="run", task_label=session_status.TaskLabel("t"),
-            status="running",
-            detail="", cost_usd=0.0, usd_partial=False, last_activity=0.0,
-        )  # fmt: skip
-
-    def fake_sleep(*_args: object) -> None:
-        nonlocal polls
-        polls += 1
-        if polls > 20:
-            raise RuntimeError("the wait did not end")
-
-    monkeypatch.setattr(lane_watch, "summarize_session_dir", fake_summary)
-    monkeypatch.setattr(lane_watch, "STOP_GRACE_S", 0.0)
-    monkeypatch.setattr(lane_watch.time, "sleep", fake_sleep)
-    monkeypatch.setattr(process, "worker_is_alive", _always_alive)
-    monkeypatch.setattr(ipc, "request_stop", _never_written)
-
-    assert lane_watch.await_lanes([res], should_stop=lambda: True, stop_is_now=lambda: False)
-    assert "could not write the stop request for fan-l1" in capsys.readouterr().err
-
-
-def test_a_stop_pending_at_the_await_keeps_its_urgency(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    runtime: app_lanes.LaneRuntime,
-) -> None:
-    """A plain stop that lands while the lanes start lets them finish their turns."""
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "fan", "2")
-    coordinator_dir = origin_state / "sessions" / "runs" / "fan"
-    inner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
-    awaited: list[dict[str, Any]] = []
-
-    def spawner(spec: lane_records.LaneSpec, task: str) -> lane_records.LaneResult:
-        result = inner(spec, task)
-        if spec.lane == len(lanes):
-            assert ipc.request_stop(coordinator_dir)
-        return result
-
-    def recording_await(started: list[lane_records.LaneResult], **kwargs: Any) -> bool:
-        awaited.append(
-            {
-                "already_interrupted": kwargs.get("already_interrupted", False),
-                "pending": kwargs["should_stop"](),
-                "now": kwargs["stop_is_now"](),
-            }
-        )
-        return False
-
-    monkeypatch.setattr(lane_watch, "await_lanes", recording_await)
-    parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
-    )
-
-    assert awaited == [{"already_interrupted": False, "pending": True, "now": False}]
-
-
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
 
-def test_run_parallel_refuses_a_gate_on_an_untracked_path_before_any_clone(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    runtime: app_lanes.LaneRuntime,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Every lane cloned, ran, and ended red: its clone had no `.venv` for the gate."""
-    origin_state = paths.state_dir(origin)
-    (origin / ".venv" / "bin").mkdir(parents=True)
-    (origin / ".venv" / "bin" / "python").write_text("#!/bin/sh\n", encoding="utf-8")
-    cfg = Config.model_validate(
-        {
-            "harness": {
-                "verify": {"command": [".venv/bin/python", "-m", "pytest", "-q"]},
-            }
-        }
-    )
-    lanes = _specs(tmp_path, cfg, "fan", "2")
-    spawned: list[str] = []
-
-    def spawner(spec: lane_records.LaneSpec, task: str) -> lane_records.LaneResult:
-        spawned.append(f"{spec.session_id}: {task}")
-        raise AssertionError("no lane may be cloned")
-
-    rc = parallel.run_parallel(
-        "do the task",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
-    )
-
-    assert rc == 2 and not spawned
-    assert not (origin_state / "sessions" / "runs" / "fan").exists()
-    err = capsys.readouterr().err
-    assert "the verify gate runs `.venv/bin/python`" in err and "a lane's clone" in err
-
-
-def test_a_fan_out_under_a_container_puts_its_lanes_inside_the_mounted_workspace(
-    origin: pathlib.Path,
-) -> None:
-    """A lane cloned into the cache had no path inside the container that mounts the workspace."""
-    cfg = Config.model_validate({"sandbox": {"isolation": "container"}})
-    lanes = app_lanes.build_lane_specs("2", cfg=cfg, origin=origin, fanout_id="fan")
-    base = origin.resolve() / ".agent6/worktrees" / paths.repo_id(origin) / "fan"
-    assert [lane.workdir for lane in lanes] == [base / "lane-1", base / "lane-2"]
-    assert "/.agent6/worktrees/" in (origin / ".git/info/exclude").read_text(encoding="utf-8")
-
-
 @pytest.mark.parametrize("exit_code", [0, 3])
-def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
+def test_lane_setup_output_survives_import_and_a_failed_one_reaches_the_operator(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     runtime: app_lanes.LaneRuntime,
@@ -1152,7 +755,7 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
     capsys: pytest.CaptureFixture[str],
     exit_code: int,
 ) -> None:
-    """A detached lane's setup output reaches the fan-out and show after its clone is removed."""
+    """A lane's setup output outlives its clone; a failed setup's is printed where it landed."""
     command = f"echo ran >> .setup-count; echo setup-out; echo setup-err >&2; exit {exit_code}"
     cfg = Config.model_validate(
         {
@@ -1240,17 +843,15 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
 
     lanes = _specs(tmp_path, cfg, "setup-fan", "2")
     state = paths.state_dir(origin)
-    rc = parallel.run_parallel(
+    results = _run_lanes(
         "task",
         lanes,
         cfg=cfg,
-        explicit_leaves=frozenset(),
         origin=origin,
-        origin_state=state,
         runtime=dataclasses.replace(runtime, spawn=spawn),
-        fanout_id="setup-fan",
+        group="setup-fan",
     )
-    assert rc == (0 if exit_code == 0 else 1)
+    assert [res.ok for res in results] == [exit_code == 0] * 2
     assert bool(calls) is (exit_code == 0)
     for lane in lanes:
         imported = state / "sessions" / "runs" / lane.session_id
@@ -1260,12 +861,10 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
         if exit_code:
             (end,) = [event for event in events if event["type"] == "session.stop"]
             assert "setup-out" in end["summary"] and command in end["summary"]
-    out, err = capsys.readouterr()
-    shown = out if exit_code else err
-    if exit_code:
-        shown = shown.split("failed lanes:", 1)[1]
-    assert "sh -c" in shown and command in shown
-    assert shown.count("setup-out\n") == 2 and shown.count("setup-err\n") == 2
+    shown = capsys.readouterr().err
+    # A setup that worked says nothing here; a failed one prints its command and output per lane.
+    assert (command in shown) is (exit_code != 0)
+    assert shown.count("setup-out\n") == shown.count("setup-err\n") == (2 if exit_code else 0)
     for lane in lanes:
         assert not lane.workdir.exists()
         imported = state / "sessions" / "runs" / lane.session_id
@@ -1278,147 +877,6 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
         assert command in shown
         # A setup that worked shows as its command line; a failed one keeps its output.
         assert ("setup-out\n" in shown and "setup-err\n" in shown) is (exit_code != 0)
-
-
-def test_run_parallel_settles_the_gate_and_the_setup_command_in_the_origin(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    runtime: app_lanes.LaneRuntime,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Each lane inferred its own gate in a clone with no `.venv`, and got `python3 -m pytest`."""
-    origin_state = paths.state_dir(origin)
-    (origin / "pyproject.toml").write_text("[project]\nname = 'p'\n", encoding="utf-8")
-    (origin / "AGENTS.md").write_text(
-        "## Setup command\n```\nuv sync --offline\n```\n", encoding="utf-8"
-    )
-    _git(origin, "add", "AGENTS.md")
-    _git(origin, "commit", "-q", "-m", "setup")
-    (origin / ".venv" / "bin").mkdir(parents=True)
-    (origin / ".venv" / "bin" / "python").write_text("#!/bin/sh\n", encoding="utf-8")
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "fan", "1")
-    carried: list[Config] = []
-
-    def _spawn(spec: lane_records.LaneSpec, task: str, **kw: Any) -> lane_records.LaneResult:
-        carried.append(kw["cfg"])
-        return lane_records.LaneResult(
-            spec=spec, session_dir=spec.workdir, branch="b", ok=False, error=task
-        )
-
-    monkeypatch.setattr(app_lanes, "bridge_spawner", _spawn)
-
-    parallel.run_parallel(
-        "do the task",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        fanout_id="fan",
-    )
-
-    (lane_cfg,) = carried
-    assert lane_cfg.harness.verify.command == (".venv/bin/python", "-m", "pytest", "-q")
-    assert lane_cfg.git.worktree.setup_command == ("uv", "sync", "--offline")
-
-
-@pytest.mark.parametrize("committed", [False, True])
-def test_fanout_setup_is_inferred_from_its_commit_not_the_dirty_agents_md(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    runtime: app_lanes.LaneRuntime,
-    monkeypatch: pytest.MonkeyPatch,
-    committed: bool,
-) -> None:
-    """A fan-out carried the checkout's dirty setup block into lanes cut from HEAD."""
-    agents = "# Agents\n"
-    if committed:
-        agents += "\n## Setup command\n```sh\necho committed\n```\n"
-    (origin / "AGENTS.md").write_text(agents, encoding="utf-8")
-    _git(origin, "add", "AGENTS.md")
-    _git(origin, "commit", "-q", "-m", "agents")
-    (origin / "AGENTS.md").write_text(
-        "## Setup command\n```sh\necho uncommitted; exit 3\n```\n", encoding="utf-8"
-    )
-    carried: list[Config] = []
-
-    def spawn(spec: lane_records.LaneSpec, task: str, **kw: Any) -> lane_records.LaneResult:
-        carried.append(kw["cfg"])
-        return lane_records.LaneResult(spec, spec.workdir, "b", False, task)
-
-    monkeypatch.setattr(app_lanes, "bridge_spawner", spawn)
-    cfg = Config.model_validate(
-        {
-            "harness": {
-                "verify": {"infer": False},
-            }
-        }
-    )
-    assert (
-        parallel.run_parallel(
-            "task",
-            _specs(tmp_path, cfg, "committed-setup", "2"),
-            cfg=cfg,
-            explicit_leaves=frozenset(),
-            origin=origin,
-            origin_state=paths.state_dir(origin),
-            runtime=runtime,
-            fanout_id="committed-setup",
-        )
-        == 1
-    )
-    assert len(carried) == 2
-    assert all(
-        c.git.worktree.setup_command == (("echo", "committed") if committed else ())
-        for c in carried
-    )
-
-
-def test_run_parallel_imports_branches_and_stamps_lineage(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
-) -> None:
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "fan", "2")
-    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
-
-    rc = parallel.run_parallel(
-        "do the task",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
-    )
-
-    assert rc == 0
-    # Both lane branches landed in the origin.
-    assert git_read.branch_exists(origin, "agent6/fan-l1")
-    assert git_read.branch_exists(origin, "agent6/fan-l2")
-    # The live symlink was replaced by the real imported dir.
-    imported = origin_state / "sessions" / "runs" / "fan-l1"
-    assert imported.is_dir() and not imported.is_symlink()
-    # Lineage was stamped post-import.
-    manifest = json.loads((imported / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["parallel"] == {
-        "group": "fan",
-        "lane": 1,
-        "coordinator": "fan",
-        "config_notes": [],
-    }
-    assert (
-        json.loads(
-            (origin_state / "sessions" / "runs" / "fan-l2" / "manifest.json").read_text(
-                encoding="utf-8"
-            )
-        )["parallel"]["lane"]
-        == 2
-    )
 
 
 def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
@@ -1443,20 +901,10 @@ def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
     memory.add(lane_state, "repo-fact", "The build needs BUILD_ID set, and BUILD_NO.")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
 
-    assert (
-        parallel.run_parallel(
-            "do the task",
-            lanes,
-            explicit_leaves=frozenset(),
-            cfg=cfg,
-            origin=origin,
-            origin_state=origin_state,
-            runtime=runtime,
-            spawner=spawner,
-            fanout_id="fan",
-        )
-        == 0
+    (result,) = _run_lanes(
+        "do the task", lanes, cfg=cfg, origin=origin, runtime=runtime, group="fan", spawner=spawner
     )
+    assert result.ok
     assert "The flaky test is test_clock." in memory.show(origin_state, "lane-fact")
     assert "lane-fact" in memory.index_text(origin_state)
     assert (
@@ -1472,90 +920,8 @@ def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
     ) in err
 
 
-def test_run_parallel_forwards_auto_approve_to_the_default_spawner(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    runtime: app_lanes.LaneRuntime,
-) -> None:
-    """`run --parallel --auto-approve` reaches the lane's own default bridge spawner.
-
-    The same plumbing as `--max-usd`.
-    """
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "fan", "1")
-    captured: list[dict[str, object]] = []
-
-    def fake_bridge(
-        spec: lane_records.LaneSpec, task: str, **kw: object
-    ) -> lane_records.LaneResult:
-        captured.append(kw)
-        return lane_records.LaneResult(
-            spec=spec, session_dir=spec.workdir, branch="agent6/x", ok=False, error="s"
-        )
-
-    monkeypatch.setattr(app_lanes, "bridge_spawner", fake_bridge)
-
-    parallel.run_parallel(
-        "t", lanes, explicit_leaves=frozenset(), cfg=cfg, origin=origin, origin_state=origin_state,
-        runtime=runtime, fanout_id="fan", auto_approve=True,
-    )  # fmt: skip
-
-    assert captured[-1]["auto_approve"] is True
-
-
-def test_compare_outcome_stamped_into_each_lane_manifest(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
-) -> None:
-    """The fan-out's auto-compare stamps a `compare` block into every imported lane's manifest.
-
-    Winner and loser alike record rank, of and winner; with no reviewer configured,
-    the coordinator records the mechanical ranking with an empty rationale.
-    """
-    origin_state = paths.state_dir(origin)
-    cfg = Config()  # no reviewer -> mechanical ranking
-    lanes = _specs(tmp_path, cfg, "fan", "2")
-    # Lane 2 passes verify, lane 1 finishes without it -> lane 2 wins (rank 1)
-    # mechanically. The loser is a deliberate finish, not a "failed" run: a
-    # failure is imported but never ranked, so it would carry no stamp at all.
-    spawner = _FakeSpawner(
-        origin, origin_state, tmp_path / "lane-state", status_by_lane={1: "finished", 2: "passed"}
-    )
-
-    parallel.run_parallel(
-        "t", lanes, explicit_leaves=frozenset(), cfg=cfg, origin=origin, origin_state=origin_state,
-        runtime=runtime, spawner=spawner, fanout_id="fan",
-    )  # fmt: skip
-
-    m1 = json.loads(
-        (origin_state / "sessions" / "runs" / "fan-l1" / "manifest.json").read_text("utf-8")
-    )
-    m2 = json.loads(
-        (origin_state / "sessions" / "runs" / "fan-l2" / "manifest.json").read_text("utf-8")
-    )
-    assert m2["placement"] == {
-        "rank": 1, "of": 2, "winner": True,
-        "group": "fan",
-    }  # fmt: skip
-    assert m1["placement"] == {
-        "rank": 2, "of": 2, "winner": False,
-        "group": "fan",
-    }  # fmt: skip
-    # The lineage stamp is untouched by the compare stamp (shared rewrite merges).
-    assert m1["parallel"] == {
-        "group": "fan",
-        "lane": 1,
-        "coordinator": "fan",
-        "config_notes": [],
-    }
-
-
 def test_compare_stamp_records_judge_rationale_truncated(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    runtime: app_lanes.LaneRuntime,
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """The coordinator holds the ranking and judge cost once; lanes hold only placement."""
     origin_state = paths.state_dir(origin)
@@ -1563,22 +929,34 @@ def test_compare_stamp_records_judge_rationale_truncated(
     lanes = _specs(tmp_path, cfg, "fan", "2")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
     long_rationale = "x" * 3000
+    results = _run_lanes(
+        "t", lanes, cfg=cfg, origin=origin, runtime=runtime, group="fan", spawner=spawner
+    )
+    coordinator_dir = origin_state / "sessions" / "runs" / "fan"
+    _write_fake_run(coordinator_dir, "t", status="passed", cost=0.0)
 
-    def fake_rank(*_a: object, **_k: object) -> compare.RankOutcome:
-        return compare.RankOutcome(
+    parallel_results.stamp_compare_outcomes(
+        [
+            judge.CandidateBrief(
+                session_id=res.spec.session_id,
+                task="t",
+                diff="",
+                verification="passed",
+                cost_usd=0.05,
+            )
+            for res in results
+        ],
+        compare.RankOutcome(
             ("fan-l1", "fan-l2"),
             long_rationale,
             "judge",
             judge_cost_usd=0.0123,
             judge_cost_partial=True,
-        )
-
-    monkeypatch.setattr(compare, "rank", fake_rank)
-
-    parallel.run_parallel(
-        "t", lanes, explicit_leaves=frozenset(), cfg=cfg, origin=origin, origin_state=origin_state,
-        runtime=runtime, spawner=spawner, fanout_id="fan",
-    )  # fmt: skip
+        ),
+        origin_state=origin_state,
+        coordinator_dir=coordinator_dir,
+        group="fan",
+    )
 
     m1 = json.loads(
         (origin_state / "sessions" / "runs" / "fan-l1" / "manifest.json").read_text("utf-8")
@@ -1603,154 +981,42 @@ def test_compare_stamp_records_judge_rationale_truncated(
     }
 
 
-def test_run_parallel_removes_its_emptied_workdir_levels(
+def test_landed_lanes_remove_their_emptied_workdir_levels(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
-    """`run --parallel` clones sit at `<base>/<repo>/<fan-out>/lane-N`.
+    """A group's clones sit at `<base>/<repo>/<group>/lane-N`.
 
-    The fan-out dir and the per-repo dir go once empty, the base stays.
+    The group dir and the per-repo dir go once empty, the base stays.
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()
     per_repo = workdirs.workdir_base(cfg, origin)
-    lanes = app_lanes.build_lane_specs(
-        "2", cfg=cfg, origin=origin, fanout_id="fan", workdir_root=per_repo / "fan"
-    )
+    lanes = [
+        dataclasses.replace(spec, workdir=per_repo / "fan" / f"lane-{spec.lane}")
+        for spec in _specs(tmp_path, cfg, "fan", "2")
+    ]
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
 
-    rc = parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
+    results = _run_lanes(
+        "t", lanes, cfg=cfg, origin=origin, runtime=runtime, group="fan", spawner=spawner
     )
 
-    assert rc == 0
+    assert all(res.ok for res in results)
     assert not (per_repo / "fan").exists()
     assert not per_repo.exists()
     assert per_repo.parent.is_dir()
 
 
-def test_run_parallel_symlink_appears_before_import(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
-) -> None:
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "fan", "2")
-    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
-
-    parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
-    )
-
-    # While lane 2 spawned, lane 1 was already visible as a live symlink...
-    assert spawner.prior_link_was_symlink[2] is True
-    # ...and after completion every lane is a real dir, no symlink left behind.
-    for i in (1, 2):
-        link = origin_state / "sessions" / "runs" / f"fan-l{i}"
-        assert link.is_dir() and not link.is_symlink()
-
-
-def test_failed_lane_does_not_stop_others(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
-) -> None:
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "fan", "3")
-    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", fail={2})
-
-    rc = parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
-    )
-
-    assert rc == 0  # lanes 1 and 3 still produced candidates
-    assert git_read.branch_exists(origin, "agent6/fan-l1")
-    assert git_read.branch_exists(origin, "agent6/fan-l3")
-    assert not git_read.branch_exists(origin, "agent6/fan-l2")
-    assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
-    assert not (origin_state / "sessions" / "runs" / "fan-l2").exists()
-    from agent6.viewmodel import transcript as viewmodel_transcript
-
-    events = [
-        json.loads(line)
-        for line in (origin_state / "sessions" / "runs" / "fan" / "logs.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
-    ]
-    transcript = viewmodel_transcript.fold_transcript(events)
-    assert any(
-        "fan-l2" in item.body and "failed to start: boom" in item.body for item in transcript
-    )
-
-
-def test_report_ranks_passing_lane_first(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-    runtime: app_lanes.LaneRuntime,
-) -> None:
-    origin_state = paths.state_dir(origin)
-    cfg = Config()  # no reviewer model -> mechanical ranking
-    lanes = _specs(tmp_path, cfg, "fan", "2")
-    # Lane 1 fails verify but is cheaper; lane 2 passes. Verify-pass wins.
-    spawner = _FakeSpawner(
-        origin,
-        origin_state,
-        tmp_path / "lane-state",
-        status_by_lane={1: "failed", 2: "passed"},
-        cost_by_lane={1: 0.01, 2: 0.09},
-    )
-
-    parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
-    )
-
-    out = capsys.readouterr().out
-    assert "ranked candidates" in out
-    # The passing lane ranks first despite costing more.
-    assert out.index("fan-l2") < out.index("fan-l1")
-    assert "agent6 sessions merge fan-l2" in out
-
-
-def test_the_report_spells_a_lanes_cost_and_outcome_as_the_listing_does(
+def test_the_ranked_table_spells_a_lanes_cost_and_outcome_as_the_listing_does(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     runtime: app_lanes.LaneRuntime,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The fan-out report prints each lane's cost cell and status label, the listing's own.
+    """The ranked table prints each lane's cost cell and status label, the listing's own.
 
-    A plan-metered lane read `$0.0000` in the report and `1pt` in `sessions`, and a lane that
-    finished over a red gate read `failed` in the report and `finished · gate red` there.
+    A plan-metered lane read `$0.0000` in the table and `1pt` in `sessions`, and a lane that
+    finished over a red gate read `failed` in the table and `finished · gate red` there.
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -1763,114 +1029,39 @@ def test_the_report_spells_a_lanes_cost_and_outcome_as_the_listing_does(
         points_by_lane={1: 1.0, 2: 2.5},
     )
 
-    parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
+    results = _run_lanes(
+        "t", lanes, cfg=cfg, origin=origin, runtime=runtime, group="fan", spawner=spawner
+    )
+    summaries = {
+        res.spec.session_id: app_lanes.summarize_session_dir(res.session_dir) for res in results
+    }
+    capsys.readouterr()
+
+    compare.print_ranked_candidates(
+        [
+            judge.CandidateBrief(
+                session_id=sid,
+                task="t",
+                diff="",
+                verification=row.verification,
+                cost_usd=row.cost_usd,
+            )
+            for sid, row in summaries.items()
+        ],
+        compare.RankOutcome(("fan-l2", "fan-l1"), "", "mechanical"),
+        rows=summaries,
+        committed=dict.fromkeys(summaries, True),
     )
 
-    out = capsys.readouterr().out
-    ranked = [ln for ln in out.splitlines() if "merge with:" in ln]
+    ranked = [ln for ln in capsys.readouterr().out.splitlines() if "merge with:" in ln]
     rows = {ln.split()[1]: ln for ln in ranked}
     assert "passed" in rows["fan-l2"] and "2.5pt" in rows["fan-l2"]
     assert "finished · gate red" in rows["fan-l1"] and "1pt" in rows["fan-l1"]
     assert all("$0.0000" not in ln and "failed" not in ln for ln in ranked)
-    # The report ends on the account's newest reading among the lanes, as a run's end does.
-    assert out.rstrip().splitlines()[-1] == (
-        "plan usage (chatgpt): 42.5% of the 7-day window (resets in 100h)"
-    )
 
 
-def test_the_report_ends_on_the_newest_reading_by_its_own_clock(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    runtime: app_lanes.LaneRuntime,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """The newest reading was the newest journal's: a lane that ran on past an old reading won."""
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "fan", "2")
-    spawner = _FakeSpawner(
-        origin,
-        origin_state,
-        tmp_path / "lane-state",
-        points_by_lane={1: 1.0, 2: 2.5},
-        read_at_by_lane={1: _READ_AT + 3600, 2: _READ_AT},
-    )
-
-    parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
-    )
-
-    out = capsys.readouterr().out
-    assert out.rstrip().splitlines()[-1] == (
-        "plan usage (chatgpt): 41% of the 7-day window (resets in 100h)"
-    )
-
-
-def test_a_fan_out_moves_the_origins_legacy_rulings_before_seeding(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    runtime: app_lanes.LaneRuntime,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """A fan-out on a pre-upgrade origin seeded its lanes from a `decisions.md` no run had made yet.
-
-    The rulings stayed in `memory/DECISIONS.md`, where the first run moves them from.
-    """
-    origin_state = paths.state_dir(origin)
-    legacy = memory.memory_dir(origin_state) / "DECISIONS.md"
-    legacy.parent.mkdir(parents=True, exist_ok=True)
-    legacy.write_text("- ruling\n", encoding="utf-8")
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "fan", "1")
-    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
-    seeded_from: list[str] = []
-
-    def spawn(spec: lane_records.LaneSpec, task: str) -> lane_records.LaneResult:
-        # What the bridge spawner's seeding would copy at this moment.
-        seeded_from.append(memory.decisions_text(origin_state))
-        return spawner(spec, task)
-
-    parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawn,
-        fanout_id="fan",
-    )
-
-    assert seeded_from == ["- ruling"]
-    assert not legacy.exists()
-    assert "operator rulings moved from" in capsys.readouterr().err
-
-
-@pytest.mark.parametrize("coordinator", [False, True])
 def test_a_lane_with_no_commit_does_not_claim_a_branch_was_imported(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    runtime: app_lanes.LaneRuntime,
-    capsys: pytest.CaptureFixture[str],
-    coordinator: bool,
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """A setup-failed lane imports its record but claims no branch that git lacks."""
     state = paths.state_dir(origin)
@@ -1883,37 +1074,11 @@ def test_a_lane_with_no_commit_does_not_claim_a_branch_was_imported(
         status_by_lane={1: "setup_command_failed"},
         no_commit={1},
     )
-    if coordinator:
-        result = app_lanes.run_lane_to_completion(
-            spec,
-            "task",
-            cfg=cfg,
-            explicit_leaves=frozenset(),
-            origin=origin,
-            origin_state=state,
-            group="no-commit",
-            coordinator="co",
-            runtime=runtime,
-            spawner=spawner,
-        )
-        assert not result.ok
-        shown = result.error
-    else:
-        assert (
-            parallel.run_parallel(
-                "task",
-                [spec],
-                cfg=cfg,
-                explicit_leaves=frozenset(),
-                origin=origin,
-                origin_state=state,
-                runtime=runtime,
-                spawner=spawner,
-                fanout_id="no-commit",
-            )
-            == 1
-        )
-        shown = capsys.readouterr().out
+    (result,) = _run_lanes(
+        "task", [spec], cfg=cfg, origin=origin, runtime=runtime, group="no-commit", spawner=spawner
+    )
+    assert not result.ok
+    shown = result.error
     assert not git_read.branch_exists(origin, f"agent6/{spec.session_id}")
     assert (state / "sessions" / "runs" / spec.session_id / "logs.jsonl").exists()
     assert "no result (failed · setup command failed)" in shown
@@ -1921,173 +1086,51 @@ def test_a_lane_with_no_commit_does_not_claim_a_branch_was_imported(
     assert "no branch (the run made no commit)" in shown
 
 
-@pytest.mark.parametrize(
-    ("other_status", "spawn_failed", "code", "reason"),
-    [
-        ("budget_exhausted", False, 3, "budget_exhausted"),
-        ("failed", False, 1, "no_lane_result"),
-        ("passed", False, 0, "lanes_ranked"),
-        ("budget_exhausted", True, 1, "no_lane_result"),
-    ],
-)
-def test_budget_only_fanout_exits_three_and_names_how_to_continue_a_lane(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    runtime: app_lanes.LaneRuntime,
-    capsys: pytest.CaptureFixture[str],
-    other_status: str,
-    spawn_failed: bool,
-    code: int,
-    reason: str,
-) -> None:
-    """A fan-out stopped only by lane caps keeps exit 3 and offers fork, not checkout resume."""
-    state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "capped", "2")
-    spawner = _FakeSpawner(
-        origin,
-        state,
-        tmp_path / "lane-state",
-        status_by_lane={1: "budget_exhausted", 2: other_status},
-        points_by_lane={1: 1.0, 2: 1.0},
-        fail={2} if spawn_failed else set(),
-    )
-    rc = parallel.run_parallel(
-        "task",
-        lanes,
-        cfg=cfg,
-        explicit_leaves=frozenset(),
-        origin=origin,
-        origin_state=state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="capped",
-    )
-    assert rc == code
-    events = [
-        json.loads(line)
-        for line in (state / "sessions" / "runs" / "capped" / "logs.jsonl").read_text().splitlines()
-    ]
-    assert events[-1]["reason"] == reason
-    assert events[-1]["verification"] == ("passed" if other_status == "passed" else None)
-    shown, err = capsys.readouterr()
-    assert "budget exhausted" in shown and "1pt" in err
-    assert "--max-tokens-fallback), then continue with:" in shown
-    assert "agent6 fork capped-l1" in shown and "agent6 resume capped-l1" not in shown
-    if other_status == "budget_exhausted" and not spawn_failed:
-        assert "agent6 fork capped-l2" in shown
-
-
-def test_run_parallel_all_failed_returns_1(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
-) -> None:
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "fan", "2")
-    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", fail={1, 2})
-
-    rc = parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
-    )
-    assert rc == 1
-
-
-def test_lineage_stamp_oserror_does_not_abort_import_loop(
+def test_a_stamp_that_cannot_be_written_is_noted_and_the_others_still_land(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     runtime: app_lanes.LaneRuntime,
 ) -> None:
-    """An OSError while stamping lineage does not abort the import loop.
-
-    A disk-full or read-only mount at `atomic_write` leaves each lane's import standing; the
-    degradation prints, and the remaining lanes still import and report.
-    """
+    """A disk-full or read-only mount at a ranking's stamps is noted per manifest, never raised."""
     origin_state = paths.state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "2")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
+    results = _run_lanes(
+        "t", lanes, cfg=cfg, origin=origin, runtime=runtime, group="fan", spawner=spawner
+    )
+    coordinator_dir = origin_state / "sessions" / "runs" / "fan"
+    _write_fake_run(coordinator_dir, "t", status="passed", cost=0.0)
 
     def boom(_path: pathlib.Path, _m: object) -> None:
         raise OSError("disk full")
 
-    # The stamp is the fan-out's own manifest write; the lane imports keep the real writer.
-    stand_in = types.SimpleNamespace(write_manifest=boom)
-    monkeypatch.setattr(parallel_results, "stamps", stand_in)
+    monkeypatch.setattr(parallel_results, "stamps", types.SimpleNamespace(write_manifest=boom))
+    capsys.readouterr()
 
-    rc = parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
+    parallel_results.stamp_compare_outcomes(
+        [
+            judge.CandidateBrief(
+                session_id=res.spec.session_id,
+                task="t",
+                diff="",
+                verification="passed",
+                cost_usd=0.05,
+            )
+            for res in results
+        ],
+        compare.RankOutcome(("fan-l1", "fan-l2"), "", "mechanical"),
         origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
+        coordinator_dir=coordinator_dir,
+        group="fan",
     )
 
-    assert rc == 0  # both lanes still imported despite the stamp failure
-    assert git_read.branch_exists(origin, "agent6/fan-l1")
-    assert git_read.branch_exists(origin, "agent6/fan-l2")
-    assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
-    assert (origin_state / "sessions" / "runs" / "fan-l2").is_dir()
     err = capsys.readouterr().err
-    assert "lineage" in err and "disk full" in err
-
-
-def test_ctrl_c_during_spawn_loop_stops_imports_and_reports(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    runtime: app_lanes.LaneRuntime,
-) -> None:
-    """A KeyboardInterrupt during the spawn loop stops, imports what exists and reports.
-
-    The already-started lane is imported, the run exits 130, and lanes never spawned are absent.
-    """
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "fan", "3")
-    base = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
-
-    def interrupting_spawner(spec: lane_records.LaneSpec, task: str) -> lane_records.LaneResult:
-        if spec.lane == 2:  # interrupt AFTER lane 1 has started
-            raise KeyboardInterrupt
-        return base(spec, task)
-
-    monkeypatch.setattr(lane_watch, "POLL_INTERVAL_S", 0.01)
-
-    rc = parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=interrupting_spawner,
-        fanout_id="fan",
-    )
-
-    assert rc == 130
-    # Lane 1 (started before the interrupt) was stopped + imported...
-    assert git_read.branch_exists(origin, "agent6/fan-l1")
-    assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
-    # ...lanes 2 and 3 never produced a candidate.
-    assert not git_read.branch_exists(origin, "agent6/fan-l2")
-    assert not git_read.branch_exists(origin, "agent6/fan-l3")
-    assert "interrupted; stopping lanes" in capsys.readouterr().err
+    assert "group [fan]: the comparison stamp failed" in err
+    assert err.count("imported, but the placement stamp failed") == 2
+    assert err.count("disk full") == 3
 
 
 # ---------------------------------------------------------------------------
@@ -2099,7 +1142,6 @@ def test_await_waits_for_worker_pid_to_clear(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
     runtime: app_lanes.LaneRuntime,
 ) -> None:
     """session.stop lands in logs.jsonl BEFORE the lane's teardown clears worker.pid.
@@ -2115,7 +1157,7 @@ def test_await_waits_for_worker_pid_to_clear(
 
     # Clear the live pid only on the SECOND status poll of the lane's run dir,
     # so poll 1 exercises the race window deterministically.
-    real_summarize = parallel_results.summarize_session_dir
+    real_summarize = lane_watch.summarize_session_dir
     polls = {"n": 0}
 
     def summarize_then_clear_pid(session_dir: pathlib.Path) -> object:
@@ -2126,40 +1168,26 @@ def test_await_waits_for_worker_pid_to_clear(
                 (session_dir / "worker.pid").unlink(missing_ok=True)
         return summary
 
-    monkeypatch.setattr(parallel_results, "summarize_session_dir", summarize_then_clear_pid)
     monkeypatch.setattr(lane_watch, "summarize_session_dir", summarize_then_clear_pid)
-    monkeypatch.setattr(lane_watch, "POLL_INTERVAL_S", 0.01)
 
-    rc = parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
+    (result,) = _run_lanes(
+        "t", lanes, cfg=cfg, origin=origin, runtime=runtime, group="fan", spawner=spawner
     )
 
-    assert rc == 0
+    assert result.ok
     assert polls["n"] >= 2  # the gate really held through the live-pid poll
     assert git_read.branch_exists(origin, "agent6/fan-l1")
     imported = origin_state / "sessions" / "runs" / "fan-l1"
     assert imported.is_dir() and not imported.is_symlink()
-    assert "failed lanes" not in capsys.readouterr().out
 
 
 def test_cleanup_preserves_unimported_lane(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-    runtime: app_lanes.LaneRuntime,
+    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """A lane whose import is refused keeps its clone, run state and live symlink.
 
-    The clone holds the only copy of its branch; the report names what was kept. Imported lanes are
-    still cleaned up.
+    The clone holds the only copy of its branch; the refusal names it. Imported lanes are still
+    cleaned up.
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -2173,19 +1201,11 @@ def test_cleanup_preserves_unimported_lane(
     for home in homes:
         home.mkdir(parents=True)
 
-    rc = parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
+    results = _run_lanes(
+        "t", lanes, cfg=cfg, origin=origin, runtime=runtime, group="fan", spawner=spawner
     )
 
-    assert rc == 0  # lane 2 still imported
+    assert [res.ok for res in results] == [False, True]  # lane 2 still imported
     # Lane 1 kept: clone (with its branch), fabricated run state, live symlink.
     assert lanes[0].workdir.is_dir()
     assert git_read.branch_exists(lanes[0].workdir, "agent6/fan-l1")
@@ -2197,16 +1217,14 @@ def test_cleanup_preserves_unimported_lane(
     assert not lanes[1].workdir.exists()
     # A clone's jail home goes with the clone and stays with a kept one.
     assert homes[0].is_dir() and not homes[1].exists()
-    # The report names the kept clone so the operator can act on it.
-    out = capsys.readouterr().out
-    assert str(lanes[0].workdir) in out
+    # The refusal names the kept clone so the operator can act on it.
+    assert str(lanes[0].workdir) in results[0].error
 
 
 def test_await_uses_real_run_dir_not_symlink(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
     runtime: app_lanes.LaneRuntime,
 ) -> None:
     """The symlink is a view for the hub, not the source of truth.
@@ -2224,23 +1242,14 @@ def test_await_uses_real_run_dir_not_symlink(
 
     monkeypatch.setattr(lane_watch, "symlink_lane", _no_symlink)
 
-    rc = parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
+    (result,) = _run_lanes(
+        "t", lanes, cfg=cfg, origin=origin, runtime=runtime, group="fan", spawner=spawner
     )
 
-    assert rc == 0
+    # The lane's real terminal status was observed (not the missing link's).
+    assert result.ok
     assert git_read.branch_exists(origin, "agent6/fan-l1")
     assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
-    # The lane's real terminal status was observed (not the missing-link "?").
-    assert "lane 1 [fan-l1]: passed" in capsys.readouterr().err
 
 
 # ---------------------------------------------------------------------------
@@ -2475,7 +1484,7 @@ def test_build_lane_spawner_over_cap_refused(
 ) -> None:
     """A `/parallel` steer over `[harness.parallel].max_lanes` is refused before any clone or spawn.
 
-    The cap is a hard cap per fan-out, exactly as `run --parallel` enforces it in build_lane_specs;
+    The cap is a hard cap per group, as `run --parallel` enforces it before any session exists;
     the loop turns the raise into 'group dispatch failed' coordinator feedback.
     """
     cfg = Config.model_validate({"harness": {"parallel": {"max_lanes": 2}}})
@@ -2890,73 +1899,6 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
     assert lane_dir.is_dir()  # nothing was moved/imported
 
 
-def test_crashed_lane_is_not_a_rankable_candidate(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    runtime: app_lanes.LaneRuntime,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """A crashed lane is not a rankable candidate.
-
-    A lane that died without a stop folds to "stale", with no final verification word, the same
-    tri-state as a clean unverified finish; ranked by cost, the cheapest (earliest-crashing) lane
-    would be stamped placement.winner=true and wear the winner glyph while the report says "no-
-    verify".
-    """
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "crsh", "2")
-    spawner = _FakeSpawner(
-        origin,
-        origin_state,
-        tmp_path / "lane-state",
-        status_by_lane={1: "stale", 2: "finished"},
-        cost_by_lane={1: 0.001, 2: 2.0},
-    )
-
-    rc = parallel.run_parallel(
-        "do the task",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="crsh",
-    )
-    assert rc == 0
-    out = "".join(capsys.readouterr())
-    # The crashed lane never wins, and the surface names the missing result.
-    crashed = json.loads(
-        (origin_state / "sessions" / "runs" / "crsh-l1" / "manifest.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert (crashed.get("placement") or {}).get("winner") is not True
-    survivor = json.loads(
-        (origin_state / "sessions" / "runs" / "crsh-l2" / "manifest.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert survivor["placement"]["winner"] is True
-    assert "crsh-l1" in out and "no result (stale)" in out
-    assert not lanes[0].workdir.exists()
-    assert "nothing of theirs was deleted" not in out
-    from agent6.viewmodel import transcript as viewmodel_transcript
-
-    events = [
-        json.loads(line)
-        for line in (origin_state / "sessions" / "runs" / "crsh" / "logs.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
-    ]
-    assert any(
-        "crsh-l1" in item.body and "no result (stale)" in item.body
-        for item in viewmodel_transcript.fold_transcript(events)
-    )
-
-
 def test_lane_config_forces_a_run_branch(tmp_path: pathlib.Path) -> None:
     """A lane's config forces a run branch.
 
@@ -3009,184 +1951,6 @@ def test_lane_config_carries_the_lane_route(tmp_path: pathlib.Path) -> None:
     )
     assert "provider" not in written["models"]["worker"]
     assert written["models"]["worker"]["model"] == "p/other"
-
-
-def test_a_fanout_where_every_lane_failed_crowns_nobody(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    runtime: app_lanes.LaneRuntime,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """A failed lane is imported but never ranked.
-
-    Only lanes that died WITHOUT a session.stop were excluded, so a lane that
-    ended `provider_error` sailed into the candidate set: the fan-out stamped one
-    `placement.winner=true`, wore the star in every listing, printed a merge
-    command for a branch with nothing on it, and exited 0. `failed` is reserved
-    for a run that did not finish deliberately, a deliberate finish over a red
-    gate is `finished` and still ranks, which the sibling test above covers.
-    """
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "allf", "2")
-    spawner = _FakeSpawner(
-        origin,
-        origin_state,
-        tmp_path / "lane-state",
-        status_by_lane={1: "failed", 2: "failed"},
-        cost_by_lane={1: 0.001, 2: 2.0},
-    )
-
-    rc = parallel.run_parallel(
-        "do the task",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="allf",
-    )
-    # Nothing to merge, and the exit code says so.
-    assert rc == 1
-    out = "".join(capsys.readouterr())
-    assert "merge with" not in out
-    for lane_id in ("allf-l1", "allf-l2"):
-        m = json.loads(
-            (origin_state / "sessions" / "runs" / lane_id / "manifest.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        assert (m.get("placement") or {}).get("winner") is not True
-        # The work is not lost: the branch is named in the failure report.
-        assert lane_id in out
-    from agent6.viewmodel import transcript as viewmodel_transcript
-
-    events = [
-        json.loads(line)
-        for line in (origin_state / "sessions" / "runs" / "allf" / "logs.jsonl")
-        .read_text(encoding="utf-8")
-        .splitlines()
-    ]
-    failures = [
-        item.body
-        for item in viewmodel_transcript.fold_transcript(events)
-        if "no result" in item.body
-    ]
-    assert failures and "provider error" in failures[0]
-
-
-def test_a_compare_where_every_candidate_failed_its_own_gate_crowns_nobody(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
-) -> None:
-    """A compare where every candidate failed its own gate crowns nobody.
-
-    Both lanes finished deliberately and each one's verify gate failed; mechanical ranking still
-    orders them by cost, and stamping the cheaper one placement.winner=true contradicts the
-    fan-out's own exit code (4).
-    """
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "gf", "2")
-    spawner = _FakeSpawner(
-        origin,
-        origin_state,
-        tmp_path / "lane-state",
-        status_by_lane={1: "gated_fail", 2: "gated_fail"},
-        cost_by_lane={1: 0.01, 2: 0.02},
-    )
-
-    rc = parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="gf",
-    )
-
-    assert rc == 4  # EXIT_VERIFY_FAILED: a gate ran on every lane, none passed
-    for lane_id in ("gf-l1", "gf-l2"):
-        m = json.loads(
-            (origin_state / "sessions" / "runs" / lane_id / "manifest.json").read_text("utf-8")
-        )
-        assert m["placement"]["winner"] is False
-
-
-def test_a_judge_that_misranks_a_failed_gate_lane_first_crowns_nobody(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    runtime: app_lanes.LaneRuntime,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The judge is untrusted LLM output.
-
-    Its system prompt says a passing candidate outranks a failing one, but nothing enforces that.
-    When it ranks the lane whose OWN gate failed first anyway, `winner` keyed off the whole group's
-    exit code (some lane DID pass, so `crown` read True) and stamped that failed lane
-    placement.winner=true: a crown on a lane that never passed its gate, wearing the star in every
-    listing over the lane that actually did.
-    """
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "mis", "2")
-    spawner = _FakeSpawner(
-        origin,
-        origin_state,
-        tmp_path / "lane-state",
-        status_by_lane={1: "gated_fail", 2: "passed"},
-    )
-
-    def fake_rank(*_a: object, **_k: object) -> compare.RankOutcome:
-        # The failed lane (mis-l1) ranked ahead of the one that passed.
-        return compare.RankOutcome(("mis-l1", "mis-l2"), "misranked", "judge", judge_cost_usd=0.01)
-
-    monkeypatch.setattr(compare, "rank", fake_rank)
-    parallel.run_parallel(
-        "t",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="mis",
-    )
-
-    m1 = json.loads(
-        (origin_state / "sessions" / "runs" / "mis-l1" / "manifest.json").read_text("utf-8")
-    )
-    m2 = json.loads(
-        (origin_state / "sessions" / "runs" / "mis-l2" / "manifest.json").read_text("utf-8")
-    )
-    assert m1["placement"]["winner"] is False  # its own gate failed; never crowned
-    assert m2["placement"]["winner"] is False  # not ranked first, so also uncrowned
-
-
-def test_fanout_exit_reflects_the_gate_verdicts() -> None:
-    """An all-red fan-out exits 4, not 0.
-
-    Every lane finished over a red gate and one is still crowned rank 1, so without this the fan-out
-    reads as success to every script. The exit mirrors session_exit_code: 4 when gates ran and none
-    passed, 0 when some lane verified green or no lane had a gate, 1 for no candidates.
-    """
-    from agent6.harness import judge
-
-    def _cand(verification: kinds.Verification | None) -> judge.CandidateBrief:
-        return judge.CandidateBrief(
-            session_id="s", task="t", diff="", verification=verification, cost_usd=0.0
-        )
-
-    assert parallel_results.fanout_exit_code([]) == 1
-    assert parallel_results.fanout_exit_code([_cand("passed"), _cand("failed")]) == 0
-    assert parallel_results.fanout_exit_code([_cand(None), _cand(None)]) == 0  # gateless fan-out
-    assert parallel_results.fanout_exit_code([_cand("failed"), _cand("failed")]) == 4
-    assert parallel_results.fanout_exit_code([_cand("failed"), _cand(None)]) == 4
 
 
 def test_the_judge_is_capped_like_a_lane(tmp_path: pathlib.Path) -> None:
@@ -3439,23 +2203,17 @@ def test_lane_sampling_notes_survive_import_and_reach_both_reports(
         runtime=dataclasses.replace(runtime, spawn=child),
     )
     assert result.ok, result.error
-    batch = parallel_results.import_lanes(
-        [result],
+    landed = app_lanes.land_lane(
+        result,
+        parallel_results.import_lane(result, origin, paths.state_dir(origin), None),
+        cfg=cfg,
         origin=origin,
         origin_state=paths.state_dir(origin),
-        base_sha=git_read.status(origin).head_sha,
-        task="t",
+        group="notes",
+        reporter=reporter.STDIO_REPORTER,
     )
-    assert not batch.failed
+    assert landed.ok, landed.error
     assert note in "".join(capsys.readouterr())
-    workdirs.cleanup(
-        [spec],
-        origin=origin,
-        workdir_root=spec.workdir.parent,
-        base=spec.workdir.parent,
-        launch_dir=spec.workdir.parent / "launch",
-        cfg=cfg,
-    )
     imported = paths.state_dir(origin) / "sessions" / "runs" / spec.session_id
     record = sessions_manifest.read_manifest(imported)
     assert record.model_dump()["parallel"]["config_notes"] == (note,)
@@ -3516,7 +2274,14 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
     """Prune names a failed spawn's missing lane record and manual cleanup, not a live lane."""
     monkeypatch.chdir(origin)
     cfg = Config()
-    lanes = app_lanes.build_lane_specs("1", cfg=cfg, origin=origin, fanout_id="failed11")
+    lanes = [
+        lane_records.LaneSpec(
+            lane=1,
+            session_id="failed11-l1",
+            workdir=workdirs.place(cfg, origin, "failed11") / "lane-1",
+            settings=None,
+        )
+    ]
 
     def fail_spawn(
         _argv: list[str],
@@ -3548,25 +2313,20 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
             runtime=failed_runtime,
         )
 
-    assert (
-        parallel.run_parallel(
-            "t",
-            lanes,
-            cfg=cfg,
-            explicit_leaves=frozenset(),
-            origin=origin,
-            origin_state=paths.state_dir(origin),
-            runtime=failed_runtime,
-            spawner=spawn_lane,
-            fanout_id="failed11",
-        )
-        == 1
+    (result,) = _run_lanes(
+        "t",
+        lanes,
+        cfg=cfg,
+        origin=origin,
+        runtime=failed_runtime,
+        group="failed11",
+        spawner=spawn_lane,
     )
-    assert "FAILED to start" in "".join(capsys.readouterr())
+    assert not result.ok and "lane refused before creating a session" in result.error
+    capsys.readouterr()
     lane = lanes[0].workdir
     assert lane.is_dir()
     assert not listing.session_dirs(paths.state_dir(lane))
-    assert not process.worker_is_alive(paths.state_dir(origin) / "sessions" / "runs" / "failed11")
     for _ in range(2):
         assert main(["sessions", "prune"]) == 0
         out = capsys.readouterr().out
@@ -3699,201 +2459,6 @@ def test_carry_back_names_the_kept_dir_only_when_it_holds_something(
     assert "kept at" not in err and not (dest / "memory-held").exists()
 
 
-def test_run_parallel_is_a_session_of_its_own(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
-) -> None:
-    """The fan-out has a session record under the origin's runs.
-
-    A manifest carrying the fan-out stamp and no run branch, a journal that opens with
-    session.start, records the dispatch and the ranking, and ends with session.stop, and no worker
-    pid left behind. Before it, `ps` printed "no live agent6 sessions" through the whole judge call
-    and nothing grouped the lanes.
-    """
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    lanes = _specs(tmp_path, cfg, "fan", "2")
-    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
-
-    rc = parallel.run_parallel(
-        "do the task",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
-        spec="2",
-    )
-
-    assert rc == 0
-    coordinator = origin_state / "sessions" / "runs" / "fan"
-    manifest = sessions_manifest.read_manifest(coordinator)
-    assert manifest.fanout == sessions_manifest.FanoutStamp(lanes=2, spec="2")
-    assert manifest.run_branch is None and manifest.mode == "run"
-    assert manifest.user_task == "do the task" and manifest.parallel is None
-    scan = session_log.scan_session_log(coordinator / "logs.jsonl")
-    # No model finished a fan-out: its lanes ran and were ranked.
-    assert scan.saw_start and scan.finished and scan.stop_reason == "lanes_ranked"
-    events = [
-        json.loads(line)
-        for line in (coordinator / "logs.jsonl").read_text(encoding="utf-8").splitlines()
-    ]
-    types = [event["type"] for event in events]
-    assert types[:2] == ["session.start", "parallel.dispatched"]
-    assert "parallel.compared" in types and types[-1] == "session.stop"
-    assert events[-1]["execution_id"] == events[0]["execution_id"]
-    assert not (coordinator / "worker.pid").exists()
-    # The lanes carry the gate verdicts; the fan-out's own end is that they were ranked.
-    row = listing.summarize_session_dir(coordinator)
-    assert (row.status, row.detail) == ("finished", "lanes ranked")
-
-
-def test_the_compare_judge_streams_into_the_coordinators_journal(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
-) -> None:
-    """Each judge delta reaches the live fold before the provider returns its ranking."""
-    from agent6.viewmodel import transcript
-    from agent6.viewmodel.session import state
-
-    origin_state = paths.state_dir(origin)
-    log = origin_state / "sessions" / "runs" / "fan" / "logs.jsonl"
-    pieces = (
-        '{"ranking":["fan-l2","fan-l1"],"rationale":"Lane two ',
-        'covers the edge case."}',
-    )
-
-    def journal() -> list[dict[str, Any]]:
-        return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
-
-    class StreamingJudge:
-        def call(self, **kw: Any) -> ProviderResponse:
-            on_text = kw.get("text_delta_callback")
-            assert callable(on_text), "the judge was called without a stream callback"
-            for index, piece in enumerate(pieces, start=1):
-                on_text(piece)
-                events = journal()
-                assert events[-1]["type"] == "model.text_delta"
-                assert events[-1]["role"] == "judge" and events[-1]["text"] == piece
-                assert not any(e["type"] == "parallel.compared" for e in events)
-                live = state.initial_state()
-                for event in events:
-                    live = state.apply_event(live, event)
-                assert live.last_model_call is not None and live.last_model_call.in_flight
-                assert live.last_model_call.role == "judge"
-                assert live.last_model_call.streamed_text == "".join(pieces[:index])
-            return ProviderResponse(
-                text="".join(pieces),
-                tool_uses=(),
-                stop_reason="stop",
-                input_tokens=10,
-                output_tokens=20,
-                cache_read_tokens=0,
-                cache_write_tokens=0,
-            )
-
-    def build_provider(
-        _cfg: Config, _sink: object, _budget: object, _events: object
-    ) -> StreamingJudge:
-        return StreamingJudge()
-
-    cfg = _provider_cfg("judge-model")
-    rc = parallel.run_parallel(
-        "do the task",
-        _specs(tmp_path, cfg, "fan", "2"),
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=dataclasses.replace(runtime, build_provider=build_provider),
-        spawner=_FakeSpawner(origin, origin_state, tmp_path / "lane-state"),
-        fanout_id="fan",
-    )
-
-    assert rc == 0
-    events = journal()
-    assert [e["text"] for e in events if e["type"] == "model.text_delta"] == list(pieces)
-    assert next(e for e in events if e["type"] == "model.call")["model"] == "judge-model"
-    compared = next(e for e in events if e["type"] == "parallel.compared")
-    assert compared["ranked_by"] == "judge"
-    assert compared["rationale"] == "Lane two covers the edge case."
-    items = transcript.fold_transcript(events)
-    assert not any(item.kind == "text" for item in items), "the judge JSON is not agent speech"
-    assert sum("judge: Lane two covers the edge case." in item.body for item in items) == 1
-
-
-def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A stop request on the coordinator ends the await like Ctrl+C.
-
-    `stop <fan-out>` writes the coordinator's stop marker; the await reads it between polls, asks
-    every live lane to stop, and returns interrupted so the import and the report still run.
-    """
-    lane = tmp_path / "lane"
-    _write_fake_run(lane, "t", status="running", cost=0.0)
-    spec = lane_records.LaneSpec(
-        lane=1,
-        session_id="fan-l1",
-        workdir=tmp_path / "wd",
-        settings=None,
-    )
-    res = lane_records.LaneResult(
-        spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error=""
-    )
-
-    def _no_sleep(*_args: object) -> None:
-        return None
-
-    def _alive(_session_dir: pathlib.Path) -> bool:
-        return True
-
-    monkeypatch.setattr(lane_watch.time, "sleep", _no_sleep)
-    monkeypatch.setattr(lane_watch, "STOP_GRACE_S", 0.0)
-    monkeypatch.setattr(process, "worker_is_alive", _alive)
-
-    assert lane_watch.await_lanes([res], should_stop=lambda: True) is True
-    # Marked `now`: a lane's running command is handed back at once, within the drain's grace.
-    assert ipc.stop_request_is_now(lane)
-    assert "interrupted; stopping lanes" in capsys.readouterr().err
-
-
-def test_a_plain_stop_on_the_coordinator_lets_the_lanes_finish_their_turns(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """`stop --after-turn` on a fan-out reached its lanes as `now`, cutting their running commands.
-
-    The coordinator passes its own stop's urgency on: a plain marker asks each lane to finish
-    its turn, and the drain waits for them without a kill deadline.
-    """
-    lane = tmp_path / "lane"
-    _write_fake_run(lane, "t", status="running", cost=0.0)
-    spec = lane_records.LaneSpec(
-        lane=1,
-        session_id="fan-l1",
-        workdir=tmp_path / "wd",
-        settings=None,
-    )
-    res = lane_records.LaneResult(
-        spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error=""
-    )
-
-    def _no_sleep(*_args: object) -> None:
-        return None
-
-    def _ends_its_turn(session_dir: pathlib.Path, status: str, alive: object) -> bool:
-        del status, alive
-        return ipc.stop_request_pending(session_dir)  # the lane ends once asked
-
-    monkeypatch.setattr(lane_watch.time, "sleep", _no_sleep)
-    monkeypatch.setattr(lane_watch, "lane_terminal", _ends_its_turn)
-
-    assert lane_watch.await_lanes([res], should_stop=lambda: True, stop_is_now=lambda: False)
-    assert ipc.stop_request_pending(lane) and not ipc.stop_request_is_now(lane)
-    assert "stopping lanes after their current turns" in capsys.readouterr().err
-
-
 def test_a_plain_stop_escalates_to_now_when_the_operator_stops_again(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
@@ -3939,129 +2504,6 @@ def test_a_plain_stop_escalates_to_now_when_the_operator_stops_again(
     assert asked == [False, True]
     assert res.ok is False and "interrupted" in res.error
     assert ipc.stop_request_is_now(lane_dir)
-
-
-def test_a_stop_during_spawn_prevents_more_lanes(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
-) -> None:
-    """A stopped fan-out must not keep cloning and launching unneeded lanes."""
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    calls: list[int] = []
-
-    def stopped(spec: lane_records.LaneSpec, task: str) -> lane_records.LaneResult:
-        del task
-        calls.append(spec.lane)
-        ipc.request_stop(origin_state / "sessions" / "runs" / "fan")
-        return lane_records.LaneResult(
-            spec, spec.workdir, f"agent6/{spec.session_id}", False, "stopped"
-        )
-
-    rc = parallel.run_parallel(
-        "t",
-        _specs(tmp_path, cfg, "fan", "3"),
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=stopped,
-        fanout_id="fan",
-    )
-
-    assert rc == 130
-    assert calls == [1]
-
-
-def test_the_coordinator_journals_a_crash_and_an_interrupt(
-    origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    runtime: app_lanes.LaneRuntime,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The coordinator journals a crash and an interrupt.
-
-    An escape after the fan-out's record opens (a spawner fault, Ctrl+C during the judge) still ends
-    the journal (`crashed` or `interrupted`) and clears the pid, as every other execution does;
-    without the end the operator's own interrupt reads as a lost worker ("stale").
-    """
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-
-    def boom(spec: lane_records.LaneSpec, task: str) -> lane_records.LaneResult:
-        raise OSError(f"spawn failed for {spec.session_id}: {task}")
-
-    with pytest.raises(OSError):
-        parallel.run_parallel(
-            "t",
-            _specs(tmp_path, cfg, "crash", "1"),
-            explicit_leaves=frozenset(),
-            cfg=cfg,
-            origin=origin,
-            origin_state=origin_state,
-            runtime=runtime,
-            spawner=boom,
-            fanout_id="crash",
-        )
-    coordinator = origin_state / "sessions" / "runs" / "crash"
-    scan = session_log.scan_session_log(coordinator / "logs.jsonl")
-    assert scan.finished and scan.stop_reason == "crashed"
-    assert not (coordinator / "worker.pid").exists()
-    assert listing.summarize_session_dir(coordinator).status == "failed"
-
-    def interrupted_judge(*_a: object, **_k: object) -> object:
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr(compare, "rank", interrupted_judge)
-    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
-    with pytest.raises(KeyboardInterrupt):
-        parallel.run_parallel(
-            "t",
-            _specs(tmp_path, cfg, "kbi", "1"),
-            explicit_leaves=frozenset(),
-            cfg=cfg,
-            origin=origin,
-            origin_state=origin_state,
-            runtime=runtime,
-            spawner=spawner,
-            fanout_id="kbi",
-        )
-    coordinator = origin_state / "sessions" / "runs" / "kbi"
-    assert session_log.scan_session_log(coordinator / "logs.jsonl").stop_reason == "interrupted"
-    assert listing.summarize_session_dir(coordinator).status == "stopped"
-
-
-def test_a_fan_out_leaves_no_stop_marker_behind(
-    origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
-) -> None:
-    """A fan-out leaves no stop marker behind.
-
-    A stop request in the coordinator's dir, honoured or arrived after the lanes ended, is consumed
-    with the session.
-    """
-    origin_state = paths.state_dir(origin)
-    cfg = Config()
-    coordinator = origin_state / "sessions" / "runs" / "fan"
-    coordinator.mkdir(parents=True)
-    ipc.request_stop(coordinator)
-    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
-    said: list[str] = []
-    parallel.run_parallel(
-        "t",
-        _specs(tmp_path, cfg, "fan", "2"),
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
-        reporter=reporter.Reporter(out=said.append, err=said.append),
-    )
-    assert not ipc.stop_request_pending(coordinator)
-    # A stop that lands mid-spawn leaves the unstarted lanes out of every
-    # table; the report names them.
-    assert [line for line in said if "stopped before lanes 1-2 started" in line]
 
 
 def test_a_relative_workdir_resolves_to_an_absolute_path(

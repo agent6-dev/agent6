@@ -112,26 +112,6 @@ def test_the_policy_is_re_read_not_cached(tmp_path: pathlib.Path) -> None:
     assert d.command_policy() == "allow"
 
 
-@pytest.mark.parametrize(
-    ("commands", "refused"),
-    [("ask", True), ("allow", False), ("deny", False)],
-)
-def test_parallel_makes_the_operator_decide_once(commands: str, refused: bool) -> None:
-    """`--parallel` under `ask` refuses at launch and names the two coherent choices.
-
-    Waiting for approval across detached lanes would mean attaching to each in turn.
-    """
-    from agent6.ui.cli import parallel
-
-    cfg = Config.model_validate({"sandbox": {"run_commands": commands}})
-    err = parallel._parallel_approval_refusal(cfg)
-    assert (err is not None) is refused
-    if err is not None:
-        assert "--auto-approve" in err and "--no-commands" in err
-        # A hub relays this refusal with no flags to pass; the config remedy is what it can act on.
-        assert "agent6 config set sandbox.run_commands" in err
-
-
 def test_a_single_no_refuses_one_call_and_withdraws_nothing(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

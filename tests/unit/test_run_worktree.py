@@ -26,7 +26,6 @@ from agent6 import budget as agent6_budget
 from agent6 import errors, kinds, lane_records, paths
 from agent6.app import (
     fork_worktrees,
-    parallel,
     preflight,
     role_providers,
     workdirs,
@@ -495,10 +494,10 @@ def test_remove_typed_in_the_worktree_removes_the_chain_ref_too(
     assert _nothing_was_created(repo, "wt-SELF01")
 
 
-def test_a_budget_stopped_lane_continues_with_the_reports_fork_command(
+def test_a_budget_stopped_lane_continues_with_the_fork_command_its_record_names(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The report's fork command continues an imported capped lane after its clone is removed."""
+    """The fork command a capped lane's record names continues it after its clone is removed."""
     repo = _repo(tmp_path, monkeypatch)
 
     class CappedProvider:
@@ -522,12 +521,8 @@ def test_a_budget_stopped_lane_continues_with_the_reports_fork_command(
     monkeypatch.setattr(role_providers, "build_role_provider", provider)
     cfg = layer.load_effective(repo).config
     state = paths.state_dir(repo)
-    lanes = app_lanes.build_lane_specs(
-        "1",
-        cfg=cfg,
-        origin=repo,
-        fanout_id="capped-fan",
-        workdir_root=tmp_path / "lanes",
+    lane = lane_records.LaneSpec(
+        lane=1, session_id="capped-fan-l1", workdir=tmp_path / "lanes" / "lane-1", settings=None
     )
 
     def spawn(spec: lane_records.LaneSpec, task: str) -> lane_records.LaneResult:
@@ -557,29 +552,27 @@ def test_a_budget_stopped_lane_continues_with_the_reports_fork_command(
         session_dir = paths.state_dir(spec.workdir) / "sessions" / "runs" / spec.session_id
         return lane_records.LaneResult(spec, session_dir, f"agent6/{spec.session_id}", True, "")
 
-    assert (
-        parallel.run_parallel(
-            "task",
-            lanes,
-            cfg=cfg,
-            explicit_leaves=frozenset(),
-            origin=repo,
-            origin_state=state,
-            runtime=parallel_cmd.lane_runtime(),
-            spawner=spawn,
-            fanout_id="capped-fan",
-        )
-        == 3
+    result = app_lanes.run_lane_to_completion(
+        lane,
+        "task",
+        cfg=cfg,
+        explicit_leaves=frozenset(),
+        origin=repo,
+        origin_state=state,
+        group="capped-fan",
+        coordinator="capped-fan",
+        runtime=parallel_cmd.lane_runtime(),
+        spawner=spawn,
+        poll_interval_s=0.01,
     )
-    shown = capsys.readouterr().out
-    hint = next(line for line in shown.splitlines() if "then continue with:" in line)
-    command = hint.split("then continue with:", 1)[1].strip().split()
-    assert command == ["agent6", "fork", "capped-fan-l1"]
-    assert not lanes[0].workdir.exists()
+    assert not result.ok and "budget exhausted" in result.error
+    assert not lane.workdir.exists()
+    capsys.readouterr()
+    assert cli_main(["sessions", "show", "capped-fan-l1"]) == 0
+    assert "`agent6 fork capped-fan-l1" in capsys.readouterr().out
     _script(monkeypatch, _FINISH)
-    assert (
-        cli_main([*command[1:], "--session-id", "continued", "--max-tokens-fallback", "100"]) == 0
-    )
+    command = ["fork", "capped-fan-l1", "--session-id", "continued"]
+    assert cli_main([*command, "--max-tokens-fallback", "100"]) == 0
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "continued"))
     assert manifest.parent_session_id == "capped-fan-l1"
     assert manifest.worktree is not None and manifest.worktree.is_dir()

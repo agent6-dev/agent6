@@ -21,7 +21,7 @@ from unittest import mock
 import pytest
 
 from agent6 import directive, lane_records
-from agent6.app import lanes
+from agent6.app import finalize, lanes
 from agent6.config import Config
 from agent6.graph import curator, models
 from agent6.harness import loop, operator_bridge, provider_call, run_chain
@@ -1086,6 +1086,23 @@ def test_an_opening_whose_lanes_all_fail_ends_with_no_lane_result(
     assert provider.call.call_count == 0
     assert (result.reason, result.completed) == ("no_lane_result", False)
     assert git_read.chain_tip(repo, "refs/agent6/coord") is None
+
+
+def test_an_opening_the_budget_ended_reads_budget_exhausted(tmp_path: pathlib.Path) -> None:
+    """Lanes that all stopped at the run's budget end the run at exit 3, not `no_lane_result`."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    spawner = _FakeGroupSpawner(repo, "session", tmp_path / "wt", fail={1, 2, 3})
+    events = _FakeEvents(tmp_path / "session" / "logs.jsonl")
+    wf, provider = _opening_wf(repo, spawner, events, order=(1, 2, 3))
+    wf.budget = mock.MagicMock()
+    wf.budget.is_exhausted.return_value = True
+
+    result = wf.run("add a lane file")
+
+    assert provider.call.call_count == 0
+    assert (result.reason, result.completed) == ("budget_exhausted", False)
+    assert finalize.session_exit_code(result, harness_gate=False) == 3
 
 
 def test_a_stop_asked_while_the_opening_ran_ends_the_run_as_a_stop(

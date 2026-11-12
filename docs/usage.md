@@ -110,7 +110,7 @@ See [Media retention](security.md#media-retention) for containment and the upstr
 
 Every surface follows a run and sends it the same steers; the command-line verbs are on [Command line](cli.md#follow-and-steer-a-run).
 
-A session's usage covers every execution, in dollars or in plan points, and in both for a run that spent both (`1pt + $0.03`); `sessions list`, `sessions show`, the end-of-run total and the fan-out report print the same figure.
+A session's usage covers every execution, in dollars or in plan points, and in both for a run that spent both (`1pt + $0.03`); `sessions list`, `sessions show`, the end-of-run total and a ranking's table print the same figure.
 These points measure account-wide window movement between readings, accumulated across resets, not the run's own spend; other consumers sharing the plan contribute too.
 
 The tokens and the points against `max_plan_points` on `sessions show` are the latest execution's.
@@ -427,7 +427,7 @@ The verify command is the success gate.
 - For run, fork and lane sessions, the command and output tail are printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any turn (exit `1`).
     - A fork's unread steer survives the setup failure and reaches the worker on a bare resume.
   For a run or lane, no turn ran, so `agent6 resume` has nothing to continue: start the run again once the command works.
-- A fan-out prints each lane's setup line when it imports the lane, and a failed lane's output in the failed lanes block; `agent6 sessions show <id>` keeps the command, and a failed setup's output, after the worktree is gone.
+- A run prints a lane's failed setup command and its output when it imports the lane; `agent6 sessions show <id>` keeps the command, and a failed setup's output, after the worktree is gone.
 - The files it leaves untracked stay out of the run's commits.
 - The verify gate is settled in your checkout and carried into the workspace: a gate inferred as `.venv/bin/python -m pytest -q` stays that.
 - A gate whose first word is a path git does not track, with no setup command, refuses `run --worktree`, `fork` and `run --parallel` before anything is created; the refusal names the path, the config line and the AGENTS.md block.

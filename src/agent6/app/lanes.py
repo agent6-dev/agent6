@@ -16,7 +16,7 @@ from collections.abc import Callable, Sequence
 from typing import Protocol
 
 from agent6 import budget as agent6_budget
-from agent6 import directive, errors, kinds, lane_records, paths
+from agent6 import errors, kinds, lane_records, paths
 from agent6.app import compare as app_compare
 from agent6.app import lane_launch, lane_watch, parallel_results, stop, workdirs
 from agent6.app import reporter as app_reporter
@@ -88,47 +88,6 @@ class LaneRuntime:
     spawn: SpawnRun
     build_provider: app_compare.BuildProvider
     judging_status: app_compare.JudgingStatus
-
-
-def build_lane_specs(
-    spec: str,
-    *,
-    cfg: Config,
-    origin: pathlib.Path,
-    fanout_id: str,
-    workdir_root: pathlib.Path | None = None,
-) -> list[lane_records.LaneSpec]:
-    """Plan the lanes for a `--parallel` fan-out, refusing over-cap up front.
-
-    Args:
-        spec: The `--parallel` argument as typed.
-        cfg: The run's config.
-        origin: The repository.
-        fanout_id: The fan-out's session id.
-        workdir_root: Where the lane clones go; the fan-out's subordinate dir by default.
-
-    Returns:
-        One spec per lane, numbered from 1.
-
-    Raises:
-        ConfigError: A lane's model names nothing.
-        ParallelError: The lanes' worktrees cannot be placed.
-    """
-    if workdir_root is None:
-        try:
-            workdir_root = workdirs.place(cfg, origin, fanout_id)
-        except (errors.OperatorError, errors.GitError, OSError) as exc:
-            raise ParallelError(str(exc)) from exc
-    settings = lane_settings(cfg, directive.parse_spec(spec, limit=cfg.harness.parallel.max_lanes))
-    return [
-        lane_records.LaneSpec(
-            lane=i,
-            session_id=f"{fanout_id}-l{i}",
-            workdir=workdir_root / f"lane-{i}",
-            settings=chosen,
-        )
-        for i, chosen in enumerate(settings, start=1)
-    ]
 
 
 def lane_settings(cfg: Config, selectors: Sequence[str | None]) -> list[kinds.ModelSettings | None]:
@@ -573,6 +532,15 @@ def recorded_result(
     )
 
 
+def _lane_provider(session_dir: pathlib.Path) -> str:
+    """Return the provider entry that drove a lane, "" when its manifest names none."""
+    try:
+        driver = sessions_manifest.read_manifest(session_dir).models.driver
+    except sessions_manifest.ManifestError:
+        return ""
+    return driver.provider if driver is not None else ""
+
+
 def lane_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement | None:
     """Read what a lane used from its journal, as its parent settles it.
 
@@ -610,7 +578,7 @@ def lane_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement | Non
             if not isinstance(event, journal.BudgetUpdate) or event.account is None:
                 continue
             account = event.account
-            provider = account.provider or parallel_results.lane_provider(directory)
+            provider = account.provider or _lane_provider(directory)
             if not provider or not account.windows:
                 continue
             # Credits are already in the inclusive USD total; only replay plan windows.

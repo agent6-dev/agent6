@@ -88,12 +88,6 @@ def test_steering_docstring_includes_turn_boundaries() -> None:
     assert "Apply steering at turn and execution boundaries." in _doc("harness/loop_steer.py")
 
 
-def test_lane_import_docstring_does_not_invent_a_failed_starts_symlink() -> None:
-    text = _doc("app/parallel_results.py", "import_lanes")
-    assert "keeps what it created" in text
-    assert "still running or whose import was refused" in text
-
-
 def test_graph_docstring_names_fork_locking_and_full_isolation() -> None:
     text = _doc("graph/__init__.py")
     assert "per-mutation flock also serialises fork's copy" in text

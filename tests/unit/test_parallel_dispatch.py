@@ -12,10 +12,9 @@ from typing import Any
 import pytest
 
 from agent6 import directive, errors, lane_records
-from agent6.app import lanes, parallel, preflight
+from agent6.app import lanes
 from agent6.harness import parallel_dispatch, parallel_join
 from agent6.vcs.git import ops as git_ops
-from agent6.vcs.git import read as git_read
 
 
 def _res(
@@ -218,76 +217,6 @@ def test_segment_lanes_carry_the_operator_pins_out_of_band() -> None:
     assert plain[0].task == "do it" and plain[0].pins == ()
 
 
-def test_a_dirty_origin_fans_out_under_stash_and_include(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A dirty origin fans out under stash and include.
-
-    One knob decides for the run path and `--parallel` alike; reading `require_clean_worktree` alone
-    refuses the documented stash-without-asking setup and names a key the run path ignores.
-    """
-    from agent6.config import Config
-    from agent6.ui.cli import parallel as cli_parallel
-
-    def _dirty(_origin: pathlib.Path) -> list[str]:
-        return ["a.py"]
-
-    def _clear(_cfg: Config) -> None:
-        return None
-
-    monkeypatch.setattr(git_read, "modified_paths", _dirty)
-    monkeypatch.setattr(preflight, "budget_preflight", _clear)
-    monkeypatch.setattr(cli_parallel, "_parallel_approval_refusal", _clear)
-    fanned: list[str] = []
-
-    def _fake_run_parallel(task: str, *_a: object, **_kw: object) -> int:
-        fanned.append(task)
-        return 0
-
-    monkeypatch.setattr(parallel, "run_parallel", _fake_run_parallel)
-    ask = Config.model_validate({"git": {"dirty_tree": "ask"}})
-    assert (
-        cli_parallel.dispatch_parallel(ask, "t", "2", explicit_leaves=frozenset(), cwd=tmp_path)
-        == 2
-    )
-    assert "dirty_tree" in capsys.readouterr().err and fanned == []
-    for choice in ("stash", "include"):
-        cfg = Config.model_validate({"git": {"dirty_tree": choice}})
-        assert (
-            cli_parallel.dispatch_parallel(cfg, "t", "2", explicit_leaves=frozenset(), cwd=tmp_path)
-            == 0
-        ), choice
-    assert fanned == ["t", "t"]
-
-
-def test_a_fan_out_prints_the_sandbox_degrades_a_run_prints(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """The lanes run detached, so the coordinator prints the unsandboxed warning once, up front."""
-    from agent6.config import Config
-    from agent6.ui.cli import parallel as cli_parallel
-
-    def _clear(_cfg: Config) -> None:
-        return None
-
-    def _clean(_origin: pathlib.Path) -> list[str]:
-        return []
-
-    def _fake_run_parallel(_task: str, *_a: object, **_kw: object) -> int:
-        return 0
-
-    monkeypatch.setattr(preflight, "budget_preflight", _clear)
-    monkeypatch.setattr(cli_parallel, "_parallel_approval_refusal", _clear)
-    monkeypatch.setattr(git_read, "modified_paths", _clean)
-    monkeypatch.setattr(parallel, "run_parallel", _fake_run_parallel)
-    cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
-    assert (
-        cli_parallel.dispatch_parallel(cfg, "t", "2", explicit_leaves=frozenset(), cwd=tmp_path)
-        == 0
-    )
-    assert "running UNSANDBOXED (sandbox.isolation = none)" in capsys.readouterr().err
-
-
 def test_summary_text_gives_each_lanes_finish_summary() -> None:
     """What a lane said at its end reaches its parent under the lane's line.
 
@@ -349,44 +278,6 @@ def test_summary_hands_a_conflicted_lane_to_the_operator() -> None:
     text = parallel_join.summary_text("g", [_join("conflict")])
     assert "for the operator (`git merge " in text and "continue without it" in text
     assert "resolve" not in text
-
-
-def test_the_coordinator_takes_sigterm_as_a_ctrl_c_stop(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """SIGTERM reaches the coordinator as a KeyboardInterrupt, which journals the stop.
-
-    `timeout`, CI and the kill `agent6 stop` falls back to send it; the handler is put back after.
-    """
-    import os
-    import signal
-    import time
-
-    from agent6.config import Config
-    from agent6.ui.cli import parallel as cli_parallel
-
-    def _clean(_origin: pathlib.Path) -> list[str]:
-        return []
-
-    def _clear(_cfg: Config) -> None:
-        return None
-
-    monkeypatch.setattr(git_read, "modified_paths", _clean)
-    monkeypatch.setattr(preflight, "budget_preflight", _clear)
-    monkeypatch.setattr(cli_parallel, "_parallel_approval_refusal", _clear)
-
-    def _killed_run_parallel(*_a: object, **_kw: object) -> int:
-        os.kill(os.getpid(), signal.SIGTERM)
-        time.sleep(2.0)
-        return 0
-
-    monkeypatch.setattr(parallel, "run_parallel", _killed_run_parallel)
-    before = signal.getsignal(signal.SIGTERM)
-    with pytest.raises(KeyboardInterrupt):
-        cli_parallel.dispatch_parallel(
-            Config.model_validate({}), "t", "2", explicit_leaves=frozenset(), cwd=tmp_path
-        )
-    assert signal.getsignal(signal.SIGTERM) is before
 
 
 def _ended_lane(dest: pathlib.Path, *, reason: str, verification: str) -> None:
