@@ -828,7 +828,7 @@ def _fork_with_worktree(
     from agent6.config import Config
 
     base = _git(repo, "rev-parse", "HEAD")
-    worktree = worktrees.subordinate_worktree_root(Config(), repo, session_id)
+    worktree = worktrees.child_worktree_root(Config(), repo, session_id)
     git_ops.add_worktree(repo, worktree, base)
     _git(repo, "branch", f"agent6/{session_id}", base)
     git_ops.set_ref(repo, git_read.chain_ref_for(session_id), base)
@@ -950,7 +950,7 @@ def test_prune_leaves_a_worktree_no_manifest_records_alone(
     (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "init")
-    foreign = worktrees.subordinate_worktree_root(Config(), tmp_path, "my-experiment")
+    foreign = worktrees.child_worktree_root(Config(), tmp_path, "my-experiment")
     git_ops.add_worktree(tmp_path, foreign, _git(tmp_path, "rev-parse", "HEAD"))
     (foreign / "draft.txt").write_text("uncommitted\n", encoding="utf-8")
     forgotten = _fork_with_worktree(tmp_path, "fork-forgot11", merged=False, record=False)

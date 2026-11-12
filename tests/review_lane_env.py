@@ -16,7 +16,7 @@ from agent6.providers import ProviderResponse
 from agent6.sessions import event_log, journal
 from agent6.tools import dispatch as tools_dispatch
 from agent6.tools import results
-from tests import subordinate_env
+from tests import child_env
 
 _run_panel = review_gate.run_panel
 # What a parent whose command policy is `deny` hands a seat.
@@ -94,8 +94,8 @@ def run_panel(
     with tempfile.TemporaryDirectory(prefix="review-policy-") as tmp:
         root = pathlib.Path(tmp)
         repo = root / "repo"
-        subordinate_env.init_repo(repo)
-        directory = subordinate_env.create_record(repo, "parent")
+        child_env.init_repo(repo)
+        directory = child_env.create_record(repo, "parent")
         (repo / "foo.py").write_text("x\n" * 20)
         target = kwargs.pop("target", None) or review_records.ReviewTarget(
             "base", "base-tree", "head", "head-tree", "snapshot", (), "revisions"

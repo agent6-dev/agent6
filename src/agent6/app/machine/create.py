@@ -130,7 +130,7 @@ def _discard_workspace(workspace: pathlib.Path, reporter: app_reporter.Reporter)
         # A workspace that never ran has no state dir; rmtree reports a missing path through onexc.
         if path.exists():
             shutil.rmtree(path, onexc=lambda _fn, target, exc: errors.append(f"{target}: {exc}"))
-    # The per-repo base every subordinate tree sits in goes only when empty.
+    # The per-repo base every child's worktree sits in goes only when empty.
     with contextlib.suppress(OSError):
         workspace.parent.rmdir()
     if errors:
@@ -215,8 +215,8 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     reporter.err(
         f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})"
     )
-    # An empty repo of its own beside the other subordinate trees: the jail masks the state dir.
-    workspace = worktrees.subordinate_worktree_root(cfg, cwd, scratch.name)
+    # An empty repo of its own beside the children's worktrees: the jail masks the state dir.
+    workspace = worktrees.child_worktree_root(cfg, cwd, scratch.name)
     try:
         workspace.mkdir(parents=True)
         git_ops.init_repo(workspace)

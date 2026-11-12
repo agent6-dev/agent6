@@ -515,7 +515,7 @@ The directive uses the session's tools and permissions and returns markdown, wit
 
 ## Parallel runs
 
-The primitive is a task run as a subordinate isolated run whose branch joins back.
+The primitive is a task run as a child in its own worktree, whose branch joins back.
 One rule holds for every child (a lane, a review seat): the parent hands down, the child pushes up, and the root is the one owner.
 
 - handed down: the config snapshot, the task and pins, the turn cap and deadline, and what the parent's budget has left
@@ -534,7 +534,7 @@ Before any clone, a spec's models are checked against what a lane can run.
 - unknown model: a miss against an existing cache re-checks that provider's live listing, and refuses with a did-you-mean only when the fresh listing confirms it; no cache, or a re-fetch that fails, proceeds with a warning (offline machines never block on a regenerable cache)
 - all three consumers validate through the one helper, keeping `harness` free of a models dependency
 
-The primitive is git plumbing in [subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/subrun.py), with no LLM, no UI, and no process spawning:
+The primitive is git plumbing in [child_repo.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/child_repo.py), with no LLM, no UI, and no process spawning:
 
 - `clone_worktree(origin, dest)`: a plain `git clone` for a lane's own worktree.
 - `import_run(origin, lane_repo, branch, lane_session_dir)`: fetches the lane's branch and its retained session refs into the origin, refusing to overwrite an existing branch; the lane's record is in the origin's state already.
@@ -578,7 +578,7 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
 - a dispatch reserves nothing: each lane starts under what the parent has left in each finite ledger (`BudgetTracker.available`, `-1` and `0` passing through per currency) as its own caps, through its launch file, and a panel's later batch under what is left then; while a lane runs, the parent's watch reads its journal on each poll and counts its spend so far against the parent's caps (`BudgetTracker.note_running`), the lane's own running lanes included (`usd_running_lanes` and `tokens_running_lanes` on its `budget.update` row, which the watch writes as that spend moves, ten seconds apart at most); a running lane's spend is inside `available`, `fraction_remaining` and the breaker and outside `usd_total`; the lanes together reaching a cap ends them at once, so the total can pass the cap by what was in flight and one poll; a lane's settlement (`settle_lane`) charges its final usage once and folds its plan readings through the parent's high-water rule so movement two lanes both saw counts once; a lane whose usage is unknown stays unsettled, its last reading counted for that execution; a resumed execution takes the lanes its journal already names as settled (`mark_settled`) and charges none of them again; `run --parallel` hands down nothing (its lanes keep the config's caps and `--max-usd`)
 - every live dispatch is recorded before any lane launches (`sessions/lane_dispatch.py`, `<session_dir>/dispatch/<group>.json`, version 2, written atomically): the identity, source, join policy, owner execution, base, segments with their DAG nodes, each lane's share and limits; an unwritable record refuses the dispatch; the record advances `prepared`, `running`, `settling` (each lane's usage charged once, or marked outstanding), `joining` (each join written as it lands with the chain tip before and after) and `complete` with the delivered message, then `delivered`
 - the read model (`viewmodel/lanes.py`) shows every session's children: from its dispatch records when it has any (each lane's source, selector, join outcome and sha, the branch the join read, its settled spend, and whether it ever launched: a lane with no session dir reads `failed: never started`), else from its lanes' lineage (an older session) with no join to report; the session header carries `lanes` for every session that has any and `dispatches` when records exist; the receipt's `children` and its `Lanes` section name each lane and the spend the lanes added to the parent's inclusive total
-- the model's `parallel` tool (`[harness.parallel].tool`, off by default) runs through the same dispatcher with `source = "model"`: the dispatcher's `parallel_handler` is the loop's `_parallel_tool`, which validates the arguments, applies the model-lane ceilings (200 turns, 1,800 s) as `LaneLimits` the lanes' launch files enforce again, dispatches for the turn in progress and returns the result as the tool's answer; the tool is listed only when `ToolDispatcher.parallel_available()` holds (the knob, run mode, not a subordinate, a handler installed), and the same gates refuse a call that slips past the list
+- the model's `parallel` tool (`[harness.parallel].tool`, off by default) runs through the same dispatcher with `source = "model"`: the dispatcher's `parallel_handler` is the loop's `_parallel_tool`, which validates the arguments, applies the model-lane ceilings (200 turns, 1,800 s) as `LaneLimits` the lanes' launch files enforce again, dispatches for the turn in progress and returns the result as the tool's answer; the tool is listed only when `ToolDispatcher.parallel_available()` holds (the knob, run mode, not a child, a handler installed), and the same gates refuse a call that slips past the list
 - a resumed execution reconciles every record that is not complete or whose panel charges lack journal confirmation before its first provider call: the grant is restored as recorded (settled lanes released, never a second split), the recoverer finds the lanes by their session dirs (a live one is stopped as `agent6 stop` stops a run, one whose record is only in its clone is imported, one already imported is read as it stands), usage is settled exactly once, a lane whose work the chain already reaches is recorded joined at the merge that landed it and never merged twice, the rest join in order, and the result is delivered once for the original call; a record with no lane found completes as `dispatch interrupted before launch; nothing ran`; a complete record never delivered is delivered; a session older than the records has none to reconcile
 - a dispatch may give a lane `LaneLimits` (a turn cap and a wall-clock deadline) in its launch file: the bootstrap clamps `harness.max_turns` (a configured `-1` cannot lift the cap) and arms its own backstop, the stop bridges at the deadline and SIGTERM to itself a grace later; the parent's await ends at the same deadline, and a lane that reaches it reads `ended at its deadline`, never a success
 - the ranking is `app.compare.rank`: each of `[harness.parallel].judges` ranks once ([judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py)) and the lowest sum of ranks wins; a tie, or a config with no judge, falls to verify-then-cost
@@ -597,9 +597,9 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
 - each segment gets one DAG node: `passed` with the last joined sha (none when every lane made no changes), or `failed` when every lane failed or conflicted; a conflict aborts that merge and tells the model; the run continues either way
 - `parallel.dispatched` / `joined` / `failed` render as conversation markers, so the blocked wait is visible
 
-**Subordinate work cannot fan out.** `app.lane_launch.dispatch_authority` separates work dispatch from configured harness-panel scheduling on `OperatorBridge.lane_authority`.
-Every lane bootstrap sets `AGENT6_SUBRUN=1`; a matching private worker launch retains panel authority under `[review]`, but its model and steer cannot dispatch work even with `harness.parallel.tool = true`.
-An unproven subordinate run, including unrelated machine-state execution, gets neither authority.
+**A child cannot dispatch work.** `app.lane_launch.dispatch_authority` separates work dispatch from configured harness-panel scheduling on `OperatorBridge.lane_authority`.
+Every lane bootstrap sets `AGENT6_CHILD=1`; a matching private worker launch retains panel authority under `[review]`, but its model and steer cannot dispatch work even with `harness.parallel.tool = true`.
+An unproven child, including unrelated machine-state execution, gets neither authority.
 A read-only conversation contract grants neither authority, ending the structure at the review leaf.
 
 `ParallelDispatcher.dispatch_panel` accepts bounded read-only conversations and a retained target through an internal record-only policy, independent of `harness.parallel.tool`.
@@ -843,7 +843,7 @@ Every other approval publishes as `approval.prompt` before its answer.
 | Jail sessions and detached jobs | [sandbox/jail_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_session.py), [sandbox/jail_jobs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_jobs.py) |
 | Jail launcher | [sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py) (Python), [jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs) (Rust) |
 | Git policy | [git_policy.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git/policy.py) |
-| Subordinate-run primitive | [harness/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/subrun.py) |
+| Child repository primitive | [harness/child_repo.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/child_repo.py) |
 | Run-dir single-writer lock | [sessions/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lock.py) |
 | Compare judge | [harness/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py) |
 | Fan-out orchestrator | [app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) (lanes), [app/parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel_results.py) (import and ranking stamps), [app/worktrees.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/worktrees.py) (working directories), [ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
@@ -866,7 +866,7 @@ These env vars are switches for benchmark arms, harness experiments and debuggin
 
 agent6 also sets markers for its own children:
 
-- `AGENT6_SUBRUN=1`: subordinate work (a lane, a machine state, a `/btw` question), whose model and operator work entry points cannot fan out ([Parallel runs](#parallel-runs)).
+- `AGENT6_CHILD=1`: a child of a session (a lane, a machine state, a `/btw` question), whose model and operator work entry points cannot dispatch work ([Parallel runs](#parallel-runs)).
 - `AGENT6_STREAM_TO_LOG=1`: a detached spawn or lane emits its stream deltas as events with no console echo.
 - `AGENT6_LANE=<path>`: the lane's launch file (`app/lane_launch.py`): the task and pins, the caps and away mode, the config snapshot the lane's sole `--config` must name, its serialization loss notes, the lineage the lane's manifest records, the origin of the verify gate the parent resolved, and the operator's task; the bootstrap refuses a missing, malformed, foreign-owned or exposed file, and the config load refuses another `--config`.
 

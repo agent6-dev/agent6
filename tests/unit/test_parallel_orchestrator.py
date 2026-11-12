@@ -40,7 +40,7 @@ from agent6.app import (
 from agent6.app import lanes as app_lanes
 from agent6.config import Config
 from agent6.context import memory
-from agent6.harness import judge, subrun
+from agent6.harness import child_repo, judge
 from agent6.providers import ProviderResponse
 from agent6.sessions import ipc, process
 from agent6.sessions import manifest as sessions_manifest
@@ -216,7 +216,7 @@ class _FakeSpawner:
             return lane_records.LaneResult(
                 spec=spec, session_dir=spec.worktree, branch=branch, ok=False, error="boom"
             )
-        subrun.clone_worktree(self.origin, spec.worktree)
+        child_repo.clone_worktree(self.origin, spec.worktree)
         if spec.lane in self.branch_at_base:
             git_ops.create_branch(spec.worktree, branch)
         elif spec.lane not in self.no_commit:
@@ -418,7 +418,7 @@ def test_parent_dispatch_refuses_unknown_model(
     def _boom(*_a: object, **_k: object) -> None:
         raise AssertionError("clone must not happen before validation")
 
-    monkeypatch.setattr(subrun, "clone_worktree", _boom)
+    monkeypatch.setattr(child_repo, "clone_worktree", _boom)
     dispatch = app_lanes.build_lane_spawner(
         _provider_cfg(),
         origin,
@@ -1499,7 +1499,7 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
     origin_state = paths.state_dir(origin)
     lock = threading.Lock()
     held: list[bool] = []
-    real_import_run = subrun.import_run
+    real_import_run = child_repo.import_run
 
     def observe(
         origin: pathlib.Path,
@@ -1514,7 +1514,7 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
             origin, lane_repo, branch, lane_session_dir, model_control=model_control
         )
 
-    monkeypatch.setattr(subrun, "import_run", observe)
+    monkeypatch.setattr(child_repo, "import_run", observe)
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="co-p1-l1",
@@ -1658,7 +1658,7 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
     # orphaned lane was never adopted.
     assert all(group == "co-p2" for (_l, _r, _t, group, _w) in seen)
     assert all(
-        str(worktrees.subordinate_worktree_root(cfg, origin, group) / f"lane-{lane}") == workdir
+        str(worktrees.child_worktree_root(cfg, origin, group) / f"lane-{lane}") == workdir
         for (lane, _r, _t, group, workdir) in seen
     )
 
@@ -2208,7 +2208,7 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
 
     unmerged = scoped / "fan-a" / "lane-1"
     unmerged.parent.mkdir(parents=True)
-    subrun.clone_worktree(origin, unmerged)
+    child_repo.clone_worktree(origin, unmerged)
     git_ops.create_branch(unmerged, "agent6/fan-a-l1")
     (unmerged / "x.txt").write_text("x\n", encoding="utf-8")
     _git(unmerged, "add", "-A")
@@ -2216,12 +2216,12 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
 
     merged = scoped / "fan-b" / "lane-1"
     merged.parent.mkdir(parents=True)
-    subrun.clone_worktree(origin, merged)
+    child_repo.clone_worktree(origin, merged)
     git_ops.create_branch(merged, "agent6/fan-b-l1")  # tip == origin HEAD: nothing unique
 
     foreign = workdir / "other-repo-0" / "fan-c" / "lane-1"
     foreign.mkdir(parents=True)
-    subrun.clone_worktree(origin, foreign)
+    child_repo.clone_worktree(origin, foreign)
     git_ops.create_branch(foreign, "agent6/fan-c-l1")
 
     for clone in (unmerged, merged):
@@ -2325,7 +2325,7 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
     cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(workdir)}}})
     lane = workdir / paths.repo_id(origin) / "fan-starting" / "lane-1"
     lane.parent.mkdir(parents=True)
-    subrun.clone_worktree(origin, lane)
+    child_repo.clone_worktree(origin, lane)
     # No session dir yet: a lane between its clone and its first write looks
     # like one that never started, and a prune in that window must not win.
     assert worktrees.sweep_fanout_clones(origin, cfg) == (0, 1)
@@ -2344,7 +2344,7 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
 
     # A lane that died in preflight leaves a husk (a session dir with no
     # record and no worker): ended, so its clone goes too.
-    subrun.clone_worktree(origin, lane)
+    child_repo.clone_worktree(origin, lane)
     (session / "logs.jsonl").unlink()
     assert worktrees.sweep_fanout_clones(origin, cfg) == (1, 0)
 
@@ -2365,7 +2365,7 @@ def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
     scoped = workdir / paths.repo_id(origin)
     lane = scoped / "fan-x" / "lane-1"
     lane.parent.mkdir(parents=True)
-    subrun.clone_worktree(origin, lane)
+    child_repo.clone_worktree(origin, lane)
     git_ops.create_branch(lane, "agent6/fan-x-l1")
     (lane / "x.txt").write_text("lane work\n", encoding="utf-8")
     _git(lane, "add", "-A")
@@ -2397,7 +2397,7 @@ def test_sweep_leaves_a_dir_that_is_not_a_fan_out_group_alone(
     scoped = workdir / paths.repo_id(origin)
     theirs = scoped / "my-clone"
     theirs.parent.mkdir(parents=True)
-    subrun.clone_worktree(origin, theirs)
+    child_repo.clone_worktree(origin, theirs)
     (theirs / "draft.txt").write_text("uncommitted\n", encoding="utf-8")
     notes = scoped / "notes"
     notes.mkdir()

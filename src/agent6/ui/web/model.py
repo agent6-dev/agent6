@@ -99,7 +99,7 @@ def draft_workspace(
 ) -> pathlib.Path | None:
     """Return the workspace a `machine create` draft commits in, or None once it is gone.
 
-    The workspace is a repository of its own beside the other subordinate working
+    The workspace is a repository of its own beside the children's working
     trees; publishing the draft removes it.
 
     Args:
@@ -114,7 +114,7 @@ def draft_workspace(
         cfg = layer.load_effective(cwd, config_paths).config
     except ConfigError:
         return None
-    workspace = worktrees.subordinate_worktree_root(cfg, cwd, name)
+    workspace = worktrees.child_worktree_root(cfg, cwd, name)
     return workspace if (workspace / ".git").exists() else None
 
 

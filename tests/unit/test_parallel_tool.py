@@ -120,16 +120,16 @@ def test_other_modes_never_offer_or_run_the_tool(tmp_path: pathlib.Path, mode: s
         d.dispatch("parallel", {"task": "consult"})
 
 
-def test_a_subordinate_run_and_a_front_end_without_a_dispatcher_refuse(
+def test_a_child_and_a_front_end_without_a_dispatcher_refuse(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Depth stays one, and a harness with no lane dispatcher cannot pretend otherwise."""
-    monkeypatch.setenv("AGENT6_SUBRUN", "1")
+    monkeypatch.setenv("AGENT6_CHILD", "1")
     inside = _dispatcher(tmp_path, _config(tool=True), handler=_handler)
     assert "parallel" not in _names(inside)
     with pytest.raises(tool_errors.ToolError, match="inside a lane"):
         inside.dispatch("parallel", {"task": "consult"})
-    monkeypatch.delenv("AGENT6_SUBRUN")
+    monkeypatch.delenv("AGENT6_CHILD")
     headless = _dispatcher(tmp_path, _config(tool=True), handler=None)
     assert "parallel" not in _names(headless)
     with pytest.raises(tool_errors.ToolError, match="no lane dispatcher"):
@@ -309,4 +309,4 @@ def test_the_model_dispatches_lanes_and_reads_the_result_as_the_tools_answer(
     l1, l2 = record.children
     assert l1.join is not None and l2.join is not None
     assert l2.join.target_before == _git(repo, "rev-parse", "agent6/run-abc-p1-l1")
-    assert not os.environ.get("AGENT6_SUBRUN")
+    assert not os.environ.get("AGENT6_CHILD")

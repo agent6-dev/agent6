@@ -85,7 +85,7 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
 
 def is_lane() -> bool:
     """Return whether this process runs a lane, whose work the session that dispatched it joins."""
-    return bool(os.environ.get("AGENT6_SUBRUN"))
+    return bool(os.environ.get("AGENT6_CHILD"))
 
 
 def dispatch_authority(
@@ -103,9 +103,9 @@ def dispatch_authority(
         Work authority only in top-level runs; configured panels also in top-level ask/plan.
     """
     launch = read()
-    subordinate = launch is not None or is_lane()
+    is_child = launch is not None or is_lane()
     worker = mode == "run"
-    if subordinate:
+    if is_child:
         worker = (
             worker
             and launch is not None
@@ -115,8 +115,8 @@ def dispatch_authority(
         )
     deadline = launch.limits.deadline_at if launch is not None and launch.limits else None
     return lane_records.DispatchAuthority(
-        work=worker and not subordinate,
-        panels=(worker or (not subordinate and mode in ("ask", "plan")))
+        work=worker and not is_child,
+        panels=(worker or (not is_child and mode in ("ask", "plan")))
         and cfg.review.when != "never",
         deadline_at=deadline,
     )

@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 from agent6 import budget as agent6_budget
 from agent6 import directive, errors, lane_records
 from agent6.graph import curator as graph_curator
-from agent6.harness import parallel_join, run_chain, subrun
+from agent6.harness import child_repo, parallel_join, run_chain
 from agent6.sessions import budget_events, journal, lane_dispatch
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel.session import log as session_log
@@ -134,9 +134,7 @@ class ParallelDispatcher:
             The result; `dispatched` False names a refusal before any clone.
         """
         if source == "panel" or not self.authority.work:
-            return self.refusal(
-                "work dispatch is unavailable in a subordinate run; nothing dispatched."
-            )
+            return self.refusal("work dispatch is unavailable in a child; nothing dispatched.")
         if join == "rank" and self.ranker is None:
             return self.refusal("this execution has no ranker for a rank join; nothing dispatched.")
         if self.lane_spawner is None:
@@ -338,7 +336,7 @@ class ParallelDispatcher:
 
         Returns:
             The completed result, or a diagnosed spawner failure with unresolved holds.
-        """  # noqa: DOC501  # the spawner's SubrunError is caught below
+        """  # noqa: DOC501  # the spawner's ChildRepoError is caught below
         assert self.lane_spawner is not None
         identity = record.identity
         what = "review seat(s)" if record.source == "panel" else "lane(s)"
@@ -366,7 +364,7 @@ class ParallelDispatcher:
                 batch_group = group if len(lanes) <= width else f"{group}-b{offset // width + 1}"
                 results.extend(self.lane_spawner(batch, batch_group, at=record.base or None))
             if len(results) != len(lanes):
-                raise subrun.SubrunError(
+                raise child_repo.ChildRepoError(
                     f"group spawner returned {len(results)} result(s) for {len(lanes)} lane(s)"
                 )
         except Exception as exc:

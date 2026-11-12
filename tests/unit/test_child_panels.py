@@ -22,7 +22,7 @@ from agent6.app import (
     stop,
     worktrees,
 )
-from agent6.harness import loop_conversation, loop_state, parallel_dispatch, run_chain, subrun
+from agent6.harness import child_repo, loop_conversation, loop_state, parallel_dispatch, run_chain
 from agent6.sessions import (
     budget_events,
     completion,
@@ -39,7 +39,7 @@ from agent6.tools import dispatch, tool_errors
 from agent6.ui.cli import parallel
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing, receipt
-from tests import lane_env, subordinate_env
+from tests import child_env, lane_env
 
 
 @pytest.mark.parametrize("panel_cost", [None, 2.0])
@@ -48,13 +48,13 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
 ) -> None:
     """A private worker launch authorizes only panel leaves, whatever harness.parallel.tool is."""
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
-    subordinate_env.create_record(repo, "parent")
+    child_env.init_repo(repo)
+    child_env.create_record(repo, "parent")
     clone = short_repo / "worker"
     with lane_env.scripted_provider(("reviewed",), cost_usd=panel_cost) as (url, calls):
-        cfg = subordinate_env.config(url)
-        _path, launch = subordinate_env.launch_worker(repo, clone, cfg, monkeypatch)
-        worker_dir = subordinate_env.create_record(repo, launch.session_id, parent="parent")
+        cfg = child_env.config(url)
+        _path, launch = child_env.launch_worker(repo, clone, cfg, monkeypatch)
+        worker_dir = child_env.create_record(repo, launch.session_id, parent="parent")
         parent = budget.BudgetTracker(max_usd=8, max_tokens_fallback=1000, max_plan_points=20)
         share = parent.available()  # the worker starts under all its parent has left
         worker = budget.BudgetTracker(
@@ -72,14 +72,14 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         event_log.EventSink(worker_dir / "logs.jsonl").emit(
             journal.BudgetUpdate(**budget_events.budget_update_fields(worker))
         )
-        executor = subordinate_env.dispatcher(clone, worker_dir, cfg, worker)
+        executor = child_env.dispatcher(clone, worker_dir, cfg, worker)
         refused = executor.dispatch(
             loop_conversation.Conversation(),
             1,
             loop_state.LoopState(original_task="worker", tool_calls=0),
             [directive.Segment(task="not allowed", spec="1")],
         )
-        assert not refused.dispatched and "subordinate" in refused.message
+        assert not refused.dispatched and "in a child" in refused.message
         contract = kinds.ConversationContract(
             system="Review only.",
             opening="Read this tree.",
@@ -92,7 +92,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
             limits=lane_records.LaneLimits(deadline_at=time.time() + 1800),
         )
         result = executor.dispatch_panel(
-            [request], panel_id="seat-test", at=subordinate_env.git(clone, "rev-parse", "HEAD")
+            [request], panel_id="seat-test", at=child_env.git(clone, "rev-parse", "HEAD")
         )
         assert result.dispatched and len(result.lanes) == 1, result.message
         assert result.lanes[0].status == "no_changes"
@@ -169,14 +169,14 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
     boundary: str,
 ) -> None:
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
+    child_env.init_repo(repo)
     clone = short_repo / "worker"
     with lane_env.scripted_provider() as (url, calls):
-        cfg = subordinate_env.config(url)
-        _path, launch = subordinate_env.launch_worker(repo, clone, cfg, monkeypatch)
-        worker_dir = subordinate_env.create_record(repo, launch.session_id, parent="parent")
+        cfg = child_env.config(url)
+        _path, launch = child_env.launch_worker(repo, clone, cfg, monkeypatch)
+        worker_dir = child_env.create_record(repo, launch.session_id, parent="parent")
         meter = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
-        executor = subordinate_env.dispatcher(clone, worker_dir, cfg, meter)
+        executor = child_env.dispatcher(clone, worker_dir, cfg, meter)
         contract = kinds.ConversationContract(
             system="s",
             opening="o",
@@ -218,7 +218,7 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
                 executor.dispatch_panel(
                     [lane_records.LaneTask("review", "reviewer", contract=contract)],
                     panel_id="recovery",
-                    at=subordinate_env.git(clone, "rev-parse", "HEAD"),
+                    at=child_env.git(clone, "rev-parse", "HEAD"),
                 )
         if boundary == "accounting_failed":
             # Finalization can still publish the charged meter after the dispatch emit failed.
@@ -242,7 +242,7 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
         recovered_budget = budget.BudgetTracker(
             max_usd=5, max_tokens_fallback=1000, max_plan_points=20
         )
-        recovered = subordinate_env.dispatcher(clone, worker_dir, cfg, recovered_budget)
+        recovered = child_env.dispatcher(clone, worker_dir, cfg, recovered_budget)
         recovered.lane_recoverer = lanes.build_lane_recoverer(
             cfg, clone, paths.state_dir(repo), mode="run"
         )
@@ -262,16 +262,14 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
         assert record.state == "complete" and record.join_policy == "record_only"
         assert record.delivered and all(child.settled for child in record.children)
         assert all(child.join is None or child.join.sha == "" for child in record.children)
-        assert subordinate_env.git(clone, "rev-parse", "HEAD") == subordinate_env.git(
-            repo, "rev-parse", "HEAD"
-        )
+        assert child_env.git(clone, "rev-parse", "HEAD") == child_env.git(repo, "rev-parse", "HEAD")
 
 
-def test_subordinate_bootstrap_refuses_model_and_steer_parallel_even_with_flag_on(
+def test_a_child_bootstrap_refuses_model_and_steer_parallel_even_with_flag_on(
     short_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
+    child_env.init_repo(repo)
     clone = short_repo / "worker"
     steered = threading.Event()
 
@@ -284,8 +282,8 @@ def test_subordinate_bootstrap_refuses_model_and_steer_parallel_even_with_flag_o
         [("parallel", {"task": "recurse", "spec": "1"}), lane_env.FINISH],
         before_reply=queue_steer,
     ) as (url, calls):
-        cfg = subordinate_env.config(url, tool=True)
-        _path, launch = subordinate_env.launch_worker(repo, clone, cfg, monkeypatch)
+        cfg = child_env.config(url, tool=True)
+        _path, launch = child_env.launch_worker(repo, clone, cfg, monkeypatch)
         worker_dir = layout.bucket_dir(paths.state_dir(repo), "runs") / launch.session_id
         env = {**os.environ, "AGENT6_ALLOW_ROOT": "1", "AGENT6_STREAM_TO_LOG": "1"}
         proc = subprocess.run(
@@ -307,21 +305,21 @@ def test_subordinate_bootstrap_refuses_model_and_steer_parallel_even_with_flag_o
     assert all("parallel" not in json.dumps(c.get("tools", [])) for c in calls)
     assert steered.is_set()
     assert any(
-        "work dispatch is unavailable in a subordinate run; nothing dispatched."
+        "work dispatch is unavailable in a child; nothing dispatched."
         in json.dumps(call["messages"])
         for call in calls[1:]
     )
     assert lane_dispatch.read_records(worker_dir) == ()
 
 
-def test_review_leaf_and_unproven_subrun_have_no_dispatch_authority(
+def test_review_leaf_and_unproven_child_have_no_dispatch_authority(
     short_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
+    child_env.init_repo(repo)
     clone = short_repo / "worker"
-    cfg = subordinate_env.config(tool=True)
-    path, launch = subordinate_env.launch_worker(repo, clone, cfg, monkeypatch)
+    cfg = child_env.config(tool=True)
+    path, launch = child_env.launch_worker(repo, clone, cfg, monkeypatch)
     contract = kinds.ConversationContract(system="s", opening="o", max_turns=1)
     lane_launch.write(path.parent, launch.model_copy(update={"contract": contract}))
     for mode in ("run", "reviewer"):
@@ -360,14 +358,12 @@ def test_import_retains_descendant_records_receipts_and_target_objects(
 ) -> None:
     """Removing a worker clone cannot remove its panel record or its immutable target."""
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
-    subordinate_env.create_record(repo, "parent")
+    child_env.init_repo(repo)
+    child_env.create_record(repo, "parent")
     clone = short_repo / "worker"
-    subrun.clone_worktree(repo, clone)
-    worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
-    leaf = subordinate_env.create_record(
-        repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="reviewer"
-    )
+    child_repo.clone_worktree(repo, clone)
+    worker = child_env.create_record(repo, "parent-p1-l1", parent="parent")
+    leaf = child_env.create_record(repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="reviewer")
     evidence = completion.CompletionRecord(
         text="review evidence",
         stop_reason="end_turn",
@@ -380,7 +376,7 @@ def test_import_retains_descendant_records_receipts_and_target_objects(
     chain = run_chain.RunChain(
         clone,
         ref=git_read.chain_ref_for(worker.name),
-        fallback_parent=subordinate_env.git(clone, "rev-parse", "HEAD"),
+        fallback_parent=child_env.git(clone, "rev-parse", "HEAD"),
     )
     (clone / "README.md").write_text("reviewed dirty tree\n")
     target = chain.review_target()
@@ -412,10 +408,9 @@ def test_import_retains_descendant_records_receipts_and_target_objects(
     saved = session_manifest.read_manifest(dest)
     assert saved.parallel is not None and saved.parallel.parent == worker.name
     assert lane_dispatch.read_records(imported.session_dir)[0].base == target.snapshot_commit
-    assert subordinate_env.git(repo, "rev-parse", target.snapshot_ref) == target.snapshot_commit
+    assert child_env.git(repo, "rev-parse", target.snapshot_ref) == target.snapshot_commit
     assert (
-        subordinate_env.git(repo, "show", f"{target.snapshot_commit}:README.md")
-        == "reviewed dirty tree"
+        child_env.git(repo, "show", f"{target.snapshot_commit}:README.md") == "reviewed dirty tree"
     )
     # The seat is the worker's child by lineage and none of its lanes.
     assert [child.name for child in lineage.children_of(imported.session_dir)] == [leaf.name]
@@ -427,13 +422,11 @@ def test_cleanup_keeps_a_live_descendant_even_when_all_commits_are_reachable(
     short_repo: pathlib.Path,
 ) -> None:
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
+    child_env.init_repo(repo)
     clone = short_repo / "worker"
-    subrun.clone_worktree(repo, clone)
-    worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
-    leaf = subordinate_env.create_record(
-        repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="reviewer"
-    )
+    child_repo.clone_worktree(repo, clone)
+    worker = child_env.create_record(repo, "parent-p1-l1", parent="parent")
+    leaf = child_env.create_record(repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="reviewer")
     process.write_worker_pid(leaf, os.getpid())
     kept: list[str] = []
     worktrees.cleanup(
@@ -443,7 +436,7 @@ def test_cleanup_keeps_a_live_descendant_even_when_all_commits_are_reachable(
         worktree_root=short_repo,
         base=short_repo,
         launch_dir=lane_launch.launch_dir(paths.state_dir(repo), "parent-p1"),
-        cfg=subordinate_env.config(),
+        cfg=child_env.config(),
         note_keep=lambda _p, why: kept.append(why),
     )
     assert clone.is_dir() and leaf.is_dir()
@@ -452,8 +445,8 @@ def test_cleanup_keeps_a_live_descendant_even_when_all_commits_are_reachable(
 
 def test_an_unfinished_panel_keeps_the_ancestor_reservation(short_repo: pathlib.Path) -> None:
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
-    worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
+    child_env.init_repo(repo)
+    worker = child_env.create_record(repo, "parent-p1-l1", parent="parent")
     record = lane_dispatch.DispatchRecord(
         identity=worker.name + "-r1",
         source="panel",
@@ -475,8 +468,8 @@ def test_a_settled_panel_keeps_the_ancestor_hold_until_the_journal_names_it(
 ) -> None:
     """A worker that died before journaling a panel's charge must not settle without it."""
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
-    worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
+    child_env.init_repo(repo)
+    worker = child_env.create_record(repo, "parent-p1-l1", parent="parent")
     leaf = worker.name + "-r1-l1"
     record = lane_dispatch.DispatchRecord(
         identity=worker.name + "-r1",
@@ -516,14 +509,12 @@ def test_stop_follows_clone_state_and_readonly_bucket_and_leaves_the_worker_unse
 ) -> None:
     """A live leaf is found through a worker symlink, even when the worker already died."""
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
-    parent = subordinate_env.create_record(repo, "parent")
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
     clone = short_repo / "worker"
-    subrun.clone_worktree(repo, clone)
-    worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
-    leaf = subordinate_env.create_record(
-        repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="reviewer"
-    )
+    child_repo.clone_worktree(repo, clone)
+    worker = child_env.create_record(repo, "parent-p1-l1", parent="parent")
+    leaf = child_env.create_record(repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="reviewer")
     ancestor = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
     lane_dispatch.write_record(
         worker,

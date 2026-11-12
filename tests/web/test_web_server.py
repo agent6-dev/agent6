@@ -2061,7 +2061,7 @@ def test_bare_diff_returns_the_latest_commit(
     sid = "latest-run"
     if draft:
         cfg = layer.load_effective(tmp_path, ()).config
-        workspace = worktrees.subordinate_worktree_root(cfg, tmp_path, sid)
+        workspace = worktrees.child_worktree_root(cfg, tmp_path, sid)
         workspace.mkdir(parents=True)
         base, c1, c2 = _git_chain(workspace)
     bucket = "machines" if draft else "runs"

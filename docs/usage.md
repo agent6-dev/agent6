@@ -169,7 +169,7 @@ The call dispatches through the `/parallel` path: a checkpoint, fresh clones of 
 Each lane is an ordinary run with the same tools as the parent: it may edit its clone, and its commits land on the parent's chain when it joins; a lane runs under 200 turns, 30 minutes and the run's remaining budget.
 The run counts its lanes' spend while they run and ends them once the sum reaches a cap, so the total can pass the cap by what was in flight.
 The tool's description names every role's resolved model, effort and temperature and the configured providers, so the model can pick a selector such as `reviewer`.
-The tool is offered only in run mode, never inside a subordinate run and never in a front-end without a lane dispatcher; a call that slips past the list is refused with the reason.
+The tool is offered only in run mode, never inside a child and never in a front-end without a lane dispatcher; a call that slips past the list is refused with the reason.
 A worker lane's configured harness panel retains authority to create bounded read-only leaves; neither the worker's model nor its `/parallel` steer may dispatch work.
 The knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel.
 

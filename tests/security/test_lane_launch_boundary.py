@@ -6,7 +6,7 @@ Real subprocesses run the fixed `python -P -E -m agent6.ui.cli.lane_agent` argv 
 scripted provider. `-P` keeps a planted `agent6/` or `sitecustomize.py` in the clone off
 `sys.path` and `-E` ignores a planted `PYTHONPATH`; the task and pins reach the run exactly as
 the file holds them; a detached lane without a terminal approves nothing. A lane cannot fan
-out either: `AGENT6_SUBRUN=1` is pinned by `test_parent_spawner_gate_under_subrun`.
+out either: `AGENT6_CHILD=1` is pinned by `test_parent_spawner_gate_in_a_child`.
 """
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ def _run(
     path: pathlib.Path | None, cwd: pathlib.Path, **extra_env: str
 ) -> subprocess.CompletedProcess[str]:
     env = {k: v for k, v in os.environ.items() if k != lane_launch.ENV}
-    env.update({"AGENT6_SUBRUN": "1", "AGENT6_STREAM_TO_LOG": "1", "AGENT6_ALLOW_ROOT": "1"})
+    env.update({"AGENT6_CHILD": "1", "AGENT6_STREAM_TO_LOG": "1", "AGENT6_ALLOW_ROOT": "1"})
     env.update(extra_env)
     if path is not None:
         env[lane_launch.ENV] = str(path)

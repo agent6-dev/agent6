@@ -3,7 +3,7 @@
 """The lane records every fan-out shares: what a lane runs, what it returned, how it joined.
 
 `run --parallel`, the `/parallel` steer and the import plumbing read and write these; the
-code that clones, spawns and merges lives in `harness.subrun`, `app.lanes` and
+code that clones, spawns and merges lives in `harness.child_repo`, `app.lanes` and
 `harness.parallel_dispatch`.
 """
 

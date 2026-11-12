@@ -634,7 +634,7 @@ def test_the_chown_runs_after_the_auto_merge_writes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Under sudo the chown is the last teardown step, after the merge's root writes."""
-    monkeypatch.delenv("AGENT6_SUBRUN", raising=False)
+    monkeypatch.delenv("AGENT6_CHILD", raising=False)
     assert _teardown_order(tmp_path, monkeypatch) == [
         "steer",
         "session",
@@ -650,7 +650,7 @@ def test_a_lane_never_lands_itself(tmp_path: pathlib.Path, monkeypatch: pytest.M
     It merged into its throwaway clone's base branch and stamped itself merged, so every
     listing read the lane merged while the operator's repository never got the work.
     """
-    monkeypatch.setenv("AGENT6_SUBRUN", "1")
+    monkeypatch.setenv("AGENT6_CHILD", "1")
     assert _teardown_order(tmp_path, monkeypatch) == ["steer", "session", "dispatcher", "chown"]
 
 

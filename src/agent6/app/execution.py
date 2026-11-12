@@ -587,7 +587,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 lane_authority=lane_launch.dispatch_authority(
                     cfg, mode=mode, session_id=inputs.session_id, root=cwd
                 ),
-                # Subordinate workers retain only harness-panel authority. Every child's
+                # Child workers retain only harness-panel authority. Every child's
                 # record goes where this session's does: the root repository's state.
                 lane_spawner=frontend.build_parent_spawner(
                     cfg,

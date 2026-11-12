@@ -14,7 +14,7 @@ from agent6.app import compare as app_compare
 from agent6.app import finalize, lane_watch, stamps
 from agent6.app import reporter as app_reporter
 from agent6.context import memory
-from agent6.harness import judge, subrun
+from agent6.harness import child_repo, judge
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import read as git_read
 
@@ -193,14 +193,14 @@ def import_lane(
         The lane's dir and the ref the work landed in.
 
     Raises:
-        SubrunError: The import failed; nothing moved.
+        ChildRepoError: The import failed; nothing moved.
     """
     with lock if lock is not None else contextlib.nullcontext():
         manifest = sessions_manifest.read_manifest(res.session_dir)
         model_control = manifest.git_control == "model"
         branch = git_read.status(res.spec.worktree).branch if model_control else ""
         free_branch = branch and branch != "HEAD" and not git_read.branch_exists(origin, branch)
-        imported = subrun.import_run(
+        imported = child_repo.import_run(
             origin, res.spec.worktree, res.branch, res.session_dir, model_control=model_control
         )
         if free_branch:

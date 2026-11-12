@@ -56,7 +56,7 @@ def tool_definitions(
         ):
             continue  # no skills: the tool could only error
         if cls is tools_schema.ParallelInput and not dispatcher.parallel_available():
-            continue  # off by config, a subordinate run or no lane dispatcher
+            continue  # off by config, a child or no lane dispatcher
         description = cls.TOOL_DESCRIPTION
         if cls is tools_schema.ListFindingsInput and dispatcher.session_id:
             description = description.replace("<session_id>", dispatcher.session_id)

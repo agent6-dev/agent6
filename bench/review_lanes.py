@@ -8,7 +8,7 @@ import tempfile
 import time
 
 import pydantic
-from tests import review_traces, subordinate_env
+from tests import child_env, review_traces
 
 from agent6 import budget
 from agent6.app import role_providers
@@ -28,21 +28,21 @@ def main() -> None:
             os.environ[f"XDG_{name}_HOME"] = str(root / name.lower())
         os.environ["AGENT6_ALLOW_ROOT"] = "1"
         repo = root / "repo"
-        subordinate_env.init_repo(repo)
+        child_env.init_repo(repo)
         os.chdir(repo)
         (repo / "README.md").write_text("base\nchanged\n")
-        diff = subordinate_env.git(repo, "diff")
+        diff = child_env.git(repo, "diff")
         with output.open("w") as stream:
             for rep in range(3):
                 for case in review_traces.CASES:
                     sid = f"measure-{rep}-{case}"
-                    directory = subordinate_env.create_record(repo, sid)
+                    directory = child_env.create_record(repo, sid)
                     with review_traces.server(case) as (url, calls):
-                        cfg = subordinate_env.config(url)
+                        cfg = child_env.config(url)
                         meter = budget.BudgetTracker(
                             max_usd=10, max_tokens_fallback=10000, max_plan_points=20
                         )
-                        executor = subordinate_env.dispatcher(repo, directory, cfg, meter)
+                        executor = child_env.dispatcher(repo, directory, cfg, meter)
                         target = executor.chain.review_target()
                         assert target is not None
                         target = executor.chain.retain_review_target(target, sid)

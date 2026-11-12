@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Parent dispatch: `/parallel` steer fans out subordinate lanes.
+"""Parent dispatch: `/parallel` steer dispatches lanes.
 
 A fake provider fires the steer once, and a fake group spawner fabricates real mergeable branches in
 the parent's tmp repo, so parse, the dirty-tree gate, the sequential join, DAG stamping, events
@@ -955,11 +955,11 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
 # The run.py and resume.py wiring gate (depth 1 by construction).
 
 
-def test_parent_spawner_gate_under_subrun(
+def test_parent_spawner_gate_in_a_child(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = Config()
-    monkeypatch.delenv("AGENT6_SUBRUN", raising=False)
+    monkeypatch.delenv("AGENT6_CHILD", raising=False)
     # A write run outside a lane gets a real dispatcher.
     assert callable(
         lanes.build_parent_spawner(
@@ -985,8 +985,8 @@ def test_parent_spawner_gate_under_subrun(
         )
         is None
     )
-    # Inside a subordinate lane -> no dispatcher (depth 1).
-    monkeypatch.setenv("AGENT6_SUBRUN", "1")
+    # Inside a lane -> no dispatcher (depth 1).
+    monkeypatch.setenv("AGENT6_CHILD", "1")
     assert (
         lanes.build_parent_spawner(
             cfg,

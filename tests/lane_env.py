@@ -119,7 +119,7 @@ def mark_lane(
     operator_task: str | None = None,
     record_state: pathlib.Path | None = None,
 ) -> pathlib.Path:
-    """Write a lane launch file under `where` and set `AGENT6_LANE` and `AGENT6_SUBRUN`.
+    """Write a lane launch file under `where` and set `AGENT6_LANE` and `AGENT6_CHILD`.
 
     Args:
         monkeypatch: The test's monkeypatch.
@@ -153,5 +153,5 @@ def mark_lane(
         ),
     )
     monkeypatch.setenv(lane_launch.ENV, str(path))
-    monkeypatch.setenv("AGENT6_SUBRUN", "1")
+    monkeypatch.setenv("AGENT6_CHILD", "1")
     return path

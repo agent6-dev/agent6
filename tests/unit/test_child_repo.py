@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.harness.subrun on temporary git repositories."""
+"""Tests for agent6.harness.child_repo on temporary git repositories."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import subprocess
 
 import pytest
 
-from agent6.harness import subrun
+from agent6.harness import child_repo
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 
@@ -33,27 +33,27 @@ def test_clone_worktree_produces_independent_clone(tmp_path: pathlib.Path) -> No
     _init_repo(origin)
     dest = tmp_path / "lane-1"
 
-    subrun.clone_worktree(origin, dest)
+    child_repo.clone_worktree(origin, dest)
 
     assert (dest / "README.md").read_text(encoding="utf-8") == "hi\n"
     (dest / "README.md").write_text("edited in the lane\n", encoding="utf-8")
     assert origin.joinpath("README.md").read_text(encoding="utf-8") == "hi\n"
 
 
-def test_clone_worktree_missing_origin_raises_subrun_error(tmp_path: pathlib.Path) -> None:
-    with pytest.raises(subrun.SubrunError):
-        subrun.clone_worktree(tmp_path / "does-not-exist", tmp_path / "lane-1")
+def test_clone_worktree_missing_origin_raises_child_repo_error(tmp_path: pathlib.Path) -> None:
+    with pytest.raises(child_repo.ChildRepoError):
+        child_repo.clone_worktree(tmp_path / "does-not-exist", tmp_path / "lane-1")
 
 
-def test_clone_worktree_raises_subrun_error_on_failure(tmp_path: pathlib.Path) -> None:
+def test_clone_worktree_raises_child_repo_error_on_failure(tmp_path: pathlib.Path) -> None:
     origin = tmp_path / "origin"
     _init_repo(origin)
     dest = tmp_path / "lane-1"
     dest.mkdir()
     (dest / "existing.txt").write_text("occupied\n", encoding="utf-8")
 
-    with pytest.raises(subrun.SubrunError):
-        subrun.clone_worktree(origin, dest)
+    with pytest.raises(child_repo.ChildRepoError):
+        child_repo.clone_worktree(origin, dest)
 
 
 def test_import_run_lands_the_branch_and_leaves_the_record_in_place(tmp_path: pathlib.Path) -> None:
@@ -61,7 +61,7 @@ def test_import_run_lands_the_branch_and_leaves_the_record_in_place(tmp_path: pa
     origin = tmp_path / "origin"
     _init_repo(origin)
     lane_repo = tmp_path / "lane-1"
-    subrun.clone_worktree(origin, lane_repo)
+    child_repo.clone_worktree(origin, lane_repo)
 
     branch = "agent6/lane-1"
     git_ops.create_branch(lane_repo, branch)
@@ -73,7 +73,7 @@ def test_import_run_lands_the_branch_and_leaves_the_record_in_place(tmp_path: pa
     lane_session_dir.mkdir(parents=True)
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
 
-    result = subrun.import_run(origin, lane_repo, branch, lane_session_dir)
+    result = child_repo.import_run(origin, lane_repo, branch, lane_session_dir)
 
     assert result.session_dir == lane_session_dir
     assert result.ref == branch
@@ -91,12 +91,12 @@ def test_import_run_lands_a_lane_that_never_committed(tmp_path: pathlib.Path) ->
     origin = tmp_path / "origin"
     _init_repo(origin)
     lane_repo = tmp_path / "lane-1"
-    subrun.clone_worktree(origin, lane_repo)
+    child_repo.clone_worktree(origin, lane_repo)
     lane_session_dir = tmp_path / "lane-state" / "sessions" / "runs" / "01DEAD"
     lane_session_dir.mkdir(parents=True)
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
 
-    result = subrun.import_run(origin, lane_repo, "agent6/lane-1", lane_session_dir)
+    result = child_repo.import_run(origin, lane_repo, "agent6/lane-1", lane_session_dir)
 
     assert (result.session_dir / "manifest.json").is_file()
     assert (result.ref, result.tip) == ("", "")
@@ -114,7 +114,7 @@ def test_import_run_under_model_control_lands_the_hidden_chain_ref(
     origin = tmp_path / "origin"
     _init_repo(origin)
     lane_repo = tmp_path / "lane-1"
-    subrun.clone_worktree(origin, lane_repo)
+    child_repo.clone_worktree(origin, lane_repo)
     _git(lane_repo, "checkout", "-q", "-b", "feature")
     (lane_repo / "new.txt").write_text("lane\n", encoding="utf-8")
     _git(lane_repo, "add", "-A")
@@ -124,7 +124,7 @@ def test_import_run_under_model_control_lands_the_hidden_chain_ref(
     lane_session_dir.mkdir(parents=True)
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
 
-    result = subrun.import_run(origin, lane_repo, "", lane_session_dir, model_control=True)
+    result = child_repo.import_run(origin, lane_repo, "", lane_session_dir, model_control=True)
 
     chain = git_read.chain_ref_for("01MC")
     assert (result.ref, result.tip) == (chain, head)
@@ -143,10 +143,10 @@ def test_import_run_refuses_existing_branch(tmp_path: pathlib.Path) -> None:
     _git(origin, "checkout", "main")
 
     lane_repo = tmp_path / "lane-1"
-    subrun.clone_worktree(origin, lane_repo)
+    child_repo.clone_worktree(origin, lane_repo)
     lane_session_dir = tmp_path / "lane-state" / "sessions" / "runs" / "01ABC"
     lane_session_dir.mkdir(parents=True)
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
 
-    with pytest.raises(subrun.SubrunError):
-        subrun.import_run(origin, lane_repo, branch, lane_session_dir)
+    with pytest.raises(child_repo.ChildRepoError):
+        child_repo.import_run(origin, lane_repo, branch, lane_session_dir)

@@ -61,7 +61,7 @@ def test_four_explicit_routes_without_default_are_not_runnable(
         cfg, lane, explicit_leaves=frozenset(), into=lane.worktree.parent / "launch"
     )
     assert "default" not in tomllib.loads(written.path.read_text())["models"]
-    for name in (lane_launch.ENV, "AGENT6_SUBRUN"):
+    for name in (lane_launch.ENV, "AGENT6_CHILD"):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(ConfigError, match=r"No models\.default\.model configured"):
         session_setup.load_session_config(lane.worktree, (written.path,), mode="run")
@@ -121,7 +121,7 @@ def test_only_internal_snapshot_discards_global_model_contributions(
         + "".join(f'[models.{r}]\nmodel = "p/base"\n' for r in kinds.MODEL_ROLES)
         + '[sandbox]\nprotect_git = "on"\n[budget]\nmax_usd = 3.5\n'
     )
-    monkeypatch.setenv("AGENT6_SUBRUN", "1")
+    monkeypatch.setenv("AGENT6_CHILD", "1")
     if internal:
         lane_env.mark_lane(monkeypatch, path.parent, config=path)
     effective = session_setup.load_session_config(lane.worktree, (path,), mode="run")

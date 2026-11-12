@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Place subordinate worktrees and manage a lane's files from config to cleanup."""
+"""Place children's worktrees and manage a lane's files from config to cleanup."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from collections.abc import Callable
 from agent6 import errors, lane_records, paths
 from agent6.app import lane_launch
 from agent6.config import Config, lane_snapshot
-from agent6.harness import subrun
+from agent6.harness import child_repo
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lineage, process
 from agent6.sessions import manifest as sessions_manifest
@@ -22,8 +22,8 @@ from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 
 
-def subordinate_worktree_root(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
-    """Return the base dir for a group of subordinate working trees.
+def child_worktree_root(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
+    """Return the base dir for a group of children's worktrees.
 
     Fan-out ids, `machine-<id>` and fork ids are all groups, so one prune sweep
     covers them; the dir is scoped by repo id, so another repo's clones never enter
@@ -41,7 +41,7 @@ def subordinate_worktree_root(cfg: Config, origin: pathlib.Path, group: str) -> 
 
 
 def worktree_base(cfg: Config, origin: pathlib.Path) -> pathlib.Path:
-    """Return the per-repo dir every subordinate working tree of the origin sits in.
+    """Return the per-repo dir every child's worktree of the origin sits in.
 
     Args:
         cfg: The run's config.
@@ -99,7 +99,7 @@ def place(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
                     f" --no-index {probe}` names the rule; remove it, or set {key} to a"
                     " directory git ignores."
                 )
-    return subordinate_worktree_root(cfg, origin, group)
+    return child_worktree_root(cfg, origin, group)
 
 
 def holds(cfg: Config, tree: pathlib.Path) -> bool:
@@ -162,7 +162,7 @@ def adopt_orphan_lane(
         The note to print, or None when the session is not an orphaned lane.
 
     Raises:
-        SubrunError: The import failed.
+        ChildRepoError: The import failed.
     """
     if (
         not manifest.run_branch
@@ -171,10 +171,10 @@ def adopt_orphan_lane(
     ):
         return None
     lineage = manifest.parallel
-    clone = subordinate_worktree_root(cfg, origin, lineage.group) / f"lane-{lineage.lane}"
+    clone = child_worktree_root(cfg, origin, lineage.group) / f"lane-{lineage.lane}"
     if not (clone / ".git").exists() or not git_read.branch_exists(clone, manifest.run_branch):
         return None
-    subrun.import_run(origin, clone, manifest.run_branch, layout.session_dir)
+    child_repo.import_run(origin, clone, manifest.run_branch, layout.session_dir)
     return f"imported orphaned lane branch {manifest.run_branch} from {clone}"
 
 

@@ -708,7 +708,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
 
 ### 10. Parallel lanes
 
-`agent6 run --parallel` and a live run's `/parallel` steer directive (see [architecture.md, Parallel runs](architecture.md#parallel-runs)) each spawn subordinate work.
+`agent6 run --parallel` and a live run's `/parallel` steer directive (see [architecture.md, Parallel runs](architecture.md#parallel-runs)) each dispatch children.
 
 - Every work lane is an ordinary run on its own clone, its own jail per `sandbox.isolation`, its own `run_commands` policy, started by the fixed bootstrap `python -P -E -m agent6.ui.cli.lane_agent`
     - the task, pins, caps, away mode and lineage travel in a launch file under the origin's state dir (`<state>/launch/<group>/lane-<n>.json`, `0600` in a `0700` dir, the config snapshot beside it); nothing model-written reaches the host argv
@@ -720,9 +720,9 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - a seat's command runs under the lane's own `run_commands` policy, jail and `sandbox.network`, as a work lane's does: `"deny"` on the parent withholds the command tools from the seat's list and from its dispatcher, and an `"ask"` prompt is asked on the parent; `git.worktree.setup_command` runs first only where the seat may run commands
     - a command can change the seat's clone, which is removed with the lane; a seat's join is record-only, so nothing from the clone merges into the parent's chain
     - the loop ends the session at the contract's turn limit without executing that response's tool calls; a background command dies with the session
-- Subordinate models and operator work entry points (`parallel`, `/parallel`, `--parallel`) cannot fan out, even with `harness.parallel.tool = true`.
+- A child's model and its operator work entry points (`parallel`, `/parallel`, `--parallel`) cannot fan out, even with `harness.parallel.tool = true`.
     - a worker lane retains its configured harness-panel authority, independent of `harness.parallel.tool`; the internal record-only dispatch seam uses the same executor, never a tool-supplied purpose or authority argument
-    - authority comes from the private launch's session id, checkout and conversation contract, checked against the execution; `AGENT6_SUBRUN` without a matching worker launch grants no panel authority, including in unrelated machine states
+    - authority comes from the private launch's session id, checkout and conversation contract, checked against the execution; `AGENT6_CHILD` without a matching worker launch grants no panel authority, including in unrelated machine states
     - a read-only review lane has neither work nor panel authority, so the allowed structure ends at that leaf
     - panel costs sub-reserve the owning worker's remaining allowance; a seat's deadline is the earlier of its batch's 30 minutes and its ancestor's deadline
 - Import retains descendant session directories, dispatch records, objects, lineage and hidden target refs before worker-clone cleanup; stop follows live links across state directories and session buckets, including through a dead worker.

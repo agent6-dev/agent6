@@ -11,7 +11,7 @@ from agent6.harness import parallel_dispatch, toolset
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import seat as review_seat
 from agent6.sessions import completion
-from tests import review_lane_env, review_traces, subordinate_env
+from tests import child_env, review_lane_env, review_traces
 
 
 def test_seat_resolution_constructs_no_provider(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -21,7 +21,7 @@ def test_seat_resolution_constructs_no_provider(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(role_providers, "_provider_from_entry", forbidden)
     resolve = getattr(role_providers, "resolve_review_seats", None)
     assert resolve is not None, "review seats need pure settings resolution"
-    seats = resolve(subordinate_env.config())
+    seats = resolve(child_env.config())
     assert len(seats) == 1 and seats[0].focus == "security"
     assert seats[0].settings == kinds.ModelSettings(kinds.ModelRoute("p", "base"), None, 0.0)
     assert "provider" not in {f.name for f in dataclasses.fields(seats[0])}
@@ -46,10 +46,10 @@ def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
     The roster's seats each held an even fifth from the start, whatever the others used.
     """
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
-    directory = subordinate_env.create_record(repo, "parent")
+    child_env.init_repo(repo)
+    directory = child_env.create_record(repo, "parent")
     meter = budget.BudgetTracker(max_usd=10, max_tokens_fallback=1000, max_plan_points=20)
-    executor = subordinate_env.dispatcher(repo, directory, subordinate_env.config(), meter)
+    executor = child_env.dispatcher(repo, directory, child_env.config(), meter)
     executor.max_lanes = 2
     executor.clock = lambda: 1000.0
     observed: list[tuple[int, float]] = []
@@ -84,7 +84,7 @@ def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
     result = executor.dispatch_panel(
         requests,
         panel_id="roster",
-        at=subordinate_env.git(repo, "rev-parse", "HEAD"),
+        at=child_env.git(repo, "rev-parse", "HEAD"),
         concurrency=3,
     )
     assert result.dispatched and len(result.lanes) == 5
@@ -101,21 +101,19 @@ def test_real_panel_runs_bound_reviewer_sessions(short_repo: pathlib.Path) -> No
     from agent6.viewmodel import receipt
 
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
-    directory = subordinate_env.create_record(repo, "parent")
+    child_env.init_repo(repo)
+    directory = child_env.create_record(repo, "parent")
     with review_traces.server("tools") as (url, calls):
-        cfg = subordinate_env.config(url)
+        cfg = child_env.config(url)
         meter = budget.BudgetTracker(max_usd=10, max_tokens_fallback=1000, max_plan_points=20)
-        executor = subordinate_env.dispatcher(repo, directory, cfg, meter)
+        executor = child_env.dispatcher(repo, directory, cfg, meter)
         (repo / "README.md").write_text("base\nchanged\n")
         target = executor.chain.review_target()
         assert target is not None
         target = executor.chain.retain_review_target(target, "parent")
         result = review_gate.run_panel(
             role_providers.resolve_review_seats(cfg),
-            review_panel.ReviewContext(
-                task="Review changes", diff=subordinate_env.git(repo, "diff")
-            ),
+            review_panel.ReviewContext(task="Review changes", diff=child_env.git(repo, "diff")),
             target=target,
             executor=executor,
             block_on="any",
@@ -147,12 +145,12 @@ def test_failed_artifacts_keep_the_actual_diagnostic(
     from agent6.harness.review import panel as review_panel
 
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
-    directory = subordinate_env.create_record(repo, "parent")
-    executor = subordinate_env.dispatcher(
+    child_env.init_repo(repo)
+    directory = child_env.create_record(repo, "parent")
+    executor = child_env.dispatcher(
         repo,
         directory,
-        subordinate_env.config(),
+        child_env.config(),
         budget.BudgetTracker(max_usd=10, max_tokens_fallback=1000, max_plan_points=20),
     )
     (repo / "README.md").write_text("base\nchanged\n")
@@ -164,7 +162,7 @@ def test_failed_artifacts_keep_the_actual_diagnostic(
         lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
     ) -> list[lane_records.LaneResult]:
         sid = f"parent-{group}-l1"
-        seat_dir = subordinate_env.create_record(repo, sid, parent="parent", mode="reviewer")
+        seat_dir = child_env.create_record(repo, sid, parent="parent", mode="reviewer")
         contract = lanes[0].contract
         assert contract is not None
         if failure == "malformed":
@@ -199,8 +197,8 @@ def test_failed_artifacts_keep_the_actual_diagnostic(
 
     executor.lane_spawner = spawn
     result = review_gate.run_panel(
-        role_providers.resolve_review_seats(subordinate_env.config()),
-        review_panel.ReviewContext(task="Review changes", diff=subordinate_env.git(repo, "diff")),
+        role_providers.resolve_review_seats(child_env.config()),
+        review_panel.ReviewContext(task="Review changes", diff=child_env.git(repo, "diff")),
         target=target,
         executor=executor,
         block_on="any",
@@ -263,12 +261,12 @@ def test_worker_child_schedules_its_panel_without_certifying_parent(
     from agent6.viewmodel import receipt
 
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
-    directory = subordinate_env.create_record(repo, "parent")
+    child_env.init_repo(repo)
+    directory = child_env.create_record(repo, "parent")
     with review_traces.server("worker") as (url, calls):
-        cfg = subordinate_env.config(url)
+        cfg = child_env.config(url)
         cfg = cfg.model_copy(update={"review": cfg.review.model_copy(update={"when": "finish"})})
-        executor = subordinate_env.dispatcher(
+        executor = child_env.dispatcher(
             repo,
             directory,
             cfg,
@@ -299,11 +297,11 @@ def test_a_seat_reads_the_retained_target_not_head_or_live_tree(short_repo: path
     from agent6.harness.review import panel as review_panel
 
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
-    directory = subordinate_env.create_record(repo, "parent")
+    child_env.init_repo(repo)
+    directory = child_env.create_record(repo, "parent")
     with review_traces.server("tools") as (url, calls):
-        cfg = subordinate_env.config(url)
-        executor = subordinate_env.dispatcher(
+        cfg = child_env.config(url)
+        executor = child_env.dispatcher(
             repo,
             directory,
             cfg,
@@ -313,9 +311,9 @@ def test_a_seat_reads_the_retained_target_not_head_or_live_tree(short_repo: path
         target = executor.chain.review_target()
         assert target is not None
         target = executor.chain.retain_review_target(target, "parent")
-        diff = subordinate_env.git(repo, "diff")
+        diff = child_env.git(repo, "diff")
         (repo / "README.md").write_text("later live bytes\n")
-        assert subordinate_env.git(repo, "show", "HEAD:README.md") == "base"
+        assert child_env.git(repo, "show", "HEAD:README.md") == "base"
         result = review_gate.run_panel(
             role_providers.resolve_review_seats(cfg),
             review_panel.ReviewContext(task="Review changes", diff=diff),
@@ -338,7 +336,7 @@ def test_configured_top_level_ask_retains_panel_authority(short_repo: pathlib.Pa
     from agent6.app import lane_launch
 
     authority = lane_launch.dispatch_authority(
-        subordinate_env.config(), mode="ask", session_id="review", root=short_repo
+        child_env.config(), mode="ask", session_id="review", root=short_repo
     )
     assert authority.panels and not authority.work
 
@@ -351,7 +349,7 @@ def test_ask_review_uses_real_seat_sessions(
     from agent6.viewmodel import receipt
 
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
+    child_env.init_repo(repo)
     (repo / "README.md").write_text("base\nchanged\n")
     monkeypatch.chdir(repo)
     monkeypatch.setenv("AGENT6_ALLOW_ROOT", "1")

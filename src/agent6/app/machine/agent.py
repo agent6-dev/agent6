@@ -37,7 +37,7 @@ from agent6.app import reporter as app_reporter
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, layer
-from agent6.harness import loop, operator_bridge, run_chain, subrun
+from agent6.harness import child_repo, loop, operator_bridge, run_chain
 from agent6.harness.compaction import window as compaction_window
 from agent6.machine import AgentExecResult, AgentRequest, validate_record_payload
 from agent6.providers import Provider, TranscriptSink
@@ -679,7 +679,7 @@ def build_machine_agent_runner(
             clone = clone_root / f"state-{request.step_seq:04d}"
             try:
                 clone_at_machine_chain(cwd, clone, chain)
-            except (subrun.SubrunError, errors.GitError) as exc:
+            except (child_repo.ChildRepoError, errors.GitError) as exc:
                 return salvaged(f"error: clone for machine {machine_id!r} failed: {exc}")
         workdir = clone or cwd
         payload = MachineAgentRequest(
@@ -718,7 +718,7 @@ def build_machine_agent_runner(
                 proc = subprocess.Popen(
                     argv,
                     start_new_session=True,
-                    env={**os.environ, "AGENT6_SUBRUN": "1"},
+                    env={**os.environ, "AGENT6_CHILD": "1"},
                     preexec_fn=jail.die_with_parent(os.getpid()),  # noqa: PLW1509
                 )
             except OSError as exc:
@@ -762,13 +762,13 @@ def clone_at_machine_chain(origin: pathlib.Path, dest: pathlib.Path, chain_ref: 
         chain_ref: The machine's chain ref.
 
     Raises:
-        SubrunError: The clone failed.
+        ChildRepoError: The clone failed.
         GitError: The fetch or checkout failed.
     """
     if dest.exists():
         shutil.rmtree(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    subrun.clone_worktree(origin, dest)
+    child_repo.clone_worktree(origin, dest)
     tip = git_read.chain_tip(origin, chain_ref)
     if tip is not None:
         git_ops.fetch_branch(dest, origin, f"{chain_ref}:{chain_ref}")

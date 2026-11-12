@@ -16,7 +16,7 @@ from agent6 import errors, kinds, terminal
 from agent6.app import merge, resume, worktrees
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
-from agent6.harness import subrun
+from agent6.harness import child_repo
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
@@ -210,7 +210,7 @@ def plan_merge(  # noqa: PLR0911
     # An orphaned lane (its parent died before importing it) is adopted: fetched, then merged.
     try:
         adopted = worktrees.adopt_orphan_lane(cwd, cfg, layout, manifest)
-    except subrun.SubrunError as exc:
+    except child_repo.ChildRepoError as exc:
         reporter.error(f"{exc}")
         return 2
     if adopted is not None:

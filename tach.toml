@@ -177,7 +177,7 @@ depends_on = [
 # The package re-exports prompt_preview; it uses dag_focus, prompt_blocks,
 # repo_context and toolset within this boundary.
 # parallel_dispatch shares one executor and budget reservation path for work and panels.
-# parallel_join owns merge/DAG projections; subrun retains descendant session records.
+# parallel_join owns merge/DAG projections; child_repo retains descendant session records.
 path = "agent6.harness"
 depends_on = [
   "agent6.budget",  # loop harness needs BudgetExceededError
@@ -209,7 +209,7 @@ depends_on = [
   "agent6.sessions.event_log",
   # the start-family emitter stamps worker.pid before the event is readable
   "agent6.sessions.ipc",
-  # subrun lands a finished lane's session dir in the ORIGIN state dir; the
+  # child_repo lands a finished lane's session dir in the ORIGIN state dir; the
   # bucket layout has one owner rather than a second spelling here.
   "agent6.sessions.journal",
   "agent6.sessions.lane_dispatch",

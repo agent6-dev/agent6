@@ -26,7 +26,7 @@ from agent6.app import reporter as app_reporter
 from agent6.app.machine import agent, bundle, crash_spend, host_preflight, state_configs, workspace
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError
-from agent6.harness import subrun
+from agent6.harness import child_repo
 from agent6.machine import (
     AgentExecResult,
     AgentRequest,
@@ -176,7 +176,7 @@ def machine_tool_runner(
         dest = clone_root / f"tool-{uuid.uuid4().hex[:12]}"
         try:
             agent.clone_at_machine_chain(cwd, dest, git_read.machine_chain_ref_for(machine_id))
-        except (subrun.SubrunError, errors.GitError) as exc:
+        except (child_repo.ChildRepoError, errors.GitError) as exc:
             shutil.rmtree(dest, ignore_errors=True)
             raise jail.JailUnavailableError(f"machine tree clone failed: {exc}") from exc
         try:
@@ -463,7 +463,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 return 2
     keep_snapshots = cfg.machine.keep_snapshots
     # One clone base for the agent states' per-state clones and the tool states' per-call trees.
-    clone_root = worktrees.subordinate_worktree_root(cfg, cwd, f"machine-{spec.machine}")
+    clone_root = worktrees.child_worktree_root(cfg, cwd, f"machine-{spec.machine}")
 
     def agent_config(name: str, state: AgentState) -> Config:
         """Return an agent state's config with its spend cap applied.

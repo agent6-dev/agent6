@@ -130,9 +130,9 @@ def test_run_states_continue_the_machine_branch_and_never_touch_the_checkout(
     # The operator's checkout never moved and holds neither file.
     assert _git(origin, "branch", "--show-current") == "main"
     assert not (origin / "work0.txt").exists()
-    # Clones are gone once landed; the subprocess ran subordinate.
+    # Clones are gone once landed; the subprocess ran as a child.
     assert not any((tmp_path / "clones").glob("state-*"))
-    assert _FakeChild.captured_env["AGENT6_SUBRUN"] == "1"
+    assert _FakeChild.captured_env["AGENT6_CHILD"] == "1"
 
 
 def test_run_state_request_keeps_the_true_checkout_as_cwd_for_config(
@@ -405,12 +405,12 @@ def test_tool_clone_host_failure_aborts_the_machine(
     """A failed clone is a host failure, not the tool state's nonzero edge."""
     from agent6 import kinds, machine
     from agent6.app.machine import run as machine_run
-    from agent6.harness import subrun
+    from agent6.harness import child_repo
 
     origin = _origin(tmp_path)
 
     def fail_clone(*args: object) -> None:
-        raise subrun.SubrunError("clone unavailable")
+        raise child_repo.ChildRepoError("clone unavailable")
 
     monkeypatch.setattr(agent, "clone_at_machine_chain", fail_clone)
     world = machine.LiveWorld(
@@ -625,7 +625,7 @@ def test_prune_handles_a_machine_clone_after_failed_import(
     origin = _origin(tmp_path)
     monkeypatch.chdir(origin)
     monkeypatch.setattr(agent.subprocess, "Popen", _fake_popen)
-    group = worktrees.subordinate_worktree_root(Config(), origin, "machine-m1")
+    group = worktrees.child_worktree_root(Config(), origin, "machine-m1")
     instance = layout.machines_root(paths.state_dir(origin)) / "m1"
     runner = agent.build_machine_agent_runner(
         _OVERLAYS,

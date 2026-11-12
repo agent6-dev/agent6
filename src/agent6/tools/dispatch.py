@@ -310,7 +310,7 @@ class ToolDispatcher:
         """Return why the `parallel` tool is withheld: the knob, the depth, the dispatcher."""
         if not self._config.harness.parallel.tool:
             return "not available (harness.parallel.tool is off)"
-        if os.environ.get("AGENT6_SUBRUN"):
+        if os.environ.get("AGENT6_CHILD"):
             return "not available inside a lane (parallel dispatch is depth 1)"
         if self.parallel_handler is None:
             return "not available (no lane dispatcher in this front-end)"

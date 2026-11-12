@@ -395,7 +395,7 @@ def test_a_real_seat_never_edits_and_runs_only_the_commands_it_may(
         env = {
             **os.environ,
             lane_launch.ENV: str(path),
-            "AGENT6_SUBRUN": "1",
+            "AGENT6_CHILD": "1",
             "AGENT6_STREAM_TO_LOG": "1",
             "AGENT6_ALLOW_ROOT": "1",
         }

@@ -16,7 +16,7 @@ from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 
 
-class SubrunError(Exception):
+class ChildRepoError(Exception):
     """A lane clone or import failed."""
 
 
@@ -28,12 +28,12 @@ def clone_worktree(origin: pathlib.Path, dest: pathlib.Path) -> None:
         dest: The worktree's path, which must not exist.
 
     Raises:
-        SubrunError: When the clone fails.
+        ChildRepoError: When the clone fails.
     """
     try:
         git_ops.clone_repo(origin, dest)
     except errors.GitError as exc:
-        raise SubrunError(f"clone {origin} -> {dest} failed: {exc}") from exc
+        raise ChildRepoError(f"clone {origin} -> {dest} failed: {exc}") from exc
 
 
 def import_run(
@@ -61,11 +61,11 @@ def import_run(
         nothing lands no ref.
 
     Raises:
-        SubrunError: When the branch already exists in the origin, a descendant is still
+        ChildRepoError: When the branch already exists in the origin, a descendant is still
             running, or a fetch fails.
     """
     if not model_control and git_read.branch_exists(origin, branch):
-        raise SubrunError(f"branch {branch!r} already exists in {origin}")
+        raise ChildRepoError(f"branch {branch!r} already exists in {origin}")
     fetch_retained_refs(origin, lane_repo, lane_session_dir)
     ref = tip = ""
     if model_control:
@@ -76,13 +76,13 @@ def import_run(
             if head.branch and not git_read.branch_exists(origin, head.branch):
                 git_ops.create_branch_at(origin, head.branch, head.head_sha)
         except errors.GitError as exc:
-            raise SubrunError(f"import HEAD from {lane_repo} failed: {exc}") from exc
+            raise ChildRepoError(f"import HEAD from {lane_repo} failed: {exc}") from exc
         ref, tip = chain, head.head_sha
     elif git_read.branch_exists(lane_repo, branch):
         try:
             git_ops.fetch_branch(origin, lane_repo, f"{branch}:{branch}")
         except errors.GitError as exc:
-            raise SubrunError(f"fetch {branch!r} from {lane_repo} failed: {exc}") from exc
+            raise ChildRepoError(f"fetch {branch!r} from {lane_repo} failed: {exc}") from exc
         ref, tip = branch, git_read.branch_tip_sha(origin, branch) or ""
     return lane_records.Imported(lane_session_dir, ref, tip)
 
@@ -100,16 +100,16 @@ def fetch_retained_refs(
         lane_session_dir: The lane's record.
 
     Raises:
-        SubrunError: A descendant is live or a fetch fails.
+        ChildRepoError: A descendant is live or a fetch fails.
     """
     descendants = lineage.descendants_of(lane_session_dir)
     if any(process.worker_is_alive(child) for child in descendants):
-        raise SubrunError("a descendant is still running; its worker clone must be retained")
+        raise ChildRepoError("a descendant is still running; its worker clone must be retained")
     try:
         for session in (lane_session_dir, *descendants):
             for retained in git_read.session_refs(lane_repo, session.name):
                 git_ops.fetch_branch(origin, lane_repo, f"{retained}:{retained}")
     except errors.GitError as exc:
-        raise SubrunError(
+        raise ChildRepoError(
             f"import retained session targets from {lane_repo} failed: {exc}"
         ) from exc

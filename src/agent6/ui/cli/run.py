@@ -345,10 +345,10 @@ def _cmd_run(
     # `--parallel` is a run that opens with a dispatch joined by rank; run mode only.
     opening: directive.Segment | None = None
     if parallel_spec and mode == "run":
-        # Depth 1: a subordinate lane (AGENT6_SUBRUN) must never itself fan out.
-        if os.environ.get("AGENT6_SUBRUN"):
+        # Depth 1: a lane (AGENT6_CHILD) never dispatches work itself.
+        if os.environ.get("AGENT6_CHILD"):
             common.refuse(
-                "--parallel is unavailable inside a subordinate run (parallel dispatch is depth 1)."
+                "--parallel is unavailable inside a child (parallel dispatch is depth 1)."
             )
             return 2
         # Before any session exists: a spec that cannot run names its reason here.

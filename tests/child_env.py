@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Real repositories and private launches for subordinate lane tests."""
+"""Real repositories and private launches for lane tests."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from agent6.app import (
     worktrees,
 )
 from agent6.config import Config
-from agent6.harness import parallel_dispatch, run_chain, subrun
+from agent6.harness import child_repo, parallel_dispatch, run_chain
 from agent6.sessions import (
     event_log,
     layout,
@@ -64,7 +64,7 @@ def create_record(
 
 
 def config(url: str = "http://127.0.0.1:1/v1", *, tool: bool = False) -> Config:
-    """Configure a local provider and subordinate review authority."""
+    """Configure a local provider and a child's review authority."""
     return Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": url}},
@@ -80,7 +80,7 @@ def launch_worker(
     repo: pathlib.Path, clone: pathlib.Path, cfg: Config, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[pathlib.Path, lane_launch.LaneLaunch]:
     """Create a private worker launch and install its provenance in the environment."""
-    subrun.clone_worktree(repo, clone)
+    child_repo.clone_worktree(repo, clone)
     sid = "parent-p1-l1"
     spec = lane_records.LaneSpec(1, sid, clone, None)
     into = lane_launch.launch_dir(paths.state_dir(repo), "parent-p1")
@@ -98,7 +98,7 @@ def launch_worker(
     )
     path = lane_launch.write(into, launch)
     monkeypatch.setenv(lane_launch.ENV, str(path))
-    monkeypatch.setenv("AGENT6_SUBRUN", "1")
+    monkeypatch.setenv("AGENT6_CHILD", "1")
     return path, launch
 
 
@@ -172,8 +172,7 @@ def run_panel_parent(directory: str, url: str) -> None:
         [
             sys.executable,
             "-c",
-            "import sys; from tests import subordinate_env; "
-            "subordinate_env.run_panel_worker(sys.argv[1])",
+            "import sys; from tests import child_env; child_env.run_panel_worker(sys.argv[1])",
             url,
         ],
         check=False,

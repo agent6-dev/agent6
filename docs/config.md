@@ -467,7 +467,7 @@ Each lane is a disposable clone running its own `agent6/<id>` branch; lanes are 
 `--max-usd` caps the lanes and the judges together; `--auto-approve` forwards to every lane.
 A live run dispatches lanes the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
 `harness.parallel.tool = true` offers a run's model the `parallel` tool, which dispatches a task through the same path ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.
-A subordinate model or steer cannot dispatch work; its configured harness panel may create bounded read-only leaves.
+A child's model or steer cannot dispatch work; its configured harness panel may still run its reviewers.
 Headless surfaces without a dispatcher answer "not available".
 
 | Field | Default | Meaning |

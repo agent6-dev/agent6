@@ -16,7 +16,7 @@ from agent6 import budget, lane_records, paths
 from agent6.app import lanes, parallel_results, stop
 from agent6.sessions import lane_dispatch, layout, process
 from agent6.viewmodel import receipt
-from tests import lane_env, subordinate_env
+from tests import child_env, lane_env
 
 
 def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
@@ -25,8 +25,8 @@ def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
 ) -> None:
     """Stopping the visible ancestor kills a blocked real panel and preserves its obligation."""
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
-    parent = subordinate_env.create_record(repo, "parent")
+    child_env.init_repo(repo)
+    parent = child_env.create_record(repo, "parent")
     clone = short_repo / "worker"
     entered, release = threading.Event(), threading.Event()
 
@@ -35,9 +35,9 @@ def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
         release.wait(60)
 
     with lane_env.scripted_provider(before_reply=block_reply) as (url, calls):
-        cfg = subordinate_env.config(url)
-        _path, launch = subordinate_env.launch_worker(repo, clone, cfg, monkeypatch)
-        worker = subordinate_env.create_record(repo, launch.session_id, parent="parent")
+        cfg = child_env.config(url)
+        _path, launch = child_env.launch_worker(repo, clone, cfg, monkeypatch)
+        worker = child_env.create_record(repo, launch.session_id, parent="parent")
         result = lane_records.LaneResult(
             lane_records.LaneSpec(1, worker.name, clone, None),
             worker,
@@ -54,8 +54,8 @@ def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
                 [
                     sys.executable,
                     "-c",
-                    "import sys; from tests import subordinate_env; "
-                    "subordinate_env.run_panel_parent(*sys.argv[1:])",
+                    "import sys; from tests import child_env; "
+                    "child_env.run_panel_parent(*sys.argv[1:])",
                     str(parent),
                     url,
                 ],

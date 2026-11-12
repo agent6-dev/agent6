@@ -75,7 +75,7 @@ def start_btw(
     err = launch(
         cwd,
         [*config, "ask", "--no-commands", "--from", parent_id, "--", question],
-        {"AGENT6_SUBRUN": "1"},
+        {"AGENT6_CHILD": "1"},
     )
     if err:
         return None, err

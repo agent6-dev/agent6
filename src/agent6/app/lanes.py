@@ -22,8 +22,8 @@ from agent6.app import lane_launch, lane_watch, parallel_results, stop, worktree
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError
 from agent6.context import memory
+from agent6.harness import child_repo
 from agent6.harness import judge as harness_judge
-from agent6.harness import subrun
 from agent6.models import validate
 from agent6.sessions import event_log, ipc, journal, lane_dispatch, lineage
 from agent6.sessions import layout as sessions_layout
@@ -162,11 +162,11 @@ def bridge_spawner(
     """
     branch = git_read.run_branch_for(spec.session_id)
     try:
-        subrun.clone_worktree(origin, spec.worktree)
+        child_repo.clone_worktree(origin, spec.worktree)
         if at is not None:
             # A local clone hardlinks the whole odb, so the chain's commits are present.
             git_ops.checkout_detached(spec.worktree, at)
-    except (subrun.SubrunError, errors.GitError) as exc:
+    except (child_repo.ChildRepoError, errors.GitError) as exc:
         return lane_records.LaneResult(
             spec=spec, session_dir=spec.worktree, branch=branch, ok=False, error=str(exc)
         )
@@ -212,10 +212,10 @@ def bridge_spawner(
     def list_dirs() -> list[pathlib.Path]:
         return [lane_dir] if lane_dir.is_dir() else []
 
-    # Subordinate models cannot dispatch work; only the harness may schedule panel leaves.
+    # A child's model cannot dispatch work; only the harness may schedule panel leaves.
     markers = {
         "AGENT6_STREAM_TO_LOG": "1",
-        "AGENT6_SUBRUN": "1",
+        "AGENT6_CHILD": "1",
         lane_launch.ENV: str(launch_path),
     }
     session_dir, pid, err = runtime.spawn(
@@ -269,7 +269,7 @@ def run_lane_to_completion(
     clock: Callable[[], float] = time.time,
     watch: Callable[[pathlib.Path, str, str], bool] | None = None,
 ) -> lane_records.LaneResult:
-    """Run one subordinate lane to its end and import it into the origin.
+    """Run one lane to its end and import it into the origin.
 
     The parent runs a group of these on a thread pool, so each is
     self-contained. A lane that failed to start, was still running at teardown or its
@@ -396,7 +396,7 @@ def run_lane_to_completion(
             )
     try:
         imported = parallel_results.import_lane(res, origin, import_lock)
-    except subrun.SubrunError as exc:
+    except child_repo.ChildRepoError as exc:
         # The clone holds the only copy of the lane's work: say where it is.
         return lane_records.LaneResult(
             spec=res.spec,
@@ -623,7 +623,7 @@ def recover_lanes(
     Returns:
         One result per lane that has a session dir, in lane order.
     """
-    worktree_root = worktrees.subordinate_worktree_root(cfg, origin, group)
+    worktree_root = worktrees.child_worktree_root(cfg, origin, group)
     results: list[lane_records.LaneResult] = []
     for lane, session_id in enumerate(children, start=1):
         matches = sessions_layout.session_matches(record_state, session_id)
@@ -642,7 +642,7 @@ def recover_lanes(
             res = lane_records.LaneResult(spec, lane_dir, branch, True, "")
             try:
                 imported = parallel_results.import_lane(res, origin, None)
-            except subrun.SubrunError as exc:
+            except child_repo.ChildRepoError as exc:
                 results.append(dataclasses.replace(res, ok=False, error=str(exc)))
                 continue
             results.append(
@@ -1017,7 +1017,7 @@ def build_parent_spawner(
 ) -> lane_records.GroupLaneSpawner | None:
     """Build the `/parallel` dispatcher for a run's loop, or None when dispatch is unavailable.
 
-    A subordinate worker retains the executor only for its configured harness panels.
+    A child worker retains the executor only for its configured harness panels.
 
     Args:
         cfg: The run's config.

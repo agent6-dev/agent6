@@ -18,7 +18,7 @@ from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
 from agent6.providers import provider_types, stream_lifecycle, transport
 from agent6.sessions import event_log
-from tests import review_lane_env, review_traces, subordinate_env
+from tests import child_env, review_lane_env, review_traces
 
 
 def _session(
@@ -108,10 +108,10 @@ def test_review_requests_belong_to_real_distinct_seat_sessions(
 ) -> None:
     """Duplicate-focus seats have distinct sessions, conversations and bound call transcripts."""
     repo = short_repo / "origin"
-    subordinate_env.init_repo(repo)
-    directory = subordinate_env.create_record(repo, "parent")
+    child_env.init_repo(repo)
+    directory = child_env.create_record(repo, "parent")
     with review_traces.server("pass") as (url, calls):
-        cfg = subordinate_env.config(url)
+        cfg = child_env.config(url)
         cfg = cfg.model_copy(
             update={
                 "review": cfg.review.model_copy(
@@ -121,7 +121,7 @@ def test_review_requests_belong_to_real_distinct_seat_sessions(
                 )
             }
         )
-        executor = subordinate_env.dispatcher(
+        executor = child_env.dispatcher(
             repo,
             directory,
             cfg,
