@@ -792,21 +792,33 @@
                 {
                   "attributes": [
                     {
-                      "key": "agent6.role",
+                      "key": "gen_ai.operation.name",
                       "value": {
-                        "stringValue": ""
+                        "stringValue": "chat"
                       }
                     },
                     {
-                      "key": "agent6.model",
+                      "key": "gen_ai.provider.name",
+                      "value": {
+                        "stringValue": "p"
+                      }
+                    },
+                    {
+                      "key": "gen_ai.request.model",
                       "value": {
                         "stringValue": "m"
                       }
                     },
                     {
-                      "key": "agent6.provider",
+                      "key": "gen_ai.conversation.id",
                       "value": {
-                        "stringValue": "p"
+                        "stringValue": "machine:demo:0003-review"
+                      }
+                    },
+                    {
+                      "key": "agent6.role",
+                      "value": {
+                        "stringValue": ""
                       }
                     },
                     {
@@ -816,13 +828,13 @@
                       }
                     },
                     {
-                      "key": "agent6.input_tokens",
+                      "key": "gen_ai.usage.input_tokens",
                       "value": {
                         "intValue": "1000"
                       }
                     },
                     {
-                      "key": "agent6.output_tokens",
+                      "key": "gen_ai.usage.output_tokens",
                       "value": {
                         "intValue": "200"
                       }
@@ -830,7 +842,7 @@
                   ],
                   "endTimeUnixNano": "1784160004000000000",
                   "kind": 3,
-                  "name": "agent6.model_call",
+                  "name": "chat m",
                   "parentSpanId": "846a17cd85a7f935",
                   "spanId": "e024c423f6f2adc4",
                   "startTimeUnixNano": "1784160003000000000",
@@ -1440,21 +1452,33 @@
               {
                 "attributes": [
                   {
-                    "key": "agent6.role",
+                    "key": "gen_ai.operation.name",
                     "value": {
-                      "stringValue": "worker"
+                      "stringValue": "chat"
                     }
                   },
                   {
-                    "key": "agent6.model",
+                    "key": "gen_ai.provider.name",
+                    "value": {
+                      "stringValue": "p"
+                    }
+                  },
+                  {
+                    "key": "gen_ai.request.model",
                     "value": {
                       "stringValue": "m"
                     }
                   },
                   {
-                    "key": "agent6.provider",
+                    "key": "gen_ai.conversation.id",
                     "value": {
-                      "stringValue": "p"
+                      "stringValue": "run-AAAAAA"
+                    }
+                  },
+                  {
+                    "key": "agent6.role",
+                    "value": {
+                      "stringValue": "worker"
                     }
                   },
                   {
@@ -1464,39 +1488,45 @@
                     }
                   },
                   {
-                    "key": "agent6.input_tokens",
+                    "key": "gen_ai.usage.input_tokens",
                     "value": {
-                      "intValue": "10"
+                      "intValue": "12"
                     }
                   },
                   {
-                    "key": "agent6.output_tokens",
+                    "key": "gen_ai.usage.output_tokens",
                     "value": {
                       "intValue": "5"
                     }
                   },
                   {
-                    "key": "agent6.cache_read_tokens",
+                    "key": "gen_ai.usage.cache_read.input_tokens",
                     "value": {
                       "intValue": "2"
                     }
                   },
                   {
-                    "key": "agent6.cache_write_tokens",
+                    "key": "gen_ai.usage.cache_write.input_tokens",
                     "value": {
                       "intValue": "0"
                     }
                   },
                   {
-                    "key": "agent6.stop_reason",
+                    "key": "gen_ai.response.finish_reasons",
                     "value": {
-                      "stringValue": "tool_use"
+                      "arrayValue": {
+                        "values": [
+                          {
+                            "stringValue": "tool_use"
+                          }
+                        ]
+                      }
                     }
                   }
                 ],
                 "endTimeUnixNano": "1792922403000000000",
                 "kind": 3,
-                "name": "agent6.model_call",
+                "name": "chat m",
                 "parentSpanId": "2807016c73f5f1db",
                 "spanId": "9faba09783670e6c",
                 "startTimeUnixNano": "1792922401000000000",
@@ -1540,7 +1570,13 @@
               {
                 "attributes": [
                   {
-                    "key": "agent6.tool",
+                    "key": "gen_ai.operation.name",
+                    "value": {
+                      "stringValue": "execute_tool"
+                    }
+                  },
+                  {
+                    "key": "gen_ai.tool.name",
                     "value": {
                       "stringValue": "run_command"
                     }
@@ -1560,7 +1596,7 @@
                 ],
                 "endTimeUnixNano": "1792922410000000000",
                 "kind": 1,
-                "name": "agent6.tool",
+                "name": "execute_tool run_command",
                 "parentSpanId": "2807016c73f5f1db",
                 "spanId": "c126109701736822",
                 "startTimeUnixNano": "1792922403000000000",

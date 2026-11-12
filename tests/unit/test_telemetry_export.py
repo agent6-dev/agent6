@@ -463,7 +463,7 @@ def test_machine_exports_parent_workers_and_do_not_double_count_spend(
         if {"key": "agent6.machine.state", "value": {"stringValue": "review"}} in s["attributes"]
     )
     execution = next(s for s in spans if s["name"] == "agent6.execution")
-    call = next(s for s in spans if s["name"] == "agent6.model_call")
+    call = next(s for s in spans if s["name"].startswith("chat "))
     assert execution["parentSpanId"] == review["spanId"]
     assert call["parentSpanId"] == execution["spanId"]
     assert execution["traceId"] == call["traceId"] == review["traceId"]
@@ -502,7 +502,7 @@ def test_machine_follow_discovers_workers_before_the_next_transition(
                 "".join(json.dumps(e) + "\n" for e in machine_tests.worker())
             )
         if polls == 3:
-            assert "agent6.model_call" in json.dumps(collector.requests)
+            assert "gen_ai.operation.name" in json.dumps(collector.requests)
             with journal.open("a") as fh:
                 fh.write("".join(json.dumps(e) + "\n" for e in rows[4:]))
             return True

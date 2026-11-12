@@ -15,7 +15,7 @@ from agent6 import budget, kinds
 from agent6.app import role_providers
 from agent6.providers import openai, provider_types, stream_lifecycle
 from agent6.sessions import event_log
-from agent6.viewmodel import telemetry, telemetry_records
+from agent6.viewmodel import telemetry
 
 Failure = Literal[
     "http_error", "provider_error", "malformed_delta", "abort", "truncated", "failed_completion"
@@ -144,9 +144,12 @@ def test_failed_stream_usage_reaches_the_journal_and_telemetry(
     fold = telemetry.TelemetryFold("failed-stream")
     fold.feed({"type": "session.start", "execution_id": "e"})
     spans = [span for row in rows for span in fold.feed(row).spans]
-    (model_span,) = [span for span in spans if span.name == telemetry_records.SPAN_MODEL_CALL]
+    (model_span,) = [span for span in spans if span.name.startswith("chat ")]
     assert model_span.status == "error"
-    assert dict(model_span.attributes)["agent6.input_tokens"] == 100
+    # The convention's input count takes the cached tokens in; the journal's is the fresh part.
+    assert dict(model_span.attributes)["gen_ai.usage.input_tokens"] == 125
+    assert dict(model_span.attributes)["gen_ai.usage.cache_read.input_tokens"] == 25
+    assert dict(model_span.attributes)["error.type"] == "_OTHER"
     counters = fold.metrics().counters
     labels = (("model", "test-model"), ("provider", "test-provider"))
     for kind, total in (("input", 100), ("output", 10), ("cache_read", 25)):

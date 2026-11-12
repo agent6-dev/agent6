@@ -77,16 +77,17 @@ def test_otlp_json_follows_the_protobuf_mapping_with_its_otlp_exceptions() -> No
     assert isinstance(traces, dict)
     spans = traces["resourceSpans"][0]["scopeSpans"][0]["spans"]
     root = next(s for s in spans if s["name"] == telemetry_records.SPAN_EXECUTION)
-    call = next(s for s in spans if s["name"] == telemetry_records.SPAN_MODEL_CALL)
+    call = next(s for s in spans if s["name"] == "chat m")
     assert len(root["traceId"]) == 32 and len(root["spanId"]) == 16
     assert "parentSpanId" not in root and call["parentSpanId"] != root["spanId"]
     assert root["startTimeUnixNano"] == str(_START) and root["endTimeUnixNano"] == str(_NOW)
     assert (root["kind"], call["kind"]) == (1, 3)
     assert root["status"] == {"code": 2} and call["status"] == {"code": 1}
     by_key = {a["key"]: a["value"] for a in call["attributes"]}
-    assert by_key["agent6.input_tokens"] == {"intValue": "10"}
+    assert by_key["gen_ai.usage.input_tokens"] == {"intValue": "12"}  # 10 fresh, 2 cached
     assert by_key["agent6.ok"] == {"boolValue": True}
-    assert by_key["agent6.model"] == {"stringValue": "m"}
+    assert by_key["gen_ai.request.model"] == {"stringValue": "m"}
+    assert by_key["gen_ai.operation.name"] == {"stringValue": "chat"}
     scope = traces["resourceSpans"][0]["scopeSpans"][0]["scope"]
     assert scope["name"] == "agent6.telemetry" and scope["version"] == __version__
     assert traces["resourceSpans"][0]["resource"]["attributes"][0] == {

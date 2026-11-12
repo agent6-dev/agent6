@@ -24,10 +24,26 @@ _TOKEN_TYPES = (
     ("cache_read", "cache_read_tokens"),
     ("cache_write", "cache_write_tokens"),
 )
+# The convention's usage attributes; its input count takes the cached tokens in.
+_USAGE_ATTRIBUTES = (
+    ("output_tokens", "gen_ai.usage.output_tokens"),
+    ("cache_read_tokens", "gen_ai.usage.cache_read.input_tokens"),
+    ("cache_write_tokens", "gen_ai.usage.cache_write.input_tokens"),
+)
+_PROMPT_FIELDS = ("input_tokens", "cache_read_tokens", "cache_write_tokens")
 _FINDING_ACTIONS = ("review.finding.resolved", "review.finding.reopened")
 # What still folds once an execution has ended: the settled budget, the stranded notice and
 # the review dispositions; everything else belongs to the next execution.
 _AFTER_END = frozenset({"budget.update", "session.stranded"})
+
+
+def _route(span: telemetry_records.OpenSpan | None) -> tuple[str, str]:
+    """Return the model and provider an open call's span names, for a row that leaves them out."""
+    if span is None:
+        return "unattributed", "unattributed"
+    return str(span.attributes["gen_ai.request.model"]), str(
+        span.attributes["gen_ai.provider.name"]
+    )
 
 
 def tool_label(name: str) -> str:
@@ -199,7 +215,7 @@ class TelemetryFold:
 
     # --- model calls ------------------------------------------------------------
 
-    def _role_call(self, step: telemetry_records.Step) -> None:
+    def _model_call(self, step: telemetry_records.Step) -> None:
         execution, event = step.execution, step.event
         execution.sequence += 1
         key = str(event.get("model_call_id") or f"seq:{execution.sequence}")
@@ -207,16 +223,20 @@ class TelemetryFold:
         parent = execution.parent()
         if seat is not None and execution.panels:
             parent = next(reversed(execution.panels.values())).span_id
+        model = str(event.get("model", ""))
         fields: dict[str, telemetry_records.AttributeValue] = {
+            "gen_ai.operation.name": telemetry_records.OPERATION_CHAT,
+            "gen_ai.provider.name": str(event.get("provider", "")),
+            "gen_ai.request.model": model,
+            "gen_ai.conversation.id": self.session_id,
             "agent6.role": str(event.get("role", "")),
-            "agent6.model": str(event.get("model", "")),
-            "agent6.provider": str(event.get("provider", "")),
         }
         if seat is not None:
             fields["agent6.seat"] = seat
         span_id = telemetry_records.hex_id(f"{execution.trace_id}:call:{key}", 16)
+        name = f"{telemetry_records.OPERATION_CHAT} {model}".rstrip()
         execution.calls[key] = telemetry_records.OpenSpan(
-            span_id, parent, telemetry_records.SPAN_MODEL_CALL, step.now, "client", fields
+            span_id, parent, name, step.now, "client", fields
         )
 
     def _open_call(
@@ -241,8 +261,7 @@ class TelemetryFold:
         Returns:
             The model and provider labels.
         """
-        known_model = span.attributes["agent6.model"] if span is not None else "unattributed"
-        known_provider = span.attributes["agent6.provider"] if span is not None else "unattributed"
+        known_model, known_provider = _route(span)
         model = self.meter.label("model", event.get("model") or known_model)
         provider = self.meter.label("provider", event.get("provider") or known_provider)
         for kind, field in _TOKEN_TYPES:
@@ -253,7 +272,7 @@ class TelemetryFold:
                 )
         return model, provider
 
-    def _role_attempt(self, step: telemetry_records.Step) -> None:
+    def _model_attempt(self, step: telemetry_records.Step) -> None:
         execution, event = step.execution, step.event
         span = self._open_call(execution, event)
         self._count_tokens(event, span)
@@ -261,14 +280,13 @@ class TelemetryFold:
             attempts = telemetry_records.as_int(span.attributes.get("agent6.attempts")) or 0
             span.attributes["agent6.attempts"] = attempts + 1
 
-    def _role_result(self, step: telemetry_records.Step) -> None:
+    def _model_result(self, step: telemetry_records.Step) -> None:
         execution, event = step.execution, step.event
         span = self._open_call(execution, event)
         ok = event.get("ok") is not False
         if span is not None and "agent6.attempts" in span.attributes:
             # The attempts counted their own usage; the result repeats the last one's.
-            known_model = span.attributes["agent6.model"]
-            known_provider = span.attributes["agent6.provider"]
+            known_model, known_provider = _route(span)
             model = self.meter.label("model", event.get("model") or known_model)
             provider = self.meter.label("provider", event.get("provider") or known_provider)
         else:
@@ -280,16 +298,23 @@ class TelemetryFold:
         if span is None:
             return
         span.attributes["agent6.ok"] = ok
-        for _kind, field in _TOKEN_TYPES:
+        prompt = [telemetry_records.as_int(event.get(field)) for field in _PROMPT_FIELDS]
+        if any(part is not None for part in prompt):
+            # The journal's input is the fresh part; the convention's takes the cached tokens in.
+            span.attributes["gen_ai.usage.input_tokens"] = sum(part or 0 for part in prompt)
+        for field, name in _USAGE_ATTRIBUTES:
             if (value := telemetry_records.as_int(event.get(field))) is not None:
-                span.attributes[f"agent6.{field}"] = value
+                span.attributes[name] = value
         if event.get("stop_reason"):
-            span.attributes["agent6.stop_reason"] = str(event["stop_reason"])
+            span.attributes["gen_ai.response.finish_reasons"] = (str(event["stop_reason"]),)
+        if not ok:
+            # The journal keeps the failure's text, not its class.
+            span.attributes["error.type"] = "_OTHER"
         if not ok and self.capture == "content" and event.get("error"):
             span.attributes["agent6.model.error"] = telemetry_records.excerpt(event["error"])
         step.spans.append(execution.end(span, step.now, "ok" if ok else "error"))
         if not ok:
-            fields = {"agent6.model": model, "agent6.provider": provider}
+            fields = {"gen_ai.request.model": model, "gen_ai.provider.name": provider}
             step.logs.append(
                 execution.log(step.now, "ERROR", "model call failed", fields, span.span_id)
             )
@@ -301,14 +326,19 @@ class TelemetryFold:
         execution.sequence += 1
         call_id = event.get("call_id")
         key = str(call_id) if call_id is not None else f"seq:{execution.sequence}"
+        tool = str(event.get("name", ""))
         fields: dict[str, telemetry_records.AttributeValue] = {
-            "agent6.tool": str(event.get("name", ""))
+            "gen_ai.operation.name": telemetry_records.OPERATION_EXECUTE_TOOL,
+            "gen_ai.tool.name": tool,
         }
+        if provider_id := event.get("provider_tool_call_id"):
+            fields["gen_ai.tool.call.id"] = str(provider_id)
         if self.capture == "content" and (args := viewmodel_events.call_args(event)):
             fields["agent6.tool.args"] = telemetry_records.excerpt(args)
         span_id = telemetry_records.hex_id(f"{execution.trace_id}:tool:{key}", 16)
+        name = f"{telemetry_records.OPERATION_EXECUTE_TOOL} {tool}".rstrip()
         execution.tools[key] = telemetry_records.OpenSpan(
-            span_id, execution.parent(), telemetry_records.SPAN_TOOL, step.now, attributes=fields
+            span_id, execution.parent(), name, step.now, attributes=fields
         )
 
     def _tool_result(self, step: telemetry_records.Step) -> None:
@@ -339,7 +369,7 @@ class TelemetryFold:
             "agent6.verify.scoped": event.get("scoped") is True,
         }
         if self.capture == "content" and event.get("command"):
-            fields["agent6.verify.cmd"] = telemetry_records.excerpt(
+            fields["agent6.verify.command"] = telemetry_records.excerpt(
                 " ".join(str(p) for p in event["command"])
             )
         span_id = telemetry_records.hex_id(f"{execution.trace_id}:verify:{key}", 16)
@@ -604,9 +634,9 @@ class TelemetryFold:
         step.logs.append(log)
 
     _HANDLERS: ClassVar[dict[str, Callable[[TelemetryFold, telemetry_records.Step], None]]] = {
-        "model.attempt": _role_attempt,
-        "model.call": _role_call,
-        "model.result": _role_result,
+        "model.attempt": _model_attempt,
+        "model.call": _model_call,
+        "model.result": _model_result,
         "tool.call": _tool_call,
         "tool.result": _tool_result,
         "verify.start": _verify_start,

@@ -133,8 +133,13 @@ def _review_version(rows: list[dict[str, Any]]) -> int:
     return view.version
 
 
+def _op(span: telemetry_records.Span) -> str:
+    """Return the span's name; a GenAI span's operation, without its model or tool."""
+    return span.name.split(" ", 1)[0]
+
+
 def _by_name(spans: list[telemetry_records.Span]) -> dict[str, telemetry_records.Span]:
-    return {span.name: span for span in spans}
+    return {_op(span): span for span in spans}
 
 
 def _attr(span: telemetry_records.Span | telemetry_records.LogRecord, key: str) -> object:
@@ -159,18 +164,18 @@ def test_a_journal_folds_into_a_deterministic_span_tree() -> None:
     assert execution.parent_span_id == "" and {s.trace_id for s in spans} == {execution.trace_id}
     assert all(t.parent_span_id == execution.span_id for t in turns)
     turn_one, turn_two = (t.span_id for t in turns)
-    assert named[telemetry_records.SPAN_MODEL_CALL].parent_span_id == turn_one
-    assert named[telemetry_records.SPAN_TOOL].parent_span_id == turn_one
+    assert named[telemetry_records.OPERATION_CHAT].parent_span_id == turn_one
+    assert named[telemetry_records.OPERATION_EXECUTE_TOOL].parent_span_id == turn_one
     assert (
         named[telemetry_records.SPAN_WAIT].parent_span_id
-        == named[telemetry_records.SPAN_TOOL].span_id
+        == named[telemetry_records.OPERATION_EXECUTE_TOOL].span_id
     )
     assert named[telemetry_records.SPAN_VERIFY].parent_span_id == turn_one
     assert named[telemetry_records.SPAN_REVIEW].parent_span_id == turn_two
-    assert named[telemetry_records.SPAN_MODEL_CALL].kind == "client"
+    assert named[telemetry_records.OPERATION_CHAT].kind == "client"
     assert (
-        named[telemetry_records.SPAN_MODEL_CALL].status,
-        named[telemetry_records.SPAN_TOOL].status,
+        named[telemetry_records.OPERATION_CHAT].status,
+        named[telemetry_records.OPERATION_EXECUTE_TOOL].status,
     ) == (
         "ok",
         "ok",
@@ -189,7 +194,7 @@ def test_a_journal_folds_into_a_deterministic_span_tree() -> None:
         named[telemetry_records.SPAN_WAIT].end_ns - named[telemetry_records.SPAN_WAIT].start_ns
         == 6_000_000_000
     )
-    assert _attr(named[telemetry_records.SPAN_MODEL_CALL], "agent6.output_tokens") == 5
+    assert _attr(named[telemetry_records.OPERATION_CHAT], "gen_ai.usage.output_tokens") == 5
     assert _attr(named[telemetry_records.SPAN_VERIFY], "agent6.verify.outcome") == "failed"
     assert _attr(named[telemetry_records.SPAN_REVIEW], "agent6.panel.blocked") is True
     assert _fold1.first_ns == telemetry_records.event_ns(_ts(0))
@@ -252,9 +257,9 @@ def test_content_capture_adds_only_the_capped_excerpts() -> None:
         and len(task) == telemetry_records.CONTENT_CHARS
         and task.endswith("…")
     )
-    assert "rm" in str(_attr(named[telemetry_records.SPAN_TOOL], "agent6.tool.args"))
-    assert _attr(named[telemetry_records.SPAN_TOOL], "agent6.tool.exit_code") == 0
-    assert _attr(named[telemetry_records.SPAN_VERIFY], "agent6.verify.cmd") == "pytest"
+    assert "rm" in str(_attr(named[telemetry_records.OPERATION_EXECUTE_TOOL], "agent6.tool.args"))
+    assert _attr(named[telemetry_records.OPERATION_EXECUTE_TOOL], "agent6.tool.exit_code") == 0
+    assert _attr(named[telemetry_records.SPAN_VERIFY], "agent6.verify.command") == "pytest"
 
 
 def test_the_metrics_count_what_the_journal_records() -> None:
@@ -382,9 +387,11 @@ def test_work_still_open_at_the_end_or_the_close_reads_incomplete() -> None:
     ended = [row for row in rows if row["type"] not in ("tool.result", "approval.answer")]
     _fold, spans, _logs = _run(ended)
     named = _by_name(spans)
-    assert _attr(named[telemetry_records.SPAN_TOOL], "agent6.incomplete") is True
-    assert named[telemetry_records.SPAN_TOOL].status == "unset"
-    assert named[telemetry_records.SPAN_TOOL].end_ns == telemetry_records.event_ns(_ts(60))
+    assert _attr(named[telemetry_records.OPERATION_EXECUTE_TOOL], "agent6.incomplete") is True
+    assert named[telemetry_records.OPERATION_EXECUTE_TOOL].status == "unset"
+    assert named[telemetry_records.OPERATION_EXECUTE_TOOL].end_ns == telemetry_records.event_ns(
+        _ts(60)
+    )
     assert _attr(named[telemetry_records.SPAN_WAIT], "agent6.incomplete") is True
     crashed = rows[:5]  # ends after the tool call
     _fold, spans, _logs = _run(crashed)
@@ -430,9 +437,9 @@ def test_a_journal_without_pairing_ids_pairs_only_what_is_certain() -> None:
         if isinstance(parsed, dict):
             rows.append(parsed)
     fold, spans, _logs = _run(rows)
-    calls = [s for s in spans if s.name == telemetry_records.SPAN_MODEL_CALL]
+    calls = [s for s in spans if _op(s) == telemetry_records.OPERATION_CHAT]
     assert len(calls) == 2 and all(_attr(s, "agent6.ok") is not None for s in calls)
-    tools = [s for s in spans if s.name == telemetry_records.SPAN_TOOL]
+    tools = [s for s in spans if _op(s) == telemetry_records.OPERATION_EXECUTE_TOOL]
     assert len(tools) == 4 and all(_attr(s, "agent6.incomplete") is None for s in tools)
     concurrent = [
         {"type": "session.start", "ts": _ts(0), "execution_id": "e"},
@@ -447,7 +454,7 @@ def test_a_journal_without_pairing_ids_pairs_only_what_is_certain() -> None:
         },
     ]
     fold, spans, _logs = _run(concurrent)
-    calls = [s for s in spans if s.name == telemetry_records.SPAN_MODEL_CALL]
+    calls = [s for s in spans if _op(s) == telemetry_records.OPERATION_CHAT]
     assert all(_attr(s, "agent6.incomplete") is True for s in calls)
     unattributed = _counter(
         fold, "agent6_tokens_total", model="unattributed", provider="unattributed", type="input"
@@ -569,5 +576,86 @@ def test_attempts_count_their_own_tokens_under_one_model_call_span() -> None:
     assert _counter(fold, "agent6_tokens_total", model="m", provider="p", type="input") == 20
     assert _counter(fold, "agent6_tokens_total", model="m", provider="p", type="output") == 5
     assert _counter(fold, "agent6_model_calls_total", model="m", outcome="ok", provider="p") == 1
-    assert _attr(named[telemetry_records.SPAN_MODEL_CALL], "agent6.attempts") == 2
-    assert sum(span.name == telemetry_records.SPAN_MODEL_CALL for span in spans) == 1
+    assert _attr(named[telemetry_records.OPERATION_CHAT], "agent6.attempts") == 2
+    assert sum(_op(span) == telemetry_records.OPERATION_CHAT for span in spans) == 1
+
+
+def test_model_and_tool_spans_follow_the_genai_conventions() -> None:
+    """A model call is `chat {model}` and a tool call `execute_tool {tool}`, named as the spec does.
+
+    The convention's input count takes the cached tokens in; the journal's is the fresh part.
+    """
+    rows: list[dict[str, Any]] = [
+        {"type": "session.start", "ts": _ts(0), "execution_id": "e"},
+        {
+            "type": "model.call",
+            "ts": _ts(1),
+            "role": "worker",
+            "model": "m",
+            "provider": "p",
+            "model_call_id": "c1",
+        },
+        {
+            "type": "model.result",
+            "ts": _ts(2),
+            "role": "worker",
+            "ok": True,
+            "model_call_id": "c1",
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "cache_read_tokens": 30,
+            "cache_write_tokens": 2,
+            "stop_reason": "tool_use",
+        },
+        {
+            "type": "tool.call",
+            "ts": _ts(3),
+            "name": "read_file",
+            "call_id": 1,
+            "provider_tool_call_id": "call_abc",
+        },
+        {"type": "tool.result", "ts": _ts(4), "name": "read_file", "call_id": 1, "ok": True},
+        {
+            "type": "model.call",
+            "ts": _ts(5),
+            "role": "worker",
+            "model": "m",
+            "provider": "p",
+            "model_call_id": "c2",
+        },
+        {
+            "type": "model.result",
+            "ts": _ts(6),
+            "role": "worker",
+            "ok": False,
+            "model_call_id": "c2",
+        },
+        {"type": "session.stop", "ts": _ts(7), "reason": "provider_error"},
+    ]
+    _fold, spans, logs = _run(rows)
+    ok_call, failed_call = (s for s in spans if s.name == "chat m")
+    (tool,) = (s for s in spans if s.name == "execute_tool read_file")
+    assert (ok_call.kind, tool.kind) == ("client", "internal")
+    assert dict(ok_call.attributes) == {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.provider.name": "p",
+        "gen_ai.request.model": "m",
+        "gen_ai.conversation.id": "run-AAAAAA",
+        "agent6.role": "worker",
+        "agent6.ok": True,
+        "gen_ai.usage.input_tokens": 42,
+        "gen_ai.usage.output_tokens": 5,
+        "gen_ai.usage.cache_read.input_tokens": 30,
+        "gen_ai.usage.cache_write.input_tokens": 2,
+        "gen_ai.response.finish_reasons": ("tool_use",),
+    }
+    assert dict(tool.attributes) == {
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": "read_file",
+        "gen_ai.tool.call.id": "call_abc",
+        "agent6.ok": True,
+    }
+    assert _attr(failed_call, "error.type") == "_OTHER"
+    assert _attr(failed_call, "gen_ai.usage.input_tokens") is None
+    (failure,) = (log for log in logs if log.body == "model call failed")
+    assert dict(failure.attributes) == {"gen_ai.request.model": "m", "gen_ai.provider.name": "p"}

@@ -232,6 +232,8 @@ Every end has one reason (`stop_reason` in `agent6 sessions show --json` and `se
 
 `agent6 telemetry export` reads this repository's session and machine journals and delivers what `[telemetry]` selects: spans for each execution, turn, model call, tool call, verification, review panel, operator wait and completed machine state; cumulative metrics (tokens, cost, plan points, tool calls, verification outcomes and durations, findings, approvals, waits); and log records for the significant events.
 Machine worker executions are children of their state spans, and machine waits produce log records.
+Model-call and tool spans follow OpenTelemetry's GenAI conventions (semantic conventions 1.45.0, status Development): they are named `chat {model}` and `execute_tool {tool}` and carry `gen_ai.*` attributes.
+`gen_ai.usage.input_tokens` includes the cached tokens, as the convention defines it.
 Nothing is exported until a signal is selected; a run never exports its own events.
 
 ```toml

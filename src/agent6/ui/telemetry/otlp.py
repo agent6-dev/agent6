@@ -34,6 +34,8 @@ def path_for(signal: str) -> str:
 
 
 def _value(value: telemetry_records.AttributeValue) -> dict[str, Any]:
+    if isinstance(value, tuple):
+        return {"arrayValue": {"values": [{"stringValue": item} for item in value]}}
     if isinstance(value, bool):
         return {"boolValue": value}
     if isinstance(value, int):

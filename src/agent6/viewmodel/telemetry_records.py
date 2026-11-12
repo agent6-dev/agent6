@@ -18,8 +18,9 @@ from typing import Any, Literal
 
 from agent6.viewmodel import telemetry_metrics
 
-AttributeValue = telemetry_metrics.AttributeValue
-Attributes = telemetry_metrics.Attributes
+# A span or log attribute: a metric label's scalar, or a list of strings.
+AttributeValue = telemetry_metrics.AttributeValue | tuple[str, ...]
+Attributes = tuple[tuple[str, AttributeValue], ...]
 Severity = Literal["INFO", "WARN", "ERROR"]
 Status = Literal["unset", "ok", "error"]
 SpanKind = Literal["internal", "client"]
@@ -28,11 +29,13 @@ SpanKind = Literal["internal", "client"]
 SPAN_EXECUTION = "agent6.execution"
 SPAN_MACHINE_STATE = "agent6.machine.state"
 SPAN_TURN = "agent6.turn"
-SPAN_MODEL_CALL = "agent6.model_call"
-SPAN_TOOL = "agent6.tool"
 SPAN_VERIFY = "agent6.verify"
 SPAN_REVIEW = "agent6.review_panel"
 SPAN_WAIT = "agent6.wait"
+# OpenTelemetry's GenAI operations (semantic conventions 1.45.0, Development): a model call's
+# span is named `chat {model}` and a tool call's `execute_tool {tool}`.
+OPERATION_CHAT = "chat"
+OPERATION_EXECUTE_TOOL = "execute_tool"
 # Every content excerpt is cut here.
 CONTENT_CHARS = 1024
 _EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
@@ -54,7 +57,7 @@ class Span:
         trace_id: 32 hex characters, one trace per standalone execution or machine.
         span_id: 16 hex characters, derived from the journal id of the work.
         parent_span_id: The parent's span id; "" for a root.
-        name: One of the `SPAN_*` names.
+        name: One of the `SPAN_*` names, or a GenAI operation and its model or tool.
         kind: `client` for a model call, `internal` otherwise.
         start_ns: The start, in nanoseconds since the epoch.
         end_ns: The end, in nanoseconds since the epoch.
