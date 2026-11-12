@@ -267,7 +267,8 @@ def pack(
     root = root.resolve()
     directory = root / ".agent6"
     pack_manifest.check_path(directory)
-    if directory.exists() and not pack_manifest.is_own(
+    own = [directory / name for name in ("pack.json", *pack_manifest.AREAS)]
+    if any(path.exists() for path in own) and not pack_manifest.is_own(
         pack_manifest.read(root).origin, paths.effective_user().home
     ):
         raise errors.PackError(f"{directory}: pack belongs to another origin; unpack first")
@@ -280,10 +281,9 @@ def pack(
         ).validate_json(base_path.read_bytes() if base_path.exists() else b"{}")
         sources = _sources(root, repo_config=repo_config, on_fold=on_fold)
         paths.mkdir_for_real_user(directory)
-        directory.chmod(0o700)
         with tempfile.TemporaryDirectory(dir=directory) as stage_name:
             stage = pathlib.Path(stage_name)
-            for area in ("config", "repo", "skills"):
+            for area in pack_manifest.AREAS:
                 (stage / area).mkdir(mode=0o700)
             files: dict[str, pack_manifest.PackedFile] = {}
             for name, source in sorted(sources.items()):
@@ -305,14 +305,7 @@ def pack(
                 files=files,
             )
             (stage / "pack.json").write_text(manifest.model_dump_json(indent=2) + "\n")
-            for old in directory.iterdir():
-                if old == stage:
-                    continue
-                pack_manifest.check_path(old)
-                if old.is_dir():
-                    shutil.rmtree(old)
-                else:
-                    old.unlink()
+            _remove_own(directory)
             for child in stage.iterdir():
                 child.replace(directory / child.name)
         paths.chown_to_real_user(directory)
@@ -322,6 +315,26 @@ def pack(
     finally:
         for fd in held:
             lock.release_single_writer(fd)
+
+
+def _remove_own(directory: pathlib.Path) -> None:
+    """Remove a pack's own names from `.agent6/`, leaving every other name there.
+
+    Args:
+        directory: The `.agent6/` directory.
+
+    Raises:
+        PackError: A name is a link.
+    """
+    for name in ("pack.json", *pack_manifest.AREAS):
+        old = directory / name
+        if not old.exists() and not old.is_symlink():
+            continue
+        pack_manifest.check_path(old)
+        if old.is_dir():
+            shutil.rmtree(old)
+        else:
+            old.unlink()
 
 
 def _exclusive_leases(root: pathlib.Path) -> list[int]:
@@ -373,7 +386,11 @@ def _preflight(root: pathlib.Path, manifest: pack_manifest.Manifest) -> tuple[Fi
         PackError: A file is unlisted, unsafe, or conflicts with the home's copy.
     """
     directory = root / ".agent6"
-    present = {p.relative_to(directory).as_posix() for p in _files(directory)} - {"pack.json"}
+    present = {
+        path.relative_to(directory).as_posix()
+        for area in pack_manifest.AREAS
+        for path in _files(directory / area)
+    }
     unlisted = present - manifest.files.keys()
     if unlisted:
         raise errors.PackError(
@@ -484,7 +501,9 @@ def unpack(root: pathlib.Path) -> ImportResult:
                 mode=0o600,
             )
             paths.chown_to_real_user(state / "pack-base.json")
-            shutil.rmtree(root / ".agent6")
+            _remove_own(root / ".agent6")
+            with contextlib.suppress(OSError):  # other names live there: worktrees, plans
+                (root / ".agent6").rmdir()
             return ImportResult(
                 manifest.origin,
                 tuple(f.home for f in facts if f.outcome == "move"),

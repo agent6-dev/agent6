@@ -9,57 +9,63 @@ from agent6.app import confine
 from agent6.config import Config
 from agent6.sandbox import jail
 from agent6.sessions import lock
-from agent6.tools import dispatch, index, tool_errors
-from agent6.vcs import git_read
-
-
-def _secret(root: pathlib.Path) -> pathlib.Path:
-    secret = root / ".agent6/config/secrets.toml"
-    secret.parent.mkdir(parents=True)
-    secret.write_text("packed-secret")
-    return secret
-
-
-def test_jail_hidden_set_contains_workspace_pack_even_when_absent(tmp_path: pathlib.Path) -> None:
-    policy = kinds.JailPolicy(cwd=tmp_path, argv=("/bin/true",))
-    assert str(tmp_path / ".agent6") in jail.policy_spec(policy)["hide_paths"]
+from agent6.tools import dispatch
 
 
 @pytest.mark.parametrize("isolation", ["full", "partial", "none"])
-@pytest.mark.parametrize("subdir", [".", "child"])
-def test_tools_hide_pack_at_every_isolation_level(
-    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel, subdir: str
+def test_the_directory_is_an_ordinary_one_to_the_file_tools(
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
-    root = tmp_path / subdir
-    _secret(root)
+    """The start check is a pack's one protection: a tree agent6 keeps there stays readable.
+
+    A rule that hid every `.agent6` path component hid a session's own worktree placed under it.
+    """
+    tree = tmp_path / ".agent6/worktrees/run-1"
+    tree.mkdir(parents=True)
+    (tree / "module.py").write_text("def kept_symbol():\n    pass\n")
     d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation=isolation)
     try:
-        with pytest.raises(tool_errors.ToolError, match="absent"):
-            d.dispatch("read_file", {"path": f"{subdir}/.agent6/config/secrets.toml"})
-        with pytest.raises(tool_errors.ToolError, match="absent"):
-            d.dispatch("list_dir", {"path": f"{subdir}/.agent6"})
-        assert ".agent6/" not in d.dispatch("list_dir", {"path": subdir}).to_wire()["entries"]
-        (root / ".agent6/secret.py").write_text("def secret_symbol():\n    pass\n")
-        assert (
-            d.dispatch("find_definition", {"symbol": "secret_symbol"}).to_wire()["definitions"]
-            == []
-        )
+        read = d.dispatch("read_file", {"path": ".agent6/worktrees/run-1/module.py"}).to_wire()
+        assert "kept_symbol" in str(read)
+        assert ".agent6/" in d.dispatch("list_dir", {"path": "."}).to_wire()["entries"]
     finally:
         d.close()
+    assert not path_safety.Workspace(tmp_path).is_denied(tree / "module.py")
+    assert (
+        str(tmp_path / ".agent6")
+        not in jail.policy_spec(kinds.JailPolicy(cwd=tmp_path, argv=("/bin/true",)))["hide_paths"]
+    )
 
 
-def test_bare_workspace_and_host_reads_hide_pack(tmp_path: pathlib.Path) -> None:
-    secret = _secret(tmp_path)
-    for ws in (path_safety.Workspace(tmp_path), path_safety.host_workspace(tmp_path)):
-        assert ws.is_denied(secret)
-        with pytest.raises(path_safety.ContainmentError, match="absent"):
-            ws.resolve_read(".agent6/config/secrets.toml")
-    assert path_safety.read_workspace_text(tmp_path, ".agent6/config/secrets.toml") == ""
-    symbols = index.SymbolIndex(path_safety.Workspace(tmp_path))
-    assert symbols._included_rel(secret) is None  # pyright: ignore[reportPrivateUsage]
-    public = tmp_path / "public.py"
-    public.write_text("def visible(): pass\n")
-    assert symbols._included_rel(public) == pathlib.Path("public.py")  # pyright: ignore[reportPrivateUsage]
+def test_pack_and_unpack_leave_the_directorys_other_names(tmp_path: pathlib.Path) -> None:
+    """`pack` deleted every other entry of `.agent6/` and `unpack` removed the directory."""
+    kept = tmp_path / ".agent6/worktrees/run-1/file.txt"
+    kept.parent.mkdir(parents=True)
+    kept.write_text("a session's tree")
+    note = paths.state_dir(tmp_path) / "note"
+    note.parent.mkdir(parents=True, exist_ok=True)
+    note.write_text("first")
+
+    pack.pack(tmp_path)
+    assert kept.read_text() == "a session's tree"
+    assert (tmp_path / ".agent6/repo/note").read_text() == "first"
+    pack.pack(tmp_path)  # a second pack replaces its own names only
+    assert kept.read_text() == "a session's tree"
+
+    pack.unpack(tmp_path)
+    assert kept.read_text() == "a session's tree"
+    assert sorted(path.name for path in (tmp_path / ".agent6").iterdir()) == ["worktrees"]
+
+
+def test_unpack_refuses_an_unlisted_file_in_its_own_areas_only(tmp_path: pathlib.Path) -> None:
+    """A file beside the pack is not the pack's; one slipped into `config/` still refuses."""
+    pack.pack(tmp_path)
+    (tmp_path / ".agent6/plans").mkdir()
+    (tmp_path / ".agent6/plans/plan.md").write_text("not a pack file")
+    (tmp_path / ".agent6/config/extra.toml").write_text("slipped in")
+    with pytest.raises(errors.PackError, match=r"config/extra\.toml") as refused:
+        pack.unpack(tmp_path)
+    assert "plans" not in str(refused.value)
 
 
 @pytest.mark.parametrize("isolation", ["full", "partial", "none"])
@@ -101,39 +107,6 @@ def test_pack_scan_prunes_git_and_does_not_follow_symlinks(tmp_path: pathlib.Pat
     pack.pack(outside)
     (root / "link").symlink_to(outside, target_is_directory=True)
     assert confine.config_refusal(Config(), "full", root) is None
-
-
-def test_file_boundary_denies_pack_names_inside_grants(tmp_path: pathlib.Path) -> None:
-    """An extra grant or memory exemption cannot expose a nested pack to file tools."""
-    root = tmp_path / "repo"
-    root.mkdir()
-    grant = paths.state_dir(root) / "memory"
-    secret = _secret(grant / "child")
-    ws = path_safety.Workspace(root, read_roots=(grant,), exempt=(grant,))
-    assert ws.is_denied(secret)
-    with pytest.raises(path_safety.ContainmentError, match="absent"):
-        ws.resolve_read(str(secret))
-
-
-def test_pack_is_excluded_from_git_snapshots(tmp_path: pathlib.Path) -> None:
-    import subprocess
-
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    _secret(tmp_path)
-    assert ".agent6" in git_read.hidden_in_repo(tmp_path, ())
-
-
-@pytest.mark.needs_namespaces
-def test_full_jail_masks_workspace_pack(tmp_path: pathlib.Path) -> None:
-    """A directory mask exposes no packed secret bytes through the workspace mount."""
-    _secret(tmp_path)
-    result = jail.run_in_jail(
-        kinds.JailPolicy(
-            cwd=tmp_path, argv=("/bin/cat", ".agent6/config/secrets.toml"), isolation="full"
-        )
-    )
-    assert result.stdout == ""
-    assert result.returncode != 0
 
 
 def test_pack_refuses_while_a_user_of_the_checkout_holds_the_lease(tmp_path: pathlib.Path) -> None:

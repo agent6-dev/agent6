@@ -211,7 +211,7 @@ Each `--security-opt` flag on this page turns off a protection of the container 
       The policy builder refuses when the pointer no longer resolves to the record.
       A policy with no record gets no grant
     - under `partial` `sandbox.isolation`, a `hide_paths` entry inside the recorded dir refuses like any other unmaskable entry
-- Masked last, after every bind (`full` `sandbox.isolation`): the config dir, the state base, the workspace and project roots' `.agent6/` pack directories, `[sandbox].hide_paths`
+- Masked last, after every bind (`full` `sandbox.isolation`): the config dir, the state base, `[sandbox].hide_paths`
     - each is masked under its given name and under the path it resolves to, so an entry spelled through a symlink covers the real directory
     - a hidden path inside the tree a symlinked grant resolves to is masked under the grant's spelled name too, where the jail shows that tree
     - a hidden directory reads as an empty directory and a hidden file as an empty file; a write to either fails with `Read-only file system`
@@ -220,7 +220,7 @@ Each `--security-opt` flag on this page turns off a protection of the container 
     - a `sandbox.extra_read_paths` or `extra_write_paths` entry inside a `hide_paths` entry refuses at every jailed level: the launcher binds a grant through the mask above it
     - every run, resume, machine and exec holds the checkout's workspace lease (shared) for its lifetime, and `pack` takes it alone before it writes, so neither starts under the other; a nested checkout's pack also needs the leases of the checkouts above it
     - a present `.agent6/pack.json` refuses startup at every isolation level, including `partial`.
-      Run `agent6 unpack` in that workspace or delete its `.agent6/` directory
+      Run `agent6 unpack` in that workspace, or delete the pack from that directory: `pack.json`, `config/`, `repo/` and `skills/`
     - run preflight scans the project tree once for nested packs, without following symlinks or entering `.git`, and refuses with every pack's path.
       Trees reached through `extra_read_paths` grants are not scanned: unpack or delete a pack before granting the tree that holds it
     - a `hide_paths` entry that is the workspace or a directory above it refuses at every level, before anything runs: drop the entry, or work in a directory outside it
@@ -327,7 +327,6 @@ Every path they take resolves through `Workspace`:
       + [sandbox].extra_read_paths (read) / extra_write_paths (write)
       - [sandbox].hide_paths
       - agent6's own config dir and state base
-      - any path with a .agent6 component
 
 - The boundary comes from config values
     - a degradation (`auto` falling back to `partial` or `none`, a host with no jail) never widens it; under `none` `sandbox.isolation` it is the only boundary
@@ -634,7 +633,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 `agent6 pack` copies credentials into the workspace at `.agent6/config/secrets.toml`.
 A present pack stops every run until it is unpacked or deleted, even on its origin host and home.
 `pack` verifies git's ignore decision and refuses tracked `.agent6` paths before writing the snapshot.
-File tools, symbol indexing and host-side tree reads deny `.agent6` path components; the `full` jail also masks the workspace and project roots' `.agent6/` directories.
+That refusal is the pack's only protection: `.agent6/` is an ordinary directory to file tools and commands.
 
 The secrets copy is created through a `0600` descriptor in a `0700` directory.
 A workspace sync can expose it to the sync service and the destination host; use only trusted destinations.

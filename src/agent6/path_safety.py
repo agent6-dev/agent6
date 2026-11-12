@@ -114,16 +114,13 @@ class Workspace:
 
     def __post_init__(self) -> None:
         # The given entries stay as spelled: a caller adds a historical path by name, and a
-        # looping entry is refused when read, not here. The implicit private dirs and packs
-        # join them, through the non-strict realpath `host_workspace` uses.
-        implicit = (pathlib.Path(os.path.realpath(p)) for p in paths.hidden_paths(self.root))
+        # looping entry is refused when read, not here. The implicit private dirs join them,
+        # through the non-strict realpath `host_workspace` uses.
+        implicit = (pathlib.Path(os.path.realpath(p)) for p in paths.hidden_paths())
         object.__setattr__(self, "denied", tuple(dict.fromkeys((*self.denied, *implicit))))
 
     def _denying(self, abs_path: pathlib.Path) -> pathlib.Path | None:
         """Return the denied root covering the path, or None; the one owner of the verdict."""
-        for parent in (abs_path, *abs_path.parents):
-            if fold_name(parent.name) == ".agent6":
-                return parent
         if any(path_within(abs_path, e) for e in self.exempt):
             return None
         for d in self.denied:
@@ -405,7 +402,7 @@ def host_workspace(root: pathlib.Path, hide: Iterable[str] = ()) -> Workspace:
     Returns:
         The workspace, each denied root resolved.
     """
-    denied = (root / ".git", *paths.hidden_paths(root, (pathlib.Path(p) for p in hide)))
+    denied = (root / ".git", *paths.hidden_paths(pathlib.Path(p) for p in hide))
     # realpath, not resolve(): on Python 3.12 resolve() raises RuntimeError on a symlink loop.
     return Workspace(root=root, denied=tuple(pathlib.Path(os.path.realpath(p)) for p in denied))
 

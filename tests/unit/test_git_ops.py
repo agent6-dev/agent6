@@ -2288,10 +2288,8 @@ def test_hidden_in_repo_keeps_the_entries_inside_the_repository(tmp_path: pathli
         str(tmp_path),
         str(tmp_path.parent / "elsewhere"),
     )
-    assert git_read.hidden_in_repo(tmp_path, hide) == frozenset({".agent6", "secrets", "sub/.env"})
-    assert git_read.hidden_in_repo(tmp_path / "sub", hide) == frozenset(
-        {".agent6", "secrets", "sub/.env"}
-    )
+    assert git_read.hidden_in_repo(tmp_path, hide) == frozenset({"secrets", "sub/.env"})
+    assert git_read.hidden_in_repo(tmp_path / "sub", hide) == frozenset({"secrets", "sub/.env"})
 
 
 def test_status_leaves_out_everything_under_an_excluded_directory(

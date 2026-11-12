@@ -247,7 +247,7 @@ def hidden_in_repo(path: pathlib.Path, hide: Collection[str]) -> frozenset[str]:
     """
     root = pathlib.Path(os.path.realpath(toplevel(path) or path))
     inside: set[str] = set()
-    for entry in paths.hidden_paths(root, (pathlib.Path(p) for p in hide)):
+    for entry in paths.hidden_paths(pathlib.Path(p) for p in hide):
         real = pathlib.Path(os.path.realpath(entry))
         if real != root and real.is_relative_to(root):
             inside.add(real.relative_to(root).as_posix())

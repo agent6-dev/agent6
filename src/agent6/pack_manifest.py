@@ -12,6 +12,8 @@ from agent6 import errors
 
 Hash = Annotated[str, pydantic.Field(pattern=r"^[0-9a-f]{64}$")]
 CONFIG_FILES = ("config.toml", "secrets.toml", "ui.toml")
+# A pack is `pack.json` and these directories inside `.agent6/`; every other name there is not its.
+AREAS = ("config", "repo", "skills")
 
 
 class Origin(pydantic.BaseModel):
@@ -152,5 +154,6 @@ def check_origin(root: pathlib.Path) -> None:
     time = manifest.model_dump(mode="json")["packed_at"]
     raise errors.PackError(
         f"{root / '.agent6'}: pack from {origin.host}:{origin.home}, packed at {time}. "
-        "Run agent6 unpack in that workspace or delete its .agent6/ directory."
+        "Run agent6 unpack in that workspace, or delete the pack from that directory:"
+        " pack.json, config/, repo/ and skills/."
     )

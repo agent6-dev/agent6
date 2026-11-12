@@ -433,7 +433,7 @@ It copies this home's state into `<project root>/.agent6/` and keeps it out of g
 Before copying, it asks git whether `.agent6/pack.json` is ignored and refuses if it is not (a `.gitignore` rule such as `!.agent6/` outranks the exclude file) or if any `.agent6` path is tracked.
 Home keeps its copies.
 Run `agent6 unpack` in the destination checkout to move the pack into that home's global directories and the state directory keyed to the new project root.
-It deletes `.agent6/` after a successful import.
+After a successful import it removes the pack's own entries (`pack.json`, `config/`, `repo/`, `skills/`), and `.agent6/` itself when nothing else is left in it.
 A repeated `pack` replaces a snapshot from the same host and home; a pack from another origin requires `unpack` first.
 
 Use `agent6 pack --repo-config` to carry global settings in the repository config instead of exporting global config files.
@@ -450,7 +450,7 @@ Session activity ordering and no-id session selection use the last readable jour
 Ordering reads backward from each journal's tail until it finds a timestamp; full session summaries still read the journal's history.
 Linked worktrees are not packed: listings, session details and resume name a missing worktree rather than treating its recorded path as a local checkout.
 Symlinks and special files refuse rather than following a path outside the snapshot.
-**The pack contains credentials.** Use a trusted workspace sync and see [hidden paths](security.md#2-sandbox).
+**The pack contains credentials.** Use a trusted workspace sync and see [Secrets](security.md#8-secrets-and-connect).
 A command already running in this checkout's sandbox can read the pack.
 `agent6 pack` refuses while a run, an `agent6 exec` or a machine of this checkout is live, and a run refuses to start while `pack` writes: a pack made under a live sandbox would put the secrets within its commands' reach.
 

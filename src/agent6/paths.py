@@ -238,23 +238,19 @@ def private_dirs() -> tuple[pathlib.Path, ...]:
     return (global_config_dir(), state_base())
 
 
-def hidden_paths(
-    root: pathlib.Path, extra: Iterable[pathlib.Path] = ()
-) -> tuple[pathlib.Path, ...]:
-    """Return every hidden tree: explicit entries, private dirs and workspace packs.
+def hidden_paths(extra: Iterable[pathlib.Path] = ()) -> tuple[pathlib.Path, ...]:
+    """Return every hidden tree: the explicit entries and agent6's private dirs.
 
     One owner, because the jail and the in-process `Workspace` both enforce it, and a
     boundary they disagree about is a hole.
 
     Args:
-        root: The workspace root.
         extra: The `[sandbox].hide_paths` entries.
 
     Returns:
-        The hidden paths, including packs at the workspace and project roots.
+        The hidden paths.
     """
-    packs = (root.resolve() / ".agent6", project_root(root, allow_pack=True) / ".agent6")
-    return tuple(dict.fromkeys((*extra, *private_dirs(), *packs)))
+    return tuple(dict.fromkeys((*extra, *private_dirs())))
 
 
 # The filesystem limit is 255 bytes per component, and CJK or emoji run 3 to 4 bytes a character.

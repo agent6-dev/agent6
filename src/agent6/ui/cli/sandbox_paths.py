@@ -309,9 +309,7 @@ def command_rows(
         rules.append(Row("ro", git.resolve()))
     masked = {
         p.resolve()
-        for p in agent6_paths.hidden_paths(
-            ws.root, (pathlib.Path(p) for p in cfg.sandbox.hide_paths)
-        )
+        for p in agent6_paths.hidden_paths(pathlib.Path(p) for p in cfg.sandbox.hide_paths)
     }
     if selected == "full":
         rules += [Row("--", p) for p in masked]
