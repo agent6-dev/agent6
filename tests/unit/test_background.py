@@ -13,6 +13,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.sandbox import jail_jobs, jail_session
+from agent6.sessions import shells as session_shells
 from agent6.tools import background
 
 
@@ -205,7 +206,7 @@ def test_the_disk_roster_skips_metadata_that_is_not_an_object(tmp_path: pathlib.
     shell.mkdir(parents=True)
     (shell / "meta.json").write_text("[]", encoding="utf-8")
 
-    assert background.roster_from_dir(tmp_path / "shells") == []
+    assert session_shells.roster_from_dir(tmp_path / "shells") == []
 
 
 def test_the_disk_roster_tolerates_its_root_disappearing(
@@ -223,7 +224,7 @@ def test_the_disk_roster_tolerates_its_root_disappearing(
 
     monkeypatch.setattr(pathlib.Path, "iterdir", iterdir)
 
-    assert background.roster_from_dir(root) == []
+    assert session_shells.roster_from_dir(root) == []
 
 
 def test_adopt_stops_a_command_when_its_metadata_cannot_be_recorded(

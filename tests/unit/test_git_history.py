@@ -449,7 +449,7 @@ def test_tree_files_list_a_commits_files_with_size_and_kind(tmp_path: pathlib.Pa
     assert sorted(rows) == ["b.txt", "dir/f.txt", "img.bin", "lnk", "logo.png"]
     assert rows["b.txt"] == git_files.TreeFile("b.txt", 14, "file")
     assert rows["logo.png"] == git_files.TreeFile("logo.png", len(PNG_RED_1X1), "file")
-    assert rows["lnk"] == git_files.TreeFile("lnk", 5, "symlink")
+    assert rows["lnk"] == git_files.TreeFile("lnk", 5, "symlink", target="a.txt")
     assert [f.path for f in git_files.tree_files(tmp_path, shas["root"])] == [
         "a.txt",
         "d.txt",
@@ -473,7 +473,7 @@ def test_worktree_tree_files_list_tracked_and_unignored_untracked_files(
     assert sorted(rows) == ["b.txt", "blob.bin", "dir/g.txt", "lnk", "logo.png", "new.txt"]
     assert rows["b.txt"] == git_files.TreeFile("b.txt", 19, "file", "modified")
     assert rows["new.txt"] == git_files.TreeFile("new.txt", 12, "file", "untracked")
-    assert rows["lnk"] == git_files.TreeFile("lnk", 5, "symlink", "untracked")
+    assert rows["lnk"] == git_files.TreeFile("lnk", 5, "symlink", "untracked", target="b.txt")
 
 
 def add_submodule_pointer(path: pathlib.Path) -> tuple[str, str]:
