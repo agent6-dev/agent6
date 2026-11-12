@@ -68,8 +68,8 @@ def test_watch_run_json_snapshot(
     out = json.loads(capsys.readouterr().out)
     assert out["task"] == "demo\n" + "words " * 900
     assert "user_task" not in out and "task_clipped" not in out
-    assert out["budget"]["cost_usd"] == 0.25
-    assert "usd_total" not in out["budget"]
+    assert out["budget"]["session"]["usd"] == 0.25
+    assert out["budget"]["execution"]["usd"] == 0.25
     for command in (
         ["sessions", "list", "--json"],
         ["sessions", "show", "willing-glen-001", "--json"],

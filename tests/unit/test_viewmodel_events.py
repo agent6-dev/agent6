@@ -134,3 +134,47 @@ def test_an_attempt_row_reads_into_its_record_with_defaults() -> None:
     )
     assert isinstance(row, journal.RoleAttempt)
     assert (row.attempt, row.ok, row.model_call_id, row.request_id) == (1, False, "c1", None)
+
+
+def test_a_budget_row_reads_its_caps_and_account_as_recorded() -> None:
+    """A missing cap is unknown, a recorded zero stays; a flat reading becomes the account."""
+    bare = ev.parse_event({"type": "budget.update", "usd_total": 0.1})
+    assert isinstance(bare, journal.BudgetUpdate)
+    assert bare.usd_cap is None and bare.plan_cap is None and bare.account is None
+    refused = ev.parse_event(
+        {"type": "budget.update", "usd_total": 0.0, "usd_cap": 0, "plan_cap": -1}
+    )
+    assert isinstance(refused, journal.BudgetUpdate)
+    assert refused.usd_cap == 0.0 and refused.plan_cap == -1.0
+    # A journal written before the account record keys the reading flat, without a provider.
+    flat = ev.parse_event(
+        {
+            "type": "budget.update",
+            "usd_total": 0.0,
+            "plan_used_percent": 42.0,
+            "plan_resets_at": 1.0,
+            "plan_windows": [
+                {"name": "primary", "used_percent": 42.0, "window_minutes": 300, "resets_at": 1.0}
+            ],
+        }
+    )
+    assert isinstance(flat, journal.BudgetUpdate) and flat.account is not None
+    assert flat.account.provider == "" and flat.account.used_percent == 42.0
+    assert [w.name for w in flat.account.windows] == ["primary"]
+    nested = ev.parse_event(
+        {
+            "type": "budget.update",
+            "usd_total": 0.0,
+            "account": {
+                "provider": "chatgpt",
+                "used_percent": 7.0,
+                "resets_at": 2.0,
+                "windows": [],
+                "credits_has": False,
+                "credits_unlimited": False,
+                "credits_balance": "",
+            },
+        }
+    )
+    assert isinstance(nested, journal.BudgetUpdate) and nested.account is not None
+    assert nested.account.provider == "chatgpt"

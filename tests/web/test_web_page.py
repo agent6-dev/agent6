@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "976cd2ff5190c2b23485d78af6a3c044475ea24490660bdf3b7832917b66d2e0"
+PAGE_SHA256 = "0c2ddc705800440ba6b62bb26541dd7e21ee97d519ad8e88338f294df773520d"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -135,13 +135,13 @@ def test_page_assets_load_non_empty() -> None:
 
 
 def test_the_plan_bar_meters_this_executions_points() -> None:
-    """The run view's plan bar subtracts the points earlier executions banked.
+    """The run view's plan bar meters this execution's points against the cap it runs under.
 
-    The wire's `plan_observed_points` sums every execution, and the sum against the cap a resume
-    re-armed would read a resumed run as over it.
+    The session's points sum every execution; that sum against the cap a resume re-armed
+    would read a resumed run as over it.
     """
     client = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
-    assert "(b.plan_observed_points || 0) - (b.plan_prior_executions || 0)" in client
+    assert "const executionPt = run.plan_observed_points || 0;" in client
     assert "executionPt / planCap" in client
 
 

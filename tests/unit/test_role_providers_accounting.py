@@ -79,3 +79,17 @@ def test_shared_model_id_settles_both_provider_accounts() -> None:
     snap = tracker.snapshot()
     assert {name: spend.observed_points for name, spend in snap.plans.items()} == {"a": 3, "b": 3}
     assert not tracker.settle()
+
+
+def test_the_budget_row_names_the_account_it_read() -> None:
+    """The account reading carries the provider entry that answered and every window."""
+    tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
+    for provider, used in (("a", 20.0), ("b", 40.0)):
+        tracker.record_plan_preflight(
+            provider, budget.PlanUsage.single(used, 300, 2e9, secondary_used_percent=5.0)
+        )
+    fields = role_providers.budget_update_fields(tracker)
+    account = fields["account"]
+    assert account.provider == "b" and account.used_percent == 40.0
+    assert [w.name for w in account.windows] == ["primary", "secondary"]
+    assert "plan_used_percent" not in fields and "plan_windows" not in fields

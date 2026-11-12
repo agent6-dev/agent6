@@ -550,7 +550,11 @@ class TelemetryFold:
         if plan is not None and plan > self._plan_seen:
             self.meter.count("agent6_plan_observed_points_total", plan - self._plan_seen)
             self._plan_seen = plan
-        if (used := telemetry_records.as_number(event.get("plan_used_percent"))) is not None:
+        account = event.get("account")
+        used_raw = account.get("used_percent") if isinstance(account, dict) else None
+        if used_raw is None:
+            used_raw = event.get("plan_used_percent")  # the older flat key
+        if (used := telemetry_records.as_number(used_raw)) is not None:
             self.meter.gauge("agent6_plan_used_ratio", used / 100.0)
 
     def _jail_degraded(self, step: telemetry_records.Step) -> None:

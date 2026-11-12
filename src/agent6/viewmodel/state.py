@@ -13,7 +13,7 @@ import pathlib
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from agent6 import terminal
+from agent6 import budget, terminal
 from agent6.graph import models
 from agent6.sessions import journal, layout, process
 from agent6.viewmodel import events, format, log_line, review, session_status, state_types
@@ -148,19 +148,9 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 questions=_carried(state.questions),
                 unattended_questions=0,
                 tool_count=0,
-                budget=dataclasses.replace(
-                    state.budget,
-                    usd_prior_executions=state.budget.usd_total,
-                    input_total=0,
-                    output_total=0,
-                    usd_cap=0.0,
-                    tokens_unmetered=0,
-                    tokens_fallback_cap=0,
-                    plan_used_percent=0.0,
-                    plan_prior_executions=state.budget.plan_observed_points,
-                    plan_cap=0.0,
-                    plan_resets_at=0.0,
-                ),
+                # The session's usage keeps the finished execution's; the account's last
+                # reading stays, the run is plan-metered before its next call too.
+                budget=dataclasses.replace(state.budget, execution=state_types.ExecutionUsage()),
             )
 
         case journal.GraphUpdate(nodes=nodes, cursor=cursor):
@@ -318,31 +308,54 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             usd_cap=ucap,
             tokens_unmetered=unmet,
             tokens_fallback_cap=fcap,
-            plan_used_percent=plan_pct,
             plan_observed_points=plan_used,
             plan_cap=plan_cap,
-            plan_resets_at=plan_resets,
+            account=account,
         ):
-            # The event's usd_total and plan_observed_points are this execution's; the view's are
-            # cumulative.
+            # The row carries the tracker's lifetime; the finished executions' usage is the
+            # difference between the session's and the execution's.
+            prior = state.budget
+            banked_usd = prior.session.usd - prior.execution.usd
+            banked_points = (
+                prior.session.plan_observed_points - prior.execution.plan_observed_points
+            )
+            execution = state_types.ExecutionUsage(
+                input_tokens=it or 0,
+                output_tokens=ot or 0,
+                cache_read_tokens=cr or 0,
+                cache_creation_tokens=cc or 0,
+                usd=usd,
+                usd_partial=bool(partial),
+                unmetered_tokens=unmet or 0,
+                plan_observed_points=plan_used or 0.0,
+                usd_cap=ucap,
+                tokens_fallback_cap=fcap,
+                plan_cap=plan_cap,
+            )
+            session = state_types.SessionUsage(
+                usd=banked_usd + usd,
+                usd_partial=bool(partial) or prior.session.usd_partial,
+                plan_observed_points=banked_points + (plan_used or 0.0),
+            )
+            reading = prior.account
+            if account is not None:
+                reading = state_types.AccountReading(
+                    provider=account.provider,
+                    used_percent=account.used_percent,
+                    resets_at=account.resets_at,
+                    windows=tuple(
+                        budget.PlanWindow(w.name, w.used_percent, w.window_minutes, w.resets_at)
+                        for w in account.windows
+                    ),
+                    credits_has=account.credits_has,
+                    credits_unlimited=account.credits_unlimited,
+                    credits_balance=account.credits_balance,
+                    observed_at=events.event_epoch(event.get("ts")) or 0.0,
+                )
             return dataclasses.replace(
                 state,
                 budget=state_types.BudgetView(
-                    input_total=it or 0,
-                    output_total=ot or 0,
-                    cache_read_total=cr or 0,
-                    cache_creation_total=cc or 0,
-                    usd_total=state.budget.usd_prior_executions + usd,
-                    usd_prior_executions=state.budget.usd_prior_executions,
-                    usd_partial=bool(partial) or state.budget.usd_partial,
-                    usd_cap=ucap or 0.0,
-                    tokens_unmetered=unmet or 0,
-                    tokens_fallback_cap=fcap or 0,
-                    plan_used_percent=plan_pct or 0.0,
-                    plan_observed_points=state.budget.plan_prior_executions + (plan_used or 0.0),
-                    plan_prior_executions=state.budget.plan_prior_executions,
-                    plan_cap=plan_cap or 0.0,
-                    plan_resets_at=plan_resets or 0.0,
+                    session=session, execution=execution, account=reading
                 ),
             )
 

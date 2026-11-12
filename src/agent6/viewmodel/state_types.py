@@ -7,7 +7,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Literal
 
-from agent6 import evidence, kinds
+from agent6 import budget, evidence, kinds
 from agent6.viewmodel import format, review, session_status
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
@@ -129,46 +129,94 @@ class VerifyView:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class BudgetView:
-    """The run's spend as every surface shows it.
+class ExecutionUsage:
+    """The current accounting lifetime's usage beside the caps that bound it.
 
-    Token counters and the caps are the current execution's, pairing with the
-    per-execution enforcement; `usd_total` and `plan_observed_points` are cumulative across
-    executions, as the listing scan sums them, so the surfaces agree on what a run cost.
+    The lifetime is the tracker's: an execution's, or the whole REPL conversation's, which
+    keeps one tracker across its starts. A cap is None until a `budget.update` carries it;
+    a recorded -1 means unlimited and a recorded 0 means refused.
 
     Attributes:
-        input_total: This execution's input tokens.
-        output_total: This execution's output tokens.
-        cache_read_total: The cached side of the input.
-        cache_creation_total: Cache-creation tokens.
-        usd_total: The spend across every execution.
-        usd_prior_executions: The spend banked by completed executions.
-        usd_partial: Some model had no price, so `usd_total` is a lower bound.
-        usd_cap: `[budget].max_usd` for this execution; -1 unlimited, 0 unknown.
-        tokens_unmetered: Input and output tokens of calls the meter could not price.
-        tokens_fallback_cap: `[budget].max_tokens_fallback`; -1 unlimited, 0 unknown.
-        plan_used_percent: The account's reported plan usage; 0 until a plan call runs.
-        plan_observed_points: The plan movement observed across every execution, in points.
-        plan_prior_executions: The points banked by completed executions.
-        plan_cap: `[budget].max_plan_points`; 0 until a plan call runs.
-        plan_resets_at: When the plan window resets, as epoch seconds.
+        input_tokens: Input tokens.
+        output_tokens: Output tokens.
+        cache_read_tokens: The cached side of the input.
+        cache_creation_tokens: Cache-creation tokens.
+        usd: The metered spend.
+        usd_partial: Some model had no price, so `usd` is a lower bound.
+        unmetered_tokens: Input and output tokens of calls the meter could not price.
+        plan_observed_points: The plan movement observed, in points.
+        usd_cap: `[budget].max_usd`.
+        tokens_fallback_cap: `[budget].max_tokens_fallback`.
+        plan_cap: `[budget].max_plan_points`.
     """
 
-    input_total: int = 0
-    output_total: int = 0
-    cache_read_total: int = 0
-    cache_creation_total: int = 0
-    usd_total: float = 0.0
-    usd_prior_executions: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    usd: float = 0.0
     usd_partial: bool = False
-    usd_cap: float = 0.0
-    tokens_unmetered: int = 0
-    tokens_fallback_cap: int = 0
-    plan_used_percent: float = 0.0
+    unmetered_tokens: int = 0
     plan_observed_points: float = 0.0
-    plan_prior_executions: float = 0.0
-    plan_cap: float = 0.0
-    plan_resets_at: float = 0.0
+    usd_cap: float | None = None
+    tokens_fallback_cap: int | None = None
+    plan_cap: float | None = None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class SessionUsage:
+    """The session's usage across every execution, what the listings' usage cell shows.
+
+    Attributes:
+        usd: The spend across every execution.
+        usd_partial: Some execution's model had no price, so `usd` is a lower bound.
+        plan_observed_points: The plan movement observed across every execution, in points.
+    """
+
+    usd: float = 0.0
+    usd_partial: bool = False
+    plan_observed_points: float = 0.0
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class AccountReading:
+    """The latest reading of a subscription account: an observation of the account, not the run.
+
+    Attributes:
+        provider: The provider entry whose account was read; "" in a journal written before
+            the reading named it.
+        used_percent: The binding window's used percent.
+        resets_at: When the binding window resets, as epoch seconds; 0 when unknown.
+        windows: Every window the backend reported, the primary first.
+        credits_has: Whether the account holds purchased credits.
+        credits_unlimited: Whether the credits are unlimited.
+        credits_balance: The credit balance as the backend sent it; "" when none.
+        observed_at: When the reading was journaled, as epoch seconds.
+    """
+
+    provider: str = ""
+    used_percent: float = 0.0
+    resets_at: float = 0.0
+    windows: tuple[budget.PlanWindow, ...] = ()
+    credits_has: bool = False
+    credits_unlimited: bool = False
+    credits_balance: str = ""
+    observed_at: float = 0.0
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class BudgetView:
+    """The run's usage as every surface shows it, each amount with one lifetime.
+
+    Attributes:
+        session: The usage across every execution.
+        execution: The current accounting lifetime's usage beside its caps.
+        account: The latest subscription account reading; None before a plan call runs.
+    """
+
+    session: SessionUsage = dataclasses.field(default_factory=SessionUsage)
+    execution: ExecutionUsage = dataclasses.field(default_factory=ExecutionUsage)
+    account: AccountReading | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

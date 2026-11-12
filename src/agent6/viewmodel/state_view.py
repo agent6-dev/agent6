@@ -141,8 +141,7 @@ def session_state_as_dict(
         review: The shared review evidence with computed merge facts.
         context_pct: The last model call's context fill percentage, or null when unknown.
         needs_new_work: Whether a resume requires a new task rather than continuing work.
-        budget.cost_usd: Cumulative spend in USD.
-        budget.usd_text: The rendered cumulative spend and cap.
+        budget.usd_text: The rendered session spend, then this execution's against its cap.
         open_approval: The current approval identifier, or null when none is open.
         status: The lifecycle status word.
         status_label: The rendered status with mode and unmerged marks when available.
@@ -178,10 +177,9 @@ def session_state_as_dict(
         `needs_new_work`, `open_approval`, `status`, `status_label`, the full `task`, `task_line`,
         `dead_state`, `operator_blocked`, the rendered budget text, approval parts and
         commit labels, and `log_tail` as plain strings.
-        Spend is `budget.cost_usd`; journal event fields keep their stored names.
+        Journal event fields keep their stored names.
     """
     d = {name: _wire_value(getattr(state, name)) for name in PUBLIC_STATE_FIELDS}
-    d["budget"]["cost_usd"] = d["budget"].pop("usd_total")
     d["review"] = review.as_dict(state.review)
     d["context_pct"] = context_fill(state)
     d["needs_new_work"] = listing.needs_new_work(
@@ -191,15 +189,15 @@ def session_state_as_dict(
         saved_answers=len(ipc.saved_question_answers(session_dir)) if session_dir else 0,
     )
     d["budget"]["usd_text"] = format.budget_usd_text(
-        state.budget.usd_total,
-        partial=state.budget.usd_partial,
-        usd_cap=state.budget.usd_cap,
-        usd_prior_executions=state.budget.usd_prior_executions,
+        state.budget.session.usd,
+        partial=state.budget.session.usd_partial,
+        execution_usd=state.budget.execution.usd,
+        usd_cap=state.budget.execution.usd_cap,
         cell=session_status.usage_cell(
-            state.budget.usd_total,
-            partial=state.budget.usd_partial,
-            plan_observed_points=state.budget.plan_observed_points,
-            plan_used_percent=state.budget.plan_used_percent,
+            state.budget.session.usd,
+            partial=state.budget.session.usd_partial,
+            plan_observed_points=state.budget.session.plan_observed_points,
+            plan_used_percent=state.budget.account.used_percent if state.budget.account else 0.0,
         ),
     )
     for ap, row in zip(state.approvals, d["approvals"], strict=True):

@@ -148,7 +148,7 @@ def _print_status(session_dir: pathlib.Path) -> None:
     tasks = f"{done}/{len(s.tasks)}" if s.tasks else "—"
     role = s.last_role
     model = f"{role.role}/{role.model}" if role else "—"
-    cost = budget.format_usd(s.budget.usd_total, partial=s.budget.usd_partial)
+    cost = budget.format_usd(s.budget.session.usd, partial=s.budget.session.usd_partial)
     ctx = ""
     if role is not None and role.ctx_tokens > 0:
         fill = context_fill(s)

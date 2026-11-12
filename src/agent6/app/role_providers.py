@@ -609,7 +609,28 @@ def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
     """Return a `budget.update` event's fields: the tracker's cumulative spend and plan reading."""
     snap = budget.snapshot()
     usd_total, usd_partial = budget.estimate_usd()
-    plan = snap.plan_latest
+    account = None
+    latest = next(reversed(snap.plans.items()), None)  # the last reading any provider gave
+    if latest is not None:
+        provider, spend = latest
+        plan = spend.usage
+        account = journal.AccountReading(
+            provider=provider,
+            used_percent=plan.used_percent,
+            resets_at=plan.resets_at,
+            windows=[
+                journal.AccountWindow(
+                    name=w.name,
+                    used_percent=w.used_percent,
+                    window_minutes=w.window_minutes,
+                    resets_at=w.resets_at,
+                )
+                for w in plan.windows
+            ],
+            credits_has=plan.has_credits,
+            credits_unlimited=plan.credits_unlimited,
+            credits_balance=plan.credits_balance,
+        )
     return dict(
         input_total=snap.input_total,
         output_total=snap.output_total,
@@ -620,23 +641,9 @@ def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
         usd_cap=snap.max_usd,
         tokens_unmetered=snap.unmetered_tokens,
         tokens_fallback_cap=snap.max_tokens_fallback,
-        plan_used_percent=plan.used_percent if plan else 0.0,
         plan_observed_points=snap.plan_observed_points,
         plan_cap=snap.max_plan_points,
-        plan_resets_at=plan.resets_at if plan else 0.0,
-        # Every reported window, raw: the derived fields cannot show a second window.
-        plan_windows=[
-            {
-                "name": w.name,
-                "used_percent": w.used_percent,
-                "window_minutes": w.window_minutes,
-                "resets_at": w.resets_at,
-            }
-            for w in (plan.windows if plan else ())
-        ],
-        credits_has=plan.has_credits if plan else False,
-        credits_unlimited=plan.credits_unlimited if plan else False,
-        credits_balance=plan.credits_balance if plan else "",
+        account=account,
     )
 
 

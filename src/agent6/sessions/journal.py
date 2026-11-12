@@ -22,6 +22,41 @@ class Event(pydantic.BaseModel):
     TYPE: ClassVar[str] = ""
 
 
+class AccountWindow(pydantic.BaseModel):
+    """One rate-limit window of a subscription account."""
+
+    model_config = pydantic.ConfigDict(frozen=True, extra="forbid")
+
+    name: str = pydantic.Field(
+        description="The backend's label: primary, secondary, or a per-model family."
+    )
+    used_percent: float = pydantic.Field(description="Percent of the included allowance used.")
+    window_minutes: int = pydantic.Field(
+        description="The window's length; 0 when the backend gave none."
+    )
+    resets_at: float = pydantic.Field(description="When the window resets, as epoch seconds.")
+
+
+class AccountReading(pydantic.BaseModel):
+    """The latest reading of a subscription account: an observation of the account, not the run."""
+
+    model_config = pydantic.ConfigDict(frozen=True, extra="forbid")
+
+    provider: str = pydantic.Field(description="The provider entry whose account was read.")
+    used_percent: float = pydantic.Field(description="The binding window's used percent.")
+    resets_at: float = pydantic.Field(
+        description="When the binding window resets, as epoch seconds; 0 when unknown."
+    )
+    windows: Sequence[AccountWindow] = pydantic.Field(
+        description="Every window the backend reported, the primary first."
+    )
+    credits_has: bool = pydantic.Field(description="Whether the account holds purchased credits.")
+    credits_unlimited: bool = pydantic.Field(description="Whether the credits are unlimited.")
+    credits_balance: str = pydantic.Field(
+        description="The credit balance as the backend sent it; empty when none."
+    )
+
+
 class ApprovalAnswer(Event):
     """The operator answered an approval request."""
 
@@ -63,7 +98,7 @@ class BtwOpened(Event):
 
 
 class BudgetUpdate(Event):
-    """The cumulative token, spend and subscription readings."""
+    """The tracker's accounting since this process began, its caps and the account's reading."""
 
     TYPE: ClassVar[str] = "budget.update"
     usd_total: float = pydantic.Field(
@@ -97,10 +132,6 @@ class BudgetUpdate(Event):
         default=None,
         description="Token cap used for unpriced usage.",
     )
-    plan_used_percent: float | None = pydantic.Field(
-        default=None,
-        description="Provider-reported subscription usage percentage.",
-    )
     plan_observed_points: float | None = pydantic.Field(
         default=None,
         description=(
@@ -109,25 +140,9 @@ class BudgetUpdate(Event):
         ),
     )
     plan_cap: float | None = pydantic.Field(default=None, description="Subscription points cap.")
-    plan_resets_at: float | None = pydantic.Field(
+    account: AccountReading | None = pydantic.Field(
         default=None,
-        description="Subscription window reset time in epoch seconds.",
-    )
-    plan_windows: Sequence[Any] | None = pydantic.Field(
-        default=None,
-        description="Every provider-reported subscription window.",
-    )
-    credits_has: bool | None = pydantic.Field(
-        default=None,
-        description="Whether the account has credits.",
-    )
-    credits_unlimited: bool | None = pydantic.Field(
-        default=None,
-        description="Whether credits are unlimited.",
-    )
-    credits_balance: str | None = pydantic.Field(
-        default=None,
-        description="Provider-reported credit balance.",
+        description="The latest subscription account reading; null before a plan call runs.",
     )
 
 

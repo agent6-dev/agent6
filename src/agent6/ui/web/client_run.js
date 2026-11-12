@@ -341,30 +341,29 @@ function paintDetails(cards, s, asOf) {
     const w = el('div'); w.appendChild(el('div', 'sub muted', `${label}: ${text}`));
     const bar = el('div', 'bar' + (frac > 0.85 ? ' warn' : '')); const sp = el('span'); sp.style.width = (frac*100)+'%'; bar.appendChild(sp); w.appendChild(bar); return w;
   };
-  // Metered spend vs max_usd (-1 = unlimited); unmetered tokens vs the fallback
-  // cap only when that ledger has traffic. The cap re-arms each resume execution, so
-  // the bar meters this execution's spend (cost_usd - usd_prior_executions) while the cost
-  // figure stays cumulative; the text is the server's `usd_text`.
-  const usdCap = b.usd_cap || 0;
-  const executionUsd = Math.max(0, (b.cost_usd || 0) - (b.usd_prior_executions || 0));
-  const usdFrac = usdCap > 0 ? Math.min(1, executionUsd / usdCap) : 0;
+  // `b.session` is the run's usage across executions; `b.execution` is this execution's
+  // beside its caps (null = unknown, -1 = unlimited, 0 = refused); `b.account` is the
+  // subscription account's latest reading. The usage text is the server's `usd_text`.
+  const run = b.execution || {};
+  const usdCap = run.usd_cap || 0;
+  const usdFrac = usdCap > 0 ? Math.min(1, (run.usd || 0) / usdCap) : 0;
   cards.budget.appendChild(barRow('usage', usdFrac, b.usd_text || ''));
-  if (b.tokens_unmetered) {
-    const fbCap = b.tokens_fallback_cap || 0;
-    const fbFrac = fbCap > 0 ? Math.min(1, b.tokens_unmetered / fbCap) : 0;
-    const fbText = `${b.tokens_unmetered}${fbCap > 0 ? ' / ' + fbCap : (fbCap === -1 ? ' (unlimited)' : '')} tokens`;
+  if (run.unmetered_tokens) {
+    const fbCap = run.tokens_fallback_cap || 0;
+    const fbFrac = fbCap > 0 ? Math.min(1, run.unmetered_tokens / fbCap) : 0;
+    const fbText = `${run.unmetered_tokens}${fbCap > 0 ? ' / ' + fbCap : (fbCap === -1 ? ' (unlimited)' : '')} tokens`;
     cards.budget.appendChild(barRow('unmetered', fbFrac, fbText));
   }
-  if (b.plan_used_percent > 0 || b.plan_cap > 0) {
-    // Subscription plan usage: the account's window fill; the bar meters this
-    // execution's observed points (plan_observed_points - plan_prior_executions) against
-    // max_plan_points when one is set, else the account percent itself. The cap re-arms
-    // each resume, as the cost bar's does.
-    const planCap = b.plan_cap || 0;
-    const executionPt = Math.max(0, (b.plan_observed_points || 0) - (b.plan_prior_executions || 0));
+  const account = b.account;
+  if ((account && account.used_percent > 0) || run.plan_cap > 0) {
+    // The account's window fill; the bar meters this execution's observed points against
+    // max_plan_points when one is set, else the account percent itself.
+    const usedPct = account ? account.used_percent : 0;
+    const planCap = run.plan_cap || 0;
+    const executionPt = run.plan_observed_points || 0;
     const planFrac = planCap > 0 ? Math.min(1, executionPt / planCap)
-                                 : Math.min(1, b.plan_used_percent / 100);
-    const planText = `${b.plan_used_percent}%`
+                                 : Math.min(1, usedPct / 100);
+    const planText = `${usedPct}%`
       + (planCap > 0 ? ` · moved ${executionPt.toFixed(1)} / ${planCap} pt this run` : '');
     cards.budget.appendChild(barRow('plan', planFrac, planText));
   }
@@ -374,9 +373,9 @@ function paintDetails(cards, s, asOf) {
   // The cached side of the input is the bulk of a long run's tokens (the run
   // summary's cache_r/cache_c columns); absent from journals written before it
   // was recorded, so it shows only when nonzero.
-  const cached = (b.cache_read_total || b.cache_creation_total)
-    ? ` · cached read ${b.cache_read_total||0} · cached written ${b.cache_creation_total||0}` : '';
-  cards.budget.appendChild(el('div', 'sub muted', `tokens: in ${b.input_total||0} · out ${b.output_total||0}${cached}${ctxPct}`));
+  const cached = (run.cache_read_tokens || run.cache_creation_tokens)
+    ? ` · cached read ${run.cache_read_tokens||0} · cached written ${run.cache_creation_tokens||0}` : '';
+  cards.budget.appendChild(el('div', 'sub muted', `tokens: in ${run.input_tokens||0} · out ${run.output_tokens||0}${cached}${ctxPct}`));
 
   // task tree
   cards.tasks.innerHTML = '';

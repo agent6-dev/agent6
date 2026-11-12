@@ -206,33 +206,31 @@ def format_usage_cell(
 
 
 def budget_usd_text(
-    usd_total: float,
+    session_usd: float,
     *,
     partial: bool,
-    usd_cap: float,
-    usd_prior_executions: float,
+    execution_usd: float,
+    usd_cap: float | None,
     cell: str = "",
 ) -> str:
-    """Return the run view's cost line.
+    """Return the run view's usage line.
 
     Args:
-        usd_total: The cumulative spend across executions.
+        session_usd: The spend across every execution.
         partial: The figure is a lower bound.
-        usd_cap: This execution's cap; -1 for unlimited, 0 for none set.
-        usd_prior_executions: The spend banked by earlier executions.
-        cell: The listings' cost cell (plan points, dollars or both), the figure when given.
+        execution_usd: This execution's spend.
+        usd_cap: This execution's cap; -1 for unlimited, 0 for refused, None for unknown.
+        cell: The listings' usage cell (plan points, dollars or both), the figure when given.
 
     Returns:
-        The cumulative figure, then this execution's spend against its cap when earlier
+        The session figure, then this execution's spend against its cap when earlier
         executions spent; `(unlimited)` for a cap of -1.
     """
-    text = cell or budget.format_usd(usd_total, partial=partial)
-    if usd_cap > 0:
+    text = cell or budget.format_usd(session_usd, partial=partial)
+    if usd_cap is not None and usd_cap > 0:
         cap = budget.format_usd(usd_cap)
-        if usd_prior_executions > 0:
-            execution = budget.format_usd(
-                max(0.0, usd_total - usd_prior_executions), partial=partial
-            )
+        if execution_usd < session_usd:
+            execution = budget.format_usd(max(0.0, execution_usd), partial=partial)
             return f"{text} · execution {execution} / {cap}"
         return f"{text} / {cap}"
     return f"{text} (unlimited)" if usd_cap == -1 else text

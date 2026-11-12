@@ -89,21 +89,25 @@
     "rules_complete": null
   },
   "budget": {
-    "input_total": 0,
-    "output_total": 0,
-    "cache_read_total": 0,
-    "cache_creation_total": 0,
-    "usd_prior_executions": 0.004841036,
-    "usd_partial": false,
-    "usd_cap": 0.0,
-    "tokens_unmetered": 0,
-    "tokens_fallback_cap": 0,
-    "plan_used_percent": 0.0,
-    "plan_observed_points": 0.0,
-    "plan_prior_executions": 0.0,
-    "plan_cap": 0.0,
-    "plan_resets_at": 0.0,
-    "cost_usd": 0.004841036,
+    "session": {
+      "usd": 0.004841036,
+      "usd_partial": false,
+      "plan_observed_points": 0.0
+    },
+    "execution": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_tokens": 0,
+      "cache_creation_tokens": 0,
+      "usd": 0.0,
+      "usd_partial": false,
+      "unmetered_tokens": 0,
+      "plan_observed_points": 0.0,
+      "usd_cap": null,
+      "tokens_fallback_cap": null,
+      "plan_cap": null
+    },
+    "account": null,
     "usd_text": "$0.0048"
   },
   "approvals": [

@@ -83,30 +83,32 @@ class RunHeader(widgets.Static):
         # Tasks and cost are as of the selected commit; ctx is live.
         done_n = sum(1 for t in ds.tasks if t.status in order.DONE_STATUSES)
         tasks = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
+        b = ds.budget
         cell = session_status.usage_cell(
-            ds.budget.usd_total,
-            partial=ds.budget.usd_partial,
-            plan_observed_points=ds.budget.plan_observed_points,
-            plan_used_percent=ds.budget.plan_used_percent,
+            b.session.usd,
+            partial=b.session.usd_partial,
+            plan_observed_points=b.session.plan_observed_points,
+            plan_used_percent=b.account.used_percent if b.account else 0.0,
         ) or agent6_budget.format_usd(0.0)
         segments = ["[b]agent6[/]"]
         if finished:
             segments.append(finished)
         segments.extend((tasks, f"usage: [b]{cell}[/]"))
-        # This execution's metered spend against its cap: a resume re-arms the cap while
-        # usd_total stays cumulative.
-        if ds.budget.usd_cap > 0:
-            execution_usd = ds.budget.usd_total - ds.budget.usd_prior_executions
-            segments.append(f"budget: {min(execution_usd / ds.budget.usd_cap, 1.0):.0%}")
-        if ds.budget.tokens_unmetered and ds.budget.tokens_fallback_cap > 0:
-            unmet = min(ds.budget.tokens_unmetered / ds.budget.tokens_fallback_cap, 1.0)
+        # This execution's metered spend against its cap; the session figure stays cumulative.
+        run = b.execution
+        if run.usd_cap is not None and run.usd_cap > 0:
+            segments.append(f"budget: {min(run.usd / run.usd_cap, 1.0):.0%}")
+        if (
+            run.unmetered_tokens
+            and run.tokens_fallback_cap is not None
+            and run.tokens_fallback_cap > 0
+        ):
+            unmet = min(run.unmetered_tokens / run.tokens_fallback_cap, 1.0)
             segments.append(f"unmetered: {unmet:.0%}")
-        if ds.budget.plan_used_percent > 0:
-            plan = f"plan: {ds.budget.plan_used_percent:g}%"
-            if ds.budget.plan_cap > 0:
-                # This execution's points against the cap a resume re-armed.
-                execution_pt = ds.budget.plan_observed_points - ds.budget.plan_prior_executions
-                plan += f" (moved {execution_pt:g}/{ds.budget.plan_cap:g}pt this run)"
+        if b.account is not None and b.account.used_percent > 0:
+            plan = f"plan: {b.account.used_percent:g}%"
+            if run.plan_cap is not None and run.plan_cap > 0:
+                plan += f" (moved {run.plan_observed_points:g}/{run.plan_cap:g}pt this run)"
             segments.append(plan)
         if as_of:
             segments.append(as_of.strip())

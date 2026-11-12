@@ -53,28 +53,28 @@ def test_the_page_carries_no_cost_formatter_and_no_glyph_map() -> None:
 
 
 def test_the_budget_line_is_rendered_once() -> None:
-    assert (
-        format.budget_usd_text(0.42, partial=False, usd_cap=0.0, usd_prior_executions=0.0)
-        == "$0.42"
-    )
-    assert format.budget_usd_text(0.42, partial=True, usd_cap=-1, usd_prior_executions=0.0) == (
+    assert format.budget_usd_text(0.42, partial=False, execution_usd=0.42, usd_cap=None) == "$0.42"
+    assert format.budget_usd_text(0.42, partial=True, execution_usd=0.42, usd_cap=-1) == (
         "~$0.42 (unlimited)"
     )
-    assert format.budget_usd_text(0.42, partial=False, usd_cap=1.0, usd_prior_executions=0.0) == (
+    assert format.budget_usd_text(0.42, partial=False, execution_usd=0.42, usd_cap=1.0) == (
         "$0.42 / $1.00"
     )
     # A plan-metered run's figure is the listings' cell, the cap text unchanged.
     assert format.budget_usd_text(
-        0.0, partial=False, usd_cap=1.0, usd_prior_executions=0.0, cell="2.5pt"
+        0.0, partial=False, execution_usd=0.0, usd_cap=1.0, cell="2.5pt"
     ) == ("2.5pt / $1.00")
-    assert format.budget_usd_text(0.42, partial=False, usd_cap=1.0, usd_prior_executions=0.1) == (
+    # Earlier executions spent: this execution's figure follows the session's.
+    assert format.budget_usd_text(0.42, partial=False, execution_usd=0.32, usd_cap=1.0) == (
         "$0.42 · execution $0.32 / $1.00"
     )
+    # A refused ledger (cap 0) and an unknown cap (None) both show the bare figure.
+    assert format.budget_usd_text(0.42, partial=False, execution_usd=0.42, usd_cap=0.0) == "$0.42"
 
 
 def test_a_partial_total_marks_the_execution_figure_too() -> None:
     """A resumed execution's dollar figure carries the `~` its cumulative total carries."""
-    assert format.budget_usd_text(0.42, partial=True, usd_cap=1.0, usd_prior_executions=0.1) == (
+    assert format.budget_usd_text(0.42, partial=True, execution_usd=0.32, usd_cap=1.0) == (
         "~$0.42 · execution ~$0.32 / $1.00"
     )
 

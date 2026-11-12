@@ -87,7 +87,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### budget.update
 
-**Support: public.** The cumulative token, spend and subscription readings.
+**Support: public.** The tracker's accounting since this process began, its caps and the account's reading.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -100,14 +100,20 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `usd_cap` | `float, optional` | Spend cap in USD; -1 means unlimited. |
 | `tokens_unmetered` | `int, optional` | Tokens with no known price. |
 | `tokens_fallback_cap` | `int, optional` | Token cap used for unpriced usage. |
-| `plan_used_percent` | `float, optional` | Provider-reported subscription usage percentage. |
 | `plan_observed_points` | `float, optional` | The largest observed plan movement in points across providers and windows; account-wide, so includes other consumers. |
 | `plan_cap` | `float, optional` | Subscription points cap. |
-| `plan_resets_at` | `float, optional` | Subscription window reset time in epoch seconds. |
-| `plan_windows` | `list, optional` | Every provider-reported subscription window. |
-| `credits_has` | `bool, optional` | Whether the account has credits. |
-| `credits_unlimited` | `bool, optional` | Whether credits are unlimited. |
-| `credits_balance` | `str, optional` | Provider-reported credit balance. |
+| `account` | `object, optional` | The latest subscription account reading; null before a plan call runs. |
+| `account.provider` | `str` | The provider entry whose account was read. |
+| `account.used_percent` | `float` | The binding window's used percent. |
+| `account.resets_at` | `float` | When the binding window resets, as epoch seconds; 0 when unknown. |
+| `account.windows` | `list` | Every window the backend reported, the primary first. |
+| `account.windows[].name` | `str` | The backend's label: primary, secondary, or a per-model family. |
+| `account.windows[].used_percent` | `float` | Percent of the included allowance used. |
+| `account.windows[].window_minutes` | `int` | The window's length; 0 when the backend gave none. |
+| `account.windows[].resets_at` | `float` | When the window resets, as epoch seconds. |
+| `account.credits_has` | `bool` | Whether the account holds purchased credits. |
+| `account.credits_unlimited` | `bool` | Whether the credits are unlimited. |
+| `account.credits_balance` | `str` | The credit balance as the backend sent it; empty when none. |
 
 ### command.backgrounded
 
@@ -1697,10 +1703,9 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `compact_gists_live` | `int` | The live gists in the current context; a demoted gist is back to a bare marker, and a tier-2 restart resets both. |
 | `pins` | `tuple[str, ...]` | The operator's /pin instructions in force, most recent last. |
 | `last_event_ep` | `float \| None` | The last folded event's own ts, the idle anchor every "working… Ns" timer measures from, so replayed history reads as its true age. |
-| `budget.cost_usd` | `JSON` | Cumulative spend in USD. |
 | `context_pct` | `JSON` | The last model call's context fill percentage, or null when unknown. |
 | `needs_new_work` | `JSON` | Whether a resume requires a new task rather than continuing work. |
-| `budget.usd_text` | `JSON` | The rendered cumulative spend and cap. |
+| `budget.usd_text` | `JSON` | The rendered session spend, then this execution's against its cap. |
 | `open_approval` | `JSON` | The current approval identifier, or null when none is open. |
 | `status` | `JSON` | The lifecycle status word. |
 | `status_label` | `JSON` | The rendered status with mode and unmerged marks when available. |
@@ -3196,27 +3201,15 @@ Source: [`agent6.evidence.ExecutionTargets`](https://github.com/agent6-dev/agent
 
 ### BudgetView
 
-**Support: public.** The run's spend as every surface shows it.
+**Support: public.** The run's usage as every surface shows it, each amount with one lifetime.
 
 Source: [`agent6.viewmodel.state_types.BudgetView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `input_total` | `int` | This execution's input tokens. |
-| `output_total` | `int` | This execution's output tokens. |
-| `cache_read_total` | `int` | The cached side of the input. |
-| `cache_creation_total` | `int` | Cache-creation tokens. |
-| `usd_total` | `float` | The spend across every execution. |
-| `usd_prior_executions` | `float` | The spend banked by completed executions. |
-| `usd_partial` | `bool` | Some model had no price, so `usd_total` is a lower bound. |
-| `usd_cap` | `float` | `[budget].max_usd` for this execution; -1 unlimited, 0 unknown. |
-| `tokens_unmetered` | `int` | Input and output tokens of calls the meter could not price. |
-| `tokens_fallback_cap` | `int` | `[budget].max_tokens_fallback`; -1 unlimited, 0 unknown. |
-| `plan_used_percent` | `float` | The account's reported plan usage; 0 until a plan call runs. |
-| `plan_observed_points` | `float` | The plan movement observed across every execution, in points. |
-| `plan_prior_executions` | `float` | The points banked by completed executions. |
-| `plan_cap` | `float` | `[budget].max_plan_points`; 0 until a plan call runs. |
-| `plan_resets_at` | `float` | When the plan window resets, as epoch seconds. |
+| `session` | `SessionUsage` | The usage across every execution. |
+| `execution` | `ExecutionUsage` | The current accounting lifetime's usage beside its caps. |
+| `account` | `AccountReading \| None` | The latest subscription account reading; None before a plan call runs. |
 
 ### ApprovalPrompt
 
@@ -3557,6 +3550,55 @@ Source: [`agent6.review_records.ReviewTarget`](https://github.com/agent6-dev/age
 | `source` | `Literal['revisions', 'worktree']` | Whether the comparison came from revisions or the working tree. |
 | `hidden_paths` | `tuple[str, ...]` | Paths withheld from the review. |
 
+### SessionUsage
+
+**Support: public.** The session's usage across every execution, what the listings' usage cell shows.
+
+Source: [`agent6.viewmodel.state_types.SessionUsage`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `usd` | `float` | The spend across every execution. |
+| `usd_partial` | `bool` | Some execution's model had no price, so `usd` is a lower bound. |
+| `plan_observed_points` | `float` | The plan movement observed across every execution, in points. |
+
+### ExecutionUsage
+
+**Support: public.** The current accounting lifetime's usage beside the caps that bound it.
+
+Source: [`agent6.viewmodel.state_types.ExecutionUsage`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `input_tokens` | `int` | Input tokens. |
+| `output_tokens` | `int` | Output tokens. |
+| `cache_read_tokens` | `int` | The cached side of the input. |
+| `cache_creation_tokens` | `int` | Cache-creation tokens. |
+| `usd` | `float` | The metered spend. |
+| `usd_partial` | `bool` | Some model had no price, so `usd` is a lower bound. |
+| `unmetered_tokens` | `int` | Input and output tokens of calls the meter could not price. |
+| `plan_observed_points` | `float` | The plan movement observed, in points. |
+| `usd_cap` | `float \| None` | `[budget].max_usd`. |
+| `tokens_fallback_cap` | `int \| None` | `[budget].max_tokens_fallback`. |
+| `plan_cap` | `float \| None` | `[budget].max_plan_points`. |
+
+### AccountReading
+
+**Support: public.** The latest reading of a subscription account: an observation of the account, not the run.
+
+Source: [`agent6.viewmodel.state_types.AccountReading`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `provider` | `str` | The provider entry whose account was read; "" in a journal written before the reading named it. |
+| `used_percent` | `float` | The binding window's used percent. |
+| `resets_at` | `float` | When the binding window resets, as epoch seconds; 0 when unknown. |
+| `windows` | `tuple[PlanWindow, ...]` | Every window the backend reported, the primary first. |
+| `credits_has` | `bool` | Whether the account holds purchased credits. |
+| `credits_unlimited` | `bool` | Whether the credits are unlimited. |
+| `credits_balance` | `str` | The credit balance as the backend sent it; "" when none. |
+| `observed_at` | `float` | When the reading was journaled, as epoch seconds. |
+
 ### Question
 
 **Support: public.** One question within an `ask_user` prompt.
@@ -3669,6 +3711,19 @@ Source: [`agent6.viewmodel.review.ActionRecord`](https://github.com/agent6-dev/a
 | `action` | `str \| None` | The requested action kind, or null when unrecorded. |
 | `execution_id` | `str \| None` | The execution that handled the action, or null. |
 | `error` | `str \| None` | The action failure diagnostic, or null. |
+
+### PlanWindow
+
+**Support: public.** One rate-limit window of a subscription plan.
+
+Source: [`agent6.budget.PlanWindow`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/budget.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | `str` | The backend's label: `primary`, `secondary`, a per-model family. |
+| `used_percent` | `float` | Percent of the included allowance used. |
+| `window_minutes` | `int` | The window's length; 0 when the backend gave none. |
+| `resets_at` | `float` | When the window resets, as a Unix time. |
 
 ### Finding
 

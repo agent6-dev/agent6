@@ -198,7 +198,9 @@ class LogScan:
 
 def read_plan_usage(ev: Mapping[str, object]) -> budget.PlanUsage | None:
     """Return the plan windows a budget.update carries, or None when it carries none."""
-    raw = ev.get("plan_windows")
+    account = ev.get("account")
+    # A journal written before the account record keys the windows flat.
+    raw = account.get("windows") if isinstance(account, dict) else ev.get("plan_windows")
     windows: list[budget.PlanWindow] = []
     for w in raw if isinstance(raw, list) else ():
         if not isinstance(w, dict):
@@ -215,6 +217,22 @@ def read_plan_usage(ev: Mapping[str, object]) -> budget.PlanUsage | None:
         except (KeyError, TypeError, ValueError):
             continue
     return budget.PlanUsage(windows=tuple(windows)) if windows else None
+
+
+def account_used_percent(ev: Mapping[str, object], last_good: float) -> float:
+    """Read a budget.update's account used percent; an older journal keys it flat.
+
+    Args:
+        ev: The event.
+        last_good: The figure to keep when the value is unusable.
+
+    Returns:
+        The account's used percent, or `last_good`.
+    """
+    account = ev.get("account")
+    if isinstance(account, dict):
+        return tolerant_float(account.get("used_percent"), last_good)
+    return figure(ev, "plan_used_percent", last_good)
 
 
 def figure(ev: Mapping[str, object], key: str, last_good: float) -> float:
@@ -586,7 +604,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         plan_observed_points,
                     )
                     plan_cap = figure(ev, "plan_cap", plan_cap)
-                    plan_used_percent = figure(ev, "plan_used_percent", plan_used_percent)
+                    plan_used_percent = account_used_percent(ev, plan_used_percent)
                     if (reading := read_plan_usage(ev)) is not None:
                         plan_usage = reading
                         plan_usage_at = events.event_epoch(ev.get("ts")) or 0.0

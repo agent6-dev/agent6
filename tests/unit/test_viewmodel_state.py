@@ -384,13 +384,14 @@ def test_budget_update_populates_view() -> None:
             "tokens_fallback_cap": 1000,
         },
     )
-    assert s.budget.input_total == 100
-    assert s.budget.usd_cap == 10.0
-    assert s.budget.tokens_unmetered == 30
-    assert s.budget.tokens_fallback_cap == 1000
-    # USD fields default cleanly when the event omits them.
-    assert s.budget.usd_total == 0.0
-    assert s.budget.usd_partial is False
+    assert s.budget.execution.input_tokens == 100
+    assert s.budget.execution.usd_cap == 10.0
+    assert s.budget.execution.unmetered_tokens == 30
+    assert s.budget.execution.tokens_fallback_cap == 1000
+    # USD fields default cleanly when the event omits them; a missing cap stays unknown.
+    assert s.budget.session.usd == 0.0 and s.budget.execution.usd == 0.0
+    assert s.budget.session.usd_partial is False
+    assert s.budget.execution.plan_cap is None
     # budget.update never carries a per-model token breakdown (no emitter ever
     # wrote one, and no surface reads it); the fold must not resurrect a
     # permanently-empty field. The per-model breakdown is surfaced from the
@@ -411,8 +412,8 @@ def test_budget_update_carries_usd_total() -> None:
             "usd_partial": True,
         },
     )
-    assert s.budget.usd_total == 0.1234
-    assert s.budget.usd_partial is True
+    assert s.budget.session.usd == s.budget.execution.usd == 0.1234
+    assert s.budget.session.usd_partial is True
 
 
 def test_budget_usd_cumulative_across_resume_executions() -> None:
@@ -429,15 +430,16 @@ def test_budget_usd_cumulative_across_resume_executions() -> None:
     )
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     # Banked, and the header keeps the old total until the new execution reports.
-    assert s.budget.usd_total == 0.02
+    assert s.budget.session.usd == 0.02 and s.budget.execution.usd == 0.0
     s = viewmodel_state.apply_event(s, _update(0.005))
-    assert s.budget.usd_total == pytest.approx(0.025)
-    # partial is sticky: execution 1's unpriced spend keeps the total an under-estimate.
-    assert s.budget.usd_partial is True
+    assert s.budget.session.usd == pytest.approx(0.025)
+    assert s.budget.execution.usd == pytest.approx(0.005)
+    # partial is sticky on the session: execution 1's unpriced spend keeps it an under-estimate.
+    assert s.budget.session.usd_partial is True and s.budget.execution.usd_partial is False
     # A second resume banks the cumulative, not just the last execution.
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     s = viewmodel_state.apply_event(s, _update(0.001))
-    assert s.budget.usd_total == pytest.approx(0.026)
+    assert s.budget.session.usd == pytest.approx(0.026)
 
 
 def test_verify_lifecycle() -> None:
@@ -546,7 +548,7 @@ def test_full_run_trace_replay() -> None:
     assert s.tasks[1].status == "failed"
     assert s.cursor_task_id == "two"
     assert s.latest_diff == "+ added"
-    assert s.budget.input_total == 50
+    assert s.budget.execution.input_tokens == 50
 
 
 def test_log_count_is_monotonic_past_window_cap() -> None:
@@ -750,8 +752,8 @@ def test_run_start_after_run_end_unfinishes_without_banking() -> None:
     assert s.stop_reason == ""
     assert session_state_as_dict(s)["status_label"] == "running"
     s = viewmodel_state.apply_event(s, {"type": "budget.update", "usd_total": 0.03})
-    assert s.budget.usd_total == pytest.approx(0.03)
-    assert s.budget.usd_prior_executions == pytest.approx(0.0)
+    assert s.budget.session.usd == pytest.approx(0.03)
+    assert s.budget.execution.usd == pytest.approx(0.03)  # nothing banked: one tracker
 
 
 def test_resume_resets_the_execution_token_counters() -> None:
@@ -778,17 +780,12 @@ def test_resume_resets_the_execution_token_counters() -> None:
         s, {"type": "session.stop", "verification": "unverified", "reason": "budget_exhausted"}
     )
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
-    assert s.budget.input_total == 0
-    assert s.budget.output_total == 0
-    assert s.budget.usd_cap == 0.0
-    assert s.budget.tokens_unmetered == 0
-    assert s.budget.tokens_fallback_cap == 0
-    assert s.budget.usd_total == pytest.approx(0.2)
-    assert s.budget.usd_prior_executions == pytest.approx(0.2)
+    assert s.budget.execution == BudgetView().execution  # zeros, the caps unknown again
+    assert s.budget.session.usd == pytest.approx(0.2)
 
 
 def test_resume_resets_the_execution_plan_counters() -> None:
-    """A resume drops the plan cap and the account reading and banks the observed points."""
+    """A resume drops the plan cap and banks the observed points; the account's reading stays."""
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(s, {"type": "session.start", "user_task": "t"})
     s = viewmodel_state.apply_event(
@@ -805,10 +802,10 @@ def test_resume_resets_the_execution_plan_counters() -> None:
         s, {"type": "session.stop", "verification": "unverified", "reason": "budget_exhausted"}
     )
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
-    assert s.budget.plan_used_percent == 0.0
-    assert s.budget.plan_observed_points == s.budget.plan_prior_executions == 3.5
-    assert s.budget.plan_cap == 0.0
-    assert s.budget.plan_resets_at == 0.0
+    assert s.budget.account is not None and s.budget.account.used_percent == 42.0
+    assert s.budget.session.plan_observed_points == 3.5
+    assert s.budget.execution.plan_observed_points == 0.0
+    assert s.budget.execution.plan_cap is None
 
 
 def test_plan_points_cumulative_across_resume_executions() -> None:
@@ -823,8 +820,8 @@ def test_plan_points_cumulative_across_resume_executions() -> None:
     s = viewmodel_state.apply_event(s, {**update, "plan_observed_points": 2.5})
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     s = viewmodel_state.apply_event(s, {**update, "plan_observed_points": 1.0})
-    assert s.budget.plan_observed_points == 3.5
-    assert s.budget.plan_prior_executions == 2.5
+    assert s.budget.session.plan_observed_points == 3.5
+    assert s.budget.execution.plan_observed_points == 1.0
 
 
 def test_concurrent_same_name_results_pair_by_call_id() -> None:
@@ -1373,3 +1370,40 @@ def test_the_state_names_its_execution_from_the_start_rows() -> None:
     s = viewmodel_state.apply_event(s, {"type": "session.resume", "execution_id": "second"})
     assert s.execution_id == "second"
     assert session_state_as_dict(s)["execution_id"] == "second"
+
+
+def test_the_account_reading_names_its_provider_and_survives_a_resume() -> None:
+    """The view keeps the latest account reading, with the provider and when it was read."""
+    s = viewmodel_state.apply_event(viewmodel_state.initial_state(), {"type": "session.start"})
+    s = viewmodel_state.apply_event(
+        s,
+        {
+            "type": "budget.update",
+            "ts": "2026-07-14T10:00:30+00:00",
+            "usd_total": 0.0,
+            "plan_observed_points": 1.0,
+            "plan_cap": 5.0,
+            "account": {
+                "provider": "chatgpt",
+                "used_percent": 42.0,
+                "resets_at": 2e9,
+                "windows": [
+                    {
+                        "name": "primary",
+                        "used_percent": 42.0,
+                        "window_minutes": 300,
+                        "resets_at": 2e9,
+                    }
+                ],
+                "credits_has": False,
+                "credits_unlimited": False,
+                "credits_balance": "",
+            },
+        },
+    )
+    account = s.budget.account
+    assert account is not None and account.provider == "chatgpt" and account.observed_at > 0
+    assert [w.name for w in account.windows] == ["primary"]
+    s = viewmodel_state.apply_event(s, {"type": "session.resume"})
+    assert s.budget.account == account
+    assert s.budget.execution.plan_cap is None and s.budget.session.plan_observed_points == 1.0

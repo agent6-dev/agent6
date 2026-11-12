@@ -202,6 +202,35 @@ def _call_identity(raw: dict[str, Any]) -> dict[str, Any]:
     return fields
 
 
+def _cap(value: object) -> float | None:
+    """Return a recorded cap; None when the row carries none."""
+    return None if value is None else float(value)  # pyright: ignore[reportArgumentType]
+
+
+def _account_reading(raw: dict[str, Any]) -> journal.AccountReading | None:
+    """Return a budget row's account reading; a journal written before the record keys it flat."""
+    nested = raw.get("account")
+    if isinstance(nested, dict):
+        return journal.AccountReading.model_validate(nested)
+    windows = [
+        journal.AccountWindow.model_validate(w)
+        for w in raw.get("plan_windows") or ()
+        if isinstance(w, dict)
+    ]
+    used = float(raw.get("plan_used_percent") or 0.0)
+    if not windows and used <= 0:
+        return None
+    return journal.AccountReading(
+        provider="",
+        used_percent=used,
+        resets_at=float(raw.get("plan_resets_at") or 0.0),
+        windows=windows,
+        credits_has=bool(raw.get("credits_has", False)),
+        credits_unlimited=bool(raw.get("credits_unlimited", False)),
+        credits_balance=str(raw.get("credits_balance") or ""),
+    )
+
+
 def _call_id(raw: dict[str, Any]) -> int | None:
     """Return the event's `call_id` when it is an int, else None."""
     cid = raw.get("call_id")
@@ -368,17 +397,20 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 cache_creation_total=int(raw.get("cache_creation_total", 0)),
                 usd_total=float(raw.get("usd_total", 0.0)),
                 usd_partial=bool(raw.get("usd_partial", False)),
-                # A log written without these keys folds 0.
-                usd_cap=float(raw.get("usd_cap", 0.0)),
+                # A row without a cap leaves it unknown; a recorded 0 (refuse) or -1 stays.
+                usd_cap=_cap(raw.get("usd_cap")),
                 tokens_unmetered=int(raw.get("tokens_unmetered", 0)),
-                tokens_fallback_cap=int(raw.get("tokens_fallback_cap", 0)),
-                plan_used_percent=float(raw.get("plan_used_percent", 0.0)),
+                tokens_fallback_cap=(
+                    None
+                    if raw.get("tokens_fallback_cap") is None
+                    else int(raw["tokens_fallback_cap"])
+                ),
                 # Journals written before the rename stamp `plan_consumed`.
                 plan_observed_points=float(
                     raw.get("plan_observed_points", raw.get("plan_consumed", 0.0))
                 ),
-                plan_cap=float(raw.get("plan_cap", 0.0)),
-                plan_resets_at=float(raw.get("plan_resets_at", 0.0)),
+                plan_cap=_cap(raw.get("plan_cap")),
+                account=_account_reading(raw),
             )
         case "approval.prompt":
             return journal.ApprovalPrompt(

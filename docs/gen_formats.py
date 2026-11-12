@@ -496,14 +496,7 @@ def _journal() -> str:
         ).render()
     ]
     for event_type, record in sorted(journal.EVENT_TYPES.items()):
-        fields = [
-            Field(
-                name,
-                _record_kind(info.annotation) + ("" if info.is_required() else ", optional"),
-                (info.description or "").replace("|", "\\|"),
-            )
-            for name, info in record.model_fields.items()
-        ]
+        fields = _record_fields(record, "")
         meaning = (inspect.getdoc(record) or "").split("\n\n")[0].replace("\n", " ")
         parts.append(f"### {event_type}\n\n**Support: public.** {meaning}\n\n{_table(fields)}")
     return "\n\n".join(parts)
@@ -518,6 +511,29 @@ _RECORD_KINDS = {
     "collections.abc.Sequence[Any]": "list",
     "dict[str, Any]": "object",
 }
+
+
+def _record_fields(record: type[Any], prefix: str) -> list[Field]:
+    """Return a record's rows, a nested record's fields under dotted names."""
+    rows: list[Field] = []
+    for name, info in record.model_fields.items():
+        optional = "" if info.is_required() else ", optional"
+        nested, kind = _nested_record(info.annotation)
+        rows.append(
+            Field(prefix + name, kind + optional, (info.description or "").replace("|", "\\|"))
+        )
+        if nested is not None:
+            rows.extend(_record_fields(nested, f"{prefix}{name}{'[].' if kind == 'list' else '.'}"))
+    return rows
+
+
+def _nested_record(annotation: Any) -> tuple[type[Any] | None, str]:
+    """Return the record an annotation nests (bare, optional or listed) and its JSON kind."""
+    for t in _types(annotation):
+        if issubclass(t, pydantic.BaseModel):
+            text = _type_text(annotation)
+            return t, "list" if text.startswith("collections.abc.Sequence") else "object"
+    return None, _record_kind(annotation)
 
 
 def _record_kind(annotation: Any) -> str:
