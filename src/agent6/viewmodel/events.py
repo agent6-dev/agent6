@@ -373,7 +373,10 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 tokens_unmetered=int(raw.get("tokens_unmetered", 0)),
                 tokens_fallback_cap=int(raw.get("tokens_fallback_cap", 0)),
                 plan_used_percent=float(raw.get("plan_used_percent", 0.0)),
-                plan_consumed=float(raw.get("plan_consumed", 0.0)),
+                # Journals written before the rename stamp `plan_consumed`.
+                plan_observed_points=float(
+                    raw.get("plan_observed_points", raw.get("plan_consumed", 0.0))
+                ),
                 plan_cap=float(raw.get("plan_cap", 0.0)),
                 plan_resets_at=float(raw.get("plan_resets_at", 0.0)),
             )

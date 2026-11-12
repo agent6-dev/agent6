@@ -348,7 +348,7 @@ function paintDetails(cards, s, asOf) {
   const usdCap = b.usd_cap || 0;
   const executionUsd = Math.max(0, (b.cost_usd || 0) - (b.usd_prior_executions || 0));
   const usdFrac = usdCap > 0 ? Math.min(1, executionUsd / usdCap) : 0;
-  cards.budget.appendChild(barRow('cost', usdFrac, b.usd_text || ''));
+  cards.budget.appendChild(barRow('usage', usdFrac, b.usd_text || ''));
   if (b.tokens_unmetered) {
     const fbCap = b.tokens_fallback_cap || 0;
     const fbFrac = fbCap > 0 ? Math.min(1, b.tokens_unmetered / fbCap) : 0;
@@ -357,15 +357,15 @@ function paintDetails(cards, s, asOf) {
   }
   if (b.plan_used_percent > 0 || b.plan_cap > 0) {
     // Subscription plan usage: the account's window fill; the bar meters this
-    // execution's consumed points (plan_consumed - plan_prior_executions) against
+    // execution's observed points (plan_observed_points - plan_prior_executions) against
     // max_plan_points when one is set, else the account percent itself. The cap re-arms
     // each resume, as the cost bar's does.
     const planCap = b.plan_cap || 0;
-    const executionPt = Math.max(0, (b.plan_consumed || 0) - (b.plan_prior_executions || 0));
+    const executionPt = Math.max(0, (b.plan_observed_points || 0) - (b.plan_prior_executions || 0));
     const planFrac = planCap > 0 ? Math.min(1, executionPt / planCap)
                                  : Math.min(1, b.plan_used_percent / 100);
     const planText = `${b.plan_used_percent}%`
-      + (planCap > 0 ? ` · run ${executionPt.toFixed(1)} / ${planCap} pt` : '');
+      + (planCap > 0 ? ` · moved ${executionPt.toFixed(1)} / ${planCap} pt this run` : '');
     cards.budget.appendChild(barRow('plan', planFrac, planText));
   }
   // The context-window fill at the last model call (the TUI's `ctx: N%`, the

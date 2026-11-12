@@ -175,7 +175,7 @@ def _result(
     if budget is not None:
         usd, partial = budget.estimate_usd()
         snap = budget.snapshot()
-        inp, out, plan = snap.input_total, snap.output_total, snap.plan_consumed
+        inp, out, plan = snap.input_total, snap.output_total, snap.plan_observed_points
     return AgentExecResult(
         reason=reason,
         payload=payload,
@@ -183,7 +183,7 @@ def _result(
         usd_partial=partial,
         input_tokens=inp,
         output_tokens=out,
-        plan_consumed=plan,
+        plan_observed_points=plan,
     )
 
 

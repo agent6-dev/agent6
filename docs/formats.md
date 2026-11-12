@@ -101,7 +101,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `tokens_unmetered` | `int, optional` | Tokens with no known price. |
 | `tokens_fallback_cap` | `int, optional` | Token cap used for unpriced usage. |
 | `plan_used_percent` | `float, optional` | Provider-reported subscription usage percentage. |
-| `plan_consumed` | `float, optional` | The largest observed plan movement in points across providers and windows; account-wide, so includes other consumers. |
+| `plan_observed_points` | `float, optional` | The largest observed plan movement in points across providers and windows; account-wide, so includes other consumers. |
 | `plan_cap` | `float, optional` | Subscription points cap. |
 | `plan_resets_at` | `float, optional` | Subscription window reset time in epoch seconds. |
 | `plan_windows` | `list, optional` | Every provider-reported subscription window. |
@@ -1544,9 +1544,9 @@ Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/b
 | `when` | `str` | The rendered last activity time. |
 | `cost_usd` | `float` | Cumulative spend in USD across executions. |
 | `usd_partial` | `bool` | Whether unpriced usage makes spend a lower bound. |
-| `plan_consumed` | `float` | Subscription points consumed across executions. |
+| `plan_observed_points` | `float` | The plan movement observed across executions, in points. |
 | `plan_cap` | `float` | The subscription points cap. |
-| `cost` | `str` | The rendered cost cell. |
+| `usage` | `str` | The rendered usage cell: plan points, dollars, or both. |
 | `model` | `str` | The resolved provider/model route. |
 | `model_from_flag` | `bool` | Whether a model flag selected the route. |
 | `id_cell` | `str` | The session identifier with winner and worktree marks. |
@@ -1608,7 +1608,7 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `cache_read_tokens` | `int \| None` | Recorded cached input tokens. |
 | `cache_creation_tokens` | `int \| None` | Recorded cache-creation tokens. |
 | `cost_usd` | `float \| None` | Cumulative spend in USD, or null when unknown. |
-| `plan_consumed` | `float` | Subscription points consumed across executions. |
+| `plan_observed_points` | `float` | The plan movement observed across executions, in points. |
 | `plan_prior_executions` | `float` | Subscription points banked by earlier executions. |
 | `plan_cap` | `float` | The subscription points cap. |
 | `unattended_questions` | `int` | Questions answered empty because nobody was attached. |
@@ -3213,7 +3213,7 @@ Source: [`agent6.viewmodel.state_types.BudgetView`](https://github.com/agent6-de
 | `tokens_unmetered` | `int` | Input and output tokens of calls the meter could not price. |
 | `tokens_fallback_cap` | `int` | `[budget].max_tokens_fallback`; -1 unlimited, 0 unknown. |
 | `plan_used_percent` | `float` | The account's reported plan usage; 0 until a plan call runs. |
-| `plan_consumed` | `float` | The plan points consumed across every execution. |
+| `plan_observed_points` | `float` | The plan movement observed across every execution, in points. |
 | `plan_prior_executions` | `float` | The points banked by completed executions. |
 | `plan_cap` | `float` | `[budget].max_plan_points`; 0 until a plan call runs. |
 | `plan_resets_at` | `float` | When the plan window resets, as epoch seconds. |

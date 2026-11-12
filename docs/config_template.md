@@ -186,7 +186,7 @@ agent6 model default chatgpt/gpt-5.6-sol
   Later calls on that provider instance keep the accepted levels; they are not persisted.
 - `agent6 connect chatgpt --logout` signs out: the grant is revoked at the OAuth authority (best effort) and the tokens leave `secrets.toml`.
 - Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit windows.
-  `[budget].max_plan_points` caps the points one run may consume (`--max-plan-points` per run).
+  `[budget].max_plan_points` caps the plan movement observed during one run (`--max-plan-points` per run).
   Dollar figures stay an authoritative $0.
 
 ### Claude Code subscription (`backend = "claude_code"`)
@@ -203,7 +203,7 @@ agent6 model default claude/claude-sonnet-4-5
   Inside it every Claude Code capability is off: built-in tools, hooks, settings, CLAUDE.md, MCP servers, skills, slash commands, session files, auto-memory, auto-compaction.
 - agent6 never reads the login under `~/.claude`; a `CLAUDE_CONFIG_DIR` in the environment selects a relocated one.
 - Spend is plan-metered: every round reports the account's 5-hour and 7-day windows.
-  `[budget].max_plan_points` caps the points one run may consume (`--max-plan-points` per run).
+  `[budget].max_plan_points` caps the plan movement observed during one run (`--max-plan-points` per run).
   Dollar figures stay an authoritative $0; the binary's own list-price estimate is not recorded.
 - Ignored: `[models.<role>].temperature` and the loop's per-call output-token cap (the binary owns sampling).
   Refused: `effort = "off"` (`claude --effort` has no off value; use `low`).

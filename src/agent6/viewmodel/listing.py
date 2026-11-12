@@ -120,7 +120,7 @@ class SessionSummary:
             compare table and the judge read it.
         coordinator: The session that dispatched this lane, the row it nests under.
         lane: The lane number within its fan-out.
-        plan_consumed: The plan points consumed across executions on a plan-metered provider.
+        plan_observed_points: The plan movement observed across executions, in points.
         plan_cap: The plan's points cap, `[budget].max_plan_points`.
         plan_used_percent: The account's reading; 0 unless a plan provider answered.
         model: The manifest's provider/model route for this execution.
@@ -145,7 +145,7 @@ class SessionSummary:
     verification: kinds.Verification | None = None
     coordinator: str = ""
     lane: int | None = None
-    plan_consumed: float = 0.0
+    plan_observed_points: float = 0.0
     plan_cap: float = 0.0
     plan_used_percent: float = 0.0
     model: str = ""
@@ -158,12 +158,12 @@ class SessionSummary:
     )
 
     @property
-    def cost_cell(self) -> str:
-        """The session's cost as `cost_cell` spells it."""
-        return session_status.cost_cell(
+    def usage_cell(self) -> str:
+        """The session's cost as `usage_cell` spells it."""
+        return session_status.usage_cell(
             self.cost_usd,
             partial=self.usd_partial,
-            plan_consumed=self.plan_consumed,
+            plan_observed_points=self.plan_observed_points,
             plan_used_percent=self.plan_used_percent,
         )
 
@@ -341,9 +341,9 @@ class SummaryRow(TypedDict):
     when: str
     cost_usd: float
     usd_partial: bool
-    plan_consumed: float
+    plan_observed_points: float
     plan_cap: float
-    cost: str
+    usage: str
     model: str
     model_from_flag: bool
     id_cell: str
@@ -415,9 +415,9 @@ def summary_row(
         when: The rendered last activity time.
         cost_usd: Cumulative spend in USD across executions.
         usd_partial: Whether unpriced usage makes spend a lower bound.
-        plan_consumed: Subscription points consumed across executions.
+        plan_observed_points: The plan movement observed across executions, in points.
         plan_cap: The subscription points cap.
-        cost: The rendered cost cell.
+        usage: The rendered usage cell: plan points, dollars, or both.
         model: The resolved provider/model route.
         model_from_flag: Whether a model flag selected the route.
         id_cell: The session identifier with winner and worktree marks.
@@ -456,9 +456,9 @@ def summary_row(
         "when": format.format_when(s.last_activity) if s.last_activity else "",
         "cost_usd": s.cost_usd,
         "usd_partial": s.usd_partial,
-        "plan_consumed": s.plan_consumed,
+        "plan_observed_points": s.plan_observed_points,
         "plan_cap": s.plan_cap,
-        "cost": s.cost_cell,
+        "usage": s.usage_cell,
         "model": s.model,
         "model_from_flag": s.model_from_flag,
         "id_cell": s.id_cell(winner=winner),
@@ -785,7 +785,7 @@ def summarize_session_dir(
         verification=scan.verification,
         coordinator=lineage.coordinator if lineage is not None else "",
         lane=lineage.lane if lineage is not None else None,
-        plan_consumed=scan.plan_consumed,
+        plan_observed_points=scan.plan_observed_points,
         plan_cap=scan.plan_cap,
         plan_used_percent=scan.plan_used_percent,
         model=format.format_model_route(manifest.models.driver) if manifest is not None else "",

@@ -320,11 +320,11 @@ def test_create_keeps_one_plan_point_ledger_across_attempts(
     _stub_runner(
         monkeypatch,
         [
-            ({}, AgentExecResult(payload=None, reason="finish_session", plan_consumed=20.0)),
-            ({}, AgentExecResult(payload=None, reason="finish_session", plan_consumed=20.0)),
+            ({}, AgentExecResult(payload=None, reason="finish_session", plan_observed_points=20.0)),
+            ({}, AgentExecResult(payload=None, reason="finish_session", plan_observed_points=20.0)),
             (
                 _draft(VALID_MACHINE),
-                AgentExecResult(payload=None, reason="finish_session", plan_consumed=1.0),
+                AgentExecResult(payload=None, reason="finish_session", plan_observed_points=1.0),
             ),
         ],
     )
@@ -483,7 +483,7 @@ def test_create_logs_the_cumulative_spend_across_attempts(
                     usd=0.01,
                     input_tokens=100,
                     output_tokens=20,
-                    plan_consumed=1.5,
+                    plan_observed_points=1.5,
                 ),
             ),
             (
@@ -494,7 +494,7 @@ def test_create_logs_the_cumulative_spend_across_attempts(
                     usd=0.02,
                     input_tokens=150,
                     output_tokens=30,
-                    plan_consumed=2.5,
+                    plan_observed_points=2.5,
                 ),
             ),
         ],
@@ -507,7 +507,7 @@ def test_create_logs_the_cumulative_spend_across_attempts(
     last = budgets[-1]
     assert abs(last["usd_total"] - 0.03) < 1e-9  # 0.01 + 0.02, not the last 0.02
     assert last["input_total"] == 250 and last["output_total"] == 50
-    assert last["plan_consumed"] == 4.0  # the stderr line's points reach the journal too
+    assert last["plan_observed_points"] == 4.0  # the stderr line's points reach the journal too
 
 
 def test_create_saves_the_prompt(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

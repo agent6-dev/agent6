@@ -53,7 +53,7 @@ if args == ['sessions', 'show', 'stub-1', '--json']:
         'session_id': 'stub-1',
         'reason': os.environ.get('STUB_REASON', 'finish_session'),
         'model': 'stub-provider/stub-model',
-        'plan_consumed': json.loads(os.environ.get('STUB_PLAN', '1.5')),
+        'plan_observed_points': json.loads(os.environ.get('STUB_PLAN', '1.5')),
         'plan_cap': 2,
         'input_tokens': 10,
         'output_tokens': 5,

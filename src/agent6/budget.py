@@ -289,11 +289,12 @@ class PlanSpend:
 
     Attributes:
         usage: The latest reading.
-        consumed: Accumulated window movement in percentage points, including other consumers.
+        observed_points: Accumulated window movement in percentage points, including other
+            consumers.
     """
 
     usage: PlanUsage
-    consumed: float
+    observed_points: float
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -334,9 +335,9 @@ class BudgetSnapshot:
         return next(reversed(self.plans.values())).usage if self.plans else None
 
     @property
-    def plan_consumed(self) -> float:
-        """This run's consumption on the plan that moved most, what `max_plan_points` caps."""
-        return max((spend.consumed for spend in self.plans.values()), default=0.0)
+    def plan_observed_points(self) -> float:
+        """The movement observed this run on the plan that moved most, what the cap bounds."""
+        return max((spend.observed_points for spend in self.plans.values()), default=0.0)
 
 
 @dataclasses.dataclass(slots=True)
@@ -345,7 +346,7 @@ class BudgetTracker:
 
     The call that brings a ledger to or over its cap trips `BudgetExceededError` on
     the next `check`, so one call may cross the line and no further call is issued.
-    `max_plan_points` meters consumption: the rise in the account's reported used percent
+    `max_plan_points` meters observed movement: the rise in the account's reported used percent
     across this run's readings, accumulated across window resets; a window counts as reset
     when its reported reset time moves later by more than `RESET_SLACK_S`, and a lower
     reading whose reset time has not moved is out of order and counts nothing. The reading
@@ -374,9 +375,9 @@ class BudgetTracker:
     _exceeded_reason: str = ""
     # Provider entry to its latest plan reading, the most recently reported last.
     _plans: dict[str, PlanUsage] = dataclasses.field(default_factory=dict)
-    # Per (provider entry, window): the high-water reading, and this run's consumption.
+    # Per (provider entry, window): the high-water reading, and the movement observed this run.
     _plan_last_window: dict[tuple[str, str], PlanWindow] = dataclasses.field(default_factory=dict)
-    _plan_consumed_by_window: dict[tuple[str, str], float] = dataclasses.field(default_factory=dict)
+    _plan_observed_by_window: dict[tuple[str, str], float] = dataclasses.field(default_factory=dict)
     # Provider entry to its plan reader, the request the preflight makes.
     _plan_readers: dict[str, Callable[[], PlanUsage | None]] = dataclasses.field(
         default_factory=dict
@@ -467,16 +468,16 @@ class BudgetTracker:
                 )
             self._check_ceilings(route.provider, plan_usage)
 
-    def _plan_consumed(self, route: str = "") -> float:
-        """Return this run's consumption on its binding window, narrowed to one route when given."""
-        return self._plan_consumption_binding(route)[2]
+    def _plan_observed_points(self, route: str = "") -> float:
+        """Return the movement observed on the binding window this run, one route when given."""
+        return self._plan_observation_binding(route)[2]
 
-    def _plan_consumption_binding(self, route: str = "") -> tuple[str, str, float]:
-        """Return the provider entry, window and consumed points nearest the cap."""
+    def _plan_observation_binding(self, route: str = "") -> tuple[str, str, float]:
+        """Return the provider entry, window and observed points nearest the cap."""
         return max(
             (
                 (entry, window, points)
-                for (entry, window), points in self._plan_consumed_by_window.items()
+                for (entry, window), points in self._plan_observed_by_window.items()
                 if not route or entry == route
             ),
             key=lambda row: row[2],
@@ -484,9 +485,9 @@ class BudgetTracker:
         )
 
     def _note_plan_usage(self, route: str, plan: PlanUsage) -> None:
-        """Fold one reading into the window's consumption and the credit balance into the USD meter.
+        """Fold one reading into the window's observed movement and the credits into the USD meter.
 
-        A window's first reading is its baseline. A rise within the window is consumption. A
+        A window's first reading is its baseline. A rise within the window is movement. A
         reset time later by more than `RESET_SLACK_S` is a new window, whose reading counts
         whole. A reading out of order (another seat read the account first) counts nothing:
         a lower percent on the same window, or any reading from a window already left. A
@@ -510,7 +511,7 @@ class BudgetTracker:
                 delta = w.used_percent - last.used_percent
             else:
                 continue
-            self._plan_consumed_by_window[key] = self._plan_consumed_by_window.get(key, 0.0) + delta
+            self._plan_observed_by_window[key] = self._plan_observed_by_window.get(key, 0.0) + delta
             self._plan_last_window[key] = w
         balance = plan.credits_usd
         if balance is not None:
@@ -549,12 +550,12 @@ class BudgetTracker:
                 f" (provider {provider!r} draws on a subscription plan;"
                 " raise [budget].max_plan_points)"
             )
-        elif self.max_plan_points > 0.0 and self._plan_consumed() >= self.max_plan_points:
-            route, window, consumed = self._plan_consumption_binding()
+        elif self.max_plan_points > 0.0 and self._plan_observed_points() >= self.max_plan_points:
+            route, window, observed = self._plan_observation_binding()
             reading = self._plan_last_window[(route, window)]
             windows = tuple(w for (r, _), w in self._plan_last_window.items() if r == route)
             self._exceeded_reason = (
-                f"plan budget exhausted: this run consumed ~{consumed:.1f}"
+                f"plan budget exhausted: the plan moved ~{observed:.1f}"
                 f" percentage points >= max_plan_points {self.max_plan_points:g}"
                 f" ({route}: account at {reading.used_percent:g}% on its"
                 f" {format_plan_window(reading, windows)})"
@@ -657,7 +658,7 @@ class BudgetTracker:
             if self.max_tokens_fallback > 0:
                 used = max(used, self._unmetered_tokens / self.max_tokens_fallback)
             if self.max_plan_points > 0.0:
-                used = max(used, self._plan_consumed() / self.max_plan_points)
+                used = max(used, self._plan_observed_points() / self.max_plan_points)
         return max(0.0, 1.0 - used)
 
     def snapshot(self) -> BudgetSnapshot:
@@ -677,7 +678,7 @@ class BudgetTracker:
                 max_tokens_fallback=self.max_tokens_fallback,
                 max_plan_points=self.max_plan_points,
                 plans={
-                    route: PlanSpend(plan, self._plan_consumed(route))
+                    route: PlanSpend(plan, self._plan_observed_points(route))
                     for route, plan in self._plans.items()
                 },
                 exhausted=bool(self._exceeded_reason),
@@ -855,7 +856,7 @@ def format_plan_window(window: PlanWindow, windows: tuple[PlanWindow, ...]) -> s
 
 
 def format_plan_reading(route: str, usage: PlanUsage) -> str:
-    """Return a plan's reading with no run's consumption, as a fan-out prints its lanes' newest.
+    """Return a plan's reading with no observed movement, as a fan-out prints its lanes' newest.
 
     Args:
         route: The provider entry's name.
@@ -877,7 +878,7 @@ def format_plan_usage(route: str, spend: PlanSpend, max_plan_points: float) -> s
     Args:
         route: The provider entry.
         spend: Its latest reading and observed window movement.
-        max_plan_points: The cap the consumption is printed against; -1 prints none.
+        max_plan_points: The cap the observed movement is printed against; -1 prints none.
 
     Returns:
         The line.
@@ -888,7 +889,7 @@ def format_plan_usage(route: str, spend: PlanSpend, max_plan_points: float) -> s
     return (
         f"plan usage ({route}): {plan.used_percent:g}% of the"
         f" {format_plan_window(plan.binding, plan.windows)}"
-        f" (window moved ~{spend.consumed:g} points{cap} during this run;"
+        f" (window moved ~{spend.observed_points:g} points{cap} during this run;"
         f" resets in {resets_h:.0f}h)"
         + (
             f"; purchased credits balance {plan.credits_balance or 'present'}"

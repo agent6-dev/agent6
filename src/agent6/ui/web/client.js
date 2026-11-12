@@ -538,9 +538,9 @@ const QUEUE_LEVEL = { needs_answer: 'warn', blocked: 'error', unverified: 'warn'
 function paintSession(r, it, g) {
   it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.session_id);
   taskTitle(g, r.task_line || firstLine(r.task, 200) || '(no task)');
-  const cost = r.cost ? ' · ' + r.cost : ''; // the server's cost cell, blank for a clean $0
+  const usage = r.usage ? ' · ' + r.usage : ''; // the server's usage cell, blank for a clean $0
   // id_cell carries the winner mark the CLI and TUI id cells carry.
-  g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id_cell || r.session_id)} · ${esc(r.when)}${cost}`));
+  g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id_cell || r.session_id)} · ${esc(r.when)}${usage}`));
   // Where the run works and the branch holding its commits, when it has them.
   const where = [r.worktree && 'worktree ' + r.worktree, r.branch && 'branch ' + r.branch].filter(Boolean).join(' · ');
   if (where) g.appendChild(el('div', 'sub', where));

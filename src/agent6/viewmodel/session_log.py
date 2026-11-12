@@ -22,7 +22,7 @@ class LogScan:
 
     One owner, so the resume rules (bank the cost of past executions, un-finish) and
     the torn-line tolerances cannot drift between consumers. Token counters are the
-    current execution's; `cost_usd` and `plan_consumed` are cumulative, matching the typed
+    current execution's; `cost_usd` and `plan_observed_points` are cumulative, matching the typed
     fold's BudgetView.
 
     Attributes:
@@ -52,8 +52,8 @@ class LogScan:
         output_tokens: This execution's output tokens.
         cache_read_tokens: The cached side of the input, None when the event lacked it.
         cache_creation_tokens: Cache-creation tokens, None when the event lacked it.
-        plan_consumed: The plan points consumed across every execution; 0.0 until a plan
-            call runs.
+        plan_observed_points: The plan movement observed across every execution, in points; 0.0
+            until a plan call runs.
         plan_prior_executions: The points banked by completed executions.
         plan_cap: `[budget].max_plan_points` for this execution, 0.0 until a plan call runs.
         plan_used_percent: The account's last reading, 0.0 until a plan call runs.
@@ -113,7 +113,7 @@ class LogScan:
     output_tokens: int | None = None
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
-    plan_consumed: float = 0.0
+    plan_observed_points: float = 0.0
     plan_prior_executions: float = 0.0
     plan_cap: float = 0.0
     plan_used_percent: float = 0.0
@@ -160,14 +160,14 @@ class LogScan:
         )
 
     @property
-    def cost_cell(self) -> str:
-        """The session's cost as `cost_cell` spells it; "" before any budget.update."""
+    def usage_cell(self) -> str:
+        """The session's cost as `usage_cell` spells it; "" before any budget.update."""
         if self.cost_usd is None:
             return ""
-        return session_status.cost_cell(
+        return session_status.usage_cell(
             self.cost_usd,
             partial=self.usd_partial,
-            plan_consumed=self.plan_consumed,
+            plan_observed_points=self.plan_observed_points,
             plan_used_percent=self.plan_used_percent,
         )
 
@@ -378,7 +378,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     output_tokens: int | None = None
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
-    plan_consumed = plan_prior_executions = plan_cap = plan_used_percent = 0.0
+    plan_observed_points = plan_prior_executions = plan_cap = plan_used_percent = 0.0
     plan_usage: budget.PlanUsage | None = None
     plan_usage_at: float = 0.0
     turn: int | None = None
@@ -502,8 +502,8 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         cache_read_tokens = cache_creation_tokens = None
                         # The account's reading stays: the run is plan-metered before its
                         # next call too.
-                        plan_prior_executions += plan_consumed
-                        plan_consumed = plan_cap = 0.0
+                        plan_prior_executions += plan_observed_points
+                        plan_observed_points = plan_cap = 0.0
                         last_verify_rc = None
                         verify_timeout_s = 0.0
                         executions += 1
@@ -579,7 +579,12 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         cache_read_tokens = cr if isinstance(cr, int) else None
                         cache_creation_tokens = cc if isinstance(cc, int) else None
                     output_tokens = to if isinstance(to, int) else output_tokens
-                    plan_consumed = figure(ev, "plan_consumed", plan_consumed)
+                    plan_observed_points = figure(
+                        ev,
+                        # Journals written before the rename stamp `plan_consumed`.
+                        "plan_observed_points" if "plan_observed_points" in ev else "plan_consumed",
+                        plan_observed_points,
+                    )
                     plan_cap = figure(ev, "plan_cap", plan_cap)
                     plan_used_percent = figure(ev, "plan_used_percent", plan_used_percent)
                     if (reading := read_plan_usage(ev)) is not None:
@@ -626,7 +631,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         output_tokens=output_tokens,
         cache_read_tokens=cache_read_tokens,
         cache_creation_tokens=cache_creation_tokens,
-        plan_consumed=plan_prior_executions + plan_consumed,
+        plan_observed_points=plan_prior_executions + plan_observed_points,
         plan_prior_executions=plan_prior_executions,
         plan_cap=plan_cap,
         plan_used_percent=plan_used_percent,

@@ -195,10 +195,10 @@ def session_state_as_dict(
         partial=state.budget.usd_partial,
         usd_cap=state.budget.usd_cap,
         usd_prior_executions=state.budget.usd_prior_executions,
-        cell=session_status.cost_cell(
+        cell=session_status.usage_cell(
             state.budget.usd_total,
             partial=state.budget.usd_partial,
-            plan_consumed=state.budget.plan_consumed,
+            plan_observed_points=state.budget.plan_observed_points,
             plan_used_percent=state.budget.plan_used_percent,
         ),
     )

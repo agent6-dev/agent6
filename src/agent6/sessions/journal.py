@@ -101,7 +101,7 @@ class BudgetUpdate(Event):
         default=None,
         description="Provider-reported subscription usage percentage.",
     )
-    plan_consumed: float | None = pydantic.Field(
+    plan_observed_points: float | None = pydantic.Field(
         default=None,
         description=(
             "The largest observed plan movement in points across providers and windows; "

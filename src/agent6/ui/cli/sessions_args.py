@@ -41,7 +41,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         sessions_sub,
         "list",
         help=(
-            "List sessions by most recent activity, with update time, status, cost, id, and task."
+            "List sessions by most recent activity, with update time, status, usage, id, and task."
         ),
     )
     sessions_list.add_argument(
@@ -52,8 +52,8 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             "Print a JSON array. Each row has session_id, mode, task (full text), continued_task,"
             " task_line, status, detail,"
             " stop_reason, label, level, last_activity, group_last_activity, when,"
-            " cost_usd, usd_partial, plan_consumed,"
-            " plan_cap, cost, model, model_from_flag, id_cell, unmerged, verification,"
+            " cost_usd, usd_partial, plan_observed_points,"
+            " plan_cap, usage, model, model_from_flag, id_cell, unmerged, verification,"
             " winner, lane,"
             " coordinator, worktree, review_queue, queue_group, lane_groups, and nested lanes."
         ),

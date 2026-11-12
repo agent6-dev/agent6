@@ -157,7 +157,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                     tokens_unmetered=0,
                     tokens_fallback_cap=0,
                     plan_used_percent=0.0,
-                    plan_prior_executions=state.budget.plan_consumed,
+                    plan_prior_executions=state.budget.plan_observed_points,
                     plan_cap=0.0,
                     plan_resets_at=0.0,
                 ),
@@ -319,11 +319,11 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             tokens_unmetered=unmet,
             tokens_fallback_cap=fcap,
             plan_used_percent=plan_pct,
-            plan_consumed=plan_used,
+            plan_observed_points=plan_used,
             plan_cap=plan_cap,
             plan_resets_at=plan_resets,
         ):
-            # The event's usd_total and plan_consumed are this execution's; the view's are
+            # The event's usd_total and plan_observed_points are this execution's; the view's are
             # cumulative.
             return dataclasses.replace(
                 state,
@@ -339,7 +339,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                     tokens_unmetered=unmet or 0,
                     tokens_fallback_cap=fcap or 0,
                     plan_used_percent=plan_pct or 0.0,
-                    plan_consumed=state.budget.plan_prior_executions + (plan_used or 0.0),
+                    plan_observed_points=state.budget.plan_prior_executions + (plan_used or 0.0),
                     plan_prior_executions=state.budget.plan_prior_executions,
                     plan_cap=plan_cap or 0.0,
                     plan_resets_at=plan_resets or 0.0,

@@ -95,7 +95,7 @@ def _setup_run(
         {
             "type": "budget.update",
             "usd_total": cost,
-            "plan_consumed": plan_points,
+            "plan_observed_points": plan_points,
             "plan_used_percent": plan_points,
         },
     ]

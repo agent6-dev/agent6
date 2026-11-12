@@ -312,7 +312,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
             events_log,
         )
         total_usd += result.usd
-        total_plan += result.plan_consumed
+        total_plan += result.plan_observed_points
         total_partial |= result.usd_partial
         total_in += result.input_tokens
         total_out += result.output_tokens
@@ -387,7 +387,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
             usd_total=total_usd,
             input_total=total_in,
             output_total=total_out,
-            plan_consumed=total_plan,
+            plan_observed_points=total_plan,
         )
     )
     # session.stop reasons are tokens: the listing prints one beside "failed". turns = attempts.

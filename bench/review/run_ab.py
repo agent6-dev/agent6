@@ -131,7 +131,7 @@ def read_measurements(state_home: pathlib.Path, *, clean: bool) -> dict[str, Any
         "tokens_out": usage.get("output_total"),
         "usd": usage.get("usd_total"),
         "usd_partial": usage.get("usd_partial"),
-        "plan_points": usage.get("plan_consumed"),
+        "plan_points": usage.get("plan_observed_points"),
         "receipt": str(receipts[0]),
         "panel": panels[0],
     }

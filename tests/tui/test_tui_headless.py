@@ -1249,7 +1249,8 @@ def test_subscription_header_separates_every_segment(
             await pilot.pause()
             top = str(app._dash.query_one("#top", widgets.Static).render()).splitlines()[0]
             assert top == (
-                "agent6  passed  tasks: 1/1  cost: 0pt  budget: 0%  plan: 52% (run 0/10pt)"
+                "agent6  passed  tasks: 1/1  usage: 0pt  budget: 0%"
+                + "  plan: 52% (moved 0/10pt this run)"
                 + ("  ctx: 2%" if context_window else "")
             )
 
@@ -1271,13 +1272,13 @@ def test_plan_meter_reads_this_executions_points_after_a_resume(tmp_path: pathli
             await _show_dashboard(pilot)
             app._handle_event(_ev(type="session.start", user_task="x", mode="run"))
             app._handle_event(_ev(type="role.call", role="worker", model="m"))
-            app._handle_event(_ev(**plan, plan_consumed=2.0))
+            app._handle_event(_ev(**plan, plan_observed_points=2.0))
             app._handle_event(_ev(type="session.resume"))
-            app._handle_event(_ev(**plan, plan_consumed=0.5))
+            app._handle_event(_ev(**plan, plan_observed_points=0.5))
             app._tick()
             await pilot.pause()
             top = str(app._dash.query_one("#top", widgets.Static).render())
-            assert "(run 0.5/2pt)" in top, top
+            assert "(moved 0.5/2pt this run)" in top, top
 
     asyncio.run(scenario())
 

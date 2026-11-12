@@ -63,7 +63,7 @@ def test_the_settled_reading_reaches_the_journal_and_the_end_block(
         reporter=reporter.STDIO_REPORTER,
     )
     assert "window moved ~10 points" in capsys.readouterr().out
-    assert session_log.scan_session_log(layout.logs_path).plan_consumed == 10.0
+    assert session_log.scan_session_log(layout.logs_path).plan_observed_points == 10.0
 
 
 def test_finish_session_over_red_verify_is_not_headlined_passed(
@@ -865,10 +865,10 @@ def test_end_banner_run_total_carries_plan_points(
         "r9",
         [
             {"type": "session.start", "session_id": "r9", "user_task": "t"},
-            {**plan, "plan_consumed": 1.0},
+            {**plan, "plan_observed_points": 1.0},
             {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
             {"type": "session.resume", "turn": 4},
-            {**plan, "plan_consumed": 0.0},
+            {**plan, "plan_observed_points": 0.0},
             {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )

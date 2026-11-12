@@ -85,7 +85,7 @@ class AgentExecResult(pydantic.BaseModel):
         usd_partial: `usd` is a known under-estimate (an unpriced model).
         input_tokens: The slice's input tokens.
         output_tokens: The slice's output tokens.
-        plan_consumed: The slice's plan points, summed into `machine create`'s ledger.
+        plan_observed_points: The slice's plan points, summed into `machine create`'s ledger.
     """
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
@@ -96,7 +96,7 @@ class AgentExecResult(pydantic.BaseModel):
     usd_partial: bool = False
     input_tokens: int = 0
     output_tokens: int = 0
-    plan_consumed: float = 0.0
+    plan_observed_points: float = 0.0
 
     @pydantic.field_validator("payload")
     @classmethod

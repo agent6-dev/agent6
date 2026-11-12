@@ -89,8 +89,8 @@ def test_the_hub_row_and_the_run_view_carry_rendered_cells(tmp_path: pathlib.Pat
         ],
     )
     clean = _run(tmp_path, "clean", [{"type": "session.start", "mode": "run", "user_task": "y"}])
-    assert listing.summary_row(listing.summarize_session_dir(spent))["cost"] == "$0.16"
-    assert listing.summary_row(listing.summarize_session_dir(clean))["cost"] == ""
+    assert listing.summary_row(listing.summarize_session_dir(spent))["usage"] == "$0.16"
+    assert listing.summary_row(listing.summarize_session_dir(clean))["usage"] == ""
     assert (
         listing.summary_row(listing.summarize_session_dir(clean), winner=True)["id_cell"]
         == "clean ★"

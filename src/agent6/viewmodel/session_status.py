@@ -102,24 +102,24 @@ def task_snippet(text: str, max_chars: int | None = 200) -> str:
     return snip
 
 
-def cost_cell(
-    cost_usd: float, *, partial: bool, plan_consumed: float, plan_used_percent: float
+def usage_cell(
+    cost_usd: float, *, partial: bool, plan_observed_points: float, plan_used_percent: float
 ) -> str:
     """Return a session's cost, the one spelling the listings, show and the reports print.
 
     Args:
         cost_usd: The dollars spent across executions.
         partial: The dollar figure is a lower bound.
-        plan_consumed: The plan points consumed across executions.
+        plan_observed_points: The plan movement observed across executions, in points.
         plan_used_percent: The account's last plan reading.
 
     Returns:
         The points once a subscription plan answered a call, the dollars when any were
         spent, both for a run that spent both; "" for a clean $0.
     """
-    metered = plan_used_percent > 0 or plan_consumed > 0
-    return format.format_cost_cell(
-        cost_usd, partial=partial, plan_points=plan_consumed if metered else None
+    metered = plan_used_percent > 0 or plan_observed_points > 0
+    return format.format_usage_cell(
+        cost_usd, partial=partial, plan_points=plan_observed_points if metered else None
     )
 
 

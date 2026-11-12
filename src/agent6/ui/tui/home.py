@@ -80,11 +80,11 @@ def _sync_columns(table: widgets.DataTable[Any], width: int, *, review: bool) ->
     Returns:
         The column labels.
     """
-    labels = ("updated", "status", "cost", "id", "task")
+    labels = ("updated", "status", "usage", "id", "task")
     if width < _NARROWEST_COLS:
         labels = ("updated", "status", "id", "task")
     elif review and width >= _NARROW_COLS:
-        labels = ("updated", "status", "review", "cost", "id", "task")
+        labels = ("updated", "status", "review", "usage", "id", "task")
     if width >= _WIDE_COLS:
         labels = (*labels[:-1], "branch", "task")
     if tuple(str(c.label) for c in table.columns.values()) != labels:
@@ -273,7 +273,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 "updated": format.format_when(row.group_last_activity, short=narrow),
                 "status": _status_cell(s, narrow=narrow),
                 "review": _review_cell(row),
-                "cost": s.cost_cell,
+                "usage": s.usage_cell,
                 "id": text.Text(id_cell),
                 "branch": s.branch,
             }

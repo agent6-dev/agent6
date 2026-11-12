@@ -93,7 +93,7 @@ def _journal() -> list[dict[str, Any]]:
             "ts": _ts(50),
             "usd_total": 0.25,
             "usd_partial": False,
-            "plan_consumed": 3,
+            "plan_observed_points": 3,
             "plan_used_percent": 12,
         },
         {
@@ -312,7 +312,7 @@ def test_what_follows_an_end_still_folds_against_it() -> None:
     start, panel = queue_tests._panel_rows(block=1)  # pyright: ignore[reportPrivateUsage]
     rows = [
         *_journal(),
-        {"type": "budget.update", "ts": _ts(61), "usd_total": 0.40, "plan_consumed": 5},
+        {"type": "budget.update", "ts": _ts(61), "usd_total": 0.40, "plan_observed_points": 5},
         {"type": "session.stranded", "ts": _ts(62)},
         {
             "type": "loop.review.finding.resolved",

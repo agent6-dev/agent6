@@ -77,7 +77,7 @@ def test_runs_list_sort_review_orders_the_queue_and_adds_its_column(
     monkeypatch.chdir(tmp_path)
     assert sessions_cmds._cmd_list(sort="review") == 0
     out = capsys.readouterr().out.splitlines()
-    assert out[0].split()[:4] == ["updated", "status", "review", "cost"]
+    assert out[0].split()[:4] == ["updated", "status", "review", "usage"]
     assert out[1].startswith("run-block") is False and "run-block" in out[1]
     assert "blocked · 1 open block finding" in out[1]
     assert "run-newest" in out[2]
@@ -123,10 +123,10 @@ def test_runs_list_json_carries_the_row_facts(
         "unmerged",
         "verification",
         "cost_usd",
-        "cost",
+        "usage",
         "id_cell",
         "usd_partial",
-        "plan_consumed",
+        "plan_observed_points",
         "plan_cap",
         "model",
         "model_from_flag",
@@ -167,7 +167,7 @@ def test_the_list_marks_a_run_that_works_in_its_own_worktree(
 
     assert sessions_cmds._cmd_list() == 0
     out = capsys.readouterr().out
-    assert out.splitlines()[0].split() == ["updated", "status", "cost", "id", "task"]
+    assert out.splitlines()[0].split() == ["updated", "status", "usage", "id", "task"]
     assert "apart (worktree)" in out and "inplace (worktree)" not in out
 
     assert sessions_cmds._cmd_list(as_json=True) == 0
@@ -210,7 +210,7 @@ def test_runs_list_uses_plan_points_for_a_plan_metered_run(
     budget = {
         "type": "budget.update",
         "usd_total": 0.0,
-        "plan_consumed": 2.5,
+        "plan_observed_points": 2.5,
         "plan_cap": 6.0,
     }
     log.write_text("\n".join([lines[0], json.dumps(budget), *lines[1:]]) + "\n", encoding="utf-8")
@@ -222,7 +222,7 @@ def test_runs_list_uses_plan_points_for_a_plan_metered_run(
 
     assert sessions_cmds._cmd_list(as_json=True) == 0
     (data,) = json.loads(capsys.readouterr().out)
-    assert (data["plan_consumed"], data["plan_cap"], data["cost"]) == (2.5, 6.0, "2.5pt")
+    assert (data["plan_observed_points"], data["plan_cap"], data["usage"]) == (2.5, 6.0, "2.5pt")
 
 
 def test_runs_list_marks_a_partial_cost(

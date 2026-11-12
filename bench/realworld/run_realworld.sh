@@ -369,7 +369,7 @@ PY
       > "$logdir/session.json" 2>/dev/null || true
   fi
   stop_reason=$(session_field "$logdir/session.json" reason)
-  plan_points=$(session_field "$logdir/session.json" plan_consumed)
+  plan_points=$(session_field "$logdir/session.json" plan_observed_points)
   [[ "$plan_points" =~ ^[0-9]+(\.[0-9]+)?$ ]] || plan_points=0
   model_ran=$(session_field "$logdir/session.json" model)
   # The header names the last model that ran.

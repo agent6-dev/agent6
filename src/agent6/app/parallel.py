@@ -408,7 +408,7 @@ def _drive_fanout(
                     "verify": app_compare.verify_word(by_id[rid].verification),
                     "cost_usd": by_id[rid].cost_usd,
                     # The listings' cell: plan points for a lane on a subscription plan.
-                    "cost": batch.rows[rid].cost_cell if rid in batch.rows else "",
+                    "cost": batch.rows[rid].usage_cell if rid in batch.rows else "",
                 }
                 for rid in outcome.ranking
             ],

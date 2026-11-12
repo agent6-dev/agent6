@@ -582,7 +582,12 @@ def test_usage_is_silent_without_a_window_and_costless_while_unpriced() -> None:
     plan = [
         {"type": "role.call", "role": "worker", "model": "big", "provider": "p"},
         result,
-        {"type": "budget.update", "usd_total": 0.0, "usd_partial": False, "plan_consumed": 3.0},
+        {
+            "type": "budget.update",
+            "usd_total": 0.0,
+            "usd_partial": False,
+            "plan_observed_points": 3.0,
+        },
     ]
     assert _updates_of(_info(), plan) == [
         {"sessionUpdate": "usage_update", "used": 5, "size": 200_000}

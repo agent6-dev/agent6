@@ -40,8 +40,8 @@ def _cmd_list(
     """List this repo's sessions, newest first or in review-queue order.
 
     Columns: updated, status (the mode folded in when the word does not imply it, the
-    failure reason, the unmerged mark), cost, id, task; `--sort review` adds the review
-    column (the row's queue group and reason) before cost. A fan-out's lanes nest under
+    failure reason, the unmerged mark), usage, id, task; `--sort review` adds the review
+    column (the row's queue group and reason) before usage. A fan-out's lanes nest under
     its row: folded into a count, or listed indented with `lanes`; the JSON row always
     nests them. Every bucket, unlike the TUI and web hubs, which give `machine create`
     drafts their own card.
@@ -85,7 +85,7 @@ def _cmd_list(
             styled,
             plain,
             _review_cell(row) if sort == "review" else "",
-            s.cost_cell,
+            s.usage_cell,
             id_cell,
             s.task_label,
         )
@@ -115,14 +115,14 @@ def _cmd_list(
     fixed = 11 + 2 + status_w + 2 + (review_w + 2 if review_w else 0) + 8 + 2 + id_w + 2
     task_w = max(24, shutil.get_terminal_size().columns - fixed) if color else 60
     print(
-        f"{'updated':<11}  {'status':<{status_w}}  {review_head}{'cost':<8}  {'id':<{id_w}}  task"
+        f"{'updated':<11}  {'status':<{status_w}}  {review_head}{'usage':<8}  {'id':<{id_w}}  task"
     )
-    for when, styled, plain, review, cost, session_id, task in rows:
+    for when, styled, plain, review, usage, session_id, task in rows:
         pad = " " * (status_w - len(plain))
         review_col = f"{review:<{review_w}}  " if review_w else ""
         task_lines = task.line(max_chars=task_w).splitlines()
         snip = task_lines[0] if task_lines else ""
-        print(f"{when:<11}  {styled}{pad}  {review_col}{cost:<8}  {session_id:<{id_w}}  {snip}")
+        print(f"{when:<11}  {styled}{pad}  {review_col}{usage:<8}  {session_id:<{id_w}}  {snip}")
         for continuation in task_lines[1:]:
             print(" " * fixed + continuation)
     return 0

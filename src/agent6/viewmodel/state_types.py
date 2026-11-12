@@ -133,7 +133,7 @@ class BudgetView:
     """The run's spend as every surface shows it.
 
     Token counters and the caps are the current execution's, pairing with the
-    per-execution enforcement; `usd_total` and `plan_consumed` are cumulative across
+    per-execution enforcement; `usd_total` and `plan_observed_points` are cumulative across
     executions, as the listing scan sums them, so the surfaces agree on what a run cost.
 
     Attributes:
@@ -148,7 +148,7 @@ class BudgetView:
         tokens_unmetered: Input and output tokens of calls the meter could not price.
         tokens_fallback_cap: `[budget].max_tokens_fallback`; -1 unlimited, 0 unknown.
         plan_used_percent: The account's reported plan usage; 0 until a plan call runs.
-        plan_consumed: The plan points consumed across every execution.
+        plan_observed_points: The plan movement observed across every execution, in points.
         plan_prior_executions: The points banked by completed executions.
         plan_cap: `[budget].max_plan_points`; 0 until a plan call runs.
         plan_resets_at: When the plan window resets, as epoch seconds.
@@ -165,7 +165,7 @@ class BudgetView:
     tokens_unmetered: int = 0
     tokens_fallback_cap: int = 0
     plan_used_percent: float = 0.0
-    plan_consumed: float = 0.0
+    plan_observed_points: float = 0.0
     plan_prior_executions: float = 0.0
     plan_cap: float = 0.0
     plan_resets_at: float = 0.0

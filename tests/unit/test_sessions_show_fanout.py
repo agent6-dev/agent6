@@ -255,10 +255,10 @@ def test_show_marks_a_lane_unmerged_like_the_listing(
 def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The usage line carries the cached input side and the listing's cost cell.
+    """The usage line carries the cached input side and the listing's usage cell.
 
     It kept only the uncached `in=` (a 500k-token run read as `in=18`) and spelled a clean $0
-    as `cost $0.0000` where the listing blanks it.
+    as `usage $0.0000` where the listing blanks it.
     """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -287,7 +287,7 @@ def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
     )
     assert main(["sessions", "show", "cached"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
-    assert usage.endswith("cache_c=22617  cost $0.50")
+    assert usage.endswith("cache_c=22617  usage $0.50")
 
 
 def test_show_usage_and_json_carry_the_plan_points(
@@ -310,7 +310,7 @@ def test_show_usage_and_json_carry_the_plan_points(
         "output_total": 2194,
         "usd_total": 0.0,
         "plan_used_percent": 13.0,
-        "plan_consumed": 2.5,
+        "plan_observed_points": 2.5,
         "plan_cap": 6.0,
     }
     lines = layout.logs_path.read_text(encoding="utf-8").splitlines()
@@ -319,10 +319,10 @@ def test_show_usage_and_json_carry_the_plan_points(
     )
     assert main(["sessions", "show", "capped"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
-    assert usage.split(None, 1)[1] == "in=18 out=2194 plan=2.5/6pt  cost 2.5pt"
+    assert usage.split(None, 1)[1] == "in=18 out=2194 plan moved=2.5/6pt  usage 2.5pt"
     assert main(["sessions", "show", "capped", "--json"]) == 0
     obj = json.loads(capsys.readouterr().out)
-    assert (obj["plan_consumed"], obj["plan_cap"]) == (2.5, 6.0)
+    assert (obj["plan_observed_points"], obj["plan_cap"]) == (2.5, 6.0)
     layout.logs_path.write_text(
         "\n".join([lines[0], json.dumps({**budget, "plan_cap": 0.0}), *lines[1:]]) + "\n",
         encoding="utf-8",

@@ -83,16 +83,16 @@ class RunHeader(widgets.Static):
         # Tasks and cost are as of the selected commit; ctx is live.
         done_n = sum(1 for t in ds.tasks if t.status in order.DONE_STATUSES)
         tasks = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
-        cell = session_status.cost_cell(
+        cell = session_status.usage_cell(
             ds.budget.usd_total,
             partial=ds.budget.usd_partial,
-            plan_consumed=ds.budget.plan_consumed,
+            plan_observed_points=ds.budget.plan_observed_points,
             plan_used_percent=ds.budget.plan_used_percent,
         ) or agent6_budget.format_usd(0.0)
         segments = ["[b]agent6[/]"]
         if finished:
             segments.append(finished)
-        segments.extend((tasks, f"cost: [b]{cell}[/]"))
+        segments.extend((tasks, f"usage: [b]{cell}[/]"))
         # This execution's metered spend against its cap: a resume re-arms the cap while
         # usd_total stays cumulative.
         if ds.budget.usd_cap > 0:
@@ -105,8 +105,8 @@ class RunHeader(widgets.Static):
             plan = f"plan: {ds.budget.plan_used_percent:g}%"
             if ds.budget.plan_cap > 0:
                 # This execution's points against the cap a resume re-armed.
-                execution_pt = ds.budget.plan_consumed - ds.budget.plan_prior_executions
-                plan += f" (run {execution_pt:g}/{ds.budget.plan_cap:g}pt)"
+                execution_pt = ds.budget.plan_observed_points - ds.budget.plan_prior_executions
+                plan += f" (moved {execution_pt:g}/{ds.budget.plan_cap:g}pt this run)"
             segments.append(plan)
         if as_of:
             segments.append(as_of.strip())

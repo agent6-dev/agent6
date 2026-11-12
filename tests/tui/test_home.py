@@ -888,7 +888,7 @@ def test_hub_cost_cell_uses_plan_points_for_a_plan_metered_run(tmp_path: pathlib
             {
                 "type": "budget.update",
                 "usd_total": 0.0,
-                "plan_consumed": 2.5,
+                "plan_observed_points": 2.5,
                 "plan_cap": 6.0,
             },
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
@@ -900,7 +900,7 @@ def test_hub_cost_cell_uses_plan_points_for_a_plan_metered_run(tmp_path: pathlib
         async with app.run_test(size=(140, 40)) as pilot:
             await pilot.pause()
             table = app.screen.query_one("#sessions", widgets.DataTable)
-            cost = [str(c.label) for c in table.columns.values()].index("cost")
+            cost = [str(c.label) for c in table.columns.values()].index("usage")
             assert str(table.get_row_at(0)[cost]) == "2.5pt"
 
     asyncio.run(scenario())
@@ -913,14 +913,14 @@ def test_cost_cell_marks_partial_and_keeps_zero_clean() -> None:
     """
     from agent6.viewmodel import format
 
-    assert format.format_cost_cell(0.0123, partial=True) == "~$0.01"
-    assert format.format_cost_cell(0.0, partial=True) == "~$0.0000"
-    assert format.format_cost_cell(0.0, partial=False) == ""
-    assert format.format_cost_cell(0.0123, partial=False) == "$0.01"
+    assert format.format_usage_cell(0.0123, partial=True) == "~$0.01"
+    assert format.format_usage_cell(0.0, partial=True) == "~$0.0000"
+    assert format.format_usage_cell(0.0, partial=False) == ""
+    assert format.format_usage_cell(0.0123, partial=False) == "$0.01"
     # A run that spent plan points and dollars shows both: the dollars were hidden.
-    assert format.format_cost_cell(0.0, plan_points=1) == "1pt"
-    assert format.format_cost_cell(0.03, plan_points=1) == "1pt + $0.03"
-    assert format.format_cost_cell(0.03, partial=True, plan_points=1) == "1pt + ~$0.03"
+    assert format.format_usage_cell(0.0, plan_points=1) == "1pt"
+    assert format.format_usage_cell(0.03, plan_points=1) == "1pt + $0.03"
+    assert format.format_usage_cell(0.03, partial=True, plan_points=1) == "1pt + ~$0.03"
 
 
 def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
@@ -1111,11 +1111,11 @@ def test_the_hub_table_names_its_columns_like_the_cli(tmp_path: pathlib.Path) ->
             table = screen.query_one("#sessions", widgets.DataTable)
             labels = [str(column.label) for column in table.columns.values()]
             # In review order the review column sits before cost, as `sessions list --sort review`.
-            assert labels == ["updated", "status", "review", "cost", "id", "task"]
+            assert labels == ["updated", "status", "review", "usage", "id", "task"]
             screen.action_toggle_sort()
             await pilot.pause()
             labels = [str(column.label) for column in table.columns.values()]
-            assert labels == ["updated", "status", "cost", "id", "task"]
+            assert labels == ["updated", "status", "usage", "id", "task"]
 
     asyncio.run(scenario())
 
@@ -1553,7 +1553,7 @@ def test_the_hub_gives_the_task_room_on_a_narrow_terminal(tmp_path: pathlib.Path
             assert [str(c.label) for c in table.columns.values()] == [
                 "updated",
                 "status",
-                "cost",
+                "usage",
                 "id",
                 "task",
             ]

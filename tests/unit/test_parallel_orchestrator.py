@@ -117,7 +117,7 @@ def _write_fake_run(
             "ts": datetime.datetime.fromtimestamp(read_at, tz=datetime.UTC).isoformat(),
             "type": "budget.update",
             "plan_used_percent": used,
-            "plan_consumed": points,
+            "plan_observed_points": points,
             "plan_windows": [
                 {
                     "name": "primary",

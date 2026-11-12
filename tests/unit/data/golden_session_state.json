@@ -99,7 +99,7 @@
     "tokens_unmetered": 0,
     "tokens_fallback_cap": 0,
     "plan_used_percent": 0.0,
-    "plan_consumed": 0.0,
+    "plan_observed_points": 0.0,
     "plan_prior_executions": 0.0,
     "plan_cap": 0.0,
     "plan_resets_at": 0.0,

@@ -166,7 +166,7 @@ def print_ranked_candidates(
     reporter.out("ranked candidates (best first):")
     for rnk, rid in enumerate(outcome.ranking, start=1):
         # A clean $0 is a blank cell in a listing; a report line spells it out.
-        cost = rows[rid].cost_cell or agent6_budget.format_usd(0.0)
+        cost = rows[rid].usage_cell or agent6_budget.format_usd(0.0)
         into = (merged_into or {}).get(rid, "")
         if into:
             landing = f"merged into {into}"
@@ -184,10 +184,10 @@ def print_ranked_candidates(
     if len(candidates) > 1:
         cand_total = sum(c.cost_usd for c in candidates)
         plan_total = sum(
-            rows[c.session_id].plan_consumed for c in candidates if c.session_id in rows
+            rows[c.session_id].plan_observed_points for c in candidates if c.session_id in rows
         )
-        candidates_cell = session_status.cost_cell(
-            cand_total, partial=False, plan_consumed=plan_total, plan_used_percent=0.0
+        candidates_cell = session_status.usage_cell(
+            cand_total, partial=False, plan_observed_points=plan_total, plan_used_percent=0.0
         ) or agent6_budget.format_usd(0.0)
         judge = outcome.judge_cost_usd
         partial = outcome.judge_cost_partial

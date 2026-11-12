@@ -544,7 +544,9 @@ class TelemetryFold:
             self.meter.count("agent6_cost_usd_total", usd - self._usd_seen)
             self._usd_seen = usd
         self.meter.gauge("agent6_cost_partial", 1.0 if event.get("usd_partial") is True else 0.0)
-        plan = telemetry_records.as_number(event.get("plan_consumed"))
+        plan = telemetry_records.as_number(
+            event.get("plan_observed_points", event.get("plan_consumed"))  # the older key
+        )
         if plan is not None and plan > self._plan_seen:
             self.meter.count("agent6_plan_observed_points_total", plan - self._plan_seen)
             self._plan_seen = plan

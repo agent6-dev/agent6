@@ -91,7 +91,7 @@ agent6 steer ID "focus on X"  # an instruction at the next step; --now interrupt
 agent6 answer ID "yes"        # answer a pending question or approval (bare: list them; --question QID picks a question set)
 agent6 stop ID                # stop during the current turn (the worker killed if it does not answer); --all
 agent6 stop ID --after-turn   # finish the current turn, then stop
-agent6 sessions show          # status, turn, elapsed, cost, the gate's word, where the changes are; --json
+agent6 sessions show          # status, turn, elapsed, usage, the gate's word, where the changes are; --json
 agent6 sessions diff          # the git diff the run produced; --stat, --path P
 agent6 sessions commits       # the run's per-turn commits
 agent6 sessions merge         # land on the run's starting branch (warns first when the gate did not certify it); --method, --into BRANCH

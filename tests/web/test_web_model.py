@@ -87,14 +87,14 @@ def test_run_summary_uses_plan_points_for_a_plan_metered_run(tmp_path: pathlib.P
             {
                 "type": "budget.update",
                 "usd_total": 0.0,
-                "plan_consumed": 2.5,
+                "plan_observed_points": 2.5,
                 "plan_cap": 6.0,
             },
             {"type": "session.stop", "verification": "passed"},
         ],
     )
     (row,) = model.hub_payload(tmp_path)["sessions"]
-    assert (row["plan_consumed"], row["plan_cap"], row["cost"]) == (2.5, 6.0, "2.5pt")
+    assert (row["plan_observed_points"], row["plan_cap"], row["usage"]) == (2.5, 6.0, "2.5pt")
 
 
 def test_run_summary_carries_the_partial_cost_marker(tmp_path: pathlib.Path) -> None:

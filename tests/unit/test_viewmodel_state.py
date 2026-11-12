@@ -788,7 +788,7 @@ def test_resume_resets_the_execution_token_counters() -> None:
 
 
 def test_resume_resets_the_execution_plan_counters() -> None:
-    """A resume drops the plan cap and the account reading and banks the points consumed."""
+    """A resume drops the plan cap and the account reading and banks the observed points."""
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(s, {"type": "session.start", "user_task": "t"})
     s = viewmodel_state.apply_event(
@@ -796,7 +796,7 @@ def test_resume_resets_the_execution_plan_counters() -> None:
         {
             "type": "budget.update",
             "plan_used_percent": 42.0,
-            "plan_consumed": 3.5,
+            "plan_observed_points": 3.5,
             "plan_cap": 80.0,
             "plan_resets_at": 1_700_000_000.0,
         },
@@ -806,7 +806,7 @@ def test_resume_resets_the_execution_plan_counters() -> None:
     )
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     assert s.budget.plan_used_percent == 0.0
-    assert s.budget.plan_consumed == s.budget.plan_prior_executions == 3.5
+    assert s.budget.plan_observed_points == s.budget.plan_prior_executions == 3.5
     assert s.budget.plan_cap == 0.0
     assert s.budget.plan_resets_at == 0.0
 
@@ -820,10 +820,10 @@ def test_plan_points_cumulative_across_resume_executions() -> None:
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(s, {"type": "session.start", "user_task": "t"})
     update = {"type": "budget.update", "plan_used_percent": 42.0, "plan_cap": 6.0}
-    s = viewmodel_state.apply_event(s, {**update, "plan_consumed": 2.5})
+    s = viewmodel_state.apply_event(s, {**update, "plan_observed_points": 2.5})
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
-    s = viewmodel_state.apply_event(s, {**update, "plan_consumed": 1.0})
-    assert s.budget.plan_consumed == 3.5
+    s = viewmodel_state.apply_event(s, {**update, "plan_observed_points": 1.0})
+    assert s.budget.plan_observed_points == 3.5
     assert s.budget.plan_prior_executions == 2.5
 
 

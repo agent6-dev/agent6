@@ -155,11 +155,11 @@ def await_lanes(
             summary = summarize_session_dir(res.session_dir)
             # A "waiting" lane is blocked on a prompt no detached lane can answer.
             waiting = pending_prompt(res.session_dir) if summary.status == "waiting" else ""
-            key = (summary.status, waiting, summary.cost_cell)
+            key = (summary.status, waiting, summary.usage_cell)
             if seen.get(rid) != key:
                 seen[rid] = key
                 print_lane_status(
-                    res.spec, summary.status, summary.cost_cell, waiting=waiting, reporter=reporter
+                    res.spec, summary.status, summary.usage_cell, waiting=waiting, reporter=reporter
                 )
             if lane_terminal(res.session_dir, summary.status, process.worker_is_alive):
                 pending.pop(rid)

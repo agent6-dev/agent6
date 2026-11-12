@@ -781,7 +781,7 @@ def test_status_text_labels_plan_points_on_a_resumed_run(
         monkeypatch,
         [
             {"ts": _ts(90), "type": "session.start", "mode": "run", "user_task": "t"},
-            {"ts": _ts(80), "type": "budget.update", **plan, "plan_consumed": 1.0},
+            {"ts": _ts(80), "type": "budget.update", **plan, "plan_observed_points": 1.0},
             {
                 "ts": _ts(70),
                 "type": "session.stop",
@@ -789,7 +789,7 @@ def test_status_text_labels_plan_points_on_a_resumed_run(
                 "verification": "passed",
             },
             {"ts": _ts(60), "type": "session.resume", "turn": 4},
-            {"ts": _ts(10), "type": "budget.update", **plan, "plan_consumed": 0.0},
+            {"ts": _ts(10), "type": "budget.update", **plan, "plan_observed_points": 0.0},
             {
                 "ts": _ts(5),
                 "type": "session.stop",
@@ -801,8 +801,8 @@ def test_status_text_labels_plan_points_on_a_resumed_run(
     process.write_worker_pid(d, 999999999)
     sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
-    assert "plan=0/2pt (latest execution)" in out
-    assert "cost 1pt (all 2 executions)" in out
+    assert "plan moved=0/2pt (latest execution)" in out
+    assert "usage 1pt (all 2 executions)" in out
     assert "elapsed:    1m25s (wall, 2 executions)" in out
 
 
@@ -849,7 +849,7 @@ def test_status_text_labels_execution_scoped_figures_on_a_resumed_run(
     sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
     assert "in=300 out=50 (latest execution)" in out
-    assert "cost $0.03 (all 2 executions)" in out
+    assert "usage $0.03 (all 2 executions)" in out
 
 
 def test_worker_is_alive_reads_a_foreign_owned_pid_as_dead(
@@ -1382,7 +1382,7 @@ def test_show_says_why_a_stale_run_with_no_snapshot_cannot_be_resumed(
 def test_show_json_carries_the_points_earlier_executions_banked(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`plan_consumed` sums every execution and `plan_cap` is the latest one's.
+    """`plan_observed_points` sums every execution and `plan_cap` is the latest one's.
 
     The banked points ride beside them, so a script can tell this execution's spend.
     """
@@ -1395,7 +1395,7 @@ def test_show_json_carries_the_points_earlier_executions_banked(
                 "ts": _ts(35),
                 "type": "budget.update",
                 "usd_total": 0.0,
-                "plan_consumed": 3.0,
+                "plan_observed_points": 3.0,
                 "plan_cap": 10.0,
                 "plan_used_percent": 5.0,
             },
@@ -1410,7 +1410,7 @@ def test_show_json_carries_the_points_earlier_executions_banked(
                 "ts": _ts(10),
                 "type": "budget.update",
                 "usd_total": 0.0,
-                "plan_consumed": 2.0,
+                "plan_observed_points": 2.0,
                 "plan_cap": 10.0,
                 "plan_used_percent": 7.0,
             },
@@ -1418,7 +1418,11 @@ def test_show_json_carries_the_points_earlier_executions_banked(
     )
     assert sessions_show._cmd_status("winsome-dawn", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
-    assert (obj["plan_consumed"], obj["plan_prior_executions"], obj["plan_cap"]) == (5.0, 3.0, 10.0)
+    assert (obj["plan_observed_points"], obj["plan_prior_executions"], obj["plan_cap"]) == (
+        5.0,
+        3.0,
+        10.0,
+    )
 
 
 def test_a_live_run_asking_after_an_earlier_end_reads_waiting(

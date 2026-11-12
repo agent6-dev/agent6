@@ -141,7 +141,7 @@ def _print_fanout(
         stamp = lane_manifest.compare if lane_manifest is not None else None
         place = f"rank {stamp.rank}/{stamp.of}" if stamp is not None else f"lane {lane.lane}"
         model = lane.model or "?"
-        cost = lane.cost_cell
+        cost = lane.usage_cell
         label = format.listing_status_label(
             lane.mode, lane.status, lane.detail, unmerged=lane.unmerged
         )
@@ -297,8 +297,8 @@ def _usage_line(scan: LogScan) -> str:
         scan: The run's log scan.
 
     Returns:
-        `in` and `out`, the cached side when the journal recorded it, the plan points a
-        percent-metered execution consumed against its cap, then the cost as the listing's
+        `in` and `out`, the cached side when the journal recorded it, the plan movement a
+        percent-metered execution observed against its cap, then the usage as the listing's
         cell spells it (blank for a clean $0).
     """
     tokens = f"in={scan.input_tokens or 0} out={scan.output_tokens or 0}"
@@ -306,12 +306,12 @@ def _usage_line(scan: LogScan) -> str:
         tokens += f" cache_r={scan.cache_read_tokens or 0}"
         tokens += f" cache_c={scan.cache_creation_tokens or 0}"
     if scan.plan_cap > 0:
-        execution_pt = scan.plan_consumed - scan.plan_prior_executions
-        tokens += f" plan={execution_pt:g}/{scan.plan_cap:g}pt"
+        execution_pt = scan.plan_observed_points - scan.plan_prior_executions
+        tokens += f" plan moved={execution_pt:g}/{scan.plan_cap:g}pt"
     execution_s = " (latest execution)" if scan.executions > 1 else ""
-    cell = scan.cost_cell
+    cell = scan.usage_cell
     executions_s = f" (all {scan.executions} executions)" if scan.executions > 1 else ""
-    cost_s = f"  cost {cell}{executions_s}" if cell else ""
+    cost_s = f"  usage {cell}{executions_s}" if cell else ""
     return f"{tokens}{execution_s}{cost_s}"
 
 
@@ -345,7 +345,7 @@ class StatusJSON(TypedDict):
     cache_read_tokens: int | None
     cache_creation_tokens: int | None
     cost_usd: float | None
-    plan_consumed: float
+    plan_observed_points: float
     plan_prior_executions: float
     plan_cap: float
     unattended_questions: int
@@ -403,7 +403,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         cache_read_tokens: Recorded cached input tokens.
         cache_creation_tokens: Recorded cache-creation tokens.
         cost_usd: Cumulative spend in USD, or null when unknown.
-        plan_consumed: Subscription points consumed across executions.
+        plan_observed_points: The plan movement observed across executions, in points.
         plan_prior_executions: Subscription points banked by earlier executions.
         plan_cap: The subscription points cap.
         unattended_questions: Questions answered empty because nobody was attached.
@@ -503,7 +503,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             "cache_read_tokens": scan.cache_read_tokens,
             "cache_creation_tokens": scan.cache_creation_tokens,
             "cost_usd": scan.cost_usd,
-            "plan_consumed": scan.plan_consumed,
+            "plan_observed_points": scan.plan_observed_points,
             "plan_prior_executions": scan.plan_prior_executions,
             "plan_cap": scan.plan_cap,
             "unattended_questions": scan.unattended_questions,

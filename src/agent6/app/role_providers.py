@@ -621,7 +621,7 @@ def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
         tokens_unmetered=snap.unmetered_tokens,
         tokens_fallback_cap=snap.max_tokens_fallback,
         plan_used_percent=plan.used_percent if plan else 0.0,
-        plan_consumed=snap.plan_consumed,
+        plan_observed_points=snap.plan_observed_points,
         plan_cap=snap.max_plan_points,
         plan_resets_at=plan.resets_at if plan else 0.0,
         # Every reported window, raw: the derived fields cannot show a second window.

@@ -267,7 +267,7 @@ def test_percent_meter_sawtooth_and_cap() -> None:
     rec(5.0, reset)  # +3 -> consumed 8
     t.check()  # under the cap of 10
     snap = t.snapshot()
-    assert snap.plan_consumed == pytest.approx(8.0)
+    assert snap.plan_observed_points == pytest.approx(8.0)
     assert snap.plan_latest is not None and snap.plan_latest.used_percent == 5.0
     assert snap.unmetered_tokens == 0  # percent-metered, never fallback
     usd, partial = t.estimate_usd()
@@ -392,7 +392,7 @@ def test_unlimited_credits_do_not_refuse() -> None:
 
 
 def test_fraction_remaining_counts_the_plan_percent_ledger() -> None:
-    """fraction_remaining counts the plan percent ledger as used = plan_consumed / max_plan_points.
+    """fraction_remaining counts the plan ledger as used = plan_observed_points / max_plan_points.
 
     Without it a plan-metered run reads ~1.0 remaining until the hard stop and no near-budget
     behaviour engages.
@@ -435,7 +435,7 @@ def test_preflight_reading_seeds_the_baseline_and_guards_credits() -> None:
         cache_creation_tokens=0,
         plan_usage=budget.PlanUsage.single(used_percent=42.0, window_minutes=10080, resets_at=0),
     )
-    assert t.snapshot().plan_consumed == 2.0
+    assert t.snapshot().plan_observed_points == 2.0
     guarded = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_plan_points=-1)
     guarded.record_plan_preflight(
         "m",
@@ -468,7 +468,7 @@ def test_the_binding_window_meters_the_run_whatever_its_name() -> None:
     t = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_plan_points=5.0)
     _record_plan(t, reading(10.0, 40.0))  # baselines
     _record_plan(t, reading(10.5, 43.0))
-    assert t.snapshot().plan_consumed == 3.0  # spark moved 3, primary 0.5
+    assert t.snapshot().plan_observed_points == 3.0  # spark moved 3, primary 0.5
     _record_plan(t, reading(11.0, 46.0))
     with pytest.raises(budget.BudgetExceededError, match="5-hour window"):
         t.check()
@@ -476,7 +476,7 @@ def test_the_binding_window_meters_the_run_whatever_its_name() -> None:
     t2 = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_plan_points=50.0)
     _record_plan(t2, reading(10.0, 90.0))
     _record_plan(t2, reading(12.0, 1.0))
-    assert t2.snapshot().plan_consumed == 2.0
+    assert t2.snapshot().plan_observed_points == 2.0
 
 
 def test_percent_cap_names_the_window_whose_consumption_bound_it() -> None:
@@ -585,7 +585,7 @@ def test_settlement_enforces_plan_point_ceiling() -> None:
 
     assert tracker.settle()
 
-    assert tracker.snapshot().plan_consumed == 6
+    assert tracker.snapshot().plan_observed_points == 6
     assert tracker.snapshot().exhausted
     assert tracker.is_exhausted()
     with pytest.raises(budget.BudgetExceededError, match="plan budget exhausted"):
@@ -704,9 +704,9 @@ def test_each_subscription_plan_prints_its_own_named_line() -> None:
     )  # +1 on the chatgpt plan; the claude plan is untouched
     snap = t.snapshot()
     assert set(snap.plans) == {"chatgpt", "claude"}
-    assert snap.plans["chatgpt"].consumed == pytest.approx(1.0)
-    assert snap.plans["claude"].consumed == 0.0
-    assert snap.plan_consumed == pytest.approx(1.0)
+    assert snap.plans["chatgpt"].observed_points == pytest.approx(1.0)
+    assert snap.plans["claude"].observed_points == 0.0
+    assert snap.plan_observed_points == pytest.approx(1.0)
     assert snap.plan_latest is not None and snap.plan_latest.used_percent == 29.0
     summary = t.format_summary()
     assert "plan usage (chatgpt): 29% of the 7-day window" in summary
@@ -792,7 +792,7 @@ def test_an_out_of_order_reading_counts_nothing() -> None:
     tracker = _t()
     for used in (20.0, 23.0, 21.0, 23.0):
         tracker.record_plan_preflight("m", _window(used, 2e9))
-    assert tracker.snapshot().plan_consumed == 3.0
+    assert tracker.snapshot().plan_observed_points == 3.0
 
 
 def test_a_reset_time_later_by_more_than_a_minute_is_a_new_window() -> None:
@@ -800,7 +800,7 @@ def test_a_reset_time_later_by_more_than_a_minute_is_a_new_window() -> None:
     tracker = _t()
     tracker.record_plan_preflight("m", _window(10.0, 2e9))
     tracker.record_plan_preflight("m", _window(12.0, 2e9 + 7 * 86400))
-    assert tracker.snapshot().plan_consumed == 12.0
+    assert tracker.snapshot().plan_observed_points == 12.0
 
 
 def test_a_reading_from_a_window_already_left_counts_nothing() -> None:
@@ -809,7 +809,7 @@ def test_a_reading_from_a_window_already_left_counts_nothing() -> None:
     later = 2e9 + 7 * 86400
     for used, at in ((90.0, 2e9), (2.0, later), (90.0, 2e9), (3.0, later)):
         tracker.record_plan_preflight("m", _window(used, at))
-    assert tracker.snapshot().plan_consumed == 3.0
+    assert tracker.snapshot().plan_observed_points == 3.0
 
 
 def test_a_reset_time_within_a_minute_is_the_same_window() -> None:
@@ -817,7 +817,7 @@ def test_a_reset_time_within_a_minute_is_the_same_window() -> None:
     tracker = _t()
     for used, at in ((93.0, 2e9), (93.0, 2e9 + 1), (94.0, 2e9 - 1), (93.0, 2e9), (94.0, 2e9)):
         tracker.record_plan_preflight("m", _window(used, at))
-    assert tracker.snapshot().plan_consumed == 1.0
+    assert tracker.snapshot().plan_observed_points == 1.0
 
 
 @pytest.mark.parametrize("anchored_at", [2e9 + 150, 2e9 + 7200], ids=["within", "beyond"])
@@ -827,7 +827,7 @@ def test_an_unanchored_window_slides_with_the_clock_and_counts_nothing(anchored_
     tracker.record_plan_preflight("m", _window(0.0, 2e9))
     tracker.record_plan_preflight("m", _window(0.0, 2e9 + 120))
     tracker.record_plan_preflight("m", _window(1.0, anchored_at))
-    assert tracker.snapshot().plan_consumed == 1.0
+    assert tracker.snapshot().plan_observed_points == 1.0
 
 
 def test_settle_reads_each_metered_plan_once_more() -> None:
@@ -840,5 +840,5 @@ def test_settle_reads_each_metered_plan_once_more() -> None:
     tracker.record_plan_preflight("m", _window(20.0, 2e9))
     tracker.settle()
     tracker.settle()
-    assert tracker.snapshot().plan_consumed == 5.0
+    assert tracker.snapshot().plan_observed_points == 5.0
     assert metered.call_count == 1 and idle.call_count == 0

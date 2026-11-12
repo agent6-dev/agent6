@@ -184,13 +184,15 @@ def format_transition(seq: int, state: str, label: str, goto: str, detail: str =
     return f"{line} -- {detail}" if detail else line
 
 
-def format_cost_cell(usd: float, *, partial: bool = False, plan_points: float | None = None) -> str:
+def format_usage_cell(
+    usd: float, *, partial: bool = False, plan_points: float | None = None
+) -> str:
     """Return a listing's cost cell.
 
     Args:
         usd: The dollar figure.
         partial: The figure is a lower bound.
-        plan_points: The plan points consumed on a subscription-metered execution.
+        plan_points: The plan movement observed on a subscription-metered execution, in points.
 
     Returns:
         The points as `Npt` when given, the dollars through `format_usd` when any were

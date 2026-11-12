@@ -77,5 +77,5 @@ def test_shared_model_id_settles_both_provider_accounts() -> None:
         tracker.register_plan_reader(provider, lambda reading=reading: reading)
     assert tracker.settle()
     snap = tracker.snapshot()
-    assert {name: spend.consumed for name, spend in snap.plans.items()} == {"a": 3, "b": 3}
+    assert {name: spend.observed_points for name, spend in snap.plans.items()} == {"a": 3, "b": 3}
     assert not tracker.settle()

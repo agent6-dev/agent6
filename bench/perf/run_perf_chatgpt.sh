@@ -4,7 +4,7 @@
 # so the metric loop keeps grinding for the whole wall budget instead of
 # finishing at the first plateau. Auth is the `agent6 connect chatgpt`
 # sign-in in the global secrets; spend draws on the plan
-# ([budget].max_plan_points bounds the points this run may consume).
+# ([budget].max_plan_points bounds the plan movement observed during this run).
 #
 # Usage:
 #   bash bench/perf/run_perf_chatgpt.sh
@@ -21,8 +21,8 @@ PERF_REPO_COMMIT="${PERF_REPO_COMMIT:-5452f74bd977807ac2e74f3d29432b9df6f25197}"
 MODEL="${AGENT6_GPT_MODEL:-gpt-5.6-sol}"
 EFFORT="${AGENT6_PERF_EFFORT:-max}"
 LABEL="${AGENT6_GPT_LABEL:-agent6-$(printf '%s' "$MODEL" | sed 's#.*/##; s/[^A-Za-z0-9._-]/-/g')-$EFFORT-standing}"
-# Plan-metered: max_plan_points bounds the percentage points this run may
-# consume; the usd/fallback caps stay as backstops for any non-plan call.
+# Plan-metered: max_plan_points bounds the percentage points the plan may move during
+# this run; the usd/fallback caps stay as backstops for any non-plan call.
 MAX_PLAN_POINTS="${AGENT6_PERF_MAX_PLAN_POINTS:-20}"
 MAX_USD="${AGENT6_PERF_MAX_USD:-5.0}"
 MAX_TOKENS_FALLBACK="${AGENT6_PERF_MAX_TOKENS_FALLBACK:-1500000}"

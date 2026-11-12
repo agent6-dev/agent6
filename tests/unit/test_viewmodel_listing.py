@@ -1146,7 +1146,7 @@ def test_summary_plan_points_sum_across_resume_executions(tmp_path: pathlib.Path
             {
                 "type": "budget.update",
                 "plan_used_percent": 40.0,
-                "plan_consumed": 1.0,
+                "plan_observed_points": 1.0,
                 "plan_cap": 2.0,
             },
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
@@ -1154,15 +1154,15 @@ def test_summary_plan_points_sum_across_resume_executions(tmp_path: pathlib.Path
             {
                 "type": "budget.update",
                 "plan_used_percent": 40.0,
-                "plan_consumed": 0.0,
+                "plan_observed_points": 0.0,
                 "plan_cap": 2.0,
             },
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
     s = summarize_session_dir(rd)
-    assert s.cost_cell == "1pt"
-    assert listing.summary_row(s)["plan_consumed"] == 1.0
+    assert s.usage_cell == "1pt"
+    assert listing.summary_row(s)["plan_observed_points"] == 1.0
 
 
 def test_cost_cell_keeps_points_between_a_resume_and_its_first_budget_update(
@@ -1181,14 +1181,14 @@ def test_cost_cell_keeps_points_between_a_resume_and_its_first_budget_update(
             {
                 "type": "budget.update",
                 "plan_used_percent": 40.0,
-                "plan_consumed": 1.0,
+                "plan_observed_points": 1.0,
                 "plan_cap": 2.0,
             },
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
             {"type": "session.resume", "turn": 3},
         ],
     )
-    assert summarize_session_dir(rd).cost_cell == "1pt"
+    assert summarize_session_dir(rd).usage_cell == "1pt"
 
 
 def test_is_run_husk(tmp_path: pathlib.Path) -> None:
