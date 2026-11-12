@@ -307,7 +307,6 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: pathlib.Path) -
         chain=run_chain.RunChain(repo),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -318,6 +317,7 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: pathlib.Path) -
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
         provider=provider,

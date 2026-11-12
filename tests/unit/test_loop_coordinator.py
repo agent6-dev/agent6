@@ -285,12 +285,11 @@ def _build_wf(
         chain=run_chain.RunChain(repo, ref="refs/agent6/coord", fallback_parent=_head(repo)),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=mock.MagicMock(system_prompt_file=""),
             git=types.SimpleNamespace(
                 control="agent6",
                 commit_per_turn=True,
                 commit=types.SimpleNamespace(
-                    checkpoint=types.SimpleNamespace(message="agent6"),
+                    checkpoint_message="agent6",
                     name="",
                     email="",
                     trailer="",
@@ -306,6 +305,7 @@ def _build_wf(
                 verify_when=verify_when,
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file=""),
             ),
             # A real int, not a Mock: segment_lanes compares the lane count against this cap.
             parallel=types.SimpleNamespace(max_lanes=4),

@@ -603,7 +603,6 @@ def _wf(
             base_sha=base_sha,
         ),
         "config": mock.MagicMock(
-            prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -614,6 +613,7 @@ def _wf(
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
         "provider": mock.MagicMock(),
@@ -673,7 +673,6 @@ def _plan_wf(
         chain=run_chain.RunChain(repo),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=mock.MagicMock(system_prompt_file="", decompose="off"),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -684,6 +683,7 @@ def _plan_wf(
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file="", decompose="off"),
             ),
         ),
         provider=provider,

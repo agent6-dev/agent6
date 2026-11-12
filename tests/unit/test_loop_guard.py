@@ -78,7 +78,6 @@ def _build_wf(
         ),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -89,6 +88,7 @@ def _build_wf(
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
         provider=provider,
@@ -289,7 +289,6 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: pathlib.Pat
         chain=run_chain.RunChain(repo),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -300,6 +299,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: pathlib.Pat
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
         provider=provider,
@@ -339,7 +339,6 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: pathlib.Path) ->
         chain=run_chain.RunChain(repo),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -350,6 +349,7 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: pathlib.Path) ->
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
         provider=provider,
@@ -390,12 +390,11 @@ def _gated_wf(
         ),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=mock.MagicMock(system_prompt_file=""),
             git=types.SimpleNamespace(
                 control="agent6",
                 commit_per_turn=True,
                 commit=types.SimpleNamespace(
-                    checkpoint=types.SimpleNamespace(message="agent6"),
+                    checkpoint_message="agent6",
                     name="",
                     email="",
                     trailer="",
@@ -411,6 +410,7 @@ def _gated_wf(
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
         provider=provider,

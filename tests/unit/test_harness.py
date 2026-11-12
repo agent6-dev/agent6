@@ -55,9 +55,7 @@ from tests.unit.turn_context import turn_context
 _GIT_STUB = types.SimpleNamespace(
     control="agent6",
     commit_per_turn=True,
-    commit=types.SimpleNamespace(
-        checkpoint=types.SimpleNamespace(message="agent6"), name="", email="", trailer=""
-    ),
+    commit=types.SimpleNamespace(checkpoint_message="agent6", name="", email="", trailer=""),
 )
 
 
@@ -166,7 +164,6 @@ def _wf(
             git=_GIT_STUB,
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             parallel=types.SimpleNamespace(max_lanes=4),
-            prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -177,6 +174,7 @@ def _wf(
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
         "provider": mock.MagicMock(),
@@ -282,7 +280,6 @@ class _EventCapture:
 
 def _cfg_with_verify() -> Any:
     return mock.MagicMock(
-        prompt=mock.MagicMock(system_prompt_file=""),
         harness=mock.MagicMock(
             standing_patience=-1,
             went_quiet_max_nudges=4,
@@ -294,6 +291,7 @@ def _cfg_with_verify() -> Any:
             verify_at_start=True,
             verify_retries=2,
             metric=types.SimpleNamespace(goal=None),
+            prompt=mock.MagicMock(system_prompt_file=""),
         ),
     )
 
@@ -1836,8 +1834,8 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
             metric=None,
             verify_timeout_s=60.0,
             verify_infer=True,
+            prompt=types.SimpleNamespace(decompose=False),
         ),
-        prompt=types.SimpleNamespace(decompose=False),
     )
     wf = _wf(
         root=tmp_path,
@@ -1919,8 +1917,8 @@ def test_an_editing_turn_checkpoints_whatever_the_gate_policy(tmp_path: pathlib.
             metric=None,
             verify_timeout_s=60.0,
             verify_infer=True,
+            prompt=types.SimpleNamespace(decompose=False),
         ),
-        prompt=types.SimpleNamespace(decompose=False),
     )
     wf = _wf(
         root=tmp_path,
@@ -4522,8 +4520,8 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
             metric=None,
             verify_timeout_s=60.0,
             verify_infer=True,
+            prompt=types.SimpleNamespace(decompose=False),
         ),
-        prompt=types.SimpleNamespace(decompose=False),
     )
     wf = _wf(
         root=tmp_path,
@@ -4626,8 +4624,8 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
             metric=None,
             verify_timeout_s=60.0,
             verify_infer=True,
+            prompt=types.SimpleNamespace(decompose=False),
         ),
-        prompt=types.SimpleNamespace(decompose=False),
     )
     wf = _wf(
         root=tmp_path,
@@ -5400,8 +5398,8 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
             metric=None,
             verify_timeout_s=60.0,
             verify_infer=True,
+            prompt=types.SimpleNamespace(decompose=False),
         ),
-        prompt=types.SimpleNamespace(decompose=False),
     )
     wf = _wf(
         root=tmp_path,
@@ -7603,7 +7601,6 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
         config=mock.MagicMock(
             git=_GIT_STUB,
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -7614,6 +7611,7 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
     )

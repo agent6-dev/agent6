@@ -210,7 +210,6 @@ def test_after_auto_commit_default_continues() -> None:
     wf = loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=mock.MagicMock(
-            prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -221,6 +220,7 @@ def test_after_auto_commit_default_continues() -> None:
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
         provider=mock.MagicMock(),
@@ -246,7 +246,6 @@ def test_after_auto_commit_field_is_overridable() -> None:
     wf = loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=mock.MagicMock(
-            prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -257,6 +256,7 @@ def test_after_auto_commit_field_is_overridable() -> None:
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
         provider=mock.MagicMock(),

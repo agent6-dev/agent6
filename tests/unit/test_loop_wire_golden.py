@@ -207,11 +207,9 @@ def _config() -> Any:
             metric=None,
             verify_timeout_s=60.0,
             verify_infer=True,
+            prompt=types.SimpleNamespace(decompose="off"),
         ),
-        prompt=types.SimpleNamespace(decompose="off"),
-        git=types.SimpleNamespace(
-            commit=types.SimpleNamespace(checkpoint=types.SimpleNamespace(message="agent6"))
-        ),
+        git=types.SimpleNamespace(commit=types.SimpleNamespace(checkpoint_message="agent6")),
     )
 
 

@@ -86,7 +86,6 @@ def _wf(
             base_sha=base_sha,
         ),
         "config": mock.MagicMock(
-            prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -97,6 +96,7 @@ def _wf(
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
         "provider": mock.MagicMock(),

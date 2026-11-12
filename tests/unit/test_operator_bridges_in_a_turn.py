@@ -90,7 +90,6 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: pat
         chain=run_chain.RunChain(repo, ref="refs/agent6/bridges", fallback_parent=head),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=mock.MagicMock(system_prompt_file="", decompose="off"),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -101,6 +100,7 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: pat
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file="", decompose="off"),
             ),
             parallel=types.SimpleNamespace(max_lanes=4),
         ),

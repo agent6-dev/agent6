@@ -39,9 +39,7 @@ from agent6.tools import dispatch, results, tool_errors
 _GIT_STUB = types.SimpleNamespace(
     control="agent6",
     commit_per_turn=True,
-    commit=types.SimpleNamespace(
-        checkpoint=types.SimpleNamespace(message="agent6"), name="", email="", trailer=""
-    ),
+    commit=types.SimpleNamespace(checkpoint_message="agent6", name="", email="", trailer=""),
 )
 
 
@@ -76,7 +74,6 @@ def _wf(
         "config": mock.MagicMock(
             git=_GIT_STUB,
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -87,6 +84,7 @@ def _wf(
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
         "provider": mock.MagicMock(),
@@ -1103,7 +1101,6 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
     )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     config = mock.MagicMock(
-        prompt=mock.MagicMock(system_prompt_file=""),
         harness=mock.MagicMock(
             standing_patience=-1,
             went_quiet_max_nudges=4,
@@ -1114,6 +1111,7 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
             verify_when="never",
             verify_at_start=True,
             verify_retries=2,
+            prompt=mock.MagicMock(system_prompt_file=""),
         ),
     )
     ev = _EventCapture()
@@ -1176,7 +1174,6 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     config = mock.MagicMock(
-        prompt=mock.MagicMock(system_prompt_file=""),
         harness=mock.MagicMock(
             standing_patience=-1,
             went_quiet_max_nudges=4,
@@ -1187,6 +1184,7 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
             verify_when="never",
             verify_at_start=True,
             verify_retries=2,
+            prompt=mock.MagicMock(system_prompt_file=""),
         ),
     )
     ev = _EventCapture()

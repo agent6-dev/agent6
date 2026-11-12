@@ -38,9 +38,7 @@ from tests import review_lane_env
 # The `[git]` surface the loop reads: the checkpoint message and the commit
 # identity (`commit_identity`), empty as a real Config carries it unset.
 _GIT_STUB = types.SimpleNamespace(
-    commit=types.SimpleNamespace(
-        checkpoint=types.SimpleNamespace(message="agent6"), name="", email="", trailer=""
-    )
+    commit=types.SimpleNamespace(checkpoint_message="agent6", name="", email="", trailer="")
 )
 
 
@@ -69,7 +67,6 @@ def _wf(
         ),
         "config": mock.MagicMock(
             git=_GIT_STUB,
-            prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -80,6 +77,7 @@ def _wf(
                 verify_when="never",
                 verify_at_start=True,
                 verify_retries=2,
+                prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
         "provider": mock.MagicMock(),
