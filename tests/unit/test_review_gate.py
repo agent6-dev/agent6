@@ -33,6 +33,7 @@ from agent6.harness import (
 from agent6.providers import ProviderResponse
 from agent6.sessions import event_log, journal
 from agent6.tools import results
+from tests import review_lane_env
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
 # identity (`commit_identity`), empty as a real Config carries it unset.
@@ -871,7 +872,7 @@ def _target_reviewer(
     """Return a reviewer with one scripted seat and no git behind its grounding."""
     provider = mock.MagicMock()
     provider.call.return_value = _resp(_SEAT_REPLY)
-    seat = review_gate.ReviewSeat(focus="correctness", model="p/m", provider=provider)
+    seat = review_lane_env.seat(focus="correctness", model="p/m", provider=provider)
 
     def rules(*_args: Any, **_kwargs: Any) -> review_records.ReviewRules:
         return review_records.ReviewRules()
@@ -896,7 +897,7 @@ def _target_reviewer(
         settings=review_gate.ReviewSettings(trigger="before_finish", reviewers=[seat]),
         chain=mock.MagicMock(root=tmp_path),
         hide=(),
-        review_tools=lambda: ([], mock.MagicMock()),
+        executor=mock.MagicMock,
         budget_remaining=lambda: None,
         log=_silent,
         emit=events.append,
@@ -949,3 +950,8 @@ def test_a_review_target_without_a_diff_is_skipped(
     assert reviewer.review_target(_state(), target, "  \n") is None
     (skipped,) = events
     assert type(skipped).__name__ == "LoopReviewSkipped" and skipped.reason == "no_diff"
+
+
+@pytest.fixture(autouse=True)
+def panel_lanes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)

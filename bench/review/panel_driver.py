@@ -12,11 +12,11 @@ import uuid
 import pydantic
 
 from agent6 import budget, config, evidence, paths, review_records
-from agent6.app import role_providers
+from agent6.app import lane_launch, lanes, role_providers
 from agent6.config import layer
-from agent6.harness import review_gate, review_history, review_panel
-from agent6.providers import provider_types
+from agent6.harness import parallel_dispatch, review_gate, review_history, review_panel, run_chain
 from agent6.sessions import budget_events, event_log, journal, layout, manifest
+from agent6.ui.cli import parallel
 from agent6.vcs import git_read, review
 from agent6.viewmodel import receipt
 
@@ -73,9 +73,33 @@ def run(
         max_plan_points=cfg.budget.max_plan_points,
         allow_plan_overage=cfg.budget.allow_plan_overage,
     )
-    sink = provider_types.TranscriptSink(saved.transcripts_dir, objects_dir=saved.objects_dir)
-    seats = role_providers.build_review_seats(
-        cfg, transcript_sink=sink, budget=tracker, events=events
+    seats = role_providers.resolve_review_seats(cfg)
+    chain = run_chain.RunChain(root, ref=None, fallback_parent=target.base_commit)
+    target = chain.retain_review_target(target, saved.session_id)
+    executor = parallel_dispatch.ParallelDispatcher(
+        chain=chain,
+        curator=None,
+        max_lanes=cfg.parallel.max_lanes,
+        lane_spawner=lanes.build_coordinator_spawner(
+            cfg,
+            root,
+            paths.state_dir(root),
+            explicit_leaves=frozenset(),
+            mode="run",
+            session_id=saved.session_id,
+            runtime=parallel.lane_runtime(),
+        ),
+        save_snapshot=lambda *_a, **_k: None,
+        log=lambda _m: None,
+        emit=events.emit,
+        emit_graph_snapshot=lambda: None,
+        session_id=saved.session_id,
+        session_dir=saved.session_dir,
+        execution_id=execution_id,
+        budget=tracker,
+        authority=lane_launch.dispatch_authority(
+            cfg, mode="run", session_id=saved.session_id, root=root
+        ),
     )
     identity = dict(panel_id=panel_id, execution_id=execution_id, turn=0, trigger="benchmark")
     events.emit(
@@ -107,7 +131,8 @@ def run(
         panel_id=panel_id,
         repo_max_turns=cfg.review.repo_max_turns,
         concurrency=cfg.review.concurrency,
-        emit=events.emit,
+        target=target,
+        executor=executor,
     )
     for verdict in result.per_seat:
         events.emit(

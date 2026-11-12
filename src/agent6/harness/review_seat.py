@@ -1,45 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Run a review seat and parse its verdict."""
+"""Prepare review messages and parse bound lane completions."""
 
 from __future__ import annotations
 
-import json
-from collections.abc import Callable
-from typing import Any, Protocol
+import dataclasses
+from typing import Any
 
 import pydantic
 
-from agent6 import kinds, media, review_records
-from agent6.harness import llm_json, loop_conversation, provider_call, review_panel
-from agent6.prompts import review
-from agent6.providers import (
-    Provider,
-    ProviderError,
-    ProviderResponse,
-    ToolDefinition,
-    output_cap_truncated,
-    request_headers,
-)
-from agent6.sessions import journal
-from agent6.tools import results
+from agent6 import review_records
+from agent6.harness import llm_json, review_panel
+from agent6.sessions import completion
 from agent6.vcs import git_files
-
-
-# A read-only dispatch callable for repo-scope seats: (tool_name, input) -> result.
-class ReviewDispatch(Protocol):
-    """Run one read-only tool for a review seat."""
-
-    def __call__(
-        self,
-        name: str,
-        tool_input: dict[str, Any],
-        /,
-        *,
-        origin: kinds.ToolCallOrigin | None = None,
-    ) -> results.ToolResult:
-        """Return the tool's result; a tool outside the read-only set is refused."""
-        ...
 
 
 def build_user_message(ctx: review_panel.ReviewContext) -> str:
@@ -92,7 +65,7 @@ def coerce_findings(raw: object) -> tuple[review_records.Finding, ...]:
     return tuple(out)
 
 
-def no_verdict_error(resp: ProviderResponse) -> str:
+def no_verdict_error(resp: completion.CompletionRecord) -> str:
     """Return why a seat produced no verdict JSON: the output cap, no content, or junk.
 
     Args:
@@ -101,7 +74,7 @@ def no_verdict_error(resp: ProviderResponse) -> str:
     Returns:
         The error text for the abstaining verdict.
     """
-    if output_cap_truncated(resp):
+    if resp.response_stop_reason.strip().lower() in ("length", "max_tokens"):
         detail = (
             "before emitting any content (likely all reasoning)"
             if not resp.text.strip()
@@ -109,84 +82,19 @@ def no_verdict_error(resp: ProviderResponse) -> str:
         )
         return (
             f"output hit the cap {detail}"
-            f" (stop_reason={resp.stop_reason}, {resp.output_tokens} output tokens);"
+            f" (stop_reason={resp.response_stop_reason},"
+            f" {resp.response_output_tokens} output tokens);"
             " raise max_tokens or use a model with more output headroom"
         )
     if not resp.text.strip():
         # The reasoning produced tells a starved reasoner from an upstream error.
-        thought = sum(
-            len(str(block.get("thinking") or ""))
-            for block in (resp.raw.get("content") or [])
-            if isinstance(block, dict) and block.get("type") == "thinking"
-        )
+        thought = resp.reasoning_chars
         channel = f", {thought:,} chars of it in the reasoning channel" if thought else ""
         return (
-            f"the reviewer returned no content (stop_reason={resp.stop_reason},"
-            f" {resp.output_tokens} output tokens{channel})"
+            f"the reviewer returned no content (stop_reason={resp.response_stop_reason},"
+            f" {resp.response_output_tokens} output tokens{channel})"
         )
     return "unparseable reviewer output"
-
-
-def structured_review(
-    provider: Provider,
-    ctx: review_panel.ReviewContext,
-    *,
-    seat_index: int,
-    focus: str,
-    model_route: str,
-    max_tokens: int = 1500,
-    temperature: float | None = 0.0,
-    panel_id: str | None = None,
-    execution_id: str | None = None,
-) -> review_records.ReviewVerdict:
-    """Run one diff-scope seat.
-
-    Args:
-        provider: The seat's provider.
-        ctx: The review context, with the seat's focus.
-        seat_index: The position in the panel roster.
-        focus: The seat's focus.
-        model_route: The provider/model route, for the verdict.
-        max_tokens: The output cap of the call.
-        temperature: The sampling temperature.
-        panel_id: The panel's id, retained across its seat calls.
-        execution_id: The execution the panel reviews for, carried by the seat's events.
-
-    Returns:
-        The seat's verdict; a provider error or junk output abstains with `error` set.
-    """
-    system = review.panel_prompt(ctx.focus)
-    try:
-        resp = provider.call(
-            system=system,
-            messages=[{"role": "user", "content": build_user_message(ctx)}],
-            max_tokens=max_tokens,
-            temperature=temperature,
-            context=request_headers.RequestContext.initiated_by(
-                "agent",
-                call_context=kinds.CallContext(
-                    panel_id=panel_id, seat_index=seat_index, execution_id=execution_id
-                ),
-            ),
-        )
-    except ProviderError as exc:
-        return review_records.ReviewVerdict(
-            seat_index=seat_index,
-            focus=focus,
-            model_route=model_route,
-            verdict="abstain",
-            error=f"provider: {exc}",
-        )
-    obj = llm_json.extract_json(resp.text, prefer=("verdict", "findings"))
-    if obj is None:
-        return review_records.ReviewVerdict(
-            seat_index=seat_index,
-            focus=focus,
-            model_route=model_route,
-            verdict="abstain",
-            error=no_verdict_error(resp),
-        )
-    return verdict_from_obj(obj, seat_index, focus, model_route)
 
 
 def verdict_from_obj(
@@ -232,128 +140,58 @@ def verdict_from_obj(
     )
 
 
-def repo_review(
-    provider: Provider,
-    ctx: review_panel.ReviewContext,
+def verdict_from_completion(
+    record: completion.CompletionRecord | None,
     *,
-    seat_index: int,
+    binding: review_records.ReviewBinding,
+    session_id: str,
     focus: str,
     model_route: str,
-    tools: list[ToolDefinition],
-    dispatch: ReviewDispatch,
-    max_turns: int,
-    max_tokens: int = 2000,
-    temperature: float | None = 0.0,
-    recovery: provider_call.MediaRecovery | None = None,
-    emit: Callable[..., None] | None = None,
-    panel_id: str | None = None,
-    execution_id: str | None = None,
+    scope: str,
+    max_calls: int,
+    error: str | None = None,
 ) -> review_records.ReviewVerdict:
-    """Run one repo-scope seat with at most `max_turns` provider calls.
+    """Validate provenance before parsing any model text.
 
     Args:
-        provider: The seat's provider.
-        ctx: The review context, with the seat's focus.
-        seat_index: The position in the panel roster.
-        focus: The seat's focus.
-        model_route: The provider/model route, for the verdict.
-        tools: The read-only tools offered.
-        dispatch: The dispatch that refuses every other tool.
-        max_turns: The provider calls allowed.
-        max_tokens: The output cap of each call.
-        temperature: The sampling temperature on every call.
-        recovery: The seat's capability facts and execution-local rejections.
-        emit: The journal emitter for delivery refusals.
-        panel_id: The panel's id, retained across its seat calls.
-        execution_id: The execution the panel reviews for, carried by the seat's events.
+        record: The imported bounded-conversation artifact, never a worker answer.
+        binding: The parent's panel, seat and target binding.
+        session_id: The child assigned by the parent dispatcher.
+        focus: The parent's seat focus.
+        model_route: The parent's resolved route.
+        scope: The seat's diff or repo scope.
+        max_calls: The request's call ceiling.
+        error: A dispatch, timeout or artifact-read failure.
 
     Returns:
-        The seat's verdict; a provider error or no valid verdict abstains with `error` set.
+        A verdict or an abstention carrying the actual failure diagnostic.
     """
-    system = review.panel_prompt(ctx.focus, max_turns=max_turns)
-    conversation = loop_conversation.Conversation()
-    conversation.notice(build_user_message(ctx))
-    if recovery is None:
-        entry, sep, model = model_route.partition("/")
-        route = kinds.ModelRoute(entry if sep else "", model if sep else entry)
-        recovery = provider_call.MediaRecovery(media.InputCapabilities(route))
-    call_context = kinds.CallContext(
-        panel_id=panel_id, seat_index=seat_index, execution_id=execution_id
-    )
-
-    def _logical_call(messages: list[dict[str, Any]]) -> ProviderResponse:
-        # One identity per logical call: a media-free retry is a new call, and the turn's
-        # tool rows name the call that returned.
-        nonlocal call_context
-        call_context = kinds.CallContext(
-            panel_id=panel_id, seat_index=seat_index, execution_id=execution_id
+    if error is None:
+        if record is None:
+            error = "missing completion artifact"
+        elif record.review_binding != binding or record.session_id != session_id:
+            error = "completion binding does not match the parent panel, seat, target or session"
+        elif record.calls > max_calls:
+            error = "completion exceeded its bound call allowance"
+        elif record.stop_reason not in ("answered", "calls_exhausted"):
+            error = "; ".join(record.diagnostics) or record.text or record.stop_reason
+    if error is not None:
+        return review_records.ReviewVerdict(
+            binding.seat_index, focus, model_route, "abstain", error=error, session_id=session_id
         )
-        return provider.call(
-            system=system,
-            messages=messages,
-            tools=tools,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            context=request_headers.RequestContext.initiated_by("agent", call_context=call_context),
+    assert record is not None
+    obj = llm_json.extract_json(record.text, prefer=("verdict", "findings"))
+    if obj is None or (
+        scope == "repo" and record.tool_uses and not ({"verdict", "findings"} & obj.keys())
+    ):
+        error = (
+            f"repo: no verdict within {max_calls} calls"
+            if scope == "repo" and record.tool_uses
+            else no_verdict_error(record)
         )
-
-    for i in range(max_turns):
-        try:
-            resp = provider_call.call_with_media_recovery(
-                _logical_call, conversation, recovery, emit=emit
-            )
-        except ProviderError as exc:
-            return review_records.ReviewVerdict(
-                seat_index=seat_index,
-                focus=focus,
-                model_route=model_route,
-                verdict="abstain",
-                error=f"provider: {exc}",
-            )
-        assistant = conversation.assistant(resp.raw.get("content") or [])
-        if not resp.tool_uses:
-            obj = llm_json.extract_json(resp.text, prefer=("verdict", "findings"))
-            if obj is None:
-                return review_records.ReviewVerdict(
-                    seat_index=seat_index,
-                    focus=focus,
-                    model_route=model_route,
-                    verdict="abstain",
-                    error=no_verdict_error(resp),
-                )
-            return verdict_from_obj(obj, seat_index, focus, model_route)
-        # On the last turn a verdict beside tool calls counts; without one no tool runs.
-        if i == max_turns - 1:
-            obj = llm_json.extract_json(resp.text, prefer=("verdict", "findings"))
-            if obj is not None and ("verdict" in obj or "findings" in obj):
-                return verdict_from_obj(obj, seat_index, focus, model_route)
-            break
-        tool_results: list[loop_conversation.ToolResultItem] = []
-        media_budget = media.AttachmentBudget()
-        for tu in assistant.tool_uses:
-            name = tu.name
-            attachment = None
-            try:
-                out = dispatch(
-                    name, tu.input or {}, origin=kinds.ToolCallOrigin(call_context, tu.id)
-                )
-                attachment = out.attachment
-                content = json.dumps(out.to_wire(), ensure_ascii=False)
-                if attachment is not None and (reason := media_budget.refusal(attachment)):
-                    if emit is not None:
-                        emit(journal.LoopMediaRefused(provider_tool_call_id=tu.id, reason=reason))
-                    attachment = None
-                    content = reason
-                if attachment is None:
-                    content = content[:8000]
-            except Exception as exc:
-                content = f"error: {exc}"[:2000]
-            tool_results.append(loop_conversation.ToolResultItem(tu.id, content, tu, attachment))
-        conversation.results(tool_results)
-    return review_records.ReviewVerdict(
-        seat_index=seat_index,
-        focus=focus,
-        model_route=model_route,
-        verdict="abstain",
-        error=f"repo: no verdict within {max_turns} calls",
+        return review_records.ReviewVerdict(
+            binding.seat_index, focus, model_route, "abstain", error=error, session_id=session_id
+        )
+    return dataclasses.replace(
+        verdict_from_obj(obj, binding.seat_index, focus, model_route), session_id=session_id
     )

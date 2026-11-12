@@ -115,10 +115,15 @@ const host = el('div'); globalThis.location = {hash:''};
 const r = {session_id:'run',
  text:'Receipt run\\n\\nTesting\\n\\nRisk\\n<script>raw risk</script>\\n\\nHow to revert',
  revert_request:'Inspect the recorded run before reverting',
+ children:[{lane:1, session_id:'worker-rpanel-l1'}],
+ review:{panels:[{panel_id:'panel',
+   seats:[{seat_index:0, focus:'security', session_id:'worker-rpanel-l1'}]}]},
  verifications:[{verify_id:'v', stdout_tail:'<b>out</b>', stderr_tail:''}]};
 drawReceipt(host, r);
 assert.ok(host.textContent.includes('<script>raw risk</script>'));
 assert.ok(host.textContent.includes('<b>out</b>'));
+assert.ok(host.textContent.includes('seat 1 (security)'));
+assert.equal(host.querySelector('a').href, '#/session/worker-rpanel-l1');
 assert.ok(host.textContent.includes('Testing') && host.textContent.includes('How to revert'));
 host.querySelector('button').onclick();
 assert.equal(window.pendingNewWork.task, r.revert_request);

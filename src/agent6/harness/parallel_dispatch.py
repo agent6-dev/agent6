@@ -233,17 +233,19 @@ class ParallelDispatcher:
         panel_id: str,
         at: str,
         turn: int = 0,
+        concurrency: int | None = None,
     ) -> lane_records.DispatchResult:
-        """Submit a harness-owned read-only batch through the ordinary lane executor.
+        """Reserve a harness-owned roster and submit bounded batches through the lane executor.
 
         The retained target is supplied by the harness; no checkpoint or merge changes it.
-        The review policy owns seat selection and batching, not this execution seam.
+        The review policy selects seats and concurrency; this executor bounds each batch.
 
         Args:
-            lanes: Bounded conversations with resolved seat settings.
+            lanes: The complete roster of bounded conversations with resolved seat settings.
             panel_id: The harness's stable panel/batch id.
             at: The retained immutable target commit.
             turn: The owning worker's completed turn.
+            concurrency: The policy's concurrency cap; None uses parallel.max_lanes.
 
         Returns:
             The record-only joins, or a refusal before launch.
@@ -257,17 +259,21 @@ class ParallelDispatcher:
             or not panel_id.replace("-", "").isalnum()
         ):
             return self.refusal("a panel needs a session dir, retained target and safe panel id.")
-        if not lanes or len(lanes) > self.max_lanes or any(lane.contract is None for lane in lanes):
-            return self.refusal(
-                "a panel batch needs bounded read-only lanes within parallel.max_lanes."
-            )
+        if not lanes or any(lane.contract is None for lane in lanes):
+            return self.refusal("a panel needs bounded read-only lanes.")
         group = f"r{panel_id}"
         identity = f"{self.session_id}-{group}"
         if lane_dispatch.record_path(self.session_dir, identity).exists():
             return self.refusal(
                 "the panel batch already has a dispatch record; reconcile it instead."
             )
-        children = [f"{identity}-l{i}" for i in range(1, len(lanes) + 1)]
+        width = max(1, min(self.max_lanes, concurrency or self.max_lanes))
+        children = [
+            f"{identity}-l{i + 1}"
+            if len(lanes) <= width
+            else f"{identity}-b{i // width + 1}-l{i % width + 1}"
+            for i in range(len(lanes))
+        ]
         grant = None
         if self.budget is not None:
             try:
@@ -319,10 +325,15 @@ class ParallelDispatcher:
             return self.refusal(
                 f"could not persist the panel dispatch ({exc}); nothing dispatched."
             )
-        return self.execute(record, bounded, group)
+        return self.execute(record, bounded, group, batch_width=width)
 
     def execute(
-        self, record: lane_dispatch.DispatchRecord, lanes: list[lane_records.LaneTask], group: str
+        self,
+        record: lane_dispatch.DispatchRecord,
+        lanes: list[lane_records.LaneTask],
+        group: str,
+        *,
+        batch_width: int | None = None,
     ) -> lane_records.DispatchResult:
         """Run a published work or panel batch, then settle and land it under its recorded policy.
 
@@ -330,6 +341,7 @@ class ParallelDispatcher:
             record: The durable prepared dispatch.
             lanes: Its bounded tasks, in child order.
             group: The group suffix used by the shared spawner.
+            batch_width: The maximum lanes submitted together; None submits the whole group.
 
         Returns:
             The completed result, or a diagnosed spawner failure with unresolved holds.
@@ -348,7 +360,12 @@ class ParallelDispatcher:
         record = record.advanced("running")
         self.write(record)
         try:
-            results = self.lane_spawner(lanes, group, at=record.base or None)
+            width = batch_width or len(lanes)
+            results: list[lane_records.LaneResult] = []
+            for offset in range(0, len(lanes), width):
+                batch = lanes[offset : offset + width]
+                batch_group = group if len(lanes) <= width else f"{group}-b{offset // width + 1}"
+                results.extend(self.lane_spawner(batch, batch_group, at=record.base or None))
             if len(results) != len(lanes):
                 raise subrun.SubrunError(
                     f"group spawner returned {len(results)} result(s) for {len(lanes)} lane(s)"

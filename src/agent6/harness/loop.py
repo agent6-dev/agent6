@@ -195,6 +195,7 @@ class Harness:
     turns_reached: int = dataclasses.field(default=0, init=False)
     # What a contract's ceiling cut, for its completion record.
     _contract_diagnostics: list[str] = dataclasses.field(default_factory=list, init=False)
+    _contract_response: ProviderResponse | None = dataclasses.field(default=None, init=False)
     _execution_started: bool = dataclasses.field(default=False, init=False)
     # The turn whose tools are running, for the `parallel` tool's dispatch.
     _tool_turn: tuple[loop_conversation.Conversation, loop_state.LoopState, int] | None = (
@@ -319,6 +320,8 @@ class Harness:
         Returns:
             The system prompt, the conversation holding the opening, and no root task.
         """
+        self.dispatcher.no_tools = contract.kind == "no_tools"
+        self.dispatcher.allowed_tools = contract.allowed_tools
         self.log(f"LOOP: contract={contract.kind} max_calls={contract.max_calls}")
         conversation = loop_conversation.Conversation()
         conversation.notice(contract.opening, origin="operator")
@@ -846,7 +849,12 @@ class Harness:
         def _logical_call(messages: list[dict[str, Any]]) -> ProviderResponse:
             # One identity per logical call: its attempts share it, a media-free retry is a
             # new call, and the turn's tool rows name the call that returned.
-            state.call_context = kinds.CallContext(execution_id=self.execution_id)
+            binding = self.contract.review_binding if self.contract is not None else None
+            state.call_context = kinds.CallContext(
+                execution_id=self.execution_id,
+                panel_id=binding.panel_id if binding else None,
+                seat_index=binding.seat_index if binding else None,
+            )
             return self.caller.call(
                 system,
                 messages,
@@ -905,6 +913,8 @@ class Harness:
                 return outcome
             return loop_state.NEXT_TURN  # "continue" or an injected instruction -> re-do the turn
         except ProviderError as exc:
+            if self.contract is not None:
+                self._contract_diagnostics.append(f"provider: {exc}")
             hint = provider_call.provider_error_hint(exc.status_code, exc.provider)
             attempts = f" after {exc.attempts} attempts" if exc.attempts > 1 else ""
             # The upstream body lands in this one log line; the summary below stays short.
@@ -945,6 +955,7 @@ class Harness:
         """
         if self.contract is None:
             return None
+        self._contract_response = resp
         text = (resp.text or "").strip()
         if self.caller.counter.attempts >= self.contract.max_calls:
             if assistant.tool_uses:
@@ -1568,6 +1579,22 @@ class Harness:
                     output_tokens=self.caller.counter.output_tokens,
                     calls=self.caller.counter.attempts,
                     diagnostics=tuple(self._contract_diagnostics),
+                    session_id=self.session_id,
+                    review_binding=self.contract.review_binding,
+                    response_stop_reason=self._contract_response.stop_reason
+                    if self._contract_response
+                    else "",
+                    response_output_tokens=self._contract_response.output_tokens
+                    if self._contract_response
+                    else 0,
+                    reasoning_chars=sum(
+                        len(str(b.get("thinking") or ""))
+                        for b in (self._contract_response.raw.get("content") or [])
+                        if isinstance(b, dict) and b.get("type") == "thinking"
+                    )
+                    if self._contract_response
+                    else 0,
+                    tool_uses=bool(self._contract_response and self._contract_response.tool_uses),
                 ),
             )
         return loop_snapshot.SessionResult(
@@ -1967,10 +1994,9 @@ class Harness:
         return review_gate.Reviewer(
             settings=self.review,
             session_id=self.session_id,
-            media_rejections=self.media_rejections,
             chain=self.chain,
             hide=self.config.sandbox.hide_paths,
-            review_tools=lambda: toolset.build_readonly_review_tools(self.dispatcher),
+            executor=lambda: self.parallel,
             budget_remaining=self._budget_fraction_remaining,
             log=self.log,
             emit=self.emit,

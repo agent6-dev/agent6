@@ -11,7 +11,7 @@ from agent6 import review_records
 from agent6.harness import loop_state, repo_context, review_gate, run_chain
 from agent6.sessions import event_log
 from agent6.vcs import git_files, git_read, review
-from tests import review_helpers
+from tests import review_helpers, review_lane_env
 from tests.unit import (
     test_review_gate,
     test_review_line_origin,
@@ -106,11 +106,11 @@ def test_in_loop_subdirectory_panel_uses_repository_relative_evidence(
     monkeypatch.setattr(git_files, "blob_at", blobs)
     reviewer = review_gate.Reviewer(
         settings=review_gate.ReviewSettings(
-            reviewers=[review_gate.ReviewSeat("security", "model", provider)], block_on="any"
+            reviewers=[review_lane_env.seat("security", "model", provider)], block_on="any"
         ),
         chain=chain,
         hide=hide,
-        review_tools=lambda: ([], mock.MagicMock()),
+        executor=mock.MagicMock,
         budget_remaining=lambda: None,
         log=lambda _s: None,
         emit=sink.emit,
@@ -285,11 +285,11 @@ def test_panel_classifies_immutable_bytes_before_its_single_record(
     provider.call.side_effect = seat
     reviewer = review_gate.Reviewer(
         settings=review_gate.ReviewSettings(
-            reviewers=[review_gate.ReviewSeat("security", "model", provider)], block_on="any"
+            reviewers=[review_lane_env.seat("security", "model", provider)], block_on="any"
         ),
         chain=chain,
         hide=hide,
-        review_tools=lambda: ([], mock.MagicMock()),
+        executor=mock.MagicMock,
         budget_remaining=lambda: None,
         log=lambda _s: None,
         emit=sink.emit,
@@ -321,3 +321,8 @@ def test_panel_classifies_immutable_bytes_before_its_single_record(
     assert (tmp_path / ".git" / "index").read_bytes() == index
     assert review_helpers.git(tmp_path, "show-ref") == refs
     assert (tmp_path / "code.py").read_text() == "workspace\nnot context\n"
+
+
+@pytest.fixture(autouse=True)
+def panel_lanes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)

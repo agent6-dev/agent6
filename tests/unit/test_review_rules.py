@@ -19,7 +19,7 @@ from agent6.harness import (
 )
 from agent6.sessions import event_log
 from agent6.vcs import git_files, git_read
-from tests import review_helpers
+from tests import review_helpers, review_lane_env
 from tests.unit import test_review_gate
 
 
@@ -233,10 +233,10 @@ def _reviewer_for(
     (repo / "AGENTS.md").unlink()
     chain.commit("edit")
     return review_gate.Reviewer(
-        review_gate.ReviewSettings(reviewers=[review_gate.ReviewSeat("s", "m", provider)]),
+        review_gate.ReviewSettings(reviewers=[review_lane_env.seat("s", "m", provider)]),
         chain,
         (),
-        lambda: ([], mock.MagicMock()),
+        mock.MagicMock,
         lambda: None,
         lambda _s: None,
         sink.emit,
@@ -268,15 +268,12 @@ def test_in_loop_records_base_rules_and_sends_exact_text(repo: pathlib.Path, lin
         loop_state.LoopState(original_task="t", tool_calls=0), trigger="periodic", turn=1
     )
     assert result is not None
-    assert provider.call.call_args.kwargs["messages"] == [
-        {
-            "role": "user",
-            "content": (
-                f"TASK:\nt\n\nREVIEW RULES (base tree):\nAGENTS.md (blob {blob}):\nbase rule\n"
-                f"\n\nVERIFY: not run.\n\nDIFF:\n{diff}"
-            ),
-        }
-    ]
+    (message,) = provider.call.call_args.kwargs["messages"]
+    assert message["role"] == "user"
+    assert message["content"][0]["text"] == (
+        f"TASK:\nt\n\nREVIEW RULES (base tree):\nAGENTS.md (blob {blob}):\nbase rule\n"
+        f"\n\nVERIFY: not run.\n\nDIFF:\n{diff}"
+    )
     start = next(row for row in rows if row["type"] == "loop.review.start")
     assert start["rule_sources"] == [{"path": "AGENTS.md", "blob_id": blob, "supplied_bytes": 10}]
     assert start["rules_complete"] is True
@@ -366,15 +363,15 @@ def test_malicious_rules_do_not_add_tools_or_change_grounding(repo: pathlib.Path
             }
         )
     )
-    result = review_gate.run_panel(
-        [review_gate.ReviewSeat("s", "m", provider)],
+    result = review_lane_env.run_panel(
+        [review_lane_env.seat("s", "m", provider)],
         review_panel.ReviewContext(rules=rules, diff="diff --git a/foo.py b/foo.py\n"),
         block_on="any",
         min_blocking_models=1,
         panel_id="p",
         repo_max_turns=1,
     )
-    assert "tools" not in provider.call.call_args.kwargs
+    assert provider.call.call_args.kwargs["tools"] == []
     assert not result.blocked and result.merged_findings[0].severity == "warn"
 
 
@@ -490,3 +487,8 @@ def test_prepared_review_freezes_rules_findings_and_failed_verification(repo: pa
     assert prepared.context.prior_findings == (state.review_panels[0].findings[0].finding,)
     with pytest.raises(dataclasses.FrozenInstanceError):
         prepared.panel_id = "forged"  # type: ignore[misc]
+
+
+@pytest.fixture(autouse=True)
+def panel_lanes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)

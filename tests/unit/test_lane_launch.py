@@ -195,3 +195,27 @@ def test_spawn_lane_returns_the_pid_with_a_failure(
     )
     assert (found, pid) == (None, 0)
     assert "failed to start agent6 lane agent" in err
+
+
+def test_siblings_can_create_the_shared_private_launch_dir(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import concurrent.futures
+    import threading
+
+    target = tmp_path / "group"
+    barrier = threading.Barrier(2)
+    exists = pathlib.Path.exists
+
+    def simultaneous(path: pathlib.Path, *, follow_symlinks: bool = True) -> bool:
+        found = exists(path, follow_symlinks=follow_symlinks)
+        if path == target and not found:
+            barrier.wait(timeout=5)
+        return found
+
+    monkeypatch.setattr(pathlib.Path, "exists", simultaneous)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(lane_launch.private_dir, target) for _ in range(2)]
+        for future in futures:
+            future.result()
+    assert target.stat().st_mode & 0o777 == 0o700

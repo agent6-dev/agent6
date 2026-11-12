@@ -92,9 +92,14 @@ def _route(
     tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     if builder == "panel":
-        wrapped = role_providers.build_review_seats(
-            cfg, transcript_sink=sink, budget=tracker, events=events if observed else None
-        )[0].provider
+        seat = role_providers.resolve_review_seats(cfg)[0]
+        wrapped = role_providers.build_role_provider(
+            cfg.with_model_settings("worker", seat.settings),
+            "worker",
+            transcript_sink=sink,
+            budget=tracker,
+            events=events if observed else None,
+        )
     else:
         wrapped = role_providers.helper_seat_provider(
             cfg,

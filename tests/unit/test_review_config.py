@@ -20,6 +20,7 @@ from agent6.config import Config, ReviewConfig, io, layer_data
 from agent6.harness import review_gate, review_panel
 from agent6.ui.cli import cli_main
 from agent6.viewmodel import config_view
+from tests import review_lane_env
 from tests.unit import test_run_lifecycle_bugfix
 
 
@@ -58,9 +59,12 @@ def test_configured_repo_call_budget_reaches_the_seat(
     seat = test_run_lifecycle_bugfix._Scripted([("", (tool,))] * 3)
     seat_call = mock.Mock(wraps=seat.call)
     monkeypatch.setattr(seat, "call", seat_call)
-    monkeypatch.setattr(
-        role_providers, "_provider_from_entry", test_run_lifecycle_bugfix._use(seat)
-    )
+
+    def resolve_seats(_cfg: Config) -> list[review_gate.ReviewSeat]:
+        return [review_lane_env.seat("security", "p/m", seat, scope="repo")]
+
+    monkeypatch.setattr(role_providers, "resolve_review_seats", resolve_seats)
+    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)
     aggregate = mock.Mock(wraps=review_panel.aggregate_verdicts)
     monkeypatch.setattr(review_panel, "aggregate_verdicts", aggregate)
     worker = test_run_lifecycle_bugfix._Scripted(
@@ -206,12 +210,27 @@ def test_reviewer_sampling_reaches_provider_call(
             },
         )
 
-    seats = role_providers.build_review_seats(
-        cfg, transcript_sink=mock.MagicMock(), budget=mock.MagicMock()
-    )
+    seats = role_providers.resolve_review_seats(cfg)
+    wired = []
+    for resolved in seats:
+        provider = role_providers.build_role_provider(
+            cfg.with_model_settings("worker", resolved.settings),
+            "worker",
+            transcript_sink=mock.MagicMock(),
+            budget=mock.MagicMock(),
+        )
+        wired.append(
+            review_lane_env.seat(
+                resolved.focus,
+                resolved.model,
+                provider,
+                scope=resolved.scope,
+                temperature=resolved.temperature,
+            )
+        )
     with mock.patch("agent6.providers.transport.http_post", side_effect=post):
-        result = review_gate.run_panel(
-            seats,
+        result = review_lane_env.run_panel(
+            wired,
             review_panel.ReviewContext(task="review", diff=""),
             block_on="none",
             min_blocking_models=2,
@@ -252,9 +271,7 @@ def test_trigger_on_with_no_reviewers_builds_the_one_seat_roster() -> None:
             "review": {"trigger": "before_finish"},
         }
     )
-    seats = role_providers.build_review_seats(
-        cfg, transcript_sink=mock.MagicMock(), budget=mock.MagicMock()
-    )
+    seats = role_providers.resolve_review_seats(cfg)
     assert len(seats) == 1
     assert seats[0].model == "o/rm"
     assert seats[0].focus == "security"

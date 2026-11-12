@@ -61,6 +61,7 @@ def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
                     str(parent),
                     url,
                 ],
+                cwd=pathlib.Path(__file__).resolve().parents[2],
                 env={**os.environ, "AGENT6_ALLOW_ROOT": "1", "AGENT6_STREAM_TO_LOG": "1"},
                 stdout=output,
                 stderr=subprocess.STDOUT,

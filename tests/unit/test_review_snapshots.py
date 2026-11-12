@@ -10,7 +10,7 @@ from agent6 import paths, review_records
 from agent6.harness import loop_state, review_gate, run_chain
 from agent6.sessions import event_log, layout
 from agent6.vcs import git_ops, git_read, review
-from tests import review_helpers
+from tests import review_helpers, review_lane_env
 from tests.unit import test_review_gate
 
 
@@ -44,10 +44,10 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
 
     provider.call.side_effect = seat
     reviewer = review_gate.Reviewer(
-        settings=review_gate.ReviewSettings(reviewers=[review_gate.ReviewSeat("s", "m", provider)]),
+        settings=review_gate.ReviewSettings(reviewers=[review_lane_env.seat("s", "m", provider)]),
         chain=chain,
         hide=(),
-        review_tools=lambda: ([], mock.MagicMock()),
+        executor=mock.MagicMock,
         budget_remaining=lambda: None,
         log=lambda _s: None,
         emit=sink.emit,
@@ -100,11 +100,11 @@ def test_a_panel_over_unchanged_trees_is_reused_not_sat_again(tmp_path: pathlib.
     )
     reviewer = review_gate.Reviewer(
         settings=review_gate.ReviewSettings(
-            reviewers=[review_gate.ReviewSeat("s", "m", provider)], block_on="any"
+            reviewers=[review_lane_env.seat("s", "m", provider)], block_on="any"
         ),
         chain=chain,
         hide=(),
-        review_tools=lambda: ([], mock.MagicMock()),
+        executor=mock.MagicMock,
         budget_remaining=lambda: None,
         log=lambda _s: None,
         emit=sink.emit,
@@ -159,10 +159,10 @@ def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Pat
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     sink.subscribe(rows.append)
     reviewer = review_gate.Reviewer(
-        review_gate.ReviewSettings(reviewers=[review_gate.ReviewSeat("s", "m", provider)]),
+        review_gate.ReviewSettings(reviewers=[review_lane_env.seat("s", "m", provider)]),
         chain,
         (),
-        lambda: ([], mock.Mock()),
+        mock.MagicMock,
         lambda: None,
         lambda _s: None,
         sink.emit,
@@ -177,7 +177,7 @@ def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Pat
     assert target["base_commit"] is None
     assert target["base_tree"] == git_read.EMPTY_TREE
     assert starts[0]["rules_complete"] is True and starts[0]["rule_sources"] == []
-    message = provider.call.call_args.kwargs["messages"][0]["content"]
+    message = provider.call.call_args.kwargs["messages"][0]["content"][0]["text"]
     assert "REVIEW RULES (base tree):\nNo base rules exist." in message
 
 
@@ -240,7 +240,7 @@ def test_session_panel_retains_cloneable_bytes_without_checkpointing(
         repo,
         chain=chain,
         events=sink,
-        review=review_gate.ReviewSettings(reviewers=[review_gate.ReviewSeat("s", "m", provider)]),
+        review=review_gate.ReviewSettings(reviewers=[review_lane_env.seat("s", "m", provider)]),
     )
     reviewer = dataclasses.replace(harness.reviewer, hide=(str(repo / "hidden"),))
     state = loop_state.LoopState(original_task="t", tool_calls=0)
@@ -265,9 +265,10 @@ def test_session_panel_retains_cloneable_bytes_without_checkpointing(
     later = chain.review_target()
     assert later is not None
     assert review_gate.reusable_panel((panel,), later, panel.roster) is None
-    assert "base rule\n" in provider.call.call_args.kwargs["messages"][0]["content"]
+    assert "base rule\n" in provider.call.call_args.kwargs["messages"][0]["content"][0]["text"]
     assert (
-        "test failed on reviewed bytes" in provider.call.call_args.kwargs["messages"][0]["content"]
+        "test failed on reviewed bytes"
+        in provider.call.call_args.kwargs["messages"][0]["content"][0]["text"]
     )
     git(repo, "gc", "--prune=now")
     clone = tmp_path / "clone"
@@ -336,7 +337,7 @@ def test_review_session_retains_its_supplied_target_not_the_checkout(
     harness = test_review_gate._wf(
         repo,
         events=sink,
-        review=review_gate.ReviewSettings(reviewers=[review_gate.ReviewSeat("s", "m", provider)]),
+        review=review_gate.ReviewSettings(reviewers=[review_lane_env.seat("s", "m", provider)]),
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     if reuse:
@@ -363,3 +364,8 @@ def test_review_session_retains_its_supplied_target_not_the_checkout(
     git_ops.checkout_detached(clone, target.snapshot_commit)
     assert (clone / "foo.py").read_text() == "head\n"
     assert git_read.read_file_at(clone, target.base_tree, "foo.py") == "base\n"
+
+
+@pytest.fixture(autouse=True)
+def panel_lanes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)

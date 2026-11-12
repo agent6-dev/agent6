@@ -393,7 +393,8 @@ class ParallelConfig(pydantic.BaseModel):
         default=4,
         description=(
             "The most lanes one `--parallel` fan-out may run, `1` to `1024`; a spec asking for "
-            "more is refused before anything is cloned."
+            "more is refused before anything is cloned; a review roster longer than this "
+            "runs in batches of this width, with no seat dropped."
         ),
     )
 

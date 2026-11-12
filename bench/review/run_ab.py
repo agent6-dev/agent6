@@ -125,10 +125,20 @@ def read_measurements(state_home: pathlib.Path, *, clean: bool) -> dict[str, Any
     journal = receipts[0].with_name("logs.jsonl")
     events = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
     usage = next((e for e in reversed(events) if e["type"] == "budget.update"), {})
+    seat_ids = {s.get("session_id") for s in panels[0]["seats"] if s.get("session_id")}
+    seat_usage = []
+    for sid in sorted(seat_ids):
+        child_log = receipts[0].parents[2] / "read_only" / sid / "logs.jsonl"
+        child_events = [json.loads(line) for line in child_log.read_text().splitlines()]
+        seat_usage.append(next(e for e in reversed(child_events) if e["type"] == "budget.update"))
     return {
         **measures(panels[0], clean=clean),
-        "tokens_in": usage.get("input_total"),
-        "tokens_out": usage.get("output_total"),
+        "tokens_in": sum(u["input_total"] for u in seat_usage)
+        if seat_usage
+        else usage.get("input_total"),
+        "tokens_out": sum(u["output_total"] for u in seat_usage)
+        if seat_usage
+        else usage.get("output_total"),
         "usd": usage.get("usd_total"),
         "usd_partial": usage.get("usd_partial"),
         "plan_points": usage.get("plan_observed_points"),

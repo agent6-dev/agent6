@@ -28,7 +28,7 @@ from agent6.harness import (
 from agent6.sessions import event_log, journal
 from agent6.tools import results
 from agent6.vcs import git_read
-from tests import review_helpers
+from tests import review_helpers, review_lane_env
 from tests.unit.test_review_gate import (
     _exec,  # pyright: ignore[reportPrivateUsage]
     _finish_tool_use,  # pyright: ignore[reportPrivateUsage]
@@ -106,7 +106,7 @@ def immutable_target(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _seat(provider: Any, focus: str = "security", model: str = "m1") -> review_gate.ReviewSeat:
-    return review_gate.ReviewSeat(focus=focus, model=model, provider=provider)
+    return review_lane_env.seat(focus=focus, model=model, provider=provider)
 
 
 def _disp() -> mock.MagicMock:
@@ -241,7 +241,7 @@ def test_panels_count_and_inject_each_finding_once(
     resumed = wf.resume()
     assert json.loads(snapshot.read_text())["review_rejections_total"] == rejections
     assert resumed.reason == "finish_session" and resumed.turns == rejections + 2
-    prompt = seat_provider.call.call_args_list[0].kwargs["messages"][0]["content"]
+    prompt = seat_provider.call.call_args_list[0].kwargs["messages"][0]["content"][0]["text"]
     assert "ALREADY RAISED" in prompt
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
     starts = [row for row in rows if row["type"] == "loop.review.start"]
@@ -362,7 +362,7 @@ def test_second_panel_prompt_names_prior_finding() -> None:
         base_sha="b",
     )
     _drive(wf, _begin())
-    prompt = seat_provider.call.call_args_list[1].kwargs["messages"][0]["content"]
+    prompt = seat_provider.call.call_args_list[1].kwargs["messages"][0]["content"][0]["text"]
     assert "ALREADY RAISED (do not repeat): foo.py:11 security" in prompt
 
 
@@ -449,7 +449,7 @@ def test_observe_only_panels_do_not_repeat_findings(
         if b.get("type") == "text" and b["text"].startswith("[review]")
     )
     assert feedback.count("hardcoded key") == 1
-    prompt = seat_provider.call.call_args_list[1].kwargs["messages"][0]["content"]
+    prompt = seat_provider.call.call_args_list[1].kwargs["messages"][0]["content"][0]["text"]
     assert "ALREADY RAISED (do not repeat): foo.py:11 security" in prompt
 
 
@@ -659,7 +659,7 @@ def test_findings_the_notice_cut_are_not_remembered_as_injected(
     assert "[1 more finding not shown]" in notices[1]
     assert "not shown" not in notices[2]
     category = {"finding 1": "security", "finding 2": "data-loss", "finding 3": "sandbox-bypass"}
-    prompt = seat_provider.call.call_args_list[1].kwargs["messages"][0]["content"]
+    prompt = seat_provider.call.call_args_list[1].kwargs["messages"][0]["content"][0]["text"]
     assert f"foo.py:11 {category[shown[0][0]]}" in prompt
     assert all(f"foo.py:11 {category[t[0]]}" not in prompt for t in shown[1:])
 
@@ -717,3 +717,8 @@ def test_panel_risk_round_trips_into_the_receipt(tmp_path: pathlib.Path, repeat:
     assert view.review.panels[-1].seats[0].model_route == "provider/model"
     assert expected in receipt.render(view)
     assert ("Risk truncated at 1000 characters." in receipt.render(view)) == (len(risk) > 1000)
+
+
+@pytest.fixture(autouse=True)
+def panel_lanes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)

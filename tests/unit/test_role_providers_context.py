@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import json
 import pathlib
 from collections.abc import Generator
@@ -10,12 +9,14 @@ from typing import Any
 import httpx2
 import pytest
 
+from agent6 import budget
 from agent6.app import conversation_state, role_providers, session_runtime
+from agent6.config import ReviewerConfig
 from agent6.config import model as config_model
 from agent6.harness import review_gate, review_panel
 from agent6.providers import provider_types, stream_lifecycle, transport
 from agent6.sessions import event_log
-from agent6.tools import results
+from tests import review_traces, subordinate_env
 
 
 def _session(
@@ -53,11 +54,6 @@ def _session(
             path=tmp_path / conversation_state.FILE_NAME
         ),
     )
-    for index, seat in enumerate(providers.review_seats):
-        assert isinstance(seat.provider, role_providers.InstrumentedProvider)
-        providers.review_seats[index] = dataclasses.replace(
-            seat, provider=dataclasses.replace(seat.provider, stream_text=streaming)
-        )
     return providers
 
 
@@ -97,25 +93,6 @@ def _mock_http(monkeypatch: pytest.MonkeyPatch, *, reject_temperature: bool = Fa
     monkeypatch.setattr(stream_lifecycle, "http_stream", stream)
 
 
-def _panel(providers: session_runtime.SessionProviders, panel_id: str) -> None:
-    def dispatch(_name: str, _args: dict[str, Any], *, origin: object = None) -> results.ToolResult:
-        raise AssertionError("the response requests no tools")
-
-    result = review_gate.run_panel(
-        providers.review_seats,
-        review_panel.ReviewContext(task="review", diff=""),
-        block_on="none",
-        min_blocking_models=2,
-        panel_id=panel_id,
-        repo_max_turns=2,
-        concurrency=2,
-        tools=[],
-        dispatch=dispatch,
-    )
-    assert [seat.verdict for seat in result.per_seat] == ["pass", "pass"]
-    assert result.panel_id == panel_id
-
-
 def _events(tmp_path: pathlib.Path, kind: str) -> list[dict[str, Any]]:
     rows = [json.loads(line) for line in (tmp_path / "logs.jsonl").read_text().splitlines()]
     return [row for row in rows if row["type"] == kind]
@@ -125,82 +102,76 @@ def _transcripts(tmp_path: pathlib.Path) -> list[dict[str, Any]]:
     return [json.loads(path.read_text()) for path in (tmp_path / "transcripts").glob("*.json")]
 
 
-def _assert_joins(tmp_path: pathlib.Path, *, attempts: int) -> None:
-    calls = _events(tmp_path, "role.call")
-    requests = _events(tmp_path, "provider.request")
-    transcripts = _transcripts(tmp_path)
-    assert len(calls) == 2
-    assert len(requests) == len(transcripts) == attempts
-    assert len({call["model_call_id"] for call in calls}) == 2
-    assert {row.get("model_call_id") for row in requests} == {
-        call["model_call_id"] for call in calls
-    }
-    by_request = {row["request_id"]: row for row in requests}
-    assert len(by_request) == attempts
-    for transcript in transcripts:
-        request = by_request[transcript["request_id"]]
-        assert transcript["model_call_id"] == request["model_call_id"]
-        call = next(row for row in calls if row["model_call_id"] == request["model_call_id"])
-        assert request["panel_id"] == "panel-a"
-        assert request["seat_index"] == call["seat_index"]
-    assert {row["seat_index"] for row in requests} == {0, 1}
-
-
 @pytest.mark.parametrize("scope", ["diff", "repo"])
-@pytest.mark.parametrize("streaming", [False, True])
-def test_review_requests_join_calls_and_transcripts(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, scope: str, streaming: bool
+def test_review_requests_belong_to_real_distinct_seat_sessions(
+    short_repo: pathlib.Path,
+    scope: str,
 ) -> None:
-    """Identical seats remain addressable by call and request ids, not their shared label."""
-    _mock_http(monkeypatch)
-    providers = _session(tmp_path, scope=scope, streaming=streaming)
-    _panel(providers, "panel-a")
-    _assert_joins(tmp_path, attempts=2)
-    providers.close()
-
-
-@pytest.mark.parametrize("scope", ["diff", "repo"])
-def test_review_conversations_belong_to_panel_seats(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, scope: str
-) -> None:
-    """Same-focus seats are separate; repeating a panel continues only its own seats."""
-    _mock_http(monkeypatch)
-    providers = _session(tmp_path, scope=scope)
-    _panel(providers, "panel-a")
-    first = _transcripts(tmp_path)
-    conversations = {row["request"]["headers"]["x-conversation"] for row in first}
-    assert len(conversations) == 2
-    assert {row["request"]["headers"]["x-first"] for row in first} == {"true"}
-    providers.close()
-
-    resumed = _session(tmp_path, scope=scope)
-    _panel(resumed, "panel-a")
-    repeated = [row for row in _transcripts(tmp_path) if row["seq"] > 2]
-    assert {row["request"]["headers"]["x-conversation"] for row in repeated} == conversations
-    assert {row["request"]["headers"]["x-first"] for row in repeated} == {"false"}
-    _panel(resumed, "panel-b")
-    other = [row for row in _transcripts(tmp_path) if row["seq"] > 4]
-    assert len({row["request"]["headers"]["x-conversation"] for row in other} - conversations) == 2
-    assert {row["request"]["headers"]["x-first"] for row in other} == {"true"}
-    resumed.close()
-
-
-@pytest.mark.parametrize("streaming", [False, True])
-def test_retried_requests_keep_the_call_id_and_get_distinct_transcript_ids(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, streaming: bool
-) -> None:
-    """A body adaptation keeps its parent call but records each HTTP attempt separately."""
-    _mock_http(monkeypatch, reject_temperature=True)
-    providers = _session(tmp_path, streaming=streaming)
-    _panel(providers, "panel-a")
-    _assert_joins(tmp_path, attempts=4)
-    assert sorted(row["response"]["status"] for row in _transcripts(tmp_path)) == [
-        200,
-        200,
-        400,
-        400,
-    ]
-    providers.close()
+    """Duplicate-focus seats have distinct sessions, conversations and bound call transcripts."""
+    repo = short_repo / "origin"
+    subordinate_env.init_repo(repo)
+    directory = subordinate_env.create_record(repo, "parent")
+    with review_traces.server("pass", scope) as (url, calls):
+        cfg = subordinate_env.config(url)
+        cfg = cfg.model_copy(
+            update={
+                "review": cfg.review.model_copy(
+                    update={
+                        "scope": scope,
+                        "reviewers": tuple(ReviewerConfig(focus="security") for _ in range(2)),
+                    }
+                )
+            }
+        )
+        executor = subordinate_env.dispatcher(
+            repo,
+            directory,
+            cfg,
+            budget.BudgetTracker(max_usd=10, max_tokens_fallback=10000, max_plan_points=20),
+        )
+        target = executor.chain.review_target()
+        assert target is not None
+        target = executor.chain.retain_review_target(target, directory.name)
+        seats = role_providers.resolve_review_seats(cfg)
+        result = review_gate.run_panel(
+            seats,
+            review_panel.ReviewContext(task="review", diff=""),
+            target=target,
+            executor=executor,
+            block_on="none",
+            min_blocking_models=2,
+            panel_id="panel-a",
+            repo_max_turns=2,
+            concurrency=2,
+        )
+        assert [s.verdict for s in result.per_seat] == ["pass", "pass"], result
+        assert len(calls) == 2
+        child_dirs = [directory.parent.parent / "read_only" / s.session_id for s in result.per_seat]
+        requests = [r for child in child_dirs for r in _events(child, "provider.request")]
+        logical = [r for child in child_dirs for r in _events(child, "role.call")]
+        transcripts = [r for child in child_dirs for r in _transcripts(child)]
+        assert len(requests) == len(logical) == len(transcripts) == 2
+        assert {r["seat_index"] for r in requests} == {0, 1}
+        assert {r["panel_id"] for r in requests} == {"panel-a"}
+        assert len({r["model_call_id"] for r in requests}) == 2
+        by_id = {r["request_id"]: r for r in requests}
+        for transcript in transcripts:
+            request = by_id[transcript["request_id"]]
+            assert transcript["model_call_id"] == request["model_call_id"]
+        assert len({r["execution_id"] for r in logical}) == 2
+        # A repeated identity never buys replacement children or another grant.
+        repeated = review_gate.run_panel(
+            seats,
+            review_panel.ReviewContext(task="review", diff=""),
+            target=target,
+            executor=executor,
+            block_on="none",
+            min_blocking_models=2,
+            panel_id="panel-a",
+            repo_max_turns=2,
+            concurrency=2,
+        )
+        assert repeated.n_abstain == 2 and len(calls) == 2
 
 
 @pytest.mark.parametrize("streaming", [False, True])

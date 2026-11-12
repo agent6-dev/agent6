@@ -112,8 +112,8 @@ def test_build_role_provider_forwards_extra_body_and_headers() -> None:
     assert ("x-title", "agent6") in prov.extra_headers.literal
 
 
-def test_side_call_and_review_builders_stamp_their_own_seats() -> None:
-    """The reviser, summariser and a bare-focus seat stamp their own seats.
+def test_role_builders_stamp_seats_and_review_resolution_stays_pure() -> None:
+    """The summariser stamps its seat; a roster resolves settings without a provider.
 
     A transcript tells which actor made a call, even when routes are shared.
     """
@@ -136,23 +136,8 @@ def test_side_call_and_review_builders_stamp_their_own_seats() -> None:
     )
     assert sink.for_seat.call_args == mock.call("summariser")
 
-    sink = mock.MagicMock()
-    role_providers.build_review_seats(cfg, transcript_sink=sink, budget=mock.MagicMock())
-    assert sink.for_seat.call_args == mock.call("review:security")
-
-    # Each instrumented seat carries its roster index, so concurrent seats' calls pair up.
-    unpinned = cfg.model_copy(
-        update={
-            "review": ReviewConfig(
-                trigger="on_verify_fail",
-                reviewers=(ReviewerConfig(focus="security"), ReviewerConfig(focus="correctness")),
-            )
-        }
-    )
-    seats = role_providers.build_review_seats(
-        unpinned, transcript_sink=sink, budget=mock.MagicMock(), events=mock.MagicMock()
-    )
-    assert [getattr(s.provider, "seat_index", None) for s in seats] == [0, 1]
+    seats = role_providers.resolve_review_seats(cfg)
+    assert [(seat.focus, seat.model) for seat in seats] == [("security", "o/m")]
 
     # The role builders keep stamping the role itself.
     sink = mock.MagicMock()

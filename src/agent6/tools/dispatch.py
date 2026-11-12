@@ -162,7 +162,7 @@ class ToolDispatcher:
         self.isolation: kinds.IsolationLevel = isolation
         self._mode: kinds.SessionMode = mode
         self.no_tools = no_tools
-        # next() is atomic under the GIL, so seats on a shared dispatcher need no lock.
+        self.allowed_tools: tuple[str, ...] | None = None
         self._call_seq = itertools.count(1)
         self.extra_protect_paths = extra_protect_paths
         self._events = events
@@ -296,8 +296,10 @@ class ToolDispatcher:
 
     def tool_is_withheld(self, name: str) -> bool:
         """Return whether the model is denied the tool, extras included."""
-        return (name in _COMMAND_TOOLS and self.command_policy() == "deny") or (
-            name == schema.RunVerifyInput.TOOL_NAME and self.verify_withheld
+        return (
+            (self.allowed_tools is not None and name not in self.allowed_tools)
+            or (name in _COMMAND_TOOLS and self.command_policy() == "deny")
+            or (name == schema.RunVerifyInput.TOOL_NAME and self.verify_withheld)
         )
 
     @property
@@ -457,6 +459,8 @@ class ToolDispatcher:
         """
         if self.no_tools:
             raise tool_errors.ToolError("not available: this conversation has no tools")
+        if self.allowed_tools is not None and name not in self.allowed_tools:
+            raise tool_errors.ToolError("not available in this conversation contract")
         if name.startswith(mcp_client.MCP_TOOL_PREFIX):
             if not kinds.session_kind(self._mode).edits:
                 # An MCP tool cannot be classified as read-only, so every non-run mode refuses it.

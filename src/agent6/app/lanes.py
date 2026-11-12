@@ -709,6 +709,7 @@ def build_lane_spawner(
     *,
     explicit_leaves: frozenset[str],
     coordinator_session_id: str,
+    coordinator_mode: str = "run",
     runtime: LaneRuntime,
     max_usd: float | None = None,
     auto_approve: bool = False,
@@ -727,6 +728,7 @@ def build_lane_spawner(
         origin_state: The origin's state dir.
         explicit_leaves: The dotted leaves the coordinator's config layers set.
         coordinator_session_id: The coordinator's session id.
+        coordinator_mode: The coordinator's session bucket owner.
         runtime: The front-end's primitives.
         max_usd: Each lane's spend cap.
         auto_approve: The coordinator's own `--auto-approve`, forwarded to every lane.
@@ -774,7 +776,10 @@ def build_lane_spawner(
         ]
         paths.mkdir_for_real_user(sessions_layout.bucket_dir(origin_state, "runs"))
         import_lock = threading.Lock()
-        coord_dir = sessions_layout.bucket_dir(origin_state, "runs") / coordinator_session_id
+        coord_dir = (
+            sessions_layout.bucket_dir(origin_state, kinds.session_bucket(coordinator_mode))
+            / coordinator_session_id
+        )
         hard_stop = threading.Event()
 
         def should_stop() -> bool:
@@ -900,6 +905,7 @@ def build_coordinator_spawner(
         origin_state,
         explicit_leaves=explicit_leaves,
         coordinator_session_id=session_id,
+        coordinator_mode=mode,
         runtime=runtime,
         max_usd=max_usd,
         auto_approve=auto_approve,

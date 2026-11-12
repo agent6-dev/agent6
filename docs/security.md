@@ -376,6 +376,11 @@ Capture preserves the target's exclusions and hidden paths; it does not add excl
 A snapshot does not widen read permissions: historical hidden files already in git remain subject to the configured hidden-path boundary.
 Preparation refuses an unreadable target or failed retention rather than reviewing an older committed tree.
 Only the parent binds the panel ID, target, rules, prior findings and verification evidence; reviewer text cannot replace that binding.
+Panel seats run as read-only lanes, each its own process and session, not as calls through the parent's editing dispatcher.
+Diff seats expose no tools; repo seats expose only `read_file`, `list_dir`, `outline`, `find_definition` and `find_references`, checked at both tool advertisement and dispatch.
+The parent validates the completion artifact's session, panel, seat and exact target before parsing or grounding a verdict.
+Failed, timed-out, missing, mismatched and unparseable evidence abstains with its diagnostic; a bounded final-call verdict may still count at the call ceiling.
+Neither child prose nor a successful process exit certifies the parent's tree.
 See [Usage](usage.md#plan-review-and-ask) for cleanup ownership.
 
 **Repo memory** is a prompt-injection persistence channel: the rendered index joins the system prompt of later runs on the same repo.

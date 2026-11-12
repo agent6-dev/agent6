@@ -853,6 +853,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `error` | `str, optional` | The failure diagnostic. |
 | `risk` | `str` | The seat's stated risk. |
 | `risk_truncated` | `bool` | Whether the risk text was truncated. |
+| `session_id` | `str, optional` | The read-only seat session, when assigned. |
 
 ### loop.review.skipped
 
@@ -2566,6 +2567,12 @@ Source: [`agent6.sessions.completion.CompletionRecord`](https://github.com/agent
 | `output_tokens` | `int` | The output tokens of every attempt. |
 | `calls` | `int` | The provider attempts made, retries included. |
 | `diagnostics` | `tuple[str, ...]` | What the ceiling or the contract cut, one line each; empty when nothing was. |
+| `session_id` | `str` | The producing read-only session, empty in legacy records. |
+| `review_binding` | `ReviewBinding \| None` | The parent-assigned panel, seat and target, or null outside a panel. |
+| `response_stop_reason` | `str` | The last provider response's stop reason. |
+| `response_output_tokens` | `int` | The last response's output tokens. |
+| `reasoning_chars` | `int` | The last response's reasoning character count. |
+| `tool_uses` | `bool` | Whether the last response requested tools. |
 
 ### DispatchRecord
 
@@ -3106,6 +3113,20 @@ Source: [`agent6.kinds.ConversationContract`](https://github.com/agent6-dev/agen
 | `max_calls` | `int` | The provider attempts allowed, retries included; the ceiling ends the conversation `calls_exhausted` with the last response's text kept. |
 | `max_output_tokens` | `int` | One call's output cap. |
 | `temperature` | `float \| None` | The sampling temperature; None keeps the worker's. |
+| `review_binding` | `ReviewBinding \| None` | Parent-owned review provenance, or None for other conversations. |
+| `allowed_tools` | `tuple[str, ...] \| None` | Optional restriction within the read-only surface; None keeps that surface. |
+
+### ReviewBinding
+
+**Support: public.** Bind a completion to the parent-assigned panel, seat and immutable target.
+
+Source: [`agent6.review_records.ReviewBinding`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/review_records.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `panel_id` | `str` | The parent-assigned panel identity. |
+| `seat_index` | `int` | The zero-based roster position. |
+| `target` | `ReviewTarget` | The exact retained comparison. |
 
 ### SegmentRecord
 
@@ -3678,6 +3699,24 @@ Source: [`agent6.review_records.FindingResolution`](https://github.com/agent6-de
 | `commit` | `str \| None` | The associated correction commit, or null. |
 | `verify_id` | `str \| None` | The associated verification attempt, or null. |
 
+### ReviewTarget
+
+**Support: public.** Identify the immutable trees and path coverage of a review.
+
+Source: [`agent6.review_records.ReviewTarget`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/review_records.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `base_commit` | `str \| None` | The base commit, or null for a tree-only comparison. |
+| `base_tree` | `str` | The immutable base tree identifier. |
+| `head_commit` | `str \| None` | The head commit, or null for a working-tree snapshot. |
+| `head_tree` | `str` | The immutable head tree identifier. |
+| `snapshot_commit` | `str` | The commit retaining the reviewed tree. |
+| `paths` | `tuple[str, ...]` | The reviewed path scope, empty for all paths. |
+| `source` | `Literal['revisions', 'worktree']` | Whether the comparison came from revisions or the working tree. |
+| `hidden_paths` | `tuple[str, ...]` | Paths withheld from the review. |
+| `snapshot_ref` | `str` | The session-owned hidden ref retaining the comparison; empty on old records. |
+
 ### JoinRecord
 
 **Support: public.** How one lane's work joined, with the chain tip on either side of the merge.
@@ -3834,24 +3873,6 @@ Source: [`agent6.viewmodel.review.SeverityCounts`](https://github.com/agent6-dev
 | `warn` | `int` | The number of open grounded warning findings. |
 | `nit` | `int` | The number of open grounded nit findings. |
 
-### ReviewTarget
-
-**Support: public.** Identify the immutable trees and path coverage of a review.
-
-Source: [`agent6.review_records.ReviewTarget`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/review_records.py).
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `base_commit` | `str \| None` | The base commit, or null for a tree-only comparison. |
-| `base_tree` | `str` | The immutable base tree identifier. |
-| `head_commit` | `str \| None` | The head commit, or null for a working-tree snapshot. |
-| `head_tree` | `str` | The immutable head tree identifier. |
-| `snapshot_commit` | `str` | The commit retaining the reviewed tree. |
-| `paths` | `tuple[str, ...]` | The reviewed path scope, empty for all paths. |
-| `source` | `Literal['revisions', 'worktree']` | Whether the comparison came from revisions or the working tree. |
-| `hidden_paths` | `tuple[str, ...]` | Paths withheld from the review. |
-| `snapshot_ref` | `str` | The session-owned hidden ref retaining the comparison; empty on old records. |
-
 ### SessionUsage
 
 **Support: public.** The session's usage across every execution, what the listings' usage cell shows.
@@ -3945,6 +3966,7 @@ Source: [`agent6.review_records.ReviewVerdict`](https://github.com/agent6-dev/ag
 | `error` | `str \| None` | The failure diagnostic for an abstention, or null. |
 | `risk` | `str` | The seat's retained risk assessment. |
 | `risk_truncated` | `bool` | Whether the risk text was truncated. |
+| `session_id` | `str` | The read-only seat session, empty in legacy verdicts. |
 
 ### ReviewPanel
 

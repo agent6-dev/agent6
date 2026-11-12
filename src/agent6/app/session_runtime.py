@@ -210,8 +210,6 @@ class SessionProviders:
         role_providers.close_provider(self.provider)
         if self.summariser_provider is not None:
             role_providers.close_provider(self.summariser_provider)
-        for seat in self.review_seats:
-            role_providers.close_provider(seat.provider)
 
 
 def build_session_providers(
@@ -265,17 +263,7 @@ def build_session_providers(
         conversations=conversations,
     )
     # The panel is the in-loop review: a trigger with no seats builds one seat on the reviewer.
-    review_seats = (
-        role_providers.build_review_seats(
-            cfg,
-            transcript_sink=transcript_sink,
-            budget=budget,
-            events=events,
-            conversations=conversations,
-        )
-        if cfg.review.trigger != "off"
-        else []
-    )
+    review_seats = role_providers.resolve_review_seats(cfg) if cfg.review.trigger != "off" else []
     return SessionProviders(
         budget=budget,
         rm_role=rm_role,

@@ -3,32 +3,15 @@
 """Build the tool surface each mode exposes to the model.
 
 The list comes from the dispatcher's availability plus the mode's extras.
-The in-loop panel uses the read-only review surface.
 """
 
 from __future__ import annotations
 
-from typing import Any
-
 from agent6 import kinds
 from agent6.config import Config
-from agent6.harness import review_seat
 from agent6.providers import ToolDefinition
 from agent6.tools import dispatch as tools_dispatch
-from agent6.tools import results, tool_errors
 from agent6.tools import schema as tools_schema
-
-# The only tools a reviewer may use, enforced by the exposed list and by the dispatch wrapper.
-READONLY_REVIEW_TOOLS = frozenset(
-    {
-        "read_file",
-        "list_dir",
-        "outline",
-        "find_definition",
-        "find_references",
-    }
-)
-
 
 # The task-graph tools, offered only where a curator backs them.
 DAG_TOOLS = (
@@ -150,27 +133,3 @@ def parallel_description(cfg: Config) -> str:
         " 200 turns, 30 minutes and a share of this run's budget; the result names each"
         " lane's join, and `read_session` reads a lane's answer."
     )
-
-
-def build_readonly_review_tools(
-    dispatcher: tools_dispatch.ToolDispatcher,
-) -> tuple[list[ToolDefinition], review_seat.ReviewDispatch]:
-    """Build the read-only tool surface a review seat gets.
-
-    Args:
-        dispatcher: The run's dispatcher.
-
-    Returns:
-        The navigation tools in `READONLY_REVIEW_TOOLS`, and a dispatch wrapper that refuses
-        every other tool.
-    """
-    tools = [t for t in tool_definitions(dispatcher, mode="run") if t.name in READONLY_REVIEW_TOOLS]
-
-    def dispatch(
-        name: str, tool_input: dict[str, Any], *, origin: kinds.ToolCallOrigin | None = None
-    ) -> results.ToolResult:
-        if name not in READONLY_REVIEW_TOOLS:
-            raise tool_errors.ToolError(f"review reviewer may not call {name!r} (read-only)")
-        return dispatcher.dispatch(name, tool_input, origin=origin)
-
-    return tools, dispatch

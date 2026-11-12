@@ -464,6 +464,8 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
     seats = [(p.panel_id, seat) for p in view.review.panels for seat in p.seats]
     for panel_id, seat in seats:
         lines.append(f"{panel_id} / {seat.model_route}:\n{seat.risk or 'not recorded'}")
+        if seat.session_id:
+            lines.append(f"Seat {seat.seat_index + 1} ({seat.focus}): {seat.session_id}")
         if seat.risk_truncated:
             lines.append("Risk truncated at 1000 characters.")
     if not seats:

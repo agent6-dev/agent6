@@ -259,7 +259,13 @@ agent6 ask "how does the task-graph curator work?"
 - every `sessions review` is saved under `<state-dir>/reviews/`; the path prints on stderr
 - `ask` runs in any directory; `run` and `plan` need a git repository
 
-In-loop panels record their findings and reviewed tree IDs in the session journal.
+In-loop panels run each seat as a read-only lane with its own session, and record their findings and reviewed tree IDs in the session journal.
+The full roster's allowance is reserved before launch; batches use at most `review.concurrency` and `parallel.max_lanes` seats, without truncating the roster.
+Results keep roster order even when seats finish in another order.
+Diff seats make one call without tools, capped at 1,500 output tokens; repo seats read the retained snapshot with a 2,000-token per-call cap and `review.repo_max_turns` calls.
+Each seat has a real session linked from the parent, including panels beneath worker lanes.
+Failed or unparseable seats remain abstentions with their diagnostics; an all-abstain panel is inconclusive, not a clean review.
+Child review does not certify a later or different parent tree.
 Session-owned panels retain a cloneable snapshot of the exact comparison, including uncommitted work after failed verification and with `git.commit_per_turn = false`.
 Snapshotting does not checkpoint the run or move HEAD, the index or visible branches.
 `sessions remove <id>` deletes the session's review snapshot refs with its record; `sessions remove --asks --yes` also deletes the removed asks' refs, while `sessions prune` leaves review snapshots alone.

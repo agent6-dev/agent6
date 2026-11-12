@@ -198,6 +198,11 @@ function paintFindings(cards, state) {
     host.appendChild(el('div', 'muted', 'Panel ' + panel.panel_id + ': ' + panel.completion
       + (panel.reason ? ' (' + panel.reason + ')' : '')
       + (result ? ' · worker finish ' + (result.blocked ? 'rejected' : 'not rejected') + ' (review.block_on=' + result.block_on + (result.disarmed ? ', rejection cap reached' : '') + ')' : '')));
+    for (const seat of panel.seats || []) if (seat.session_id) {
+      const link = el('a', 'sub', `Seat ${seat.seat_index + 1} (${seat.focus}): ${seat.session_id}`);
+      link.href = '#/session/' + encodeURIComponent(seat.session_id);
+      host.appendChild(link);
+    }
   }
   const filters = el('div', 'row wrap'); host.appendChild(filters);
   const status = el('select'); status.setAttribute('aria-label', 'Finding status');
@@ -275,7 +280,9 @@ function drawReceipt(host, receipt) {
     const line = el('div', 'sub');
     const link = el('a', null, child.session_id);
     link.href = '#/session/' + encodeURIComponent(child.session_id);
-    line.appendChild(el('span', null, `lane ${child.lane} `));
+    const seat = (receipt.review?.panels || []).flatMap(p => p.seats || [])
+      .find(s => s.session_id === child.session_id);
+    line.appendChild(el('span', null, seat ? `seat ${seat.seat_index + 1} (${seat.focus}) ` : `lane ${child.lane} `));
     line.appendChild(link);
     host.appendChild(line);
   }

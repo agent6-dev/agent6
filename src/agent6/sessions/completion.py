@@ -9,7 +9,7 @@ import pathlib
 
 import pydantic
 
-from agent6 import portable
+from agent6 import portable, review_records
 
 COMPLETION_NAME = "completion.json"
 
@@ -27,6 +27,12 @@ class CompletionRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         output_tokens: The output tokens of every attempt.
         calls: The provider attempts made, retries included.
         diagnostics: What the ceiling or the contract cut, one line each; empty when nothing was.
+        session_id: The producing read-only session, empty in legacy records.
+        review_binding: The parent-assigned panel, seat and target, or null outside a panel.
+        response_stop_reason: The last provider response's stop reason.
+        response_output_tokens: The last response's output tokens.
+        reasoning_chars: The last response's reasoning character count.
+        tool_uses: Whether the last response requested tools.
     """
 
     text: str
@@ -34,6 +40,12 @@ class CompletionRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     output_tokens: int = pydantic.Field(ge=0)
     calls: int = pydantic.Field(ge=0)
     diagnostics: tuple[str, ...] = ()
+    session_id: str = ""
+    review_binding: review_records.ReviewBinding | None = None
+    response_stop_reason: str = ""
+    response_output_tokens: int = 0
+    reasoning_chars: int = 0
+    tool_uses: bool = False
 
 
 def write_completion(session_dir: pathlib.Path, record: CompletionRecord) -> pathlib.Path:

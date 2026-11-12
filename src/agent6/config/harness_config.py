@@ -585,7 +585,7 @@ class ReviewConfig(pydantic.BaseModel):
             "In-loop panel over the diff so far, with findings sent to the model; only "
             "finish-time review can gate finish; periodic review uses "
             "`review.interval_turns`; without `review.reviewers`, one seat uses "
-            "`[models.reviewer]`."
+            "`[models.reviewer]`; each seat runs as a read-only lane with its own session."
         ),
     )
     interval_turns: int = pydantic.Field(
@@ -652,7 +652,8 @@ class ReviewConfig(pydantic.BaseModel):
         ge=1,
         default=1,
         description=(
-            "simultaneous in-loop panel seats; `review.concurrency = 1`: one after another"
+            "simultaneous panel seats, at most `parallel.max_lanes`; a longer roster runs in "
+            "batches, in roster order; `review.concurrency = 1`: one after another"
         ),
     )
     scope: ReviewScope = pydantic.Field(
@@ -664,8 +665,9 @@ class ReviewConfig(pydantic.BaseModel):
         },
         default="diff",
         description=(
-            "How much a review seat reads; repository review uses several calls and reads the "
-            "checkout, so the reviewed head must be checked out with a clean tree."
+            "How much a review seat reads; a diff seat makes one call without tools; a repo "
+            "seat reads the reviewed snapshot with read-only tools over several calls, never "
+            "the working tree as it changes later."
         ),
     )
     repo_max_turns: int = pydantic.Field(

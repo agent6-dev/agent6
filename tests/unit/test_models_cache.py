@@ -484,7 +484,6 @@ def test_review_seats_resolve_their_own_modality_facts(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Review seats receive their exact route's capability, not the worker's state."""
-    from agent6 import budget
     from agent6.app import role_providers
     from agent6.config import Config
 
@@ -510,13 +509,9 @@ def test_review_seats_resolve_their_own_modality_facts(
     monkeypatch.setattr(transport, "http_request", fake_get)
     models_cache.fetch_models_live("p", cfg.providers["p"], None)
     worker = role_providers.input_capabilities(cfg, cfg.models.resolve("worker"))
-    seats = role_providers.build_review_seats(
-        cfg,
-        transcript_sink=provider_types.TranscriptSink(
-            cache_home / "transcripts", objects_dir=cache_home / "objects"
-        ),
-        budget=budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=10000, max_plan_points=0),
-    )
+    seats = role_providers.resolve_review_seats(cfg)
+    lane_cfg = cfg.with_model_settings("worker", seats[0].settings)
+    capability = role_providers.input_capabilities(lane_cfg, lane_cfg.models.resolve("worker"))
     assert worker.image == "unsupported"
-    assert seats[0].media_input.image == "supported"
-    assert seats[0].media_input.route.spec == "p/vision"
+    assert capability.image == "supported"
+    assert capability.route.spec == "p/vision"

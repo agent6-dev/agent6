@@ -169,7 +169,8 @@ depends_on = [
 ]
 
 [[modules]]
-# review_gate and toolset use review_seat; review_seat uses review_panel and llm_json.
+# review_gate uses parallel_dispatch and review_seat policy; toolset has no seat coupling.
+# review_seat parses bound completion artifacts with review_panel and llm_json.
 # review_gate and loop use review_history to restore durable panel evidence.
 # compaction_driver and compaction_rules use compaction_elision and compaction_window.
 # compaction_window uses loop_conversation and compaction_elision; the result cap
@@ -266,7 +267,7 @@ depends_on = []
 
 [[modules]]
 path = "agent6.sessions.completion"
-depends_on = ["agent6.portable"]
+depends_on = ["agent6.portable", "agent6.review_records"]
 
 [[modules]]
 path = "agent6.sessions.event_log"
@@ -795,7 +796,7 @@ depends_on = []
 
 [[modules]]
 path = "agent6.kinds"
-depends_on = []
+depends_on = ["agent6.review_records"]
 
 [[modules]]
 path = "agent6.lane_records"

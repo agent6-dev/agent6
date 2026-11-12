@@ -67,6 +67,21 @@ class ReviewTarget:
     snapshot_ref: str = ""
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class ReviewBinding:
+    """Bind a completion to the parent-assigned panel, seat and immutable target.
+
+    Attributes:
+        panel_id: The parent-assigned panel identity.
+        seat_index: The zero-based roster position.
+        target: The exact retained comparison.
+    """
+
+    panel_id: str
+    seat_index: int
+    target: ReviewTarget
+
+
 class ReviewLocation(pydantic.BaseModel):
     """Name a repository-relative path on one side, with an optional inclusive line range.
 
@@ -166,6 +181,7 @@ class ReviewVerdict:
         error: The failure diagnostic for an abstention, or null.
         risk: The seat's retained risk assessment.
         risk_truncated: Whether the risk text was truncated.
+        session_id: The read-only seat session, empty in legacy verdicts.
     """
 
     seat_index: int
@@ -177,6 +193,7 @@ class ReviewVerdict:
     error: str | None = None
     risk: str = ""
     risk_truncated: bool = False
+    session_id: str = ""
 
 
 class LineOrigin(pydantic.BaseModel):

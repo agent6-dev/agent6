@@ -466,15 +466,15 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 
 | Field | Default | Meaning |
 |---|---|---|
-| `trigger` | `"off"` | In-loop panel over the diff so far, with findings sent to the model; only finish-time review can gate finish; periodic review uses `review.interval_turns`; without `review.reviewers`, one seat uses `[models.reviewer]`.<ul><li><code>off</code>: Do not run in-loop review</li><li><code>on_verify_fail</code>: Review after each failed verification</li><li><code>before_finish</code>: Review when model requests finish</li><li><code>periodic</code>: Review every configured interval of turns</li></ul> |
+| `trigger` | `"off"` | In-loop panel over the diff so far, with findings sent to the model; only finish-time review can gate finish; periodic review uses `review.interval_turns`; without `review.reviewers`, one seat uses `[models.reviewer]`; each seat runs as a read-only lane with its own session.<ul><li><code>off</code>: Do not run in-loop review</li><li><code>on_verify_fail</code>: Review after each failed verification</li><li><code>before_finish</code>: Review when model requests finish</li><li><code>periodic</code>: Review every configured interval of turns</li></ul> |
 | `interval_turns` | `10` | Turns between panels when `trigger = "periodic"`. |
 | `block_on` | `"none"` | Effect of panel blocking verdicts; quorum uses `review.min_blocking_models` distinct provider/model routes; abstentions do not block; gating applies only to finish-time review; other triggers are advisory.<ul><li><code>none</code>: Treat blocking verdicts as guidance</li><li><code>any</code>: One blocking seat rejects finish</li><li><code>model_quorum</code>: Require configured number of distinct blocking model routes</li><li><code>all</code>: Require every seat to block</li></ul> |
 | `min_blocking_models` | `2` | distinct provider/model routes required to block with `review.block_on = "model_quorum"`; two seats on one route counted once, even with different focus or effort |
 | `max_review_rejections` | `4` | ends rejectable by a gating panel per run (`finish_session`, silent finish, settled or plateau stop); count preserved across resumes, never reset; at the cap: panels and findings retained, every end accepted, no indefinite panel stall |
 | `min_remaining_budget_fraction` | `0.25` | remaining-budget fraction below which the panel is skipped and the finish accepted; `review.min_remaining_budget_fraction = 0.25`: no panel in the last quarter |
 | `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `model`, `temperature` and `effort`; every omitted field inherits the resolved `[models.reviewer]`, `model` pinned or not; `model` is a provider/model route; empty roster: one `security` seat when `review.trigger` is on |
-| `concurrency` | `1` | simultaneous in-loop panel seats; `review.concurrency = 1`: one after another |
-| `scope` | `"diff"` | How much a review seat reads; repository review uses several calls and reads the checkout, so the reviewed head must be checked out with a clean tree.<ul><li><code>diff</code>: One review call over diff, task and verification</li><li><code>repo</code>: Read-only tool review of surrounding repository</li></ul> |
+| `concurrency` | `1` | simultaneous panel seats, at most `parallel.max_lanes`; a longer roster runs in batches, in roster order; `review.concurrency = 1`: one after another |
+| `scope` | `"diff"` | How much a review seat reads; a diff seat makes one call without tools; a repo seat reads the reviewed snapshot with read-only tools over several calls, never the working tree as it changes later.<ul><li><code>diff</code>: One review call over diff, task and verification</li><li><code>repo</code>: Read-only tool review of surrounding repository</li></ul> |
 | `repo_max_turns` | `20` | provider-call cap for a `review.scope = "repo"` seat, tool calls included; no verdict within the cap: abstention, reported by the panel |
 
 The [TUI](terminal.md#configuration) and [web](web.md#pages) config pages edit the ordered roster with **Add reviewer…** and positional removal.
@@ -637,7 +637,7 @@ Headless surfaces without a dispatcher answer "not available".
 | Field | Default | Meaning |
 |---|---|---|
 | `tool` | `false` | offer a run's model the `parallel` tool, which dispatches a task to isolated lanes (fresh clones of the committed tree, each an ordinary run that may edit) and joins their commits back in order; each lane runs under 200 turns, 30 minutes and a share of the run's remaining budget; `parallel.tool = false`: no run is offered it; neither value changes `run --parallel`, the `/parallel` steer or the review panel |
-| `max_lanes` | `4` | The most lanes one `--parallel` fan-out may run, `1` to `1024`; a spec asking for more is refused before anything is cloned. |
+| `max_lanes` | `4` | The most lanes one `--parallel` fan-out may run, `1` to `1024`; a spec asking for more is refused before anything is cloned; a review roster longer than this runs in batches of this width, with no seat dropped. |
 
 ## `[workspace]`
 

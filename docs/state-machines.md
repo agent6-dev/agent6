@@ -270,6 +270,7 @@ Where a run state's work lands:
 - its commits land per state on the visible `agent6/machine-<id>` branch; your checkout is never touched
 - merge the branch when you want the work (the run's ending names it and the `git merge` line)
 - the hub's machine card shows supervision state only; a run state is not a session in the [review state](usage.md#a-sessions-review-state)
+- configured panel seats use the shared read-only lane executor; a machine state cannot claim subordinate worker authority without that worker's matching private launch, and a read-only seat cannot schedule another panel
 - a state's clone is removed as it lands
 - `sessions prune` sweeps leftover `machine-*/state-*` clones when their chain tips are reachable in the origin
   A live machine or unreachable work keeps the group, with a note.

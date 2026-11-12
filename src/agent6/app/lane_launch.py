@@ -10,6 +10,7 @@ state base every jail hides.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import pathlib
 import stat
@@ -91,7 +92,7 @@ def dispatch_authority(
         root: The execution's checkout, bound to its launch.
 
     Returns:
-        Work authority only outside subordinate runs; panel authority only in workers.
+        Work authority only in top-level runs; configured panels also in top-level ask/plan.
     """
     launch = read()
     subordinate = launch is not None or bool(os.environ.get("AGENT6_SUBRUN"))
@@ -107,7 +108,8 @@ def dispatch_authority(
     deadline = launch.limits.deadline_at if launch is not None and launch.limits else None
     return lane_records.DispatchAuthority(
         work=worker and not subordinate,
-        panels=worker and cfg.review.trigger != "off",
+        panels=(worker or (not subordinate and mode in ("ask", "plan")))
+        and cfg.review.trigger != "off",
         deadline_at=deadline,
     )
 
@@ -157,10 +159,9 @@ def private_dir(path: pathlib.Path) -> None:
     Raises:
         LaunchError: The path is a symlink, not a dir, foreign-owned or writable by others.
     """
-    if not path.exists() and not path.is_symlink():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        pathlib.Path(path).mkdir(mode=_DIR_MODE)
-        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with contextlib.suppress(FileExistsError):
+        path.mkdir(mode=_DIR_MODE)
     _check_private(path, directory=True, exposed=0o022)
 
 

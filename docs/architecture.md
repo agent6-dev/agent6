@@ -654,8 +654,14 @@ A read-only conversation contract grants neither authority, ending the structure
 
 `ParallelDispatcher.dispatch_panel` accepts bounded read-only conversations and a retained target through an internal record-only policy, independent of `parallel.tool`.
 It shares the work dispatch's executor, reservation, import, settlement and recovery paths; `parallel_join` owns merge and DAG projections.
-The existing `review_gate.run_panel` still executes panel seats in process; it does not call this internal seam.
-Each submitted batch stays within `parallel.max_lanes`; panel policy owns seat selection and batching.
+`review_gate.run_panel` prepares ordered requests using provider-free seats resolved by `app.role_providers.resolve_review_seats`.
+The dispatcher reserves the entire roster before launching batches of at most `min(review.concurrency, parallel.max_lanes)` seats; no seat is dropped.
+Diff seats use the existing prompt, one call, a 1,500-token output cap and no tools.
+Repo seats use the existing prompt, a 2,000-token per-call cap and `review.repo_max_turns` on the common bounded Harness path, including media recovery and final-turn verdict handling.
+`review_seat` owns message preparation, finding coercion, verdict parsing and abstention diagnostics, not execution.
+The parent validates each completion's session, panel, seat and retained target before parsing and grounding; an ordinary worker answer or successful exit is not evidence.
+Events, replay and receipts keep each seat's session ID, `risk` and `risk_truncated`.
+Configured top-level ask and plan reviews can schedule panels, but cannot dispatch work.
 Panel shares come from the worker's remaining allowance, and their deadlines take the minimum of the requested bound, the 1,800-second panel ceiling and the owning lane's deadline.
 
 Worker import preserves descendant session directories, dispatch records, objects and lineage in the original state directory, and fetches hidden session-owned target refs before removing the clone.
@@ -759,8 +765,8 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 Transcript callers supply the object directory explicitly: sessions use the layout's `objects/`, and `sessions review` uses `<state-dir>/reviews/objects/`.
 The [Formats reference](formats.md#provider-transcripts) describes provider attempt records, their pre-send write and finalization, and their call and request ids.
 Review calls carry a frozen `CallContext` through `RequestContext` to the transport and transcript writer.
-Review conversations use `(panel_id, seat_index)` rather than focus text, so identical seats remain separate.
-Calls with the same panel id and seat index continue the same conversation.
+Panel seats have distinct read-only session directories and provider transcripts, including duplicate-focus seats.
+Their completion artifacts carry the parent-owned `(panel_id, seat_index, target)` binding; the parent links verdicts to those sessions.
 
 `finish_planning` is `plan.md`'s only writer and `agent6 plan edit` its only editor.
 The planner re-reads it before every turn and is shown it whenever it differs from what it last saw.

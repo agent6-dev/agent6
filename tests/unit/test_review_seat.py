@@ -17,6 +17,7 @@ from agent6.harness import llm_json, review_gate, review_panel, review_seat
 from agent6.providers import Provider, ProviderError
 from agent6.sessions import journal
 from agent6.tools import results
+from tests import review_lane_env
 
 SAMPLE_DIFF = """\
 --- a/foo.py
@@ -85,7 +86,7 @@ def test_risk_ablation_changes_only_the_risk_line(
 
     def call() -> str:
         if repo_scope:
-            review_seat.repo_review(
+            review_lane_env.repo_verdict(
                 provider,
                 _ctx(),
                 seat_index=0,
@@ -96,7 +97,7 @@ def test_risk_ablation_changes_only_the_risk_line(
                 max_turns=2,
             )
         else:
-            review_seat.structured_review(
+            review_lane_env.diff_verdict(
                 provider, _ctx(), seat_index=0, focus="security", model_route="p/m"
             )
         return str(provider.call.call_args.kwargs["system"])
@@ -114,7 +115,7 @@ def test_risk_ablation_changes_only_the_risk_line(
 
 
 def test_structured_review_parses_clean_json() -> None:
-    v = review_seat.structured_review(
+    v = review_lane_env.diff_verdict(
         _prov(_BLOCK_JSON), _ctx(), seat_index=0, focus="security", model_route="m1"
     )
     assert v.error is None and v.verdict == "block"
@@ -123,14 +124,12 @@ def test_structured_review_parses_clean_json() -> None:
 
 def test_structured_review_parses_fenced_json_with_prose() -> None:
     text = f"Here is my review:\n```json\n{_BLOCK_JSON}\n```\nDone."
-    v = review_seat.structured_review(
-        _prov(text), _ctx(), seat_index=0, focus="s", model_route="m1"
-    )
+    v = review_lane_env.diff_verdict(_prov(text), _ctx(), seat_index=0, focus="s", model_route="m1")
     assert v.error is None and v.verdict == "block" and len(v.findings) == 1
 
 
 def test_structured_review_junk_output_abstains() -> None:
-    v = review_seat.structured_review(
+    v = review_lane_env.diff_verdict(
         _prov("I could not produce JSON, sorry."), _ctx(), seat_index=0, focus="s", model_route="m1"
     )
     assert v.error is not None and v.verdict == "abstain"  # abstain, never a false pass-as-real
@@ -138,14 +137,12 @@ def test_structured_review_junk_output_abstains() -> None:
 
 @pytest.mark.parametrize("text", ["{}", '{"findings": []}', '{"verdict": "maybe"}'])
 def test_structured_review_without_a_verdict_abstains(text: str) -> None:
-    v = review_seat.structured_review(
-        _prov(text), _ctx(), seat_index=0, focus="s", model_route="m1"
-    )
+    v = review_lane_env.diff_verdict(_prov(text), _ctx(), seat_index=0, focus="s", model_route="m1")
     assert v.error == "invalid reviewer verdict"
 
 
 def test_structured_review_provider_error_abstains() -> None:
-    v = review_seat.structured_review(
+    v = review_lane_env.diff_verdict(
         cast(Provider, _ErrProvider()), _ctx(), seat_index=0, focus="s", model_route="m1"
     )
     assert v.error is not None and "provider" in v.error
@@ -161,7 +158,7 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     starved = _FakeProvider("")
     starved_resp = _Resp("", stop_reason="length", output_tokens=4500)
     starved.call = lambda **_kw: starved_resp  # type: ignore[method-assign]
-    v = review_seat.structured_review(
+    v = review_lane_env.diff_verdict(
         cast(Provider, starved), _ctx(), seat_index=0, focus="s", model_route="kimi-k3"
     )
     assert v.error is not None and v.verdict == "abstain"
@@ -173,7 +170,7 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     cut = _FakeProvider("")
     cut_resp = _Resp('{"verdict": "blo', stop_reason="length", output_tokens=1500)
     cut.call = lambda **_kw: cut_resp  # type: ignore[method-assign]
-    v2 = review_seat.structured_review(
+    v2 = review_lane_env.diff_verdict(
         cast(Provider, cut), _ctx(), seat_index=0, focus="s", model_route="m1"
     )
     assert v2.error is not None
@@ -191,7 +188,7 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     empty_resp = _Resp("", stop_reason="error", output_tokens=16801)
     empty.call = lambda **_kw: empty_resp  # type: ignore[method-assign]
 
-    v = review_seat.structured_review(
+    v = review_lane_env.diff_verdict(
         cast(Provider, empty), _ctx(), seat_index=0, focus="s", model_route="kimi-k2.6"
     )
 
@@ -208,7 +205,7 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     thought = _Resp("", stop_reason="stop", output_tokens=7160, thinking="t" * 30_175)
     thinker.call = lambda **_kw: thought  # type: ignore[method-assign]
 
-    v2 = review_seat.structured_review(
+    v2 = review_lane_env.diff_verdict(
         cast(Provider, thinker), _ctx(), seat_index=0, focus="s", model_route="kimi-k2.6"
     )
 
@@ -250,7 +247,7 @@ def test_coerce_findings_normalizes_bad_category_and_severity() -> None:
 def test_invalid_locations_abstain_instead_of_passing(location: object) -> None:
     payload = json.loads(_BLOCK_JSON)
     payload["findings"][0]["location"] = location
-    verdict = review_seat.structured_review(
+    verdict = review_lane_env.diff_verdict(
         _prov(json.dumps(payload)), _ctx(), seat_index=3, focus="security", model_route="m1"
     )
     assert verdict.verdict == "abstain" and not verdict.findings
@@ -261,7 +258,7 @@ def test_invalid_locations_abstain_instead_of_passing(location: object) -> None:
 def test_provider_findings_keep_the_title_and_detail_caps() -> None:
     payload = json.loads(_BLOCK_JSON)
     payload["findings"][0].update(title="t" * 201, detail="d" * 1001)
-    verdict = review_seat.structured_review(
+    verdict = review_lane_env.diff_verdict(
         _prov(json.dumps(payload)), _ctx(), seat_index=0, focus="security", model_route="m1"
     )
     assert verdict.error is None
@@ -288,10 +285,10 @@ def test_finding_text_is_one_line() -> None:
 
 def test_run_panel_distinct_models_quorum_blocks() -> None:
     seats = [
-        review_gate.ReviewSeat(focus="security", model="m1", provider=_prov(_BLOCK_JSON)),
-        review_gate.ReviewSeat(focus="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
+        review_lane_env.seat(focus="security", model="m1", provider=_prov(_BLOCK_JSON)),
+        review_lane_env.seat(focus="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
     ]
-    res = review_gate.run_panel(
+    res = review_lane_env.run_panel(
         seats,
         _ctx(),
         block_on="model_quorum",
@@ -305,8 +302,8 @@ def test_run_panel_distinct_models_quorum_blocks() -> None:
 
 
 def test_run_panel_advisory_never_blocks() -> None:
-    seats = [review_gate.ReviewSeat(focus="security", model="m1", provider=_prov(_BLOCK_JSON))]
-    res = review_gate.run_panel(
+    seats = [review_lane_env.seat(focus="security", model="m1", provider=_prov(_BLOCK_JSON))]
+    res = review_lane_env.run_panel(
         seats, _ctx(), block_on="none", min_blocking_models=2, panel_id="p", repo_max_turns=20
     )
     assert res.blocked is False
@@ -319,11 +316,11 @@ def test_run_panel_concurrent_preserves_order_and_aggregates() -> None:
     # 3 seats, distinct models, concurrency=3: results stay in seat order and the
     # grounded min_blocking_models still blocks (thread pool must not change the verdict).
     seats = [
-        review_gate.ReviewSeat(focus="security", model="m1", provider=_prov(_BLOCK_JSON)),
-        review_gate.ReviewSeat(focus="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
-        review_gate.ReviewSeat(focus="edge", model="m3", provider=_prov(_BLOCK_JSON)),
+        review_lane_env.seat(focus="security", model="m1", provider=_prov(_BLOCK_JSON)),
+        review_lane_env.seat(focus="correctness", model="m2", provider=_prov(_BLOCK_JSON)),
+        review_lane_env.seat(focus="edge", model="m3", provider=_prov(_BLOCK_JSON)),
     ]
-    res = review_gate.run_panel(
+    res = review_lane_env.run_panel(
         seats,
         _ctx(),
         block_on="model_quorum",
@@ -379,9 +376,7 @@ def test_a_routed_reviewer_leaves_pinned_seats_alone(monkeypatch: Any) -> None:
     )
     cfg = cfg.with_model_route("reviewer", cfg.model_route("reviewer", "claude-haiku-override"))
 
-    seats = role_providers.build_review_seats(
-        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None)
-    )
+    seats = role_providers.resolve_review_seats(cfg)
     assert [s.model for s in seats] == [
         "anthropic/claude-opus-4-8",
         "anthropic/some-model",
@@ -395,9 +390,7 @@ def test_build_review_seats_no_override_keeps_pinned_models(monkeypatch: Any) ->
     monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_seat_provider)
     cfg = _cfg_with_reviewers(({"focus": "security", "model": "anthropic/claude-opus-4-8"},))
 
-    seats = role_providers.build_review_seats(
-        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None)
-    )
+    seats = role_providers.resolve_review_seats(cfg)
     assert seats[0].model == "anthropic/claude-opus-4-8"  # unchanged when no --model
 
 
@@ -409,9 +402,7 @@ def test_a_bare_focus_seat_follows_the_routed_reviewer(monkeypatch: Any) -> None
     cfg = _cfg_with_reviewers(({"focus": "correctness"},))
     cfg = cfg.with_model_route("reviewer", cfg.model_route("reviewer", "claude-haiku-override"))
 
-    seats = role_providers.build_review_seats(
-        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None)
-    )
+    seats = role_providers.resolve_review_seats(cfg)
     assert seats[0].model == "anthropic/claude-haiku-override"
 
 
@@ -428,14 +419,13 @@ def test_bare_and_pinned_routes_to_the_same_model_count_once(monkeypatch: Any) -
             {"focus": "security", "model": "anthropic/reviewer-default"},
         )
     )
-    seats = role_providers.build_review_seats(
-        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None)
-    )
+    seats = role_providers.resolve_review_seats(cfg)
     assert [seat.model for seat in seats] == [
         "anthropic/reviewer-default",
         "anthropic/reviewer-default",
     ]
-    result = review_gate.run_panel(
+    seats = [review_lane_env.seat(s.focus, s.model, _prov(_BLOCK_JSON)) for s in seats]
+    result = review_lane_env.run_panel(
         seats,
         _ctx(),
         block_on="model_quorum",
@@ -473,7 +463,7 @@ def test_repo_review_first_request_names_the_call_budget(max_turns: int) -> None
     """The seat knows its total call budget and that the last call must be its verdict."""
     provider = mock.MagicMock()
     provider.call.return_value = _RepoResp(text=_BLOCK_JSON)
-    verdict = review_seat.repo_review(
+    verdict = review_lane_env.repo_verdict(
         provider,
         _ctx(),
         seat_index=0,
@@ -507,7 +497,7 @@ def test_repo_review_returns_a_verdict_on_the_sixth_call(monkeypatch: pytest.Mon
         dispatched.append(name)
         return results.RawResult({"matches": ["caller.py:9: read_doc(x)"]})
 
-    v = review_seat.repo_review(
+    v = review_lane_env.repo_verdict(
         cast(Provider, provider),
         _ctx(),
         seat_index=0,
@@ -531,7 +521,7 @@ def test_repo_review_abstains_after_six_calls_without_a_verdict() -> None:
             for _ in range(10)
         ]
     )
-    v = review_seat.repo_review(
+    v = review_lane_env.repo_verdict(
         cast(Provider, provider),
         _ctx(),
         seat_index=0,
@@ -562,7 +552,7 @@ def test_repo_review_skips_dispatch_on_final_turn() -> None:
         dispatched.append(name)
         return results.RawResult({"ok": True})
 
-    v = review_seat.repo_review(
+    v = review_lane_env.repo_verdict(
         cast(Provider, provider),
         _ctx(),
         seat_index=0,
@@ -585,10 +575,10 @@ def test_run_panel_routes_repo_tier_seats() -> None:
             _RepoResp(text=_BLOCK_JSON),
         ]
     )
-    seat = review_gate.ReviewSeat(
+    seat = review_lane_env.seat(
         focus="security", model="m1", provider=cast(Provider, prov), scope="repo"
     )
-    res = review_gate.run_panel(
+    res = review_lane_env.run_panel(
         [seat],
         _ctx(),
         block_on="any",
@@ -625,7 +615,7 @@ def test_repo_review_honors_verdict_alongside_tool_use_on_last_turn() -> None:
     # the same turn; the verdict must be honored (not wasted into an abstain).
     tu = {"name": "find_references", "id": "t1", "input": {"symbol": "x"}}
     provider = _RepoProvider([_RepoResp(text=_BLOCK_JSON, tool_uses=(tu,), raw={"content": []})])
-    v = review_seat.repo_review(
+    v = review_lane_env.repo_verdict(
         cast(Provider, provider),
         _ctx(),
         seat_index=0,
@@ -638,63 +628,28 @@ def test_repo_review_honors_verdict_alongside_tool_use_on_last_turn() -> None:
     assert v.error is None and v.verdict == "block"
 
 
-def test_run_panel_concurrent_seats_run_on_daemon_threads() -> None:
-    """The seat pool must not block process exit.
-
-    ThreadPoolExecutor workers are joined at interpreter exit; daemon threads die with it.
-    """
-    import threading
-
-    daemons: list[bool] = []
-
-    class _ThreadProbeProvider:
-        def call(self, **kw: Any) -> Any:
-            daemons.append(threading.current_thread().daemon)
-            return _Resp(_BLOCK_JSON)
-
-    seats = [
-        review_gate.ReviewSeat(
-            focus=f"s{i}", model="m", provider=cast(Provider, _ThreadProbeProvider())
-        )
-        for i in range(3)
-    ]
-    res = review_gate.run_panel(
-        seats,
-        _ctx(),
-        block_on="none",
-        min_blocking_models=2,
-        panel_id="p",
-        repo_max_turns=20,
-        concurrency=3,
-    )
-    assert len(res.per_seat) == 3
-    assert daemons == [True, True, True]
-
-
-def test_run_panel_concurrent_seat_crash_propagates() -> None:
-    """An unexpected seat-thread exception surfaces from run_panel.
-
-    Not the ProviderError abstain path; the same semantics as `pool.map`.
-    """
+def test_run_panel_executor_crash_retains_diagnostics() -> None:
+    """An executor failure retains every seat as an abstention with its diagnostic."""
 
     class _BoomProvider:
         def call(self, **kw: Any) -> Any:
             raise RuntimeError("unexpected seat crash")
 
     seats = [
-        review_gate.ReviewSeat(focus="a", model="m", provider=_prov(_BLOCK_JSON)),
-        review_gate.ReviewSeat(focus="b", model="m", provider=cast(Provider, _BoomProvider())),
+        review_lane_env.seat(focus="a", model="m", provider=_prov(_BLOCK_JSON)),
+        review_lane_env.seat(focus="b", model="m", provider=cast(Provider, _BoomProvider())),
     ]
-    with pytest.raises(RuntimeError, match="unexpected seat crash"):
-        review_gate.run_panel(
-            seats,
-            _ctx(),
-            block_on="none",
-            min_blocking_models=2,
-            panel_id="p",
-            repo_max_turns=20,
-            concurrency=2,
-        )
+    result = review_lane_env.run_panel(
+        seats,
+        _ctx(),
+        block_on="none",
+        min_blocking_models=2,
+        panel_id="p",
+        repo_max_turns=20,
+        concurrency=2,
+    )
+    assert result.n_abstain == 2
+    assert all("unexpected seat crash" in (v.error or "") for v in result.per_seat)
 
 
 def test_run_panel_concurrency_limit_is_honored() -> None:
@@ -718,10 +673,10 @@ def test_run_panel_concurrency_limit_is_honored() -> None:
             return _Resp(_BLOCK_JSON)
 
     seats = [
-        review_gate.ReviewSeat(focus=f"s{i}", model="m", provider=cast(Provider, _SlowProvider()))
+        review_lane_env.seat(focus=f"s{i}", model="m", provider=cast(Provider, _SlowProvider()))
         for i in range(6)
     ]
-    res = review_gate.run_panel(
+    res = review_lane_env.run_panel(
         seats,
         _ctx(),
         block_on="none",
@@ -734,53 +689,12 @@ def test_run_panel_concurrency_limit_is_honored() -> None:
     assert peak <= 2
 
 
-def test_seats_are_instrumented_when_the_run_passes_its_event_sink(monkeypatch: Any) -> None:
-    """Seats are instrumented when the run passes its event sink.
-
-    Only InstrumentedProvider emits budget.update, so a bare seat provider spends real money no
-    surface shows: the tracker enforces, the log never hears, and the run's cost is under-reported.
-    With the run's sink each seat is wrapped; without a sink it stays bare.
-    """
-    from agent6.app import role_providers
-
-    monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_seat_provider)
-    cfg = _cfg_with_reviewers(
-        (
-            {"focus": "security", "model": "anthropic/claude-opus-4-8"},
-            {"focus": "correctness"},
-        )
-    )
-    kw: dict[str, Any] = {"transcript_sink": cast(Any, mock.MagicMock()), "budget": cast(Any, None)}
-
-    seats = role_providers.build_review_seats(cfg, events=cast(Any, mock.MagicMock()), **kw)
-    assert [type(s.provider) for s in seats] == [
-        role_providers.InstrumentedProvider,
-        role_providers.InstrumentedProvider,
-    ]
-
-    assert not any(
-        isinstance(s.provider, role_providers.InstrumentedProvider)
-        for s in role_providers.build_review_seats(cfg, **kw)
-    )
-
-    # The simple form (no configured seats) wraps the same way.
-    simple_cfg = _cfg_with_reviewers(())
-    (seat,) = role_providers.build_review_seats(
-        simple_cfg, events=cast(Any, mock.MagicMock()), **kw
-    )
-    assert isinstance(seat.provider, role_providers.InstrumentedProvider)
-
-
 def test_empty_roster_builds_one_security_seat_on_the_reviewer_route(monkeypatch: Any) -> None:
     """An empty roster still builds the in-loop panel's default seat."""
     from agent6.app import role_providers
 
     monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_seat_provider)
-    seats = role_providers.build_review_seats(
-        _cfg_with_reviewers(()),
-        transcript_sink=cast(Any, mock.MagicMock()),
-        budget=cast(Any, None),
-    )
+    seats = role_providers.resolve_review_seats(_cfg_with_reviewers(()))
     assert [(s.focus, s.model) for s in seats] == [
         ("security", "anthropic/reviewer-default"),
     ]
@@ -818,7 +732,7 @@ def test_repo_review_preserves_image_result() -> None:
         _RepoResp(text=_BLOCK_JSON),
     ]
     image = kinds.MediaAttachment(b"x" * 90000, "image/png", "page.png")
-    verdict = review_seat.repo_review(
+    verdict = review_lane_env.repo_verdict(
         provider,
         _ctx(),
         seat_index=0,
@@ -852,7 +766,7 @@ def test_repo_review_uses_shared_media_recovery_without_rerunning_tools() -> Non
         return_value=results.ReadMediaResult(kinds.MediaAttachment(b"x", "image/png", "page.png"))
     )
     emit = mock.Mock()
-    verdict = review_seat.repo_review(
+    verdict = review_lane_env.repo_verdict(
         provider,
         _ctx(),
         seat_index=0,
@@ -860,7 +774,7 @@ def test_repo_review_uses_shared_media_recovery_without_rerunning_tools() -> Non
         model_route="p/m",
         tools=[],
         dispatch=dispatch,
-        max_turns=2,
+        max_turns=3,
         recovery=provider_call.MediaRecovery(media.InputCapabilities(kinds.ModelRoute("p", "m"))),
         emit=emit,
     )
@@ -877,7 +791,6 @@ def test_repo_review_uses_shared_media_recovery_without_rerunning_tools() -> Non
 def test_panel_media_refusals_follow_the_seat_not_the_shared_dispatch() -> None:
     """A text-only seat refuses locally while a vision seat receives the same tool result."""
     from agent6 import kinds, media
-    from agent6.harness import provider_call
     from agent6.tools import results
 
     tu = {"name": "read_file", "id": "t1", "input": {"path": "page.png"}}
@@ -895,7 +808,7 @@ def test_panel_media_refusals_follow_the_seat_not_the_shared_dispatch() -> None:
         ]
         role_providers.append(provider)
         seats.append(
-            review_gate.ReviewSeat(
+            review_lane_env.seat(
                 focus="ui",
                 model=f"p/{model}",
                 provider=provider,
@@ -906,8 +819,7 @@ def test_panel_media_refusals_follow_the_seat_not_the_shared_dispatch() -> None:
     dispatch = mock.Mock(
         return_value=results.ReadMediaResult(kinds.MediaAttachment(b"x", "image/png", "page.png"))
     )
-    rejections: provider_call.MediaRejections = {}
-    review_gate.run_panel(
+    review_lane_env.run_panel(
         seats,
         _ctx(),
         block_on="none",
@@ -916,15 +828,12 @@ def test_panel_media_refusals_follow_the_seat_not_the_shared_dispatch() -> None:
         repo_max_turns=2,
         tools=[],
         dispatch=dispatch,
-        media_rejections=rejections,
     )
     replies = [
         p.call.call_args.kwargs["messages"][-1]["content"][0]["content"] for p in role_providers
     ]
     assert replies[0].startswith("Cannot deliver image 'page.png' to p/text:")
     assert replies[1][1]["type"] == "image"
-    assert rejections[kinds.ModelRoute("p", "text")] == {"image"}
-    assert rejections[kinds.ModelRoute("p", "vision")] == set()
     assert dispatch.call_count == 2
 
 
@@ -953,7 +862,7 @@ def test_repo_review_records_attachment_limit_refusals(cross_turn: bool) -> None
         return_value=results.ReadMediaResult(kinds.MediaAttachment(data, "image/png", "page.png"))
     )
     emit = mock.Mock()
-    verdict = review_seat.repo_review(
+    verdict = review_lane_env.repo_verdict(
         provider,
         _ctx(),
         seat_index=0,
@@ -970,3 +879,8 @@ def test_repo_review_records_attachment_limit_refusals(cross_turn: bool) -> None
     assert isinstance(refused, journal.LoopMediaRefused)
     assert refused.provider_tool_call_id == "one"
     assert ("4 MiB" if cross_turn else "2 MiB") in refused.reason
+
+
+@pytest.fixture(autouse=True)
+def panel_lanes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)

@@ -5,25 +5,24 @@
 from __future__ import annotations
 
 import dataclasses
-import threading
 import uuid
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic
 
-from agent6 import budget, errors, media, review_records, terminal
+from agent6 import budget, errors, kinds, lane_records, review_records, terminal
 from agent6.config import ReviewScope
 from agent6.harness import (
-    provider_call,
+    parallel_dispatch,
     repo_context,
     review_history,
     review_panel,
     review_seat,
     run_chain,
 )
-from agent6.providers import Provider, ToolDefinition
-from agent6.sessions import journal
+from agent6.prompts import review
+from agent6.sessions import completion, journal, layout
 from agent6.vcs import git_read
 
 if TYPE_CHECKING:
@@ -48,24 +47,22 @@ class CritiqueResult:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewSeat:
-    """Bind one focus to a provider and model.
-
-    Attributes:
-        focus: The reviewer's stance.
-        model: The model name, for events.
-        provider: The provider called.
-        scope: `diff` for one call over the diff, `repo` for a read-only tool loop first.
-        temperature: The sampling temperature sent on every call.
-    """
+    """Resolve one roster entry without holding a live provider."""
 
     focus: str
-    model: str
-    provider: Provider
+    settings: kinds.ModelSettings
     scope: ReviewScope = "diff"
-    temperature: float | None = 0.0
-    media_input: media.InputCapabilities = dataclasses.field(
-        default_factory=media.InputCapabilities
-    )
+
+    @property
+    def model(self) -> str:
+        """Return the resolved route for events and quorum."""
+        route = self.settings.route
+        return f"{route.provider}/{route.model}" if route.provider else route.model
+
+    @property
+    def temperature(self) -> float | None:
+        """Return the resolved sampling temperature."""
+        return self.settings.temperature
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -102,133 +99,111 @@ def run_panel(
     seats: Sequence[ReviewSeat],
     ctx: review_panel.ReviewContext,
     *,
+    target: review_records.ReviewTarget,
+    executor: parallel_dispatch.ParallelDispatcher,
     block_on: review_panel.ReviewBlockOn,
     min_blocking_models: int,
     panel_id: str,
     repo_max_turns: int,
     concurrency: int = 1,
-    tools: list[ToolDefinition] | None = None,
-    dispatch: review_seat.ReviewDispatch | None = None,
-    media_rejections: provider_call.MediaRejections | None = None,
-    emit: Callable[..., None] | None = None,
-    execution_id: str | None = None,
+    turn: int = 0,
 ) -> review_panel.PanelResult:
-    """Run every seat over the same context and aggregate the verdicts in seat order.
+    """Submit the roster as bounded lanes and aggregate only their bound artifacts.
 
     Args:
-        seats: The seats.
-        ctx: The review context; each seat gets its own focus substituted.
+        seats: The resolved roster in seat order.
+        ctx: The shared task, rules, verification and diff.
+        target: The retained immutable comparison.
+        executor: The common lane dispatcher.
         block_on: The blocking rule.
-        min_blocking_models: The distinct blocking routes a `model_quorum` rejection needs.
-        panel_id: The panel's id, for the result.
-        repo_max_turns: The provider calls each repo-scope seat may make, tools included.
-        concurrency: The seat calls run at once.
-        tools: The read-only tools for repo seats.
-        dispatch: The read-only dispatch for repo seats.
-        media_rejections: Execution-local unsupported facts, shared only by identical routes.
-        emit: The journal emitter for delivery refusals.
-        execution_id: The execution the panel reviews for, carried by the seats' events.
+        min_blocking_models: The distinct blocking routes needed for quorum.
+        panel_id: The parent-assigned panel identity.
+        repo_max_turns: The repo-seat call ceiling.
+        concurrency: The maximum simultaneous seats, also bounded by parallel.max_lanes.
+        turn: The owning worker's turn.
 
     Returns:
-        The aggregated panel result.
+        The grounded panel result, including every abstention in roster order.
     """
-    rejections = media_rejections if media_rejections is not None else {}
-
-    def _run(i: int, s: ReviewSeat) -> review_records.ReviewVerdict:
-        seat_ctx = dataclasses.replace(ctx, focus=s.focus)
-        if s.scope == "repo" and tools is not None and dispatch is not None:
-            return review_seat.repo_review(
-                s.provider,
-                seat_ctx,
-                seat_index=i,
-                panel_id=panel_id,
-                focus=s.focus,
-                model_route=s.model,
-                tools=tools,
-                dispatch=dispatch,
-                max_turns=repo_max_turns,
-                temperature=s.temperature,
-                recovery=provider_call.MediaRecovery(
-                    s.media_input, rejections.setdefault(s.media_input.route, set())
-                ),
-                emit=emit,
-                execution_id=execution_id,
-            )
-        return review_seat.structured_review(
-            s.provider,
-            seat_ctx,
-            seat_index=i,
-            panel_id=panel_id,
-            execution_id=execution_id,
-            focus=s.focus,
-            model_route=s.model,
-            temperature=s.temperature,
-        )
-
     if not ctx.rules.complete:
         return review_panel.PanelResult(
             panel_id, block_on, False, (), (), 0, 0, skipped_reason=ctx.rules.reason
         )
-    if concurrency > 1 and len(seats) > 1:
-        verdicts = _run_seats_concurrently(seats, _run, concurrency)
-    else:
-        verdicts = [_run(i, s) for i, s in enumerate(seats)]
+    requests: list[lane_records.LaneTask] = []
+    for i, seat in enumerate(seats):
+        calls = repo_max_turns if seat.scope == "repo" else 1
+        contract = kinds.ConversationContract(
+            kind="read_only" if seat.scope == "repo" else "no_tools",
+            system=review.panel_prompt(seat.focus, max_turns=calls)
+            if seat.scope == "repo"
+            else review.panel_prompt(seat.focus),
+            opening=review_seat.build_user_message(dataclasses.replace(ctx, focus=seat.focus)),
+            max_calls=calls,
+            max_output_tokens=2000 if seat.scope == "repo" else 1500,
+            temperature=seat.temperature,
+            review_binding=review_records.ReviewBinding(panel_id, i, target),
+            allowed_tools=(
+                "find_definition",
+                "find_references",
+                "list_dir",
+                "outline",
+                "read_file",
+            ),
+        )
+        requests.append(
+            lane_records.LaneTask(
+                task=f"Review: {seat.focus}",
+                model=seat.model,
+                settings=seat.settings,
+                contract=contract,
+            )
+        )
+    dispatched = executor.dispatch_panel(
+        requests, panel_id=panel_id, at=target.snapshot_commit, turn=turn, concurrency=concurrency
+    )
+    verdicts: list[review_records.ReviewVerdict] = []
+    for i, (seat, request) in enumerate(zip(seats, requests, strict=True)):
+        assert request.contract is not None and request.contract.review_binding is not None
+        joined = dispatched.lanes[i] if i < len(dispatched.lanes) else None
+        sid = joined.session_id if joined is not None else ""
+        error = dispatched.message if joined is None else None
+        artifact = None
+        if sid and executor.session_dir is not None:
+            try:
+                state_dir = layout.layout_of(executor.session_dir).state_dir
+                artifact = completion.read_completion(
+                    layout.bucket_dir(state_dir, kinds.session_bucket("read_only")) / sid
+                )
+            except completion.CompletionError as exc:
+                error = str(exc)
+        # Only the call ceiling can leave usable evidence after an execution failure.
+        if joined is not None and joined.status == "failed":
+            ceiling = artifact is not None and artifact.stop_reason == "calls_exhausted"
+            if not ceiling or "deadline" in joined.detail:
+                diagnostic = (
+                    "; ".join(artifact.diagnostics)
+                    if artifact is not None and artifact.stop_reason == "provider_error"
+                    else ""
+                )
+                error = error or diagnostic or joined.detail or "seat execution failed"
+        if artifact is None:
+            error = error or "missing completion artifact"
+        verdicts.append(
+            review_seat.verdict_from_completion(
+                artifact,
+                binding=request.contract.review_binding,
+                session_id=sid,
+                focus=seat.focus,
+                model_route=seat.model,
+                scope=seat.scope,
+                max_calls=request.contract.max_calls,
+                error=error,
+            )
+        )
+    executor.record_delivery(dispatched)
     return review_panel.aggregate_verdicts(
         verdicts, ctx, block_on=block_on, min_blocking_models=min_blocking_models, panel_id=panel_id
     )
-
-
-def _run_seats_concurrently(
-    seats: Sequence[ReviewSeat],
-    run_seat: Callable[[int, ReviewSeat], review_records.ReviewVerdict],
-    concurrency: int,
-) -> list[review_records.ReviewVerdict]:
-    """Run the seat calls on daemon threads, results in seat order.
-
-    A thread pool's workers are joined at exit and a seat call has no abort hook, so Ctrl-C
-    would wait for every seat; daemon threads die with the process and the polling wait lets
-    KeyboardInterrupt land.
-
-    Args:
-        seats: The seats.
-        run_seat: The call that runs one seat.
-        concurrency: The seat calls run at once.
-
-    Returns:
-        One verdict per seat.
-
-    Raises:
-        RuntimeError: When a thread ended with neither a verdict nor an error.
-    """
-    slots: list[review_records.ReviewVerdict | None] = [None] * len(seats)
-    errors: list[BaseException] = []
-    gate = threading.Semaphore(min(concurrency, len(seats)))
-    done = threading.Semaphore(0)
-
-    def work(i: int, seat: ReviewSeat) -> None:
-        with gate:
-            try:
-                slots[i] = run_seat(i, seat)
-            except BaseException as exc:  # surfaced below; a pool would do the same
-                errors.append(exc)
-            finally:
-                done.release()
-
-    threads = [
-        threading.Thread(target=work, args=(i, s), name=f"review-seat-{i}", daemon=True)
-        for i, s in enumerate(seats)
-    ]
-    for t in threads:
-        t.start()
-    for _ in seats:
-        while not done.acquire(timeout=0.2):
-            pass
-    if errors:
-        raise errors[0]
-    verdicts = [v for v in slots if v is not None]
-    if len(verdicts) != len(seats):  # a worker ended with neither verdict nor error
-        raise RuntimeError("review seat thread ended without a verdict")
-    return verdicts
 
 
 # The before-finish panel's rejection by the ending it rejected; the findings follow.
@@ -307,7 +282,7 @@ class Reviewer:
         settings: The panel's settings.
         chain: The run's chain: the diff the panel grounds on and the AGENTS.md it reads.
         hide: `[sandbox].hide_paths`, which no AGENTS.md is read from.
-        review_tools: Builds the read-only tools and dispatch a repo seat gets.
+        executor: The common lane dispatcher, resolved lazily.
         budget_remaining: The fraction of the budget left, or None without a tracker.
         log: The run's text logger.
         emit: The run's event emitter.
@@ -316,11 +291,10 @@ class Reviewer:
     settings: ReviewSettings
     chain: run_chain.RunChain
     hide: tuple[str, ...]
-    review_tools: Callable[[], tuple[list[ToolDefinition], review_seat.ReviewDispatch]]
+    executor: Callable[[], parallel_dispatch.ParallelDispatcher]
     budget_remaining: Callable[[], float | None]
     log: Callable[[str], None]
     emit: Callable[..., None]
-    media_rejections: provider_call.MediaRejections = dataclasses.field(default_factory=dict)
     session_id: str = ""
 
     def prepare(
@@ -651,10 +625,6 @@ class Reviewer:
                 )
             )
             return None
-        tools: list[ToolDefinition] | None = None
-        dispatch: review_seat.ReviewDispatch | None = None
-        if any(s.scope == "repo" for s in self.settings.reviewers):
-            tools, dispatch = self.review_tools()
         try:
             result = run_panel(
                 self.settings.reviewers,
@@ -664,11 +634,9 @@ class Reviewer:
                 panel_id=panel_id,
                 repo_max_turns=self.settings.repo_max_turns,
                 concurrency=self.settings.concurrency,
-                tools=tools,
-                dispatch=dispatch,
-                media_rejections=self.media_rejections,
-                emit=self.emit,
-                execution_id=state.execution_id,
+                target=target,
+                executor=self.executor(),
+                turn=turn,
             )
         except budget.BudgetExceededError:
             self.emit(journal.LoopReviewSkipped(**identity, reason="budget"))

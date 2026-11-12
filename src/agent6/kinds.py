@@ -14,6 +14,8 @@ import pathlib
 import uuid
 from typing import Any, Literal
 
+from agent6 import review_records
+
 # The gate's word at the end: `failed` is an observed red, `unverified` a tree no verdict covers.
 Verification = Literal["passed", "failed", "unverified", "not_applicable"]
 
@@ -269,6 +271,8 @@ class ConversationContract:
             conversation `calls_exhausted` with the last response's text kept.
         max_output_tokens: One call's output cap.
         temperature: The sampling temperature; None keeps the worker's.
+        review_binding: Parent-owned review provenance, or None for other conversations.
+        allowed_tools: Optional restriction within the read-only surface; None keeps that surface.
     """
 
     kind: Literal["read_only", "no_tools"]
@@ -277,6 +281,8 @@ class ConversationContract:
     max_calls: int
     max_output_tokens: int
     temperature: float | None = None
+    review_binding: review_records.ReviewBinding | None = None
+    allowed_tools: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         if self.max_calls < 1 or self.max_output_tokens < 1:

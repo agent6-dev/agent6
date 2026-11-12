@@ -129,8 +129,8 @@ Define immutable review evidence and validate review boundary payloads.
 Public fields: [Formats](formats.md#typed-records).
 
 - **Written by:** app/review_actions, harness/{review_gate, review_history, review_panel, review_seat}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
-- **Read by:** app/{execution, review_directive}, harness/{loop, loop_state, repo_context, run_chain}, ui/acp/review, ui/tui/{diff_pane, review}, vcs/review_rule_reader, viewmodel/review
-- **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (20 test files exercise it)
+- **Read by:** kinds, app/{execution, review_directive}, harness/{loop, loop_state, repo_context, run_chain}, sessions/completion, ui/acp/review, ui/tui/{diff_pane, review}, vcs/review_rule_reader, viewmodel/review
+- **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (22 test files exercise it)
 
 ## Conversation
 
@@ -141,8 +141,8 @@ The loop-owned conversation: typed messages over the provider wire.
 **Conversation** &mdash; The history as frozen messages plus the rolling cache-mark pair.
 
 - **Written by:** harness/loop
-- **Read by:** harness/{compaction_driver, compaction_rules, compaction_window, loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, provider_call, quiet_turns, review_seat, standing_goal, verify_gate}
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (34 test files exercise it)
+- **Read by:** harness/{compaction_driver, compaction_rules, compaction_window, loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, provider_call, quiet_turns, standing_goal, verify_gate}
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (35 test files exercise it)
 
 ## SessionManifest
 
@@ -217,7 +217,7 @@ Typed tool-handler results.
 Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ReadMediaResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`, `FindingsResult`
 
 - **Written by:** tools/{command_tools, control_tools, dag_tools, dispatch, edit_diag, fs_tools, nav_tools, skill_tools}
-- **Read by:** app/review_actions, harness/{guards, loop, memory_touch, metric_sampler, review_seat, tool_effects, toolset, verify_gate}, tools/result_format
+- **Read by:** app/review_actions, harness/{guards, loop, memory_touch, metric_sampler, tool_effects, verify_gate}, tools/result_format
 - **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (38 test files exercise it)
 
 ## Event union

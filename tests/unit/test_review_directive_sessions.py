@@ -12,10 +12,12 @@ import pytest
 
 from agent6 import paths, providers
 from agent6.app import role_providers, session_runtime
+from agent6.harness import review_gate
 from agent6.sessions import manifest
 from agent6.ui import directive_actions
 from agent6.ui.cli import cli_main, session_prompt
 from agent6.viewmodel import transcript
+from tests import review_lane_env
 from tests.unit import test_review_directive_world as world_tests
 
 _CONFIG = """
@@ -160,7 +162,6 @@ def test_the_panel_sits_on_the_reviewed_branch_and_records_its_findings(
 ) -> None:
     """With the panel on, an ask review journals a panel over the branch; Fix stays a run's."""
     from agent6.app import review_actions
-    from agent6.harness import review_gate
 
     config_path = repo.parent / "config" / "agent6" / "config.toml"
     config_path.write_text(
@@ -171,9 +172,9 @@ def test_the_panel_sits_on_the_reviewed_branch_and_records_its_findings(
     )
 
     def seats(*_args: Any, **_kwargs: Any) -> list[review_gate.ReviewSeat]:
-        return [review_gate.ReviewSeat(focus="correctness", model="p/m", provider=SeatProvider())]
+        return [review_lane_env.seat(focus="correctness", model="p/m", provider=SeatProvider())]
 
-    monkeypatch.setattr(role_providers, "build_review_seats", seats)
+    monkeypatch.setattr(role_providers, "resolve_review_seats", seats)
     world_tests.git(repo, "switch", "-q", "main")
     provider = ScriptedReview()
     install(monkeypatch, provider)
@@ -499,3 +500,8 @@ def test_the_system_prompt_carries_the_base_rules_not_the_heads(
     assert "Base rule" in system
     assert "Head rule" not in system
     assert "Head rule" in json.dumps(provider.calls[0]["messages"])
+
+
+@pytest.fixture(autouse=True)
+def panel_lanes(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)

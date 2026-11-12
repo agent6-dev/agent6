@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Construct role/summariser/review-seat providers for CLI commands."""
+"""Construct role providers and resolve review-panel settings."""
 
 from __future__ import annotations
 
@@ -645,78 +645,41 @@ def helper_seat_provider(
     )
 
 
-def build_review_seats(
-    cfg: Config,
-    *,
-    transcript_sink: TranscriptSink,
-    budget: agent6_budget.BudgetTracker,
-    events: event_log.EventSink | None = None,
-    conversations: conversation_state.Conversations | None = None,
-) -> list[review_gate.ReviewSeat]:
-    """Build the review-panel seats, one per roster entry.
+def resolve_review_seats(cfg: Config) -> list[review_gate.ReviewSeat]:
+    """Resolve the ordered roster without constructing providers.
 
-    `cfg.review.reviewers` names the roster; an empty roster builds one security seat.
-    Each entry resolves its route and sampling settings before the provider is built.
+    Omitted fields inherit the reviewer, including seats with a pinned route.
 
     Args:
-        cfg: The run's config.
-        transcript_sink: The recorder the seats' round-trips go to.
-        budget: The tracker the seats bill.
-        events: The sink each seat's events go to; None leaves the seats uninstrumented,
-            so their spend reaches no surface.
-        conversations: The session's conversation state; None holds one per seat.
+        cfg: The effective configuration.
 
     Returns:
-        The seats in roster order.
+        The roster, or one security seat when the roster is empty.
 
     Raises:
-        ProviderError: An entry has no resolved route or names a missing provider.
+        ProviderError: A seat has no route or names a missing provider.
     """
     cfg.require_runnable("reviewer")
-    roster = cfg.review.reviewers or (ReviewerConfig(focus="security"),)
     reviewer = cfg.models.resolve("reviewer")
-    resolved = [(entry.focus, entry.resolve(reviewer)) for entry in roster]
-    for seat_focus, rm in resolved:
+    seats: list[review_gate.ReviewSeat] = []
+    for entry in cfg.review.reviewers or (ReviewerConfig(focus="security"),):
+        rm = entry.resolve(reviewer)
         if rm is None:
             raise ProviderError(
-                f"reviewer {seat_focus!r} has no model; configure [models.reviewer]"
+                f"reviewer {entry.focus!r} has no model; configure [models.reviewer]"
             )
         if rm.provider not in cfg.providers:
             raise ProviderError(
-                f"reviewer {seat_focus!r} names provider {rm.provider!r} but"
+                f"reviewer {entry.focus!r} names provider {rm.provider!r} but"
                 f" [providers.{rm.provider}] is missing"
-            )
-    seats: list[review_gate.ReviewSeat] = []
-    for seat_index, (seat_focus, rm) in enumerate(resolved):
-        assert rm is not None  # every route was checked before constructing any provider
-        provider = _provider_from_entry(
-            rm.provider,
-            cfg.providers[rm.provider],
-            rm.model,
-            rm.effort,
-            transcript_sink=transcript_sink.for_seat(f"review:{seat_focus}"),
-            budget=budget,
-            events=events,
-        )
-        if events is not None:
-            provider = InstrumentedProvider(
-                inner=provider,
-                role=f"review:{seat_focus}",
-                model=rm.model,
-                provider_name=rm.provider,
-                events=events,
-                budget=budget,
-                seat_index=seat_index,
-                conversations=conversations or conversation_state.Conversations(),
             )
         seats.append(
             review_gate.ReviewSeat(
-                focus=seat_focus,
-                model=f"{rm.provider}/{rm.model}",
-                provider=provider,
+                focus=entry.focus,
+                settings=kinds.ModelSettings(
+                    kinds.ModelRoute(rm.provider, rm.model), rm.effort, rm.temperature
+                ),
                 scope=cfg.review.scope,
-                temperature=rm.temperature,
-                media_input=input_capabilities(cfg, rm),
             )
         )
     return seats
