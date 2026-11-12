@@ -173,7 +173,7 @@ def test_reviewers_refuse_strings_blank_focus_and_unknown_fields(entry: object) 
 def test_reviewer_sampling_reaches_provider_call(
     scope: str, pinned: bool, overrides: dict[str, object], effort: str, temperature: float
 ) -> None:
-    """Both review scopes send per-entry settings, including off and zero, to the provider."""
+    """Both scopes send per-entry settings, off and zero included; a pinned seat inherits too."""
     route = {"model": "o/moonshotai/kimi-k2"}
     cfg = Config.model_validate(
         {
@@ -222,9 +222,6 @@ def test_reviewer_sampling_reaches_provider_call(
         )
     assert result.n_abstain == 0
     expected_effort = {"enabled": False} if effort == "off" else {"effort": effort}
-    # Pinned routes use RoleModel defaults unless the entry sets sampling explicitly.
-    if pinned and not overrides:
-        expected_effort, temperature = {"effort": "low"}, 0.0
     assert captured["reasoning"] == expected_effort
     assert captured["temperature"] == temperature
 

@@ -359,7 +359,7 @@ Each `reviewers` entry has these fields:
 <!-- config-table: review.reviewers.<entry> -->
 
 Set `model = "provider/model"` to pin a route; omit it to inherit the resolved reviewer role.
-An unpinned entry inherits the role's sampling settings; a pinned entry defaults to `temperature = 0.0` and unset effort.
+Every omitted field inherits the resolved reviewer role's value, `model` pinned or not.
 Explicit `effort = "off"` and `temperature = 0.0` override inherited values.
 `model_quorum` requires at least `min_blocking_models` distinct resolved provider/model routes at config validation.
 Different focuses or effort levels on one route still count as one blocking model.

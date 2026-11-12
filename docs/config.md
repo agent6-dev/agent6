@@ -472,7 +472,7 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 | `min_blocking_models` | `2` | distinct provider/model routes required to block with `review.block_on = "model_quorum"`; two seats on one route counted once, even with different focus or effort |
 | `max_review_rejections` | `4` | ends rejectable by a gating panel per run (`finish_session`, silent finish, settled or plateau stop); count preserved across resumes, never reset; at the cap: panels and findings retained, every end accepted, no indefinite panel stall |
 | `min_remaining_budget_fraction` | `0.25` | remaining-budget fraction below which the panel is skipped and the finish accepted; `review.min_remaining_budget_fraction = 0.25`: no panel in the last quarter |
-| `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `model`, `temperature` and `effort`; routing omitted: inherited `[models.reviewer]`; pinned route: role-model defaults, `model` is a provider/model route; empty roster: one `security` seat when `review.trigger` is on |
+| `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `model`, `temperature` and `effort`; every omitted field inherits the resolved `[models.reviewer]`, `model` pinned or not; `model` is a provider/model route; empty roster: one `security` seat when `review.trigger` is on |
 | `concurrency` | `1` | simultaneous in-loop panel seats; `review.concurrency = 1`: one after another |
 | `scope` | `"diff"` | How much a review seat reads; repository review uses several calls and reads the checkout, so the reviewed head must be checked out with a clean tree.<ul><li><code>diff</code>: One review call over diff, task and verification</li><li><code>repo</code>: Read-only tool review of surrounding repository</li></ul> |
 | `repo_max_turns` | `20` | provider-call cap for a `review.scope = "repo"` seat, tool calls included; no verdict within the cap: abstention, reported by the panel |
@@ -490,7 +490,7 @@ Each `reviewers` entry has these fields:
 | `effort` | none | reasoning effort; route's value when unset; `effort = "off"` an explicit override<ul><li><code>off</code>: Disable reasoning effort</li><li><code>low</code>: Use low reasoning effort</li><li><code>medium</code>: Use medium reasoning effort</li><li><code>high</code>: Use high reasoning effort</li><li><code>xhigh</code>: Use extra-high reasoning effort where supported</li><li><code>max</code>: Use maximum reasoning effort where supported</li></ul> |
 
 Set `model = "provider/model"` to pin a route; omit it to inherit the resolved reviewer role.
-An unpinned entry inherits the role's sampling settings; a pinned entry defaults to `temperature = 0.0` and unset effort.
+Every omitted field inherits the resolved reviewer role's value, `model` pinned or not.
 Explicit `effort = "off"` and `temperature = 0.0` override inherited values.
 `model_quorum` requires at least `min_blocking_models` distinct resolved provider/model routes at config validation.
 Different focuses or effort levels on one route still count as one blocking model.

@@ -136,13 +136,19 @@ class ReviewerConfig(pydantic.BaseModel):
             reviewer: The resolved reviewer role, or None when unconfigured.
 
         Returns:
-            A pinned route uses RoleModel defaults; an unpinned route inherits the role.
-            None when neither supplies a route.
+            The pinned route or the role's, with the role's sampling settings under the
+            entry's own; None when neither supplies a route.
         """
         route = reviewer
         if self.model is not None:
             pinned = validation.model_route(self.model)
-            route = RoleModel(provider=pinned.provider, model=pinned.model)
+            # The one rule: every omitted field inherits the role, model pinned or not.
+            route = RoleModel(
+                provider=pinned.provider,
+                model=pinned.model,
+                temperature=reviewer.temperature if reviewer is not None else 0.0,
+                effort=reviewer.effort if reviewer is not None else None,
+            )
         if route is None:
             return None
         return RoleModel(
@@ -638,9 +644,9 @@ class ReviewConfig(pydantic.BaseModel):
         json_schema_extra={"display_safe": True},
         description=(
             "ordered panel roster of tables with `focus` and optional `model`, "
-            "`temperature` and `effort`; routing omitted: inherited `[models.reviewer]`; pinned "
-            "route: role-model defaults, `model` is a provider/model route; empty "
-            "roster: one `security` seat when `review.trigger` is on"
+            "`temperature` and `effort`; every omitted field inherits the resolved "
+            "`[models.reviewer]`, `model` pinned or not; `model` is a provider/model route; "
+            "empty roster: one `security` seat when `review.trigger` is on"
         ),
     )
     concurrency: int = pydantic.Field(
