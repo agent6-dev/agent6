@@ -15,7 +15,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from agent6 import __version__
+from agent6 import __version__, kinds
 from agent6.config import header_config
 from agent6.providers import provider_types
 
@@ -40,11 +40,11 @@ class RequestContext:
     is_subagent: bool
     initiator: str
     observe: Callable[[RequestFacts], None] | None = None
-    call_context: provider_types.CallContext | None = None
+    call_context: kinds.CallContext | None = None
 
     @classmethod
     def initiated_by(
-        cls, initiator: str, *, call_context: provider_types.CallContext | None = None
+        cls, initiator: str, *, call_context: kinds.CallContext | None = None
     ) -> RequestContext:
         """Return the partial context a caller states the initiator with.
 

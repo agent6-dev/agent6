@@ -61,6 +61,7 @@ def test_transcript_reference_lists_the_written_keys(tmp_path: pathlib.Path) -> 
     """The transcript table follows the writer, including its call and request ids."""
     import json
 
+    from agent6 import kinds
     from agent6.providers import provider_types
 
     path = provider_types.TranscriptSink(tmp_path, objects_dir=tmp_path / "objects").record(
@@ -68,7 +69,7 @@ def test_transcript_reference_lists_the_written_keys(tmp_path: pathlib.Path) -> 
         request_body={},
         response_status=200,
         response_body={},
-        call_context=provider_types.CallContext(),
+        call_context=kinds.CallContext(),
         request_id="attempt",
     )
     page = _generator().build_markdown()

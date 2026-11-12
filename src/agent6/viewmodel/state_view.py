@@ -24,6 +24,7 @@ from agent6.viewmodel import state as session_fold
 PUBLIC_STATE_FIELDS = (
     "session_id",
     "mode",
+    "execution_id",
     "tasks",
     "cursor_task_id",
     "last_role",

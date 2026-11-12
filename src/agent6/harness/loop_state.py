@@ -14,7 +14,7 @@ from __future__ import annotations
 import dataclasses
 import uuid
 
-from agent6 import review_records
+from agent6 import kinds, review_records
 from agent6.harness import (
     advice,
     finish_gates,
@@ -70,6 +70,8 @@ class LoopState:
         focus: The DAG focus guard.
         gates: The finish gates' state.
         execution_id: The identity of this execution.
+        call_context: The identity of the turn's model call, stamped on the tool rows it
+            dispatches; None before the first call.
         review_panels: Durable panel records, including prior executions.
         budget_nudges: The budget nudge state.
     """
@@ -107,6 +109,7 @@ class LoopState:
     focus: guards.FocusGuard = dataclasses.field(default_factory=guards.FocusGuard)
     gates: finish_gates.FinishGates = dataclasses.field(default_factory=finish_gates.FinishGates)
     execution_id: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex)
+    call_context: kinds.CallContext | None = None
     review_panels: tuple[review_records.ReviewPanel, ...] = ()
     budget_nudges: guards.BudgetNudges = dataclasses.field(default_factory=guards.BudgetNudges)
 

@@ -335,10 +335,10 @@ def test_loaded_executions_keep_distinct_tools_and_resume_the_same_run(
         call,
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
-    seen: list[tuple[str, str, int, str]] = []
+    seen: list[tuple[str, str, str]] = []
 
     def run(session: acp_session.Session, text: str) -> str:
-        seen.append((session.acp_id, session.session_id, session.execution, text))
+        seen.append((session.acp_id, session.session_id, text))
         return "end_turn"
 
     sessions = _sessions(run)
@@ -367,7 +367,7 @@ def test_loaded_executions_keep_distinct_tools_and_resume_the_same_run(
         sessions,
     )
     assert reply["result"] == {"stopReason": "end_turn"}
-    assert seen == [(d.name, d.name, 2, "more")]
+    assert seen == [(d.name, d.name, "more")]
 
 
 def test_close_drops_an_idle_conversation_and_cancels_a_running_one(
@@ -434,7 +434,6 @@ def test_reopened_thread_seeds_execution_without_replaying_on_resume(
     sessions = _sessions(None)
     frames = _drive(_msg(1, method, cwd=str(cwd), sessionId=saved.name) + b"\n", sessions)
     assert frames[-1]["result"] == {}
-    assert sessions.get({"sessionId": saved.name}).execution == 2
     if method == "session/resume":
         assert len(frames) == 1
 

@@ -146,7 +146,9 @@ class _Dispatcher(_StubDispatcher):
     def resolved_skills(self) -> Any:  # pragma: no cover - not used by _drive_loop
         return types.SimpleNamespace(warnings=[], enabled=[], always=[])
 
-    def dispatch(self, name: str, tool_input: dict[str, Any]) -> results.ToolResult:
+    def dispatch(
+        self, name: str, tool_input: dict[str, Any], *, origin: object = None
+    ) -> results.ToolResult:
         if name == "read_file":
             path = str(tool_input.get("path", ""))
             body = {"a.md": "A" * 4000, "b.md": "B" * 600}[path]

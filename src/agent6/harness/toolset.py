@@ -110,9 +110,11 @@ def build_readonly_review_tools(
     """
     tools = [t for t in tool_definitions(dispatcher, mode="run") if t.name in READONLY_REVIEW_TOOLS]
 
-    def dispatch(name: str, tool_input: dict[str, Any]) -> results.ToolResult:
+    def dispatch(
+        name: str, tool_input: dict[str, Any], *, origin: kinds.ToolCallOrigin | None = None
+    ) -> results.ToolResult:
         if name not in READONLY_REVIEW_TOOLS:
             raise tool_errors.ToolError(f"review reviewer may not call {name!r} (read-only)")
-        return dispatcher.dispatch(name, tool_input)
+        return dispatcher.dispatch(name, tool_input, origin=origin)
 
     return tools, dispatch

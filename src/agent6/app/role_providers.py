@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6 import budget as agent6_budget
-from agent6 import media
+from agent6 import kinds, media
 from agent6.app import conversation_state
 from agent6.config import (
     AnthropicProviderEntry,
@@ -435,7 +435,7 @@ class InstrumentedProvider:
             ProviderError: The inner call failed; the provider name is filled in.
         """
         call_context = (context.call_context if context is not None else None) or (
-            provider_types.CallContext(seat_index=self.seat_index)
+            kinds.CallContext(seat_index=self.seat_index)
         )
         caller_observe = context.observe if context is not None else None
 
@@ -455,16 +455,17 @@ class InstrumentedProvider:
         # Every live view subscribes to the delta events; a caller callback chains through.
         role_for_event = self.role
         events = self.events
+        identity = call_context.event_fields()
 
         def _on_text(piece: str) -> None:
             if events is not None:
-                events.emit(journal.RoleTextDelta(role=role_for_event, text=piece))
+                events.emit(journal.RoleTextDelta(role=role_for_event, text=piece, **identity))
             if text_delta_callback is not None:
                 text_delta_callback(piece)
 
         def _on_thinking(piece: str) -> None:
             if events is not None:
-                events.emit(journal.RoleThinkingDelta(role=role_for_event, text=piece))
+                events.emit(journal.RoleThinkingDelta(role=role_for_event, text=piece, **identity))
             if thinking_delta_callback is not None:
                 thinking_delta_callback(piece)
 
@@ -518,7 +519,7 @@ class InstrumentedProvider:
         self._emit_budget()
         return resp
 
-    def _identity(self, call_context: provider_types.CallContext) -> dict[str, Any]:
+    def _identity(self, call_context: kinds.CallContext) -> dict[str, Any]:
         """Return the fields that pair a `role.call` with its `role.result`."""
         return {
             "role": self.role,

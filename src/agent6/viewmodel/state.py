@@ -103,13 +103,14 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
         state = dataclasses.replace(state, log_tail=new_log, log_count=state.log_count + 1)
 
     match events.parse_event(event):
-        case journal.SessionStart(user_task=task):
+        case journal.SessionStart(user_task=task, execution_id=eid):
             # The ask REPL re-runs on one log, so a second start clears the prior end.
             # No banking, unlike ResumeStart: the REPL's one tracker is already cumulative.
             return dataclasses.replace(
                 state,
                 task_label=state.task_label.start(task),
                 mode=str(event.get("mode", state.mode)),
+                execution_id=eid,
                 started=True,
                 finished=False,
                 verification=None,
@@ -126,12 +127,13 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 tool_count=0,
             )
 
-        case journal.SessionResume(user_task=task, steer=steer):
+        case journal.SessionResume(user_task=task, steer=steer, execution_id=eid):
             # The new execution's counters start fresh: bank the spend, zero the rest.
             return dataclasses.replace(
                 state,
                 task_label=state.task_label.resume(task, steer),
                 mode=str(event.get("mode", state.mode)),
+                execution_id=eid,
                 started=True,
                 finished=False,
                 verification=None,

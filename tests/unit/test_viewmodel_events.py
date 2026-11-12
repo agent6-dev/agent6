@@ -95,3 +95,33 @@ def test_coercion_matches_the_folds_historical_defaults() -> None:
         }
     )
     assert isinstance(done, journal.ToolResult) and done.exit_code == 1 and done.duration_s is None
+
+
+def test_tool_rows_and_deltas_read_their_call_identity() -> None:
+    """The execution, the model call, the seat and the provider's block id ride into the records."""
+    call = ev.parse_event(
+        {
+            "type": "tool.call",
+            "name": "read_file",
+            "args_preview": {},
+            "call_id": 3,
+            "execution_id": "e1",
+            "model_call_id": "c1",
+            "panel_id": "p",
+            "seat_index": 1,
+            "provider_tool_call_id": "toolu_1",
+        }
+    )
+    assert isinstance(call, journal.ToolCall)
+    assert (call.execution_id, call.model_call_id, call.panel_id, call.seat_index) == (
+        "e1",
+        "c1",
+        "p",
+        1,
+    )
+    assert call.provider_tool_call_id == "toolu_1"
+    delta = ev.parse_event(
+        {"type": "role.text_delta", "role": "worker", "text": "hi", "model_call_id": "c1"}
+    )
+    assert isinstance(delta, journal.RoleTextDelta) and delta.model_call_id == "c1"
+    assert delta.execution_id is None  # a row without the field leaves it unset

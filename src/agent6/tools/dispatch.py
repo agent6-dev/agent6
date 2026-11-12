@@ -340,7 +340,9 @@ class ToolDispatcher:
             d for d in self._mcp_manager.descriptors() if not self.mcp_denied(d.server_name)
         )
 
-    def dispatch(self, name: str, raw_input: dict[str, Any]) -> results.ToolResult:
+    def dispatch(
+        self, name: str, raw_input: dict[str, Any], *, origin: kinds.ToolCallOrigin | None = None
+    ) -> results.ToolResult:
         """Execute one tool call, journaling a `tool.call` and `tool.result` pair around it.
 
         The pair is emitted here, before any guard and outside the model's reach, so a
@@ -349,6 +351,8 @@ class ToolDispatcher:
         Args:
             name: The tool's name.
             raw_input: The model's arguments.
+            origin: The model call and tool-use block the call answers; None for a call the
+                harness makes itself.
 
         Returns:
             The typed result; the caller serializes it at the wire boundary.
@@ -363,27 +367,32 @@ class ToolDispatcher:
         preview = result_format.truncate_args(raw_input, max_value_chars=max_chars)
         # Concurrent review seats interleave events, and name-based pairing cross-stamps calls.
         cid = next(self._call_seq)
-        self._emit(journal.ToolCall(name=name, args_preview=preview, call_id=cid))
+        identity: dict[str, Any] = {
+            **(origin.event_fields() if origin is not None else {}),
+            "call_id": cid,
+            "execution_id": self.execution_id,
+        }
+        self._emit(journal.ToolCall(name=name, args_preview=preview, **identity))
         outer = self._gating_call_id()
         self._gating.call_id = cid
         try:
             result = self._dispatch_inner(name, raw_input)
         except tool_errors.ToolError as exc:
-            self._emit(journal.ToolResult(name=name, ok=False, summary=str(exc), call_id=cid))
+            self._emit(journal.ToolResult(name=name, ok=False, summary=str(exc), **identity))
             raise
         except path_safety.ContainmentError as exc:
             # The boundary's refusal reaches the model as the tool's.
-            self._emit(journal.ToolResult(name=name, ok=False, summary=str(exc), call_id=cid))
+            self._emit(journal.ToolResult(name=name, ok=False, summary=str(exc), **identity))
             raise tool_errors.ToolError(str(exc)) from exc
         except tool_errors.OperatorCommandUnexecutableError as exc:
-            self._emit(journal.ToolResult(name=name, ok=False, summary=str(exc), call_id=cid))
+            self._emit(journal.ToolResult(name=name, ok=False, summary=str(exc), **identity))
             raise
         except pydantic.ValidationError as exc:
             message = arguments.invalid_arguments(exc)
-            self._emit(journal.ToolResult(name=name, ok=False, summary=message, call_id=cid))
+            self._emit(journal.ToolResult(name=name, ok=False, summary=message, **identity))
             raise tool_errors.ToolError(message) from exc
         except Exception as exc:
-            self._emit(journal.ToolResult(name=name, ok=False, summary=str(exc), call_id=cid))
+            self._emit(journal.ToolResult(name=name, ok=False, summary=str(exc), **identity))
             raise tool_errors.ToolError(f"failed: {exc}") from exc
         finally:
             self._gating.call_id = outer
@@ -392,7 +401,7 @@ class ToolDispatcher:
                 name=name,
                 ok=True,
                 summary=result.summary(),
-                call_id=cid,
+                **identity,
                 **result_format.tool_result_fields(name, result),
             )
         )

@@ -92,7 +92,7 @@ def test_risk_ablation_changes_only_the_risk_line(
                 focus="security",
                 model_route="p/m",
                 tools=[],
-                dispatch=lambda _name, _args: results.RawResult({}),
+                dispatch=lambda _name, _args, origin=None: results.RawResult({}),
                 max_turns=2,
             )
         else:
@@ -503,7 +503,7 @@ def test_repo_review_returns_a_verdict_on_the_sixth_call(monkeypatch: pytest.Mon
     )
     dispatched: list[str] = []
 
-    def dispatch(name: str, inp: dict[str, Any]) -> results.ToolResult:
+    def dispatch(name: str, inp: dict[str, Any], *, origin: object = None) -> results.ToolResult:
         dispatched.append(name)
         return results.RawResult({"matches": ["caller.py:9: read_doc(x)"]})
 
@@ -538,7 +538,7 @@ def test_repo_review_abstains_after_six_calls_without_a_verdict() -> None:
         focus="s",
         model_route="m1",
         tools=[],
-        dispatch=lambda n, i: results.RawResult({"entries": []}),
+        dispatch=lambda n, i, origin=None: results.RawResult({"entries": []}),
         max_turns=6,
     )
     assert v.error == "repo: no verdict within 6 calls"
@@ -558,7 +558,7 @@ def test_repo_review_skips_dispatch_on_final_turn() -> None:
     )
     dispatched: list[str] = []
 
-    def dispatch(name: str, inp: dict[str, Any]) -> results.ToolResult:
+    def dispatch(name: str, inp: dict[str, Any], *, origin: object = None) -> results.ToolResult:
         dispatched.append(name)
         return results.RawResult({"ok": True})
 
@@ -596,7 +596,7 @@ def test_run_panel_routes_repo_tier_seats() -> None:
         panel_id="p",
         repo_max_turns=2,
         tools=[],
-        dispatch=lambda n, i: results.RawResult({"ok": True}),
+        dispatch=lambda n, i, origin=None: results.RawResult({"ok": True}),
     )
     assert prov.calls == 2 and res.blocked is True  # repo seat ran the tool loop + blocked
 
@@ -632,7 +632,7 @@ def test_repo_review_honors_verdict_alongside_tool_use_on_last_turn() -> None:
         focus="s",
         model_route="m1",
         tools=[],
-        dispatch=lambda n, i: results.RawResult({"ok": True}),
+        dispatch=lambda n, i, origin=None: results.RawResult({"ok": True}),
         max_turns=1,
     )
     assert v.error is None and v.verdict == "block"
@@ -825,7 +825,7 @@ def test_repo_review_preserves_image_result() -> None:
         focus="ui",
         model_route="p/m",
         tools=[],
-        dispatch=lambda name, inp: results.ReadMediaResult(image),
+        dispatch=lambda name, inp, origin=None: results.ReadMediaResult(image),
         max_turns=2,
     )
     assert verdict.error is None

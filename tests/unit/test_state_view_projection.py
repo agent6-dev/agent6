@@ -13,6 +13,7 @@ def test_every_state_field_has_an_explicit_wire_classification() -> None:
         "budget",
         "session_id",
         "cursor_task_id",
+        "execution_id",
         "tool_count",
         "finish_summary",
         "log_count",

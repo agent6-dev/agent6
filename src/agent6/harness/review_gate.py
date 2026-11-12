@@ -111,6 +111,7 @@ def run_panel(
     dispatch: review_seat.ReviewDispatch | None = None,
     media_rejections: provider_call.MediaRejections | None = None,
     emit: Callable[..., None] | None = None,
+    execution_id: str | None = None,
 ) -> review_panel.PanelResult:
     """Run every seat over the same context and aggregate the verdicts in seat order.
 
@@ -126,6 +127,7 @@ def run_panel(
         dispatch: The read-only dispatch for repo seats.
         media_rejections: Execution-local unsupported facts, shared only by identical routes.
         emit: The journal emitter for delivery refusals.
+        execution_id: The execution the panel reviews for, carried by the seats' events.
 
     Returns:
         The aggregated panel result.
@@ -150,12 +152,14 @@ def run_panel(
                     s.media_input, rejections.setdefault(s.media_input.route, set())
                 ),
                 emit=emit,
+                execution_id=execution_id,
             )
         return review_seat.structured_review(
             s.provider,
             seat_ctx,
             seat_index=i,
             panel_id=panel_id,
+            execution_id=execution_id,
             focus=s.focus,
             model_route=s.model,
             temperature=s.temperature,
@@ -554,6 +558,7 @@ class Reviewer:
                 dispatch=dispatch,
                 media_rejections=self.media_rejections,
                 emit=self.emit,
+                execution_id=state.execution_id,
             )
         except budget.BudgetExceededError:
             self.emit(journal.LoopReviewSkipped(**identity, reason="budget"))

@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, media, task_text, terminal
+from agent6 import errors, kinds, media, task_text, terminal
 from agent6.config import Config
 from agent6.context import memory as agent6_memory
 from agent6.context import skills
@@ -719,6 +719,8 @@ class Harness:
             The response, the end of the execution, or `NEXT_TURN` when a mid-stream
             steer discarded the turn.
         """
+        # One identity per turn: the attempts share it, and the turn's tool rows name it.
+        state.call_context = kinds.CallContext(execution_id=self.execution_id)
         try:
             return provider_call.call_with_media_recovery(
                 lambda messages: self.caller.call(
@@ -727,6 +729,7 @@ class Harness:
                     tools,
                     self._worker_max_tokens(state),
                     initiator=conversation.initiator,
+                    call_context=state.call_context,
                 ),
                 conversation,
                 provider_call.MediaRecovery(
@@ -857,7 +860,15 @@ class Harness:
                     # The provider's front-end refused the input; the same error is the result.
                     raise tool_errors.ToolError(refusal)
                 tree_before = tool_effects.tree_before_command(self, name)
-                result = self.dispatcher.dispatch(name, tool_input)
+                result = self.dispatcher.dispatch(
+                    name,
+                    tool_input,
+                    origin=(
+                        kinds.ToolCallOrigin(state.call_context, tu.id)
+                        if state.call_context is not None
+                        else None
+                    ),
+                )
                 attachment = result.attachment
                 if attachment is not None and (reason := media_budget.refusal(attachment)):
                     attachment = None

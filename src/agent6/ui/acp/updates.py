@@ -231,27 +231,22 @@ def replay(
     *,
     acp_session_id: str,
     cwd: pathlib.Path,
-    notify: Callable[[dict[str, Any]], None] | None = None,
-) -> int:
+    notify: Callable[[dict[str, Any]], None],
+) -> None:
     """Replay a recorded run through the shared fold and ACP projection.
 
     Args:
         rows: The run's events in emission order.
         acp_session_id: The conversation id, also the recorded run's id.
         cwd: The working directory for tool locations.
-        notify: Sends each notification before load returns; None only counts executions.
-
-    Returns:
-        The number of recorded executions, for the next prompt's tool call ids.
+        notify: Sends each notification before load returns.
     """
-    if notify is None:
-        return sum(event.get("type") in journal.SESSION_START_EVENTS for event in rows)
     fold = transcript.TranscriptFold()
-    execution = 0
+    execution, executions = "", 0
     announced: set[str] = set()
 
     def send(item: transcript_items.TranscriptItem, paths: tuple[str, ...] = ()) -> None:
-        wire_id = tool_call_id(item, acp_session_id, max(1, execution))
+        wire_id = tool_call_id(item, acp_session_id, execution)
         for body in updates_for(
             item,
             acp_session_id=acp_session_id,
@@ -275,11 +270,12 @@ def replay(
             send(wire_item, paths)
         if event_type in journal.SESSION_START_EVENTS:
             # The fold settles the previous execution's open calls before this boundary.
-            execution += 1
+            executions += 1
+            # A journal from before execution ids numbers its executions instead.
+            execution = str(event.get("execution_id") or executions)
             announced.clear()
     for item in fold.settle_open_calls("the run died"):
         send(item)
-    return execution
 
 
 def result_paths(event: dict[str, Any]) -> tuple[str, ...]:
@@ -337,7 +333,7 @@ def updates_for(
         text = " ".join(part for part in ("committed", item.arg, item.detail) if part)
         return [message_update(acp_session_id, text)]
     if item.kind in ("tool", "verify"):
-        wire_id = wire_id or _execution_call_id(item)
+        wire_id = wire_id or execution_call_id(item)
         if item.ok is None and not announced:
             update = {"sessionUpdate": "tool_call", **_tool_call(item, wire_id)}
         else:
@@ -460,12 +456,12 @@ def _tool_locations(paths: tuple[str, ...], cwd: pathlib.Path) -> list[dict[str,
     return [{"path": str(path)} for path in dict.fromkeys(resolved)]
 
 
-def wire_call_id(session_id: str, execution: int, within_execution: str) -> str:
+def wire_call_id(session_id: str, execution: str, within_execution: str) -> str:
     """Return a tool call's wire id, `<run>:<execution>:<call>`, unique for the ACP session.
 
     Args:
         session_id: The run id; "" leaves the stamp bare.
-        execution: The execution's number within the run.
+        execution: The execution's id from its start row.
         within_execution: The dispatcher's stamp, a counter that restarts every execution.
 
     Returns:
@@ -474,14 +470,14 @@ def wire_call_id(session_id: str, execution: int, within_execution: str) -> str:
     return f"{session_id}:{execution}:{within_execution}" if session_id else within_execution
 
 
-def _execution_call_id(item: transcript_items.TranscriptItem) -> str:
+def execution_call_id(item: transcript_items.TranscriptItem) -> str:
     """Return the item's stamped call id, or its name and arg for an event with no stamp."""
     return item.call_id or (f"{item.name}:{item.arg}" if item.arg else item.name)
 
 
-def tool_call_id(item: transcript_items.TranscriptItem, session_id: str, execution: int) -> str:
+def tool_call_id(item: transcript_items.TranscriptItem, session_id: str, execution: str) -> str:
     """Return the wire id for a fold item."""
-    return wire_call_id(session_id, execution, _execution_call_id(item))
+    return wire_call_id(session_id, execution, execution_call_id(item))
 
 
 def _tool_call(item: transcript_items.TranscriptItem, wire_id: str) -> dict[str, Any]:

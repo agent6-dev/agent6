@@ -897,7 +897,9 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: pathlib.Path
     calls: list[str] = []
 
     class _Dispatcher(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             calls.append(name)
             return tools_results.MetricResult(
                 returncode=0,
@@ -973,7 +975,9 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             self.calls.append(name)
             if name == "run_verify_command":
                 return tools_results.ExecResult(
@@ -1069,7 +1073,9 @@ def test_drive_loop_tracks_turns_reached(tmp_path: pathlib.Path) -> None:
             return _tool_resp("finish_session", {"summary": "done"}, tool_id="tool-2")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "run_verify_command":
                 return tools_results.ExecResult(
                     returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
@@ -1157,7 +1163,9 @@ def test_abnormal_end_keeps_an_observed_red_verdict(
             raise AssertionError("max_turns should stop before another call")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             del name, raw_input
             return tools_results.ExecResult(
                 returncode=1, stdout="red", stderr="", duration_s=5.0, exec_failed=False
@@ -1481,7 +1489,9 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: pathlib.Path) -> No
             return _tool_resp("finish_session", {"summary": "added median()"}, tool_id="m2")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "finish_session":
                 return tools_results.RawResult(
                     {"acknowledged": True, "summary": raw_input["summary"]}
@@ -1620,7 +1630,9 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: pathlib
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             del raw_input
             self.calls.append(name)
             if name == "run_verify_command":
@@ -1686,7 +1698,9 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: path
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             del raw_input
             self.calls.append(name)
             if name == "run_verify_command":
@@ -1782,7 +1796,9 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
             return _tool_resp("finish_session", {"summary": "done"}, tool_id="fin")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "run_verify_command":
                 return tools_results.ExecResult(
                     returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
@@ -1868,7 +1884,9 @@ def test_an_editing_turn_checkpoints_whatever_the_gate_policy(tmp_path: pathlib.
             return _tool_resp("finish_session", {"summary": "done"}, tool_id="fin")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "apply_edit":
                 return tools_results.RawResult({"ok": True})
             if name == "finish_session":
@@ -2025,7 +2043,9 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: pathlib.Path)
             return _tool_resp("finish_session", {"summary": "done"}, tool_id="fin")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "finish_session":
                 return tools_results.RawResult(
                     {"acknowledged": True, "summary": raw_input["summary"]}
@@ -2093,7 +2113,9 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: pathlib.Path) -> None:
             # Improves to 50, then ties: three plateaus draw a pivot nudge, the fourth stops.
             self.scores = iter([100.0, 80.0, 60.0, 50.0, 50.0, 50.0, 50.0, 50.0])
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             del raw_input
             self.calls.append(name)
             if name == "run_verify_command":
@@ -2183,7 +2205,9 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: pathlib.Path) -> No
             self.calls: list[str] = []
             self.scores = iter([100.0, 80.0, 60.0, 50.0, 50.0])
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             self.calls.append(name)
             if name == "run_verify_command":
                 return tools_results.ExecResult(
@@ -2280,7 +2304,9 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: pa
             # Ties 5-8 land in runway and consume no patience; 9-11 draw the final nudge, 12 stops.
             self.scores = iter([100.0, 80.0, 60.0, 50.0] + [50.0] * 8)
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             del raw_input
             self.calls.append(name)
             if name == "run_verify_command":
@@ -2372,7 +2398,9 @@ def test_drive_loop_plan_finish_nudge_fires_once_at_iter_cap(tmp_path: pathlib.P
             return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r-{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             assert name == "read_file"
             return tools_results.RawResult({"content": "..."})
 
@@ -2421,7 +2449,9 @@ def test_drive_loop_plan_finish_nudge_fires_on_low_budget(
             return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r-{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             return tools_results.RawResult({"content": "..."})
 
     provider = ProviderStub()
@@ -2469,7 +2499,9 @@ def test_drive_loop_run_budget_nudge_forces_verify_and_finish(
             return _tool_resp("list_dir", {"path": "."}, tool_id=f"l-{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             return tools_results.RawResult({"content": "..."})
 
     provider = ProviderStub()
@@ -2511,7 +2543,9 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> 
             return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             return tools_results.ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
@@ -2582,7 +2616,9 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
             return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             return tools_results.ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
@@ -2715,7 +2751,9 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(
             return _tool_resp("read_file", {"path": f"f{self.calls}.py"}, tool_id=f"r{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "finish_session":
                 return tools_results.RawResult(
                     {"acknowledged": True, "summary": raw_input["summary"]}
@@ -2771,7 +2809,9 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: pathlib.Path) -
             return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")  # always re-verify
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             return tools_results.ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
@@ -2834,7 +2874,9 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: pathlib.Path
             return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "run_metric_command":
                 return tools_results.MetricResult(
                     returncode=0,
@@ -2920,7 +2962,9 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: pathlib.Pa
             # Plateaus at the 5th sample and stays flat thereafter.
             self.scores = iter([100.0, 80.0, 60.0, 50.0] + [50.0] * 20)
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             del raw_input
             self.calls.append(name)
             if name == "run_verify_command":
@@ -3014,7 +3058,9 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: pathlib.Pat
             )
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             del name, raw_input
             return tools_results.RawResult({"ok": True})
 
@@ -3082,7 +3128,9 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: pathlib.Path) 
             return _tool_resp("finish_session", {"summary": "done"}, tool_id=f"finish-{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             del name, raw_input
             return tools_results.RawResult({"ok": True})
 
@@ -3160,7 +3208,9 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: pathlib.Path
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             del raw_input
             self.calls.append(name)
             return tools_results.RawResult({"ok": True})
@@ -3275,7 +3325,9 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
             )
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             del raw_input
             if name == "run_verify_command":
                 return tools_results.ExecResult(
@@ -4438,7 +4490,9 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
             )
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             del name, raw_input
             return tools_results.RawResult({"ok": True})
 
@@ -4532,7 +4586,9 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
             return _resp("SUMMARY of progress so far")  # no checkoff block
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "finish_session":
                 return tools_results.RawResult(
                     {"acknowledged": True, "summary": raw_input.get("summary", "")}
@@ -5309,7 +5365,9 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
             return _resp("SUMMARY of progress so far")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "finish_session":
                 return tools_results.RawResult(
                     {"acknowledged": True, "summary": raw_input.get("summary", "")}
@@ -5432,7 +5490,9 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: pathlib.Path) -> Non
             return _tool_resp("run_command", {"cmd": f"ls {self.calls}"}, tool_id=f"c{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             return tools_results.ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
@@ -5639,7 +5699,9 @@ def test_question_nudge_then_accept(tmp_path: pathlib.Path) -> None:
             return _resp("Anything else you want?")  # would-be second question
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "ask_user":
                 return tools_results.RawResult({"answers": ["dracula"]})
             raise AssertionError(f"unexpected tool: {name}")
@@ -5735,7 +5797,9 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: pathlib.P
         def __init__(self) -> None:
             self.verifies = 0
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "run_verify_command":
                 self.verifies += 1
                 return tools_results.ExecResult(
@@ -5813,7 +5877,9 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: pathlib.Pa
         def __init__(self) -> None:
             self.verifies = 0
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "run_verify_command":
                 self.verifies += 1
                 return tools_results.ExecResult(
@@ -5897,7 +5963,9 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: pat
             return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "run_verify_command":
                 return tools_results.ExecResult(
                     returncode=1,
@@ -6038,7 +6106,9 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: pathlib.P
             return _resp("Done: applied the fix.")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             return tools_results.RawResult({"applied": True, "path": "f.py"})
 
     provider = ProviderStub()
@@ -6107,7 +6177,9 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: pathlib.Path) ->
             return _tool_resp("run_verify_command", tool_id=f"v{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "run_verify_command":
                 return tools_results.ExecResult(
                     returncode=1,
@@ -6192,7 +6264,9 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: pathli
     big = "界" * 4000
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "read_file":
                 return tools_results.RawResult({"content": big, "size": len(big)})
             return tools_results.RawResult({"ok": True})
@@ -6274,7 +6348,9 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: pathlib.Path) 
     from agent6.tools import tool_errors
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             raise tool_errors.ToolError(
                 "read_file: the arguments were not valid JSON. Resend the call."
             )
@@ -6358,7 +6434,9 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: path
         def __init__(self) -> None:
             self.calls = 0
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             self.calls += 1
             if self.calls == 1:
                 # A real exec failure records argv[0]="git"; a ToolError never entered the jail.
@@ -6439,7 +6517,9 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: pathlib.Path) 
         def __init__(self) -> None:
             self.n = 0
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             self.n += 1
             if self.n % 2 == 0:  # alternate error / success
                 return tools_results.RawResult({"content": "ok"})
@@ -6632,7 +6712,9 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: pathlib.P
     from agent6.tools import tool_errors
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             raise tool_errors.ToolError("python3: boom in the sandbox")
 
     provider = ProviderStub()
@@ -6696,7 +6778,9 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
             return _tool_resp("read_file", {"path": f"a{self.calls}.py"}, tool_id=f"r{self.calls}")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             return tools_results.ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
@@ -6768,7 +6852,9 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -
             )
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             return tools_results.ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
@@ -6842,7 +6928,9 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> 
             )
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             return tools_results.ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
@@ -6916,7 +7004,9 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
             )
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             return tools_results.ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
@@ -7022,7 +7112,9 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
             self.adopted = argv
             return True
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             return tools_results.ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
@@ -7097,7 +7189,9 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
         def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:
             return False  # the jail cannot execute the inferred runner
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             return tools_results.ExecResult(
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
@@ -7152,7 +7246,9 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: pathlib
     """Two exec failures of a host-present binary emit the unreachable event once."""
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "run_command":
                 return tools_results.ExecResult(
                     returncode=127,
@@ -7221,7 +7317,9 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: pathlib.P
     from agent6.tools import tool_errors
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "run_command":
                 raise tool_errors.ToolError(
                     "1 validation error for RunCommandInput: env extra_forbidden"
@@ -8074,7 +8172,9 @@ def test_turn_marker_covers_dispatch_and_clears_after_the_snapshot(tmp_path: pat
             return _tool_resp("finish_session", {"summary": "done"}, tool_id="tool-2")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             seen.append(loop_snapshot.read_turn_marker(marker))
             if name == "run_verify_command":
                 return tools_results.ExecResult(
@@ -8124,7 +8224,9 @@ def test_an_end_declared_mid_turn_clears_the_turn_marker(tmp_path: pathlib.Path)
             return _tool_resp("run_verify_command")
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             assert marker.exists()
             raise tool_errors.OperatorCommandUnexecutableError("verify command 'npm' not in jail")
 
@@ -8161,7 +8263,9 @@ def _die_in_the_second_call(tmp_path: pathlib.Path) -> pathlib.Path:
             return _two_call_resp()
 
     class DispatcherStub(_StubDispatcher):
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "run_command":
                 raise _Died
             return tools_results.RawResult({"content": "the file"})
@@ -8211,7 +8315,9 @@ def test_a_resume_after_a_death_mid_turn_does_not_run_the_cut_off_call_again(
         def set_run_root_node_id(self, _node_id: str) -> None:
             return None
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             dispatched.append(name)
             return tools_results.RawResult({"acknowledged": True, "summary": "done"})
 
@@ -9098,7 +9204,9 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
         def __init__(self) -> None:
             self.scores = iter([100.0, 80.0, 60.0, 50.0, 50.0, 50.0, 50.0, 50.0])
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "run_verify_command":
                 return tools_results.ExecResult(
                     returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
@@ -9198,7 +9306,9 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
         def command_policy(self) -> str:
             return "deny"
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "finish_session":
                 return tools_results.FinishSessionResult(
                     summary_text=str(raw_input.get("summary", "")), result=None
@@ -9282,7 +9392,9 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Pat
             self.adopted.append(tuple(argv))
             return True
 
-        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+        def dispatch(
+            self, name: str, raw_input: dict[str, Any], *, origin: object = None
+        ) -> tools_results.ToolResult:
             if name == "finish_session":
                 return tools_results.FinishSessionResult(
                     summary_text=str(raw_input.get("summary", "")), result=None

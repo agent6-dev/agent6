@@ -13,7 +13,7 @@ from unittest import mock
 import httpx2
 import pytest
 
-from agent6 import portable
+from agent6 import kinds, portable
 from agent6.providers import openai, provider_types, request_headers, stream_lifecycle
 from agent6.sessions import objects
 
@@ -140,7 +140,7 @@ def test_stream_attempt_keeps_one_record_with_its_outcome(
                 should_abort=stream.stop.is_set if ending == "aborted" else None,
                 should_interrupt=stream.stop.is_set if ending == "interrupted" else None,
                 context=request_headers.RequestContext.initiated_by(
-                    "user", call_context=provider_types.CallContext(model_call_id="logical-call")
+                    "user", call_context=kinds.CallContext(model_call_id="logical-call")
                 ),
             )
         except (provider_types.ProviderError, asyncio.CancelledError, KeyboardInterrupt) as exc:

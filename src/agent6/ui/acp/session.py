@@ -43,8 +43,6 @@ class Session:
         cwd: The working directory.
         session_id: agent6's run id; "" until the first prompt mints it. Later prompts
             resume it, following an undo to its continuation.
-        execution: The execution in progress, 1-based: the first prompt starts the run and
-            each later prompt resumes it.
         thread: The execution's worker.
         cancelled: The operator cancelled the execution.
         execution_live: Cleared before the prompt answers, since the thread is still alive
@@ -58,7 +56,6 @@ class Session:
     acp_id: str
     cwd: pathlib.Path
     session_id: str = ""
-    execution: int = 0
     thread: threading.Thread | None = None
     cancelled: bool = False
     execution_live: bool = False
@@ -212,14 +209,7 @@ class Sessions:
                     rpc.INVALID_PARAMS, "that session already has a prompt in flight"
                 )
             return {}  # the conversation is open already; its counters carry on
-        execution = updates.replay(
-            tail.tail_events(saved.logs_path, follow=False),
-            acp_session_id=session_id,
-            cwd=cwd,
-        )
-        self._by_id[session_id] = Session(
-            acp_id=session_id, cwd=cwd, session_id=session_id, execution=execution
-        )
+        self._by_id[session_id] = Session(acp_id=session_id, cwd=cwd, session_id=session_id)
         return {}
 
     def load(
@@ -240,13 +230,12 @@ class Sessions:
         self.resume(params)
         session = self.get(params)
         saved = session.layout(self.state_dir_for(session.cwd))
-        execution = updates.replay(
+        updates.replay(
             tail.tail_events(saved.logs_path, follow=False),
             acp_session_id=session.acp_id,
             cwd=session.cwd,
             notify=notify,
         )
-        session.execution = max(session.execution, execution)
         return {}
 
     def close(self, params: dict[str, Any]) -> dict[str, Any]:

@@ -4,10 +4,12 @@
 
 from __future__ import annotations
 
+import pathlib
 from typing import Any
 
+from agent6 import kinds
 from agent6.harness import loop_conversation, provider_call
-from agent6.providers import ProviderError, ProviderResponse, provider_types, request_headers
+from agent6.providers import ProviderError, ProviderResponse, request_headers
 
 
 def _ok() -> ProviderResponse:
@@ -79,7 +81,7 @@ def test_a_retried_call_keeps_its_logical_call_id() -> None:
     class _Flaky:
         def call(self, **kw: Any) -> ProviderResponse:
             # As the instrumented provider does: mint an id only when the caller sent none.
-            call_context = kw["context"].call_context or provider_types.CallContext()
+            call_context = kw["context"].call_context or kinds.CallContext()
             seen.append(call_context.model_call_id)
             if len(seen) == 1:
                 raise ProviderError("busy", status_code=503)
@@ -88,3 +90,56 @@ def test_a_retried_call_keeps_its_logical_call_id() -> None:
     _caller(_Flaky(), retry_count=1).call("s", [], [], 10)
     assert len(seen) == 2
     assert len(set(seen)) == 1, seen
+
+
+def test_a_given_call_context_is_shared_by_every_attempt() -> None:
+    """The caller's context, with its execution, reaches each attempt unchanged."""
+    seen: list[kinds.CallContext] = []
+
+    class _Flaky:
+        def call(self, **kw: Any) -> ProviderResponse:
+            seen.append(kw["context"].call_context)
+            if len(seen) == 1:
+                raise ProviderError("busy", status_code=503)
+            return _ok()
+
+    given = kinds.CallContext(model_call_id="given", execution_id="exec-1")
+    _caller(_Flaky(), retry_count=1).call("s", [], [], 10, call_context=given)
+    assert seen == [given, given]
+
+
+def test_streamed_deltas_carry_the_call_identity(tmp_path: pathlib.Path) -> None:
+    """Each delta row names the model call and the execution its role.call names."""
+    import json
+
+    from agent6 import budget as agent6_budget
+    from agent6.app import role_providers
+    from agent6.sessions import event_log
+
+    class _Streaming:
+        def call(self, **kw: Any) -> ProviderResponse:
+            kw["text_delta_callback"]("hi")
+            kw["thinking_delta_callback"]("hmm")
+            return _ok()
+
+    logs = tmp_path / "logs.jsonl"
+    wrapper = role_providers.InstrumentedProvider(
+        inner=_Streaming(),  # pyright: ignore[reportArgumentType]
+        role="worker",
+        model="m",
+        provider_name="p",
+        events=event_log.EventSink(logs),
+        budget=agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
+        stream_text=True,
+    )
+    given = kinds.CallContext(model_call_id="given", execution_id="exec-1")
+    wrapper.call(
+        system="s",
+        messages=[],
+        context=request_headers.RequestContext.initiated_by("agent", call_context=given),
+    )
+    rows = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
+    by_type = {row["type"]: row for row in rows}
+    for name in ("role.call", "role.text_delta", "role.thinking_delta", "role.result"):
+        assert by_type[name]["model_call_id"] == "given", name
+        assert by_type[name]["execution_id"] == "exec-1", name

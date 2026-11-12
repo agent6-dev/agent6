@@ -1207,6 +1207,10 @@ class ProviderRequest(Event):
     """An HTTP attempt was made for a model call."""
 
     TYPE: ClassVar[str] = "provider.request"
+    execution_id: str | None = pydantic.Field(
+        default=None,
+        description="The execution the call ran in; null for a call outside one.",
+    )
     role: str = pydantic.Field(description="The calling model role.")
     provider: str = pydantic.Field(description="Configured provider name.")
     model: str = pydantic.Field(description="Model identifier.")
@@ -1257,6 +1261,10 @@ class RoleCall(Event):
     """A model call started for a role."""
 
     TYPE: ClassVar[str] = "role.call"
+    execution_id: str | None = pydantic.Field(
+        default=None,
+        description="The execution the call ran in; null for a call outside one.",
+    )
     panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
     role: str = pydantic.Field(description="The calling model role.")
     model: str = pydantic.Field(description="Model identifier.")
@@ -1274,6 +1282,10 @@ class RoleResult(Event):
     """A model call returned or failed. Failed calls include usage only when reported."""
 
     TYPE: ClassVar[str] = "role.result"
+    execution_id: str | None = pydantic.Field(
+        default=None,
+        description="The execution the call ran in; null for a call outside one.",
+    )
     panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
     role: str = pydantic.Field(description="The calling model role.")
     model: str = pydantic.Field(description="Model identifier.")
@@ -1320,6 +1332,19 @@ class RoleTextDelta(Event):
     TYPE: ClassVar[str] = "role.text_delta"
     role: str = pydantic.Field(description="The calling model role.")
     text: str = pydantic.Field(description="The event's text.")
+    execution_id: str | None = pydantic.Field(
+        default=None,
+        description="The execution the call ran in; null for a call outside one.",
+    )
+    model_call_id: str | None = pydantic.Field(
+        default=None,
+        description="The model call streaming the piece; null in a journal written before ids.",
+    )
+    panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
+    seat_index: int | None = pydantic.Field(
+        default=None,
+        description="The review seat's roster position; null outside a review seat.",
+    )
 
 
 class RoleThinkingDelta(Event):
@@ -1328,6 +1353,19 @@ class RoleThinkingDelta(Event):
     TYPE: ClassVar[str] = "role.thinking_delta"
     role: str = pydantic.Field(description="The calling model role.")
     text: str = pydantic.Field(description="The event's text.")
+    execution_id: str | None = pydantic.Field(
+        default=None,
+        description="The execution the call ran in; null for a call outside one.",
+    )
+    model_call_id: str | None = pydantic.Field(
+        default=None,
+        description="The model call streaming the piece; null in a journal written before ids.",
+    )
+    panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
+    seat_index: int | None = pydantic.Field(
+        default=None,
+        description="The review seat's roster position; null outside a review seat.",
+    )
 
 
 class SessionResume(Event):
@@ -1424,6 +1462,23 @@ class ToolCall(Event):
             "The tool call correlated with this event; null in a journal written before ids."
         ),
     )
+    execution_id: str | None = pydantic.Field(
+        default=None,
+        description="The dispatching execution; null in a journal written before ids.",
+    )
+    model_call_id: str | None = pydantic.Field(
+        default=None,
+        description="The model call whose response made the call; null for a harness-run tool.",
+    )
+    panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
+    seat_index: int | None = pydantic.Field(
+        default=None,
+        description="The review seat's roster position; null outside a review seat.",
+    )
+    provider_tool_call_id: str | None = pydantic.Field(
+        default=None,
+        description="The provider's tool-use id for the block; null for a harness-run tool.",
+    )
 
 
 class ToolResult(Event):
@@ -1440,6 +1495,23 @@ class ToolResult(Event):
         description=(
             "The tool call correlated with this event; null in a journal written before ids."
         ),
+    )
+    execution_id: str | None = pydantic.Field(
+        default=None,
+        description="The dispatching execution; null in a journal written before ids.",
+    )
+    model_call_id: str | None = pydantic.Field(
+        default=None,
+        description="The model call whose response made the call; null for a harness-run tool.",
+    )
+    panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
+    seat_index: int | None = pydantic.Field(
+        default=None,
+        description="The review seat's roster position; null outside a review seat.",
+    )
+    provider_tool_call_id: str | None = pydantic.Field(
+        default=None,
+        description="The provider's tool-use id for the block; null for a harness-run tool.",
     )
     exit_code: int | None = pydantic.Field(
         default=None,

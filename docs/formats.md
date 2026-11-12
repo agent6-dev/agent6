@@ -1168,6 +1168,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
 | `role` | `str` | The calling model role. |
 | `provider` | `str` | Configured provider name. |
 | `model` | `str` | Model identifier. |
@@ -1205,6 +1206,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
 | `panel_id` | `str, optional` | Review panel identifier. |
 | `role` | `str` | The calling model role. |
 | `model` | `str` | Model identifier. |
@@ -1218,6 +1220,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
 | `panel_id` | `str, optional` | Review panel identifier. |
 | `role` | `str` | The calling model role. |
 | `model` | `str` | Model identifier. |
@@ -1242,6 +1245,10 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `role` | `str` | The calling model role. |
 | `text` | `str` | The event's text. |
+| `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
+| `model_call_id` | `str, optional` | The model call streaming the piece; null in a journal written before ids. |
+| `panel_id` | `str, optional` | Review panel identifier. |
+| `seat_index` | `int, optional` | The review seat's roster position; null outside a review seat. |
 
 ### role.thinking_delta
 
@@ -1251,6 +1258,10 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `role` | `str` | The calling model role. |
 | `text` | `str` | The event's text. |
+| `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
+| `model_call_id` | `str, optional` | The model call streaming the piece; null in a journal written before ids. |
+| `panel_id` | `str, optional` | Review panel identifier. |
+| `seat_index` | `int, optional` | The review seat's roster position; null outside a review seat. |
 
 ### session.resume
 
@@ -1327,6 +1338,11 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `name` | `str` | Tool or skill name. |
 | `args_preview` | `object` | The arguments with long values clipped, or a skill's argument text. |
 | `call_id` | `int, optional` | The tool call correlated with this event; null in a journal written before ids. |
+| `execution_id` | `str, optional` | The dispatching execution; null in a journal written before ids. |
+| `model_call_id` | `str, optional` | The model call whose response made the call; null for a harness-run tool. |
+| `panel_id` | `str, optional` | Review panel identifier. |
+| `seat_index` | `int, optional` | The review seat's roster position; null outside a review seat. |
+| `provider_tool_call_id` | `str, optional` | The provider's tool-use id for the block; null for a harness-run tool. |
 
 ### tool.result
 
@@ -1338,6 +1354,11 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `ok` | `bool` | Whether the handler returned a result; a command's failure is its exit_code. |
 | `summary` | `str` | The result or outcome in words. |
 | `call_id` | `int, optional` | The tool call correlated with this event; null in a journal written before ids. |
+| `execution_id` | `str, optional` | The dispatching execution; null in a journal written before ids. |
+| `model_call_id` | `str, optional` | The model call whose response made the call; null for a harness-run tool. |
+| `panel_id` | `str, optional` | Review panel identifier. |
+| `seat_index` | `int, optional` | The review seat's roster position; null outside a review seat. |
+| `provider_tool_call_id` | `str, optional` | The provider's tool-use id for the block; null for a harness-run tool. |
 | `exit_code` | `int, optional` | A command's exit code; null while it runs in the background or when unknown. |
 | `duration_s` | `float, optional` | A command's wall-clock seconds until the result. |
 | `timed_out` | `bool, optional` | Whether the runner ended the command at its deadline. |
@@ -1620,6 +1641,7 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | --- | --- | --- |
 | `session_id` | `JSON` | The journaled session identifier with the directory name as fallback. |
 | `mode` | `JSON` | The session mode with the manifest as fallback. |
+| `execution_id` | `str` | The current execution's id, "" until its start is read. |
 | `tasks` | `tuple[TaskNodeView, ...]` | The live task tree in DFS pre-order. |
 | `cursor_task_id` | `str \| None` | The task the worker is on. |
 | `last_role` | `RoleCall \| None` | The last model call. |

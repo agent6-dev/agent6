@@ -191,6 +191,17 @@ _OUTCOME_KEYS = (
 )
 
 
+_IDENTITY_KEYS = ("execution_id", "model_call_id", "panel_id", "provider_tool_call_id")
+
+
+def _call_identity(raw: dict[str, Any]) -> dict[str, Any]:
+    """Return a row's model-call identity fields, each when present."""
+    fields: dict[str, Any] = {key: raw[key] for key in _IDENTITY_KEYS if key in raw}
+    if "seat_index" in raw:
+        fields["seat_index"] = _seat_index(raw)
+    return fields
+
+
 def _call_id(raw: dict[str, Any]) -> int | None:
     """Return the event's `call_id` when it is an int, else None."""
     cid = raw.get("call_id")
@@ -271,6 +282,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 provider=_text(raw, "provider"),
                 model_call_id=_text(raw, "model_call_id"),
                 seat_index=_seat_index(raw),
+                execution_id=raw.get("execution_id"),
             )
         case "role.result":
             return journal.RoleResult(
@@ -279,6 +291,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 provider=_text(raw, "provider"),
                 model_call_id=_text(raw, "model_call_id"),
                 seat_index=_seat_index(raw),
+                execution_id=raw.get("execution_id"),
                 ok=raw.get("ok") is not False,
                 tokens_in=as_int(raw.get("tokens_in")),
                 tokens_out=as_int(raw.get("tokens_out")),
@@ -286,13 +299,20 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 cache_creation=as_int(raw.get("cache_creation")),
             )
         case "role.text_delta":
-            return journal.RoleTextDelta(role=_text(raw, "role"), text=_text(raw, "text"))
+            return journal.RoleTextDelta(
+                role=_text(raw, "role"), text=_text(raw, "text"), **_call_identity(raw)
+            )
         case "role.thinking_delta":
-            return journal.RoleThinkingDelta(role=_text(raw, "role"), text=_text(raw, "text"))
+            return journal.RoleThinkingDelta(
+                role=_text(raw, "role"), text=_text(raw, "text"), **_call_identity(raw)
+            )
         case "tool.call":
             # The call happened even with garbled args, and the preview is display-only downstream.
             return journal.ToolCall(
-                name=_text(raw, "name"), args_preview=call_args(raw), call_id=_call_id(raw)
+                name=_text(raw, "name"),
+                args_preview=call_args(raw),
+                call_id=_call_id(raw),
+                **_call_identity(raw),
             )
         case "tool.result":
             return journal.ToolResult(
@@ -300,6 +320,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 ok=tool_result_ok(raw.get("ok")),
                 summary=readable_summary(raw.get("summary", "")),
                 call_id=_call_id(raw),
+                **_call_identity(raw),
                 **{key: raw[key] for key in _OUTCOME_KEYS if key in raw},
             )
         case "verify.start":

@@ -325,6 +325,7 @@ class SessionState:
     Attributes:
         session_id: The session's id, "" until an event carries it.
         mode: The session's mode, "" until known.
+        execution_id: The current execution's id, "" until its start is read.
         task_label: The first non-empty task and latest resume steer from the journal.
         tasks: The live task tree in DFS pre-order.
         cursor_task_id: The task the worker is on.
@@ -368,6 +369,7 @@ class SessionState:
 
     session_id: str = ""
     mode: str = ""
+    execution_id: str = ""
     task_label: session_status.TaskLabel = dataclasses.field(
         default_factory=session_status.TaskLabel
     )

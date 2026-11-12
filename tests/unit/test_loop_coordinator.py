@@ -711,7 +711,9 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: pathlib.Path) ->
         last_verification=None, execution_id="execution", verify_withheld=False
     )
 
-    def dispatch(_name: str, _input: dict[str, Any]) -> tools_results.RawResult:
+    def dispatch(
+        _name: str, _input: dict[str, Any], *, origin: object = None
+    ) -> tools_results.RawResult:
         (repo / "wip.txt").write_text("uncommitted work\n", encoding="utf-8")
         return tools_results.RawResult({"content": "wrote wip.txt"})
 
@@ -768,7 +770,9 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
         last_verification=None, execution_id="execution", verify_withheld=False
     )
 
-    def dispatch(_name: str, _input: dict[str, Any]) -> tools_results.RawResult:
+    def dispatch(
+        _name: str, _input: dict[str, Any], *, origin: object = None
+    ) -> tools_results.RawResult:
         (repo / "wip.txt").write_text("uncommitted\n", encoding="utf-8")
         return tools_results.RawResult({"content": "ok"})
 

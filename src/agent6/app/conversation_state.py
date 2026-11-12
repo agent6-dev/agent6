@@ -18,8 +18,8 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from agent6 import portable
-from agent6.providers import provider_types, request_headers
+from agent6 import kinds, portable
+from agent6.providers import request_headers
 
 FILE_NAME = "conversations.json"
 
@@ -32,7 +32,7 @@ class _Route:
     completed: int = 0
 
 
-def _route_key(role: str, provider: str, call_context: provider_types.CallContext | None) -> str:
+def _route_key(role: str, provider: str, call_context: kinds.CallContext | None) -> str:
     """Return a panel seat key or a role and provider key."""
     if (
         call_context is not None
@@ -80,7 +80,7 @@ class Conversations:
         *,
         initiator: str,
         observe: Callable[[request_headers.RequestFacts], None] | None = None,
-        call_context: provider_types.CallContext | None = None,
+        call_context: kinds.CallContext | None = None,
     ) -> request_headers.RequestContext:
         """Return the context of one model call, minting the conversation on first use.
 
@@ -111,7 +111,7 @@ class Conversations:
             )
 
     def completed(
-        self, role: str, provider: str, *, call_context: provider_types.CallContext | None = None
+        self, role: str, provider: str, *, call_context: kinds.CallContext | None = None
     ) -> None:
         """Record one answered call of a conversation.
 

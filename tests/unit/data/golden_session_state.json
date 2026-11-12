@@ -1,6 +1,7 @@
 {
   "session_id": "golden-run-GLDN01",
   "mode": "run",
+  "execution_id": "",
   "tasks": [
     {
       "id": "ok",

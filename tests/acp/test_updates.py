@@ -362,8 +362,8 @@ def test_a_tool_call_id_is_unique_across_a_runs_executions() -> None:
     item = transcript_items.TranscriptItem(
         kind="tool", name="run_command", arg="ls", ok=True, call_id="1"
     )
-    first = acp_updates.tool_call_id(item, "brave-oak-AAAAAA", 1)
-    second = acp_updates.tool_call_id(item, "brave-oak-AAAAAA", 2)
+    first = acp_updates.tool_call_id(item, "brave-oak-AAAAAA", "a")
+    second = acp_updates.tool_call_id(item, "brave-oak-AAAAAA", "b")
     assert first != second
     assert first.startswith("brave-oak-AAAAAA:")
     (announced,) = acp_updates.updates_for(item, acp_session_id="s", wire_id=first)
@@ -633,3 +633,9 @@ def test_journal_end_leaves_the_receipt_pointer_to_the_footer() -> None:
     messages = updates_for_events(rows, acp_session_id="s")
     messages += [message for row in rows for message in info.feed(row)]
     assert "receipt" not in json.dumps(messages)
+
+
+def test_a_wire_id_carries_the_execution_id_from_the_start_row() -> None:
+    """`<run>:<execution id>:<call>`; a bare stamp when the run has no id."""
+    assert acp_updates.wire_call_id("run-x", "exec-a", "7") == "run-x:exec-a:7"
+    assert acp_updates.wire_call_id("", "exec-a", "7") == "7"

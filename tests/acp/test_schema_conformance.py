@@ -59,7 +59,7 @@ def _notifications() -> list[dict[str, Any]]:
                 updates.updates_for(
                     item,
                     acp_session_id="s",
-                    wire_id=updates.tool_call_id(item, "brave-oak-AAAAAA", 1),
+                    wire_id=updates.tool_call_id(item, "brave-oak-AAAAAA", "1"),
                     announced=item.call_id in announced,
                 )
             )
@@ -119,7 +119,7 @@ def test_each_fold_item_projects_to_a_valid_update(item: transcript_items.Transc
     notifications = updates.updates_for(
         item,
         acp_session_id="s",
-        wire_id=updates.tool_call_id(item, "r", 1),
+        wire_id=updates.tool_call_id(item, "r", "1"),
         cwd=pathlib.Path("/repo"),
         paths=paths,
     )
@@ -178,11 +178,9 @@ def test_a_permission_request_is_one_a_client_can_answer() -> None:
         return {}
 
     bridge.server.request = _capture  # pyright: ignore[reportAttributeAccessIssue]
-    session = acp_session.Session(
-        acp_id="s", cwd=pathlib.Path("/x"), session_id="run-x", execution=1
-    )
-    announced = runner.Announced(execution=1)
-    announced.add("run-x:1:7")
+    session = acp_session.Session(acp_id="s", cwd=pathlib.Path("/x"), session_id="run-x")
+    announced = runner.Announced(execution_id="1")
+    announced.add("7")
     four = ("allow", "allow all", "deny", "deny all")  # a scoped approval's answers
     bridge.ask(session, announced, "Allow run_command: ls", four, True, 7)
     bridge.ask(session, announced, "Theme?", ("dark", "light"), None, None)

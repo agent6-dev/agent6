@@ -25,7 +25,7 @@ from agent6 import paths as agent6_paths
 from agent6.app import finalize, frontend, resume, session_setup
 from agent6.app import reporter as app_reporter
 from agent6.app import run as app_run
-from agent6.sessions import id, ipc
+from agent6.sessions import id, ipc, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.ui import keymap, spawn
 from agent6.ui.acp import frontend as acp_frontend
@@ -204,18 +204,20 @@ def _selected(answer: dict[str, Any], options: tuple[str, ...]) -> str | None:
 
 
 class Announced:
-    """Register one execution's number and the tool calls the editor has been told about.
+    """Register one execution's id and the tool calls the editor has been told about.
 
     A permission request waits here until the call it names is announced, so the
     editor never hears of a call first through its approval. The wait ends on
     liveness, never a clock: the tail closes the register when it stops reading.
+    Calls are registered by the dispatcher's stamp; the tail learns the execution's
+    id from its start row, before any call.
 
     Attributes:
-        execution: The execution's number within the run.
+        execution_id: The execution's id; "" until the tail reads its start row.
     """
 
-    def __init__(self, execution: int) -> None:
-        self.execution = execution
+    def __init__(self, execution_id: str = "") -> None:
+        self.execution_id = execution_id
         self._ids: set[str] = set()
         self._closed = False
         self._changed = threading.Condition()
@@ -299,10 +301,10 @@ class RunBridge:
         if not options:
             return None
         if call_id is not None:
-            gated = updates.wire_call_id(session.session_id, announced.execution, str(call_id))
-            announced.wait_for(gated, abandoned=lambda: session.cancelled)
-            if session.cancelled or gated not in announced:
+            announced.wait_for(str(call_id), abandoned=lambda: session.cancelled)
+            if session.cancelled or str(call_id) not in announced:
                 return None
+            gated = updates.wire_call_id(session.session_id, announced.execution_id, str(call_id))
             tool_call: dict[str, Any] = {
                 "toolCallId": gated,
                 "title": updates.printable(prompt),
@@ -532,11 +534,10 @@ class RunBridge:
             ACP's stop reason.
         """
         layout = session.layout(agent6_paths.state_dir(session.cwd))
-        session.execution += 1
         journal_before = viewmodel_tail.journal_size(layout.logs_path)
 
         said: list[str] = []
-        announced = Announced(execution=session.execution)
+        announced = Announced()
         ended, drained = threading.Event(), threading.Event()
 
         def _stop() -> bool:
@@ -649,6 +650,8 @@ class RunBridge:
                 on_position=_at,
             ):
                 event_type = str(event.get("type", ""))
+                if event_type in journal.SESSION_START_EVENTS:
+                    announced.execution_id = str(event.get("execution_id") or "")
                 for body in info.feed(event) if info is not None else ():
                     self.server.notify_raw(body)
                 paths = updates.result_paths(event) if event_type == "tool.result" else ()
@@ -680,7 +683,7 @@ class RunBridge:
         finally:
             announced.close()
             for item in fold.settle_open_calls("the run died"):
-                wire_id = updates.tool_call_id(item, session.session_id, announced.execution)
+                wire_id = updates.tool_call_id(item, session.session_id, announced.execution_id)
                 for body in updates.updates_for(
                     item,
                     acp_session_id=session.acp_id,
@@ -715,9 +718,10 @@ class RunBridge:
         """
         if item.kind == "task" or (item.kind == "operator" and item.body.strip() == prompt.strip()):
             return
+        within = updates.execution_call_id(item) if item.kind in ("tool", "verify") else ""
         wire_id = (
-            updates.tool_call_id(item, session.session_id, announced.execution)
-            if item.kind in ("tool", "verify")
+            updates.wire_call_id(session.session_id, announced.execution_id, within)
+            if within
             else ""
         )
         wire_item = item
@@ -735,13 +739,13 @@ class RunBridge:
             wire_item,
             acp_session_id=session.acp_id,
             wire_id=wire_id,
-            announced=wire_id in announced,
+            announced=within in announced,
             cwd=session.cwd,
             paths=paths,
         ):
             self.server.notify_raw(body)
-        if item.kind in ("tool", "verify"):
-            announced.add(wire_id)
+        if within:
+            announced.add(within)
         elif item.kind == "done":
             _stderr(
                 "\n\n".join(part for part in (item.body.strip(), updates.status_line(item)) if part)

@@ -1361,3 +1361,15 @@ def test_a_reused_question_id_names_the_latest_question(tmp_path: pathlib.Path) 
     carried = resume_questions.carried_questions(log)
     assert [(q.id, q.questions[0].question) for q in carried.pending] == [("question-1", "new?")]
     assert carried.next_number == 2
+
+
+def test_the_state_names_its_execution_from_the_start_rows() -> None:
+    """The live state carries the current execution's id, and a resume replaces it."""
+    s = viewmodel_state.apply_event(
+        viewmodel_state.initial_state(),
+        {"type": "session.start", "mode": "run", "user_task": "t", "execution_id": "first"},
+    )
+    assert s.execution_id == "first"
+    s = viewmodel_state.apply_event(s, {"type": "session.resume", "execution_id": "second"})
+    assert s.execution_id == "second"
+    assert session_state_as_dict(s)["execution_id"] == "second"

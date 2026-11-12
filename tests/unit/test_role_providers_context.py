@@ -98,7 +98,7 @@ def _mock_http(monkeypatch: pytest.MonkeyPatch, *, reject_temperature: bool = Fa
 
 
 def _panel(providers: session_runtime.SessionProviders, panel_id: str) -> None:
-    def dispatch(_name: str, _args: dict[str, Any]) -> results.ToolResult:
+    def dispatch(_name: str, _args: dict[str, Any], *, origin: object = None) -> results.ToolResult:
         raise AssertionError("the response requests no tools")
 
     result = review_gate.run_panel(

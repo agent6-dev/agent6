@@ -555,7 +555,7 @@ class ClaudeCodeProvider:
         system: str,
         messages: list[dict[str, Any]],
         resp: provider_types.ProviderResponse,
-        call_context: provider_types.CallContext | None,
+        call_context: kinds.CallContext | None,
     ) -> None:
         """Record the round as one transcript entry, then clear the stdin log."""
         if self.transcript_sink is None:

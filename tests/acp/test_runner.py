@@ -472,7 +472,7 @@ def test_an_approval_round_trips_through_the_editor() -> None:
     assert (
         bridge.ask(
             session,
-            runner.Announced(execution=1),
+            runner.Announced(execution_id="1"),
             "Allow run_command: ls",
             ("allow", "deny"),
             True,
@@ -502,7 +502,7 @@ def test_only_an_option_we_offered_is_an_answer(answer: dict[str, Any]) -> None:
     assert (
         bridge.ask(
             session,
-            runner.Announced(execution=1),
+            runner.Announced(execution_id="1"),
             "Allow run_command: rm -rf /",
             ("allow", "deny"),
             True,
@@ -519,7 +519,7 @@ def test_an_option_id_has_to_match_the_offered_id_exactly() -> None:
     assert (
         bridge.ask(
             session,
-            runner.Announced(execution=1),
+            runner.Announced(execution_id="1"),
             "Allow run_command: rm -rf /",
             ("allow", "deny"),
             True,
@@ -769,7 +769,7 @@ def test_cancelling_while_permission_is_open_releases_the_execution() -> None:
     asker = threading.Thread(
         target=lambda: answered.append(
             bridge.ask(
-                session, runner.Announced(execution=1), "Theme?", ("dark", "light"), None, None
+                session, runner.Announced(execution_id="1"), "Theme?", ("dark", "light"), None, None
             )
         ),
         daemon=True,
@@ -906,13 +906,15 @@ def test_a_question_with_no_buttons_is_not_put_to_the_editor() -> None:
     session = session_mod.Session(acp_id="s", cwd=pathlib.Path("/x"))
     assert (
         bridge.ask(
-            session, runner.Announced(execution=1), "What should the theme be?", (), None, None
+            session, runner.Announced(execution_id="1"), "What should the theme be?", (), None, None
         )
         is None
     )
     assert sent == [], "an unanswerable prompt was still shown"
     assert (
-        bridge.ask(session, runner.Announced(execution=1), "Theme?", ("dark", "light"), None, None)
+        bridge.ask(
+            session, runner.Announced(execution_id="1"), "Theme?", ("dark", "light"), None, None
+        )
         is None
     )
     assert len(sent) == 1, "a question WITH options still goes out"
@@ -931,7 +933,7 @@ def test_an_approval_closes_the_tool_call_it_announced() -> None:
     assert (
         bridge.ask(
             session,
-            runner.Announced(execution=1),
+            runner.Announced(execution_id="1"),
             "Allow run_command: ls",
             ("allow", "deny"),
             True,
@@ -981,7 +983,7 @@ def test_the_approval_dialog_is_scrubbed_too() -> None:
     session = session_mod.Session(acp_id="s", cwd=pathlib.Path("/x"))
     bridge.ask(
         session,
-        runner.Announced(execution=1),
+        runner.Announced(execution_id="1"),
         "Allow run_command: \x1b]0;PWNED\x07ls",
         ("allow\x1b[2J", "deny"),
         True,
@@ -1257,7 +1259,7 @@ def test_a_request_waits_for_the_announcement_only_while_the_tail_reads() -> Non
     """The wait ends on the announcement, the tail's close or a cancel, never on a clock."""
     import time
 
-    announced = runner.Announced(execution=1)
+    announced = runner.Announced(execution_id="1")
     abandoned = threading.Event()
     returned: list[float] = []
 
@@ -1274,7 +1276,7 @@ def test_a_request_waits_for_the_announcement_only_while_the_tail_reads() -> Non
     waiter.join(timeout=5.0)
     assert returned, "the announcement did not release the wait"
 
-    closing = runner.Announced(execution=1)
+    closing = runner.Announced(execution_id="1")
     closer = threading.Thread(
         target=lambda: closing.wait_for("run-x:1:2", abandoned=lambda: False), daemon=True
     )
@@ -1283,7 +1285,7 @@ def test_a_request_waits_for_the_announcement_only_while_the_tail_reads() -> Non
     closer.join(timeout=5.0)
     assert not closer.is_alive(), "a closed register must release every wait"
 
-    cancelled = runner.Announced(execution=1)
+    cancelled = runner.Announced(execution_id="1")
     quitter = threading.Thread(
         target=lambda: cancelled.wait_for("run-x:1:3", abandoned=abandoned.is_set), daemon=True
     )
@@ -1389,17 +1391,16 @@ def test_a_late_tail_keeps_its_own_execution(tmp_path: pathlib.Path) -> None:
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
     server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
     bridge = runner.RunBridge(server=server)
-    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", execution=1)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
     log = tmp_path / "logs.jsonl"
     log.write_text("", encoding="utf-8")
     done = threading.Event()
     tail = threading.Thread(
         target=bridge._stream,  # pyright: ignore[reportPrivateUsage]
-        args=(session, log, done.is_set, False, runner.Announced(execution=1)),
+        args=(session, log, done.is_set, False, runner.Announced(execution_id="1")),
         daemon=True,
     )
     tail.start()
-    session.execution = 2  # the next execution began while this tail still reads
     event_log.EventSink(log).emit(
         journal.ToolCall(name="run_command", args_preview={"argv": ["ls"]}, call_id=1)
     )
@@ -1444,7 +1445,7 @@ def test_model_deltas_stream_once_in_journal_order_and_side_calls_stay_hidden(
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
 
     bridge._stream(  # pyright: ignore[reportPrivateUsage]
-        session, tmp_path / "logs.jsonl", lambda: True, 0, runner.Announced(execution=1)
+        session, tmp_path / "logs.jsonl", lambda: True, 0, runner.Announced(execution_id="1")
     )
 
     chunks = [
@@ -1476,7 +1477,7 @@ def test_a_dead_workers_open_tool_call_is_settled(tmp_path: pathlib.Path) -> Non
     )
 
     bridge._stream(  # pyright: ignore[reportPrivateUsage]
-        session, log, lambda: True, False, runner.Announced(execution=1)
+        session, log, lambda: True, False, runner.Announced(execution_id="1")
     )
 
     statuses = [message["params"]["update"]["status"] for message in sent]
@@ -1849,7 +1850,7 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: pathli
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
     server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
     bridge = runner.RunBridge(server=server)
-    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", execution=1)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
     events.emit(journal.ToolCall(name="run_command", args_preview={"argv": ["ls"]}, call_id=1))
@@ -1862,7 +1863,7 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: pathli
     done = threading.Event()
     tail = threading.Thread(
         target=bridge._stream,  # pyright: ignore[reportPrivateUsage]
-        args=(session, log, done.is_set, False, runner.Announced(execution=1), order),
+        args=(session, log, done.is_set, False, runner.Announced(execution_id="1"), order),
         daemon=True,
     )
     tail.start()
@@ -2007,7 +2008,7 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathli
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
     server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
     bridge = runner.RunBridge(server=server)
-    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", execution=1)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
     log = tmp_path / "logs.jsonl"
     sink = event_log.EventSink(log)
     sink.emit(journal.ToolCall(name="apply_edit", args_preview={"path": "src/x.py"}, call_id=1))
@@ -2030,7 +2031,7 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathli
     )
 
     bridge._stream(  # pyright: ignore[reportPrivateUsage]
-        session, log, lambda: True, 0, runner.Announced(execution=1)
+        session, log, lambda: True, 0, runner.Announced(execution_id="1")
     )
 
     updates = [m["params"]["update"] for m in sent]
@@ -2141,14 +2142,14 @@ def test_the_tail_sends_the_title_the_commands_and_the_usage(tmp_path: pathlib.P
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
     server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
     bridge = runner.RunBridge(server=server)
-    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x", execution=1)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
     log = tmp_path / "logs.jsonl"
     log.write_text("", encoding="utf-8")
     done = threading.Event()
     info = updates.RunInfo(acp_session_id="s", window=lambda _p, _m: 1000)
     tail = threading.Thread(
         target=bridge._stream,  # pyright: ignore[reportPrivateUsage]
-        args=(session, log, done.is_set, False, runner.Announced(execution=1)),
+        args=(session, log, done.is_set, False, runner.Announced(execution_id="1")),
         kwargs={"info": info},
         daemon=True,
     )
@@ -2228,7 +2229,7 @@ def test_a_streamed_final_answer_is_not_sent_again_as_the_end_summary(
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
 
     bridge._stream(  # pyright: ignore[reportPrivateUsage]
-        session, tmp_path / "logs.jsonl", lambda: True, 0, runner.Announced(execution=1)
+        session, tmp_path / "logs.jsonl", lambda: True, 0, runner.Announced(execution_id="1")
     )
 
     texts = [
@@ -2269,7 +2270,7 @@ def test_the_editors_own_prompt_is_not_echoed_back_as_a_user_message(
         tmp_path / "logs.jsonl",
         lambda: True,
         0,
-        runner.Announced(execution=1),
+        runner.Announced(execution_id="1"),
         prompt="Now reply PING.",
     )
 
@@ -2279,3 +2280,36 @@ def test_the_editors_own_prompt_is_not_echoed_back_as_a_user_message(
         if (update := message["params"]["update"])["sessionUpdate"] == "user_message_chunk"
     ]
     assert said == ["keep the API"], sent
+
+
+def test_the_tail_stamps_calls_with_the_execution_id_it_reads(tmp_path: pathlib.Path) -> None:
+    """A call's wire id carries the execution id from the start row the tail read before it."""
+    import time
+
+    from agent6.sessions import event_log
+
+    sent: list[dict[str, Any]] = []
+    server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
+    server.notify_raw = sent.append  # pyright: ignore[reportAttributeAccessIssue]
+    bridge = runner.RunBridge(server=server)
+    session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-x")
+    log = tmp_path / "logs.jsonl"
+    log.write_text("", encoding="utf-8")
+    done = threading.Event()
+    tail = threading.Thread(
+        target=bridge._stream,  # pyright: ignore[reportPrivateUsage]
+        args=(session, log, done.is_set, False, runner.Announced()),
+        daemon=True,
+    )
+    tail.start()
+    sink = event_log.EventSink(log)
+    sink.emit(journal.SessionStart(user_task="t", mode="run", execution_id="exec-a"))
+    sink.emit(journal.ToolCall(name="run_command", args_preview={"argv": ["ls"]}, call_id=1))
+    for _ in range(100):
+        if any("toolCallId" in body["params"]["update"] for body in sent):
+            break
+        time.sleep(0.05)
+    done.set()
+    tail.join(timeout=5.0)
+    ids = [body["params"]["update"].get("toolCallId") for body in sent]
+    assert "run-x:exec-a:1" in ids, sent

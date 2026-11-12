@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import pathlib
+import uuid
 from typing import Any, Literal
 
 # The gate's word at the end: `failed` is an observed red, `unverified` a tree no verdict covers.
@@ -462,6 +463,51 @@ def read_target_stamp(data: object) -> object:
         renamed.setdefault("launcher_digest", version)
         return renamed
     return data
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class CallContext:
+    """Identify one logical model call across its request attempts.
+
+    Attributes:
+        model_call_id: The call's id, shared by its events and transcripts.
+        panel_id: The review panel's id; None outside a panel.
+        seat_index: The seat's zero-based roster position; None outside a review seat.
+        execution_id: The execution the call runs in; None for a call outside one.
+    """
+
+    model_call_id: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex)
+    panel_id: str | None = None
+    seat_index: int | None = None
+    execution_id: str | None = None
+
+    def event_fields(self) -> dict[str, Any]:
+        """Return the call identity, omitting absent seat and execution fields."""
+        fields: dict[str, Any] = {"model_call_id": self.model_call_id}
+        if self.panel_id is not None:
+            fields["panel_id"] = self.panel_id
+        if self.seat_index is not None:
+            fields["seat_index"] = self.seat_index
+        if self.execution_id is not None:
+            fields["execution_id"] = self.execution_id
+        return fields
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ToolCallOrigin:
+    """The model call a tool call answers, and the provider's id for its tool-use block.
+
+    Attributes:
+        call: The model call whose response holds the block.
+        provider_tool_call_id: The provider's tool-use id, the one the result is returned under.
+    """
+
+    call: CallContext
+    provider_tool_call_id: str
+
+    def event_fields(self) -> dict[str, Any]:
+        """Return the origin's fields for a tool.call or tool.result row."""
+        return {**self.call.event_fields(), "provider_tool_call_id": self.provider_tool_call_id}
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

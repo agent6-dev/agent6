@@ -284,6 +284,7 @@ class ProviderCaller:
         max_tokens: int,
         *,
         initiator: str = "agent",
+        call_context: kinds.CallContext | None = None,
     ) -> ProviderResponse:
         """Call the provider under the retry.
 
@@ -294,6 +295,8 @@ class ProviderCaller:
             max_tokens: The output cap.
             initiator: `user` when the latest input is the operator's, else `agent`; every
                 attempt of this logical call carries it.
+            call_context: The logical call's identity, shared by every attempt; a fresh one
+                when the caller names none.
 
         Returns:
             The first usable response, or the last empty one.
@@ -308,7 +311,7 @@ class ProviderCaller:
         attempt = 1
         # One logical call: its retries share the call id, each attempt with its own request id.
         context = request_headers.RequestContext.initiated_by(
-            initiator, call_context=provider_types.CallContext()
+            initiator, call_context=call_context or kinds.CallContext()
         )
         while True:
             try:

@@ -16,37 +16,12 @@ import json
 import math
 import pathlib
 import threading
-import uuid
 from collections.abc import Callable, Generator, Mapping
 from email import utils
 from typing import Any, Literal, Protocol
 
-from agent6 import media, paths, portable
+from agent6 import kinds, media, paths, portable
 from agent6.sessions import objects, retention
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class CallContext:
-    """Identify one logical model call across its request attempts.
-
-    Attributes:
-        model_call_id: The call's id, shared by its events and transcripts.
-        panel_id: The review panel's id; None outside a panel.
-        seat_index: The seat's zero-based roster position; None outside a review seat.
-    """
-
-    model_call_id: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex)
-    panel_id: str | None = None
-    seat_index: int | None = None
-
-    def event_fields(self) -> dict[str, Any]:
-        """Return the call identity, omitting absent seat fields."""
-        fields: dict[str, Any] = {"model_call_id": self.model_call_id}
-        if self.panel_id is not None:
-            fields["panel_id"] = self.panel_id
-        if self.seat_index is not None:
-            fields["seat_index"] = self.seat_index
-        return fields
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -341,7 +316,7 @@ class TranscriptRecorder(Protocol):
         self,
         *,
         url: str = "",
-        call_context: CallContext | None = None,
+        call_context: kinds.CallContext | None = None,
         request_id: str = "",
         request_headers: dict[str, str],
         request_body: dict[str, Any],
@@ -353,7 +328,7 @@ class TranscriptRecorder(Protocol):
         self,
         *,
         url: str = "",
-        call_context: CallContext | None = None,
+        call_context: kinds.CallContext | None = None,
         request_id: str = "",
         request_headers: dict[str, str],
         request_body: dict[str, Any],
@@ -375,7 +350,7 @@ class RoleTranscriptSink:
         self,
         *,
         url: str = "",
-        call_context: CallContext | None = None,
+        call_context: kinds.CallContext | None = None,
         request_id: str = "",
         request_headers: dict[str, str],
         request_body: dict[str, Any],
@@ -405,7 +380,7 @@ class RoleTranscriptSink:
         self,
         *,
         url: str = "",
-        call_context: CallContext | None = None,
+        call_context: kinds.CallContext | None = None,
         request_id: str = "",
         request_headers: dict[str, str],
         request_body: dict[str, Any],
@@ -463,7 +438,7 @@ class TranscriptSink:
         self,
         *,
         url: str = "",
-        call_context: CallContext | None = None,
+        call_context: kinds.CallContext | None = None,
         request_id: str = "",
         request_headers: dict[str, str],
         request_body: dict[str, Any],
@@ -505,7 +480,7 @@ class TranscriptSink:
         self,
         *,
         url: str = "",
-        call_context: CallContext | None = None,
+        call_context: kinds.CallContext | None = None,
         request_id: str = "",
         request_headers: dict[str, str],
         request_body: dict[str, Any],

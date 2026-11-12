@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol
 
 import pydantic
 
@@ -19,15 +19,27 @@ from agent6.providers import (
     ProviderResponse,
     ToolDefinition,
     output_cap_truncated,
-    provider_types,
     request_headers,
 )
 from agent6.sessions import journal
 from agent6.tools import results
 from agent6.vcs import git_files
 
+
 # A read-only dispatch callable for repo-scope seats: (tool_name, input) -> result.
-ReviewDispatch = Callable[[str, dict[str, Any]], results.ToolResult]
+class ReviewDispatch(Protocol):
+    """Run one read-only tool for a review seat."""
+
+    def __call__(
+        self,
+        name: str,
+        tool_input: dict[str, Any],
+        /,
+        *,
+        origin: kinds.ToolCallOrigin | None = None,
+    ) -> results.ToolResult:
+        """Return the tool's result; a tool outside the read-only set is refused."""
+        ...
 
 
 def build_user_message(ctx: review_panel.ReviewContext) -> str:
@@ -125,6 +137,7 @@ def structured_review(
     max_tokens: int = 1500,
     temperature: float | None = 0.0,
     panel_id: str | None = None,
+    execution_id: str | None = None,
 ) -> review_records.ReviewVerdict:
     """Run one diff-scope seat.
 
@@ -137,6 +150,7 @@ def structured_review(
         max_tokens: The output cap of the call.
         temperature: The sampling temperature.
         panel_id: The panel's id, retained across its seat calls.
+        execution_id: The execution the panel reviews for, carried by the seat's events.
 
     Returns:
         The seat's verdict; a provider error or junk output abstains with `error` set.
@@ -150,7 +164,9 @@ def structured_review(
             temperature=temperature,
             context=request_headers.RequestContext.initiated_by(
                 "agent",
-                call_context=provider_types.CallContext(panel_id=panel_id, seat_index=seat_index),
+                call_context=kinds.CallContext(
+                    panel_id=panel_id, seat_index=seat_index, execution_id=execution_id
+                ),
             ),
         )
     except ProviderError as exc:
@@ -231,6 +247,7 @@ def repo_review(
     recovery: provider_call.MediaRecovery | None = None,
     emit: Callable[..., None] | None = None,
     panel_id: str | None = None,
+    execution_id: str | None = None,
 ) -> review_records.ReviewVerdict:
     """Run one repo-scope seat with at most `max_turns` provider calls.
 
@@ -248,6 +265,7 @@ def repo_review(
         recovery: The seat's capability facts and execution-local rejections.
         emit: The journal emitter for delivery refusals.
         panel_id: The panel's id, retained across its seat calls.
+        execution_id: The execution the panel reviews for, carried by the seat's events.
 
     Returns:
         The seat's verdict; a provider error or no valid verdict abstains with `error` set.
@@ -260,19 +278,19 @@ def repo_review(
         route = kinds.ModelRoute(entry if sep else "", model if sep else entry)
         recovery = provider_call.MediaRecovery(media.InputCapabilities(route))
     for i in range(max_turns):
+        call_context = kinds.CallContext(
+            panel_id=panel_id, seat_index=seat_index, execution_id=execution_id
+        )
         try:
             resp = provider_call.call_with_media_recovery(
-                lambda messages: provider.call(
+                lambda messages, call_context=call_context: provider.call(
                     system=system,
                     messages=messages,
                     tools=tools,
                     max_tokens=max_tokens,
                     temperature=temperature,
                     context=request_headers.RequestContext.initiated_by(
-                        "agent",
-                        call_context=provider_types.CallContext(
-                            panel_id=panel_id, seat_index=seat_index
-                        ),
+                        "agent", call_context=call_context
                     ),
                 ),
                 conversation,
@@ -311,7 +329,9 @@ def repo_review(
             name = tu.name
             attachment = None
             try:
-                out = dispatch(name, tu.input or {})
+                out = dispatch(
+                    name, tu.input or {}, origin=kinds.ToolCallOrigin(call_context, tu.id)
+                )
                 attachment = out.attachment
                 content = json.dumps(out.to_wire(), ensure_ascii=False)
                 if attachment is not None and (reason := media_budget.refusal(attachment)):
