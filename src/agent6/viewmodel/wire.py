@@ -206,8 +206,8 @@ def manifest_header(
     if dispatches:
         header["dispatches"] = [dataclasses.asdict(view) for view in dispatches]
     header["session_actions"] = {
-        action: listing.session_action_applies(action, fanout=m.fanout is not None)
-        for action in ("compact", "fork", "merge", "review")
+        action: listing.session_action_applies(action, fanout=m.fanout is not None, mode=m.mode)
+        for action in ("compact", "fork", "merge", "resume", "review")
     }
     header["git_control"] = m.git_control
     header["base_sha"] = m.base_sha

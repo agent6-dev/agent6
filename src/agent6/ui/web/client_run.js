@@ -477,7 +477,11 @@ function paintRun(cards, s) {
       : s.commits_ref ? 'merge ' + s.commits_ref + (s.base_branch ? ' into ' + s.base_branch : '')
       : 'this session recorded no commits to merge');
   }
-  if (cards._composer) cards._composer.setState(s);
+  if (cards._composer) {
+    cards._composer.setState(s);
+    // A review seat's record takes no steer and no resume.
+    cards._composer.style.display = s.session_actions?.resume === false ? 'none' : '';
+  }
   // header
   // The panel's own heading states the mode, the fact that tells an operator
   // what they are looking at.

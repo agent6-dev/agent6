@@ -658,16 +658,21 @@ def live_sessions_in_checkout(state_dir: pathlib.Path) -> tuple[str, ...]:
     return tuple(live)
 
 
-def session_action_applies(action: str, *, fanout: bool) -> bool:
+def session_action_applies(action: str, *, fanout: bool, mode: str = "run") -> bool:
     """Hide loop and commit-chain actions on groups; their event records remain reviewable.
+
+    A bounded read-only conversation's record is read, never acted on: every action is hidden.
 
     Args:
         action: The session action name.
         fanout: Whether the manifest records a fan-out, not an ordinary run with lanes.
+        mode: The session's mode.
 
     Returns:
         Whether the action applies, independent of the session's liveness or git policy.
     """
+    if mode == "read_only":
+        return False
     return not (fanout and action in {"compact", "fork", "merge"})
 
 

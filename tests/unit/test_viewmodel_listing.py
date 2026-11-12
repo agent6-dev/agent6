@@ -1927,5 +1927,12 @@ def test_fanout_has_no_loop_or_commit_actions(action: str) -> None:
     assert listing.session_action_applies(action, fanout=False)
 
 
+@pytest.mark.parametrize("action", ["compact", "fork", "merge", "resume", "review"])
+def test_a_review_seats_record_offers_no_action(action: str) -> None:
+    """The findings card links a seat's page, where Fork and the composer could only refuse."""
+    assert not listing.session_action_applies(action, fanout=False, mode="read_only")
+    assert listing.session_action_applies("resume", fanout=False, mode="ask")
+
+
 def test_fanout_record_can_be_reviewed() -> None:
     assert listing.session_action_applies("review", fanout=True)

@@ -198,10 +198,13 @@ function paintFindings(cards, state) {
     host.appendChild(el('div', 'muted', 'Panel ' + panel.panel_id + ': ' + panel.completion
       + (panel.reason ? ' (' + panel.reason + ')' : '')
       + (result ? ' · worker finish ' + (result.blocked ? 'rejected' : 'not rejected') + ' (review.block_on=' + result.block_on + (result.disarmed ? ', rejection cap reached' : '') + ')' : '')));
+    // One line per seat: its session holds the seat's own conversation.
     for (const seat of panel.seats || []) if (seat.session_id) {
-      const link = el('a', 'sub', `Seat ${seat.seat_index + 1} (${seat.focus}): ${seat.session_id}`);
+      const line = el('div', 'sub', `Seat ${seat.seat_index + 1} (${seat.focus}): `);
+      const link = el('a', null, seat.session_id);
       link.href = '#/session/' + encodeURIComponent(seat.session_id);
-      host.appendChild(link);
+      line.appendChild(link);
+      host.appendChild(line);
     }
   }
   const filters = el('div', 'row wrap'); host.appendChild(filters);
