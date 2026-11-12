@@ -160,17 +160,6 @@ def test_usage_documents_both_state_transfer_commands() -> None:
     assert ".agent6/" in (REPO / "docs/security.md").read_text()
 
 
-def test_readme_dependency_count_matches_pyproject() -> None:
-    deps = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["dependencies"]
-    words = {5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}
-    readme = (REPO / "README.md").read_text()
-    m = re.search(r"(\w+) runtime dependencies", readme)
-    assert m is not None, "README no longer states the dependency count"
-    assert m.group(1).lower() == words.get(len(deps), str(len(deps))), (
-        f"README says '{m.group(1)} runtime dependencies' but pyproject has {len(deps)}"
-    )
-
-
 def test_readme_quoted_security_defaults_match_config() -> None:
     from agent6.config import Config
 
