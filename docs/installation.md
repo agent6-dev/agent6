@@ -103,18 +103,3 @@ It needs no Python, Node or Rust toolchain.
 Preparation never installs dependencies, downloads a launcher or falls back to the host.
 `sandbox.isolation = "container"` activates it ([Commands inside a dev container](cli.md#commands-inside-a-dev-container)).
 See the [installation trust boundary](security.md#container-transport-boundary).
-
-The opt-in runtime test first attaches to this repository's existing labelled dev container with a non-root user and a different workspace path.
-It inspects target evidence and copied logs, then creates a disposable container from the same local image for runtime-client loss and restart checks.
-Only that test-created container receives lifecycle commands; the existing dev container stays running.
-Set `AGENT6_CONTAINER_TEST_ROOT` if its host checkout differs from the test checkout.
-The runtime prefix is explicit and must follow the host's approved CLI policy; agent6 never adds sudo.
-
-```sh
-AGENT6_JAIL_BIN=/absolute/path/to/static/agent6-jail \
-  AGENT6_CONTAINER_TEST_RUNTIME='["sudo", "-n", "docker"]' \
-  uv run pytest -q -s tests/sandbox/test_container_runtime.py
-```
-
-Use `["podman"]` instead on a host whose approved runtime is rootless Podman.
-An absent matching dev container fails the opted-in test rather than substituting another image.
