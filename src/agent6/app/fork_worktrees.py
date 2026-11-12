@@ -117,7 +117,8 @@ def uncommitted_in_worktree(worktree: pathlib.Path, tips: tuple[str, ...]) -> st
         for tip in tips:
             if not git_read.chain_dirty(worktree, tip, None):
                 return ""
-        held = git_read.chain_dirty_paths(worktree, tips[-1], None, 5)
+        # Named against the closest commit: against HEAD every file the run changed differs.
+        held = min((git_read.chain_dirty_paths(worktree, tip, None, 5) for tip in tips), key=len)
     except (errors.GitError, OSError):
         # git runs with cwd=worktree, so a directory that vanished is an OSError: not dirt.
         return ""

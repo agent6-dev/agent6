@@ -1943,6 +1943,26 @@ def test_a_kept_worktree_names_its_uncommitted_files_on_one_line(tmp_path: pathl
     assert phrase.startswith("holds work no commit has: ") and "\n" not in phrase
 
 
+def test_a_kept_worktree_names_only_what_no_commit_has(tmp_path: pathlib.Path) -> None:
+    """The keep line named every file the run changed, committed or not.
+
+    A run's worktree stays at its base commit while the run commits to its chain, so the
+    names come from the run's tip, never from HEAD.
+    """
+    from agent6.app import fork_worktrees
+
+    _init_repo(tmp_path)
+    (tmp_path / "README.md").write_text("the run's edit\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qam", "the run's commit"], check=True)
+    tip = git_read.status(tmp_path).head_sha
+    subprocess.run(["git", "-C", str(tmp_path), "reset", "-q", "--soft", "HEAD~1"], check=True)
+    (tmp_path / "left.txt").write_text("x\n", encoding="utf-8")
+
+    phrase = fork_worktrees.uncommitted_in_worktree(tmp_path, (tip,))
+
+    assert phrase == "holds work no commit has: left.txt"
+
+
 def test_a_worktree_holding_a_commit_no_ref_has_is_kept(tmp_path: pathlib.Path) -> None:
     """A hand commit on a detached worktree HEAD was pruned with it, and no ref kept the commit."""
     from agent6.app import fork_worktrees
