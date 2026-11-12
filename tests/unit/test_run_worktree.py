@@ -1100,7 +1100,7 @@ def test_the_setup_is_journaled_and_a_resume_never_runs_it_again(
     assert cli_main(["run", "--worktree", "--session-id", "wt-SETU05", "add new.txt"]) == 0
 
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU05"))
-    assert manifest.workspace_set_up and manifest.worktree is not None
+    assert manifest.worktree_set_up and manifest.worktree is not None
     (event,) = _setup_events(repo, "wt-SETU05")
     assert event["command"] == ["sh", "-c", "echo ran >> .setup-ran"]
     assert event["exit_code"] == 0 and event["duration_s"] >= 0
@@ -1125,7 +1125,7 @@ def test_a_fork_starts_not_set_up_and_runs_the_setup_command_in_its_own_worktree
 
     assert cli_main(["fork", "wt-SETU06", "--session-id", "wt-FORK06", "--no-run"]) == 0
     forked = sessions_manifest.read_manifest(_run_dir(repo, "wt-FORK06"))
-    assert forked.worktree is not None and not forked.workspace_set_up
+    assert forked.worktree is not None and not forked.worktree_set_up
     assert not (forked.worktree / ".setup-ran").exists()
 
     capsys.readouterr()
@@ -1134,7 +1134,7 @@ def test_a_fork_starts_not_set_up_and_runs_the_setup_command_in_its_own_worktree
 
     assert "setup command: sh -c" in capsys.readouterr().err
     assert (forked.worktree / ".setup-ran").read_text(encoding="utf-8") == "ran\n"
-    assert sessions_manifest.read_manifest(_run_dir(repo, "wt-FORK06")).workspace_set_up
+    assert sessions_manifest.read_manifest(_run_dir(repo, "wt-FORK06")).worktree_set_up
     assert len(_setup_events(repo, "wt-FORK06")) == 1
 
 
@@ -1192,7 +1192,7 @@ def test_a_failed_setup_leaves_the_workspace_not_set_up(
     assert cli_main(["run", "--worktree", "--session-id", "wt-SETU07", "task"]) == 1
     capsys.readouterr()
 
-    assert not sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU07")).workspace_set_up
+    assert not sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU07")).worktree_set_up
     (event,) = _setup_events(repo, "wt-SETU07")
     assert event["exit_code"] == 3
 
@@ -1410,7 +1410,7 @@ def test_a_setup_command_that_leaves_the_gate_path_missing_ends_the_session_sayi
     assert prov.calls == 0
     assert "failed · setup command failed" in out
     assert "the setup command ran (true), and the verify gate's `.venv/bin/python` is still" in out
-    assert not sessions_manifest.read_manifest(_run_dir(repo, "wt-GATE03")).workspace_set_up
+    assert not sessions_manifest.read_manifest(_run_dir(repo, "wt-GATE03")).worktree_set_up
 
 
 def test_a_fork_whose_gate_is_on_an_untracked_path_refuses_before_its_worktree_exists(

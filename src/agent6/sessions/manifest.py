@@ -329,7 +329,7 @@ class SessionManifest(pydantic.BaseModel):
         worktree_git_dir: The repository git dir granted to a linked checkout's jail, recorded
             before any model command, including for an operator-owned checkout. Resume and
             same-checkout forks inherit it; a writable `.git` pointer cannot replace it.
-        workspace_set_up: Whether the setup command ran in the session's own worktree or
+        worktree_set_up: Whether the setup command ran in the session's own worktree or
             clone; a resume runs it only while this is False. A fork's new worktree starts
             False, and an `/undo` fork carries its source's.
         merged: The merge record, None until the run branch is merged.
@@ -371,7 +371,7 @@ class SessionManifest(pydantic.BaseModel):
     forked_from_sha: str | None = None
     worktree: pathlib.Path | None = None
     worktree_git_dir: pathlib.Path | None = None
-    workspace_set_up: bool = False
+    worktree_set_up: bool = False
     merged: MergeStamp | None = None
     includes: IncludedRun | None = None
     parallel: ParallelLineage | None = None

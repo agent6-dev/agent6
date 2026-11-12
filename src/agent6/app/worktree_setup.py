@@ -156,7 +156,7 @@ def session_needs_setup(session_dir: pathlib.Path) -> bool:
     except sessions_manifest.ManifestError:
         return False
     isolated = manifest.worktree is not None or manifest.parallel is not None
-    return isolated and not manifest.workspace_set_up
+    return isolated and not manifest.worktree_set_up
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

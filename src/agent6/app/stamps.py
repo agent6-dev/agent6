@@ -139,7 +139,7 @@ def write_session_manifest(
     worktree: pathlib.Path | None = None,
     worktree_git_dir: pathlib.Path | None = None,
     review_base_tree: str = "",
-    workspace_set_up: bool = False,
+    worktree_set_up: bool = False,
     budget: manifest.BudgetStamp | None = None,
 ) -> None:
     """Write the manifest.json a new run or fork starts with.
@@ -167,7 +167,7 @@ def write_session_manifest(
         forked_from_sha: The workspace sha at that turn.
         worktree: The session's own checkout, a fork's or a `run --worktree`'s.
         worktree_git_dir: The repository git dir the worktree points into.
-        workspace_set_up: Whether the checkout already ran its setup command (an `/undo`
+        worktree_set_up: Whether the checkout already ran its setup command (an `/undo`
             fork in its source's worktree).
         budget: The caps the run's `--max-*` flags set, so a resume replays them.
     """
@@ -207,7 +207,7 @@ def write_session_manifest(
         worktree=worktree,
         worktree_git_dir=worktree_git_dir,
         review_base_tree=review_base_tree,
-        workspace_set_up=workspace_set_up,
+        worktree_set_up=worktree_set_up,
         parallel=lineage,
     )
     write_manifest(layout.manifest_path, m)

@@ -2637,7 +2637,7 @@ Source: [`agent6.sessions.manifest.SessionManifest`](https://github.com/agent6-d
 | `forked_from_sha` | `str \| None` | The commit the fork started on, or None. |
 | `worktree` | `pathlib.Path \| None` | The absolute path of the linked worktree `agent6 fork` or `run --worktree` added; None for a session in the operator's checkout. An `/undo` fork names its source's. |
 | `worktree_git_dir` | `pathlib.Path \| None` | The repository git dir granted to a linked checkout's jail, recorded before any model command, including for an operator-owned checkout. Resume and same-checkout forks inherit it; a writable `.git` pointer cannot replace it. |
-| `workspace_set_up` | `bool` | Whether the setup command ran in the session's own worktree or clone; a resume runs it only while this is False. A fork's new worktree starts False, and an `/undo` fork carries its source's. |
+| `worktree_set_up` | `bool` | Whether the setup command ran in the session's own worktree or clone; a resume runs it only while this is False. A fork's new worktree starts False, and an `/undo` fork carries its source's. |
 | `merged` | `MergeStamp \| None` | The merge record, None until the run branch is merged. |
 | `includes` | `IncludedRun \| None` | The unmerged run this run took in under `dirty_tree = "include"`, stamped merged when this run lands; None when it took none, or more than that run's tip. |
 | `parallel` | `ParallelLineage \| None` | A lane's lineage, or None. |
