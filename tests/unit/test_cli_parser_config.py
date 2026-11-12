@@ -126,7 +126,7 @@ def test_fork_carries_the_same_sandbox_flags_as_its_siblings() -> None:
     A fork without `--no-run` continues a run, so it is a paid command and takes `--auto-approve`
     like the rest.
     """
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
 
     parser = cli_parser.build_parser()
     args = parser.parse_args(["fork", "--auto-approve", "some-session-id"])

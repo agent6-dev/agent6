@@ -262,7 +262,7 @@ def test_cli_composer_refusal_keeps_its_remedy(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], followup: bool
 ) -> None:
     """The CLI owns composer advice and the resume flag prefix, not the shared lifecycle."""
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
     from agent6.ui.cli import resume, run
     from tests.acp import test_runner
 

@@ -95,7 +95,7 @@ def test_plan_clamps_run_commands_like_ask(tmp_path: pathlib.Path) -> None:
     tightens (a configured "deny" stays "deny"). An allow-all session answer upgrades the
     clamped "ask" back to "allow".
     """
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
     from agent6.sessions import ipc
 
     allowed = Config.model_validate({"sandbox": {"run_commands": "allow"}})

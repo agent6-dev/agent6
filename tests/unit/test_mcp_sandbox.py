@@ -252,7 +252,7 @@ def test_a_provider_key_is_never_passed_to_an_mcp_server(
 
 
 def _policy_for(body: dict[str, object] | None, tmp_path: pathlib.Path):
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
 
     spec: dict[str, object] = {"command": ["npx", "server"]}
     if body is not None:
@@ -282,7 +282,7 @@ def test_one_servers_grants_do_not_reach_its_sibling(tmp_path: pathlib.Path) -> 
     Each gets its own policy and its own launcher, so a browser server granted the network and a
     data dir leaves the memory server beside it with neither.
     """
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
 
     cfg = Config.model_validate(
         {
@@ -383,7 +383,8 @@ def test_a_servers_grant_follows_the_rule_the_runs_grants_do(
     symlinked toolchain was bound by following the link at launch. A server's paths resolve
     once, by the rule `sandbox.extra_read_paths` follow, and a dropped one is named at start.
     """
-    from agent6.app import confine, session_setup
+    from agent6.app import confine
+    from agent6.app.session import setup as session_setup
     from agent6.sandbox import detect, tool_paths
 
     monkeypatch.setattr(tool_paths, "tool_mount_notes", tool_paths.ToolMountNotes)

@@ -23,9 +23,11 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds, pack, paths
-from agent6.app import execution, session_runtime, session_setup
+from agent6.app import execution
 from agent6.app import fork as app_fork
 from agent6.app import resume as app_resume
+from agent6.app.session import runtime as session_runtime
+from agent6.app.session import setup as session_setup
 from agent6.config import Config, RoleModel
 from agent6.graph import storage
 from agent6.harness import (

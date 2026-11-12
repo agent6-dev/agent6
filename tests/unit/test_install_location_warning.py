@@ -9,7 +9,8 @@ import pathlib
 import pytest
 
 import agent6
-from agent6.app import reporter, session_runtime
+from agent6.app import reporter
+from agent6.app.session import runtime as session_runtime
 
 
 def test_detects_an_install_root_inside_the_workspace(

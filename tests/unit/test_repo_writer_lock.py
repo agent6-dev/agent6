@@ -21,8 +21,10 @@ from unittest import mock
 import pytest
 
 from agent6 import errors, paths
-from agent6.app import execution, session_runtime, session_setup, stamps
+from agent6.app import execution, stamps
 from agent6.app import run as app_run
+from agent6.app.session import runtime as session_runtime
+from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.models import validate
 from agent6.sessions import layout as sessions_layout

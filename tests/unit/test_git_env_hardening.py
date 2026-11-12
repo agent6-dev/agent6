@@ -11,7 +11,7 @@ import subprocess
 import pytest
 
 from agent6 import child_env
-from agent6.app import session_setup
+from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.ui.cli import ask, sessions_cmds, skills_cmds
 from agent6.vcs import git_command, git_policy, git_read

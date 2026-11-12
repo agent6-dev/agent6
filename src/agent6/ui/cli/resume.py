@@ -10,7 +10,8 @@ from __future__ import annotations
 import pathlib
 import time
 
-from agent6.app import resume, session_setup
+from agent6.app import resume
+from agent6.app.session import setup as session_setup
 from agent6.ui.cli import common, run
 
 

@@ -19,8 +19,9 @@ import pytest
 
 from agent6 import kinds as agent6_kinds
 from agent6 import paths
-from agent6.app import execution, resume, run, session_setup, stop
+from agent6.app import execution, resume, run, stop
 from agent6.app import reporter as app_reporter
+from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, layer_data
 from agent6.sessions import id, journal
 from agent6.sessions import layout as sessions_layout

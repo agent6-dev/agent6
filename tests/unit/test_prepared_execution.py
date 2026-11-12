@@ -11,8 +11,9 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds, providers
-from agent6.app import execution, session_runtime, stamps, workspace_setup
+from agent6.app import execution, stamps, workspace_setup
 from agent6.app import reporter as app_reporter
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config, RoleModel
 from agent6.harness import loop_conversation, loop_state, run_chain
 from agent6.harness.verify import gate as verify_gate

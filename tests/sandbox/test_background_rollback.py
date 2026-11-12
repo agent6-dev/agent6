@@ -10,7 +10,7 @@ import time
 import pytest
 
 from agent6 import config, kinds, paths
-from agent6.app import session_runtime
+from agent6.app.session import runtime as session_runtime
 from agent6.sessions import event_log, layout
 from agent6.tools import background, dispatch
 

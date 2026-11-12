@@ -18,7 +18,7 @@ import pydantic
 import pytest
 
 from agent6 import kinds
-from agent6.app import session_runtime
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.sandbox import jail_session
 from agent6.tools import arguments, command_tools, dispatch, operator_prompts, schema, tool_errors

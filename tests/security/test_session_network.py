@@ -19,7 +19,7 @@ import time
 import pytest
 
 from agent6 import kinds
-from agent6.app import session_runtime
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.sandbox import jail
 from agent6.tools import dispatch, results
@@ -269,7 +269,7 @@ def test_a_private_policy_without_a_network_refuses_rather_than_running_alone(
 
 def test_a_run_only_builds_a_network_when_something_would_join_it(tmp_path: pathlib.Path) -> None:
     """A run whose commands and servers all take the host network creates no holder."""
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
 
     host_only = Config.model_validate({"sandbox": {"network": "host"}})
     assert not session_setup.wants_session_network(host_only, "full")
@@ -382,7 +382,7 @@ def test_a_private_server_gets_one_even_when_the_commands_are_on_the_host(
     `private` means the same thing however many children ask for it, so there is no
     cross-key refusal to write.
     """
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
 
     cfg = Config.model_validate(
         {
@@ -446,7 +446,7 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
     import socketserver
     import threading
 
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
     from agent6.tools import mcp_client
 
     script = tmp_path / "browser_server.py"

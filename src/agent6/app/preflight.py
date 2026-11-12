@@ -19,7 +19,8 @@ from typing import Literal
 from agent6 import budget as agent6_budget
 from agent6 import errors, kinds, terminal
 from agent6.app import reporter as app_reporter
-from agent6.app import role_providers, session_setup
+from agent6.app import role_providers
+from agent6.app.session import setup as session_setup
 from agent6.config import Config, plan_metered
 from agent6.models import pricing, validate
 from agent6.providers import TranscriptSink

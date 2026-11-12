@@ -13,8 +13,9 @@ import pydantic
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import confine, session_runtime, stamps
+from agent6.app import confine, stamps
 from agent6.app import reporter as app_reporter
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.harness import prompt_blocks
 from agent6.sandbox import container, detect

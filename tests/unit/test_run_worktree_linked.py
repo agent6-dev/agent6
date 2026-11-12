@@ -7,8 +7,9 @@ from typing import Any
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import fork, session_runtime
+from agent6.app import fork
 from agent6.app import run as run_lifecycle
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config, layer
 from agent6.sandbox import jail
 from agent6.sessions import manifest as sessions_manifest

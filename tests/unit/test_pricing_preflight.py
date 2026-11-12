@@ -14,7 +14,7 @@ import pathlib
 import pydantic
 import pytest
 
-from agent6.app import session_setup
+from agent6.app.session import setup as session_setup
 from agent6.config import Config, secret_store
 from agent6.models import cache
 from agent6.providers import claude_code as providers_claude_code

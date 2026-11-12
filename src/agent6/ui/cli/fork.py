@@ -13,7 +13,8 @@ import sys
 import time
 
 from agent6 import kinds
-from agent6.app import fork, preflight, resume, session_setup
+from agent6.app import fork, preflight, resume
+from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.sessions import id
 from agent6.ui.cli import common, run

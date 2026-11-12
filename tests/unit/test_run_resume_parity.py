@@ -66,7 +66,7 @@ def test_every_budget_override_survives_a_detach() -> None:
     """
     import argparse
 
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
 
     args = argparse.Namespace(max_usd=2.0, max_tokens_fallback=1000, max_plan_points=5.0)
     overrides = session_setup.BudgetOverrides.from_args(args)
@@ -83,7 +83,7 @@ def test_the_model_flag_survives_a_detach() -> None:
     detached execution re-reads the config's model.
     """
     from agent6 import kinds
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
 
     assert session_setup.override_flags(None, None, kinds.ModelRoute("p", "m")) == [
         "--model",

@@ -11,7 +11,7 @@ from collections.abc import Callable
 import pytest
 
 from agent6 import paths
-from agent6.app import session_setup
+from agent6.app.session import setup as session_setup
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import entry, resume, session_prompt
 

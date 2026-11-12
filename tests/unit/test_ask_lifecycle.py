@@ -71,7 +71,7 @@ def test_an_unknown_mode_is_still_refused(tmp_path: pathlib.Path) -> None:
 
 def test_a_resumed_ask_is_still_clamped() -> None:
     """A resumed ask is still clamped: the clamp lives with the mode, not one lifecycle."""
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
 
     cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
     assert session_setup.session_config(cfg, "ask").sandbox.run_commands == "ask"

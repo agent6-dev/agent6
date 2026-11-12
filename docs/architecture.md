@@ -79,7 +79,7 @@ A commit lands on the session's chain after a turn that changed the tree.
 ## The run lifecycle
 
 `app/run.py`'s `run_task` composes the run's stages; `app/resume.py`'s `resume_task` composes a resume's.
-The steps both share (the workspace lease and isolation, the session's writer lock, the headless check, the journal, transcript and operator channels, the gate pin) live in `app/session_prepare.py`, and each lifecycle calls them in its own order.
+The steps both share (the workspace lease and isolation, the session's writer lock, the headless check, the journal, transcript and operator channels, the gate pin) live in `app/session/prepare.py`, and each lifecycle calls them in its own order.
 The diagram draws the run's in call order: refusals and clamps, the route preflight, isolation, git preflight, the manifest, provider construction, target preparation, gate inference, tool assembly, the loop, then auto-merge and the end report.
 The stash finalize is last because it runs from `finally`, on every exit path, refusals included.
 
@@ -315,13 +315,13 @@ ChatGPT model listings read through the holder with refresh disabled and fall ba
 ChatGPT's proprietary device flow falls back to the displayed authorization URL and pasted callback on refusal or cancellation.
 Entries outside the current grant format read as `missing` with the `agent6 connect <name>` remedy.
 A successful connect replaces the entry atomically.
-`app/session_setup.py::sign_in_refusal` shares the bound-grant diagnosis between run preflight, `check config` and `model`.
+`app/session/setup.py::sign_in_refusal` shares the bound-grant diagnosis between run preflight, `check config` and `model`.
 `connect --status` reads the same validator's `BoundGrantError.cause` and checks each locally usable credential without refreshing or exchanging it.
 The bound store's security rules are in [Security](security.md#8-secrets-and-connect).
 
 ## Prepared execution targets
 
-`app/session_runtime.py::prepare_local_execution` resolves a local policy and opens its command session before gate inference or workspace commands.
+`app/session/runtime.py::prepare_local_execution` resolves a local policy and opens its command session before gate inference or workspace commands.
 `tools/command_tools.py::JailAccess` carries that policy, session, resolved grants and owned local resources into dispatch; it contains no lazy session callback.
 Setup, baseline verification, model commands and later verification use that same session.
 A failed preparation propagates before dispatch exists.
@@ -609,7 +609,7 @@ Its session dir is `sessions/read_only/<id>` in the lane's clone and imports und
 
 `app.workdirs.write_lane_config` uses `config.lane_snapshot` to materialize the parent's resolved worker, planner, reviewer and helper routes and sampling settings, with the lane's worker route override applied.
 The snapshot keeps only the route in `models.default`; it omits sampling keys only for resolved `None` values.
-On the internal child path, `app.session_setup.load_session_config` replaces only `[models]` after normal layer discovery and preset selection, discarding lower-layer model values and their provenance.
+On the internal child path, `app.session.setup.load_session_config` replaces only `[models]` after normal layer discovery and preset selection, discarding lower-layer model values and their provenance.
 Other sections retain normal merging and explicit-default resets, including sandbox values and budgets; ordinary operator `--config` remains a merge.
 
 TOML cannot preserve a selected `None` temperature with the unchanged sampling vocabulary: the omitted key reloads as the existing `0.0` default.

@@ -32,8 +32,10 @@ import pydantic
 
 from agent6 import budget as agent6_budget
 from agent6 import errors, kinds, paths
-from agent6.app import confine, role_providers, session_runtime, session_setup, workspace_setup
+from agent6.app import confine, role_providers, workspace_setup
 from agent6.app import reporter as app_reporter
+from agent6.app.session import runtime as session_runtime
+from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, layer
 from agent6.harness import loop, operator_bridge, run_chain, subrun
 from agent6.harness.compaction import window as compaction_window

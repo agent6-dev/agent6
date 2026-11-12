@@ -3353,7 +3353,8 @@ def test_lane_sampling_notes_survive_import_and_reach_both_reports(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The production spawn passes a models-only snapshot and durable loss notes to its child."""
-    from agent6.app import finalize, session_setup
+    from agent6.app import finalize
+    from agent6.app.session import setup as session_setup
     from agent6.config import RoleModel
     from agent6.harness import loop_snapshot
     from agent6.sessions import layout as sessions_layout

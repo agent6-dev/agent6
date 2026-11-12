@@ -19,8 +19,9 @@ from unittest import mock
 import pytest
 
 from agent6 import paths
-from agent6.app import execution, session_runtime
+from agent6.app import execution
 from agent6.app import run as run_mod
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.sessions import process
 from agent6.tools import operator_prompts

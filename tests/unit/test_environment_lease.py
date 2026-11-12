@@ -14,8 +14,9 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import environment_lease, session_runtime
+from agent6.app import environment_lease
 from agent6.app import reporter as app_reporter
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.sandbox import container, jail
 from agent6.sessions import journal, layout, process

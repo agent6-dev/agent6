@@ -18,7 +18,8 @@ from typing import Literal
 from agent6 import budget as agent6_budget
 from agent6 import kinds
 from agent6.app import reporter as app_reporter
-from agent6.app import role_providers, session_setup
+from agent6.app import role_providers
+from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.harness import judge as harness_judge
 from agent6.providers import Provider, ProviderError, TranscriptSink

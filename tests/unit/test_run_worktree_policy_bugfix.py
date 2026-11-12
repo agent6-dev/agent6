@@ -20,7 +20,8 @@ import subprocess
 import pytest
 
 from agent6 import paths
-from agent6.app import session_runtime, session_setup
+from agent6.app.session import runtime as session_runtime
+from agent6.app.session import setup as session_setup
 from agent6.config import (
     Config,
     GitConfig,

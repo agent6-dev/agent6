@@ -9,7 +9,8 @@ from collections.abc import Callable
 
 from agent6 import budget as agent6_budget
 from agent6 import errors, harness, viewmodel
-from agent6.app import role_providers, session_setup
+from agent6.app import role_providers
+from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, secret_store
 from agent6.providers import ProviderError, TranscriptSink, call_for_text
 from agent6.sessions import event_log

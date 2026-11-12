@@ -25,11 +25,11 @@ from agent6.app import (
     preflight,
     review_actions,
     role_providers,
-    session_setup,
     stamps,
     workdirs,
 )
 from agent6.app import reporter as app_reporter
+from agent6.app.session import setup as session_setup
 from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.graph import curator as graph_curator
 from agent6.harness.compaction import elision as compaction_elision

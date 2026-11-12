@@ -10,7 +10,8 @@ import pathlib
 import pytest
 
 from agent6 import paths, review_records
-from agent6.app import review_actions, session_runtime
+from agent6.app import review_actions
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config, RoleModel
 from agent6.harness import toolset
 from agent6.sessions import event_log, journal

@@ -24,8 +24,9 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6 import errors, kinds, paths, portable
-from agent6.app import fork_worktrees, resume, session_setup, stamps, workdirs, workspace_setup
+from agent6.app import fork_worktrees, resume, stamps, workdirs, workspace_setup
 from agent6.app import reporter as app_reporter
+from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, layer
 from agent6.graph import replay, storage
 from agent6.harness import loop_snapshot

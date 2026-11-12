@@ -10,7 +10,8 @@ import httpx2
 import pytest
 
 from agent6 import budget
-from agent6.app import conversation_state, role_providers, session_runtime
+from agent6.app import conversation_state, role_providers
+from agent6.app.session import runtime as session_runtime
 from agent6.config import ReviewerConfig
 from agent6.config import model as config_model
 from agent6.harness.review import gate as review_gate

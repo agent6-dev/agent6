@@ -19,8 +19,9 @@ import time
 from collections.abc import Callable
 
 from agent6 import kinds, paths
-from agent6.app import lane_launch, preflight, session_setup, stop
+from agent6.app import lane_launch, preflight, stop
 from agent6.app import run as app_run
+from agent6.app.session import setup as session_setup
 from agent6.config import ConfigError
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout

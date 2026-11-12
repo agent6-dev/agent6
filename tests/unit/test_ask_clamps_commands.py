@@ -11,7 +11,7 @@ from unittest import mock
 
 import pytest
 
-from agent6.app import session_runtime
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 
 
@@ -100,8 +100,9 @@ def test_an_explicit_auto_approve_survives_the_ask_clamp(
     The clamp stops an ask inheriting a standing `run_commands = "allow"`; the flag typed on this
     invocation is the most specific layer and unreachable by the LLM.
     """
-    from agent6.app import preflight, session_setup
+    from agent6.app import preflight
     from agent6.app import run as run_mod
+    from agent6.app.session import setup as session_setup
 
     seen: list[str] = []
 

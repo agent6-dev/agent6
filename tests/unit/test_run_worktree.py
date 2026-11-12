@@ -29,13 +29,13 @@ from agent6.app import (
     parallel,
     preflight,
     role_providers,
-    session_runtime,
     workdirs,
     workspace_setup,
 )
 from agent6.app import lanes as app_lanes
 from agent6.app import reporter as app_reporter
 from agent6.app import run as run_lifecycle
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config, layer
 from agent6.harness import subrun
 from agent6.providers import ProviderResponse

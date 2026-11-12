@@ -217,7 +217,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:
 
 def _dispatch_run_task(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
     """Return the exit code of `agent6 run`: the task, a plan to execute, or the REPL."""
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
     from agent6.ui.cli import plan_watch, run, session_prompt
 
     if args.interactive and args.tui:
@@ -363,7 +363,7 @@ def _prompt_for_the_next_input(  # noqa: PLR0911
     if rc == 2:
         return rc
 
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
     from agent6.sessions import id
     from agent6.sessions import manifest as sessions_manifest
     from agent6.ui.cli import session_prompt
@@ -422,7 +422,7 @@ def _names_an_existing_plan(cwd: pathlib.Path, task: str) -> bool:
 
 def _dispatch_plan(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 plan` or its show and edit verbs."""
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
     from agent6.ui.cli import (
         plan_watch,
         run,
@@ -462,7 +462,7 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
 
 def _dispatch_ask(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 ask`, one-shot or as a REPL."""
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
     from agent6.ui.cli import ask, run, session_prompt
 
     if args.interactive and not session_prompt.prompting_is_possible():
@@ -735,7 +735,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
             if args.delete_squashed:
                 common.error("--delete-squashed is git cleanup; it does not combine with --history")
                 return 2
-            from agent6.app import session_prune
+            from agent6.app.session import prune as session_prune
 
             return session_prune.prune_artifacts(
                 paths.state_dir(pathlib.Path.cwd()), args.older_than
@@ -808,7 +808,8 @@ def _dispatch_prompt(args: argparse.Namespace) -> int:
 
 def _dispatch_resume(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 resume`, on the named session or the newest resumable one."""
-    from agent6.app import resume, session_setup
+    from agent6.app import resume
+    from agent6.app.session import setup as session_setup
     from agent6.sessions import id
     from agent6.ui.cli import resume as cli_resume
     from agent6.ui.cli import session_prompt
@@ -858,7 +859,7 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
 
 def _dispatch_fork(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 fork`."""
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
     from agent6.ui.cli import fork
 
     return fork._cmd_fork(
@@ -1059,9 +1060,9 @@ def _dispatch_mcp(args: argparse.Namespace) -> int:
 def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
     """Return the exit code of a `agent6 machine` verb."""  # noqa: DOC501  # the last raise is unreachable
     from agent6.app import reporter as app_reporter
-    from agent6.app import session_setup
     from agent6.app.machine import create
     from agent6.app.machine import run as machine_run
+    from agent6.app.session import setup as session_setup
     from agent6.ui.cli import (
         machine_check,
         machine_cmds,

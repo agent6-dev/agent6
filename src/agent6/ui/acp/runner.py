@@ -22,9 +22,10 @@ from typing import Any, BinaryIO
 
 from agent6 import errors, kinds
 from agent6 import paths as agent6_paths
-from agent6.app import finalize, frontend, resume, session_setup
+from agent6.app import finalize, frontend, resume
 from agent6.app import reporter as app_reporter
 from agent6.app import run as app_run
+from agent6.app.session import setup as session_setup
 from agent6.sessions import id, ipc, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.ui import keymap, spawn

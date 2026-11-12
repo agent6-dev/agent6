@@ -1397,7 +1397,7 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
     Room is left for the notices the same turn folds into the payload, whatever the characters
     weigh.
     """
-    from agent6.app import session_runtime
+    from agent6.app.session import runtime as session_runtime
     from agent6.harness import nudges
     from agent6.harness.review import panel as review_panel
     from agent6.harness.verify import gate as verify_gate
@@ -1450,7 +1450,7 @@ def test_a_raising_operator_poll_leaves_the_watch_ticking() -> None:
 
 def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
     """The result cap follows the role that drives the session, the planner's on a plan."""
-    from agent6.app import session_runtime
+    from agent6.app.session import runtime as session_runtime
     from agent6.config import Config
 
     cfg = Config.model_validate(

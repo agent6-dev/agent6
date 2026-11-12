@@ -19,7 +19,7 @@ import tree_sitter_language_pack
 from xdist import workermanage
 
 from agent6 import kinds
-from agent6.app import session_runtime
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.sandbox import tool_paths
 from agent6.sessions import lock

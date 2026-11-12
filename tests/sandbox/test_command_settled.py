@@ -9,7 +9,8 @@ from unittest import mock
 import pytest
 
 from agent6 import paths, providers
-from agent6.app import role_providers, session_runtime
+from agent6.app import role_providers
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.harness import guards, loop, loop_conversation, loop_state, run_chain, tool_effects
 from agent6.tools import dispatch, results

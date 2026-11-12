@@ -9,7 +9,8 @@ from unittest import mock
 import pytest
 
 from agent6 import evidence, kinds, paths
-from agent6.app import session_runtime, stamps
+from agent6.app import stamps
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config, RoleModel
 from agent6.harness import loop, run_chain
 from agent6.sandbox import jail, jail_session

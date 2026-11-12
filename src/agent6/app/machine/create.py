@@ -15,9 +15,11 @@ import shutil
 import uuid
 
 from agent6 import budget, errors, kinds, paths, portable
-from agent6.app import preflight, session_runtime, session_setup, workdirs
+from agent6.app import preflight, workdirs
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import agent, bundle, check, scriptcheck
+from agent6.app.session import runtime as session_runtime
+from agent6.app.session import setup as session_setup
 from agent6.config import ConfigError, layer
 from agent6.machine import (
     AgentRequest,

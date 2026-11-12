@@ -8,7 +8,8 @@ import tomllib
 import pytest
 
 from agent6 import kinds, lane_records, paths
-from agent6.app import lane_launch, session_setup, stamps, workdirs
+from agent6.app import lane_launch, stamps, workdirs
+from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, RoleModel
 from tests import lane_env
 

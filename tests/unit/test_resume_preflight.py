@@ -17,16 +17,10 @@ import time
 import pytest
 
 from agent6 import paths
-from agent6.app import (
-    confine,
-    execution,
-    preflight,
-    role_providers,
-    run,
-    session_runtime,
-    session_setup,
-)
+from agent6.app import confine, execution, preflight, role_providers, run
 from agent6.app import resume as resume_mod
+from agent6.app.session import runtime as session_runtime
+from agent6.app.session import setup as session_setup
 from agent6.config import layer, layer_data
 from agent6.harness import loop_snapshot
 from agent6.sandbox import detect

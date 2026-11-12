@@ -10,7 +10,9 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import preflight, role_providers, session_runtime, session_setup
+from agent6.app import preflight, role_providers
+from agent6.app.session import runtime as session_runtime
+from agent6.app.session import setup as session_setup
 from agent6.config import layer, layer_data, model, validation
 from agent6.harness.compaction import driver as compaction_driver
 from agent6.harness.compaction import elision as compaction_elision

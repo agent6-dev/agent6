@@ -27,14 +27,14 @@ from agent6.app import (
     lane_watch,
     parallel_results,
     preflight,
-    session_runtime,
-    session_setup,
     stamps,
     workdirs,
     workspace_setup,
 )
 from agent6.app import lanes as app_lanes
 from agent6.app import reporter as app_reporter
+from agent6.app.session import runtime as session_runtime
+from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.context import memory
 from agent6.providers import TranscriptSink

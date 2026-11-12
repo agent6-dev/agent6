@@ -110,8 +110,9 @@ def test_probe_refuses_over_a_binary_it_cannot_run(
 
     A 0644 or wrong-architecture AGENT6_JAIL_BIN is not "userns supported: False".
     """
-    from agent6.app import preflight, session_runtime
+    from agent6.app import preflight
     from agent6.app import reporter as app_reporter
+    from agent6.app.session import runtime as session_runtime
     from agent6.config import Config
 
     fake = tmp_path / "agent6-jail"

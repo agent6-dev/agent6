@@ -15,7 +15,7 @@ from collections.abc import Callable
 
 import pytest
 
-from agent6.app import session_setup
+from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.tools import dispatch
 

@@ -18,7 +18,8 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import role_providers, session_setup
+from agent6.app import role_providers
+from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.context import memory
 from agent6.harness.review import session as review_session

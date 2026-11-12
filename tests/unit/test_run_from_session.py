@@ -12,7 +12,8 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import role_providers, session_runtime
+from agent6.app import role_providers
+from agent6.app.session import runtime as session_runtime
 from agent6.providers import ProviderResponse
 from agent6.ui.cli import cli_main
 

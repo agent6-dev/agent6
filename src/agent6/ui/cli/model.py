@@ -12,7 +12,7 @@ import sys
 from typing import cast
 
 from agent6 import kinds, paths
-from agent6.app import session_setup
+from agent6.app.session import setup as session_setup
 from agent6.config import (
     ClaudeCodeProviderEntry,
     ConfigError,

@@ -8,7 +8,7 @@ import pathlib
 
 import pytest
 
-from agent6.app import session_runtime
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.sandbox import jail, jail_session
 from agent6.sessions import event_log

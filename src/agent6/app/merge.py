@@ -19,7 +19,8 @@ from typing import Literal
 
 from agent6 import budget as agent6_budget
 from agent6 import errors
-from agent6.app import merge_message, session_setup, stamps
+from agent6.app import merge_message, stamps
+from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.graph import models as graph_models
 from agent6.graph import storage

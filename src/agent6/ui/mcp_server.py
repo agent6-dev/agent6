@@ -23,7 +23,7 @@ from collections.abc import Callable
 from typing import IO, Any
 
 from agent6 import __version__, paths
-from agent6.app import session_runtime
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config, layer
 from agent6.graph import storage
 from agent6.sandbox import detect, jail

@@ -80,7 +80,7 @@ def test_a_server_a_run_never_starts_refuses_no_run(
     A `none` or `session` server under `[mcp].enabled = false` refused a `partial` run that would
     start nothing, while `check mcp` read the same config as PASS.
     """
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
 
     def config(on: bool) -> Config:
         table, server = (on, True) if switch == "mcp.enabled" else (True, on)
@@ -103,7 +103,7 @@ def test_auto_degrades_with_a_warning_naming_the_server(
     MCP setup, where the operator is already being told about their servers, rather than inside the
     isolation warner, which is about the level's own gaps.
     """
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
 
     cfg = _server({})
     assert confine.check_mcp_network_support(cfg, "partial") is None  # never a refusal
@@ -122,7 +122,7 @@ def test_a_table_less_server_degrades_with_the_same_warning(
     `partial`), and the degrade warning reads the same effective value, or a table-less server keeps
     the host's network on `partial` with nothing said.
     """
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
 
     cfg = Config.model_validate({"mcp": {"enabled": True, "servers": {"s": {"command": ["x"]}}}})
     assert cfg.mcp.servers["s"].sandbox is None
@@ -135,7 +135,7 @@ def test_a_table_less_server_degrades_with_the_same_warning(
 
 def test_host_is_silent(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path) -> None:
     """An operator who granted the network asked for it; nothing degraded."""
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
 
     cfg = _server({"network": "host"})
     assert confine.check_mcp_network_support(cfg, "partial") is None
@@ -160,7 +160,7 @@ def test_a_server_agent6_does_not_jail_gets_no_network_warning(
     It said taking the network away needs 'full' and named `sandbox.network = 'none'`. Config
     refuses that value for both kinds of server, and 'full' gives such a server the same network.
     """
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
 
     cfg = Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"jailed": {"command": ["x"]}, "s": server}}}

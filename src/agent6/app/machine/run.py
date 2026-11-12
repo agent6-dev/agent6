@@ -20,10 +20,11 @@ from collections.abc import Callable, Mapping
 import pydantic
 
 from agent6 import budget, errors, kinds, paths
-from agent6.app import confine, preflight, session_setup, workdirs, workspace_setup
+from agent6.app import confine, preflight, workdirs, workspace_setup
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import agent, bundle, crash_spend, host_preflight, state_configs, workspace
+from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError
 from agent6.harness import subrun
 from agent6.machine import (

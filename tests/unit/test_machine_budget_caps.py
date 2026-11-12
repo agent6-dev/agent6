@@ -9,8 +9,9 @@ from unittest import mock
 import pytest
 
 from agent6 import paths
-from agent6.app import preflight, reporter, session_setup
+from agent6.app import preflight, reporter
 from agent6.app.machine import agent, run
+from agent6.app.session import setup as session_setup
 from agent6.config import model
 from agent6.machine import contracts
 

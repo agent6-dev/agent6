@@ -16,7 +16,8 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import paths
-from agent6.app import preflight, session_setup
+from agent6.app import preflight
+from agent6.app.session import setup as session_setup
 from agent6.config import ChatGPTProviderEntry, Config, load_config, secret_store
 from agent6.providers import oauth, oauth_protocol, provider_types, transport
 from agent6.sandbox import detect

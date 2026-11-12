@@ -9,7 +9,8 @@ from unittest import mock
 import pytest
 
 from agent6 import paths
-from agent6.app import resume, session_setup
+from agent6.app import resume
+from agent6.app.session import setup as session_setup
 from agent6.harness import loop_conversation, loop_state, operator_bridge
 from agent6.sessions import journal
 from agent6.ui.acp import runner, server, session

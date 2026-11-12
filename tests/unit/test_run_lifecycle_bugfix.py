@@ -17,7 +17,8 @@ from typing import Any
 import pytest
 
 from agent6 import budget, kinds, paths
-from agent6.app import role_providers, session_runtime
+from agent6.app import role_providers
+from agent6.app.session import runtime as session_runtime
 from agent6.providers import ProviderResponse
 from agent6.ui.cli import cli_main
 
@@ -492,7 +493,7 @@ def test_resume_applies_the_manifest_plan_points_cap(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A manifest's max_plan_points survives resume and stops calls at the cap."""
-    from agent6.app import session_setup
+    from agent6.app.session import setup as session_setup
 
     repo = _setup(tmp_path, monkeypatch)
     monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))

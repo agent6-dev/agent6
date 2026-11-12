@@ -16,7 +16,7 @@ import httpx2
 import pytest
 
 from agent6 import paths
-from agent6.app import session_setup
+from agent6.app.session import setup as session_setup
 from agent6.config import Config, OpenAIProviderEntry, load_config, secret_store
 from agent6.models import cache
 from agent6.providers import oauth, provider_types, transport

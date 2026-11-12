@@ -629,7 +629,7 @@ def test_a_run_start_prints_the_home_grant_warning(
 ) -> None:
     """A run, a resume and a fork started under a `$HOME` grant without a word about it."""
     from agent6.app import reporter as app_reporter
-    from agent6.app import session_runtime
+    from agent6.app.session import runtime as session_runtime
 
     def _detected() -> detect.Environment:
         return _env(4)

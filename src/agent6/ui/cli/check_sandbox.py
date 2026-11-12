@@ -12,7 +12,9 @@ import pathlib
 
 from agent6 import errors, kinds, path_safety
 from agent6 import paths as agent6_paths
-from agent6.app import confine, fork_worktrees, session_runtime, session_setup
+from agent6.app import confine, fork_worktrees
+from agent6.app.session import runtime as session_runtime
+from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.context import memory
 from agent6.sandbox import (

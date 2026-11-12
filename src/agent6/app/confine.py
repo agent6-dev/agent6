@@ -15,7 +15,7 @@ from collections.abc import Callable
 
 from agent6 import errors, kinds, pack_manifest, paths
 from agent6.app import reporter as app_reporter
-from agent6.app import session_setup
+from agent6.app.session import setup as session_setup
 from agent6.config import Config, MCPServerEntry
 from agent6.models import registry
 from agent6.sandbox import detect, jail, tool_paths

@@ -11,7 +11,8 @@ from typing import Any
 
 import pytest
 
-from agent6.app import role_providers, session_runtime
+from agent6.app import role_providers
+from agent6.app.session import runtime as session_runtime
 from agent6.ui.cli import cli_main
 from tests.unit import test_queued_question_lifecycle as lifecycle
 

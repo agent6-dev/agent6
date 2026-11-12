@@ -10,7 +10,8 @@ import shlex
 import shutil
 
 from agent6 import kinds
-from agent6.app import confine, session_setup
+from agent6.app import confine
+from agent6.app.session import setup as session_setup
 from agent6.config import (
     Config,
     ConfigError,

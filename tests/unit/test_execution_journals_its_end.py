@@ -20,8 +20,10 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import execution, finalize, reporter, session_runtime, session_setup
+from agent6.app import execution, finalize, reporter
 from agent6.app import frontend as app_frontend
+from agent6.app.session import runtime as session_runtime
+from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.harness import loop as harness_loop
 from agent6.harness import loop_snapshot

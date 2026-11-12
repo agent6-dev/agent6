@@ -14,8 +14,9 @@ from collections.abc import Callable, Collection
 
 from agent6 import kinds
 from agent6.app import frontend as app_frontend
-from agent6.app import preflight, resume_questions, session_runtime, stamps
+from agent6.app import preflight, resume_questions, stamps
 from agent6.app import reporter as app_reporter
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.harness import repo_context
 from agent6.providers import TranscriptSink

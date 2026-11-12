@@ -9,7 +9,7 @@ import pathlib
 import sys
 from collections.abc import Callable
 
-from agent6.app import session_setup
+from agent6.app.session import setup as session_setup
 from agent6.sessions import layout
 from agent6.ui.cli import common, resume
 from agent6.viewmodel import session_log

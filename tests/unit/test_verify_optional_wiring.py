@@ -16,15 +16,9 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import (
-    confine,
-    execution,
-    preflight,
-    role_providers,
-    session_runtime,
-    session_setup,
-    stamps,
-)
+from agent6.app import confine, execution, preflight, role_providers, stamps
+from agent6.app.session import runtime as session_runtime
+from agent6.app.session import setup as session_setup
 from agent6.config import Config, layer, layer_data
 from agent6.harness import loop_snapshot, prompt_blocks, run_chain
 from agent6.harness.verify import verdict as verify_verdict

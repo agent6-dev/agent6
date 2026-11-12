@@ -14,7 +14,8 @@ from collections.abc import Iterator
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import confine, preflight, reporter, session_runtime
+from agent6.app import confine, preflight, reporter
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.sandbox import detect
 from agent6.tools import dispatch, results, tool_errors

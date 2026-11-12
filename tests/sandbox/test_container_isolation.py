@@ -7,8 +7,9 @@ import subprocess
 import pytest
 
 from agent6 import paths
-from agent6.app import environment_lease, session_runtime, stamps
+from agent6.app import environment_lease, stamps
 from agent6.app import reporter as app_reporter
+from agent6.app.session import runtime as session_runtime
 from agent6.config import Config, RoleModel
 from agent6.sandbox import container
 from agent6.sessions import event_log, layout, manifest

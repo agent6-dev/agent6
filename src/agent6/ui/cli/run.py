@@ -15,8 +15,9 @@ import sys
 import time
 
 from agent6 import errors, kinds, paths, portable
-from agent6.app import frontend, preflight, reporter, run, session_setup
+from agent6.app import frontend, preflight, reporter, run
 from agent6.app import lanes as app_lanes
+from agent6.app.session import setup as session_setup
 from agent6.config import (
     Config,
 )

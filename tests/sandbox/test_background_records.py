@@ -10,7 +10,7 @@ import time
 import pytest
 
 from agent6 import config, kinds, paths
-from agent6.app import session_runtime
+from agent6.app.session import runtime as session_runtime
 from agent6.sandbox import jail_session
 from agent6.sessions import layout
 from agent6.sessions import shells as session_shells
