@@ -1538,27 +1538,6 @@ def test_a_resumed_run_merges_again_from_its_own_landed_tip(
     ]
 
 
-def test_the_branch_verbs_refuse_a_fan_out_coordinator_by_name(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """The branch verbs refuse a fan-out coordinator by name: its lanes hold the work."""
-    from agent6.ui.cli import sessions_cmds
-
-    monkeypatch.chdir(tmp_path)
-    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="fan")
-    layout.ensure()
-    layout.manifest_path.write_text(
-        json.dumps(
-            {"version": 3, "session_id": "fan", "mode": "run", "fanout": {"lanes": 2, "spec": "2"}}
-        ),
-        encoding="utf-8",
-    )
-    for bare in ("", "fan"):
-        assert sessions_cmds._resolve_session_manifest(tmp_path, bare) == 2
-        err = capsys.readouterr().err
-        assert "fan is a fan-out" in err and "sessions show fan" in err
-
-
 def test_diff_reads_the_chain_ref_when_the_branch_is_gone(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
 ) -> None:

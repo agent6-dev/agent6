@@ -565,7 +565,6 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   An unattended machine auto-denies.
 - A lane or review seat a run dispatched puts its approval, or the question it waits on, to that run's operator: the prompt shows on the run, named for the lane, and the answer goes back over the session's file bridge, which no jail can reach.
   An "allow all" or "deny all" given on the run covers its lanes for that scope.
-  A `run --parallel` fan-out's lanes still wait for an answer on the lane itself.
 - `agent6 mcp serve` has no operator at all, so the tools that would prompt are not published.
   Under `run_commands = "ask"` or `"deny"` its command tools are absent from `tools/list`, and a client that names one is told which setting withheld it ([the tools](acp.md#as-an-mcp-server)).
 
@@ -733,8 +732,8 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - the lane reads the same `secrets.toml` or provider env var as any other run
 - Lane git plumbing (clone, fetch, merge) goes through `git_ops.py` and its private runner; lane spawning goes through `ui/spawn.py` (see the [subprocess allowlist](#12-host-side-subprocess-allowlist)).
 - A lane starts from committed state only
-    - the fan-out clones HEAD; a coordinator dispatch cuts lanes at the run's chain tip after chain-committing changes
-    - `--parallel` refuses an origin with uncommitted tracked changes under `git.dirty_tree = "ask"`
+    - a dispatch cuts lanes at the run's chain tip after chain-committing changes
+    - `run --parallel` settles uncommitted tracked changes first, as every run does (`git.dirty_tree`)
 
 ### 11. State machines
 

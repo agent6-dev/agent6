@@ -2336,11 +2336,10 @@ def test_an_ordinary_live_parents_first_lane_reaches_the_stream_during_silence(
 
     sse.stream_session(sse.SseChannel(send=send, ping=ping), d, repo=tmp_path)
 
-    assert "lanes" not in frames[0] and "fanout" not in frames[0]
+    assert "lanes" not in frames[0]
     with_lane = next(f for f in frames if f.get("lanes"))
     assert [row["session_id"] for row in with_lane["lanes"]] == ["solo-p1-l1"]
     assert with_lane["lanes"][0]["model"] == "openai/lane-1"
-    assert "fanout" not in with_lane
     assert with_lane["session_actions"]["fork"] is True
 
 

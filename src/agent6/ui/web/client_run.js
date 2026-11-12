@@ -412,12 +412,12 @@ function laneOutcomes(dispatches) {
 
 function paintRun(cards, s) {
   if (cards.lanes) {
-    // Rows come from the session's lanes by lineage; only a true fan-out is headed as one.
+    // Rows come from the session's lanes by lineage.
     const lanes = s.lanes || [];
     cards.lanes.parentElement.style.display = lanes.length ? "" : "none";
     cards.lanes.replaceChildren();
     if (lanes.length) {
-      cards.lanes.previousSibling.textContent = s.fanout ? `fan-out: ${s.fanout.lanes} lanes` : `lanes: ${lanes.length}`;
+      cards.lanes.previousSibling.textContent = `lanes: ${lanes.length}`;
       const outcomes = laneOutcomes(s.dispatches || []);
       const table = el('table');
       const head = el('tr');

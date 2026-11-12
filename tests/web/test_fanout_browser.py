@@ -37,7 +37,7 @@ def test_group_lanes_refresh_and_link(
     page.goto(f"http://127.0.0.1:{fan_port}/#/session/fan")
     block = page.locator(".card-lanes")
     expect(block).to_be_visible()
-    expect(block.locator("h2")).to_have_text("fan-out: 2 lanes")
+    expect(block.locator("h2")).to_have_text("lanes: 2")
     expect(block.locator("tr")).to_have_count(3)
     expect(block).to_contain_text("openai/lane-1")
     lane = layout.SessionLayout(state_dir=paths.state_dir(fan_out), session_id="fan-l1")

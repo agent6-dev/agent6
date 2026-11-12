@@ -64,9 +64,5 @@
     "rationale": "covers the edge case",
     "judge_cost_usd": 0.0123,
     "judge_cost_partial": true
-  },
-  "fanout": {
-    "lanes": 2,
-    "spec": "2"
   }
 }

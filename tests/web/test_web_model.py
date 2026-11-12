@@ -1046,9 +1046,7 @@ def test_hub_folds_a_fan_outs_lanes_under_its_row(tmp_path: pathlib.Path) -> Non
     start: dict[str, object] = {"type": "session.start", "mode": "run", "user_task": "t"}
     end: dict[str, object] = {"type": "session.stop", "verification": "passed"}
     fan = _run(tmp_path, "fan", [start, end])
-    (fan / "manifest.json").write_text(
-        json.dumps({"mode": "run", "fanout": {"lanes": 1, "spec": "1"}}), encoding="utf-8"
-    )
+    (fan / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
     lane = _run(tmp_path, "fan-l1", [start, end])
     (lane / "manifest.json").write_text(
         json.dumps(

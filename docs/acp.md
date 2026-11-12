@@ -97,7 +97,7 @@ A session is one conversation in one directory.
   After an undo on another surface, the next prompt follows the run's continuation.
 - a busy session refuses a prompt rather than queueing it; one connection runs one prompt at a time across its sessions, and a prompt on another session queues and says for which session it waits
 - `session/list` (`cwd` optional, absolute) names the repository's resumable runs, newest first: agent6's run id as `sessionId`, the task as `title`, the last activity as `updatedAt`; one page, no cursor.
-  A run `agent6 resume` would refuse (a fan-out coordinator, a lane, a run whose worktree is gone, a run with no checkpoint) is left out.
+  A run `agent6 resume` would refuse (a lane, a run whose worktree is gone, a run with no checkpoint) is left out.
   Without `cwd` it covers every repository the connection has a session open in.
 - `session/resume` opens a conversation on a recorded run by that id, so an editor reopens its thread after a restart.
   `session/resume` refuses a plan, an ask, a run whose worker is alive, or a run `agent6 resume` would refuse.

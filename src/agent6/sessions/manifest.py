@@ -240,22 +240,6 @@ class ParallelLineage(pydantic.BaseModel):
     config_notes: tuple[str, ...] = ()
 
 
-class FanoutStamp(pydantic.BaseModel):
-    """The record a `run --parallel` fan-out leaves on its own session.
-
-    A `/parallel` group's coordinator is an ordinary run and carries none.
-
-    Attributes:
-        lanes: How many lanes it dispatched.
-        spec: The `--parallel` argument as typed.
-    """
-
-    model_config = _MODEL_CONFIG
-
-    lanes: int = 0
-    spec: str = ""
-
-
 class PlacementStamp(pydantic.BaseModel):
     """A fan-out lane's auto-compare placement.
 
@@ -354,7 +338,6 @@ class SessionManifest(pydantic.BaseModel):
         parallel: A fan-out lane's lineage, or None.
         placement: A fan-out lane's rank and group reference, or None.
         comparison: The group's ranking and judge spend on its coordinator, or None.
-        fanout: A fan-out's own record on its coordinator, or None.
     """
 
     model_config = _MODEL_CONFIG
@@ -394,7 +377,6 @@ class SessionManifest(pydantic.BaseModel):
     parallel: ParallelLineage | None = None
     placement: PlacementStamp | None = None
     comparison: ComparisonStamp | None = None
-    fanout: FanoutStamp | None = None
 
     def session_mode(self) -> kinds.ResumableMode:
         """Return the session's mode, refusing one this agent6 does not know.
@@ -434,30 +416,6 @@ def model_git_refusal(manifest: SessionManifest, verb: str) -> str | None:
         f"{verb}: run {manifest.session_id or '?'} managed git itself"
         ' ([git].control = "model"); its record is the model\'s own commits,'
         " not an agent6 chain. Inspect it with plain git."
-    )
-
-
-def group_steer_refusal(session_dir: pathlib.Path) -> str | None:
-    """Name the lanes to steer when the session has no model loop.
-
-    Args:
-        session_dir: The target session.
-
-    Returns:
-        The refusal for a fan-out, otherwise None.
-
-    Raises:
-        ManifestError: The manifest cannot be read.
-    """
-    if not (session_dir / MANIFEST_NAME).is_file():
-        return None
-    manifest = read_manifest(session_dir)
-    if manifest.fanout is None:
-        return None
-    count = manifest.fanout.lanes
-    lanes = ", ".join(f"{session_dir.name}-l{i}" for i in range(1, count + 1))
-    return (
-        f"{session_dir.name} is a fan-out of {count} lanes and runs no model; steer a lane: {lanes}"
     )
 
 

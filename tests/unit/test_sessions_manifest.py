@@ -573,7 +573,6 @@ def test_write_manifest_bytes_coordinator(tmp_path: pathlib.Path) -> None:
     m = sessions_manifest.SessionManifest(
         session_id="fan",
         mode="run",
-        fanout=sessions_manifest.FanoutStamp(lanes=2, spec="2"),
         comparison=sessions_manifest.ComparisonStamp(
             group="fan",
             ranking=("fan-l2", "fan-l1"),

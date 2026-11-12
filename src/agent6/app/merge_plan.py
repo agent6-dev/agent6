@@ -119,12 +119,6 @@ def chain_refusal(
         The refusal for a fan-out, whose lanes hold the commits, or for a run whose model
         managed git itself.
     """
-    if manifest.fanout is not None:
-        target_id = manifest.session_id
-        return (
-            f"{target_id} is a fan-out; its lanes hold the commits"
-            f" (`agent6 sessions show {target_id}` lists them)"
-        )
     return None if allow_model else sessions_manifest.model_git_refusal(manifest, "sessions")
 
 

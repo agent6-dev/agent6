@@ -204,29 +204,17 @@ def parallel_joined_body(event: dict[str, Any]) -> str:
 
 
 def parallel_failed_body(event: dict[str, Any]) -> str | None:
-    """Word a dispatch failure or a fan-out's failed lanes.
+    """Word a dispatch failure.
 
     Args:
         event: The `parallel.failed` event.
 
     Returns:
-        The dispatch error when the event carries one; a fan-out's failed lanes
-        otherwise; None for a post-join failure, whose joined event already showed
-        each lane's status.
+        The dispatch error when the event carries one; None for a failure after the lanes
+        ran, whose joined event or end summary already showed each lane's status.
     """
     error = str(event.get("error", "")).strip()
-    if error:
-        return f"{parallel_group_label(event)} dispatch failed: {error}"
-    if event.get("fanout") is not True:
-        return None
-    raw = event.get("lanes")
-    lanes = [lane for lane in raw if isinstance(lane, dict)] if isinstance(raw, list) else []
-    lines = [f"failed lanes in {parallel_group_label(event)}:"]
-    for lane in lanes:
-        session_id = str(lane.get("session_id", "?")).strip() or "?"
-        detail = str(lane.get("detail", "")).strip()
-        lines.append(f"{session_id}: {detail}" if detail else session_id)
-    return "\n".join(lines)
+    return f"{parallel_group_label(event)} dispatch failed: {error}" if error else None
 
 
 def mcp_unavailable_body(event: dict[str, Any]) -> str:

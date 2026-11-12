@@ -613,9 +613,7 @@ def test_the_json_row_carries_the_journal_task(
 def _fan_out(runs: pathlib.Path) -> None:
     """A `run --parallel` fan-out as it lands: the coordinator's record and two lanes naming it."""
     _run(runs, "fan")
-    (runs / "fan" / "manifest.json").write_text(
-        json.dumps({"mode": "run", "fanout": {"lanes": 2, "spec": "2"}}), encoding="utf-8"
-    )
+    (runs / "fan" / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
     for lane in (1, 2):
         _run(runs, f"fan-l{lane}", winner=lane == 2)
         (runs / f"fan-l{lane}" / "manifest.json").write_text(

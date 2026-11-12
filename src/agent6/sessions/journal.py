@@ -940,10 +940,6 @@ class ParallelFailed(Event):
 
     TYPE: ClassVar[str] = "parallel.failed"
     group: str = pydantic.Field(description="Parallel dispatch group identifier.")
-    fanout: bool | None = pydantic.Field(
-        default=None,
-        description="Whether the failed group was a top-level fan-out.",
-    )
     lanes: Sequence[Any] | None = pydantic.Field(
         default=None,
         description="Lane count for dispatch, or lane results for completion.",

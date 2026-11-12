@@ -50,7 +50,7 @@ def _hub_with_a_fan_out(a6: pathlib.Path) -> None:
     start = {"type": "session.start", "mode": "run", "user_task": "t"}
     for name, manifest in (
         ("plain-run-AAAAAA", {"mode": "run"}),
-        ("fan", {"mode": "run", "fanout": {"lanes": 1, "spec": "1"}}),
+        ("fan", {"mode": "run"}),
         ("fan-l1", {"mode": "run", "parallel": {"group": "fan", "lane": 1, "coordinator": "fan"}}),
     ):
         d = a6 / "sessions" / "runs" / name

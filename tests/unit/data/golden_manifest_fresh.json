@@ -64,6 +64,5 @@
   "includes": null,
   "parallel": null,
   "placement": null,
-  "comparison": null,
-  "fanout": null
+  "comparison": null
 }

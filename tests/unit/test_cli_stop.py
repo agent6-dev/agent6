@@ -271,7 +271,6 @@ def test_a_fanout_stops_only_its_live_lanes(
                 "session_id": fan.name,
                 "mode": "run",
                 "user_task": "t",
-                "fanout": {"lanes": 2, "spec": "2"},
             }
         ),
         encoding="utf-8",
@@ -298,9 +297,8 @@ def test_a_fanout_stops_only_its_live_lanes(
     try:
         assert main(["stop", "fan-run-AAAAAA"]) == 0
         out = capsys.readouterr().out
-        assert "fan-run-AAAAAA stopped with its 1 live lane; what they landed" in out
+        assert "fan-run-AAAAAA stopped with its 1 live lane" in out
         assert "fan-run-AAAAAA-l2" not in out
-        assert "resume with:" not in out
         for proc in workers:
             proc.wait(timeout=5.0)
     finally:
@@ -331,7 +329,6 @@ def _fanout(tmp_path: pathlib.Path, fan: str, lane: str) -> tuple[pathlib.Path, 
                 "session_id": fan,
                 "mode": "run",
                 "user_task": "t",
-                "fanout": {"lanes": 1, "spec": "1"},
             }
         ),
         encoding="utf-8",
@@ -354,12 +351,9 @@ def _fanout(tmp_path: pathlib.Path, fan: str, lane: str) -> tuple[pathlib.Path, 
 def test_a_fanouts_lanes_end_before_its_coordinator_drains(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fan-out's lanes end before its coordinator drains.
-
-    It imports what they landed and ranks it.
-    """
+    """A run's lanes end before the run drains them: it is waited for, not killed."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(stop_mod, "FANOUT_WAIT_S", 3.0)
+    monkeypatch.setattr(stop_mod, "LANES_WAIT_S", 3.0)
     fan, lane = _fanout(tmp_path, "drain-run-AAAAAA", "drain-run-AAAAAA-l1")
     # The lane is live before the coordinator starts, or its first poll drains and ends at once.
     worker = subprocess.Popen(
@@ -480,22 +474,6 @@ def test_a_dead_run_is_not_running(
     assert main(["stop", "dead-run-BBB222"]) == 0
     assert not ipc.stop_request_pending(rd)
     assert "not running" in capsys.readouterr().err
-
-
-def test_a_fan_out_gets_no_resume_hint(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A fan-out coordinator has no loop to resume, so its stop message promises no resume."""
-    monkeypatch.chdir(tmp_path)
-    rd = _session_dir(tmp_path, "fan-AAAA11")
-    (rd / "manifest.json").write_text(
-        '{"version": 3, "mode": "run", "fanout": {"lanes": 2, "spec": "2"}}', encoding="utf-8"
-    )
-    process.write_worker_pid(rd, os.getpid())
-    assert main(["stop", "fan-AAAA11", "--after-turn"]) == 0
-    assert ipc.stop_request_pending(rd)
-    out = capsys.readouterr().out
-    assert "fan-AAAA11 stops after its current turn" in out and "resume" not in out
 
 
 def test_a_bare_stop_targets_the_newest_live_session(

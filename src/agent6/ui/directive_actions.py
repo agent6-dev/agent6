@@ -17,7 +17,7 @@ from collections.abc import Callable
 
 from agent6 import directive as agent6_directive
 from agent6.graph import order, storage
-from agent6.sessions import ipc, layout, manifest
+from agent6.sessions import ipc, layout
 from agent6.ui import btw
 from agent6.viewmodel import format
 
@@ -170,8 +170,6 @@ def submit_composer_line(
     handled = act_on_directive(session_dir, text, config_paths=config_paths)
     if handled is not None:
         return handled
-    if refusal := manifest.group_steer_refusal(session_dir):
-        return False, refusal
     urgent = agent6_directive.parse_now(text)
     if urgent == "":
         return False, "/now needs the instruction: /now <text>"

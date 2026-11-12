@@ -810,7 +810,6 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `group` | `str` | Parallel dispatch group identifier. |
-| `fanout` | `bool, optional` | Whether the failed group was a top-level fan-out. |
 | `lanes` | `list, optional` | Lane count for dispatch, or lane results for completion. |
 | `error` | `str, optional` | The failure diagnostic. |
 
@@ -1645,7 +1644,6 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `placement` | `dict[str, Any] \| None` | The lane's rank and group id, or null outside a compared lane. |
 | `comparison` | `dict[str, Any] \| None` | The group record on its coordinator, or null for other sessions. |
 | `parallel` | `dict[str, Any] \| None` | The ParallelLineage, or null outside a lane. |
-| `fanout` | `dict[str, Any] \| None` | The FanoutStamp, or null outside a coordinator. |
 | `lanes` | `list[SummaryRow]` | The coordinator's summary_row objects. |
 | `run_branch` | `str \| None` | The existing run branch, or null. |
 | `base_branch` | `str \| None` | The base branch, or null when unknown. |
@@ -1745,7 +1743,6 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `git_control` | `JSON` | The launch git-control policy. |
 | `base_sha` | `JSON` | The run chain's base commit. |
 | `unmerged` | `JSON` | Whether the run holds unmerged work, when a repository is supplied. |
-| `fanout` | `JSON` | A `run --parallel` coordinator's lane count and dispatch spec. |
 | `lanes` | `JSON` | The session's lanes by lineage, from the same listing as `sessions show`, for every session that has any. |
 | `dispatches` | `JSON` | The session's dispatch records, each with its lanes' outcomes. |
 | `forked_from` | `JSON` | The rendered fork lineage when recorded. |
@@ -2645,7 +2642,6 @@ Source: [`agent6.sessions.manifest.SessionManifest`](https://github.com/agent6-d
 | `parallel` | `ParallelLineage \| None` | A fan-out lane's lineage, or None. |
 | `placement` | `PlacementStamp \| None` | A fan-out lane's rank and group reference, or None. |
 | `comparison` | `ComparisonStamp \| None` | The group's ranking and judge spend on its coordinator, or None. |
-| `fanout` | `FanoutStamp \| None` | A fan-out's own record on its coordinator, or None. |
 
 ### `agent6 ps` JSON row
 
@@ -3313,17 +3309,6 @@ Source: [`agent6.sessions.manifest.ComparisonStamp`](https://github.com/agent6-d
 | `rationale` | `str` | The judge's reason, at most 2000 characters; empty for mechanical ranking. |
 | `judge_cost_usd` | `float` | The group's judge spend in USD, zero when no judge call was made. |
 | `judge_cost_partial` | `bool` | The cost is a lower bound because some judge usage was unpriced. |
-
-### FanoutStamp
-
-**Support: public.** The record a `run --parallel` fan-out leaves on its own session.
-
-Source: [`agent6.sessions.manifest.FanoutStamp`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py).
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `lanes` | `int` | How many lanes it dispatched. |
-| `spec` | `str` | The `--parallel` argument as typed. |
 
 ### SessionCore
 

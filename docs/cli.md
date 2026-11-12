@@ -181,7 +181,7 @@ Exit codes for `agent6 run`, `ask` and `resume`, for scripts to branch on:
 | `3` | budget exhausted, including a `run --parallel` run whose budget ended every lane |
 | `4` | finished over a red or timed-out verify gate, or a never-run gate under `harness.verify.when = "finish"` or `"turn"` |
 | `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing, or one with `[git].commit_per_turn = false`, stays `0`) |
-| `130` | interrupted, or stopped by the operator: Ctrl-C, SIGTERM to a run, ask, plan or fan-out (`timeout`, CI, the kill `agent6 stop` falls back to), `agent6 stop`, abort or exit at the pause menu, stop after a commit |
+| `130` | interrupted, or stopped by the operator: Ctrl-C, SIGTERM to a run, ask or plan (`timeout`, CI, the kill `agent6 stop` falls back to), `agent6 stop`, abort or exit at the pause menu, stop after a commit |
 | `141` | the output pipe closed (`agent6 ... \| head`) |
 
 `passed` means the model called `finish_session` and the gate was green; it does not certify the task.

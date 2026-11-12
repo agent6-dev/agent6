@@ -78,6 +78,5 @@
     "winner": true,
     "group": "p-abc"
   },
-  "comparison": null,
-  "fanout": null
+  "comparison": null
 }

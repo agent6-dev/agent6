@@ -274,37 +274,3 @@ def test_steer_refuses_a_view_only_word(
     assert "pause menu" in err
     assert "agent6 attach" not in err
     assert not ipc.steer_request_pending(d)
-
-
-def test_group_steer_names_lanes_without_writing(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A fan-out has no model to consume a steer."""
-    import json
-
-    from agent6.ui import directive_actions
-    from agent6.ui.acp import rpc, session
-    from agent6.ui.web import actions
-
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / ".state"))
-    monkeypatch.chdir(tmp_path)
-    d = _run_session(tmp_path, "group-AAAA11")
-    process.write_worker_pid(d, os.getpid())
-    (d / "manifest.json").write_text(
-        json.dumps({"session_id": d.name, "mode": "run", "fanout": {"lanes": 2}})
-    )
-    expected = (
-        "group-AAAA11 is a fan-out of 2 lanes and runs no model; "
-        "steer a lane: group-AAAA11-l1, group-AAAA11-l2"
-    )
-    assert main(["steer", d.name, "hello"]) == 1
-    assert expected in capsys.readouterr().err
-    assert directive_actions.submit_composer_line(d, "hello") == (False, expected)
-    assert actions.steer(tmp_path, d.name, "hello") == (False, expected)
-    sessions = session.Sessions(run=lambda _s, _t: "end_turn", state_dir_for=paths.state_dir)
-    saved = session.Session(acp_id=d.name, cwd=tmp_path, session_id=d.name)
-    with pytest.raises(rpc.RpcError, match="steer a lane") as exc:
-        sessions.start_execution(saved, "hello", finish=lambda _r: None)
-    assert str(exc.value) == expected
-    assert not ipc.steer_request_pending(d)
-    assert not ipc.steer_answer_written(d)

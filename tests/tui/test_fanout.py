@@ -26,7 +26,7 @@ async def _scenario(fan_out: pathlib.Path) -> None:
         await pilot.pause()
         table = tui.screen.query_one("#lanes", widgets.DataTable)
         assert table.display and table.row_count == 2
-        assert table.border_title == "fan-out: 2 lanes"
+        assert table.border_title == "lanes: 2"
         assert str(table.get_row_at(0)[1]) == "openai/lane-1"
         with lane.logs_path.open("a") as log:
             log.write('{"type":"budget.update","usd_total":1.25}\n')

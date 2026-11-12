@@ -1189,36 +1189,6 @@ def test_a_steer_that_resumes_a_run_is_its_continuation(
         assert sessions_manifest.read_manifest(session_dir).continued_task == ""
 
 
-def test_resume_refuses_a_fan_out_coordinator(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A `run --parallel` fan-out is a session of its own with no loop to continue.
-
-    Resuming it is refused by name, pointing at its lanes, before the snapshot check would call it
-    "no resume snapshot".
-    """
-    monkeypatch.chdir(tmp_path)
-    layout = sessions_layout.SessionLayout(
-        state_dir=paths.state_dir(tmp_path), session_id="fan-AAAA11"
-    )
-    layout.ensure()
-    layout.manifest_path.write_text(
-        json.dumps(
-            {
-                "version": 3,
-                "session_id": "fan-AAAA11",
-                "mode": "run",
-                "user_task": "t",
-                "fanout": {"lanes": 2, "spec": "2"},
-            }
-        ),
-        encoding="utf-8",
-    )
-    assert cli_resume._cmd_resume((), "fan-AAAA11", force=False, steer="") == 2
-    err = capsys.readouterr().err
-    assert "fan-out coordinator is not resumable" in err and "sessions show fan-AAAA11" in err
-
-
 def test_a_declined_unconfined_confirm_is_the_operators_refusal(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

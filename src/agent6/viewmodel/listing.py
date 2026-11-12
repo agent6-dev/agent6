@@ -566,8 +566,6 @@ def resume_blocker(session_dir: pathlib.Path) -> str:
         The reason, naming the `agent6 fork` command when one continues the run; "" when
         no such state blocker applies.
     """
-    if is_fanout(session_dir):
-        return "a fan-out coordinator is not resumable"
     with contextlib.suppress(sessions_manifest.ManifestError):
         m = sessions_manifest.read_manifest(session_dir)
         if m.parallel is not None:
@@ -607,49 +605,6 @@ def live_sessions_in_checkout(state_dir: pathlib.Path) -> tuple[str, ...]:
         if manifest is None or (manifest.worktree is None and manifest.parallel is None):
             live.append(session_dir.name)
     return tuple(live)
-
-
-def session_action_applies(action: str, *, fanout: bool, mode: str = "run") -> bool:
-    """Hide loop and commit-chain actions on groups; their event records remain reviewable.
-
-    A bounded read-only conversation's record is read, never acted on: every action is hidden.
-
-    Args:
-        action: The session action name.
-        fanout: Whether the manifest records a fan-out, not an ordinary run with lanes.
-        mode: The session's mode.
-
-    Returns:
-        Whether the action applies, independent of the session's liveness or git policy.
-    """
-    if mode == "read_only":
-        return False
-    return not (fanout and action in {"compact", "fork", "merge"})
-
-
-def fanout_resume_refusal(session_id: str) -> str:
-    """Return the refusal every resume path gives a fan-out coordinator, which has no loop."""
-    return (
-        f"cannot resume {session_id}: a fan-out coordinator is not resumable;"
-        f" `agent6 sessions show {session_id}` lists its lanes."
-    )
-
-
-def is_fanout(session_dir: pathlib.Path) -> bool:
-    """Return whether the session is a fan-out coordinator; False when its manifest is unreadable.
-
-    A hub asks before it spawns a resume that could only refuse.
-
-    Args:
-        session_dir: The session's state dir.
-
-    Returns:
-        True when its manifest carries a fan-out record.
-    """
-    try:
-        return sessions_manifest.read_manifest(session_dir).fanout is not None
-    except sessions_manifest.ManifestError:
-        return False
 
 
 def undone_refusal(session_id: str, child: str) -> str:

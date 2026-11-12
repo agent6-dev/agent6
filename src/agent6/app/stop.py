@@ -19,7 +19,6 @@ the lanes landed before it ends; that drain gets a longer wait.
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import os
 import pathlib
@@ -27,12 +26,12 @@ import signal
 import time
 
 from agent6.sandbox import jail
-from agent6.sessions import ipc, lineage, manifest, process, shells
+from agent6.sessions import ipc, lineage, process, shells
 from agent6.viewmodel import listing, session_is_live, summarize_session_dir
 from agent6.viewmodel.session import status as session_status
 
 STOP_WAIT_S = 5.0  # a run that reads its requests ends within this
-FANOUT_WAIT_S = 30.0  # a coordinator drains its ended lanes and imports what landed within this
+LANES_WAIT_S = 30.0  # a run drains its ended lanes and imports what landed within this
 KILL_GRACE_S = 3.0  # SIGTERM to SIGKILL
 _POLL_S = 0.1
 
@@ -104,7 +103,6 @@ def stop_session(
             "lanes_stopped",
             f"{rid} {_not_live_state(session_dir)}; its {lane_count} stopped",
         )
-    fanout = _is_fanout(session_dir)
     resumable = not listing.resume_blocker(session_dir)
     with_lanes = f" with its {lane_count}" if lanes else ""
     worker = process.read_live_worker_identity(session_dir)
@@ -134,9 +132,8 @@ def stop_session(
     return _ended(
         session_dir,
         worker,
-        wait_s=FANOUT_WAIT_S if fanout else wait_s,
+        wait_s=max(wait_s, LANES_WAIT_S) if lanes else wait_s,
         grace_s=grace_s,
-        fanout=fanout,
         resumable=resumable,
         with_lanes=with_lanes,
     )
@@ -148,17 +145,13 @@ def _ended(
     *,
     wait_s: float,
     grace_s: float,
-    fanout: bool,
     resumable: bool,
     with_lanes: str,
 ) -> StopOutcome:
     """Return the outcome once both bridges are written: ended in time, or what the kill did."""
     rid = session_dir.name
     if _ended_within(session_dir, worker, wait_s):
-        landed = "; what they landed is imported and ranked" if fanout and with_lanes else ""
-        return StopOutcome(
-            rid, True, "stopped", f"{rid} stopped{with_lanes}{landed}", resumable=resumable
-        )
+        return StopOutcome(rid, True, "stopped", f"{rid} stopped{with_lanes}", resumable=resumable)
     worker_killed, commands = _kill(session_dir, worker, grace_s)
     continues = ", and resume continues it" if resumable else ""
     if not worker_killed and not commands:
@@ -190,13 +183,6 @@ def _not_live_state(session_dir: pathlib.Path) -> str:
     if session_status.produced_result(summary.status):
         return f"is already {summary.status}"
     return f"is not running ({summary.status})"
-
-
-def _is_fanout(session_dir: pathlib.Path) -> bool:
-    """Return whether the session is a fan-out coordinator."""
-    with contextlib.suppress(manifest.ManifestError):
-        return manifest.read_manifest(session_dir).fanout is not None
-    return False
 
 
 def _live_lanes(session_dir: pathlib.Path) -> list[pathlib.Path]:

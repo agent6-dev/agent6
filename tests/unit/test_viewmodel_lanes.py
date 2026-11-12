@@ -175,7 +175,6 @@ def test_the_header_carries_lanes_and_dispatches_for_an_ordinary_parent(
         parent, _record("run-abc-p1", [("run-abc-p1-l1", _joined(), 0.5)]), now=1.0
     )
     header = wire.manifest_header(parent)
-    assert "fanout" not in header
     assert [row["session_id"] for row in header["lanes"]] == ["run-abc-p1-l1"]
     (dispatch,) = header["dispatches"]
     assert dispatch["identity"] == "run-abc-p1" and dispatch["children"][0]["outcome"] == "joined"

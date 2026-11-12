@@ -1078,9 +1078,7 @@ def test_hub_folded_fan_out_shows_the_groups_latest_activity(tmp_path: pathlib.P
     coord = _write_run(
         a6, "runs", "fan", [{"type": "session.start", "mode": "run", "user_task": "t"}]
     )
-    (coord / "manifest.json").write_text(
-        json.dumps({"mode": "run", "fanout": {"lanes": 2, "spec": "2"}}), encoding="utf-8"
-    )
+    (coord / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
     for lane in (1, 2):
         ld = _write_run(
             a6,
@@ -1265,9 +1263,7 @@ def test_the_hub_folds_a_fan_outs_lanes_and_space_expands_them(tmp_path: pathlib
     a6 = tmp_path / ".agent6"
     start: dict[str, object] = {"type": "session.start", "mode": "run", "user_task": "t"}
     fan = _write_run(a6, "runs", "fan", [start])
-    (fan / "manifest.json").write_text(
-        json.dumps({"mode": "run", "fanout": {"lanes": 2, "spec": "2"}}), encoding="utf-8"
-    )
+    (fan / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
     for lane in (1, 2):
         d = _write_run(a6, "runs", f"fan-l{lane}", [start])
         (d / "manifest.json").write_text(

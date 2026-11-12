@@ -236,7 +236,7 @@ def test_ps_folds_a_live_lane_under_its_live_coordinator(
     monkeypatch.setenv("XDG_STATE_HOME", str(base))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     runs = base / "agent6" / "coord-repo-111111" / "sessions" / "runs"
-    _live(runs / "fan", {"mode": "run", "fanout": {"lanes": 2, "spec": "2"}})
+    _live(runs / "fan", {"mode": "run"})
     _live(
         runs / "fan-l1",
         {"mode": "run", "parallel": {"group": "fan", "lane": 1, "coordinator": "fan"}},
@@ -271,7 +271,7 @@ def test_ps_nests_a_lane_under_its_coordinator_whatever_the_scan_order(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     origin = base / "agent6" / "aaa-origin-000000" / "sessions" / "runs"
     clone = base / "agent6" / "zzz-clone-000000" / "sessions" / "runs"
-    _live(origin / "fan", {"mode": "run", "fanout": {"lanes": 2, "spec": "2"}})
+    _live(origin / "fan", {"mode": "run"})
     for lane in (2, 1):
         _live(
             clone / f"fan-l{lane}",

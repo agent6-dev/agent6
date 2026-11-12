@@ -252,9 +252,6 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     except sessions_manifest.ManifestError as exc:
         reporter.error(f"cannot resume {session_id}: {exc}")
         return 2
-    if manifest.fanout is not None:
-        reporter.error(listing.fanout_resume_refusal(session_id))
-        return 2
     cwd = manifest.worktree or repo
     if missing := sessions_manifest.worktree_blocker(manifest.worktree):
         reporter.error(

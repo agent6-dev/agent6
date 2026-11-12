@@ -97,7 +97,6 @@ def test_list_names_the_repositorys_resumable_runs_newest_first(tmp_path: pathli
     _record(cwd, "older-run-AAAAAA", "first task", mtime=1_700_000_000.0)
     _record(cwd, "newer-run-BBBBBB", "second task\nwith a second line", mtime=1_700_000_600.0)
     _record(cwd, "a-plan-CCCCCC", "a plan", bucket="plans", mtime=1_700_000_900.0)
-    _record(cwd, "fan-out-DDDDDD", "a fan-out", mtime=1_700_000_950.0, extra={"fanout": {}})
     _record(cwd, "no-snap-EEEEEE", "died early", mtime=1_700_000_980.0, checkpoint=False)
     sessions = _sessions(None)
     (reply,) = _drive(_msg(1, "session/list", cwd=str(cwd)) + b"\n", sessions)
@@ -135,7 +134,6 @@ def test_resume_opens_a_recorded_run_under_its_own_id(tmp_path: pathlib.Path) ->
     _record(cwd, "quiet-run-AAAAAA", "the task", mtime=time.time())
     _record(cwd, "quiet-run-BBBBBB", "another", mtime=time.time())
     _record(cwd, "a-plan-CCCCCC", "a plan", bucket="plans", mtime=time.time())
-    _record(cwd, "fan-out-DDDDDD", "a fan-out", mtime=time.time(), extra={"fanout": {}})
     seen: list[tuple[str, str, str]] = []
 
     def run(session: acp_session.Session, text: str) -> str:
@@ -147,14 +145,12 @@ def test_resume_opens_a_recorded_run_under_its_own_id(tmp_path: pathlib.Path) ->
     def resume(req_id: int, session_id: str) -> bytes:
         return _msg(req_id, "session/resume", cwd=str(cwd), sessionId=session_id, mcpServers=[])
 
-    unknown, prefix, plan, fanout, resumed, again, prompted = _drive(
+    unknown, prefix, plan, resumed, again, prompted = _drive(
         resume(1, "gone-run-ZZZZZZ")
         + b"\n"
         + resume(2, "quiet-run")
         + b"\n"
         + resume(3, "a-plan-CCCCCC")
-        + b"\n"
-        + resume(4, "fan-out-DDDDDD")
         + b"\n"
         + resume(5, "quiet-run-AAAAAA")
         + b"\n"
@@ -172,7 +168,6 @@ def test_resume_opens_a_recorded_run_under_its_own_id(tmp_path: pathlib.Path) ->
     assert "no recorded run 'gone-run-ZZZZZZ'" in unknown["error"]["message"]
     assert "no recorded run 'quiet-run'" in prefix["error"]["message"]
     assert "is a plan; an editor resumes runs" in plan["error"]["message"]
-    assert fanout["error"]["message"].startswith("cannot resume fan-out-DDDDDD: ")
     assert resumed["result"] == {} and again["result"] == {}
     assert prompted["result"] == {"stopReason": "end_turn"}
     assert seen == [("quiet-run-AAAAAA", "quiet-run-AAAAAA", "carry on")]

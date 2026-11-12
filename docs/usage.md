@@ -420,7 +420,7 @@ The verify command is the success gate.
     agent6 config set --repo git.worktree.setup_command '["uv", "sync"]'
     ```
 
-- Unset, a `## Setup command` fenced block in AGENTS.md supplies it; a `--worktree` run and a `--parallel` fan-out read it from the commit the worktree is cut from, not from an uncommitted edit, and print the command and that AGENTS.md gave it.
+- Unset, a `## Setup command` fenced block in AGENTS.md supplies it; a `--worktree` run and a lane read it from the commit the worktree is cut from, not from an uncommitted edit, and print the command and that AGENTS.md gave it.
     - an AGENTS.md that is a symlink is not read there: set `git.worktree.setup_command`
 - The command runs in the run's own sandbox, under the isolation, network and grants of every command of that run; with no route out it has to work offline ([the offline recipe](security.md#4-commands-and-environment)).
 - Machine clones follow the [state setup and failure rules](state-machines.md#agent) and [setup approval policy](security.md#4-commands-and-environment).

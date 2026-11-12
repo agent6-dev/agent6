@@ -1925,18 +1925,15 @@ def test_a_journal_written_before_the_turn_rename_keeps_its_end_turn(
     assert session_log.scan_session_log(tmp_path / "logs.jsonl").turn == 7
 
 
-@pytest.mark.parametrize("action", ["compact", "fork", "merge"])
-def test_fanout_has_no_loop_or_commit_actions(action: str) -> None:
-    assert not listing.session_action_applies(action, fanout=True)
-    assert listing.session_action_applies(action, fanout=False)
-
-
-@pytest.mark.parametrize("action", ["compact", "fork", "merge", "resume", "review"])
-def test_a_review_seats_record_offers_no_action(action: str) -> None:
+@pytest.mark.parametrize(("mode", "offered"), [("read_only", False), ("ask", True)])
+def test_a_review_seats_record_offers_no_action(
+    tmp_path: pathlib.Path, mode: str, offered: bool
+) -> None:
     """The findings card links a seat's page, where Fork and the composer could only refuse."""
-    assert not listing.session_action_applies(action, fanout=False, mode="read_only")
-    assert listing.session_action_applies("resume", fanout=False, mode="ask")
+    (tmp_path / "manifest.json").write_text(json.dumps({"mode": mode}), encoding="utf-8")
 
+    from agent6.viewmodel import wire
 
-def test_fanout_record_can_be_reviewed() -> None:
-    assert listing.session_action_applies("review", fanout=True)
+    actions = wire.manifest_header(tmp_path, repo=None)["session_actions"]
+
+    assert actions == dict.fromkeys(("compact", "fork", "merge", "resume", "review"), offered)

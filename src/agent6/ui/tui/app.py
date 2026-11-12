@@ -529,9 +529,6 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             text: The instruction the new session injects at its first boundary.
         """
         target = self.continue_as or self.session_dir.name
-        if not self.continue_as and listing.is_fanout(self.session_dir):
-            self.notify(listing.fanout_resume_refusal(target), severity="warning")
-            return
         self._spawn_resume(
             target,
             steer=text,
@@ -696,9 +693,6 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             self.notify("nothing to resume: the session is still going", severity="warning")
             return
         target = self.continue_as or self.session_dir.name
-        if not self.continue_as and listing.is_fanout(self.session_dir):
-            self.notify(listing.fanout_resume_refusal(target), severity="warning")
-            return
         if not self.continue_as and listing.finished_needs_new_work(self.session_dir):
             self.notify(
                 "this run finished; type what to do next below (Enter resumes it with the"
@@ -746,12 +740,8 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             parameters: Arguments passed to the action.
 
         Returns:
-            False for group-only exclusions, None for a disabled fork, else the default.
+            None for a disabled fork, else the default.
         """
-        if action in ("compact", "fork") and not listing.session_action_applies(
-            action, fanout=listing.is_fanout(self.session_dir)
-        ):
-            return False
         if action == "fork":
             with contextlib.suppress(sessions_manifest.ManifestError):
                 if sessions_manifest.read_manifest(self.session_dir).git_control == "model":

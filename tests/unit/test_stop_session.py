@@ -362,7 +362,7 @@ def test_a_session_that_is_not_live_is_refused_with_its_state(tmp_path: pathlib.
     assert not (d / ipc.STOP_REQUEST_FILE).exists() and not (d / ipc.STEER_ANSWER_FILE).exists()
 
 
-def test_a_fan_outs_own_stop_markers_land_before_its_lanes_are_stopped(
+def test_a_runs_own_stop_markers_land_before_its_lanes_are_stopped(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The coordinator reads its stop as its lanes end; one written after they ended is never read.
@@ -376,14 +376,10 @@ def test_a_fan_outs_own_stop_markers_land_before_its_lanes_are_stopped(
     def _live(_d: pathlib.Path) -> bool:
         return True
 
-    def _fanout(d: pathlib.Path) -> bool:
-        return d == coordinator
-
     def _lanes(d: pathlib.Path) -> list[pathlib.Path]:
         return [lane] if d == coordinator else []
 
     monkeypatch.setattr(stop, "session_is_live", _live)
-    monkeypatch.setattr(stop, "_is_fanout", _fanout)
     monkeypatch.setattr(stop, "_live_lanes", _lanes)
     pending_when_lane_stopped: list[bool] = []
     real = stop.stop_session

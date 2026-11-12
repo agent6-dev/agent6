@@ -467,11 +467,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         rows = header.get("lanes", [])
         lanes.display = bool(rows)
         if lanes.display:
-            lanes.border_title = (
-                f"fan-out: {format.lane_count(header['fanout']['lanes'])}"
-                if "fanout" in header
-                else f"lanes: {len(rows)}"
-            )
+            lanes.border_title = f"lanes: {len(rows)}"
             if not lanes.columns:
                 lanes.add_columns("id (Enter opens)", "model", "status", "usage")
             cursor = lanes.cursor_coordinate

@@ -139,12 +139,7 @@ def _print_lanes(
         lane_manifests: Each readable lane manifest, for its compare stamp.
         outcomes: How each recorded lane joined, by session id.
     """
-    if manifest.fanout is not None:
-        print(
-            f"fan-out:    {format.lane_count(manifest.fanout.lanes)} (--parallel "
-            f"{manifest.fanout.spec})"
-        )
-    elif lanes:
+    if lanes:
         print(f"lanes:      {len(lanes)}")
     idents = {
         lane.session_id: lane.id_cell(winner=_won(lane_manifests.get(lane.session_id)))
@@ -389,7 +384,6 @@ class StatusJSON(TypedDict):
     placement: dict[str, Any] | None
     comparison: dict[str, Any] | None
     parallel: dict[str, Any] | None
-    fanout: dict[str, Any] | None
     lanes: list[listing.SummaryRow]
     run_branch: str | None
     base_branch: str | None
@@ -440,7 +434,6 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         placement: The lane's rank and group id, or null outside a compared lane.
         comparison: The group record on its coordinator, or null for other sessions.
         parallel: The ParallelLineage, or null outside a lane.
-        fanout: The FanoutStamp, or null outside a coordinator.
         lanes: The coordinator's summary_row objects.
         run_branch: The existing run branch, or null.
         base_branch: The base branch, or null when unknown.
@@ -533,7 +526,6 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             if manifest.comparison
             else None,
             "parallel": manifest.parallel.model_dump(mode="json") if manifest.parallel else None,
-            "fanout": manifest.fanout.model_dump(mode="json") if manifest.fanout else None,
             "lanes": [
                 listing.summary_row(ln, winner=_won(lane_manifests.get(ln.session_id)))
                 for ln in lanes

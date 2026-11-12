@@ -140,7 +140,6 @@ def write_session_manifest(
     worktree_git_dir: pathlib.Path | None = None,
     review_base_tree: str = "",
     workspace_set_up: bool = False,
-    fanout: manifest.FanoutStamp | None = None,
     budget: manifest.BudgetStamp | None = None,
 ) -> None:
     """Write the manifest.json a new run or fork starts with.
@@ -170,7 +169,6 @@ def write_session_manifest(
         worktree_git_dir: The repository git dir the worktree points into.
         workspace_set_up: Whether the checkout already ran its setup command (an `/undo`
             fork in its source's worktree).
-        fanout: A `run --parallel` coordinator's own record.
         budget: The caps the run's `--max-*` flags set, so a resume replays them.
     """
     lineage = parallel_lineage()
@@ -211,7 +209,6 @@ def write_session_manifest(
         review_base_tree=review_base_tree,
         workspace_set_up=workspace_set_up,
         parallel=lineage,
-        fanout=fanout,
     )
     write_manifest(layout.manifest_path, m)
 

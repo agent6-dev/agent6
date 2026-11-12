@@ -40,7 +40,6 @@ def fan_out(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.
         repo,
         "fan",
         {
-            "fanout": {"lanes": 2, "spec": "2"},
             "comparison": {
                 "group": "fan",
                 "ranking": ["fan-l2", "fan-l1"],
@@ -125,13 +124,12 @@ def test_show_on_a_coordinator_lists_its_lanes(
 ) -> None:
     assert main(["sessions", "show", "fan"]) == 0
     out = capsys.readouterr().out
-    assert "fan-out:    2 lanes (--parallel 2)" in out
+    assert "lanes:      2\n" in out
     lanes = [ln for ln in out.splitlines() if "fan-l" in ln]
     assert len(lanes) == 2 and "fan-l1" in lanes[0] and "fan-l2" in lanes[1]
     assert lanes[1].split()[:2] == ["rank", "1/2"] and "passed" in lanes[1]
     assert main(["sessions", "show", "fan", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
-    assert data["fanout"] == {"lanes": 2, "spec": "2"}
     assert [ln["session_id"] for ln in data["lanes"]] == ["fan-l1", "fan-l2"]
     assert data["lanes"][1]["winner"] is True
 
@@ -213,7 +211,7 @@ def test_show_on_a_lane_names_its_coordinator(
         "coordinator": "fan",
         "config_notes": [],
     }
-    assert data["lanes"] == [] and data["fanout"] is None
+    assert data["lanes"] == []
 
 
 def test_show_marks_a_lane_unmerged_like_the_listing(
