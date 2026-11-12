@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import dataclasses
+import math
 import pathlib
 import shlex
 from typing import Any, Literal
 
 import pydantic
 
-from agent6 import errors, evidence
+from agent6 import budget, errors, evidence
 from agent6.sessions import manifest
 from agent6.vcs import commit_graph, git_read
+from agent6.viewmodel import lanes, session_log
 from agent6.viewmodel import review as review_view
-from agent6.viewmodel import session_log
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -139,6 +140,7 @@ class ReceiptView:
         jobs: Job-settlement observations.
         environments: Environment lifecycle observations.
         acquisitions: The container leases the run's executions acquired.
+        children: The session's lanes, from its dispatch records or its lanes' lineage.
     """
 
     session_id: str
@@ -156,6 +158,7 @@ class ReceiptView:
     jobs: tuple[evidence.JobsObservation, ...] = ()
     environments: tuple[evidence.EnvironmentObservation, ...] = ()
     acquisitions: tuple[evidence.AcquisitionObservation, ...] = ()
+    children: tuple[lanes.ChildView, ...] = ()
 
 
 def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
@@ -201,6 +204,7 @@ def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
         fold.jobs,
         fold.environments,
         fold.acquisitions,
+        lanes.children_of(session_dir),
     )
 
 
@@ -365,6 +369,39 @@ def environment_summary(view: ReceiptView | session_log.LogScan) -> str:
     return "\n".join(lines)
 
 
+def lanes_section(children: tuple[lanes.ChildView, ...]) -> list[str]:
+    """Return the receipt's `Lanes` lines: one per child, then the spend they add to the total.
+
+    Args:
+        children: The session's children.
+
+    Returns:
+        The lines; none for a session without children.
+    """
+    if not children:
+        return []
+    lines = ["", "Lanes"]
+    for child in children:
+        label = f"lane {child.lane} {child.session_id}"
+        if child.model:
+            label += f" ({child.model})"
+        if child.outcome == "joined":
+            what = f"joined at {child.join_sha[:12]}"
+        elif child.outcome == "no_changes":
+            what = "no changes"
+        elif child.outcome:
+            what = f"{child.outcome}: {child.error}" if child.error else child.outcome
+        else:
+            what = child.status or "not started"
+        spend = f", {budget.format_usd(child.spend_usd)}" if child.settled else ""
+        lines.append(f"{label}: {what}{spend}")
+    settled = math.fsum(child.spend_usd for child in children if child.settled)
+    if settled:
+        # The parent's total already holds this: a reader adds nothing.
+        lines.append(f"spend includes the lanes' {budget.format_usd(settled)}")
+    return lines
+
+
 def render(view: ReceiptView, *, include_output: bool = True) -> str:
     """Render the shared receipt without interpreting model prose as test evidence.
 
@@ -431,6 +468,7 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
             lines.append("Risk truncated at 1000 characters.")
     if not seats:
         lines.append("not recorded")
+    lines.extend(lanes_section(view.children))
     lines.extend(
         (
             "",

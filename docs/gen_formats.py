@@ -454,6 +454,8 @@ MODELS = (
     ("viewmodel.review_queue", "ReviewQueueEntry"),
     ("viewmodel.review", "MergeReviewGuard"),
     ("viewmodel.receipt", "ReceiptView"),
+    ("viewmodel.lanes", "ChildView"),
+    ("viewmodel.lanes", "DispatchView"),
     ("review_records", "FindingAction"),
     ("app.review_actions", "ActionResult"),
     ("vcs.git_files", "BlameLine"),

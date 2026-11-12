@@ -1754,8 +1754,9 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `git_control` | `JSON` | The launch git-control policy. |
 | `base_sha` | `JSON` | The run chain's base commit. |
 | `unmerged` | `JSON` | Whether the run holds unmerged work, when a repository is supplied. |
-| `fanout` | `JSON` | The coordinator's lane count and dispatch spec. |
-| `lanes` | `JSON` | Its current lane summaries, from the same listing as `sessions show`. |
+| `fanout` | `JSON` | A `run --parallel` coordinator's lane count and dispatch spec. |
+| `lanes` | `JSON` | The session's lanes by lineage, from the same listing as `sessions show`, for every session that has any. |
+| `dispatches` | `JSON` | The session's dispatch records, each with its lanes' outcomes. |
 | `forked_from` | `JSON` | The rendered fork lineage when recorded. |
 | `comparison` | `JSON` | The group record from the coordinator, directly or through the lane's group. |
 | `compare` | `JSON` | The lane's CompareStamp when recorded. |
@@ -2682,6 +2683,49 @@ Source: [`agent6.viewmodel.receipt.ReceiptView`](https://github.com/agent6-dev/a
 | `jobs` | `tuple[JobsObservation, ...]` | Job-settlement observations. |
 | `environments` | `tuple[EnvironmentObservation, ...]` | Environment lifecycle observations. |
 | `acquisitions` | `tuple[AcquisitionObservation, ...]` | The container leases the run's executions acquired. |
+| `children` | `tuple[ChildView, ...]` | The session's lanes, from its dispatch records or its lanes' lineage. |
+
+### ChildView
+
+**Support: public.** One lane of a session, as the surfaces show it.
+
+Source: [`agent6.viewmodel.lanes.ChildView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/lanes.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `session_id` | `str` | The lane's session id. |
+| `lane` | `int` | Its number in its group. |
+| `group` | `str` | The group it was dispatched in. |
+| `source` | `str` | Who dispatched it: operator, model or panel; "" when no record says. |
+| `task` | `str` | Its task text; "" when unknown. |
+| `model` | `str \| None` | Its selector, None for the worker's own settings. |
+| `route` | `str` | The `provider/model` its manifest records; "" when it never started. |
+| `status` | `str` | Its own status word; "" when it never started. |
+| `outcome` | `str` | How it joined: `joined`, `no_changes`, `conflict` or `failed`; "" when no join is recorded, as for a fan-out's lanes. |
+| `join_sha` | `str` | The merge commit, "" when none. |
+| `imported_ref` | `str` | The branch the join read, "" when none. |
+| `error` | `str` | The join's detail, "" when none. |
+| `spend_usd` | `float` | What its parent settled for it; the lane's own cost when no record says. |
+| `usd_partial` | `bool` | Whether unpriced calls make the spend a lower bound. |
+| `settled` | `bool` | Whether the parent charged its usage. |
+| `outstanding` | `bool` | Whether its usage is unknown and its share stays held. |
+| `launched` | `bool` | Whether a session dir of its own exists. |
+
+### DispatchView
+
+**Support: public.** One dispatch record, as the surfaces show it.
+
+Source: [`agent6.viewmodel.lanes.DispatchView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/lanes.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `identity` | `str` | The group id. |
+| `source` | `str` | Who dispatched it. |
+| `state` | `str` | The record's state, or `unreadable`. |
+| `turn` | `int` | The turn it was dispatched after. |
+| `base` | `str` | The chain tip the lanes were cut from. |
+| `message` | `str` | The delivered result, or why the record could not be read. |
+| `children` | `tuple[ChildView, ...]` | Its lanes, in lane order. |
 
 ### FindingAction
 

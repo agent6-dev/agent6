@@ -475,6 +475,7 @@ depends_on = [
   "agent6.sessions.event_log",
   "agent6.sessions.ipc",
   "agent6.sessions.journal",
+  "agent6.sessions.lane_dispatch",
   "agent6.sessions.layout",
   "agent6.sessions.manifest",
   "agent6.sessions.objects",
@@ -1015,7 +1016,7 @@ depends_on = ["agent6.errors", "agent6.vcs.git_command"]
 
 [[modules]]
 path = "agent6.viewmodel.receipt"
-depends_on = ["agent6.errors", "agent6.evidence", "agent6.sessions.manifest", "agent6.vcs.commit_graph", "agent6.vcs.git_read", "agent6.viewmodel"]
+depends_on = ["agent6.budget", "agent6.errors", "agent6.evidence", "agent6.sessions.manifest", "agent6.vcs.commit_graph", "agent6.vcs.git_read", "agent6.viewmodel"]
 
 [[modules]]
 path = "agent6.media"

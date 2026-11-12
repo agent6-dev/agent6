@@ -220,7 +220,7 @@ def read_records(session_dir: pathlib.Path) -> tuple[DispatchRecord, ...]:
     records: list[DispatchRecord] = []
     for path in sorted(directory.glob("*.json")):
         records.append(read_record(path))
-    return tuple(sorted(records, key=_dispatch_order))
+    return tuple(sorted(records, key=lambda record: order_key(record.identity)))
 
 
 def read_record(path: pathlib.Path) -> DispatchRecord:
@@ -247,6 +247,7 @@ def read_record(path: pathlib.Path) -> DispatchRecord:
     return record
 
 
-def _dispatch_order(record: DispatchRecord) -> tuple[int, str]:
-    match = _GROUP_NUMBER.search(record.identity)
-    return (int(match.group(1)) if match else 0, record.identity)
+def order_key(identity: str) -> tuple[int, str]:
+    """Return the sort key that puts dispatch ids in group order (`p2` before `p10`)."""
+    match = _GROUP_NUMBER.search(identity)
+    return (int(match.group(1)) if match else 0, identity)
