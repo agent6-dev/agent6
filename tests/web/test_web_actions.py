@@ -6,14 +6,17 @@ from __future__ import annotations
 
 import pathlib
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
 from agent6 import paths
+from agent6.app import merge
 from agent6.sessions import ipc, layout, process
 from agent6.ui import spawn
 from agent6.ui.cli import parser
 from agent6.ui.web import actions
+from agent6.vcs.git import policy as git_policy
 
 TINY = """
 machine = "tiny"
@@ -95,7 +98,7 @@ def test_model_section_write_preserves_the_target_layers_siblings(
     assert target.read_text() == before
 
 
-def test_merge_and_config_argv_end_options_before_values(
+def test_config_argv_ends_options_before_values(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured: list[list[str]] = []
@@ -105,10 +108,65 @@ def test_merge_and_config_argv_end_options_before_values(
         return True, "ok"
 
     monkeypatch.setattr(spawn, "run_cli_capture", _fake_capture)
-    actions.merge_run(tmp_path, "-rid", "squash")
-    assert captured[-1][1:] == ["sessions", "merge", "--method", "squash", "--", "-rid"]
     actions.set_config(tmp_path, "sandbox.protect_git", "-1", repo=True)
     assert captured[-1][1:] == ["config", "set", "--repo", "--", "sandbox.protect_git", "-1"]
+
+
+def test_the_web_merge_runs_in_this_process_under_the_requests_git_policy(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A merge that set the server's git policy would run every later request under it."""
+    from tests.unit import test_cli_sessions_merge as merge_tests
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    merge_tests._setup_run(  # pyright: ignore[reportPrivateUsage]
+        repo, "run-WEB111", commits=[("a.txt", "a\n", "agent6 turn 1: add a")]
+    )
+    overlay = tmp_path / "hooks.toml"
+    overlay.write_text("[git]\nrun_repo_hooks = true\n", encoding="utf-8")
+
+    def _no_child(*_a: object, **_k: object) -> tuple[bool, str]:
+        raise AssertionError("the web merge spawned a child")
+
+    monkeypatch.setattr(spawn, "run_cli_capture", _no_child)
+    during: list[git_policy.GitPolicy] = []
+    real_dispatch = merge.dispatch_merge
+
+    def _dispatch(*args: Any, **kwargs: Any) -> Any:
+        during.append(git_policy.current_policy())
+        return real_dispatch(*args, **kwargs)
+
+    monkeypatch.setattr(merge, "dispatch_merge", _dispatch)
+    before = git_policy.current_policy()
+
+    ok, message = actions.merge_run(repo, "run-WEB111", "squash", config_paths=(overlay,))
+
+    assert ok, message
+    assert message.startswith("merged agent6/run-WEB111 into main (squash) -> ")
+    assert (
+        merge_tests._git(repo, "show", "main:a.txt")  # pyright: ignore[reportPrivateUsage]
+        == "a"
+    )
+    assert during == [git_policy.GitPolicy(honor_repo_hooks=True, honor_repo_drivers=False)]
+    assert git_policy.current_policy() == before == git_policy.GitPolicy()
+
+
+def test_the_web_merge_reports_a_refusal_as_the_cli_words_it(tmp_path: pathlib.Path) -> None:
+    """A refused merge reaches the page with its reason, not as a bare exit code."""
+    from tests.unit import test_cli_sessions_merge as merge_tests
+
+    merge_tests._setup_run(  # pyright: ignore[reportPrivateUsage]
+        tmp_path, "run-WEB222", commits=[("a.txt", "a\n", "agent6 turn 1: add a")]
+    )
+    merge_tests._git(tmp_path, "checkout", "-q", "-b", "side")  # pyright: ignore[reportPrivateUsage]
+    merge_tests._git(tmp_path, "branch", "-D", "main")  # pyright: ignore[reportPrivateUsage]
+
+    ok, message = actions.merge_run(tmp_path, "run-WEB222", "squash")
+
+    assert not ok
+    assert message == "target branch 'main' does not exist; pass --into <existing-branch>."
+    assert actions.merge_run(tmp_path, "run-NOPE00", "") == (False, "no session 'run-NOPE00'")
 
 
 @pytest.mark.parametrize("asks", [False, True])

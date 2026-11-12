@@ -2037,6 +2037,16 @@ Source: [`ui.web.model.routes_payload`](https://github.com/agent6-dev/agent6/blo
 | `routes` | `JSON` | The provider/model routes the config can run. |
 | `default_label` | `JSON` | The composer's no-flag model label. |
 
+### `GET /api/session/<id>/merge` payload
+
+**Support: public.** Return what a merge confirm states about a run before the click.
+
+Source: [`ui.web.model.merge_preview_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `same_paths` | `JSON` | The line naming the unmerged runs that changed paths this run changed, or "" when there is none. |
+
 ### `/api/session/<id>/resume_defaults` payload
 
 **Support: public.** Return the resume row's no-flag preset and model labels under a picked preset.

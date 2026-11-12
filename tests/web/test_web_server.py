@@ -3073,6 +3073,20 @@ def test_the_provider_form_refuses_a_deployment_for_claude_code(
     assert status == 422 and data["ok"] is False and "deployment" in str(data["error"]), data
 
 
+def test_the_merge_preview_route_answers_for_a_session_and_404s_without_one(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
+    """`GET /api/session/<id>/merge` feeds the Merge confirm; the POST to that path merges."""
+    _srv, port = server
+    _make_run(tmp_path, "run-m", [{"type": "session.start", "mode": "run", "user_task": "m"}])
+    manifest = paths.state_dir(tmp_path) / "sessions" / "runs" / "run-m" / "manifest.json"
+    manifest.write_text(json.dumps({"session_id": "run-m", "mode": "run"}), encoding="utf-8")
+    status, body, _ = _get(port, "/api/session/run-m/merge")
+    assert (status, json.loads(body)) == (200, {"same_paths": ""})
+    status, body, _ = _get(port, "/api/session/run-none/merge")
+    assert (status, json.loads(body)) == (404, {"error": "no session 'run-none'"})
+
+
 def test_routes_payload_lists_every_route_and_the_modes_default(
     server: tuple[web_server.WebServer, int],
     tmp_path: pathlib.Path,

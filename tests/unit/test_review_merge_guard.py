@@ -140,7 +140,7 @@ def test_every_merge_path_refuses_open_blocks_even_when_panel_did_not_reject(
         captured = capsys.readouterr()
         text = captured.out + captured.err
     elif surface == "tui":
-        ok, text = home._run_merge_cli(tmp_path, run.session_id)  # pyright: ignore[reportPrivateUsage]
+        ok, text = home._merge_run(tmp_path, run.session_dir)  # pyright: ignore[reportPrivateUsage]
     elif surface == "auto":
         finalize.finalize_auto_merge(
             tmp_path, layout=run, cfg=Config(), reporter=reporter.STDIO_REPORTER

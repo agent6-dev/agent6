@@ -20,7 +20,6 @@ from typing import Literal
 from agent6 import budget as agent6_budget
 from agent6 import errors
 from agent6.app import merge_message, stamps
-from agent6.app.session import setup as session_setup
 from agent6.config import Config
 from agent6.graph import models as graph_models
 from agent6.graph import storage
@@ -28,6 +27,7 @@ from agent6.sessions import event_log, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import policy as git_policy
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import scan_session_log
 
@@ -437,9 +437,14 @@ def execute_merge(
     Returns:
         What the merge did.
     """
-    session_setup.apply_git_ops_policy(cfg)
     try:
         with contextlib.ExitStack() as cleanup:
+            # This merge's git runs under its own config, whatever process it is called in.
+            cleanup.enter_context(
+                git_policy.use(
+                    git_policy.GitPolicy(cfg.git.run_repo_hooks, cfg.git.run_repo_drivers)
+                )
+            )
             if worker_lock_fd is None:
                 fd = lock.acquire_single_writer(layout.session_dir)
                 cleanup.callback(lock.release_single_writer, fd)

@@ -15,7 +15,7 @@ import re
 from typing import Any
 
 from agent6 import paths
-from agent6.app import confine, workdirs
+from agent6.app import confine, merge_plan, workdirs
 from agent6.config import ConfigError, io, layer, layer_data, layer_presets, write
 from agent6.models import choices
 from agent6.sessions import layout, manifest, process
@@ -320,6 +320,23 @@ def resume_defaults_payload(
         cwd, config_paths, session_dir, preset=preset
     )
     return {"preset_label": preset_label, "model_label": model_label}
+
+
+def merge_preview_payload(cwd: pathlib.Path, session_dir: pathlib.Path) -> dict[str, str]:
+    """Return what a merge confirm states about a run before the click.
+
+    Attributes:
+        same_paths: The line naming the unmerged runs that changed paths this run changed,
+            or "" when there is none.
+
+    Args:
+        cwd: The repository.
+        session_dir: The session directory.
+
+    Returns:
+        The confirm's facts.
+    """
+    return {"same_paths": merge_plan.same_paths_note(cwd, session_dir)}
 
 
 def hub_payload(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()) -> dict[str, Any]:

@@ -15,7 +15,7 @@ from typing import Any
 
 from agent6 import errors
 from agent6 import paths as agent6_paths
-from agent6.app import fork, stop, undo
+from agent6.app import fork, merge_plan, stop, undo
 from agent6.app import reporter as app_reporter
 from agent6.config import ConfigError, io, notices, write
 from agent6.machine import (
@@ -521,7 +521,7 @@ def merge_run(
     method: str = "",
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
-    """Merge a run's branch through `agent6 sessions merge`.
+    """Merge a run's branch in this process, as `agent6 sessions merge` does.
 
     Args:
         cwd: The repository.
@@ -530,13 +530,15 @@ def merge_run(
         config_paths: The `--config` files in command-line order.
 
     Returns:
-        Whether the CLI succeeded, and its message.
+        Whether the merge landed or had nothing to land, and what it said.
     """
-    argv = [*spawn.agent6_argv(config_paths), "sessions", "merge"]
-    if method:
-        argv += ["--method", method]
-    argv += ["--", session_id]
-    return spawn.run_cli_capture(argv, cwd)
+    session_dir = model.session_dir_for(cwd, session_id)
+    if session_dir is None:
+        return False, f"no session {session_id!r}"
+    ok, said = merge_plan.merge_session_dir(
+        cwd, session_dir, method=method or None, config_paths=config_paths
+    )
+    return ok, spawn.capture_message(said)
 
 
 def review_run(

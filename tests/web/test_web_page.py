@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "51e23792438813c63969dbc056c6e8ac8a9da61e477ddf7b56ebee177280495d"
+PAGE_SHA256 = "90aaba4fc65b5ff6e27e10562ad7efdd2e07bb12af00cfc44dffbc24707604c6"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -172,7 +172,7 @@ def test_ctrl_k_opens_the_session_switcher_and_drafts_wait_in_the_composer() -> 
     assert "'worktree ' + r.worktree : 'this checkout'" in switcher
     assert "'ref ' + r.branch" in switcher
     assert "handToNewWork({ task: '/review ' + r.branch })" in switcher
-    assert "'/merge', {}" in switcher
+    assert "if (!await confirmMerge(r)) return;" in switcher and "await postMerge(r);" in switcher
     assert "e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey)" in switcher
     composer = client[client.index("function makeComposer") :]
     assert "const draftKey = 'a6-draft-' + id;" in composer
@@ -183,13 +183,18 @@ def test_ctrl_k_opens_the_session_switcher_and_drafts_wait_in_the_composer() -> 
 
 
 def test_a_run_row_names_its_checkout_and_offers_review_and_merge() -> None:
-    """A row shows the worktree and branch; Review fills the composer, Merge posts the merge."""
+    """A row shows the worktree and branch; Review fills the composer, Merge confirms and posts."""
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
     paint = client[client.index("function paintSession") : client.index("function sessionsCard")]
     assert "'worktree ' + r.worktree" in paint and "'branch ' + r.branch" in paint
     assert "handToNewWork({ task: '/review ' + r.branch })" in paint
     assert "if (r.branch && !live)" in paint and "if (r.unmerged)" in paint
-    assert "'/merge', {}" in paint
+    assert "if (!await confirmMerge(r)) return;" in paint and "await postMerge(r)" in paint
+    steps = client[client.index("async function confirmMerge") : client.index("function toast")]
+    # The confirm reads the run's merge preview; the POST to the same path lands it.
+    assert "getJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge')" in steps
+    assert "(same ? '\\n\\n' + same : '')" in steps
+    assert "postJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge', {})" in steps
 
 
 def test_new_work_route_refresh_clears_and_ignores_stale_models() -> None:

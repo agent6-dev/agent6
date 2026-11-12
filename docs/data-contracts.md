@@ -33,7 +33,7 @@ Scan session dirs into the listing rows every front-end's hub shows.
 Public fields: [Formats](formats.md#cli-json).
 
 - **Written by:** ui/cli/sessions_cmds, ui/web/model
-- **Read by:** app/{btw, compare, finalize, fork, fork_worktrees, lane_watch, lanes, parallel_results, preflight, resume, run, stop}, app/review/recap, harness/review/session, ui/{mcp_server, spawn}, ui/acp/session, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_merge, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home, new_work}, ui/web/{actions, git_model, review_routes, sse}, viewmodel/{__init__, lanes, state_view, wire}
+- **Read by:** app/{btw, compare, finalize, fork, fork_worktrees, lane_watch, lanes, merge_plan, parallel_results, preflight, resume, run, stop}, app/review/recap, harness/review/session, ui/{mcp_server, spawn}, ui/acp/session, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home, new_work}, ui/web/{actions, git_model, review_routes, sse}, viewmodel/{__init__, lanes, state_view, wire}
 - **Guarded by:** [test_cli_sessions_list.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_cli_sessions_list.py) (27 test files exercise it)
 
 ## CLI session status
@@ -80,7 +80,7 @@ Public fields: [Formats](formats.md#web-api).
 
 - **Written by:** ui/web/server
 - **Read by:** ui/cli/web_cmds, ui/web/{actions, sse}
-- **Guarded by:** [test_web_server.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_web_server.py) (10 test files exercise it)
+- **Guarded by:** [test_web_server.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_web_server.py) (11 test files exercise it)
 
 ## Review read model
 
@@ -155,7 +155,7 @@ The manifest.json shape and its one reader; `app.stamps` is the writer.
 Public fields: [Formats](formats.md#sessionmanifest).
 
 - **Written by:** app/stamps
-- **Read by:** app/{compare, execution, finalize, fork, fork_worktrees, lane_launch, lanes, merge, merge_message, parallel, parallel_results, preflight, resume, resume_chain, run, stop, undo, workdirs, workspace_setup}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/{directive_actions, mcp_server}, ui/acp/session, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/model, viewmodel/{comparison, format, lanes, listing, policy, receipt, state_view, wire}, viewmodel/session/status
+- **Read by:** app/{compare, execution, finalize, fork, fork_worktrees, lane_launch, lanes, merge, merge_message, merge_plan, parallel, parallel_results, preflight, resume, resume_chain, run, stop, undo, workdirs, workspace_setup}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/{directive_actions, mcp_server}, ui/acp/session, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/model, viewmodel/{comparison, format, lanes, listing, policy, receipt, state_view, wire}, viewmodel/session/status
 - **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (48 test files exercise it)
 
 ## SessionSnapshot

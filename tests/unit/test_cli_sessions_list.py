@@ -12,7 +12,9 @@ import subprocess
 import pytest
 
 from agent6 import paths
+from agent6.app import merge_plan
 from agent6.ui.cli import common, main, sessions_cmds, sessions_show
+from agent6.ui.web import model as web_model
 
 
 def _run(runs: pathlib.Path, session_id: str, *, winner: bool | None = None) -> None:
@@ -482,12 +484,15 @@ def test_a_merge_names_the_unmerged_runs_that_changed_the_same_paths(
     assert re.search(r"unmerged · open findings: 2 block\s+run-two-BBBBBB", text), text
     assert "same paths" not in text
 
+    # A front-end's confirm states the line before the click; the merge prints the same one.
+    same = "unmerged runs that changed some of the same paths: run-two-BBBBBB (b.txt)"
+    run_one = common._runs_dir(repo) / "run-one-AAAAAA"
+    assert merge_plan.same_paths_note(repo, run_one) == same
+    assert web_model.merge_preview_payload(repo, run_one) == {"same_paths": same}
+    assert merge_plan.same_paths_note(repo, common._runs_dir(repo) / "run-far-CCCCCC") == ""
     assert main(["sessions", "merge", "run-one-AAAAAA"]) == 0
     merged = capsys.readouterr().out
-    assert (
-        "[agent6] unmerged runs that changed some of the same paths: run-two-BBBBBB (b.txt)\n"
-        in merged
-    ), merged
+    assert f"[agent6] {same}\n" in merged, merged
     assert "run-far-CCCCCC" not in merged
     # The last unmerged run over those paths has nobody left to name.
     assert main(["sessions", "merge", "run-far-CCCCCC"]) == 0

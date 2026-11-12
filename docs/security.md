@@ -530,7 +530,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - The server renders folded state and drives typed contracts.
   New-work spawns fixed argv with the task behind `--`, and machine-run is allow-listed to authored files.
   Answers write only the addressed run's answer files (session id, answer id, and machine target state dir each validated to one path component).
-  Merge, prune, and config-set are fixed agent6 subcommands.
+  A merge runs in the server process, its git under the `git.run_repo_hooks` and `git.run_repo_drivers` of the config that request loaded and no later request's.
+  Prune and config-set are fixed agent6 subcommands.
 - No request carries an ambient credential, so no POST needs a cross-site guard: a cross-origin page cannot add the header without a preflight the server never answers.
   DNS rebinding is not covered (that needs a Host allow-list incompatible with the tailnet name): a rebound page holds no token (storage belongs to one origin), so it reaches the public routes and can try secrets at the login; keeping it out is left to the network layer.
 - Request framing is bounded: 1 MiB body cap (413), chunked refused (411), and any unread-body refusal closes the connection.
@@ -877,7 +878,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `ui/btw.py`: spawns `agent6 ask` detached for `/btw` (every composer).
   Argv is the agent6 exe plus the question the operator typed, with `--` before it.
 - `ui/spawn.py`: the shared front-end spawn helper.
-  Spawns the agent6 CLI detached for run and machine launches (`machine create` and `machine run`) and the fixed lane bootstrap (`spawn_lane`, which keeps the child's pid), and captures `sessions merge` / `prune` / `remove` / `review` and `config set` / `unset`.
+  Spawns the agent6 CLI detached for run and machine launches (`machine create` and `machine run`) and the fixed lane bootstrap (`spawn_lane`, which keeps the child's pid), and captures `sessions prune` / `remove` / `review` and `config set` / `unset`.
 - `ui/notify.py`: `notify-send` with fixed argv (exe, `--`, two positional data args, no shell) for the device-present notices: a machine's notify, a session that waits or ends.
 - `ui/cli/` helpers:
     - `connect_oauth.py`: the platform's URL opener (`xdg-open`, `open`) for a sign-in URL built from the operator's configuration, with the curated environment; never `$BROWSER`'s command template

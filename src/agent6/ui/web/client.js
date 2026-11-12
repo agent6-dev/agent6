@@ -117,6 +117,18 @@ async function postJSON(url, body) {
   if (!r.ok || data.ok === false) throw new Error(data.error || r.statusText);
   return data;
 }
+// The Merge buttons' two steps. The confirm names the unmerged runs that changed the same
+// paths (GET .../merge); the POST lands the branch and says what the merge said.
+async function confirmMerge(r) {
+  let same = '';
+  try { same = (await getJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge')).same_paths; }
+  catch (err) { toast(err.message, true); return false; }
+  return confirm('Merge run ' + r.session_id + '? Lands its branch on its base with your git.merge_method, as `agent6 sessions merge` does; the checkout never moves.' + (same ? '\n\n' + same : ''));
+}
+async function postMerge(r) {
+  try { const d = await postJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge', {}); toast(d.message || 'merged'); route(); return true; }
+  catch (err) { toast(err.message, true); return false; }
+}
 // Messages stack in one column. A failure carries a reason worth reading (a
 // captured CLI refusal runs several lines), so it holds until dismissed; a
 // confirmation clears itself.
@@ -554,7 +566,7 @@ function paintSession(r, it, g) {
   if (r.merge_note) g.appendChild(el('div', 'sub', r.merge_note));
   it.appendChild(pill(r.status_level, r.status_label)); // the server's one shared label + level
   // Review fills the new-work composer with `/review <branch>`; Merge lands the branch
-  // through `sessions merge`. Both need a finished run whose branch exists; Merge also
+  // as `sessions merge` does. Both need a finished run whose branch exists; Merge also
   // needs commits no merge stamped. A fan-out has no branch of its own.
   const live = LIVE_WORDS.includes(r.status);
   if (r.branch && !live) {
@@ -566,10 +578,9 @@ function paintSession(r, it, g) {
       const merge = el('button', 'mini', 'Merge');
       merge.onclick = async (e) => {
         e.stopPropagation();
-        if (!confirm('Merge run ' + r.session_id + '? Runs `agent6 sessions merge` to land its branch on its base with your git.merge_method; the checkout never moves.')) return;
+        if (!await confirmMerge(r)) return;
         merge.disabled = true;
-        try { const d = await postJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge', {}); toast(d.message || 'merged'); route(); }
-        catch (err) { toast(err.message, true); merge.disabled = false; }
+        if (!await postMerge(r)) merge.disabled = false;
       };
       merge.onkeydown = (e) => e.stopPropagation();
       it.appendChild(merge);
@@ -1142,10 +1153,9 @@ async function openSwitcher() {
           const merge = el('button', 'mini', 'Merge');
           merge.onmousedown = async (e) => {
             e.preventDefault(); e.stopPropagation();
-            if (!confirm('Merge run ' + r.session_id + '? Runs `agent6 sessions merge` to land its branch on its base with your git.merge_method; the checkout never moves.')) return;
+            if (!await confirmMerge(r)) return;
             close();
-            try { const d = await postJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge', {}); toast(d.message || 'merged'); route(); }
-            catch (err) { toast(err.message, true); }
+            await postMerge(r);
           };
           acts.appendChild(merge);
         }

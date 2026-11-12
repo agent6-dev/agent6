@@ -28,6 +28,7 @@ except ImportError as e:  # pragma: no cover
 
 # Reached only once the textual guard above passed.
 from agent6 import errors
+from agent6.app import merge_plan
 from agent6.config import ConfigError, layer
 from agent6.models import choices
 from agent6.sessions import layout, manifest
@@ -484,19 +485,21 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         )
 
     def action_merge_selected(self) -> None:
-        """Merge the selected session's branch into its base through the CLI, after a confirm."""
+        """Merge the selected session's branch into its base, after a confirm."""
         table = self.query_one("#sessions", widgets.DataTable)
         if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
             return
-        session_id = self._runs[table.cursor_row].name
+        session_dir = self._runs[table.cursor_row]
+        same = merge_plan.same_paths_note(self.repo_cwd, session_dir)
         self.app.push_screen(
             modals.ConfirmModal(
-                f"Merge run {session_id}?",
-                "Runs `agent6 sessions merge` to land this run's branch on its base using your "
-                "git.merge_method. Ref plumbing only: the checkout never moves.",
+                f"Merge run {session_dir.name}?",
+                "Lands this run's branch on its base using your git.merge_method, as"
+                " `agent6 sessions merge` does. Ref plumbing only: the checkout never moves."
+                + (f"\n\n{same}" if same else ""),
                 confirm_label="Merge",
             ),
-            self._on_merge_confirm(session_id),
+            self._on_merge_confirm(session_dir),
         )
 
     def action_delete_selected(self) -> None:
@@ -530,13 +533,13 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
 
         return cb
 
-    def _on_merge_confirm(self, session_id: str) -> Callable[[bool | None], None]:
+    def _on_merge_confirm(self, session_dir: pathlib.Path) -> Callable[[bool | None], None]:
         """Return the confirm callback that runs the merge and refreshes."""
 
         def cb(confirmed: bool | None) -> None:
             if not confirmed:
                 return
-            ok, msg = _run_merge_cli(self.repo_cwd, session_id, self.config_paths)
+            ok, msg = _merge_run(self.repo_cwd, session_dir, self.config_paths)
             self.app.notify(msg, severity="information" if ok else "error", timeout=10.0)
             self.action_refresh()
 
@@ -689,13 +692,14 @@ class Agent6HomeApp(theme.PlainNotify, theme.MuxPointerShapes, app.App[pathlib.P
                 yield cmd
 
 
-def _run_merge_cli(
-    repo_cwd: pathlib.Path, session_id: str, config_paths: tuple[pathlib.Path, ...] = ()
+def _merge_run(
+    repo_cwd: pathlib.Path, session_dir: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[bool, str]:
-    """Return whether `agent6 sessions merge` succeeded on the session, and its output."""
-    return spawn.run_cli_capture(
-        [*spawn.agent6_argv(config_paths), "sessions", "merge", session_id], repo_cwd
+    """Return whether the session's merge landed, and what it said; no child process."""
+    ok, said = merge_plan.merge_session_dir(
+        repo_cwd, session_dir, method=None, config_paths=config_paths
     )
+    return ok, spawn.capture_message(said)
 
 
 def _run_delete_cli(

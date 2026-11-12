@@ -567,36 +567,32 @@ def test_the_refusal_notice_paints_ansi_red(
     asyncio.run(scenario())
 
 
-def test_run_merge_cli_builds_argv_and_parses_result(
-    tmp_path: pathlib.Path, monkeypatch: object
+def test_the_hub_merge_lands_the_run_in_this_process(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The hub's merge helper shells out to `agent6 sessions merge <id>` and reports its output."""
-    import subprocess
-
+    """The hub's merge runs `sessions merge`'s own code and reports what it said, mark dropped."""
     from agent6.ui.tui import home
+    from tests.unit import test_cli_sessions_merge as merge_tests
 
-    captured: list[list[str]] = []
+    merge_tests._setup_run(  # pyright: ignore[reportPrivateUsage]
+        tmp_path, "r1-AAAAAA", commits=[("a.txt", "a\n", "agent6 turn 1: add a")]
+    )
 
-    class _Proc:
-        pid = 424242
-        returncode = 0
-        stdout = "[agent6] merged agent6/r1 into main (squash) -> abcdef123456\n"
-        stderr = ""
+    def _no_child(*_a: object, **_k: object) -> tuple[bool, str]:
+        raise AssertionError("the hub's merge spawned a child")
 
-    def _fake_run(argv: list[str], **_kw: object) -> _Proc:
-        captured.append(list(argv))
-        return _Proc()
+    monkeypatch.setattr(spawn, "run_cli_capture", _no_child)
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "r1-AAAAAA"
 
-    monkeypatch.setattr(subprocess, "run", _fake_run)  # type: ignore[attr-defined]
+    ok, msg = home._merge_run(tmp_path, session_dir)  # pyright: ignore[reportPrivateUsage]
 
-    ok, msg = home._run_merge_cli(tmp_path, "r1")  # pyright: ignore[reportPrivateUsage]
-    assert captured[-1][1:] == ["sessions", "merge", "r1"]
     assert ok is True
-    assert "merged agent6/r1" in msg
+    assert msg.startswith("merged agent6/r1-AAAAAA into main (")
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "a\n"
 
 
-def test_merge_action_confirms_then_shells_out(tmp_path: pathlib.Path, monkeypatch: object) -> None:
-    """`m` opens a confirm modal; confirming runs `agent6 sessions merge` for the selected run."""
+def test_merge_action_confirms_then_merges(tmp_path: pathlib.Path, monkeypatch: object) -> None:
+    """`m` opens a confirm modal; confirming merges the selected run."""
     import asyncio
     import subprocess
 
@@ -641,12 +637,19 @@ def test_merge_action_confirms_then_shells_out(tmp_path: pathlib.Path, monkeypat
     calls: list[str] = []
 
     def _fake_merge(
-        cwd: pathlib.Path, session_id: str, config_paths: object = ()
+        cwd: pathlib.Path, session_dir: pathlib.Path, config_paths: object = ()
     ) -> tuple[bool, str]:
-        calls.append(session_id)
+        calls.append(session_dir.name)
         return True, "merged"
 
-    monkeypatch.setattr(home, "_run_merge_cli", _fake_merge)  # type: ignore[attr-defined]
+    monkeypatch.setattr(home, "_merge_run", _fake_merge)  # type: ignore[attr-defined]
+    same = "unmerged runs that changed some of the same paths: r2 (work.txt)"
+
+    def _same_paths(cwd: pathlib.Path, session_dir: pathlib.Path) -> str:
+        return same if session_dir.name == "r1" else ""
+
+    # The note's own content is pinned where a merge prints it; here the confirm shows it.
+    monkeypatch.setattr(home.merge_plan, "same_paths_note", _same_paths)  # type: ignore[attr-defined]
 
     async def scenario() -> None:
         app = tui_home.Agent6HomeApp(a6, tmp_path)
@@ -658,6 +661,8 @@ def test_merge_action_confirms_then_shells_out(tmp_path: pathlib.Path, monkeypat
             await pilot.press("m")
             await pilot.pause()
             assert isinstance(app.screen, modals.ConfirmModal)
+            said = str(app.screen.query_one("#confirm-box > Static", widgets.Static).content)
+            assert said.startswith("Merge run r1?") and said.endswith(f"\n\n{same}"), said
             await pilot.press("y")  # confirm
             await pilot.pause()
             assert calls == ["r1"]  # merged the selected run

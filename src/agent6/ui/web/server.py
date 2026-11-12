@@ -1275,6 +1275,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 payload if payload is not None else {"error": why},
                 status=200 if payload is not None else 422,
             )
+        elif sub == "merge":
+            self._send_json(model.merge_preview_payload(self.cwd, session_dir))
         elif sub == "resume_defaults":
             preset = (parse.parse_qs(parse.urlsplit(self.path).query).get("preset") or [""])[0]
             self._send_json(

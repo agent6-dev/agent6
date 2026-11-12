@@ -367,7 +367,7 @@ def test_merge_refusal_keeps_the_finding_ids_visible(
     def notify(message: object, **_kwargs: object) -> None:
         notices.append(str(message))
 
-    monkeypatch.setattr(home, "_run_merge_cli", merge_refusal)
+    monkeypatch.setattr(home, "_merge_run", merge_refusal)
 
     async def scenario() -> None:
         app = home.Agent6HomeApp(saved.state_dir, tmp_path)

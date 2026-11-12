@@ -534,7 +534,8 @@ Freshness compares both tree IDs and path coverage with an explicit requested co
 Without that comparison, freshness is unknown.
 Legacy counts carry an unknown-evidence notice; an unreadable journal or structured record retains its error in `MergeReviewGuard`.
 
-`app.merge.execute_merge()` enforces the guard for CLI, web, TUI and auto-merge.
+`app.merge_plan.run_merge()` is the merge the CLI, the TUI and the web each run in their own process: it validates, then calls `app.merge.execute_merge()`.
+`app.merge.execute_merge()` enforces the guard for CLI, web, TUI and auto-merge, and runs its git under the hook and driver policy of the config it was given (`git_policy.use`), so a merge inside the web server leaves the server's policy as it was.
 It holds the existing session writer lock while re-reading the review fold, merging a pinned source commit, and recording that tip.
 Auto-merge uses the lock its lifecycle already holds; live dispositions wait in the IPC queue.
 An open grounded block or unreadable evidence refuses the merge with its reason.

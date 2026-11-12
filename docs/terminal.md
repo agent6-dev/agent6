@@ -13,7 +13,7 @@ Every image is from a recorded run; click to enlarge.
 
 The new-work composer (`n`) picks the mode, the checkout (this one or a new worktree), the preset and the model; a second row picks the plan to run from and a spend cap in USD.
 A plan's **Run this plan** opens the same composer with the plan chosen.
-On a terminal 140 columns wide or more the table adds a run's branch; `R` opens the composer with `/review <branch>` for the selected run, and `m` merges it.
+On a terminal 140 columns wide or more the table adds a run's branch; `R` opens the composer with `/review <branch>` for the selected run, and `m` merges it after a confirm that names the unmerged runs that changed some of the same paths.
 The composer accepts `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
 A session that starts waiting on an answer or ends is announced with a toast and a desktop notification (`notify-send`, when present).
 

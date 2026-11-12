@@ -401,6 +401,7 @@ WEB = (
     Producer("ui.web.model", "_machine_row", "`/api/hub` machine row", "entry"),
     Producer("ui.web.model", "list_machine_files", "`/api/hub` machine-file rows"),
     Producer("ui.web.model", "routes_payload", "`/api/routes` payload"),
+    Producer("ui.web.model", "merge_preview_payload", "`GET /api/session/<id>/merge` payload"),
     Producer(
         "ui.web.model", "resume_defaults_payload", "`/api/session/<id>/resume_defaults` payload"
     ),
