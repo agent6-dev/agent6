@@ -32,7 +32,7 @@ async function renderRun(id, opts, gen) {
 
   // Controls at the top so Stop stays reachable without scrolling; the Details
   // toggle folds the drawer away (persisted; default open on wide screens).
-  const actions = el('div', 'row wrap page-pad'); actions.style.margin = '10px 22px';
+  const actions = el('div', 'row wrap page-pad actions'); actions.style.margin = '10px 22px';
   const dBtn = el('button', 'details-btn', 'Details'); // desktop drawer toggle; phones page widgets instead
   const applyDrawer = (open) => {
     drawer.classList.toggle('closed', !open);

@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "a47fb11c1a0691781d54e7d7d249d0ab9b333b1c229b373f985518b49d75e647"
+PAGE_SHA256 = "93f39bcc7c670c47039f7af188759713602aaa3661b06868899a0eb584f6502c"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -463,3 +463,20 @@ def test_the_phone_widget_menu_can_show_the_run_review() -> None:
     client = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "['review', 'Run review']" in client
     assert "setW('review')" in client
+
+
+def test_every_global_key_is_listed_and_handled_from_one_table() -> None:
+    """The handler and the `?` overlay read one KEYS table; both pickers share one shape."""
+    client = page.CLIENT_JS
+    keys = client[
+        client.index("const KEYS = [") : client.index(
+            "document.addEventListener('keydown', (e) => {\n  for (const k of KEYS)"
+        )
+    ]
+    for label in ("Ctrl-K", "Ctrl-Shift-P", "'?'", "Ctrl-R", "Ctrl+Enter", "Shift+Enter"):
+        assert label in keys
+    assert keys.count("run: () =>") == 3  # the global bindings; the rest are listed only
+    assert "for (const k of KEYS) if (k.run && k.match(e))" in client
+    assert client.count("\n  openPicker({") == 2  # the switcher and the palette call it
+    assert "prefix: { key: '>', open: (rest) => openPalette(rest) }" in client
+    assert "function openKeys()" in client and "el('table', 'keys')" in client

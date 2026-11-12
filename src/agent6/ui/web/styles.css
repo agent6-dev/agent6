@@ -314,6 +314,9 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 /* The sessions card's maintenance actions and the composer's advanced fold: one muted
    disclosure each, closed by default. */
 .toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.keys { border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+.keys td { padding: 3px 12px 3px 0; vertical-align: top; }
+.keys .key { font-family: var(--mono); white-space: nowrap; }
 .advanced { margin-top: 10px; }
 .advanced summary { cursor: pointer; list-style: none; width: max-content; font-size: 12px; color: var(--muted); }
 .advanced summary::-webkit-details-marker { display: none; }

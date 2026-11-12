@@ -1037,11 +1037,61 @@ function openHistorySearch(entries, onPick) {
   render();
 }
 
+// --- keyboard -----------------------------------------------------------------
+// One picker shape under the session switcher and the command palette: a card over a
+// backdrop with a filter field and a list; arrows move, Enter picks, Esc, a click outside
+// or navigation closes. `prefix` hands the field to another picker when typed first.
+function openPicker({ title, placeholder, rows, haystack, paint, pick, empty, initial = '', prefix = null, limit = 12 }) {
+  if (activeOverlayClose) return; // one dialog at a time
+  const back = el('div', 'overlay');
+  const box = el('div', 'card'); box.style.width = 'min(760px, 92vw)';
+  box.appendChild(el('h2', null, title));
+  const field = el('input', 'field'); field.placeholder = placeholder; field.value = initial;
+  box.appendChild(field);
+  const list = el('div', 'hs-list');
+  box.appendChild(list);
+  const close = () => { activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey); };
+  const choose = (r) => { close(); pick(r); };
+  let items = [], active = 0;
+  const render = () => {
+    const q = field.value.toLowerCase().trim();
+    const all = rows.filter(r => !q || haystack(r).includes(q));
+    items = all.slice(0, limit);
+    if (active >= items.length) active = Math.max(0, items.length - 1);
+    list.textContent = '';
+    items.forEach((r, i) => {
+      const o = el('div', 'ac-item' + (i === active ? ' on' : ''));
+      paint(r, o, close);
+      o.onmousedown = (e) => { e.preventDefault(); choose(r); };
+      list.appendChild(o);
+    });
+    if (!items.length) list.appendChild(el('div', 'more-note', rows.length ? '(no match)' : empty));
+    else if (all.length > items.length) list.appendChild(el('div', 'more-note', '… ' + (all.length - items.length) + ' more (type to narrow)'));
+  };
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { active = (active + 1) % items.length; render(); } }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { active = (active - 1 + items.length) % items.length; render(); } }
+    else if (e.key === 'Enter') { e.preventDefault(); if (items.length) choose(items[active]); }
+  }
+  activeOverlayClose = close; // navigating away dismisses it
+  document.addEventListener('keydown', onKey);
+  back.onclick = (e) => { if (e.target === back) close(); };
+  field.oninput = () => {
+    if (prefix && field.value.startsWith(prefix.key)) { const rest = field.value.slice(prefix.key.length); close(); prefix.open(rest); return; }
+    active = 0; render();
+  };
+  back.appendChild(box); document.body.appendChild(back);
+  field.focus();
+  render();
+}
+
 // Ctrl-K anywhere: switch to another session. The hub's rows, newest activity first,
 // lanes included, narrowed by what is typed against the id, mode, status, task,
 // branch and worktree. A row names where the run works and the ref holding its
 // commits; Enter opens the highlighted one, and Review code and Merge act as the
 // Sessions page's row buttons do. A draft typed in a composer waits for the way back.
+// A `>` typed first hands the box to the command palette.
 async function openSwitcher() {
   if (activeOverlayClose) return; // one dialog at a time
   let data;
@@ -1049,25 +1099,15 @@ async function openSwitcher() {
   const rows = [];
   const flatten = (r) => { rows.push(r); for (const lane of (r.lanes || [])) flatten(lane); };
   for (const r of (data.sessions || [])) flatten(r);
-  const back = el('div', 'overlay');
-  const box = el('div', 'card'); box.style.width = 'min(760px, 92vw)';
-  box.appendChild(el('h2', null, 'switch session'));
-  const field = el('input', 'field'); field.placeholder = 'type to narrow: id, task, branch, worktree…';
-  box.appendChild(field);
-  const list = el('div', 'hs-list');
-  box.appendChild(list);
-  const close = () => { activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey); };
-  const open = (r) => { close(); location.hash = '#/session/' + encodeURIComponent(r.session_id); };
-  const haystack = (r) => [r.session_id, r.mode, r.label || r.status, r.task_line || r.task || '', r.branch || '', r.worktree || ''].join(' ').toLowerCase();
-  let items = [], active = 0;
-  const render = () => {
-    const q = field.value.toLowerCase().trim();
-    const all = rows.filter(r => !q || haystack(r).includes(q));
-    items = all.slice(0, 12);
-    if (active >= items.length) active = Math.max(0, items.length - 1);
-    list.textContent = '';
-    items.forEach((r, i) => {
-      const o = el('div', 'ac-item' + (i === active ? ' on' : ''));
+  openPicker({
+    title: 'switch session',
+    placeholder: 'type to narrow: id, task, branch, worktree… (> for commands)',
+    rows,
+    empty: '(no sessions yet)',
+    prefix: { key: '>', open: (rest) => openPalette(rest) },
+    haystack: (r) => [r.session_id, r.mode, r.label || r.status, r.task_line || r.task || '', r.branch || '', r.worktree || ''].join(' ').toLowerCase(),
+    pick: (r) => { location.hash = '#/session/' + encodeURIComponent(r.session_id); },
+    paint: (r, o, close) => {
       const head = el('div', 'row');
       head.appendChild(pill(r.level, r.label || r.status));
       head.appendChild(el('span', null, r.session_id + ' · ' + r.mode + ' · ' + (r.task_line || r.task || '').split('\n')[0].slice(0, 80)));
@@ -1093,29 +1133,84 @@ async function openSwitcher() {
         }
         o.appendChild(acts);
       }
-      o.onmousedown = (e) => { e.preventDefault(); open(r); };
-      list.appendChild(o);
-    });
-    if (!items.length) list.appendChild(el('div', 'more-note', rows.length ? '(no match)' : '(no sessions yet)'));
-    else if (all.length > items.length) list.appendChild(el('div', 'more-note', '… ' + (all.length - items.length) + ' more (type to narrow)'));
-  };
-  function onKey(e) {
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
-    else if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { active = (active + 1) % items.length; render(); } }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { active = (active - 1 + items.length) % items.length; render(); } }
-    else if (e.key === 'Enter') { e.preventDefault(); if (items.length) open(items[active]); }
+    },
+  });
+}
+
+// Ctrl-Shift-P anywhere, or `>` typed into Ctrl-K's box: the pages, the dialogs, the
+// theme, new work, and the controls the current page offers, each by the name it shows.
+function paletteItems() {
+  const go = (hash) => () => { location.hash = hash; };
+  const items = [
+    { label: 'Sessions', hint: 'page', run: go('#/') },
+    { label: 'Git', hint: 'page', run: go('#/git') },
+    { label: 'Files', hint: 'page', run: go('#/files') },
+    { label: 'State machines', hint: 'page', run: go('#/machines') },
+    { label: 'Config', hint: 'page', run: go('#/config') },
+    { label: 'Switch session', hint: 'Ctrl-K', run: () => openSwitcher() },
+    { label: 'Keyboard shortcuts', hint: '?', run: () => openKeys() },
+    { label: 'Toggle theme', hint: 'light or dark', run: () => toggleTheme() },
+    { label: 'New session', hint: 'the Sessions composer', run: () => { location.hash = '#/'; setTimeout(() => view.querySelector('.dock textarea')?.focus(), 50); } },
+  ];
+  // The page's own controls, as the page labels them; a hidden or disabled one is not offered.
+  for (const b of view.querySelectorAll('.toolbar button, .actions button')) {
+    if (b.disabled || b.offsetParent === null) continue;
+    items.push({ label: b.textContent.replace(/^[■▶]\s*/, ''), hint: 'this page', run: () => b.click() });
   }
-  activeOverlayClose = close; // navigating away dismisses it
+  return items;
+}
+function openPalette(initial = '') {
+  openPicker({
+    title: 'commands',
+    placeholder: 'type a command…',
+    rows: paletteItems(),
+    empty: '(no commands)',
+    initial,
+    haystack: (c) => (c.label + ' ' + c.hint).toLowerCase(),
+    pick: (c) => c.run(),
+    paint: (c, o) => { o.appendChild(el('span', null, c.label)); o.appendChild(el('span', 'muted', ' · ' + c.hint)); },
+  });
+}
+
+// Every binding the web answers, in one table: the global handler runs the rows that
+// carry `run`, and the Keyboard overlay (`?`) lists every row. The composer's keys are
+// handled where the composer is built, and named here so the list is whole.
+function inField(e) { const t = e.target; return !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)); }
+const KEYS = [
+  { label: 'Ctrl-K', where: 'anywhere', does: 'switch session', match: (e) => e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey, run: () => openSwitcher() },
+  { label: 'Ctrl-Shift-P', where: 'anywhere', does: 'command palette (or > in the switcher)', match: (e) => e.key.toLowerCase() === 'p' && (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey, run: () => openPalette() },
+  { label: '?', where: 'outside a field', does: 'this list', match: (e) => e.key === '?' && !inField(e) && !e.ctrlKey && !e.metaKey && !e.altKey, run: () => openKeys() },
+  { label: 'Esc', where: 'a dialog or popup', does: 'close it' },
+  { label: 'Enter', where: 'the composer', does: 'send the instruction; resume an ended session' },
+  { label: 'Ctrl+Enter', where: 'the composer', does: 'send now, interrupting the call in flight (/now)' },
+  { label: 'Shift+Enter', where: 'the composer', does: 'newline' },
+  { label: 'Ctrl-R', where: 'the composer', does: "search this session's past messages" },
+  { label: '/', where: 'the composer', does: 'directive completion; Tab or Enter accepts' },
+  { label: '↑ ↓', where: 'a list', does: 'move' },
+  { label: 'Enter or Space', where: 'a focused row', does: 'open it' },
+];
+document.addEventListener('keydown', (e) => {
+  for (const k of KEYS) if (k.run && k.match(e)) { e.preventDefault(); k.run(); return; }
+});
+function openKeys() {
+  if (activeOverlayClose) return; // one dialog at a time
+  const back = el('div', 'overlay');
+  const box = el('div', 'card'); box.style.width = 'min(640px, 92vw)';
+  box.appendChild(el('h2', null, 'keyboard'));
+  const table = el('table', 'keys');
+  for (const k of KEYS) {
+    const tr = el('tr');
+    tr.appendChild(el('td', 'key', k.label)); tr.appendChild(el('td', 'muted', k.where)); tr.appendChild(el('td', null, k.does));
+    table.appendChild(tr);
+  }
+  box.appendChild(table);
+  const close = () => { activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey); };
+  function onKey(e) { if (e.key === 'Escape' || e.key === '?') { e.preventDefault(); close(); } }
+  activeOverlayClose = close;
   document.addEventListener('keydown', onKey);
   back.onclick = (e) => { if (e.target === back) close(); };
-  field.oninput = () => { active = 0; render(); };
   back.appendChild(box); document.body.appendChild(back);
-  field.focus();
-  render();
 }
-document.addEventListener('keydown', (e) => {
-  if (e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) { e.preventDefault(); openSwitcher(); }
-});
 
 // The composer bar under a run's conversation. On a live run Enter sends the
 // text as a steer (injected at the run's next safe boundary); on a finished
@@ -1187,13 +1282,13 @@ function makeComposer(id) {
     if (busy) { hint.textContent = 'resuming…'; return; }
     if (finished && needsWork) {
       ta.placeholder = 'what should it do next…';
-      hint.textContent = 'Enter resumes it with your instruction · Shift+Enter newline · Ctrl-R past messages · Ctrl-K switch session';
+      hint.textContent = 'Enter resumes it with your instruction · Shift+Enter newline · Ctrl-R past messages · Ctrl-K switch session · ? keys';
     } else if (finished) {
       ta.placeholder = 'continue this session…';
-      hint.textContent = 'Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline · Ctrl-R past messages · Ctrl-K switch session';
+      hint.textContent = 'Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline · Ctrl-R past messages · Ctrl-K switch session · ? keys';
     } else {
       ta.placeholder = 'steer this session… (/pin pins an instruction, /compact [focus] compacts)';
-      hint.textContent = 'Enter sends the instruction at the session’s next safe boundary · Ctrl+Enter sends it now · Shift+Enter newline · Ctrl-R past messages · Ctrl-K switch session';
+      hint.textContent = 'Enter sends the instruction at the session’s next safe boundary · Ctrl+Enter sends it now · Shift+Enter newline · Ctrl-R past messages · Ctrl-K switch session · ? keys';
     }
   };
   const resume = async (text) => {

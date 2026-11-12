@@ -1130,3 +1130,31 @@ def test_lane_details_read_the_coordinators_rationale(
     expect(page.get_by_text("judge: covers the edge case", exact=True)).to_be_visible()
     expect(page.get_by_text("rank 1/1 · winner · judge ($0.01)", exact=True)).to_be_visible()
     assert not errors
+
+
+def test_the_keyboard_overlay_and_the_palette_open_and_act(
+    git_port: int, open_page: Callable[[int], tuple[Page, list[str]]]
+) -> None:
+    """`?` lists the bindings; Ctrl-Shift-P runs a command; `>` in Ctrl-K's box hands over."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/")
+    expect(page.get_by_role("heading", name="Sessions", exact=True)).to_have_count(0)
+    page.keyboard.press("?")
+    keys = page.locator(".overlay table.keys")
+    expect(keys).to_contain_text("Ctrl-K")
+    expect(keys).to_contain_text("Ctrl-Shift-P")
+    page.keyboard.press("Escape")
+    expect(keys).to_have_count(0)
+    page.keyboard.press("Control+Shift+P")
+    field = page.locator(".overlay input.field")
+    field.fill("git")
+    page.keyboard.press("Enter")
+    page.wait_for_function("location.hash === '#/git'")
+    page.keyboard.press("Control+K")
+    page.locator(".overlay input.field").fill(">keyboard")
+    expect(page.locator(".overlay h2")).to_have_text("commands")
+    page.keyboard.press("Enter")
+    expect(page.locator(".overlay table.keys")).to_contain_text("Ctrl-R")
+    assert not errors
