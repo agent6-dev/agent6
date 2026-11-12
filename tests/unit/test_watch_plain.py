@@ -12,6 +12,7 @@ import pytest
 from agent6.sessions import process
 from agent6.ui.cli import plan_watch
 from agent6.viewmodel import events as viewmodel_events
+from agent6.viewmodel import tail as viewmodel_tail
 
 
 def test_format_plain_event_renders_known_fields() -> None:
@@ -72,7 +73,7 @@ def test_raw_watch_exits_when_the_worker_is_gone(
     def _must_not_sleep(_seconds: float) -> None:
         pytest.fail("raw watch slept after the worker was gone")
 
-    monkeypatch.setattr(plan_watch.time, "sleep", _must_not_sleep)
+    monkeypatch.setattr(viewmodel_tail.time, "sleep", _must_not_sleep)
     assert plan_watch._cmd_watch_plain(target, since=0) == 1  # pyright: ignore[reportPrivateUsage]
     assert "crashed or killed" in capsys.readouterr().err
 
@@ -97,7 +98,7 @@ def test_raw_watch_returns_nonzero_when_the_log_disappears_before_the_end(
         events.unlink()
 
     monkeypatch.setattr(process, "worker_is_alive", _worker_is_alive)
-    monkeypatch.setattr(plan_watch.time, "sleep", _remove_log)
+    monkeypatch.setattr(viewmodel_tail.time, "sleep", _remove_log)
 
     assert plan_watch._cmd_watch_plain(target, since=0) == 1  # pyright: ignore[reportPrivateUsage]
     assert "is gone" in capsys.readouterr().err
@@ -127,7 +128,7 @@ def test_raw_watch_preserves_a_partial_replay_line(
         return True
 
     monkeypatch.setattr(process, "worker_is_alive", _worker_is_alive)
-    monkeypatch.setattr(plan_watch.time, "sleep", _append_tail)
+    monkeypatch.setattr(viewmodel_tail.time, "sleep", _append_tail)
     assert plan_watch._cmd_watch_plain(target, since=5) == 0  # pyright: ignore[reportPrivateUsage]
     out = capsys.readouterr().out
     assert "role.call" in out

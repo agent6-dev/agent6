@@ -83,7 +83,7 @@ from agent6.viewmodel.state_view import (  # noqa: ICN003  # re-export
     session_state_as_dict,
     status_facts,
 )
-from agent6.viewmodel.tail import LogTail, tail_events  # noqa: ICN003  # re-export
+from agent6.viewmodel.tail import LogTail, tail_events, tail_lines  # noqa: ICN003  # re-export
 from agent6.viewmodel.transcript import (  # noqa: ICN003  # re-export
     TranscriptFold,
     fold_transcript,
@@ -172,6 +172,7 @@ __all__ = [
     "summarize_session_dir",
     "summary_row",
     "tail_events",
+    "tail_lines",
     "task_snippet",
     "task_tree_views",
     "verb_answer",

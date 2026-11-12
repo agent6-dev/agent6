@@ -398,3 +398,13 @@ def test_log_tail_starts_over_when_the_file_shrinks(tmp_path: pathlib.Path) -> N
         fh.write('{"type":"d"}\n')
     assert [e["type"] for e in tail.read()] == ["d"]
     assert tail.rewound is False
+
+
+def test_tail_lines_hands_over_malformed_lines_raw_and_withholds_a_torn_tail(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The raw reader shares the framing, not the decoding: the watch prints what the file holds."""
+    p = tmp_path / "logs.jsonl"
+    p.write_bytes(b'{"type":"a"}\nnot json\n{"type":"b"')
+    out = list(viewmodel_tail.tail_lines(p, should_stop=lambda: True))
+    assert out == [b'{"type":"a"}', b"not json"]

@@ -11,7 +11,6 @@ import os
 import pathlib
 import subprocess
 import sys
-import time
 
 from agent6 import errors, paths
 from agent6.sessions import id, ipc, process
@@ -29,6 +28,7 @@ from agent6.viewmodel import (
     session_policy,
     status_for_session_dir,
     tail_events,
+    tail_lines,
 )
 
 
@@ -637,10 +637,8 @@ def _line_is_session_end(raw: bytes | str) -> bool:
     return isinstance(obj, dict) and obj.get("type") == "session.stop"
 
 
-def _cmd_watch_plain(target: pathlib.Path, *, since: int) -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per event kind the watch prints
+def _cmd_watch_plain(target: pathlib.Path, *, since: int) -> int:
     """Tail `logs.jsonl` line by line with no extra deps.
-
-    Polls the file with 0.25s sleeps; rotates when the inode changes.
 
     Args:
         target: The session dir.
@@ -653,101 +651,46 @@ def _cmd_watch_plain(target: pathlib.Path, *, since: int) -> int:  # noqa: C901,
     if not events_path.is_file():
         common.error(f"no logs.jsonl in {target}")
         return 2
-
+    try:
+        data = events_path.read_bytes()
+    except OSError as exc:
+        common.error(f"cannot read {events_path}: {exc}")
+        return 2
     # The first event is the elapsed-time anchor; a torn first line must not crash the watch.
     session_start_ts: float | None = None
-    try:
-        with events_path.open("rb") as fh:
-            first = fh.readline()
-        if first:
-            obj0 = json.loads(first.decode("utf-8"))
+    lines = data.split(b"\n")
+    torn = lines.pop()  # the bytes after the last newline: a line still being written
+    if lines:
+        with contextlib.suppress(UnicodeDecodeError, json.JSONDecodeError):
+            obj0 = json.loads(lines[0].decode("utf-8"))
             if isinstance(obj0, dict):
                 session_start_ts = event_epoch(obj0.get("ts"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        session_start_ts = None
-
-    print(
-        f"[agent6] tailing {events_path}. Ctrl-C to exit.",
-        file=sys.stderr,
-    )
-
-    # Binary reads: a read can hit EOF mid UTF-8 sequence, so a partial tail stays buffered.
+    print(f"[agent6] tailing {events_path}. Ctrl-C to exit.", file=sys.stderr)
     try:
-        fh = events_path.open("rb")
-    except OSError as exc:
-        common.error(f"cannot open {events_path}: {exc}")
-        return 2
-
-    try:
-        pending = b""
-        if since > 0:
-            # Replay the last `since` lines before following.
-            try:
-                lines = fh.readlines()
-            except OSError as exc:
-                common.error(f"read failed: {exc}")
-                return 2
-            if lines and not lines[-1].endswith(b"\n"):
-                pending = lines.pop()
-            for raw in lines[-since:]:
-                line = raw.decode("utf-8", errors="replace")
-                # Piped output must not lose the replay to the block buffer while the run is idle.
-                print(format_plain_event(line, session_start_ts=session_start_ts), flush=True)
-            if lines and scan_session_log(events_path).finished:
-                return 0  # already finished: replayed, nothing to follow
-        else:
-            # A finished run has no new events to follow; seeking to end would hang.
-            if scan_session_log(events_path).finished:
+        for raw in lines[-since:] if since > 0 else []:
+            # Piped output must not lose the replay to the block buffer while the run is idle.
+            line = raw.decode("utf-8", errors="replace")
+            print(format_plain_event(line, session_start_ts=session_start_ts), flush=True)
+        if scan_session_log(events_path).finished:
+            if since == 0:
                 print("[agent6] run already finished.", file=sys.stderr)
-                return 0
-            # Seek to end; only show new events going forward.
-            fh.seek(0, 2)
-        try:
-            current_ino = events_path.stat().st_ino
-        except OSError:
-            current_ino = -1
-        while True:
-            chunk = fh.readline()
-            if chunk:
-                pending += chunk
-                if not pending.endswith(b"\n"):
-                    continue  # partial line at EOF; the rest arrives next read
-                line = pending.decode("utf-8", errors="replace")
-                pending = b""
-                print(format_plain_event(line, session_start_ts=session_start_ts), flush=True)
-                if _line_is_session_end(line):
-                    return 0  # run ended: stop, like the default follower
-                continue
-            # A vanished log is EOF only once the worker is dead: a live run recreates the path.
-            try:
-                new_ino = events_path.stat().st_ino
-            except OSError:
-                if process.worker_is_alive(target):
-                    time.sleep(0.5)
-                    continue
-                print(f"[agent6] {events_path} is gone; stopping.", file=sys.stderr)
-                return 1
-            if new_ino != current_ino:
-                with contextlib.suppress(OSError):
-                    fh.close()
-                try:
-                    fh = events_path.open("rb")
-                except OSError:
-                    if process.worker_is_alive(target):
-                        time.sleep(0.5)
-                        continue
-                    print(f"[agent6] {events_path} is gone; stopping.", file=sys.stderr)
-                    return 1
-                current_ino = new_ino
-                pending = b""
-                continue
-            if not process.worker_is_alive(target):
-                _print_crashed_line(target)
-                return 1
-            time.sleep(0.25)
+            return 0
+        # Follow from the last complete line; a torn tail is read whole once its newline lands.
+        for raw in tail_lines(
+            events_path,
+            start_at=len(data) - len(torn),
+            should_stop=lambda: not process.worker_is_alive(target),
+        ):
+            line = raw.decode("utf-8", errors="replace")
+            print(format_plain_event(line, session_start_ts=session_start_ts), flush=True)
+            if _line_is_session_end(line):
+                return 0  # run ended: stop, like the default follower
     except KeyboardInterrupt:
         print("\n[agent6] watch: stopped.", file=sys.stderr)
         return 0
-    finally:
-        with contextlib.suppress(OSError):
-            fh.close()
+    # The worker is gone and the journal drained without a session end.
+    if events_path.exists():
+        _print_crashed_line(target)
+    else:
+        print(f"[agent6] {events_path} is gone; stopping.", file=sys.stderr)
+    return 1
