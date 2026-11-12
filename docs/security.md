@@ -407,7 +407,7 @@ The agent works within the environment it is given:
     - a toolchain that keeps its state under your home needs that directory granted and named, because the jail's `HOME` is its own; see [Rust toolchains](#rust-toolchains) for rustup's `cargo`
 - Toolchains, venvs, and deps are installed outside agent6.
   Access widens through config (`extra_read_paths`, `network`), all visible in `config show`.
-- The setup command of an isolated workspace (`[workspace].setup_command`, or an AGENTS.md `## Setup command` block) is a jailed command like any other
+- The setup command of an isolated workspace (`[git.worktree].setup_command`, or an AGENTS.md `## Setup command` block) is a jailed command like any other
     - Machine clones use the operator's configured command, else the AGENTS.md block at the starting commit recorded in `machine.begin`, never a block committed by a run state; read-only agent states run this setup too, under their command policy and jail
     - A machine clone needing setup refuses `sandbox.run_commands = "ask"` at preflight rather than asking; use `--auto-approve` or set it to `"allow"` to allow setup
     - it runs through the run's own jail: the isolation, network and grants every command of that run gets, the approval `run_commands = "ask"` asks, and nothing under `"deny"`
@@ -418,7 +418,7 @@ The agent works within the environment it is given:
         1. `agent6 config set --repo sandbox.home cache`, so jailed commands in this repository share one persistent `HOME` and its tool cache
         2. warm that cache once with your own networked command, from the checkout: `agent6 --config net.toml exec --new -- uv sync --reinstall --link-mode=copy`, where `net.toml` sets `[sandbox] home = "cache"` and `network = "host"` (the host network brings the resolver and CA files with it).
            The reinstall fetches every locked package; a plain `uv sync` over a checkout whose `.venv` is complete fetches nothing, and step 3 then fails offline.
-        3. `agent6 config set --repo workspace.setup_command '["uv", "sync", "--offline", "--link-mode=copy"]'`: a new worktree's `.venv` is then built from the cache with no route out (1.2 s for a two-package project), importing the worktree's own source.
+        3. `agent6 config set --repo git.worktree.setup_command '["uv", "sync", "--offline", "--link-mode=copy"]'`: a new worktree's `.venv` is then built from the cache with no route out (1.2 s for a two-package project), importing the worktree's own source.
            `--link-mode=copy` on both steps: the jail binds the cache `HOME` and the working tree as separate mounts, so uv cannot hardlink between them and warns on every install without it
     - the warmed cache serves every working tree agent6 makes for the repository: a `run --worktree` worktree, a fork's, a `--parallel` lane's clone and a machine state's clone all get the repository's `HOME`
 - Running agent6 as root needs `--allow-root` / `AGENT6_ALLOW_ROOT=1` (plus a banner) and weakens the boundary

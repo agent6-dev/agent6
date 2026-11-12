@@ -351,7 +351,7 @@ Filling this table alone changes nothing.
 | `exec` | `[]` | argv prefix the launcher invocation is appended to, no shell; empty: find this workspace's running Docker or Podman dev container by its labels; set: run inside a container of your choice, such as `["docker", "exec", "-i", "--user", "vscode", "agent6-dev"]`, `["sudo", "-n", "docker", "exec", "-i", "agent6-dev"]`, `["podman", "exec", "-i", "NAME"]` or `["devcontainer", "exec", "--workspace-folder", "DIR"]`; never rewritten, never given a tty |
 | `runtime` | `[]` | argv prefix for the runtime's CLI, used by discovery and by the exec it derives; empty: the `docker`, then `podman`, found on PATH; a host whose docker needs sudo sets `["sudo", "-n", "docker"]` |
 | `workspace` | `""` | workspace path inside the container; empty: the discovered bind mount's path, or the host path under `container.exec`; set: that path, which creates no mount |
-| `start` | `[]` | operator command that starts the container, as argv without a shell; empty: agent6 starts nothing and refuses when no dev container runs; run once when no container runs, before discovery runs again; separate from `workspace.setup_command`, which runs inside the prepared workspace |
+| `start` | `[]` | operator command that starts the container, as argv without a shell; empty: agent6 starts nothing and refuses when no dev container runs; run once when no container runs, before discovery runs again; separate from `git.worktree.setup_command`, which runs inside the prepared workspace |
 | `stop` | `[]` | operator command that stops a container the run started, as argv without a shell; runs after the run and every run attached to the container settled their jobs and records; empty: the container is left running; attaching alone grants no stop |
 
 ## `[git]`
@@ -382,6 +382,15 @@ See [Git](security.md#7-git) for where `sandbox.protect_git` enforces `git.contr
 | `trailer` | `""` | git trailer line (`Key: value`) on every agent6 commit, such as `"Assisted-by: agent6:{model}"` or `"Co-authored-by: agent6:{model} <noreply@agent6.dev>"`; `{model}`: the code-writing model, several joined with `, `; no trailer when empty |
 | `checkpoint_message` | `"agent6"` | Per-turn commit message style; generated messages use `agent6 turn N: <summary>` or `type(scope): subject`; model messages use git facts and fall back to the generated agent6 message with a warning on failure<ul><li><code>agent6</code>: Generate turn number and summary message</li><li><code>conventional</code>: Derive conventional subject from diff without model</li><li><code>model</code>: Ask model to write commit message</li></ul> |
 | `squash_message` | `"agent6"` | Squash commit message style; generated messages use the task's first clause, then `continued: <steer>` for a run resumed with `--steer`, with the finish summary as body or commit subjects as bullets; conventional subjects use `type(scope): subject` with the same body; model messages use up to 64 KiB of base-to-tip diff (marked if truncated), the task, continuation and execution finish summaries, and AGENTS.md commit conventions; failure warns and falls back to the generated agent6 message<ul><li><code>agent6</code>: Generate message from task and run summary</li><li><code>conventional</code>: Derive conventional subject from diff without model</li><li><code>combine</code>: Concatenate the git commit log</li><li><code>model</code>: Ask model to write commit message</li></ul> |
+
+### `[git.worktree]`
+
+Placement and setup of the worktrees agent6 makes: lane and machine-state clones, fork and `run --worktree` linked worktrees.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `base_dir` | `""` | base directory for the worktrees agent6 makes, grouped by repository: lane and machine-state clones, fork and `run --worktree` linked worktrees; empty: `<cache_dir>/worktrees`; lane clone removed after work import; fork and `run --worktree` worktrees removed by `sessions prune` once merged or holding no work |
+| `setup_command` | `[]` | environment-setup command for a new worktree as argv, no shell (pipeline form: `["sh", "-c", "a && b"]`); `run --worktree` and fork worktrees, lane and machine-state clones: tracked files only, no untracked `.venv` or `node_modules`; command run once in each worktree before the first turn, under the run's command sandbox (same isolation, network and grants); nonzero exit or 600-second timeout: session ended before any turn; unset: AGENTS.md `## Setup command` fenced block, parsed like `## Verify command`, command printed; no configured or inferred command: nothing run |
 
 ## `preset` (top-level)
 
@@ -638,15 +647,6 @@ The [`--secret` target](#creating-and-inspecting) writes and removes them; `[tel
 | `headers` | `[]` | Header names sent with every export; each value comes from `[telemetry.headers]` in `secrets.toml`, written by `agent6 config set --secret telemetry.headers.<name> <value>`. |
 | `capture` | `"metadata"` | Export detail; content excerpts cover the task, steers, tool arguments, gate command, model errors, finding titles and degradation details.<ul><li><code>metadata</code>: Export outcomes, counts, timings and identifiers</li><li><code>content</code>: Also export capped content excerpts</li></ul> |
 | `prometheus_file` | `""` | The absolute path `metrics = "prometheus"` writes atomically, in a directory node_exporter's textfile collector reads. |
-
-## `[workspace]`
-
-Placement and setup for lane clones, machine state clones, forks and `run --worktree` worktrees.
-
-| Field | Default | Meaning |
-|---|---|---|
-| `base_dir` | `""` | base directory for lane clones, machine-state clones, forks and `run --worktree` worktrees, grouped by repo; empty: `<cache_dir>/parallel`; lane clone removed after work import; fork and `run --worktree` worktrees removed by `sessions prune` once merged or holding no work |
-| `setup_command` | `[]` | environment-setup command for a new isolated workspace as argv, no shell (pipeline form: `["sh", "-c", "a && b"]`); `run --worktree` and fork worktrees, lane and machine-state clones: tracked files only, no untracked `.venv` or `node_modules`; command run once in each workspace before the first turn, under the run's command sandbox (same isolation, network and grants); nonzero exit or 600-second timeout: session ended before any turn; unset: AGENTS.md `## Setup command` fenced block, parsed like `## Verify command`, command printed; no configured or inferred command: nothing run |
 
 ## `[mcp]` and `[mcp.servers.<name>]` (optional)
 

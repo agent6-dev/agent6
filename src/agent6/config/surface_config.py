@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The surface models.
 
-`[skills]`, `[machine]`, `[web]`, `[telemetry]`, `[notify]` and `[workspace]`.
+`[skills]`, `[machine]`, `[web]`, `[telemetry]` and `[notify]`.
 """
 
 from __future__ import annotations
@@ -357,35 +357,4 @@ class NotifyConfig(pydantic.BaseModel):
         gt=0.0,
         default=30.0,
         description="Seconds the hook may run before it is killed.",
-    )
-
-
-class WorkspaceConfig(pydantic.BaseModel):
-    """The `[workspace]` table: placement and setup of isolated workspaces."""
-
-    model_config = validation.MODEL_CONFIG
-
-    # A lane: `<base_dir>/<repo-id>/<fanout-id>/lane-<i>`; a fork or a `run --worktree` run:
-    # `<base_dir>/<repo-id>/<session-id>`.
-    base_dir: str = pydantic.Field(
-        default="",
-        description=(
-            "base directory for lane clones, machine-state clones, forks and `run --worktree` "
-            "worktrees, grouped by repo; empty: `<cache_dir>/parallel`; lane clone removed "
-            "after work import; fork and `run --worktree` worktrees removed by `sessions prune` "
-            "once merged or holding no work"
-        ),
-    )
-    setup_command: validation.Argv = pydantic.Field(
-        default=(),
-        description=(
-            "environment-setup command for a new isolated workspace as argv, no shell (pipeline "
-            'form: `["sh", "-c", "a && b"]`); `run --worktree` and fork worktrees, lane and '
-            "machine-state clones: tracked files only, no untracked `.venv` or `node_modules`; "
-            "command run once in each workspace before the first turn, under the run's command "
-            "sandbox (same isolation, network and grants); nonzero exit or 600-second timeout: "
-            "session ended before any turn; unset: AGENTS.md `## Setup command` fenced block, "
-            "parsed like `## Verify command`, command printed; no configured or inferred "
-            "command: nothing run"
-        ),
     )

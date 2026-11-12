@@ -244,7 +244,7 @@ The argument always names the reviewed side: use `/review main...HEAD` for the c
 
 Start with `agent6 ask "/review main...HEAD"` for a review without edit tools, or `agent6 run "/review feature-x"` to allow fixes too.
 Both modes keep the session's sandbox, approvals and git control, and can run approved checks.
-A clean checkout at the range's head is reviewed in place; otherwise startup prepares a detached worktree at that head under `workspace.base_dir`.
+A clean checkout at the range's head is reviewed in place; otherwise startup prepares a detached worktree at that head under `git.worktree.base_dir`.
 A live session cannot change trees: a request for another tree names the `agent6 ask "/review TARGET"` command to start one.
 A bare run review cannot stash the changes it reviews; use ask or choose `git.dirty_tree = "include"`.
 The first message carries resolved revisions, a diff stat, up to 64 KiB of patch and the base tree's `AGENTS.md` rules.
@@ -408,14 +408,14 @@ The verify command is the success gate.
 `run --worktree`, a run-mode fork, each `--parallel` lane and a run-mode machine state work in a worktree or a clone of their own.
 
 - It starts with the repository's tracked files at the commit it was cut from: no uncommitted change, and nothing git does not track (`.venv`, `node_modules`, a build directory).
-- `[workspace].setup_command` builds what is missing; it runs once in each new workspace, before the first turn:
+- `[git.worktree].setup_command` builds what is missing; it runs once in each new workspace, before the first turn:
 
     ```sh
-    agent6 config set --repo workspace.setup_command '["uv", "sync"]'
+    agent6 config set --repo git.worktree.setup_command '["uv", "sync"]'
     ```
 
 - Unset, a `## Setup command` fenced block in AGENTS.md supplies it; a `--worktree` run and a `--parallel` fan-out read it from the commit the workspace is cut from, not from an uncommitted edit, and print the command and that AGENTS.md gave it.
-    - an AGENTS.md that is a symlink is not read there: set `workspace.setup_command`
+    - an AGENTS.md that is a symlink is not read there: set `git.worktree.setup_command`
 - The command runs in the run's own sandbox, under the isolation, network and grants of every command of that run; with no route out it has to work offline ([the offline recipe](security.md#4-commands-and-environment)).
 - Machine clones follow the [state setup and failure rules](state-machines.md#agent) and [setup approval policy](security.md#4-commands-and-environment).
 - For run, fork and lane sessions, the command and output tail are printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any turn (exit `1`).

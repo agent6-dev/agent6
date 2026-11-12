@@ -190,8 +190,11 @@ def resumed(
         {
             "models": {"default": {"model": "anthropic/claude-test"}},
             "sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"},
-            "workspace": {"setup_command": ["/bin/true"]},
-            "git": {"commit_per_turn": False, "auto_merge": False},
+            "git": {
+                "commit_per_turn": False,
+                "auto_merge": False,
+                "worktree": {"setup_command": ["/bin/true"]},
+            },
             "harness": {
                 "verify": {"command": ["/bin/true"], "at_start": True, "when": "finish"},
                 "command_checkin_s": 0,

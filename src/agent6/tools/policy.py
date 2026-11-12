@@ -84,7 +84,7 @@ def persistent_jail_home(
         return paths.jail_cache_home(worktree_git_dir.parent)
     # Named by where agent6 put the tree, which no jailed command can move: the first
     # directory below the workspace base directory is the owning repository's id.
-    base = paths.workspace_base(config.workspace.base_dir)
+    base = paths.worktree_base(config.git.worktree.base_dir)
     try:
         owner = root.resolve().relative_to(base.resolve()).parts[:1]
     except ValueError:

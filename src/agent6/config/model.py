@@ -112,9 +112,6 @@ class Config(pydantic.BaseModel):
     telemetry: surface_config.TelemetryConfig = pydantic.Field(
         default_factory=surface_config.TelemetryConfig
     )
-    workspace: surface_config.WorkspaceConfig = pydantic.Field(
-        default_factory=surface_config.WorkspaceConfig
-    )
     # The injection order and stacking rules live in config.layer_presets.apply_preset.
     preset: Annotated[str, pydantic.AfterValidator(preset_name)] = pydantic.Field(
         default="none",
@@ -589,7 +586,7 @@ class Config(pydantic.BaseModel):
         return Config.model_validate(data)
 
     def with_setup_command(self, argv: tuple[str, ...]) -> Config:
-        """Return a copy whose `workspace.setup_command` is the argv AGENTS.md states.
+        """Return a copy whose `git.worktree.setup_command` is the argv AGENTS.md states.
 
         Args:
             argv: The setup command.
@@ -598,7 +595,7 @@ class Config(pydantic.BaseModel):
             The config with the setup command set.
         """
         data = self.model_dump(mode="python")
-        data.setdefault("workspace", {})["setup_command"] = list(argv)
+        data["git"]["worktree"]["setup_command"] = list(argv)
         return Config.model_validate(data)
 
     def cleartext_credential_endpoints(self) -> tuple[str, ...]:
@@ -751,6 +748,7 @@ _REPLACED_KEYS = {
     "review.trigger": (
         'renamed config key; use review.when ("never", "verify_fail", "finish" or "periodic")'
     ),
+    "workspace": "moved config table; use [git.worktree]",
 }
 
 

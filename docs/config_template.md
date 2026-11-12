@@ -295,6 +295,12 @@ See [Git](security.md#7-git) for where `sandbox.protect_git` enforces `git.contr
 
 <!-- config-table: git.commit -->
 
+### `[git.worktree]`
+
+Placement and setup of the worktrees agent6 makes: lane and machine-state clones, fork and `run --worktree` linked worktrees.
+
+<!-- config-table: git.worktree -->
+
 ## `preset` (top-level)
 
 <!-- config-table: preset -->
@@ -465,12 +471,6 @@ Header values live in `secrets.toml` under `[telemetry.headers]`, never in confi
 The [`--secret` target](#creating-and-inspecting) writes and removes them; `[telemetry].headers` selects which names the exporter sends.
 
 <!-- config-table: telemetry -->
-
-## `[workspace]`
-
-Placement and setup for lane clones, machine state clones, forks and `run --worktree` worktrees.
-
-<!-- config-table: workspace -->
 
 ## `[mcp]` and `[mcp.servers.<name>]` (optional)
 

@@ -10,7 +10,11 @@ from __future__ import annotations
 
 from agent6.config import validation
 from agent6.config.container_config import ContainerConfig  # re-export
-from agent6.config.git_config import GitCommitConfig, GitConfig  # re-export
+from agent6.config.git_config import (  # re-export
+    GitCommitConfig,
+    GitConfig,
+    GitWorktreeConfig,
+)
 from agent6.config.harness_config import (  # re-export
     BudgetConfig,
     CompactionConfig,
@@ -57,7 +61,6 @@ from agent6.config.surface_config import (  # re-export
     NotifyConfig,
     TelemetryConfig,
     WebConfig,
-    WorkspaceConfig,
     is_loopback_host,
 )
 from agent6.kinds import EffortLevel, RoleName  # re-export
@@ -77,6 +80,7 @@ __all__ = [
     "EffortLevel",
     "GitCommitConfig",
     "GitConfig",
+    "GitWorktreeConfig",
     "HarnessConfig",
     "HeaderTemplate",
     "MCPConfig",
@@ -101,7 +105,6 @@ __all__ = [
     "TelemetryConfig",
     "VerifyConfig",
     "WebConfig",
-    "WorkspaceConfig",
     "is_cleartext_url",
     "is_loopback_host",
     "is_loopback_url",

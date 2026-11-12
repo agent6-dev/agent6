@@ -84,7 +84,7 @@ class ScriptedReview:
 def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     cfg = tmp_path / "config" / "agent6"
     cfg.mkdir(parents=True)
-    config = _CONFIG + "\n[workspace]\nbase_dir = " + json.dumps(str(tmp_path / "worktrees"))
+    config = _CONFIG + "\n[git.worktree]\nbase_dir = " + json.dumps(str(tmp_path / "worktrees"))
     (cfg / "config.toml").write_text(config, encoding="utf-8")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg.parent))
     monkeypatch.setenv("PROBE_KEY", "sk-test")

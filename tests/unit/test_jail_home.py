@@ -306,7 +306,7 @@ def test_a_lanes_clone_and_a_machine_clone_share_the_repositorys_home(
     for made in (lane, state_clone, stranger):
         made.mkdir(parents=True)
     cfg = Config.model_validate(
-        {"sandbox": {"home": "cache"}, "workspace": {"base_dir": str(base)}}
+        {"sandbox": {"home": "cache"}, "git": {"worktree": {"base_dir": str(base)}}}
     )
 
     def home(root: pathlib.Path) -> pathlib.Path | None:

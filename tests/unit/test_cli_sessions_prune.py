@@ -818,7 +818,7 @@ def _fork_with_worktree(
 ) -> pathlib.Path:
     """A fork session as `create_fork` leaves it.
 
-    A linked worktree of the repo under `[workspace].base_dir` and a manifest naming it
+    A linked worktree of the repo under `[git.worktree].base_dir` and a manifest naming it
     (`record=False`: the worktree of a session whose record `sessions remove` deleted).
     """
     from agent6.app import workdirs

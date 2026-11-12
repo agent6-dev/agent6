@@ -1132,7 +1132,7 @@ model = "anthropic/x"
 
     def capture(cfg: Config, isolation: kinds.IsolationLevel) -> agent.StateOverlay:
         overlay = real_overlay(cfg, isolation)
-        carried.append(tuple(overlay.overlay["workspace"]["setup_command"]))
+        carried.append(tuple(overlay.overlay["git"]["worktree"]["setup_command"]))
         return overlay
 
     monkeypatch.setattr(agent, "state_overlay", capture)

@@ -2,7 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The `[git]` model.
 
-Worktree policy, the run's detached chain, merge and message styles.
+Worktree policy, the run's detached chain, merge and message styles, and the worktrees
+agent6 makes.
 """
 
 from __future__ import annotations
@@ -117,6 +118,37 @@ class GitCommitConfig(pydantic.BaseModel):
                 ' (e.g. "Assisted-by: agent6:{model}")'
             )
         return v
+
+
+class GitWorktreeConfig(pydantic.BaseModel):
+    """The `[git.worktree]` table: where agent6 puts the worktrees it makes, and their setup."""
+
+    model_config = validation.MODEL_CONFIG
+
+    # A lane: `<base_dir>/<repo-id>/<fanout-id>/lane-<i>`; a fork or a `run --worktree` run:
+    # `<base_dir>/<repo-id>/<session-id>`.
+    base_dir: str = pydantic.Field(
+        default="",
+        description=(
+            "base directory for the worktrees agent6 makes, grouped by repository: lane and "
+            "machine-state clones, fork and `run --worktree` linked worktrees; empty: "
+            "`<cache_dir>/worktrees`; lane clone removed after work import; fork and `run "
+            "--worktree` worktrees removed by `sessions prune` once merged or holding no work"
+        ),
+    )
+    setup_command: validation.Argv = pydantic.Field(
+        default=(),
+        description=(
+            "environment-setup command for a new worktree as argv, no shell (pipeline "
+            'form: `["sh", "-c", "a && b"]`); `run --worktree` and fork worktrees, lane and '
+            "machine-state clones: tracked files only, no untracked `.venv` or `node_modules`; "
+            "command run once in each worktree before the first turn, under the run's command "
+            "sandbox (same isolation, network and grants); nonzero exit or 600-second timeout: "
+            "session ended before any turn; unset: AGENTS.md `## Setup command` fenced block, "
+            "parsed like `## Verify command`, command printed; no configured or inferred "
+            "command: nothing run"
+        ),
+    )
 
 
 class GitConfig(pydantic.BaseModel):
@@ -254,6 +286,7 @@ class GitConfig(pydantic.BaseModel):
         ),
     )
     commit: GitCommitConfig = pydantic.Field(default_factory=GitCommitConfig)
+    worktree: GitWorktreeConfig = pydantic.Field(default_factory=GitWorktreeConfig)
 
     @pydantic.model_validator(mode="after")
     def _check_auto_merge(self) -> GitConfig:

@@ -235,7 +235,7 @@ def test_the_run_works_in_its_own_worktree_and_the_checkout_stays_as_it_was(
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-AAAA01"))
     worktree = manifest.worktree
     assert worktree is not None and worktree.name == "wt-AAAA01"
-    assert worktree.is_relative_to(paths.cache_dir() / "parallel")
+    assert worktree.is_relative_to(paths.cache_dir() / "worktrees")
     assert manifest.worktree_git_dir == (repo / ".git").resolve()
     assert manifest.base_branch == "main" and manifest.base_sha == before[0].strip()
     assert seen["isolation"] == (worktree, manifest.worktree_git_dir)
@@ -291,7 +291,7 @@ def test_resume_stash_restore_command_targets_the_sessions_worktree(
     """A worktree stash's restore command works from the origin without switching branches."""
     config = (
         _CONFIG
-        + '\n[git]\ndirty_tree = "stash"\n\n[workspace]\nbase_dir = '
+        + '\n[git]\ndirty_tree = "stash"\n\n[git.worktree]\nbase_dir = '
         + json.dumps(str(tmp_path / "worktrees with spaces"))
         + "\n"
     )
@@ -775,11 +775,11 @@ def test_a_workdir_inside_the_checkout_refuses(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A worktree under the checkout would show up in its `git status`."""
-    repo = _repo(tmp_path, monkeypatch, config=_CONFIG + '\n[workspace]\nbase_dir = "wt"\n')
+    repo = _repo(tmp_path, monkeypatch, config=_CONFIG + '\n[git.worktree]\nbase_dir = "wt"\n')
     before = _checkout_facts(repo)
 
     assert cli_main(["run", "--worktree", "--session-id", "wt-RELW01", "task"]) == 2
-    assert "[workspace].base_dir" in capsys.readouterr().err
+    assert "[git.worktree].base_dir" in capsys.readouterr().err
     assert _checkout_facts(repo) == before
     assert _nothing_was_created(repo, "wt-RELW01")
 
@@ -936,7 +936,7 @@ def _with_setup(repo: pathlib.Path, argv: str) -> None:
     """Write the repository's own config with a setup command."""
     path = paths.state_dir(repo) / "config.toml"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"[workspace]\nsetup_command = {argv}\n", encoding="utf-8")
+    path.write_text(f"[git.worktree]\nsetup_command = {argv}\n", encoding="utf-8")
 
 
 def test_the_setup_command_runs_in_the_new_worktree_before_the_first_turn(
@@ -1297,7 +1297,7 @@ def test_a_gate_on_an_untracked_path_with_no_setup_command_refuses_before_anythi
     assert _nothing_was_created(repo, "wt-GATE01")
     assert "REFUSING: the verify gate runs `.venv/bin/python`" in err
     assert "git does not track" in err
-    assert """agent6 config set --repo workspace.setup_command '["uv", "sync"]'""" in err
+    assert """agent6 config set --repo git.worktree.setup_command '["uv", "sync"]'""" in err
     assert "`## Setup command`" in err and "AGENTS.md" in err
 
 
@@ -1345,7 +1345,7 @@ def test_a_setup_command_that_leaves_the_gate_path_missing_ends_the_session_sayi
     """The setup command exited 0, and the run then ended `verify command unexecutable`."""
     repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
     _untracked_venv(repo)
-    _pin_gate(repo, '\n[workspace]\nsetup_command = ["true"]\n')
+    _pin_gate(repo, '\n[git.worktree]\nsetup_command = ["true"]\n')
     prov = _script(monkeypatch)
 
     assert cli_main(["run", "--worktree", "--session-id", "wt-GATE03", "task"]) == 1
@@ -1477,7 +1477,10 @@ def test_a_failed_setup_command_says_when_it_ran_with_no_route_out(
     The line prints only where the run's commands have no route off the machine.
     """
     cfg = Config.model_validate(
-        {"sandbox": {"network": network}, "workspace": {"setup_command": ["uv", "sync"]}}
+        {
+            "sandbox": {"network": network},
+            "git": {"worktree": {"setup_command": ["uv", "sync"]}},
+        }
     )
     dispatcher = _FailingSetup(isolation)
 
@@ -1519,7 +1522,7 @@ def test_the_no_setup_refusal_says_the_command_runs_in_the_sandbox(
     ).problem
 
     assert text is not None
-    assert """agent6 config set --repo workspace.setup_command '["uv", "sync"]'""" in text
+    assert """agent6 config set --repo git.worktree.setup_command '["uv", "sync"]'""" in text
     assert (
         "it runs in the run's own sandbox: with no route off the machine it has to work"
         " offline (docs/security.md has the recipe)"

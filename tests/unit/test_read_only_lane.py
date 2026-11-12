@@ -254,7 +254,7 @@ def test_a_real_read_only_lane_cannot_write_run_or_start_anything(
                 "providers": {"p": {"backend": "openai", "base_url": base_url}},
                 "models": {"default": {"model": "p/base"}},
                 "sandbox": {"isolation": "none", "protect_git": "off", "run_commands": "allow"},
-                "workspace": {"setup_command": ["touch", str(marker)]},
+                "git": {"worktree": {"setup_command": ["touch", str(marker)]}},
                 "harness": {
                     "verify": {"when": "never"},
                 },

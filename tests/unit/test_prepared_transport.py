@@ -63,7 +63,7 @@ def test_injected_transport_serves_setup_commands_and_verification(
         {
             "sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"},
             "harness": {"verify": {"command": gate}, "command_checkin_s": 0},
-            "workspace": {"setup_command": setup},
+            "git": {"worktree": {"setup_command": setup}},
         }
     )
     env = (("HOME", str(home)), ("PATH", str(bin_dir)))
@@ -124,7 +124,7 @@ def test_injected_transport_serves_setup_commands_and_verification(
             target, protocol_version=4, launcher_instance=session.target.launcher_instance
         )
         assert session._proc is transport
-        setup_result = dispatcher.run_setup(cfg.workspace.setup_command)
+        setup_result = dispatcher.run_setup(cfg.git.worktree.setup_command)
         baseline = dispatcher.run_verify()
         ordinary = dispatcher.dispatch("run_command", {"argv": list(model)})
         verification = dispatcher.dispatch("run_verify_command", {})

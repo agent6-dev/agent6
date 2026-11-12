@@ -309,7 +309,7 @@ def cmd_prune(*, delete_squashed: bool = False, config_paths: tuple[pathlib.Path
 def _sweep_workdirs(
     cwd: pathlib.Path, state: pathlib.Path, config_paths: tuple[pathlib.Path, ...]
 ) -> tuple[str, bool]:
-    """Sweep fan-out and machine clones and fork worktrees under `[workspace].base_dir`.
+    """Sweep fan-out and machine clones and fork worktrees under `[git.worktree].base_dir`.
 
     Prints each keep and each worktree removal.
 

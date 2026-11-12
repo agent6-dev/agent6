@@ -265,7 +265,7 @@ An `agent` state spins up a normal agent6 run: its own transcript, budget slice,
 
 Where a run state's work lands:
 
-- each run state executes in a fresh clone (the `--parallel` lane mechanism, `[workspace].base_dir` cache) checked out at the machine chain's tip
+- each run state executes in a fresh clone (the `--parallel` lane mechanism, `[git.worktree].base_dir` cache) checked out at the machine chain's tip
 - run states require `git.commit_per_turn = true`: the committed chain is the only path out of a clone
 - its commits land per state on the visible `agent6/machine-<id>` branch; your checkout is never touched
 - merge the branch when you want the work (the run's ending names it and the `git merge` line)
@@ -279,7 +279,7 @@ Where a run state's work lands:
     - once HEAD contains both tips, it drops any chain ref and starts from HEAD
     - a branch left without its chain ref must also be merged or discarded before a fresh instance starts
 - a machine with run states works its own tree everywhere: `tool` and read-only agent states also run in fresh clones at the chain tip
-    - setup comes from `[workspace].setup_command`, else the AGENTS.md block at `machine.begin.base_commit` (the commit the machine started from), never the writable chain tip
+    - setup comes from `[git.worktree].setup_command`, else the AGENTS.md block at `machine.begin.base_commit` (the commit the machine started from), never the writable chain tip
     - setup runs per tool call and gets the state's `timeout_s` before the tool receives its own `timeout_s`
     - each clone runs the [workspace setup command](usage.md#isolated-workspaces) before the state executes; setup output tails, argv, exit code and duration are recorded as `workspace.setup` events in the instance's `states/<seq>-<state>/logs.jsonl`, bounded by `machine.keep_state_logs`
     - a failed setup command takes the tool state's `nonzero` edge (`timeout` for a timed-out setup); clone or jail host failures abort the machine instead
@@ -603,7 +603,7 @@ Unset keys read straight through to the lower layers, so a machine only states w
 
 **Operator-only keys.** Refused in both tables, each a load-time error:
 
-- `providers.*`, `presets.*`, `mcp.*`, `telemetry.*`, a top-level `preset`, `budget.allow_plan_overage`, `git.run_repo_hooks`, `git.run_repo_drivers`, `machine.pass_env`, `notify.on_event`, `workspace.base_dir`, `harness.prompt.system_prompt_file`, `skills.extra_dirs`
+- `providers.*`, `presets.*`, `mcp.*`, `telemetry.*`, a top-level `preset`, `budget.allow_plan_overage`, `git.run_repo_hooks`, `git.run_repo_drivers`, `machine.pass_env`, `notify.on_event`, `git.worktree.base_dir`, `harness.prompt.system_prompt_file`, `skills.extra_dirs`
     - endpoints, key-env names, and secrets live in the global/repo config and the secrets store; presets, MCP servers, host-argv hooks, host-side read and work dirs, and paid credits are operator decisions in the global/repo config
 - a state's table also refuses `machine.*`, `parallel.*`, `workspace.*` and `git.commit.*`, which are read once for the whole machine: set them in `[config]`
 
@@ -807,7 +807,7 @@ It is an ordinary agent6 run handed this document's grammar, writing the `.asm.t
 - no host is pre-allowed, so a headless `fetch` denies
 - it never sees the operator's checkout; the workspace bounds its writes the way a repo bounds a run's
 
-- the workspace is an empty git repo under `[workspace].base_dir` (where lane clones and fork worktrees live)
+- the workspace is an empty git repo under `[git.worktree].base_dir` (where lane clones and fork worktrees live)
     - each turn commits, and a failed create keeps the workspace for the operator to read
 - every draft is gated: `machine check`, ruff (the destination's ruff config), ty, the `machine test` dry-run, and mock tests in a no-network jail
     - the mock tests run under `full` `sandbox.isolation` only: elsewhere agent6 reports them as not run

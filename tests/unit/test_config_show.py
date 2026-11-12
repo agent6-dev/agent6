@@ -439,7 +439,7 @@ def test_config_values_are_toml(value: object) -> None:
         ("budget.max_usd", "1.5"),
         ("git.branch_per_run", "true"),
         (
-            "workspace.setup_command",
+            "git.worktree.setup_command",
             '["env", "AGENT6_SKIP_JAIL_BUILD=1", "uv", "sync", "--group", "dev"]',
         ),
         ("review.reviewers", '[{ focus = "security", effort = "off" }]'),

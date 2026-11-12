@@ -45,7 +45,7 @@ def _global_toml(tmp_path: pathlib.Path) -> dict[str, object]:
 @pytest.mark.parametrize(
     ("key", "value"),
     [
-        ("workspace.setup_command", '["sh", "-c", "echo hi"]'),
+        ("git.worktree.setup_command", '["sh", "-c", "echo hi"]'),
         ("git.commit.name", r'"A \"quoted\" name"'),
         ("compaction", "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"),
     ],
@@ -64,15 +64,15 @@ def test_config_set_echo_keeps_the_written_toml(
 @pytest.mark.parametrize(
     ("verb", "initial", "message", "changed"),
     [
-        ("add", "[]", 'Added "echo hi" to workspace.setup_command in {target}\n', True),
+        ("add", "[]", 'Added "echo hi" to git.worktree.setup_command in {target}\n', True),
         (
             "remove",
             '["echo hi"]',
-            'Removed "echo hi" from workspace.setup_command in {target}\n',
+            'Removed "echo hi" from git.worktree.setup_command in {target}\n',
             True,
         ),
-        ("add", '["echo hi"]', '"echo hi" already in workspace.setup_command.\n', False),
-        ("remove", "[]", '"echo hi" not in workspace.setup_command.\n', False),
+        ("add", '["echo hi"]', '"echo hi" already in git.worktree.setup_command.\n', False),
+        ("remove", "[]", '"echo hi" not in git.worktree.setup_command.\n', False),
     ],
 )
 def test_config_list_edit_echo_keeps_toml_quotes(
@@ -84,7 +84,7 @@ def test_config_list_edit_echo_keeps_toml_quotes(
     changed: bool,
 ) -> None:
     """Add and remove must quote string entries in success and no-op messages."""
-    key = "workspace.setup_command"
+    key = "git.worktree.setup_command"
     assert _run(["config", "set", "--repo", key, initial]) == 0
     target = paths.repo_config_path(iso)
     before = target.read_text(encoding="utf-8")

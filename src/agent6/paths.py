@@ -181,19 +181,19 @@ def jail_cache_home_of(repo: str, user: RealUser | None = None) -> pathlib.Path:
     return cache_dir(user) / "homes" / repo
 
 
-def workspace_base(base_dir: str) -> pathlib.Path:
-    """Return the base directory for every repository's isolated workspaces.
+def worktree_base(base_dir: str) -> pathlib.Path:
+    """Return the base directory for the worktrees agent6 makes, every repository's.
 
     Each repository has one directory in it, named by its `repo_id`, for its worktrees, lane
     clones and machine clones.
 
     Args:
-        base_dir: The `[workspace].base_dir` setting.
+        base_dir: The `[git.worktree].base_dir` setting.
 
     Returns:
-        `base_dir` as an absolute path, or `<cache_dir>/parallel` when `base_dir` is empty.
+        `base_dir` as an absolute path, or `<cache_dir>/worktrees` when `base_dir` is empty.
     """
-    return pathlib.Path(base_dir).resolve() if base_dir else cache_dir() / "parallel"
+    return pathlib.Path(base_dir).resolve() if base_dir else cache_dir() / "worktrees"
 
 
 def data_dir(user: RealUser | None = None) -> pathlib.Path:

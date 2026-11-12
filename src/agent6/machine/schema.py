@@ -468,13 +468,13 @@ PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
     "skills.extra_dirs": (
         "a skill directory is read on the host, outside the jail, and sent to the provider"
     ),
-    "workspace.base_dir": (
+    "git.worktree.base_dir": (
         "the supervisor creates and removes every state's working tree under it, on the host"
     ),
     "budget.allow_plan_overage": "it lets purchased credits or extra usage be spent",
 }
 # The supervisor reads these once for the whole machine, so one state cannot change them.
-STATE_OVERLAY_KEYS: tuple[str, ...] = ("git.commit", "harness.parallel", "machine", "workspace")
+STATE_OVERLAY_KEYS: tuple[str, ...] = ("git.commit", "git.worktree", "harness.parallel", "machine")
 
 
 def protected_overlay_key_error(key: str, state: str = "") -> str | None:

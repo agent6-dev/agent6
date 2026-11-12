@@ -72,7 +72,7 @@ class ContainerConfig(pydantic.BaseModel):
             "operator command that starts the container, as argv without a shell; empty: "
             "agent6 starts nothing and refuses when no dev container runs; run once when no "
             "container runs, before discovery runs again; separate from "
-            "`workspace.setup_command`, which runs inside the prepared workspace"
+            "`git.worktree.setup_command`, which runs inside the prepared workspace"
         ),
     )
     stop: validation.Argv = pydantic.Field(

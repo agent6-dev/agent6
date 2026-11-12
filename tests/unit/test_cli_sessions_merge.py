@@ -1427,11 +1427,11 @@ def test_merge_adopts_an_orphaned_fanout_lane(
     base_sha = _git(tmp_path, "rev-parse", "HEAD")
 
     # The lane clone as the spawner leaves it: workdir cache / repo-id / fanout / lane-1.
-    workdir = tmp_path / "cache" / "parallel"
+    workdir = tmp_path / "cache" / "worktrees"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     (tmp_path / "cfg" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "cfg" / "agent6" / "config.toml").write_text(
-        f'[workspace]\nbase_dir = "{workdir}"\n', encoding="utf-8"
+        f'[git.worktree]\nbase_dir = "{workdir}"\n', encoding="utf-8"
     )
     clone = workdir / paths.repo_id(tmp_path) / "fan" / "lane-1"
     clone.parent.mkdir(parents=True)

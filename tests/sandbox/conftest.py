@@ -124,7 +124,7 @@ def assert_execution_receipt(session: jail_session.JailSession) -> str:
     cfg = Config.model_validate(
         {
             "sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"},
-            "workspace": {"setup_command": (*observe, "setup")},
+            "git": {"worktree": {"setup_command": (*observe, "setup")}},
             "harness": {
                 "verify": {"command": (*observe, "verify"), "at_start": True, "when": "finish"},
                 "command_checkin_s": 0,
@@ -162,7 +162,7 @@ def assert_execution_receipt(session: jail_session.JailSession) -> str:
     dispatcher = tools.dispatcher
     try:
         assert dispatcher.execution_target is target
-        assert dispatcher.run_setup(cfg.workspace.setup_command).returncode == 0
+        assert dispatcher.run_setup(cfg.git.worktree.setup_command).returncode == 0
         provider = mock.Mock()
         provider.call.side_effect = [
             test_harness._tool_resp("run_command", {"argv": [*observe, "model"]}, tool_id="model"),
@@ -222,7 +222,7 @@ def assert_execution_receipt(session: jail_session.JailSession) -> str:
         assert record.target_id == stamp.target_id
         assert record.exit_code == 0
         assert record.stdout_tail.splitlines() == [record.command[-1], *expected]
-    assert view.setups[0].command == cfg.workspace.setup_command
+    assert view.setups[0].command == cfg.git.worktree.setup_command
     assert all(record.command == cfg.harness.verify.command for record in view.verifications)
     assert all(record.certifies(view.end_tree) for record in view.verifications)
     assert view.final_verify_id == view.verifications[-1].verify_id
