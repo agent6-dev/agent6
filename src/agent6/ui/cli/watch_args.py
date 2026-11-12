@@ -15,12 +15,11 @@ def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         sub,
         "attach",
         help=(
-            "Attach to a session or machine and drive it live: the conversation as"
-            " `agent6 run` prints it, and, on a terminal, its command approvals and"
-            " questions to answer. For a run, --raw follows the event log one line per"
-            " event, --tui opens the full-screen view, --json prints one snapshot of its"
-            " state. The plain and raw run followers exit non-zero if the worker dies"
-            " before the run ends. Omit the target for the newest session."
+            "Attach to a session or machine and drive it live: the conversation as `agent6 run`"
+            " prints it and, on a terminal, its approvals and questions to answer. For a run, --raw prints one line"
+            " per event, --tui opens the full-screen view and --json prints one snapshot of its"
+            " state. The plain and raw followers exit non-zero if the worker dies before the run"
+            " ends. Omit the target for the newest session."
         ),
     )
     watch_target = watch_p.add_argument(
@@ -126,10 +125,9 @@ def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default=None,
         metavar="VALUE",
         help=(
-            "The secret a browser signs in with, at least 12 characters; case, spaces and"
-            " hyphens between its words do not matter. Default: AGENT6_WEB_SECRET, else a"
-            " six-word secret minted per launch and printed. A flag value shows in the"
-            " process list; the variable keeps it out."
+            "The secret a browser signs in with, at least 12 characters. Default:"
+            " AGENT6_WEB_SECRET, else a six-word secret minted per launch and printed. A flag"
+            " value shows in the process list; the variable keeps it out."
         ),
     )
 
@@ -140,13 +138,11 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         sub,
         "steer",
         help=(
-            "Send an instruction to a live run, as the TUI and web composers do; the"
-            " run takes it at its next step. It takes the composer directives too, so"
-            " `/task <text>` queues work and `/btw <question>` asks beside the run;"
-            " `/undo` needs a composer: the TUI, the web, a `run -i` prompt, or a live"
-            " run's pause menu (Ctrl-C)."
-            " Live runs only: for a stopped session, `agent6 resume ID --steer TEXT`"
-            " queues one for its next execution."
+            "Send an instruction to a live run; it takes it at its next step. The composer"
+            " directives work too: `/task <text>` queues work and `/btw <question>` asks beside"
+            " the run. `/undo` needs a composer: the TUI, the web, a `run -i` prompt or a live"
+            " run's pause menu. For a stopped session, `agent6 resume ID --steer TEXT` queues the"
+            " instruction for its next execution."
         ),
     )
     steer_target = steer_p.add_argument("target", help=f"{common.SESSION_ID}.")
@@ -192,10 +188,10 @@ def _add_stop_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         sub,
         "stop",
         help=(
-            "Stop a live session now: cut its model call and end its running commands."
-            " The run ends as stopped. A worker still live after 5 s (30 s for a fan-out)"
-            " is killed with its commands. A run `agent6 resume` accepts stays resumable."
-            " Default: the newest live session (a fan-out's lanes stop with their coordinator)."
+            "Stop a live session now: cut its model call and end its running commands; its lanes"
+            " stop with it. The run ends as stopped. A worker still live after 5 s (30 s while it"
+            " drains lanes) is killed with its commands. A run `agent6 resume` accepts stays"
+            " resumable. Default: the newest live session."
         ),
     )
     common._add_session_id(stop_p, completers._complete_live_session_ids)
@@ -220,13 +216,11 @@ def _add_answer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         sub,
         "answer",
         help=(
-            "Answer a run's question or approval without a terminal: the same answer"
-            " file the TUI, web and attach write. With no TEXT it lists the pending"
-            " questions and approvals with their options; one TEXT per question, in order."
-            " For an approval, give yes, no, session or session-deny (session options"
-            " only when offered). An approval takes priority unless --question is given."
-            " A queued question's answer reaches the run at its next turn; an ended run's at"
-            " its resume."
+            "Answer a run's question or approval without a terminal, through the answer file the"
+            " TUI, the web and attach write. With no TEXT, list what is pending with its options;"
+            " else give one TEXT per question, in order. An approval takes yes, no, session or"
+            " session-deny, and is answered first unless --question is given. A queued question's"
+            " answer reaches the run at its next turn; an ended run's at its resume."
         ),
     )
     answer_target = answer_p.add_argument("target", help=f"{common.SESSION_ID}.")
@@ -258,30 +252,23 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         sub,
         "exec",
         help=(
-            "Run a command inside a live session's sandbox: the run's recorded"
-            " isolation and network (mounts derive from your current config), so"
-            " you see what the agent sees. The command is yours, not"
-            " the model's, so it is never approved or recorded as a tool call."
-            " What it writes in the workspace is in the run's tree: the run's next commit"
-            " holds it."
-            " With stdin and stdout on a terminal it gets a terminal of its own, with"
-            " job control; otherwise stdin,"
-            " stdout and stderr pass through, so pipes and redirects work (reach a server"
-            " the agent runs with `agent6 forward`)."
-            " `agent6 exec CMD...` runs in the newest"
-            " session; `agent6 exec SESSION -- CMD...` names one. Only the first `--`"
-            " separates; later ones belong to the command. `agent6 exec --new [CMD...]`"
-            " needs no session: it runs the command, or your shell, in a fresh sandbox"
-            " built from the current config, gone when the command exits."
+            "Run a command of yours inside a live session's sandbox, to see what the agent sees:"
+            " the run's recorded isolation and network, with mounts from your current config. It"
+            " is never approved or recorded as a tool call; what it writes in the workspace lands"
+            " in the run's next commit. On a terminal it gets a terminal of its own; otherwise"
+            " stdin, stdout and stderr pass through. `agent6 exec CMD...` runs in the newest"
+            " session; `agent6 exec SESSION -- CMD...` names one, and only the first `--`"
+            " separates. `agent6 exec --new [CMD...]` runs the command, or your shell, in a fresh"
+            " sandbox built from the current config."
         ),
     )
     exec_p.add_argument(
         "--new",
         action="store_true",
         help=(
-            "Run in a fresh sandbox built from the current config instead of a session's:"
-            " the mounts, hidden paths, network and isolation a run's commands get."
-            " Without CMD, opens $SHELL (/bin/sh when the sandbox's PATH lacks it)."
+            "Run in a fresh sandbox built from the current config, with the mounts, hidden paths,"
+            " network and isolation a run's commands get. Without CMD, opens $SHELL (/bin/sh when"
+            " the sandbox's PATH lacks it)."
         ),
     )
     common._add_sandbox_flags(exec_p, approvals=False)

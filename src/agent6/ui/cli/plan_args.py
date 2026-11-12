@@ -17,13 +17,11 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         sub,
         "plan",
         help=(
-            "Write a plan without edit tools or automatic commits; approved commands can still"
-            " modify files. Save it as plan.md."
-            ' `agent6 plan "TASK"` and `agent6 plan run "TASK"` are the same. A planning'
-            " session asks before running commands even when the config approves them"
-            " automatically; --auto-approve approves them for the session. Execute the plan"
-            " with `agent6 run --from PLAN_ID`. Read or edit it with `agent6 plan show PLAN_ID`"
-            " or `agent6 plan edit PLAN_ID`."
+            "Write a plan to plan.md without edit tools or automatic commits; approved commands"
+            " can still modify files. A planning session asks before running commands even when"
+            " the config approves them; --auto-approve approves them for the session. Execute the"
+            " plan with `agent6 run --from PLAN_ID`; read or edit it with `agent6 plan show"
+            " PLAN_ID` or `agent6 plan edit PLAN_ID`."
         ),
     )
     # `run` is the default verb, so `plan "fix the bug"` and `plan run "fix the bug"` are the same.
@@ -88,12 +86,9 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "ask",
         help=(
             "Ask for a prose answer without edit tools or automatic commits; approved commands"
-            " can still modify files. No repository is required."
-            ' `agent6 ask "QUESTION"` and `agent6 ask query "QUESTION"` are the'
-            " same. On a foreground terminal, bare `agent6 ask` starts an interactive"
-            " conversation. An ask asks before running commands even when the config"
-            " approves them automatically; --auto-approve approves them for the session."
-            " Saved asks appear in `agent6 sessions list`."
+            " can still modify files. No repository is required. On a foreground terminal, bare"
+            " `agent6 ask` starts a conversation. An ask asks before running commands even when"
+            " the config approves them; --auto-approve approves them for the session."
         ),
     )
     # `query` is the default verb, so `ask "why ..."` and `ask query "why ..."` are the same.

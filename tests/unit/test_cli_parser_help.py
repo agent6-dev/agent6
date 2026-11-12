@@ -84,7 +84,7 @@ def test_allow_root_help_names_only_the_writes_handed_back() -> None:
         (("plan", "run"), ("Without a terminal the plan continues in CLI mode",)),
         (
             ("sessions", "compare"),
-            ("reviewer model judges their changes", "a missing or failed judge falls back"),
+            ("[harness.parallel].judges rank their changes", "with no ranking from a judge"),
         ),
         (
             ("sessions", "remove"),

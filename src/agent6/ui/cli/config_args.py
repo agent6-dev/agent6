@@ -225,11 +225,10 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         choices=("auto", "browser", "device", "paste"),
         default=None,
         help=(
-            "How ChatGPT or a provider with a [providers.<name>.oauth] table signs in."
-            " browser: open the sign-in page and take the redirect on a local listener."
-            " device: show a code to enter on any device. paste: paste the callback URL by hand"
-            " (a configured issuer needs a fixed port in oauth.redirect_uri)."
-            " Default: auto, which is browser when a GUI browser is"
+            "How ChatGPT or a provider with a [providers.<name>.oauth] table signs in: browser"
+            " (the sign-in page, the redirect taken on a local listener), device (a code to enter"
+            " on any device) or paste (the callback URL by hand; a configured issuer needs a fixed"
+            " port in oauth.redirect_uri). Default: auto, which is browser when a GUI browser is"
             " available, else device when the issuer offers it, else paste."
         ),
     )
@@ -266,10 +265,9 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         default="",
         metavar="[PROVIDER/]MODEL",
         help=(
-            "Provider and model, written as PROVIDER/MODEL. MODEL alone keeps the assignment's"
-            " current provider. On a terminal, give only a configured PROVIDER to choose from"
-            " its models, or omit this value to choose both. Without an interactive terminal, a"
-            " configured PROVIDER prints its known models."
+            "PROVIDER/MODEL; MODEL alone keeps the assignment's current provider. On a terminal,"
+            " a configured PROVIDER alone lets you choose from its models, and no value lets you"
+            " choose both. Without a terminal, a configured PROVIDER prints its known models."
         ),
     )
     # Role-gated, so the routes do not bleed into the first positional.

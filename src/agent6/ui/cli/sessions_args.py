@@ -138,11 +138,10 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         sessions_sub,
         "review",
         help=(
-            "Print a read-only review of a finished session's record on the reviewer model:"
-            " how it ended, what went wrong and why, what you corrected, candidate memory"
-            " facts and AGENTS.md lines with their evidence, and the memory entries the record"
-            " contradicts. Saved under the state dir's reviews/. Nothing is written to the repo"
-            " or the memory."
+            "Print a read-only review of a finished session's record on the reviewer model: how"
+            " it ended, what went wrong and why, what you corrected, candidate memory facts and"
+            " AGENTS.md lines with their evidence, and the memory entries the record contradicts."
+            " Saved under the state dir's reviews/; nothing is written to the repo or the memory."
         ),
     )
     common._add_session_id(sessions_review, completers._complete_session_ids)
@@ -161,11 +160,10 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         sessions_sub,
         "compare",
         help=(
-            "Rank two or more finished sessions: the reviewer model judges their changes,"
-            " and a missing or failed judge falls back to verification result and cost."
-            " Session ids create a fresh report; one"
-            " fan-out id prints its saved report. This is the report `run --parallel`"
-            " prints when it ends. Nothing is merged."
+            "Rank two or more finished sessions: the [harness.parallel].judges rank their"
+            " changes, and with no ranking from a judge the order is verification result, then"
+            " cost. The id of a run that ranked its lanes prints its saved ranking. Nothing is"
+            " merged."
         ),
     )
     sessions_compare.add_argument(
@@ -290,23 +288,21 @@ def _add_prune_parser(sessions_sub: argparse._SubParsersAction[argparse.Argument
         sessions_sub,
         "prune",
         help=(
-            "Clean up merged session git data. Delete safe-to-remove agent6/* branches,"
-            " internal commit references whose recorded targets contain their work, parallel"
-            " clones whose commits are present, and the worktrees of sessions that are merged"
-            " or hold no work. First record as merged each session with no merge record whose"
-            " base branch already holds its content. Keep unstarted forks. Report kept clones"
-            " with their paths and reasons. With --history --older-than DAYS, prune session"
-            " history instead."
+            "Clean up merged sessions' git data: agent6/* branches and internal commit references"
+            " whose work their target holds, lane clones whose commits are present, and the"
+            " worktrees of sessions that are merged or hold no work. A session whose base branch"
+            " already holds its content is recorded as merged first. Unstarted forks stay; kept"
+            " clones are reported with their paths and reasons. With --history --older-than DAYS,"
+            " prune session history instead."
         ),
     )
     sessions_prune.add_argument(
         "--history",
         action="store_true",
         help=(
-            "Prune session history, not git data: with --older-than DAYS, delete the"
-            " transcripts, checkpoints and objects of finished sessions whose last execution"
-            " ended more than DAYS ago. Keep recovery state, journals, receipts and git data."
-            " Nothing is deleted automatically."
+            "With --older-than DAYS, delete the transcripts, checkpoints and objects of finished"
+            " sessions whose last execution ended more than DAYS ago, in place of git data."
+            " Recovery state, journals, receipts and git data stay."
         ),
     )
     sessions_prune.add_argument(

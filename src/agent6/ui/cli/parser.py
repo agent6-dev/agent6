@@ -502,13 +502,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         mcp_sub,
         "serve",
         help=(
-            "Run agent6 as an MCP stdio server over the cwd's agent6 config:"
-            " query_dag and list_sessions always, run_in_sandbox only where"
-            ' sandbox.run_commands = "allow" (the default "ask" withholds it: nothing'
-            " here can answer an approval), and run_verify and apply_patch_in_sandbox"
-            " where it also sets a verify command. Speaks line-delimited"
-            " JSON-RPC on stdin/stdout; configure an MCP-aware client to spawn"
-            " this command."
+            "Run agent6 as an MCP stdio server over this directory's agent6 config, for an MCP"
+            " client to spawn; it speaks line-delimited JSON-RPC on stdin and stdout. It offers"
+            " get_task_graph and list_sessions; run_in_sandbox only where sandbox.run_commands ="
+            ' "allow" (nothing here can answer an approval); run_verify_command and'
+            " apply_patch_in_sandbox where a verify command is also set."
         ),
     )
     common._add_config_flag(mcp_serve)
