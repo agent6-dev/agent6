@@ -1045,7 +1045,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `findings` | `list` | Grounded findings or panel observations. |
 | `injected_finding_ids` | `list` | Finding identifiers supplied to the worker. |
 | `block_on` | `str` | The configured panel blocking rule. |
-| `roster` | `list, optional` | The seats that sat: index, model route, focus, scope and temperature. |
+| `roster` | `list, optional` | The seats that sat: index, model route, focus and temperature. |
 | `raw_blocked` | `bool` | Whether the verdicts meet the blocking rule. |
 | `blocked` | `bool` | Whether the armed gate blocks the finish. |
 | `disarmed` | `bool` | Whether the review gate's rejection cap disarmed it. |
@@ -3103,14 +3103,13 @@ Source: [`agent6.kinds.ConversationContract`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `kind` | `Literal['read_only', 'no_tools']` | `read_only` offers the navigation tools and `finish_session`; `no_tools` offers none and refuses every call. |
 | `system` | `str` | The system prompt, in place of the worker's assembled one. |
 | `opening` | `str` | The first user message, in place of the task block. |
 | `max_calls` | `int` | The provider attempts allowed, retries included; a last attempt that still asks for tools ends the conversation `calls_exhausted` with its text kept. |
 | `max_output_tokens` | `int` | One call's output cap. |
 | `temperature` | `float \| None` | The sampling temperature; None keeps the worker's. |
 | `review_binding` | `ReviewBinding \| None` | Parent-owned review provenance, or None for other conversations. |
-| `allowed_tools` | `tuple[str, ...] \| None` | Optional restriction within the read-only surface; None keeps that surface. |
+| `allowed_tools` | `tuple[str, ...]` | The tools the parent hands down: the ones its own model is offered now, within what a contract may carry (`tools.schema.contract_tools`). |
 
 ### ReviewBinding
 
@@ -3935,7 +3934,6 @@ Source: [`agent6.review_records.SeatAssignment`](https://github.com/agent6-dev/a
 | `seat_index` | `int` | The seat's zero-based position in the roster. |
 | `model_route` | `str` | The resolved provider/model route. |
 | `focus` | `str` | The seat's assigned review focus. |
-| `scope` | `Literal['diff', 'repo']` | Whether the seat reviews the diff or the repository. |
 | `temperature` | `float \| None` | The configured sampling temperature, or null for the provider default. |
 
 ### ReviewVerdict

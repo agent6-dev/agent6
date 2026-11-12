@@ -29,7 +29,8 @@ Measurements retain elapsed dispatch-to-verdict time, process CPU time, provider
 The baseline and lane arms each contain 60 runs (10 diff cases and 10 repo cases, three repetitions per case).
 The arms ran sequentially, not interleaved; pairs share scope, case and repetition.
 Raw results are [baseline](review-lanes-baseline.jsonl) and [lanes](review-lanes-new.jsonl).
-Run the lane arm with `uv run python -m bench.review_lanes`; it uses only the local scripted endpoint in `tests/review_traces.py`.
+Both arms were measured with `review.scope` selecting a one-call diff seat or a tool-reading repo seat.
+`uv run python -m bench.review_lanes` runs the repo trace through the one seat shape and writes `review-lanes-rerun.jsonl`; it uses only the local scripted endpoint in `tests/review_traces.py`.
 
 | Scope | Arm | n | Dispatch-to-verdict median (s) | Min to max (s) | Coordinator CPU median (s) | Requests | Reported USD |
 | --- | --- | ---: | ---: | --- | ---: | ---: | ---: |

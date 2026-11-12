@@ -12,13 +12,13 @@ from typing import TYPE_CHECKING, Any, Literal
 import pydantic
 
 from agent6 import budget, errors, kinds, lane_records, review_records, terminal
-from agent6.config import ReviewScope
 from agent6.harness import parallel_dispatch, repo_context, run_chain
 from agent6.harness.review import history as review_history
 from agent6.harness.review import panel as review_panel
 from agent6.harness.review import seat as review_seat
 from agent6.prompts import review
 from agent6.sessions import completion, journal, layout
+from agent6.tools import schema as tools_schema
 from agent6.vcs.git import read as git_read
 
 if TYPE_CHECKING:
@@ -47,7 +47,6 @@ class ReviewSeat:
 
     focus: str
     settings: kinds.ModelSettings
-    scope: ReviewScope = "diff"
 
     @property
     def model(self) -> str:
@@ -77,7 +76,7 @@ class ReviewSettings:
             advises and every end stands.
         min_remaining_budget_fraction: Skip panels below this remaining budget fraction.
         concurrency: The seat calls run at once.
-        repo_max_turns: The provider calls each repo-scope seat may make, tools included.
+        max_turns: The model calls each seat may make, calls that ask for tools included.
     """
 
     when: Literal["never", "verify_fail", "finish", "periodic"] = "never"
@@ -88,7 +87,7 @@ class ReviewSettings:
     max_rejections: int = 4
     min_remaining_budget_fraction: float = 0.25
     concurrency: int = 1
-    repo_max_turns: int = 20
+    max_turns: int = 20
 
 
 def run_panel(
@@ -100,11 +99,15 @@ def run_panel(
     block_on: review_panel.ReviewBlockOn,
     min_blocking_models: int,
     panel_id: str,
-    repo_max_turns: int,
+    max_turns: int,
+    tools: Sequence[str],
     concurrency: int = 1,
     turn: int = 0,
 ) -> review_panel.PanelResult:
     """Submit the roster as bounded lanes and aggregate only their bound artifacts.
+
+    Every seat is the same child: it opens on the task, the rules, the verification and the
+    diff, investigates with the tools its parent hands down, and passes a judgement up.
 
     Args:
         seats: The resolved roster in seat order.
@@ -114,7 +117,9 @@ def run_panel(
         block_on: The blocking rule.
         min_blocking_models: The distinct blocking routes needed for quorum.
         panel_id: The parent-assigned panel identity.
-        repo_max_turns: The repo-seat call ceiling.
+        max_turns: Each seat's call ceiling.
+        tools: The tools the parent's own model is offered now; a seat gets the ones a
+            contract may carry.
         concurrency: The maximum simultaneous seats, also bounded by harness.parallel.max_lanes.
         turn: The owning worker's turn.
 
@@ -126,25 +131,18 @@ def run_panel(
             panel_id, block_on, False, (), (), 0, 0, skipped_reason=ctx.rules.reason
         )
     requests: list[lane_records.LaneTask] = []
+    carried = tools_schema.contract_tools().names
+    handed = tuple(name for name in tools if name in carried)
+    commands = tools_schema.RunCommandInput.TOOL_NAME in handed
     for i, seat in enumerate(seats):
-        calls = repo_max_turns if seat.scope == "repo" else 1
         contract = kinds.ConversationContract(
-            kind="read_only" if seat.scope == "repo" else "no_tools",
-            system=review.panel_prompt(seat.focus, max_turns=calls)
-            if seat.scope == "repo"
-            else review.panel_prompt(seat.focus),
+            system=review.panel_prompt(seat.focus, max_turns=max_turns, commands=commands),
             opening=review_seat.build_user_message(dataclasses.replace(ctx, focus=seat.focus)),
-            max_calls=calls,
-            max_output_tokens=2000 if seat.scope == "repo" else 1500,
+            max_calls=max_turns,
+            max_output_tokens=2000,
             temperature=seat.temperature,
             review_binding=review_records.ReviewBinding(panel_id, i, target),
-            allowed_tools=(
-                "find_definition",
-                "find_references",
-                "list_dir",
-                "outline",
-                "read_file",
-            ),
+            allowed_tools=handed,
         )
         requests.append(
             lane_records.LaneTask(
@@ -191,7 +189,6 @@ def run_panel(
                 session_id=sid,
                 focus=seat.focus,
                 model_route=seat.model,
-                scope=seat.scope,
                 max_calls=request.contract.max_calls,
                 error=error,
             )
@@ -279,6 +276,7 @@ class Reviewer:
         chain: The run's chain: the diff the panel grounds on and the AGENTS.md it reads.
         hide: `[sandbox].hide_paths`, which no AGENTS.md is read from.
         executor: The common lane dispatcher, resolved lazily.
+        tools: The tools the run's own model is offered now, which a seat inherits.
         budget_remaining: The fraction of the budget left, or None without a tracker.
         log: The run's text logger.
         emit: The run's event emitter.
@@ -288,6 +286,7 @@ class Reviewer:
     chain: run_chain.RunChain
     hide: tuple[str, ...]
     executor: Callable[[], parallel_dispatch.ParallelDispatcher]
+    tools: Callable[[], Sequence[str]]
     budget_remaining: Callable[[], float | None]
     log: Callable[[str], None]
     emit: Callable[..., None]
@@ -567,7 +566,7 @@ class Reviewer:
         """
         panel_id = str(identity["panel_id"])
         roster = tuple(
-            review_records.SeatAssignment(i, s.model, s.focus, s.scope, s.temperature)
+            review_records.SeatAssignment(i, s.model, s.focus, s.temperature)
             for i, s in enumerate(self.settings.reviewers)
         )
         prior = reusable_panel(state.review_panels, target, roster)
@@ -622,7 +621,8 @@ class Reviewer:
                 block_on=block_on,
                 min_blocking_models=self.settings.min_blocking_models,
                 panel_id=panel_id,
-                repo_max_turns=self.settings.repo_max_turns,
+                max_turns=self.settings.max_turns,
+                tools=self.tools(),
                 concurrency=self.settings.concurrency,
                 target=target,
                 executor=self.executor(),

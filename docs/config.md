@@ -60,7 +60,7 @@ It can be empty or absent when the global config supplies a provider and model.
 | Field | Default | Meaning |
 |---|---|---|
 | `config_version` | `1` | Config schema version; only `1` is accepted. |
-| `preset` | `"none"` | selected preset; `agent6.preset = "none"`: no preset, stop preset lookup; `"no_review"`: panel off; `"review"`: three seats able to block the finish; `"deep_review"`: five repo-scope seats able to block the finish; custom preset: `[presets.<name>]`; overrides at the selecting layer; `--preset`: per run; `resume --preset`: from that resume on, recorded for later resumes; empty string refused |
+| `preset` | `"none"` | selected preset; `agent6.preset = "none"`: no preset, stop preset lookup; `"no_review"`: panel off; `"review"`: three seats able to block the finish; `"deep_review"`: five seats able to block the finish; custom preset: `[presets.<name>]`; overrides at the selecting layer; `--preset`: per run; `resume --preset`: from that resume on, recorded for later resumes; empty string refused |
 
 ### Presets
 
@@ -81,7 +81,7 @@ The TUI and web config pages edit the selected preset in place: with `agent6.pre
 |---|---|---|
 | `no_review` | turns off the review panel | `review.when = "never"` |
 | `review` | three review seats that can block the finish | `review.when = "finish"`, `review.block_on = "any"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }]`, `review.concurrency = 3` |
-| `deep_review` | five repo-scope review seats that can block the finish | `review.when = "finish"`, `review.block_on = "any"`, `review.scope = "repo"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }, { focus = "edge-cases" }, { focus = "over-engineering" }]`, `review.concurrency = 5` |
+| `deep_review` | five review seats that can block the finish | `review.when = "finish"`, `review.block_on = "any"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }, { focus = "edge-cases" }, { focus = "over-engineering" }]`, `review.concurrency = 5` |
 
 Define your own with a `[presets.<name>]` table (a partial config); a built-in's name replaces that built-in wholesale:
 
@@ -506,8 +506,7 @@ Headless surfaces without a dispatcher answer "not available".
 | `min_remaining_budget_fraction` | `0.25` | remaining-budget fraction below which the panel is skipped and the finish accepted; `review.min_remaining_budget_fraction = 0.25`: no panel in the last quarter |
 | `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `model`, `temperature` and `effort`; every omitted field inherits the resolved `[models.reviewer]`, `model` pinned or not; `model` is a provider/model route; empty roster: one `security` seat unless `review.when = "never"` |
 | `concurrency` | `1` | simultaneous panel seats, at most `harness.parallel.max_lanes`; a longer roster runs in batches, in roster order; `review.concurrency = 1`: one after another |
-| `scope` | `"diff"` | How much a review seat reads; a diff seat makes one call without tools; a repo seat reads the reviewed snapshot with read-only tools over several calls, never the working tree as it changes later.<ul><li><code>diff</code>: One review call over diff, task and verification</li><li><code>repo</code>: Read-only tool review of surrounding repository</li></ul> |
-| `repo_max_turns` | `20` | provider-call cap for a `review.scope = "repo"` seat, tool calls included; no verdict within the cap: abstention, reported by the panel |
+| `max_turns` | `20` | model calls a review seat may make, calls that ask for tools included; no verdict within the cap: abstention, reported by the panel |
 
 The [TUI](terminal.md#configuration) and [web](web.md#pages) config pages edit the ordered roster with **Add reviewer…** and positional removal.
 Each edit writes the whole list to the global or repo config, including `[]` after the last removal.
@@ -530,8 +529,7 @@ Different focuses or effort levels on one route still count as one blocking mode
 ```toml
 [review]
 when = "finish"
-scope = "diff"
-repo_max_turns = 20
+max_turns = 20
 interval_turns = 10
 min_remaining_budget_fraction = 0.25
 block_on = "any"

@@ -11,7 +11,7 @@ from agent6.harness import parallel_dispatch, toolset
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import seat as review_seat
 from agent6.sessions import completion
-from tests import review_traces, subordinate_env
+from tests import review_lane_env, review_traces, subordinate_env
 
 
 def test_seat_resolution_constructs_no_provider(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -79,7 +79,7 @@ def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
         ]
 
     executor.lane_spawner = spawn
-    contract = kinds.ConversationContract("no_tools", "s", "o", 1, 1500)
+    contract = kinds.ConversationContract("s", "o", 1, 1500)
     requests = [lane_records.LaneTask(str(i), "reviewer", contract=contract) for i in range(5)]
     result = executor.dispatch_panel(
         requests,
@@ -96,18 +96,15 @@ def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
     assert deadlines == [1000 + window] * 2 + [1000 + 2 * window] * 2 + [1000 + 3 * window]
 
 
-@pytest.mark.parametrize("scope", ["diff", "repo"])
-def test_real_panel_runs_bound_read_only_sessions(short_repo: pathlib.Path, scope: str) -> None:
+def test_real_panel_runs_bound_read_only_sessions(short_repo: pathlib.Path) -> None:
     from agent6.harness.review import panel as review_panel
     from agent6.viewmodel import receipt
 
     repo = short_repo / "origin"
     subordinate_env.init_repo(repo)
     directory = subordinate_env.create_record(repo, "parent")
-    with review_traces.server("tools", scope) as (url, calls):
-        cfg = subordinate_env.config(url).model_copy(
-            update={"review": subordinate_env.config().review.model_copy(update={"scope": scope})}
-        )
+    with review_traces.server("tools") as (url, calls):
+        cfg = subordinate_env.config(url)
         meter = budget.BudgetTracker(max_usd=10, max_tokens_fallback=1000, max_plan_points=20)
         executor = subordinate_env.dispatcher(repo, directory, cfg, meter)
         (repo / "README.md").write_text("base\nchanged\n")
@@ -124,17 +121,16 @@ def test_real_panel_runs_bound_read_only_sessions(short_repo: pathlib.Path, scop
             block_on="any",
             min_blocking_models=2,
             panel_id="test",
-            repo_max_turns=3,
+            max_turns=3,
+            tools=("apply_edit", "finish_session", "parallel", "read_file", "run_command"),
         )
     assert result.n_abstain == 0 and result.per_seat[0].verdict == "pass"
-    assert len(calls) == (1 if scope == "diff" else 3)
-    assert all(c["max_tokens"] == (1500 if scope == "diff" else 2000) for c in calls)
+    assert len(calls) == 3
+    assert all(c["max_tokens"] == 2000 for c in calls)
+    # The parent's list, within what a contract carries: no edit, no child, no finish tool.
     names = {t["function"]["name"] for t in calls[0].get("tools", [])}
-    assert names == (
-        set()
-        if scope == "diff"
-        else {"read_file", "list_dir", "outline", "find_definition", "find_references"}
-    )
+    assert names == {"read_file", "run_command"}
+    assert "You may run commands" in calls[0]["messages"][0]["content"]
     child = receipt.read_receipt(directory, repo).children[0]
     record = completion.read_completion(directory.parent.parent / "read_only" / child.session_id)
     assert record is not None and record.review_binding is not None
@@ -209,7 +205,8 @@ def test_failed_artifacts_keep_the_actual_diagnostic(
         block_on="any",
         min_blocking_models=2,
         panel_id="failure",
-        repo_max_turns=3,
+        max_turns=3,
+        tools=review_lane_env.READING_TOOLS,
     )
     assert result.n_abstain == 1 and not result.blocked
     expected = {
@@ -251,7 +248,6 @@ def test_artifact_provenance_is_checked_before_parsing(wrong: str) -> None:
         session_id="seat-session",
         focus="security",
         model_route="p/base",
-        scope="diff",
         max_calls=1,
     )
     assert verdict.verdict == "abstain" and "binding" in (verdict.error or "")
@@ -268,7 +264,7 @@ def test_worker_child_schedules_its_panel_without_certifying_parent(
     repo = short_repo / "origin"
     subordinate_env.init_repo(repo)
     directory = subordinate_env.create_record(repo, "parent")
-    with review_traces.server("worker", "diff") as (url, calls):
+    with review_traces.server("worker") as (url, calls):
         cfg = subordinate_env.config(url)
         cfg = cfg.model_copy(update={"review": cfg.review.model_copy(update={"when": "finish"})})
         executor = subordinate_env.dispatcher(
@@ -298,15 +294,14 @@ def test_worker_child_schedules_its_panel_without_certifying_parent(
     assert len(calls) == 3
 
 
-def test_repo_seat_reads_retained_target_not_head_or_live_tree(short_repo: pathlib.Path) -> None:
+def test_a_seat_reads_the_retained_target_not_head_or_live_tree(short_repo: pathlib.Path) -> None:
     from agent6.harness.review import panel as review_panel
 
     repo = short_repo / "origin"
     subordinate_env.init_repo(repo)
     directory = subordinate_env.create_record(repo, "parent")
-    with review_traces.server("tools", "repo") as (url, calls):
+    with review_traces.server("tools") as (url, calls):
         cfg = subordinate_env.config(url)
-        cfg = cfg.model_copy(update={"review": cfg.review.model_copy(update={"scope": "repo"})})
         executor = subordinate_env.dispatcher(
             repo,
             directory,
@@ -328,7 +323,8 @@ def test_repo_seat_reads_retained_target_not_head_or_live_tree(short_repo: pathl
             block_on="any",
             min_blocking_models=2,
             panel_id="retained",
-            repo_max_turns=3,
+            max_turns=3,
+            tools=review_lane_env.READING_TOOLS,
         )
     assert result.n_abstain == 0
     tool_results = [m["content"] for m in calls[1]["messages"] if m["role"] == "tool"]
@@ -358,7 +354,7 @@ def test_ask_review_uses_real_seat_sessions(
     (repo / "README.md").write_text("base\nchanged\n")
     monkeypatch.chdir(repo)
     monkeypatch.setenv("AGENT6_ALLOW_ROOT", "1")
-    with review_traces.server("pass", "diff") as (url, calls):
+    with review_traces.server("pass") as (url, calls):
         config = short_repo / "cfg.toml"
         config.write_text(f'''[providers.p]
 backend = "openai"

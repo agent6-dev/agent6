@@ -24,7 +24,6 @@ from agent6.config.harness_config import (  # re-export
     PromptConfig,
     ReviewConfig,
     ReviewerConfig,
-    ReviewScope,
     RoleModel,
     VerifyConfig,
 )
@@ -97,7 +96,6 @@ __all__ = [
     "ProviderEntry",
     "ResponsesProviderEntry",
     "ReviewConfig",
-    "ReviewScope",
     "ReviewerConfig",
     "RoleModel",
     "RoleName",

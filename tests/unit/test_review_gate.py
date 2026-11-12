@@ -901,6 +901,7 @@ def _target_reviewer(
         chain=mock.MagicMock(root=tmp_path),
         hide=(),
         executor=mock.MagicMock,
+        tools=lambda: review_lane_env.READING_TOOLS,
         budget_remaining=lambda: None,
         log=_silent,
         emit=events.append,

@@ -83,7 +83,6 @@ def _harness(
         isolation="none",
         mode="read_only",
         session_dir=session_dir,
-        no_tools=contract.kind == "no_tools",
     )
     events: Any = _Events(session_dir / "logs.jsonl")
     wf = loop.Harness(
@@ -103,7 +102,9 @@ def _harness(
     return wf, disp
 
 
-def test_a_no_tools_contract_makes_one_call_and_records_its_text(tmp_path: pathlib.Path) -> None:
+def test_a_contract_handed_no_tools_offers_none_and_records_its_text(
+    tmp_path: pathlib.Path,
+) -> None:
     """One provider call with no tools; a hallucinated tool is refused; the text is the record."""
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -116,13 +117,12 @@ def test_a_no_tools_contract_makes_one_call_and_records_its_text(tmp_path: pathl
         _resp("never asked"),
     ]
     contract = kinds.ConversationContract(
-        kind="no_tools",
         system="You are a reviewer. Answer in JSON.",
         opening="Review this diff: +x",
         max_calls=1,
         max_output_tokens=1500,
     )
-    wf, _disp = _harness(repo, tmp_path / "leaf", provider, contract)
+    wf, disp = _harness(repo, tmp_path / "leaf", provider, contract)
     result = wf.run("review")
     assert provider.call.call_count == 1
     sent = provider.call.call_args_list[0].kwargs
@@ -134,10 +134,12 @@ def test_a_no_tools_contract_makes_one_call_and_records_its_text(tmp_path: pathl
     assert record is not None
     assert record.text == '{"verdict": "pass"}' and record.stop_reason == "calls_exhausted"
     assert record.calls == 1 and record.output_tokens == 7
-    assert "no tools" in " ".join(record.diagnostics)
+    assert "call ceiling 1 was reached: apply_edit" in " ".join(record.diagnostics)
+    with pytest.raises(tool_errors.ToolError, match="not available in this conversation contract"):
+        disp.dispatch("read_file", {"path": "README.md"})
 
 
-def test_a_read_only_contract_stops_at_its_call_ceiling_without_running_the_last_tools(
+def test_a_contract_stops_at_its_call_ceiling_without_running_the_last_tools(
     tmp_path: pathlib.Path,
 ) -> None:
     """Three calls allowed: the third response's tool use is never executed; its text is kept."""
@@ -152,11 +154,11 @@ def test_a_read_only_contract_stops_at_its_call_ceiling_without_running_the_last
         _resp("never"),
     ]
     contract = kinds.ConversationContract(
-        kind="read_only",
         system="Read, do not write.",
         opening="What is in README?",
         max_calls=3,
         max_output_tokens=2000,
+        allowed_tools=("read_file",),
     )
     wf, disp = _harness(repo, tmp_path / "leaf", provider, contract)
     reads: list[str] = []
@@ -172,8 +174,7 @@ def test_a_read_only_contract_stops_at_its_call_ceiling_without_running_the_last
     assert reads == ["read_file", "read_file"]  # the third response's tool never ran
     assert result.reason == "calls_exhausted" and result.summary == "final answer"
     tools = provider.call.call_args_list[0].kwargs["tools"]
-    names = {t.name for t in tools}
-    assert "read_file" in names and "apply_edit" not in names and "run_command" not in names
+    assert [t.name for t in tools] == ["read_file"]
     for forbidden, raw in (
         ("apply_edit", {"path": "x", "edits": []}),
         ("run_command", {"argv": ["true"]}),
@@ -182,6 +183,62 @@ def test_a_read_only_contract_stops_at_its_call_ceiling_without_running_the_last
     ):
         with pytest.raises(tool_errors.ToolError, match="not available"):
             disp.dispatch(forbidden, raw)
+
+
+def test_a_contract_runs_the_commands_it_is_handed_and_never_edits(tmp_path: pathlib.Path) -> None:
+    """A handed `run_command` runs; an edit refuses even when a parent hands its name down."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = mock.MagicMock()
+    provider.call.side_effect = [_resp("done")]
+    contract = kinds.ConversationContract(
+        system="s",
+        opening="o",
+        max_calls=2,
+        max_output_tokens=100,
+        allowed_tools=("apply_edit", "parallel", "read_file", "run_command"),
+    )
+    wf, disp = _harness(repo, tmp_path / "leaf", provider, contract)
+    wf.run("o")
+    offered = [t.name for t in provider.call.call_args_list[0].kwargs["tools"]]
+    assert offered == ["read_file", "run_command"]
+    # The handler is reached: this bare dispatcher has no jail session to run it in.
+    with pytest.raises(tool_errors.ToolError, match="no prepared command session"):
+        disp.dispatch("run_command", {"argv": ["git", "log", "--oneline"]})
+    for outside, raw in (
+        ("apply_edit", {"path": "README.md", "edits": [{"old": "hi", "new": "bye"}]}),
+        ("parallel", {"lanes": [{"task": "t"}]}),
+    ):
+        with pytest.raises(tool_errors.ToolError, match="not available"):
+            disp.dispatch(outside, raw)
+    assert (repo / "README.md").read_text(encoding="utf-8") == "hi\n"
+
+
+def test_a_machine_read_only_state_keeps_its_own_surface() -> None:
+    """Outside a contract the `read_only` mode offers navigation and `finish_session` only."""
+    from agent6.tools import schema
+
+    assert schema.mode_tools("read_only").names == {
+        "find_definition",
+        "find_references",
+        "finish_session",
+        "list_dir",
+        "outline",
+        "read_file",
+    }
+    carried = schema.contract_tools().names
+    assert {"run_command", "run_verify_command", "fetch", "read_session", "use_skill"} <= carried
+    assert not carried & {
+        "add_task",
+        "apply_edit",
+        "apply_patch",
+        "ask_user",
+        "finish_session",
+        "parallel",
+        "read_background",
+        "stop_background",
+        "update_task",
+    }
 
 
 def test_retries_count_toward_the_ceiling(tmp_path: pathlib.Path) -> None:
@@ -197,7 +254,7 @@ def test_retries_count_toward_the_ceiling(tmp_path: pathlib.Path) -> None:
         _resp("never"),
     ]
     contract = kinds.ConversationContract(
-        kind="no_tools", system="s", opening="o", max_calls=2, max_output_tokens=100
+        system="s", opening="o", max_calls=2, max_output_tokens=100
     )
     wf, _disp = _harness(repo, tmp_path / "leaf", provider, contract, max_calls_retry=3)
     result = wf.run("o")
@@ -214,7 +271,7 @@ def test_an_answer_on_the_last_allowed_call_is_an_answer(tmp_path: pathlib.Path)
     provider = mock.MagicMock()
     provider.call.side_effect = [_resp('{"verdict": "pass"}'), _resp("never")]
     contract = kinds.ConversationContract(
-        kind="no_tools", system="s", opening="o", max_calls=1, max_output_tokens=100
+        system="s", opening="o", max_calls=1, max_output_tokens=100
     )
     wf, _disp = _harness(repo, tmp_path / "leaf", provider, contract)
     result = wf.run("o")
@@ -235,25 +292,27 @@ def test_the_read_only_bucket_is_a_real_discoverable_one(tmp_path: pathlib.Path)
     assert lane_records.LaneSpec(1, "x", tmp_path, None).mode == "run"
 
 
-def test_a_real_read_only_lane_cannot_write_run_or_start_anything(
-    short_repo: pathlib.Path, tmp_path: pathlib.Path
+@pytest.mark.parametrize(("policy", "handed"), [("allow", True), ("deny", True), ("allow", False)])
+def test_a_real_seat_never_edits_and_runs_only_the_commands_it_may(
+    short_repo: pathlib.Path, tmp_path: pathlib.Path, policy: str, handed: bool
 ) -> None:
-    """Through the installed bootstrap: edits and commands refuse, no setup or MCP starts."""
+    """A seat's edit refuses; its command and setup need the hand-down and the policy."""
+    runs = handed and policy == "allow"
     clone = short_repo / "clone"
     _init_repo(clone)
     marker = tmp_path / "setup-ran"
-    replies: list[tuple[str, dict[str, Any]]] = [
+    replies: list[tuple[str, dict[str, Any]] | str] = [
         ("apply_edit", {"path": "README.md", "edits": [{"old": "hi", "new": "bye"}]}),
         ("run_command", {"argv": ["touch", str(tmp_path / "command-ran")]}),
         ("read_file", {"path": "README.md"}),
-        lane_env.FINISH,
+        '{"verdict": "pass"}',
     ]
     with lane_env.scripted_provider(replies) as (base_url, calls):
         cfg = Config.model_validate(
             {
                 "providers": {"p": {"backend": "openai", "base_url": base_url}},
                 "models": {"default": {"model": "p/base"}},
-                "sandbox": {"isolation": "none", "protect_git": "off", "run_commands": "allow"},
+                "sandbox": {"isolation": "none", "protect_git": "off", "run_commands": policy},
                 "git": {"worktree": {"setup_command": ["touch", str(marker)]}},
                 "harness": {
                     "verify": {"when": "never"},
@@ -278,11 +337,11 @@ def test_a_real_read_only_lane_cannot_write_run_or_start_anything(
             into=into,
         )
         contract = kinds.ConversationContract(
-            kind="read_only",
             system="Review only.",
-            opening="Try to edit, then run, then read, then finish.",
+            opening="Try to edit, then run, then read.",
             max_calls=6,
             max_output_tokens=2000,
+            allowed_tools=("read_file", "run_command") if handed else ("read_file",),
         )
         path = lane_launch.write(
             into,
@@ -323,24 +382,28 @@ def test_a_real_read_only_lane_cannot_write_run_or_start_anything(
     assert (
         results["apply_edit"]["ok"] is False and "not available" in results["apply_edit"]["summary"]
     )
-    assert results["run_command"]["ok"] is False
+    assert results["run_command"]["ok"] is runs
     assert results["read_file"]["ok"] is True
     assert (clone / "README.md").read_text(encoding="utf-8") == "hi\n"
-    assert not marker.exists() and not (tmp_path / "command-ran").exists()
+    # A seat that may run commands gets the worktree a lane gets, its setup included.
+    assert marker.exists() is runs
+    assert (tmp_path / "command-ran").exists() is runs
     # The operator's hook hears of the parent's end, never of a seat's.
     assert not (tmp_path / "hook-ran").exists()
     manifest = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["mode"] == "read_only"
     assert len(calls) == 4
-    assert all("apply_edit" not in json.dumps(c.get("tools", [])) for c in calls)
+    offered = sorted(t["function"]["name"] for t in calls[0]["tools"])
+    assert offered == (["read_file", "run_command"] if runs else ["read_file"])
     record = completion.read_completion(session_dir)
-    assert record is not None and record.stop_reason == "finish_session"
+    assert record is not None and record.stop_reason == "answered"
+    assert record.text == '{"verdict": "pass"}'
     assert manifest["parallel"]["coordinator"] == "leaf"
     # Found by its bucket and its id; the resume gate refuses it.
     state = paths.state_dir(clone)
     assert session_dir in listing.session_dirs(state)
     summary = listing.summarize_session_dir(session_dir)
     assert summary.session_id == "leaf-l1" and summary.coordinator == "leaf"
-    assert summary.mode == "read_only" and summary.stop_reason == "finish_session"
+    assert summary.mode == "read_only" and summary.stop_reason == "answered"
     with pytest.raises(sessions_manifest.ManifestError, match="not resumable"):
         sessions_manifest.read_manifest(session_dir).session_mode()

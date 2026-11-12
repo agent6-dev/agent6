@@ -699,11 +699,35 @@ _EXTRA_TOOLS: dict[str, tuple[type[_ToolInput], ...]] = {
 def mode_tools(mode: str) -> ModeTools:
     """Return the tool surface of a mode, derived from its `SessionKind`."""
     kind = kinds.session_kind(mode)
-    extras = _EXTRA_TOOLS.get(mode, LOOP_EXTRA_TOOLS)
+    return _surface(
+        _EXTRA_TOOLS.get(mode, LOOP_EXTRA_TOOLS),
+        edits=kind.edits,
+        runs_commands=kind.runs_commands,
+    )
+
+
+@functools.cache
+def contract_tools() -> ModeTools:
+    """Return what a `ConversationContract` may carry: a parent's tools for investigating.
+
+    A review seat never edits, owns a background command, keeps a task list or dispatches a
+    child.
+
+    Returns:
+        The reading tools, `run_command`, `run_verify_command`, `fetch`, `read_session` and
+        `use_skill`; the parent's own list narrows them to what it is offered now.
+    """
+    return _surface((UseSkillInput,), edits=False, runs_commands=True)
+
+
+def _surface(
+    extras: tuple[type[_ToolInput], ...], *, edits: bool, runs_commands: bool
+) -> ModeTools:
+    """Return the surface of a session that may or may not edit and run commands."""
     blocked: set[str] = set()
-    if not kind.edits:
+    if not edits:
         blocked = {ApplyEditInput.TOOL_NAME, ApplyPatchInput.TOOL_NAME}
-    if not kind.runs_commands:
+    if not runs_commands:
         # A machine state answers about its input: neither this project's history nor the network.
         blocked |= {
             RunVerifyInput.TOOL_NAME,
@@ -711,7 +735,7 @@ def mode_tools(mode: str) -> ModeTools:
             ReadSessionInput.TOOL_NAME,
             FetchInput.TOOL_NAME,
         }
-    if not kind.edits:
+    if not edits:
         # Only a session that edits owns a background command's lifetime.
         blocked |= {
             ReadBackgroundInput.TOOL_NAME,

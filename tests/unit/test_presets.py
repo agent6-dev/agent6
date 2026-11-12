@@ -43,7 +43,6 @@ def test_preset_via_flag_overrides_field(repo: pathlib.Path) -> None:
     _write_repo_config(repo, '[agent6]\npreset = "no_review"\n')
     cfg = layer.load_effective(repo, preset="deep_review").config  # flag wins over the field
     assert len(cfg.review.reviewers) == 5
-    assert cfg.review.scope == "repo"
     assert cfg.review.block_on == "any"
     assert cfg.review.concurrency == 5  # seats run in parallel, not in series
 

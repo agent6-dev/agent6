@@ -18,11 +18,11 @@ from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
 from agent6.providers import provider_types, stream_lifecycle, transport
 from agent6.sessions import event_log
-from tests import review_traces, subordinate_env
+from tests import review_lane_env, review_traces, subordinate_env
 
 
 def _session(
-    tmp_path: pathlib.Path, *, scope: str = "diff", streaming: bool = False
+    tmp_path: pathlib.Path, *, streaming: bool = False
 ) -> session_runtime.SessionProviders:
     cfg = config_model.Config.model_validate(
         {
@@ -39,7 +39,6 @@ def _session(
             "models": {"default": {"model": "work/shared"}},
             "review": {
                 "when": "finish",
-                "scope": scope,
                 "reviewers": [{"focus": "security"}, {"focus": "security"}],
             },
         }
@@ -104,22 +103,19 @@ def _transcripts(tmp_path: pathlib.Path) -> list[dict[str, Any]]:
     return [json.loads(path.read_text()) for path in (tmp_path / "transcripts").glob("*.json")]
 
 
-@pytest.mark.parametrize("scope", ["diff", "repo"])
 def test_review_requests_belong_to_real_distinct_seat_sessions(
     short_repo: pathlib.Path,
-    scope: str,
 ) -> None:
     """Duplicate-focus seats have distinct sessions, conversations and bound call transcripts."""
     repo = short_repo / "origin"
     subordinate_env.init_repo(repo)
     directory = subordinate_env.create_record(repo, "parent")
-    with review_traces.server("pass", scope) as (url, calls):
+    with review_traces.server("pass") as (url, calls):
         cfg = subordinate_env.config(url)
         cfg = cfg.model_copy(
             update={
                 "review": cfg.review.model_copy(
                     update={
-                        "scope": scope,
                         "reviewers": tuple(ReviewerConfig(focus="security") for _ in range(2)),
                     }
                 )
@@ -143,7 +139,8 @@ def test_review_requests_belong_to_real_distinct_seat_sessions(
             block_on="none",
             min_blocking_models=2,
             panel_id="panel-a",
-            repo_max_turns=2,
+            max_turns=2,
+            tools=review_lane_env.READING_TOOLS,
             concurrency=2,
         )
         assert [s.verdict for s in result.per_seat] == ["pass", "pass"], result
@@ -170,7 +167,8 @@ def test_review_requests_belong_to_real_distinct_seat_sessions(
             block_on="none",
             min_blocking_models=2,
             panel_id="panel-a",
-            repo_max_turns=2,
+            max_turns=2,
+            tools=review_lane_env.READING_TOOLS,
             concurrency=2,
         )
         assert repeated.n_abstain == 2 and len(calls) == 2

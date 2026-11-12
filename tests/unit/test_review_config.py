@@ -25,23 +25,23 @@ from tests import review_lane_env
 from tests.unit import test_run_lifecycle_bugfix
 
 
-def test_repo_max_turns_defaults_to_twenty_in_config_surfaces() -> None:
-    """An unset repo seat budget is visible as 20 provider calls."""
-    assert layer_data.config_leaves(Config())["review.repo_max_turns"] == 20
+def test_max_turns_defaults_to_twenty_in_config_surfaces() -> None:
+    """An unset seat budget is visible as 20 model calls."""
+    assert layer_data.config_leaves(Config())["review.max_turns"] == 20
 
 
 @pytest.mark.parametrize("value", [0, -1])
-def test_repo_max_turns_requires_a_positive_call_budget(value: int) -> None:
-    """A repo seat needs at least one provider call for its verdict."""
+def test_max_turns_requires_a_positive_call_budget(value: int) -> None:
+    """A seat needs at least one model call for its verdict."""
     with pytest.raises(pydantic.ValidationError) as caught:
-        ReviewConfig.model_validate({"repo_max_turns": value})
+        ReviewConfig.model_validate({"max_turns": value})
     assert any(
-        err["loc"] == ("repo_max_turns",) and err["type"] == "greater_than_equal"
+        err["loc"] == ("max_turns",) and err["type"] == "greater_than_equal"
         for err in caught.value.errors()
     )
 
 
-def test_configured_repo_call_budget_reaches_the_seat(
+def test_configured_call_budget_reaches_the_seat(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -50,7 +50,7 @@ def test_configured_repo_call_budget_reaches_the_seat(
     repo = test_run_lifecycle_bugfix._setup(tmp_path, monkeypatch)
     config = tmp_path / "review.toml"
     config.write_text(
-        '[review]\nrepo_max_turns = 2\nscope = "repo"\n'
+        "[review]\nmax_turns = 2\n"
         'when = "periodic"\ninterval_turns = 1\n'
         "[harness]\nmax_turns = 1\nverify.infer = false\n"
         '[harness.prompt]\ndecompose = "off"\n',
@@ -62,7 +62,7 @@ def test_configured_repo_call_budget_reaches_the_seat(
     monkeypatch.setattr(seat, "call", seat_call)
 
     def resolve_seats(_cfg: Config) -> list[review_gate.ReviewSeat]:
-        return [review_lane_env.seat("security", "p/m", seat, scope="repo")]
+        return [review_lane_env.seat("security", "p/m", seat)]
 
     monkeypatch.setattr(role_providers, "resolve_review_seats", resolve_seats)
     monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)
@@ -82,7 +82,7 @@ def test_configured_repo_call_budget_reaches_the_seat(
     assert rc == 1, captured.err
     assert seat.calls == 2
     (verdict,) = aggregate.call_args.args[0]
-    assert verdict.error == "repo: no verdict within 2 calls"
+    assert verdict.error == "no verdict within 2 calls"
     assert "at most 2 replies" in seat_call.call_args_list[0].kwargs["system"]
     assert "x = 2" in json.dumps(seat_call.call_args_list[1].kwargs["messages"])
     session = paths.state_dir(repo) / "sessions" / "runs" / "review-TURNS1"
@@ -165,7 +165,6 @@ def test_reviewers_refuse_strings_blank_focus_and_unknown_fields(entry: object) 
         ReviewConfig.model_validate({"reviewers": [entry]})
 
 
-@pytest.mark.parametrize("scope", ["diff", "repo"])
 @pytest.mark.parametrize("pinned", [False, True])
 @pytest.mark.parametrize(
     ("overrides", "effort", "temperature"),
@@ -176,9 +175,9 @@ def test_reviewers_refuse_strings_blank_focus_and_unknown_fields(entry: object) 
     ],
 )
 def test_reviewer_sampling_reaches_provider_call(
-    scope: str, pinned: bool, overrides: dict[str, object], effort: str, temperature: float
+    pinned: bool, overrides: dict[str, object], effort: str, temperature: float
 ) -> None:
-    """Both scopes send per-entry settings, off and zero included; a pinned seat inherits too."""
+    """A seat sends its entry's settings, off and zero included; a pinned seat inherits too."""
     route = {"model": "o/moonshotai/kimi-k2"}
     cfg = Config.model_validate(
         {
@@ -188,7 +187,6 @@ def test_reviewer_sampling_reaches_provider_call(
                 "reviewer": {**route, "effort": "medium", "temperature": 0.7},
             },
             "review": {
-                "scope": scope,
                 "reviewers": [{"focus": "security", **(route if pinned else {}), **overrides}],
             },
         }
@@ -225,7 +223,6 @@ def test_reviewer_sampling_reaches_provider_call(
                 resolved.focus,
                 resolved.model,
                 provider,
-                scope=resolved.scope,
                 temperature=resolved.temperature,
             )
         )
@@ -236,8 +233,7 @@ def test_reviewer_sampling_reaches_provider_call(
             block_on="none",
             min_blocking_models=2,
             panel_id="test",
-            repo_max_turns=cfg.review.repo_max_turns,
-            tools=[],
+            max_turns=cfg.review.max_turns,
             dispatch=mock.MagicMock(),
         )
     assert result.n_abstain == 0

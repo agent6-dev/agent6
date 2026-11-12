@@ -51,6 +51,7 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
         chain=chain,
         hide=(),
         executor=mock.MagicMock,
+        tools=lambda: review_lane_env.READING_TOOLS,
         budget_remaining=lambda: None,
         log=lambda _s: None,
         emit=sink.emit,
@@ -108,6 +109,7 @@ def test_a_panel_over_unchanged_trees_is_reused_not_sat_again(tmp_path: pathlib.
         chain=chain,
         hide=(),
         executor=mock.MagicMock,
+        tools=lambda: review_lane_env.READING_TOOLS,
         budget_remaining=lambda: None,
         log=lambda _s: None,
         emit=sink.emit,
@@ -116,9 +118,7 @@ def test_a_panel_over_unchanged_trees_is_reused_not_sat_again(tmp_path: pathlib.
     first = reviewer.critique(state, trigger="periodic", turn=1)
     assert first is not None and provider.call.call_count == 1
     (panel,) = [row for row in rows if row["type"] == "review.panel"]
-    assert panel["roster"] == [
-        dict(seat_index=0, model_route="m", focus="s", scope="diff", temperature=0.0)
-    ]
+    assert panel["roster"] == [dict(seat_index=0, model_route="m", focus="s", temperature=0.0)]
     again = reviewer.critique(state, trigger="periodic", turn=2)
     assert again is not None and provider.call.call_count == 1
     (reused,) = [row for row in rows if row["type"] == "review.reused"]
@@ -144,7 +144,7 @@ def test_a_panel_over_unchanged_trees_is_reused_not_sat_again(tmp_path: pathlib.
     legacy = state.review_panels[0].model_copy(update={"roster": ()})
     target = chain.review_target()
     assert target is not None
-    roster = (review_records.SeatAssignment(0, "m", "s", "diff", 0.0),)
+    roster = (review_records.SeatAssignment(0, "m", "s", 0.0),)
     assert review_gate.reusable_panel((legacy,), target, roster) is None
 
 
@@ -166,6 +166,7 @@ def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Pat
         chain,
         (),
         mock.MagicMock,
+        lambda: review_lane_env.READING_TOOLS,
         lambda: None,
         lambda _s: None,
         sink.emit,

@@ -324,9 +324,11 @@ class Harness:
         Returns:
             The system prompt, the conversation holding the opening, and no root task.
         """
-        self.dispatcher.no_tools = contract.kind == "no_tools"
         self.dispatcher.allowed_tools = contract.allowed_tools
-        self.log(f"LOOP: contract={contract.kind} max_calls={contract.max_calls}")
+        self.log(
+            f"LOOP: contract max_calls={contract.max_calls}"
+            f" tools={','.join(contract.allowed_tools) or 'none'}"
+        )
         conversation = loop_conversation.Conversation()
         conversation.notice(contract.opening, origin="operator")
         return contract.system, conversation, None
@@ -974,12 +976,9 @@ class Harness:
             )
         if self.caller.counter.attempts >= self.contract.max_calls:
             names = ", ".join(tu.name for tu in assistant.tool_uses)
-            cause = (
-                "this conversation has no tools"
-                if self.contract.kind == "no_tools"
-                else f"the call ceiling {self.contract.max_calls} was reached"
+            self._contract_diagnostics.append(
+                f"not executed, the call ceiling {self.contract.max_calls} was reached: {names}"
             )
-            self._contract_diagnostics.append(f"not executed, {cause}: {names}")
             self.log(f"LOOP: call ceiling {self.contract.max_calls} reached at turn {turn}")
             return self.finish(
                 state, loop_snapshot.End("calls_exhausted", text, checkpoint=False), turn=turn
@@ -2005,6 +2004,10 @@ class Harness:
             chain=self.chain,
             hide=self.config.sandbox.hide_paths,
             executor=lambda: self.parallel,
+            # A seat inherits the state of the world its parent has now, tools included.
+            tools=lambda: tuple(
+                d.name for d in toolset.tool_definitions(self.dispatcher, mode=self.mode)
+            ),
             budget_remaining=self._budget_fraction_remaining,
             log=self.log,
             emit=self.emit,

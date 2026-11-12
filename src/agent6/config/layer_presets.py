@@ -17,7 +17,7 @@ from agent6.config import model as config_model
 BUILTIN_PRESET_NOTES: dict[str, str] = {
     "no_review": "turns off the review panel",
     "review": "three review seats that can block the finish",
-    "deep_review": "five repo-scope review seats that can block the finish",
+    "deep_review": "five review seats that can block the finish",
 }
 
 
@@ -38,7 +38,6 @@ BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
         "review": {
             "when": "finish",
             "block_on": "any",
-            "scope": "repo",
             "reviewers": [
                 {"focus": "security"},
                 {"focus": "correctness"},

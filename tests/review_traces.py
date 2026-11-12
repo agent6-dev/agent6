@@ -37,7 +37,7 @@ CASES = (
 )
 
 
-def response(case: str, scope: str, call: int) -> tuple[str, str, list[dict[str, Any]]]:
+def response(case: str, call: int) -> tuple[str, str, list[dict[str, Any]]]:
     text = {
         "pass": PASS,
         "block": BLOCK,
@@ -47,7 +47,7 @@ def response(case: str, scope: str, call: int) -> tuple[str, str, list[dict[str,
         "invalid": '{"verdict":"maybe"}',
         "truncated": '{"verdict":"blo',
         "empty": "",
-        "tools": PASS if scope == "diff" or call == 3 else "",
+        "tools": PASS if call == 3 else "",
     }.get(case, "")
     tools = (
         [
@@ -65,7 +65,7 @@ def response(case: str, scope: str, call: int) -> tuple[str, str, list[dict[str,
 
 
 @contextlib.contextmanager
-def server(case: str, scope: str) -> Generator[tuple[str, list[dict[str, Any]]]]:
+def server(case: str) -> Generator[tuple[str, list[dict[str, Any]]]]:
     calls: list[dict[str, Any]] = []
 
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -105,9 +105,7 @@ def server(case: str, scope: str) -> Generator[tuple[str, list[dict[str, Any]]]]
                     ],
                 )
             else:
-                text, stop, tools = response(
-                    "pass" if case == "worker" else case, scope, len(calls)
-                )
+                text, stop, tools = response("pass" if case == "worker" else case, len(calls))
             delta: dict[str, Any] = {"role": "assistant", "content": text}
             if tools:
                 delta["tool_calls"] = tools

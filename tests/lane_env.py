@@ -23,18 +23,18 @@ FINISH: tuple[str, dict[str, Any]] = ("finish_session", {"summary": "Local lane 
 
 @contextlib.contextmanager
 def scripted_provider(
-    replies: Sequence[tuple[str, dict[str, Any]]] = (FINISH,),
+    replies: Sequence[tuple[str, dict[str, Any]] | str] = (FINISH,),
     *,
     cost_usd: float | None = None,
     before_reply: Callable[[dict[str, Any]], None] | None = None,
 ) -> Generator[tuple[str, list[dict[str, Any]]]]:
-    """Serve an OpenAI-shaped endpoint that answers each call with the next scripted tool call.
+    """Serve an OpenAI-shaped endpoint that answers each call with the next scripted reply.
 
     The last reply repeats once the script runs out. Every request body is kept so a test can
     read what the child sent.
 
     Args:
-        replies: `(tool name, arguments)` per call, in order.
+        replies: `(tool name, arguments)` or an answer's text per call, in order.
         cost_usd: The reported cost per response; None exercises fallback-token accounting.
         before_reply: An optional barrier after recording the request and before answering.
 
@@ -55,19 +55,22 @@ def scripted_provider(
             calls.append(body)
             if before_reply is not None:
                 before_reply(body)
-            name, args = replies[min(len(calls) - 1, len(replies) - 1)]
-            message = {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "index": 0,
-                        "id": f"call-{len(calls)}",
-                        "type": "function",
-                        "function": {"name": name, "arguments": json.dumps(args)},
-                    }
-                ],
-            }
+            reply = replies[min(len(calls) - 1, len(replies) - 1)]
+            message: dict[str, Any] = {"role": "assistant", "content": reply}
+            if not isinstance(reply, str):
+                name, args = reply
+                message = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": f"call-{len(calls)}",
+                            "type": "function",
+                            "function": {"name": name, "arguments": json.dumps(args)},
+                        }
+                    ],
+                }
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
@@ -75,7 +78,13 @@ def scripted_provider(
                 "id": f"local-{len(calls)}",
                 "object": "chat.completion.chunk",
                 "model": body["model"],
-                "choices": [{"index": 0, "delta": message, "finish_reason": "tool_calls"}],
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": message,
+                        "finish_reason": "stop" if isinstance(reply, str) else "tool_calls",
+                    }
+                ],
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
             }
             if cost_usd is not None:

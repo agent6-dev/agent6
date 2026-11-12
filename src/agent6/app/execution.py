@@ -48,7 +48,7 @@ from agent6.sandbox import detect, jail
 from agent6.sessions import event_log, ipc, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.tools import command_tools, dispatch, operator_prompts, target_policy
+from agent6.tools import command_tools, dispatch, operator_prompts, schema, target_policy
 from agent6.vcs import commit_message
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
@@ -484,7 +484,12 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         # environment, so every commit leaves it out as it does the operator's files.
         unready: str | None = None
         untracked_at_start = inputs.untracked_at_start
-        if inputs.contract is None and workspace_setup.session_needs_setup(layout.session_dir):
+        # A review seat handed `run_command` needs what git does not track, as any lane does.
+        runs_commands = inputs.contract is None or (
+            schema.RunCommandInput.TOOL_NAME in inputs.contract.allowed_tools
+            and dispatcher.command_policy() != "deny"
+        )
+        if runs_commands and workspace_setup.session_needs_setup(layout.session_dir):
             # The run's own earlier files read untracked too: the chain never moves the index.
             before = git_read.untracked_paths(cwd) if mode == "run" else frozenset[str]()
             prepared = workspace_setup.prepare(cfg, cwd, runner=dispatcher, reporter=reporter)
@@ -635,7 +640,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 max_rejections=cfg.review.max_rejections,
                 min_remaining_budget_fraction=cfg.review.min_remaining_budget_fraction,
                 concurrency=cfg.review.concurrency,
-                repo_max_turns=cfg.review.repo_max_turns,
+                max_turns=cfg.review.max_turns,
             ),
             call=provider_call.CallSettings(temperature=role_providers.role_temperature(cfg, role)),
             compaction=compaction_window.CompactionSettings(

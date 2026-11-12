@@ -64,7 +64,7 @@ class Agent6Section(pydantic.BaseModel):
         description=(
             'selected preset; `agent6.preset = "none"`: no preset, stop preset lookup; '
             '`"no_review"`: panel off; `"review"`: three seats able to block the finish; '
-            '`"deep_review"`: five repo-scope seats able to block the finish; custom preset: '
+            '`"deep_review"`: five seats able to block the finish; custom preset: '
             "`[presets.<name>]`; overrides at the selecting layer; `--preset`: per run; "
             "`resume --preset`: from that resume on, recorded for later resumes; empty string "
             "refused"
@@ -746,6 +746,10 @@ _REPLACED_KEYS = {
     "machine.snapshot_keep": "renamed config key; use machine.keep_snapshots",
     "machine.state_log_keep": "renamed config key; use machine.keep_state_logs",
     "review.max_review_rejections": "renamed config key; use review.max_rejections",
+    "review.repo_max_turns": "renamed config key; use review.max_turns",
+    "review.scope": (
+        "removed config key; every review seat reads the repository with the tools its run has"
+    ),
     "review.trigger": (
         'renamed config key; use review.when ("never", "verify_fail", "finish" or "periodic")'
     ),

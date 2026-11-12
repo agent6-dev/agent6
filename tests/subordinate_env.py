@@ -154,7 +154,6 @@ def run_panel_worker(url: str) -> None:
                 "review",
                 "reviewer",
                 contract=kinds.ConversationContract(
-                    kind="read_only",
                     system="s",
                     opening="o",
                     max_calls=2,

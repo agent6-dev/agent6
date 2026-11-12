@@ -274,7 +274,9 @@ agent6 ask "how does the task-graph curator work?"
 In-loop panels run each seat as a read-only lane with its own session, and record their findings and reviewed tree IDs in the session journal.
 Each batch's seats start under what the run has left; batches use at most `review.concurrency` and `harness.parallel.max_lanes` seats, without truncating the roster.
 Results keep roster order even when seats finish in another order.
-Diff seats make one call without tools, capped at 1,500 output tokens; repo seats read the retained snapshot with a 2,000-token per-call cap and `review.repo_max_turns` calls.
+A seat opens on the task, the rules, the verification and the diff, and investigates a clone of the retained snapshot with the tools its run has: the reading tools, and `run_command`, `run_verify_command`, `fetch`, `read_session` and `use_skill` where the run's model is offered them.
+A seat edits nothing and dispatches nothing; `sandbox.run_commands = "deny"` withholds `run_command` and `run_verify_command` from a seat as it does from the run.
+A seat makes at most `review.max_turns` model calls, each capped at 2,000 output tokens.
 Each seat has a session of its own, named on the receipt and the findings card; no listing counts it among the run's lanes.
 A seat still running 30 minutes after its batch started is stopped and abstains; batches run one after another, each with its own 30 minutes.
 Failed or unparseable seats remain abstentions with their diagnostics; an all-abstain panel is inconclusive, not a clean review.

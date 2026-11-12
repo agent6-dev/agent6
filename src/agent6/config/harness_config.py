@@ -159,9 +159,6 @@ class ReviewerConfig(pydantic.BaseModel):
         )
 
 
-ReviewScope = Literal["diff", "repo"]
-
-
 class MetricConfig(pydantic.BaseModel):
     """The `[harness.metric]` table: a continuous score beside the pass/fail gate.
 
@@ -707,26 +704,12 @@ class ReviewConfig(pydantic.BaseModel):
             "runs in batches, in roster order; `review.concurrency = 1`: one after another"
         ),
     )
-    scope: ReviewScope = pydantic.Field(
-        json_schema_extra={
-            "choice_meanings": {
-                "diff": "One review call over diff, task and verification",
-                "repo": "Read-only tool review of surrounding repository",
-            }
-        },
-        default="diff",
-        description=(
-            "How much a review seat reads; a diff seat makes one call without tools; a repo "
-            "seat reads the reviewed snapshot with read-only tools over several calls, never "
-            "the working tree as it changes later."
-        ),
-    )
-    repo_max_turns: int = pydantic.Field(
+    max_turns: int = pydantic.Field(
         ge=1,
         default=20,
         description=(
-            'provider-call cap for a `review.scope = "repo"` seat, tool calls included; no '
-            "verdict within the cap: abstention, reported by the panel"
+            "model calls a review seat may make, calls that ask for tools included; no verdict "
+            "within the cap: abstention, reported by the panel"
         ),
     )
 

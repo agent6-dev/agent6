@@ -680,7 +680,6 @@ def resolve_review_seats(cfg: Config) -> list[review_gate.ReviewSeat]:
                 settings=kinds.ModelSettings(
                     kinds.ModelRoute(rm.provider, rm.model), rm.effort, rm.temperature
                 ),
-                scope=cfg.review.scope,
             )
         )
     return seats

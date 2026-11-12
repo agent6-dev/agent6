@@ -377,7 +377,7 @@ A snapshot does not widen read permissions: historical hidden files already in g
 Preparation refuses an unreadable target or failed retention rather than reviewing an older committed tree.
 Only the parent binds the panel ID, target, rules, prior findings and verification evidence; reviewer text cannot replace that binding.
 Panel seats run as read-only lanes, each its own process and session, not as calls through the parent's editing dispatcher.
-Diff seats expose no tools; repo seats expose only `read_file`, `list_dir`, `outline`, `find_definition` and `find_references`, checked at both tool advertisement and dispatch.
+A seat's tools are the ones its parent hands down, never an edit, checked at both tool advertisement and dispatch; [Parallel lanes](#10-parallel-lanes) lists them.
 The parent validates the completion artifact's session, panel, seat and exact target before parsing or grounding a verdict.
 Failed, timed-out, missing, mismatched and unparseable evidence abstains with its diagnostic; a bounded final-call verdict may still count at the call ceiling.
 Neither child prose nor a successful process exit certifies the parent's tree.
@@ -713,10 +713,12 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
 - Every work lane is an ordinary run on its own clone, its own jail per `sandbox.isolation`, its own `run_commands` policy, started by the fixed bootstrap `python -P -E -m agent6.ui.cli.lane_agent`
     - the task, pins, caps, away mode and lineage travel in a launch file under the origin's state dir (`<state>/launch/<group>/lane-<n>.json`, `0600` in a `0700` dir, the config snapshot beside it); nothing model-written reaches the host argv
     - the bootstrap reads the file `AGENT6_LANE` names through `O_NOFOLLOW` and refuses a symlink, a foreign owner, a mode others can read or a dir others can write; `-P` keeps the clone off `sys.path` and `-E` ignores `PYTHONPATH`, so a planted `agent6/` or `sitecustomize.py` never imports (`tests/security/test_lane_launch_boundary.py`)
-    - a detached lane has no terminal: a `run_commands = "ask"` prompt parks (`wait`) or is answered empty (`deny`) by the launch file's away mode, never approved
+    - a detached lane has no terminal: its `run_commands = "ask"` prompt is asked on its parent, whose operator answers it; with no parent watching, the launch file's away mode parks it (`wait`) or answers it empty (`deny`), never approves it
     - a lane is tied to its coordinator with PDEATHSIG (SIGTERM), so a coordinator that dies cannot leave a model child running; a lane that does not stop when asked is TERMed, KILLed after the grace and reaped by its recorded pid; a dispatch's deadline is enforced by the coordinator's await and by the lane's own backstop
-- A lane whose launch file carries a conversation contract is a `read_only` session: the same bootstrap and jail, with the tool surface cut at both boundaries, whatever the config allows
-    - the tool list offers the navigation tools and `finish_session` (`no_tools`: nothing), and the dispatcher refuses every edit, command, verify, fetch, background and MCP name that slips past the list; no setup command runs and no MCP server starts
+- A lane whose launch file carries a conversation contract is a `read_only` session, a review seat: the same bootstrap and jail over its own clone of the reviewed snapshot, with the tool surface cut at both boundaries
+    - the contract lists the tools the parent hands down: the ones the parent's model is offered, within the reading tools, `run_command`, `run_verify_command`, `fetch`, `read_session` and `use_skill`; the tool list offers exactly those, and the dispatcher refuses every other name that slips past the list (an edit, a background command, the task list, `parallel`, an MCP tool); no MCP server starts
+    - a seat's command runs under the lane's own `run_commands` policy, jail and `sandbox.network`, as a work lane's does: `"deny"` on the parent withholds the command tools from the seat's list and from its dispatcher, and an `"ask"` prompt is asked on the parent; `git.worktree.setup_command` runs first only where the seat may run commands
+    - a command can change the seat's clone, which is removed with the lane; a seat's join is record-only, so nothing from the clone merges into the parent's chain
     - the provider caller counts every attempt against the contract's call ceiling, retries included, and the loop ends the session at the ceiling without executing that response's tool calls
 - Subordinate models and operator work entry points (`parallel`, `/parallel`, `--parallel`) cannot fan out, even with `harness.parallel.tool = true`.
     - a worker lane retains its configured harness-panel authority, independent of `harness.parallel.tool`; the internal record-only dispatch seam uses the same executor, never a tool-supplied purpose or authority argument

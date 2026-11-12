@@ -51,7 +51,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
     subordinate_env.init_repo(repo)
     subordinate_env.create_record(repo, "parent")
     clone = short_repo / "worker"
-    with lane_env.scripted_provider(cost_usd=panel_cost) as (url, calls):
+    with lane_env.scripted_provider(("reviewed",), cost_usd=panel_cost) as (url, calls):
         cfg = subordinate_env.config(url)
         _path, launch = subordinate_env.launch_worker(repo, clone, cfg, monkeypatch)
         worker_dir = subordinate_env.create_record(repo, launch.session_id, parent="parent")
@@ -81,7 +81,6 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         )
         assert not refused.dispatched and "subordinate" in refused.message
         contract = kinds.ConversationContract(
-            kind="read_only",
             system="Review only.",
             opening="Read this tree.",
             max_calls=2,
@@ -180,7 +179,6 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
         meter = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
         executor = subordinate_env.dispatcher(clone, worker_dir, cfg, meter)
         contract = kinds.ConversationContract(
-            kind="read_only",
             system="s",
             opening="o",
             max_calls=2,
@@ -327,7 +325,7 @@ def test_review_leaf_and_unproven_subrun_have_no_dispatch_authority(
     cfg = subordinate_env.config(tool=True)
     path, launch = subordinate_env.launch_worker(repo, clone, cfg, monkeypatch)
     contract = kinds.ConversationContract(
-        kind="no_tools", system="s", opening="o", max_calls=1, max_output_tokens=100
+        system="s", opening="o", max_calls=1, max_output_tokens=100
     )
     lane_launch.write(path.parent, launch.model_copy(update={"contract": contract}))
     for mode in ("run", "read_only"):

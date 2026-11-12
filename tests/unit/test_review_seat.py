@@ -80,7 +80,7 @@ def _ctx() -> review_panel.ReviewContext:
 
 
 def test_structured_review_parses_clean_json() -> None:
-    v = review_lane_env.diff_verdict(
+    v = review_lane_env.single_verdict(
         _prov(_BLOCK_JSON), _ctx(), seat_index=0, focus="security", model_route="m1"
     )
     assert v.error is None and v.verdict == "block"
@@ -89,12 +89,14 @@ def test_structured_review_parses_clean_json() -> None:
 
 def test_structured_review_parses_fenced_json_with_prose() -> None:
     text = f"Here is my review:\n```json\n{_BLOCK_JSON}\n```\nDone."
-    v = review_lane_env.diff_verdict(_prov(text), _ctx(), seat_index=0, focus="s", model_route="m1")
+    v = review_lane_env.single_verdict(
+        _prov(text), _ctx(), seat_index=0, focus="s", model_route="m1"
+    )
     assert v.error is None and v.verdict == "block" and len(v.findings) == 1
 
 
 def test_structured_review_junk_output_abstains() -> None:
-    v = review_lane_env.diff_verdict(
+    v = review_lane_env.single_verdict(
         _prov("I could not produce JSON, sorry."), _ctx(), seat_index=0, focus="s", model_route="m1"
     )
     assert v.error is not None and v.verdict == "abstain"  # abstain, never a false pass-as-real
@@ -102,12 +104,14 @@ def test_structured_review_junk_output_abstains() -> None:
 
 @pytest.mark.parametrize("text", ["{}", '{"findings": []}', '{"verdict": "maybe"}'])
 def test_structured_review_without_a_verdict_abstains(text: str) -> None:
-    v = review_lane_env.diff_verdict(_prov(text), _ctx(), seat_index=0, focus="s", model_route="m1")
+    v = review_lane_env.single_verdict(
+        _prov(text), _ctx(), seat_index=0, focus="s", model_route="m1"
+    )
     assert v.error == "invalid reviewer verdict"
 
 
 def test_structured_review_provider_error_abstains() -> None:
-    v = review_lane_env.diff_verdict(
+    v = review_lane_env.single_verdict(
         cast(Provider, _ErrProvider()), _ctx(), seat_index=0, focus="s", model_route="m1"
     )
     assert v.error is not None and "provider" in v.error
@@ -123,7 +127,7 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     starved = _FakeProvider("")
     starved_resp = _Resp("", stop_reason="length", output_tokens=4500)
     starved.call = lambda **_kw: starved_resp  # type: ignore[method-assign]
-    v = review_lane_env.diff_verdict(
+    v = review_lane_env.single_verdict(
         cast(Provider, starved), _ctx(), seat_index=0, focus="s", model_route="kimi-k3"
     )
     assert v.error is not None and v.verdict == "abstain"
@@ -135,7 +139,7 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     cut = _FakeProvider("")
     cut_resp = _Resp('{"verdict": "blo', stop_reason="length", output_tokens=1500)
     cut.call = lambda **_kw: cut_resp  # type: ignore[method-assign]
-    v2 = review_lane_env.diff_verdict(
+    v2 = review_lane_env.single_verdict(
         cast(Provider, cut), _ctx(), seat_index=0, focus="s", model_route="m1"
     )
     assert v2.error is not None
@@ -153,7 +157,7 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     empty_resp = _Resp("", stop_reason="error", output_tokens=16801)
     empty.call = lambda **_kw: empty_resp  # type: ignore[method-assign]
 
-    v = review_lane_env.diff_verdict(
+    v = review_lane_env.single_verdict(
         cast(Provider, empty), _ctx(), seat_index=0, focus="s", model_route="kimi-k2.6"
     )
 
@@ -170,7 +174,7 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     thought = _Resp("", stop_reason="stop", output_tokens=7160, thinking="t" * 30_175)
     thinker.call = lambda **_kw: thought  # type: ignore[method-assign]
 
-    v2 = review_lane_env.diff_verdict(
+    v2 = review_lane_env.single_verdict(
         cast(Provider, thinker), _ctx(), seat_index=0, focus="s", model_route="kimi-k2.6"
     )
 
@@ -212,7 +216,7 @@ def test_coerce_findings_normalizes_bad_category_and_severity() -> None:
 def test_invalid_locations_abstain_instead_of_passing(location: object) -> None:
     payload = json.loads(_BLOCK_JSON)
     payload["findings"][0]["location"] = location
-    verdict = review_lane_env.diff_verdict(
+    verdict = review_lane_env.single_verdict(
         _prov(json.dumps(payload)), _ctx(), seat_index=3, focus="security", model_route="m1"
     )
     assert verdict.verdict == "abstain" and not verdict.findings
@@ -223,7 +227,7 @@ def test_invalid_locations_abstain_instead_of_passing(location: object) -> None:
 def test_provider_findings_keep_the_title_and_detail_caps() -> None:
     payload = json.loads(_BLOCK_JSON)
     payload["findings"][0].update(title="t" * 201, detail="d" * 1001)
-    verdict = review_lane_env.diff_verdict(
+    verdict = review_lane_env.single_verdict(
         _prov(json.dumps(payload)), _ctx(), seat_index=0, focus="security", model_route="m1"
     )
     assert verdict.error is None
@@ -259,7 +263,7 @@ def test_run_panel_distinct_models_quorum_blocks() -> None:
         block_on="model_quorum",
         min_blocking_models=2,
         panel_id="p",
-        repo_max_turns=20,
+        max_turns=20,
     )
     assert res.blocked is True and res.n_block == 2
     assert [v.seat_index for v in res.per_seat] == [0, 1]
@@ -269,7 +273,7 @@ def test_run_panel_distinct_models_quorum_blocks() -> None:
 def test_run_panel_advisory_never_blocks() -> None:
     seats = [review_lane_env.seat(focus="security", model="m1", provider=_prov(_BLOCK_JSON))]
     res = review_lane_env.run_panel(
-        seats, _ctx(), block_on="none", min_blocking_models=2, panel_id="p", repo_max_turns=20
+        seats, _ctx(), block_on="none", min_blocking_models=2, panel_id="p", max_turns=20
     )
     assert res.blocked is False
     assert (
@@ -291,7 +295,7 @@ def test_run_panel_concurrent_preserves_order_and_aggregates() -> None:
         block_on="model_quorum",
         min_blocking_models=2,
         panel_id="p",
-        repo_max_turns=20,
+        max_turns=20,
         concurrency=3,
     )
     assert [v.seat_index for v in res.per_seat] == [0, 1, 2]
@@ -396,15 +400,15 @@ def test_bare_and_pinned_routes_to_the_same_model_count_once(monkeypatch: Any) -
         block_on="model_quorum",
         min_blocking_models=2,
         panel_id="p",
-        repo_max_turns=20,
+        max_turns=20,
     )
     assert result.n_block == 1 and result.blocked is False
 
 
-# --- repo scope (read-only tool-using reviewer) -----------------------------
+# --- the seat's tool loop --------------------------------------------------
 
 
-class _RepoResp:
+class _SeatResp:
     def __init__(
         self, text: str = "", tool_uses: tuple[Any, ...] = (), raw: dict[str, Any] | None = None
     ) -> None:
@@ -413,7 +417,7 @@ class _RepoResp:
         self.raw = raw or {"content": []}
 
 
-class _RepoProvider:
+class _SeatProvider:
     def __init__(self, responses: list[Any]) -> None:
         self._responses = list(responses)
         self.calls = 0
@@ -424,17 +428,16 @@ class _RepoProvider:
 
 
 @pytest.mark.parametrize("max_turns", [1, 2, 20])
-def test_repo_review_first_request_names_the_call_budget(max_turns: int) -> None:
+def test_seat_first_request_names_the_call_budget(max_turns: int) -> None:
     """The seat knows its total call budget and that the last call must be its verdict."""
     provider = mock.MagicMock()
-    provider.call.return_value = _RepoResp(text=_BLOCK_JSON)
-    verdict = review_lane_env.repo_verdict(
+    provider.call.return_value = _SeatResp(text=_BLOCK_JSON)
+    verdict = review_lane_env.single_verdict(
         provider,
         _ctx(),
         seat_index=0,
         focus="security",
         model_route="m1",
-        tools=[],
         dispatch=mock.MagicMock(),
         max_turns=max_turns,
     )
@@ -444,17 +447,17 @@ def test_repo_review_first_request_names_the_call_budget(max_turns: int) -> None
     assert "by the last reply at the latest, reply with ONLY the JSON verdict" in system
 
 
-def test_repo_review_returns_a_verdict_on_the_sixth_call(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_seat_returns_a_verdict_on_the_sixth_call(monkeypatch: pytest.MonkeyPatch) -> None:
     """Five tool rounds leave the sixth call for a verdict, however long they took."""
     clock = itertools.count(0, 100.0)
     monkeypatch.setattr(time, "monotonic", lambda: next(clock))
     tu = {"name": "find_references", "id": "t1", "input": {"symbol": "read_doc"}}
-    provider = _RepoProvider(
+    provider = _SeatProvider(
         [
-            _RepoResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]})
+            _SeatResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]})
             for _ in range(5)
         ]
-        + [_RepoResp(text=_BLOCK_JSON)]
+        + [_SeatResp(text=_BLOCK_JSON)]
     )
     dispatched: list[str] = []
 
@@ -462,13 +465,12 @@ def test_repo_review_returns_a_verdict_on_the_sixth_call(monkeypatch: pytest.Mon
         dispatched.append(name)
         return results.RawResult({"matches": ["caller.py:9: read_doc(x)"]})
 
-    v = review_lane_env.repo_verdict(
+    v = review_lane_env.single_verdict(
         cast(Provider, provider),
         _ctx(),
         seat_index=0,
         focus="security",
         model_route="m1",
-        tools=[],
         dispatch=dispatch,
         max_turns=6,
     )
@@ -477,37 +479,36 @@ def test_repo_review_returns_a_verdict_on_the_sixth_call(monkeypatch: pytest.Mon
     assert dispatched == ["find_references"] * 5
 
 
-def test_repo_review_abstains_after_six_calls_without_a_verdict() -> None:
+def test_seat_abstains_after_six_calls_without_a_verdict() -> None:
     """A seat that keeps requesting tools abstains after six provider calls."""
     tu = {"name": "list_dir", "id": "t1", "input": {"path": "."}}
-    provider = _RepoProvider(
+    provider = _SeatProvider(
         [
-            _RepoResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]})
+            _SeatResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]})
             for _ in range(10)
         ]
     )
-    v = review_lane_env.repo_verdict(
+    v = review_lane_env.single_verdict(
         cast(Provider, provider),
         _ctx(),
         seat_index=0,
         focus="s",
         model_route="m1",
-        tools=[],
         dispatch=lambda n, i, origin=None: results.RawResult({"entries": []}),
         max_turns=6,
     )
-    assert v.error == "repo: no verdict within 6 calls"
+    assert v.error == "no verdict within 6 calls"
     assert provider.calls == 6
 
 
-def test_repo_review_skips_dispatch_on_final_turn() -> None:
+def test_seat_skips_dispatch_on_final_turn() -> None:
     # The last allowed model call returns tool_uses and no verdict: the seat is
     # about to abstain, and no model call follows to consume the results, so the
     # final round's tools must not be executed (pure waste).
     tu = {"name": "find_references", "id": "t1", "input": {"symbol": "x"}}
-    provider = _RepoProvider(
+    provider = _SeatProvider(
         [
-            _RepoResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]})
+            _SeatResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]})
             for _ in range(3)
         ]
     )
@@ -517,43 +518,39 @@ def test_repo_review_skips_dispatch_on_final_turn() -> None:
         dispatched.append(name)
         return results.RawResult({"ok": True})
 
-    v = review_lane_env.repo_verdict(
+    v = review_lane_env.single_verdict(
         cast(Provider, provider),
         _ctx(),
         seat_index=0,
         focus="s",
         model_route="m1",
-        tools=[],
         dispatch=dispatch,
         max_turns=3,
     )
-    assert v.error == "repo: no verdict within 3 calls"
+    assert v.error == "no verdict within 3 calls"
     assert provider.calls == 3  # every model call still happens
     assert dispatched == ["find_references", "find_references"]  # rounds 1-2; final skipped
 
 
-def test_run_panel_routes_repo_tier_seats() -> None:
+def test_run_panel_runs_a_seat_through_its_tool_loop() -> None:
     tu = {"name": "find_references", "id": "t1", "input": {"symbol": "x"}}
-    prov = _RepoProvider(
+    prov = _SeatProvider(
         [
-            _RepoResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]}),
-            _RepoResp(text=_BLOCK_JSON),
+            _SeatResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]}),
+            _SeatResp(text=_BLOCK_JSON),
         ]
     )
-    seat = review_lane_env.seat(
-        focus="security", model="m1", provider=cast(Provider, prov), scope="repo"
-    )
+    seat = review_lane_env.seat(focus="security", model="m1", provider=cast(Provider, prov))
     res = review_lane_env.run_panel(
         [seat],
         _ctx(),
         block_on="any",
         min_blocking_models=2,
         panel_id="p",
-        repo_max_turns=2,
-        tools=[],
+        max_turns=2,
         dispatch=lambda n, i, origin=None: results.RawResult({"ok": True}),
     )
-    assert prov.calls == 2 and res.blocked is True  # repo seat ran the tool loop + blocked
+    assert prov.calls == 2 and res.blocked is True  # the seat ran the tool loop and blocked
 
 
 def test_extract_json_prefers_the_verdict_object_over_a_stray_preamble() -> None:
@@ -575,18 +572,17 @@ def test_extract_json_ignores_braces_inside_strings() -> None:
     assert obj is not None and obj["verdict"] == "block"
 
 
-def test_repo_review_honors_verdict_alongside_tool_use_on_last_turn() -> None:
+def test_seat_honors_verdict_alongside_tool_use_on_last_turn() -> None:
     # On the FINAL allowed turn the model emits a tool_use AND a verdict in
     # the same turn; the verdict must be honored (not wasted into an abstain).
     tu = {"name": "find_references", "id": "t1", "input": {"symbol": "x"}}
-    provider = _RepoProvider([_RepoResp(text=_BLOCK_JSON, tool_uses=(tu,), raw={"content": []})])
-    v = review_lane_env.repo_verdict(
+    provider = _SeatProvider([_SeatResp(text=_BLOCK_JSON, tool_uses=(tu,), raw={"content": []})])
+    v = review_lane_env.single_verdict(
         cast(Provider, provider),
         _ctx(),
         seat_index=0,
         focus="s",
         model_route="m1",
-        tools=[],
         dispatch=lambda n, i, origin=None: results.RawResult({"ok": True}),
         max_turns=1,
     )
@@ -610,7 +606,7 @@ def test_run_panel_executor_crash_retains_diagnostics() -> None:
         block_on="none",
         min_blocking_models=2,
         panel_id="p",
-        repo_max_turns=20,
+        max_turns=20,
         concurrency=2,
     )
     assert result.n_abstain == 2
@@ -647,7 +643,7 @@ def test_run_panel_concurrency_limit_is_honored() -> None:
         block_on="none",
         min_blocking_models=2,
         panel_id="p",
-        repo_max_turns=20,
+        max_turns=20,
         concurrency=2,
     )
     assert len(res.per_seat) == 6
@@ -674,22 +670,21 @@ def test_an_unknown_reply_key_cannot_discard_a_valid_block(extra: object) -> Non
     assert verdict.verdict == "block" and len(verdict.findings) == 1
 
 
-def test_repo_review_preserves_image_result() -> None:
-    """The repo seat retains image blocks instead of flattening or clipping them."""
+def test_seat_preserves_image_result() -> None:
+    """A seat retains image blocks instead of flattening or clipping them."""
     tu = {"name": "read_file", "id": "t1", "input": {"path": "page.png"}}
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        _RepoResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]}),
-        _RepoResp(text=_BLOCK_JSON),
+        _SeatResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]}),
+        _SeatResp(text=_BLOCK_JSON),
     ]
     image = kinds.MediaAttachment(b"x" * 90000, "image/png", "page.png")
-    verdict = review_lane_env.repo_verdict(
+    verdict = review_lane_env.single_verdict(
         provider,
         _ctx(),
         seat_index=0,
         focus="ui",
         model_route="p/m",
-        tools=[],
         dispatch=lambda name, inp, origin=None: results.ReadMediaResult(image),
         max_turns=2,
     )
@@ -699,8 +694,8 @@ def test_repo_review_preserves_image_result() -> None:
     assert reply["content"][1]["source"]["data"] == "eHh4" * 30000
 
 
-def test_repo_review_uses_shared_media_recovery_without_rerunning_tools() -> None:
-    """The independent repo seat retries its delivery rather than repeating read_file."""
+def test_seat_uses_shared_media_recovery_without_rerunning_tools() -> None:
+    """A seat retries its delivery rather than repeating read_file."""
     from agent6 import kinds, media
     from agent6.harness import provider_call
     from agent6.providers import provider_types
@@ -709,21 +704,20 @@ def test_repo_review_uses_shared_media_recovery_without_rerunning_tools() -> Non
     tu = {"name": "read_file", "id": "t1", "input": {"path": "page.png"}}
     provider = mock.MagicMock()
     provider.call.side_effect = [
-        _RepoResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]}),
+        _SeatResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]}),
         provider_types.MediaInputError(modality="image", reason="unsupported"),
-        _RepoResp(text=_BLOCK_JSON),
+        _SeatResp(text=_BLOCK_JSON),
     ]
     dispatch = mock.Mock(
         return_value=results.ReadMediaResult(kinds.MediaAttachment(b"x", "image/png", "page.png"))
     )
     emit = mock.Mock()
-    verdict = review_lane_env.repo_verdict(
+    verdict = review_lane_env.single_verdict(
         provider,
         _ctx(),
         seat_index=0,
         focus="ui",
         model_route="p/m",
-        tools=[],
         dispatch=dispatch,
         max_turns=3,
         recovery=provider_call.MediaRecovery(media.InputCapabilities(kinds.ModelRoute("p", "m"))),
@@ -754,8 +748,8 @@ def test_panel_media_refusals_follow_the_seat_not_the_shared_dispatch() -> None:
     for model, support in cases:
         provider = mock.MagicMock()
         provider.call.side_effect = [
-            _RepoResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]}),
-            _RepoResp(text=_BLOCK_JSON),
+            _SeatResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]}),
+            _SeatResp(text=_BLOCK_JSON),
         ]
         role_providers.append(provider)
         seats.append(
@@ -763,7 +757,6 @@ def test_panel_media_refusals_follow_the_seat_not_the_shared_dispatch() -> None:
                 focus="ui",
                 model=f"p/{model}",
                 provider=provider,
-                scope="repo",
                 media_input=media.InputCapabilities(kinds.ModelRoute("p", model), image=support),
             )
         )
@@ -776,8 +769,7 @@ def test_panel_media_refusals_follow_the_seat_not_the_shared_dispatch() -> None:
         block_on="none",
         min_blocking_models=1,
         panel_id="p",
-        repo_max_turns=2,
-        tools=[],
+        max_turns=2,
         dispatch=dispatch,
     )
     replies = [
@@ -789,16 +781,16 @@ def test_panel_media_refusals_follow_the_seat_not_the_shared_dispatch() -> None:
 
 
 @pytest.mark.parametrize("cross_turn", [False, True])
-def test_repo_review_records_attachment_limit_refusals(cross_turn: bool) -> None:
+def test_seat_records_attachment_limit_refusals(cross_turn: bool) -> None:
     """Turn and request limit refusals keep their tool-call identity in the journal."""
     from agent6 import kinds, media
     from agent6.tools import results
 
-    def request(*ids: str) -> _RepoResp:
+    def request(*ids: str) -> _SeatResp:
         calls = tuple(
             {"id": tid, "name": "read_file", "input": {"path": tid + ".png"}} for tid in ids
         )
-        return _RepoResp(
+        return _SeatResp(
             tool_uses=calls, raw={"content": [{"type": "tool_use", **c} for c in calls]}
         )
 
@@ -806,20 +798,19 @@ def test_repo_review_records_attachment_limit_refusals(cross_turn: bool) -> None
     provider.call.side_effect = [
         request("one"),
         *([request("two", "three")] if cross_turn else []),
-        _RepoResp(text=_BLOCK_JSON),
+        _SeatResp(text=_BLOCK_JSON),
     ]
     data = b"x" * (media.IMAGE_MAX_BYTES + (not cross_turn))
     dispatch = mock.Mock(
         return_value=results.ReadMediaResult(kinds.MediaAttachment(data, "image/png", "page.png"))
     )
     emit = mock.Mock()
-    verdict = review_lane_env.repo_verdict(
+    verdict = review_lane_env.single_verdict(
         provider,
         _ctx(),
         seat_index=0,
         focus="ui",
         model_route="p/m",
-        tools=[],
         dispatch=dispatch,
         max_turns=3 if cross_turn else 2,
         emit=emit,

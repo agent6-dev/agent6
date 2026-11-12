@@ -142,7 +142,6 @@ def verdict_from_completion(
     session_id: str,
     focus: str,
     model_route: str,
-    scope: str,
     max_calls: int,
     error: str | None = None,
 ) -> review_records.ReviewVerdict:
@@ -154,7 +153,6 @@ def verdict_from_completion(
         session_id: The child assigned by the parent dispatcher.
         focus: The parent's seat focus.
         model_route: The parent's resolved route.
-        scope: The seat's diff or repo scope.
         max_calls: The request's call ceiling.
         error: A dispatch, timeout or artifact-read failure.
 
@@ -176,12 +174,10 @@ def verdict_from_completion(
         )
     assert record is not None
     obj = llm_json.extract_json(record.text, prefer=("verdict", "findings"))
-    if obj is None or (
-        scope == "repo" and record.asked_for_tools and not ({"verdict", "findings"} & obj.keys())
-    ):
+    if obj is None or (record.asked_for_tools and not ({"verdict", "findings"} & obj.keys())):
         error = (
-            f"repo: no verdict within {max_calls} calls"
-            if scope == "repo" and record.asked_for_tools
+            f"no verdict within {max_calls} calls"
+            if record.asked_for_tools
             else no_verdict_error(record)
         )
         return review_records.ReviewVerdict(

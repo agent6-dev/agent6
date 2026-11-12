@@ -1203,7 +1203,7 @@ class ReviewPanel(Event):
     block_on: str = pydantic.Field(description="The configured panel blocking rule.")
     roster: Sequence[Any] | None = pydantic.Field(
         default=None,
-        description="The seats that sat: index, model route, focus, scope and temperature.",
+        description="The seats that sat: index, model route, focus and temperature.",
     )
     raw_blocked: bool = pydantic.Field(description="Whether the verdicts meet the blocking rule.")
     blocked: bool = pydantic.Field(description="Whether the armed gate blocks the finish.")

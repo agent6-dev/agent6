@@ -19,6 +19,8 @@ from agent6.tools import results
 from tests import subordinate_env
 
 _run_panel = review_gate.run_panel
+# What a parent whose command policy is `deny` hands a seat.
+READING_TOOLS = ("find_definition", "find_references", "list_dir", "outline", "read_file")
 _providers: dict[int, Any] = {}
 
 
@@ -33,7 +35,6 @@ def seat(
     model: str,
     provider: Any,
     *,
-    scope: str = "diff",
     temperature: float | None = 0.0,
     media_input: media.InputCapabilities | None = None,
 ) -> review_gate.ReviewSeat:
@@ -43,7 +44,6 @@ def seat(
         kinds.ModelSettings(
             kinds.ModelRoute(entry if sep else "", name if sep else entry), None, temperature
         ),
-        scope,  # type: ignore[arg-type]
     )
     _providers[id(result)] = (provider, media_input)
     return result
@@ -88,7 +88,7 @@ def run_panel(
     recovery = kwargs.pop("recovery", None)
     emit = kwargs.pop("emit", None)
     kwargs.pop("execution_id", None)
-    kwargs.pop("tools", None)
+    kwargs.setdefault("tools", READING_TOOLS)
     kwargs.pop("media_rejections", None)
     kwargs.pop("executor", None)
     with tempfile.TemporaryDirectory(prefix="review-policy-") as tmp:
@@ -180,32 +180,16 @@ def run_panel(
         return _run_panel(seats, ctx, target=target, executor=executor, **kwargs)
 
 
-def diff_verdict(
-    provider: Any,
-    ctx: review_panel.ReviewContext,
-    *,
-    dispatch: Dispatch | None = None,
-    **kwargs: Any,
-) -> review_records.ReviewVerdict:
-    return single_verdict(provider, ctx, scope="diff", dispatch=dispatch, **kwargs)
-
-
-def repo_verdict(
-    provider: Any,
-    ctx: review_panel.ReviewContext,
-    *,
-    dispatch: Dispatch | None = None,
-    **kwargs: Any,
-) -> review_records.ReviewVerdict:
-    return single_verdict(provider, ctx, scope="repo", dispatch=dispatch, **kwargs)
-
-
 def single_verdict(
-    provider: Any, ctx: review_panel.ReviewContext, *, scope: str, **kwargs: Any
+    provider: Any,
+    ctx: review_panel.ReviewContext,
+    *,
+    dispatch: Dispatch | None = None,
+    **kwargs: Any,
 ) -> review_records.ReviewVerdict:
     index = kwargs.pop("seat_index")
     focus, route = kwargs.pop("focus"), kwargs.pop("model_route")
-    resolved = seat(focus, route, provider, scope=scope, temperature=kwargs.pop("temperature", 0.0))
+    resolved = seat(focus, route, provider, temperature=kwargs.pop("temperature", 0.0))
     turns = kwargs.pop("max_turns", 20)
     kwargs.pop("max_tokens", None)
     result = run_panel(
@@ -214,7 +198,8 @@ def single_verdict(
         block_on="none",
         min_blocking_models=2,
         panel_id=kwargs.pop("panel_id", None) or "test",
-        repo_max_turns=turns,
+        max_turns=turns,
+        dispatch=dispatch,
         **kwargs,
     )
     return dataclasses.replace(result.per_seat[0], seat_index=index)

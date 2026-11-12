@@ -234,6 +234,7 @@ def _reviewer_for(
         chain,
         (),
         mock.MagicMock,
+        lambda: review_lane_env.READING_TOOLS,
         lambda: None,
         lambda _s: None,
         sink.emit,
@@ -366,9 +367,11 @@ def test_malicious_rules_do_not_add_tools_or_change_grounding(repo: pathlib.Path
         block_on="any",
         min_blocking_models=1,
         panel_id="p",
-        repo_max_turns=1,
+        max_turns=1,
     )
-    assert provider.call.call_args.kwargs["tools"] == []
+    # The seat has the tools its parent handed down, whatever the rules ask for.
+    offered = tuple(sorted(t.name for t in provider.call.call_args.kwargs["tools"]))
+    assert offered == review_lane_env.READING_TOOLS
     assert not result.blocked and result.merged_findings[0].severity == "warn"
 
 

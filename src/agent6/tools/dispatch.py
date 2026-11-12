@@ -106,8 +106,6 @@ class ToolDispatcher:
         extra_protect_paths: Paths every jail re-binds read-only and the edit tools refuse,
             such as a running machine's own bundle; read by the prompt assembly too.
         mode: The mode whose tool surface the dispatcher enforces as its backstop.
-        no_tools: Whether the conversation has no tools at all: none is offered and every
-            name refuses.
         state_dir: The per-repo state dir, for the sessions roster and the memory grant.
         session_dir: The run's dir, for background commands, the file bridge and the
             effective command policy; None leaves them unwired.
@@ -130,7 +128,6 @@ class ToolDispatcher:
         mcp_manager: mcp_client.MCPManager | None = None,
         extra_protect_paths: tuple[pathlib.Path, ...] = (),
         mode: kinds.SessionMode = "run",
-        no_tools: bool = False,
         state_dir: pathlib.Path | None = None,
         session_dir: pathlib.Path | None = None,
         findings: Callable[[], results.FindingsResult] | None = None,
@@ -161,7 +158,7 @@ class ToolDispatcher:
         )
         self.isolation: kinds.IsolationLevel = isolation
         self._mode: kinds.SessionMode = mode
-        self.no_tools = no_tools
+        # A contract's list, the tools its parent handed down; None outside a contract.
         self.allowed_tools: tuple[str, ...] | None = None
         self._call_seq = itertools.count(1)
         self.extra_protect_paths = extra_protect_paths
@@ -292,6 +289,16 @@ class ToolDispatcher:
         """Return whether `[harness.metric]` gives `run_metric_command` anything to run."""
         return self._config.harness.metric is not None
 
+    def surface(self) -> schema.ModeTools:
+        """Return the tools this session may ever be offered.
+
+        Returns:
+            What a contract may carry when a parent handed down a list, else the mode's own.
+        """
+        if self.allowed_tools is not None:
+            return schema.contract_tools()
+        return schema.mode_tools(self._mode)
+
     def tool_is_withheld(self, name: str) -> bool:
         """Return whether the model is denied the tool, extras included."""
         return (
@@ -339,8 +346,6 @@ class ToolDispatcher:
 
     def available_tool_names(self) -> tuple[str, ...]:
         """Return the base tools on offer right now, MCP tools included, sorted."""
-        if self.no_tools:
-            return ()
         names = [
             cls.TOOL_NAME for cls in schema.ALL_TOOLS if self._tool_refusal(cls.TOOL_NAME) is None
         ]
@@ -368,7 +373,7 @@ class ToolDispatcher:
 
     def mcp_descriptors(self) -> tuple[mcp_client.MCPToolDescriptor, ...]:
         """Return the MCP tools on offer right now, minus any server denied for the session."""
-        if self._mcp_manager is None or self.no_tools:
+        if self._mcp_manager is None:
             return ()
         return tuple(
             d for d in self._mcp_manager.descriptors() if not self.mcp_denied(d.server_name)
@@ -455,8 +460,6 @@ class ToolDispatcher:
         Raises:
             ToolError: The tool is unknown, withheld, outside the mode's surface, or failed.
         """
-        if self.no_tools:
-            raise tool_errors.ToolError("not available: this conversation has no tools")
         if self.allowed_tools is not None and name not in self.allowed_tools:
             raise tool_errors.ToolError("not available in this conversation contract")
         if name.startswith(mcp_client.MCP_TOOL_PREFIX):
@@ -476,7 +479,7 @@ class ToolDispatcher:
             return self.run_verify()  # records the denied attempt as evidence, then refuses
         if (refusal := self._tool_refusal(name)) is not None:
             raise tool_errors.ToolError(refusal)
-        if name not in schema.mode_tools(self._mode).permitted:
+        if name not in self.surface().permitted:
             # The backstop: a hallucinated name must not mutate the repo from a read-only mode.
             raise tool_errors.ToolError(f"not available in {self._mode} mode")
         return self._run_handler(name, raw_input)

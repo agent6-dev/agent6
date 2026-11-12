@@ -249,14 +249,12 @@ class SeatAssignment:
         seat_index: The seat's zero-based position in the roster.
         model_route: The resolved provider/model route.
         focus: The seat's assigned review focus.
-        scope: Whether the seat reviews the diff or the repository.
         temperature: The configured sampling temperature, or null for the provider default.
     """
 
     seat_index: int
     model_route: str
     focus: str
-    scope: Literal["diff", "repo"] = "diff"
     temperature: float | None = None
 
 

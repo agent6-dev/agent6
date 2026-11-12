@@ -35,10 +35,13 @@ def tool_definitions(
     Returns:
         The tool definitions, with MCP tools appended in the editing modes only.
     """
-    if dispatcher.no_tools:
-        return []
     available = set(dispatcher.available_tool_names())
-    surface = tools_schema.mode_tools(mode)
+    # A contract's surface is the dispatcher's; a mode's own otherwise.
+    surface = (
+        dispatcher.surface()
+        if dispatcher.allowed_tools is not None
+        else tools_schema.mode_tools(mode)
+    )
     out: list[ToolDefinition] = []
     for cls in (*surface.base, *surface.extras):
         if cls.TOOL_NAME not in available and cls not in surface.extras:

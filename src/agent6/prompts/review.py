@@ -3,7 +3,7 @@
 """The run review's prompt and the review panel seats' prompts.
 
 The run review (`sessions review`) reads a finished session's record; each adversarial seat
-sees the panel prompt, or its repo-scope variant, with a `{focus}` placeholder.
+sees the panel prompt with a `{focus}` placeholder.
 `harness.review.session` and `harness.review.seat` own the calls.
 """
 
@@ -90,12 +90,11 @@ Output STRICT JSON and nothing else (no prose, no markdown fence):
 )
 
 
-REPO_REVIEW_SYSTEM_PROMPT = (
-    REVIEW_SYSTEM_PROMPT
-    + """
+# What every seat adds to the verdict contract: it investigates before it judges.
+INVESTIGATE_PROMPT = """
 
-You ALSO have read-only tools (read_file, outline, list_dir,
-find_definition, find_references) to INVESTIGATE the broader repo before judging.
+You ALSO have tools to INVESTIGATE the broader repo before judging. Your checkout is
+a throwaway copy of the reviewed commit.
 When the diff changes a function/class signature, public API, return type, or a
 shared constant, USE find_references / find_definition to find existing
 callers/usages and check they still work.
@@ -106,23 +105,36 @@ real `verify-uncovered-correctness` defect of THIS diff: the verify command
 passed only because it did not exercise that path. Report it as a BLOCK, cited
 at the `path:line` IN THE DIFF that caused the break (the changed signature),
 with the broken caller (file:line) in the `detail`; only diff lines gate, so a
-finding cited at the other file's line is ignored.
+finding cited at the other file's line is ignored."""
+
+# Added when the seat's parent may run commands, so the seat may too.
+COMMANDS_PROMPT = """
+
+You may run commands to check a suspicion: a test, the verify command, git history.
+A command proves or clears a finding; it does not change what the diff is."""
+
+REPLY_LIMIT_PROMPT = """
 
 Investigate first. You have at most {max_turns} replies, replies that call tools included;
 when done, and by the last reply at the latest, reply with ONLY the JSON verdict and no
 tool calls."""
-)
 
 
-def panel_prompt(focus: str, *, max_turns: int | None = None) -> str:
-    """Render a seat's prompt for its scope.
+def panel_prompt(focus: str, *, max_turns: int, commands: bool) -> str:
+    """Render a seat's prompt.
 
     Args:
         focus: The seat's assigned focus.
-        max_turns: The repo-scope reply cap, or None for a diff-scope seat.
+        max_turns: The seat's reply cap.
+        commands: Whether the seat is handed `run_command`.
 
     Returns:
-        The system prompt for the selected scope.
+        The system prompt.
     """
-    template = REVIEW_SYSTEM_PROMPT if max_turns is None else REPO_REVIEW_SYSTEM_PROMPT
+    template = (
+        REVIEW_SYSTEM_PROMPT
+        + INVESTIGATE_PROMPT
+        + (COMMANDS_PROMPT if commands else "")
+        + REPLY_LIMIT_PROMPT
+    )
     return template.format(focus=focus or "general correctness", max_turns=max_turns)

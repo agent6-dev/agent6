@@ -388,8 +388,7 @@ Different focuses or effort levels on one route still count as one blocking mode
 ```toml
 [review]
 when = "finish"
-scope = "diff"
-repo_max_turns = 20
+max_turns = 20
 interval_turns = 10
 min_remaining_budget_fraction = 0.25
 block_on = "any"
