@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import pathlib
 
-from agent6.viewmodel import machine_logs, machine_state, machine_watch
+from agent6.viewmodel.machine import logs as machine_logs
+from agent6.viewmodel.machine import state as machine_state
+from agent6.viewmodel.machine import watch as machine_watch
 
 
 def _ms(

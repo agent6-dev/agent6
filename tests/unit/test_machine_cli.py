@@ -853,7 +853,7 @@ def test_the_fresh_start_remedy_is_a_command_outside_machines(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The printed archive command preserves the instance without leaving a listing row."""
-    from agent6.viewmodel import machine_state
+    from agent6.viewmodel.machine import state as machine_state
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path.parent / f"{tmp_path.name} state"))

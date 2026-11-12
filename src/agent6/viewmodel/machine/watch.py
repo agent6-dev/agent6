@@ -7,7 +7,8 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-from agent6.viewmodel import machine_logs, machine_state
+from agent6.viewmodel.machine import logs as machine_logs
+from agent6.viewmodel.machine import state as machine_state
 
 
 def notification_key(n: machine_state.NotificationView) -> tuple[str, str, str]:

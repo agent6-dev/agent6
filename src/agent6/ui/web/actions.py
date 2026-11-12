@@ -28,14 +28,9 @@ from agent6.machine import (
 from agent6.sessions import ipc, layout, process
 from agent6.ui import directive_actions, spawn
 from agent6.ui.web import model
-from agent6.viewmodel import (
-    listing,
-    machine_logs,
-    machine_state,
-    open_approval,
-    pending_questions,
-    session_is_live,
-)
+from agent6.viewmodel import listing, open_approval, pending_questions, session_is_live
+from agent6.viewmodel.machine import logs as machine_logs
+from agent6.viewmodel.machine import state as machine_state
 
 
 def spawn_machine_create(

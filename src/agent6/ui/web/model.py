@@ -31,7 +31,6 @@ from agent6.viewmodel import (
     listing,
     machine_files,
     machine_instance_dirs,
-    machine_logs,
     operator_inputs,
     restate,
     session_state_as_dict,
@@ -39,6 +38,7 @@ from agent6.viewmodel import (
     tail_events,
     transcript_style,
 )
+from agent6.viewmodel.machine import logs as machine_logs
 
 
 def session_dir_for(cwd: pathlib.Path, session_id: str) -> pathlib.Path | None:

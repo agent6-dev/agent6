@@ -27,13 +27,13 @@ from agent6.viewmodel import (
     apply_event,
     died_without_end,
     initial_state,
-    machine_logs,
     machine_snapshot,
     manifest_header,
     session_state_as_dict,
     summarize_session_dir,
     tail_events,
 )
+from agent6.viewmodel.machine import logs as machine_logs
 
 # Coalesce delta bursts, heartbeat idle streams so a gone client is noticed, poll at human cadence.
 DELTA_COALESCE_S = 0.15

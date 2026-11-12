@@ -39,11 +39,11 @@ from agent6.viewmodel import (
     event_epoch,
     fold_machine,
     format,
-    machine_logs,
-    machine_state,
-    machine_watch,
     machine_word_for_dir,
 )
+from agent6.viewmodel.machine import logs as machine_logs
+from agent6.viewmodel.machine import state as machine_state
+from agent6.viewmodel.machine import watch as machine_watch
 
 
 def _cmd_machine_list() -> int:

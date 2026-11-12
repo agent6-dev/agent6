@@ -14,7 +14,8 @@ import pathlib
 from collections.abc import Callable
 from typing import ClassVar
 
-from agent6.viewmodel import machine_logs, machine_watch
+from agent6.viewmodel.machine import logs as machine_logs
+from agent6.viewmodel.machine import watch as machine_watch
 
 try:
     import textual
@@ -50,13 +51,13 @@ from agent6.viewmodel import (
     MachineState,
     fold_machine,
     format,
-    machine_state,
     machine_verb_refusal,
     machine_verb_refusals,
     probe_instance,
     verb_answer,
 )
 from agent6.viewmodel import events as viewmodel_events
+from agent6.viewmodel.machine import state as machine_state
 
 _VERB_ACTIONS: dict[str, machine_state.MachineVerb] = {
     "steer": "steer",

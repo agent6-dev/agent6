@@ -252,7 +252,7 @@ The parse boundary of a `.asm.toml` machine file.
 | `config` | `dict[str, Any]` | `factory` |
 
 - **Written by:** machine/semantics
-- **Read by:** app/machine/{bundle, create, host_preflight, run, state_configs}, machine/{__init__, contracts, dryrun, engine, execution, graph, journal}, ui/cli/{completers, config_cmds, machine_check, machine_cmds, watch}, ui/tui/machines, ui/web/{actions, server, sse}, viewmodel/machine_state
+- **Read by:** app/machine/{bundle, create, host_preflight, run, state_configs}, machine/{__init__, contracts, dryrun, engine, execution, graph, journal}, ui/cli/{completers, config_cmds, machine_check, machine_cmds, watch}, ui/tui/machines, ui/web/{actions, server, sse}, viewmodel/machine/state
 - **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (16 test files exercise it)
 
 ## JournalEvent
@@ -264,7 +264,7 @@ The append-only journal, the snapshots and the single-writer lock of one machine
 Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`, `AttemptSpend`
 
 - **Written by:** machine/{engine, journal}
-- **Read by:** app/machine/{crash_spend, run}, machine/{__init__, contracts, dryrun, execution, live_world}, ui/cli/{machine_cmds, watch}, ui/tui/machines, ui/web/actions, viewmodel/{machine_logs, machine_state, wire}
+- **Read by:** app/machine/{crash_spend, run}, machine/{__init__, contracts, dryrun, execution, live_world}, ui/cli/{machine_cmds, watch}, ui/tui/machines, ui/web/actions, viewmodel/wire, viewmodel/machine/{logs, state}
 - **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (13 test files exercise it)
 
 ## TaskNode
@@ -308,6 +308,6 @@ Render session status, context usage, and the wire snapshot.
 
 Public fields: [Formats](formats.md#session-snapshots).
 
-- **Written by:** viewmodel/{machine_state, state_view}
+- **Written by:** viewmodel/state_view, viewmodel/machine/state
 - **Read by:** ui/acp/updates, ui/cli/{sessions_show, steer_menu}, ui/tui/app, ui/web/{model, sse}, viewmodel/{__init__, wire}
 - **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (14 test files exercise it)

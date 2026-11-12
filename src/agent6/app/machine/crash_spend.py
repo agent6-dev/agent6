@@ -12,7 +12,7 @@ import datetime
 import pathlib
 
 from agent6.machine import AttemptSpend, MachineJournal, StepEvent
-from agent6.viewmodel import machine_logs
+from agent6.viewmodel.machine import logs as machine_logs
 
 
 def book_crashed_attempt(journal: MachineJournal, root: pathlib.Path) -> None:

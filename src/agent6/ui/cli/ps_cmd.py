@@ -15,7 +15,8 @@ import pathlib
 from agent6 import paths
 from agent6.sessions import layout, process
 from agent6.ui.cli import common
-from agent6.viewmodel import format, listing, machine_state
+from agent6.viewmodel import format, listing
+from agent6.viewmodel.machine import state as machine_state
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

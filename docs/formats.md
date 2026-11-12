@@ -1811,7 +1811,7 @@ A machine's `attach --json` and `/api/machine/<name>` read `MachineState` with t
 | `spend.output_tokens` | `JSON` | Recorded output tokens. |
 | `spend.in_flight_state` | `JSON` | The agent-state execution still in flight, or null. |
 
-Sources: [`machine_state_as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/machine_state.py), [`machine_snapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/wire.py).
+Sources: [`machine_state_as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/machine/state.py), [`machine_snapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/wire.py).
 
 ## Web API
 
@@ -3487,7 +3487,7 @@ Source: [`agent6.viewmodel.state_types.RunCommit`](https://github.com/agent6-dev
 
 **Support: public.** One state in the overview: its name, kind and position.
 
-Source: [`agent6.viewmodel.machine_state.MachineStateView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/machine_state.py).
+Source: [`agent6.viewmodel.machine.state.MachineStateView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/machine/state.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3501,7 +3501,7 @@ Source: [`agent6.viewmodel.machine_state.MachineStateView`](https://github.com/a
 
 **Support: public.** One journaled transition: state --label--> goto.
 
-Source: [`agent6.viewmodel.machine_state.TransitionView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/machine_state.py).
+Source: [`agent6.viewmodel.machine.state.TransitionView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/machine/state.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3529,7 +3529,7 @@ Source: [`agent6.machine.contracts.MachineResult`](https://github.com/agent6-dev
 
 **Support: public.** One journaled `machine.notify` (a state's `notify` message), in order.
 
-Source: [`agent6.viewmodel.machine_state.NotificationView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/machine_state.py).
+Source: [`agent6.viewmodel.machine.state.NotificationView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/machine/state.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |

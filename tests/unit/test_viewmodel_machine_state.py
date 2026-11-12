@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for the pure machine-journal fold in agent6.viewmodel.machine_state."""
+"""Tests for the pure machine-journal fold in agent6.viewmodel.machine.state."""
 
 from __future__ import annotations
 
@@ -13,7 +13,10 @@ import pytest
 
 from agent6.machine import journal as machine_journal
 from agent6.machine import load_machine
-from agent6.viewmodel import machine_logs, machine_state, machine_watch, tail
+from agent6.viewmodel import tail
+from agent6.viewmodel.machine import logs as machine_logs
+from agent6.viewmodel.machine import state as machine_state
+from agent6.viewmodel.machine import watch as machine_watch
 
 # A branch -> terminal machine: two states, no I/O, valid to load.
 TINY = """
@@ -513,7 +516,7 @@ def test_an_unreadable_summary_keeps_its_reason_to_one_line(
 ) -> None:
     """A spec with several problems keeps the listing's reason cell to one line."""
     from agent6.machine import MachineError
-    from agent6.viewmodel import machine_state as mod
+    from agent6.viewmodel.machine import state as mod
 
     d = tmp_path / "inst"
     d.mkdir()

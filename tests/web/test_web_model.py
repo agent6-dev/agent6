@@ -972,7 +972,7 @@ def test_a_waiting_machine_is_not_labelled_failed(tmp_path: pathlib.Path) -> Non
 
     `reason` is set for a blocked machine as well as a failed end.
     """
-    from agent6.viewmodel import machine_state
+    from agent6.viewmodel.machine import state as machine_state
 
     row = model._machine_row(  # pyright: ignore[reportPrivateUsage]
         machine_state.MachineSummary(

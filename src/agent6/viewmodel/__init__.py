@@ -23,7 +23,7 @@ from agent6.viewmodel.listing import (  # re-export
     summary_row,
 )
 from agent6.viewmodel.log_line import format_log_line  # re-export
-from agent6.viewmodel.machine_state import (  # re-export
+from agent6.viewmodel.machine.state import (  # re-export
     InstanceProbes,
     MachineState,
     MachineSummary,

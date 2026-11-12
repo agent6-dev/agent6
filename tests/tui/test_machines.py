@@ -17,7 +17,9 @@ from agent6.sessions import process
 from agent6.ui import notify, spawn
 from agent6.ui.tui import composer, modals
 from agent6.ui.tui import machines as machmod
-from agent6.viewmodel import machine_files, machine_logs, machine_state
+from agent6.viewmodel import machine_files
+from agent6.viewmodel.machine import logs as machine_logs
+from agent6.viewmodel.machine import state as machine_state
 from tests.tui import waits
 
 # A no-I/O machine that reaches a terminal at once, so `machine run` finishes with no model or jail.
@@ -1365,7 +1367,7 @@ def test_the_watch_poll_folds_the_machine_and_its_execution_once(tmp_path: pathl
 
     from agent6.machine import load_machine
     from agent6.ui.tui import machines
-    from agent6.viewmodel import machine_state as vm_mod
+    from agent6.viewmodel.machine import state as vm_mod
 
     f = tmp_path / "tiny.asm.toml"
     f.write_text(TINY, encoding="utf-8")

@@ -45,7 +45,7 @@ from agent6.sandbox import jail
 from agent6.sessions import event_log, ipc, process
 from agent6.tools import dispatch, operator_prompts
 from agent6.vcs import commit_message, git_ops, git_read
-from agent6.viewmodel import machine_logs
+from agent6.viewmodel.machine import logs as machine_logs
 
 
 def _no_console(_events: event_log.EventSink) -> None:

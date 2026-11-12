@@ -8,7 +8,7 @@ import json
 import pathlib
 
 from agent6.machine import AgentFact, StepEvent
-from agent6.viewmodel import machine_logs
+from agent6.viewmodel.machine import logs as machine_logs
 
 
 def _agent_step(seq: int, usd: float) -> StepEvent:
@@ -263,7 +263,7 @@ def test_transitions_carry_bounded_failure_evidence(tmp_path: pathlib.Path) -> N
     """A failed edge carries why on the shared fold's transition view; success stays one line."""
     from agent6.machine import journal as machine_journal
     from agent6.machine import load_machine
-    from agent6.viewmodel import machine_state
+    from agent6.viewmodel.machine import state as machine_state
 
     f = tmp_path / "m.asm.toml"
     f.write_text(

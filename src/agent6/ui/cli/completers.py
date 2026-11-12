@@ -17,7 +17,8 @@ from agent6.config import Config, ConfigError, io, layer, layer_data, layer_pres
 from agent6.models import choices as models_choices
 from agent6.sessions import id, layout, process
 from agent6.ui.cli import common, config_secrets
-from agent6.viewmodel import listing, machine_state, open_approval, session_is_live, session_log
+from agent6.viewmodel import listing, open_approval, session_is_live, session_log
+from agent6.viewmodel.machine import state as machine_state
 
 
 def complete_finding_ids(prefix: str, **kw: Any) -> list[str]:

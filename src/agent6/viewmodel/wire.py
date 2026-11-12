@@ -21,14 +21,14 @@ from agent6.viewmodel import (
     format,
     lanes,
     listing,
-    machine_logs,
-    machine_state,
     session_log,
     session_status,
     state_view,
     tail,
 )
 from agent6.viewmodel import state as viewmodel_state
+from agent6.viewmodel.machine import logs as machine_logs
+from agent6.viewmodel.machine import state as machine_state
 
 
 def existing_run_branch(

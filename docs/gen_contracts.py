@@ -223,7 +223,7 @@ CONTRACTS: tuple[Contract, ...] = (
         # The dict these builders return IS the payload `attach --json`, the web
         # page, and the SSE stream serialize; their docstrings state the contract.
         primary=("session_state_as_dict",),
-        writers=("viewmodel/state_view.py", "viewmodel/machine_state.py"),
+        writers=("viewmodel/state_view.py", "viewmodel/machine/state.py"),
         pins=("tests/unit/data/golden_session_state.json", "tests/unit/test_viewmodel_state.py"),
     ),
 )

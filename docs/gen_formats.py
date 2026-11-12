@@ -364,7 +364,7 @@ SESSION = (
 BUDGET = Producer("viewmodel.state_view", "budget_dict", "`budget` rendered fields", "d")
 MACHINE = (
     Producer(
-        "viewmodel.machine_state", "machine_state_as_dict", "`attach --json` machine snapshot", "d"
+        "viewmodel.machine.state", "machine_state_as_dict", "`attach --json` machine snapshot", "d"
     ),
     Producer("viewmodel.wire", "machine_snapshot", "`/api/machine/<name>` snapshot", "d"),
 )
@@ -452,7 +452,7 @@ MODELS = (
     ("sessions.manifest", "SessionManifest"),
     ("ui.cli.ps_cmd", "_Row"),
     ("viewmodel.state_types", "SessionState"),
-    ("viewmodel.machine_state", "MachineState"),
+    ("viewmodel.machine.state", "MachineState"),
     ("viewmodel.review", "MergeReviewGuard"),
     ("viewmodel.receipt", "ReceiptView"),
     ("viewmodel.lanes", "ChildView"),
@@ -685,7 +685,7 @@ def build_markdown() -> str:
         "A machine's `attach --json` and `/api/machine/<name>` read `MachineState` "
         "with the computed fields below."
     )
-    machine_cls = importlib.import_module("agent6.viewmodel.machine_state").MachineState
+    machine_cls = importlib.import_module("agent6.viewmodel.machine.state").MachineState
     sections.append(_table(composed_fields(machine_cls, MACHINE)))
     sections.append(
         "Sources: "

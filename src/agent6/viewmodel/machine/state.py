@@ -16,7 +16,8 @@ from typing import Any, Literal
 
 from agent6.machine import MachineError, MachineResult, journal, load_machine, schema
 from agent6.sessions import layout, process
-from agent6.viewmodel import format, machine_logs
+from agent6.viewmodel import format
+from agent6.viewmodel.machine import logs as machine_logs
 
 # Front-ends render notifications as ephemeral surfaces, so only the tail travels.
 _NOTIFY_KEEP = 20
