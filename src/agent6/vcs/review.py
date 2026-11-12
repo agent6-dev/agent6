@@ -13,8 +13,7 @@ from typing import Literal
 
 import pydantic
 
-from agent6 import errors, review_records
-from agent6.tools import path_safety
+from agent6 import errors, path_safety, review_records
 from agent6.vcs import git_command, git_files, git_history, git_policy, git_read, review_submodules
 
 # Diff grounding: the (path, line) citations this diff supports.

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pathlib
 
-from agent6 import errors, kinds
+from agent6 import errors, kinds, path_safety
 from agent6 import paths as agent6_paths
 from agent6.app import confine, fork_worktrees, session_runtime, session_setup
 from agent6.config import Config
@@ -22,8 +22,8 @@ from agent6.sandbox import (
     landlock_abi,
     run_in_jail,
 )
-from agent6.tools import path_safety, target_policy
 from agent6.tools import policy as tools_policy
+from agent6.tools import target_policy
 from agent6.ui.cli import check_render, common, sandbox_paths
 from agent6.vcs import git_read
 

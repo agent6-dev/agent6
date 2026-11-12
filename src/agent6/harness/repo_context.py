@@ -12,8 +12,7 @@ import dataclasses
 import os
 import pathlib
 
-from agent6 import errors, kinds, review_records, terminal
-from agent6.tools import path_safety
+from agent6 import errors, kinds, path_safety, review_records, terminal
 from agent6.vcs import git_read, review_rule_reader
 
 _REPO_MAP_MAX_LINES = 60

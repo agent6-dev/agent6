@@ -20,7 +20,7 @@ from typing import Final
 import tree_sitter
 import tree_sitter_language_pack
 
-from agent6.tools import path_safety
+from agent6 import path_safety
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

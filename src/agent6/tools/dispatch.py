@@ -24,7 +24,7 @@ from typing import Any, Literal
 
 import pydantic
 
-from agent6 import errors, evidence, kinds, paths
+from agent6 import errors, evidence, kinds, path_safety, paths
 from agent6.config import Config
 from agent6.context import memory, skills
 from agent6.graph import curator as graph_curator
@@ -383,6 +383,10 @@ class ToolDispatcher:
         except tool_errors.ToolError as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise
+        except path_safety.ContainmentError as exc:
+            # The boundary's refusal reaches the model as the tool's.
+            self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
+            raise tool_errors.ToolError(str(exc)) from exc
         except tool_errors.OperatorCommandUnexecutableError as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise

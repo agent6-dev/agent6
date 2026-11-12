@@ -8,9 +8,9 @@ import pathlib
 
 import pytest
 
-from agent6 import kinds
+from agent6 import kinds, path_safety
 from agent6.config import Config
-from agent6.tools import policy, tool_errors
+from agent6.tools import policy
 
 
 def _host_cfg() -> Config:
@@ -131,7 +131,7 @@ def test_dropped_tmp_grant_names_command_reach_and_file_tool_refusal(
     workspace = policy.workspace_for(cfg, repo, grants=grants)
     assert not workspace.read_roots
     with pytest.raises(
-        tool_errors.ToolError, match="Absolute paths are only allowed inside a granted path"
+        path_safety.ContainmentError, match="Absolute paths are only allowed inside a granted path"
     ):
         workspace.resolve_read(str(note))
     (dropped,) = grants.dropped

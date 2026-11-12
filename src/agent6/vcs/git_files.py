@@ -10,8 +10,7 @@ import pathlib
 import stat
 import tempfile
 
-from agent6 import errors
-from agent6.tools import path_safety
+from agent6 import errors, path_safety
 from agent6.vcs import git_command, git_history, git_read
 
 C_ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11, '"': 34, "\\": 92}

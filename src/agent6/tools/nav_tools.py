@@ -12,8 +12,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from agent6 import path_safety
 from agent6.tools import index as tools_index
-from agent6.tools import path_safety, results, schema, tool_errors
+from agent6.tools import results, schema, tool_errors
 
 INDEX_RESULT_CAP = 500
 

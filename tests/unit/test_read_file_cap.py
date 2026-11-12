@@ -14,8 +14,9 @@ import pathlib
 
 import pytest
 
+from agent6 import path_safety
 from agent6.config import Config
-from agent6.tools import dispatch, fs_tools, path_safety
+from agent6.tools import dispatch, fs_tools
 
 
 def _read(root: pathlib.Path, **args: object) -> dict[str, object]:
@@ -34,7 +35,7 @@ def test_read_file_passes_a_bounded_limit_to_read_contained(
     A spy pins it so an unbounded read (limit_chars=None) fails here even though the output cap
     would still look right.
     """
-    from agent6.tools import path_safety
+    from agent6 import path_safety
 
     seen: list[int | None] = []
     real = path_safety.read_contained

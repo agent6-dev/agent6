@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The in-process tools' path containment (`tools/path_safety`)."""
+"""The in-process tools' path containment (`agent6/path_safety`)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import signal
 
 import pytest
 
-from agent6.tools import path_safety, tool_errors
+from agent6 import path_safety
 
 
 def test_contain_refuses_an_uncontained_relative_path(tmp_path: pathlib.Path) -> None:
@@ -21,7 +21,7 @@ def test_contain_refuses_an_uncontained_relative_path(tmp_path: pathlib.Path) ->
     """
     (tmp_path / "root").mkdir()
     (tmp_path / "outside.txt").write_text("host\n", encoding="utf-8")
-    with pytest.raises(tool_errors.ToolError, match=r"\.\."):
+    with pytest.raises(path_safety.ContainmentError, match=r"\.\."):
         path_safety.contain(tmp_path / "root", "../outside.txt")
 
 
@@ -32,7 +32,7 @@ def test_contain_refuses_an_absolute_path(tmp_path: pathlib.Path) -> None:
     file no containment check ever saw.
     """
     (tmp_path / "root").mkdir()
-    with pytest.raises(tool_errors.ToolError, match="Absolute"):
+    with pytest.raises(path_safety.ContainmentError, match="Absolute"):
         path_safety.contain(tmp_path / "root", "/etc/hostname")
 
 
@@ -47,7 +47,7 @@ def test_open_contained_re_checks_a_hand_built_safe_path(tmp_path: pathlib.Path,
     forged = path_safety.SafePath(
         base=tmp_path / "root", rel_path=pathlib.Path(rel), abs_path=pathlib.Path(rel)
     )
-    with pytest.raises(tool_errors.ToolError):
+    with pytest.raises(path_safety.ContainmentError):
         path_safety.open_contained(forged, os.O_RDONLY)
 
 
@@ -81,10 +81,10 @@ def test_a_leaf_swapped_for_a_fifo_cannot_block_a_read(tmp_path: pathlib.Path) -
     signal.signal(signal.SIGALRM, _timeout)
     signal.alarm(5)
     try:
-        with pytest.raises(tool_errors.ToolError, match="Not a regular file"):
+        with pytest.raises(path_safety.ContainmentError, match="Not a regular file"):
             path_safety.read_contained(ws.resolve_read("notes.txt"))
         # The write side blocks the same way (O_WRONLY on a reader-less FIFO).
-        with pytest.raises(tool_errors.ToolError, match="Not a regular file"):
+        with pytest.raises(path_safety.ContainmentError, match="Not a regular file"):
             path_safety.write_contained(ws.resolve_write("notes.txt"), "payload")
     finally:
         signal.alarm(0)
@@ -115,12 +115,12 @@ def test_rulings_live_outside_the_memory_write_grant(tmp_path: pathlib.Path) -> 
     ws = policy.workspace_for(Config(), root, memory_dir=mem)
     assert not decisions.is_relative_to(mem)
     ws.resolve_write(str(mem / "fact.md"))
-    with pytest.raises(tool_errors.ToolError, match="only allowed inside a granted path"):
+    with pytest.raises(path_safety.ContainmentError, match="only allowed inside a granted path"):
         ws.resolve_write(str(decisions))
     link = tmp_path / "link"
     link.symlink_to(state, target_is_directory=True)
     ws = policy.workspace_for(Config(), root, memory_dir=link / "memory")
-    with pytest.raises(tool_errors.ToolError, match="only allowed inside a granted path"):
+    with pytest.raises(path_safety.ContainmentError, match="only allowed inside a granted path"):
         ws.resolve_write(str(link / "decisions.md"))
 
 
@@ -149,11 +149,11 @@ def test_the_rulings_file_is_hidden_even_where_a_grant_reaches_it(
     ws = policy.workspace_for(Config(), root, memory_dir=mem)
     assert ws.resolve_read(str(mem / "fact.md")).abs_path == (mem / "fact.md").resolve()
     ws.resolve_write(str(mem / "fact.md"))
-    with pytest.raises(tool_errors.ToolError, match="hidden from this run"):
+    with pytest.raises(path_safety.ContainmentError, match="hidden from this run"):
         ws.resolve_read(str(decisions))
-    with pytest.raises(tool_errors.ToolError, match="hidden from this run"):
+    with pytest.raises(path_safety.ContainmentError, match="hidden from this run"):
         ws.resolve_write(str(decisions))
-    with pytest.raises(tool_errors.ToolError, match="hidden from this run"):
+    with pytest.raises(path_safety.ContainmentError, match="hidden from this run"):
         ws.resolve_read(str(decisions.relative_to(root)))
 
 
@@ -175,9 +175,9 @@ def test_unlink_walks_to_the_parent_like_a_write(tmp_path: pathlib.Path) -> None
     (root / "sub").rmdir()
     (root / "sub").symlink_to(outside)
 
-    with pytest.raises(tool_errors.ToolError, match="symlink"):
+    with pytest.raises(path_safety.ContainmentError, match="symlink"):
         path_safety.write_contained(sp, "x")
-    with pytest.raises(tool_errors.ToolError, match="symlink"):
+    with pytest.raises(path_safety.ContainmentError, match="symlink"):
         path_safety.unlink_contained(sp)
     assert (outside / "victim.txt").read_text(encoding="utf-8") == "operator file\n"
 
@@ -247,7 +247,9 @@ def test_a_grant_repointed_below_a_write_grant_is_dropped(tmp_path: pathlib.Path
     ws = _granted(tmp_path, shared / "inbox", shared)
     assert outside not in ws.read_roots
     for path in (outside / "secret.txt", shared / "inbox" / "secret.txt"):
-        with pytest.raises(tool_errors.ToolError, match="only allowed inside a granted path"):
+        with pytest.raises(
+            path_safety.ContainmentError, match="only allowed inside a granted path"
+        ):
             ws.resolve_read(str(path))
 
 
@@ -296,7 +298,7 @@ def test_an_absolute_symlink_loop_under_a_grant_is_refused(tmp_path: pathlib.Pat
     grant.mkdir()
     (grant / "loop").symlink_to("loop")
     ws = path_safety.Workspace(root=tmp_path / "root", read_roots=(grant,))
-    with pytest.raises(tool_errors.ToolError, match="symlink loop"):
+    with pytest.raises(path_safety.ContainmentError, match="symlink loop"):
         ws.resolve_read(str(grant / "loop"))
 
 

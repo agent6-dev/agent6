@@ -13,8 +13,9 @@ from collections.abc import Callable
 
 import pytest
 
+from agent6 import path_safety
 from agent6.context import skills
-from agent6.tools import path_safety, skill_tools, tool_errors
+from agent6.tools import skill_tools, tool_errors
 
 _WS = path_safety.Workspace(root=pathlib.Path("/nonexistent"))
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 import pathlib
 from collections.abc import Iterable
 
-from agent6.tools import path_safety, tool_errors
+from agent6 import path_safety
 
 _TEST_DIR_NAMES = ("tests", "test")
 # Vendored trees and envs are large and judge nothing.
@@ -93,7 +93,7 @@ def _visible(workspace: path_safety.Workspace, rel: pathlib.Path) -> bool:
     """Return whether the path passes the host workspace boundary."""
     try:
         workspace.resolve_read(rel.as_posix())
-    except tool_errors.ToolError:
+    except path_safety.ContainmentError:
         return False
     return True
 

@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import pathlib
 
-from agent6 import errors
-from agent6.tools import path_safety
+from agent6 import errors, path_safety
 from agent6.vcs import git_command
 
 

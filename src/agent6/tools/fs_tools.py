@@ -12,14 +12,13 @@ from __future__ import annotations
 import pathlib
 from typing import Any
 
-from agent6 import media, terminal
+from agent6 import media, path_safety, terminal
 from agent6.config import Config
 from agent6.tools import (
     docs_bundle,
     edit_diag,
     media_files,
     patch_apply,
-    path_safety,
     results,
     schema,
     tool_errors,
@@ -549,7 +548,7 @@ def apply_patch(
                 written[str(sp.rel_path)] = path_safety.write_contained(sp, new_content)
                 if index is not None:
                     index.mark_changed(sp.abs_path)
-        except (OSError, tool_errors.ToolError) as exc:
+        except (OSError, path_safety.ContainmentError) as exc:
             detail = (exc.strerror or str(exc)) if isinstance(exc, OSError) else str(exc)
             changed = f"; already changed: {', '.join(landed)}" if landed else ""
             raise tool_errors.ToolError(f"apply_patch: {sp.rel_path}: {detail}{changed}") from exc

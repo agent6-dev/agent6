@@ -558,9 +558,10 @@ def test_wire_tool_error_shape(tmp_path: pathlib.Path) -> None:
 
 def test_the_tool_error_log_line_names_the_tool_once() -> None:
     """A tool raises the bare message; the logger prefixes the tool's name."""
+    from agent6 import path_safety
     from agent6.context import skills
     from agent6.harness import loop, loop_state
-    from agent6.tools import path_safety, skill_tools
+    from agent6.tools import skill_tools
 
     with pytest.raises(tool_errors.ToolError) as exc:
         skill_tools.use_skill(

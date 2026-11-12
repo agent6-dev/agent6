@@ -15,10 +15,10 @@ import tempfile
 from collections.abc import Sequence
 from typing import Any
 
-from agent6 import kinds, paths
+from agent6 import kinds, path_safety, paths
 from agent6.config import Config
 from agent6.sandbox import detect, jail, tool_paths
-from agent6.tools import path_safety, result_format, target_policy
+from agent6.tools import result_format, target_policy
 
 # `full`'s default HOME: the launcher creates it inside the run's private /tmp tmpfs.
 JAIL_TMP_HOME = pathlib.Path("/tmp/agent6-home")  # noqa: S108 - resolved inside the jail

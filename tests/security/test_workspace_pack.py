@@ -4,12 +4,12 @@ import pathlib
 
 import pytest
 
-from agent6 import errors, kinds, pack, paths
+from agent6 import errors, kinds, pack, path_safety, paths
 from agent6.app import confine
 from agent6.config import Config
 from agent6.sandbox import jail
 from agent6.sessions import lock
-from agent6.tools import dispatch, index, path_safety, tool_errors
+from agent6.tools import dispatch, index, tool_errors
 from agent6.vcs import git_read
 
 
@@ -52,7 +52,7 @@ def test_bare_workspace_and_host_reads_hide_pack(tmp_path: pathlib.Path) -> None
     secret = _secret(tmp_path)
     for ws in (path_safety.Workspace(tmp_path), path_safety.host_workspace(tmp_path)):
         assert ws.is_denied(secret)
-        with pytest.raises(tool_errors.ToolError, match="absent"):
+        with pytest.raises(path_safety.ContainmentError, match="absent"):
             ws.resolve_read(".agent6/config/secrets.toml")
     assert path_safety.read_workspace_text(tmp_path, ".agent6/config/secrets.toml") == ""
     symbols = index.SymbolIndex(path_safety.Workspace(tmp_path))
@@ -111,7 +111,7 @@ def test_file_boundary_denies_pack_names_inside_grants(tmp_path: pathlib.Path) -
     secret = _secret(grant / "child")
     ws = path_safety.Workspace(root, read_roots=(grant,), exempt=(grant,))
     assert ws.is_denied(secret)
-    with pytest.raises(tool_errors.ToolError, match="absent"):
+    with pytest.raises(path_safety.ContainmentError, match="absent"):
         ws.resolve_read(str(secret))
 
 

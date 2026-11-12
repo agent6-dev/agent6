@@ -2996,8 +2996,7 @@ def test_read_file_bounds_media_before_validation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, prefix: bytes, cap: int
 ) -> None:
     """Media reads stop at the document cap plus one byte and refuse oversized input."""
-    from agent6 import media
-    from agent6.tools import path_safety
+    from agent6 import media, path_safety
 
     real = path_safety.read_bytes_contained
     seen: list[int | None] = []

@@ -9,7 +9,8 @@ import textwrap
 
 import pytest
 
-from agent6.tools import index, path_safety
+from agent6 import path_safety
+from agent6.tools import index
 
 # ---------------------------------------------------------------------------
 # Fixtures

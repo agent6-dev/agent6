@@ -15,8 +15,9 @@ import pathlib
 from collections.abc import Callable
 from typing import Any
 
+from agent6 import path_safety
 from agent6.context import skills
-from agent6.tools import path_safety, results, schema, tool_errors
+from agent6.tools import results, schema, tool_errors
 
 
 def use_skill(
@@ -54,7 +55,7 @@ def use_skill(
             real = (skill.dir / name).resolve()
         else:
             real = path_safety.contain(skill.dir.resolve(), args.file).abs_path
-    except tool_errors.ToolError as exc:  # absolute or `..`
+    except path_safety.ContainmentError as exc:  # absolute or `..`
         raise tool_errors.ToolError(f"{name!r} escapes the skill directory") from exc
     if ws.is_denied(real):
         raise tool_errors.ToolError(
@@ -73,7 +74,7 @@ def use_skill(
     except path_safety.NotRegularFileError:
         # A directory or a FIFO a hostile skill dir planted: refused by the open itself.
         raise tool_errors.ToolError(f"no such file in skill {skill.name!r}: {name!r}") from None
-    except tool_errors.ToolError as exc:  # a symlink component
+    except path_safety.ContainmentError as exc:  # a symlink component
         raise tool_errors.ToolError(f"{name!r} escapes the skill directory") from exc
     try:
         with os.fdopen(fd, "rb") as handle:

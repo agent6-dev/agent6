@@ -18,10 +18,13 @@ import stat
 from collections.abc import Iterable
 
 from agent6 import paths
-from agent6.tools import tool_errors
 
 
-class NotRegularFileError(tool_errors.ToolError):
+class ContainmentError(Exception):
+    """A path refused at the workspace boundary: absolute, `..`, out of the root, or a bad leaf."""
+
+
+class NotRegularFileError(ContainmentError):
     """The leaf is inside the boundary but is a directory, a FIFO or a device.
 
     Its own type because callers word it differently from a containment refusal.
@@ -142,7 +145,7 @@ class Workspace:
             The contained path.
 
         Raises:
-            ToolError: The path escapes the workspace and every read grant, or is denied.
+            ContainmentError: The path escapes the workspace and every read grant, or is denied.
         """
         return self._resolve(candidate, (self.root, *self.read_roots))
 
@@ -156,7 +159,7 @@ class Workspace:
             The contained path.
 
         Raises:
-            ToolError: The path escapes the workspace and every write grant, or is denied.
+            ContainmentError: The path escapes the workspace and every write grant, or is denied.
         """
         return self._resolve(candidate, (self.root, *self.write_roots))
 
@@ -180,13 +183,13 @@ class Workspace:
             The path contained against that grant.
 
         Raises:
-            ToolError: No grant holds the path, or it loops through symlinks.
+            ContainmentError: No grant holds the path, or it loops through symlinks.
         """
         target = resolved(candidate)
         for base in sorted(bases, key=lambda b: len(b.parts), reverse=True):
             if path_within(target, base):
                 return SafePath(base=base, rel_path=target.relative_to(base), abs_path=target)
-        raise tool_errors.ToolError(
+        raise ContainmentError(
             f"Absolute paths are only allowed inside a granted path: {candidate!r}"
         )
 
@@ -194,7 +197,7 @@ class Workspace:
         # Refused, not answered empty: a tool result can carry an error where a jail mask cannot.
         d = self._denying(sp.abs_path) or self._denying(self.root / candidate)
         if d is not None:
-            raise tool_errors.ToolError(
+            raise ContainmentError(
                 f"Path is absent (hidden from this run): {candidate!r} (under {d})"
             )
 
@@ -213,13 +216,13 @@ def contain(base: pathlib.Path, candidate: str | pathlib.Path) -> SafePath:
         The contained path.
 
     Raises:
-        ToolError: The path is absolute or contains `..`.
+        ContainmentError: The path is absolute or contains `..`.
     """
     rel = pathlib.Path(candidate)
     if rel.is_absolute():
-        raise tool_errors.ToolError(f"Absolute paths not allowed: {str(candidate)!r}")
+        raise ContainmentError(f"Absolute paths not allowed: {str(candidate)!r}")
     if ".." in rel.parts:
-        raise tool_errors.ToolError(f"Path contains '..': {str(candidate)!r}")
+        raise ContainmentError(f"Path contains '..': {str(candidate)!r}")
     return SafePath(base=base, rel_path=rel, abs_path=base / rel)
 
 
@@ -234,18 +237,19 @@ def resolve_in_root(root: pathlib.Path, candidate: str) -> SafePath:
         The contained path.
 
     Raises:
-        ToolError: The path is absolute, contains `..`, loops through symlinks, or escapes the root.
+        ContainmentError: The path is absolute, contains `..`, loops through symlinks, or
+            escapes the root.
     """
     if candidate.startswith("/"):
-        raise tool_errors.ToolError(f"Absolute paths not allowed: {candidate!r}")
+        raise ContainmentError(f"Absolute paths not allowed: {candidate!r}")
     parts = pathlib.Path(candidate).parts
     if ".." in parts:
-        raise tool_errors.ToolError(f"Path contains '..': {candidate!r}")
+        raise ContainmentError(f"Path contains '..': {candidate!r}")
     abs_path = resolved(root / candidate)
     try:
         rel = abs_path.relative_to(root.resolve())
     except ValueError as exc:
-        raise tool_errors.ToolError(f"Path escapes repo root: {candidate!r}") from exc
+        raise ContainmentError(f"Path escapes repo root: {candidate!r}") from exc
     return SafePath(base=root, rel_path=rel, abs_path=abs_path)
 
 
@@ -263,13 +267,13 @@ def resolved(candidate: str | pathlib.Path) -> pathlib.Path:
         The resolved path.
 
     Raises:
-        ToolError: The path loops through symlinks.
+        ContainmentError: The path loops through symlinks.
     """
     try:
         return pathlib.Path(os.path.realpath(candidate, strict=True))
     except OSError as exc:
         if exc.errno == errno.ELOOP:
-            raise tool_errors.ToolError(f"Path is a symlink loop: {str(candidate)!r}") from exc
+            raise ContainmentError(f"Path is a symlink loop: {str(candidate)!r}") from exc
         return pathlib.Path(candidate).resolve()
 
 
@@ -319,16 +323,16 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
         A descriptor the caller owns.
 
     Raises:
-        ToolError: The path is not relative, contains `..`, or a component became a symlink or
-            is not a directory.
+        ContainmentError: The path is not relative, contains `..`, or a component became a
+            symlink or is not a directory.
         NotRegularFileError: The leaf is not a regular file.
         OSError: The open failed for any other reason.
     """
     rel_path = sp.rel_path
     if rel_path.is_absolute():
-        raise tool_errors.ToolError(f"Path is not relative to the workspace: {rel_path}")
+        raise ContainmentError(f"Path is not relative to the workspace: {rel_path}")
     if ".." in rel_path.parts:
-        raise tool_errors.ToolError(f"Path contains '..': {rel_path}")
+        raise ContainmentError(f"Path contains '..': {rel_path}")
     dir_fd = os.open(sp.base, os.O_PATH | os.O_DIRECTORY)
     at = "."  # the component the walk is on, for the error path below
     try:
@@ -353,13 +357,13 @@ def open_contained(sp: SafePath, flags: int, *, create_parents: bool = False) ->
         # O_NOFOLLOW|O_DIRECTORY on a symlink is ENOTDIR on Linux, not ELOOP; one lstat names it.
         with contextlib.suppress(OSError):
             if stat.S_ISLNK(os.lstat(at, dir_fd=dir_fd).st_mode):
-                raise tool_errors.ToolError(
+                raise ContainmentError(
                     f"Path became a symlink while it was being used: {rel_path}"
                 ) from exc
-        raise tool_errors.ToolError(f"Path component is not a directory: {rel_path}") from exc
+        raise ContainmentError(f"Path component is not a directory: {rel_path}") from exc
     except OSError as exc:
         if exc.errno == errno.ELOOP:
-            raise tool_errors.ToolError(
+            raise ContainmentError(
                 f"Path became a symlink while it was being used: {rel_path}"
             ) from exc
         if exc.errno == errno.ENXIO:
@@ -424,7 +428,7 @@ def read_workspace_text(root: pathlib.Path, name: str, hide: Iterable[str] = ())
     """
     try:
         return read_contained(host_workspace(root, hide).resolve_read(name), errors="replace")
-    except (OSError, tool_errors.ToolError):
+    except (OSError, ContainmentError):
         return ""
 
 
@@ -472,10 +476,10 @@ def unlink_contained(sp: SafePath) -> None:
         sp: The contained file.
 
     Raises:
-        ToolError: The path names the base itself, or a component is not a directory.
+        ContainmentError: The path names the base itself, or a component is not a directory.
     """
     if not sp.rel_path.name:
-        raise tool_errors.ToolError(f"Not a file: {sp.rel_path}")
+        raise ContainmentError(f"Not a file: {sp.rel_path}")
     parent = SafePath(sp.base, sp.rel_path.parent, sp.abs_path.parent)
     fd = open_contained(parent, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -517,7 +521,7 @@ def write_contained(sp: SafePath, content: str) -> int:
         The number of bytes written.
     """
     like = None
-    with contextlib.suppress(OSError, tool_errors.ToolError):
+    with contextlib.suppress(OSError, ContainmentError):
         like = read_bytes_contained(sp)
     data = disk_bytes(content, like=like)
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC

@@ -5,8 +5,7 @@ from __future__ import annotations
 import pathlib
 import posixpath
 
-from agent6 import errors, review_records
-from agent6.tools import path_safety, tool_errors
+from agent6 import errors, path_safety, review_records
 from agent6.vcs import git_files, git_read
 
 _LINK_LIMIT = 8
@@ -37,7 +36,7 @@ def _rule_entry(workspace: path_safety.Workspace, tree: str, name: str) -> tuple
         resolved = pathlib.PurePosixPath(posixpath.normpath((resolved / pending.pop(0)).as_posix()))
         try:
             path = path_safety.contain(root, resolved.as_posix())
-        except tool_errors.ToolError as exc:
+        except path_safety.ContainmentError as exc:
             raise errors.GitError(_NOT_REGULAR) from exc
         if resolved == pathlib.PurePosixPath():
             if pending:

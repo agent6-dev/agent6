@@ -23,7 +23,7 @@ import re
 import shlex
 from collections.abc import Callable, Iterator
 
-from agent6.tools import path_safety, tool_errors
+from agent6 import path_safety
 from agent6.vcs import git_read
 
 # A command line with any of these, or a leading assignment, is shell, wrapped in `sh -c`.
@@ -249,7 +249,7 @@ def read_agents_md(
         return path_safety.read_workspace_text(root, name, hide)
     try:
         path_safety.host_workspace(root, hide).resolve_read(name)
-    except (OSError, tool_errors.ToolError):
+    except (OSError, path_safety.ContainmentError):
         return ""
     return git_read.read_file_at(root, at, name)
 

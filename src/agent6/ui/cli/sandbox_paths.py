@@ -8,14 +8,14 @@ import dataclasses
 import pathlib
 from collections.abc import Callable
 
-from agent6 import kinds
+from agent6 import kinds, path_safety
 from agent6 import paths as agent6_paths
 from agent6.app import confine
 from agent6.config import Config
 from agent6.sandbox import tool_paths
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import path_safety, target_policy
 from agent6.tools import policy as tools_policy
+from agent6.tools import target_policy
 
 # Mirrors the launcher's system binds and WriteFile device rules, pinned in tests/security.
 FULL_SYSTEM_BINDS = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/alternatives")
