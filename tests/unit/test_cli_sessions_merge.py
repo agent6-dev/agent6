@@ -982,12 +982,12 @@ def _head_message(repo: pathlib.Path) -> str:
 def test_merge_squash_combine_style_uses_gits_own_message(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """[git.commit.squash].message = combine commits with git's own squash message."""
+    """[git.commit].squash_message = combine commits with git's own squash message."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
-        '[git.commit.squash]\nmessage = "combine"\n', encoding="utf-8"
+        '[git.commit]\nsquash_message = "combine"\n', encoding="utf-8"
     )
     _setup_run(
         tmp_path,
@@ -1008,7 +1008,7 @@ def test_merge_squash_conventional_style_derives_the_subject(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
-        '[git.commit.squash]\nmessage = "conventional"\n', encoding="utf-8"
+        '[git.commit]\nsquash_message = "conventional"\n', encoding="utf-8"
     )
     _setup_run(tmp_path, "run-CNV111", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     assert main(["sessions", "merge", "run-CNV111", "--method", "squash"]) == 0
@@ -1084,7 +1084,7 @@ def test_merge_squash_conventional_cuts_the_task_once(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
-        '[git.commit.squash]\nmessage = "conventional"\n', encoding="utf-8"
+        '[git.commit]\nsquash_message = "conventional"\n', encoding="utf-8"
     )
     _setup_run(tmp_path, "run-CNV222", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     task = (
@@ -1132,7 +1132,7 @@ def test_merge_help_names_the_default_message(capsys: pytest.CaptureFixture[str]
     with pytest.raises(SystemExit):
         main(["sessions", "merge", "--help"])
     out = " ".join(capsys.readouterr().out.split())
-    assert "git.commit.squash.message" in out and "condensed session summary" not in out
+    assert "git.commit.squash_message" in out and "condensed session summary" not in out
 
 
 def test_merge_squash_model_style_degrades_on_a_budget_fault(
@@ -1149,7 +1149,7 @@ def test_merge_squash_model_style_degrades_on_a_budget_fault(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
-        '[git.commit.squash]\nmessage = "model"\n', encoding="utf-8"
+        '[git.commit]\nsquash_message = "model"\n', encoding="utf-8"
     )
 
     def over(*_a: object, **_k: object) -> object:
@@ -1170,7 +1170,7 @@ def test_merge_squash_model_style_degrades_with_a_warning(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
-        '[git.commit.squash]\nmessage = "model"\n', encoding="utf-8"
+        '[git.commit]\nsquash_message = "model"\n', encoding="utf-8"
     )
     _setup_run(tmp_path, "run-MDL111", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     assert main(["sessions", "merge", "run-MDL111", "--method", "squash"]) == 0
@@ -1188,7 +1188,7 @@ def test_merge_squash_model_style_names_the_providers_failure(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
-        '[git.commit.squash]\nmessage = "model"\n', encoding="utf-8"
+        '[git.commit]\nsquash_message = "model"\n', encoding="utf-8"
     )
 
     class _AtLimit:
@@ -1225,7 +1225,7 @@ def test_model_squash_uses_the_whole_run(
     config_dir = tmp_path / "g" / "agent6"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text(
-        '[git.commit.squash]\nmessage = "model"\n', encoding="utf-8"
+        '[git.commit]\nsquash_message = "model"\n', encoding="utf-8"
     )
     session_id = "run-MDL222"
     _setup_run(

@@ -738,6 +738,8 @@ _MISSING_BACKEND = (
 # A key an earlier release accepted, and what to write instead.
 _REPLACED_KEYS = {
     "context": "rename the context table to [compaction]; keep its keys and values",
+    "git.commit.checkpoint": "moved config key; use git.commit.checkpoint_message",
+    "git.commit.squash": "moved config key; use git.commit.squash_message",
     "harness.verify_settled_stop_after": (
         "unknown config key; use harness.settled_stop_after with the same value"
     ),

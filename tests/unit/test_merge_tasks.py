@@ -178,7 +178,7 @@ def test_tasks_merge_under_the_model_style_takes_the_models_message_with_the_tas
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     (tmp_path / "g" / "agent6").mkdir(parents=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
-        '[git.commit.squash]\nmessage = "model"\n', encoding="utf-8"
+        '[git.commit]\nsquash_message = "model"\n', encoding="utf-8"
     )
     base = _repo(tmp_path)
     layout = _session(tmp_path, "run-TASK05", base)

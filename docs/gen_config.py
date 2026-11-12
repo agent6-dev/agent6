@@ -6,7 +6,7 @@
 The template is the page. Where a field table belongs it carries one marker
 naming the sections whose leaves fill it:
 
-    <!-- config-table: git.commit.checkpoint git.commit.squash -->
+    <!-- config-table: mcp mcp.servers.<name> -->
 
 Each row comes from the model, so a renamed field moves its row and a wrong
 default is not expressible; a row that reads badly has a bad description.

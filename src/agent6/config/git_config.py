@@ -16,57 +16,8 @@ import pydantic
 from agent6.config import validation
 
 
-class GitCommitCheckpointConfig(pydantic.BaseModel):
-    """Message style for the per-turn commits a run makes on its branch."""
-
-    model_config = validation.MODEL_CONFIG
-
-    message: Literal["agent6", "conventional", "model"] = pydantic.Field(
-        json_schema_extra={
-            "choice_meanings": {
-                "agent6": "Generate turn number and summary message",
-                "conventional": "Derive conventional subject from diff without model",
-                "model": "Ask model to write commit message",
-            }
-        },
-        default="agent6",
-        description=(
-            "Per-turn commit message style; generated messages use `agent6 turn N: <summary>` "
-            "or `type(scope): subject`; model messages use git facts and fall back to the "
-            "generated agent6 message with a warning on failure"
-        ),
-    )
-
-
-class GitCommitSquashConfig(pydantic.BaseModel):
-    """Message style for the one commit a squash merge produces."""
-
-    model_config = validation.MODEL_CONFIG
-
-    message: Literal["agent6", "conventional", "combine", "model"] = pydantic.Field(
-        json_schema_extra={
-            "choice_meanings": {
-                "agent6": "Generate message from task and run summary",
-                "conventional": "Derive conventional subject from diff without model",
-                "combine": "Concatenate the git commit log",
-                "model": "Ask model to write commit message",
-            }
-        },
-        default="agent6",
-        description=(
-            "Squash commit message style; generated messages use the task's first clause, "
-            "then `continued: <steer>` for a run resumed with `--steer`, with the finish "
-            "summary as body or commit subjects as bullets; conventional subjects use "
-            "`type(scope): subject` with the same body; model messages use up to 64 KiB of "
-            "base-to-tip diff (marked if truncated), the task, continuation and execution "
-            "finish summaries, and AGENTS.md commit conventions; failure warns and falls "
-            "back to the generated agent6 message"
-        ),
-    )
-
-
 class GitCommitConfig(pydantic.BaseModel):
-    """The commit identity, the provenance trailer and the per-kind message styles.
+    """The commit identity, the provenance trailer and the two message styles.
 
     `name` and `email` unset read `GIT_COMMITTER_NAME` and `GIT_COMMITTER_EMAIL`, then
     the project's own `git config` identity; a run with
@@ -101,10 +52,41 @@ class GitCommitConfig(pydantic.BaseModel):
             "`{model}`: the code-writing model, several joined with `, `; no trailer when empty"
         ),
     )
-    checkpoint: GitCommitCheckpointConfig = pydantic.Field(
-        default_factory=GitCommitCheckpointConfig
+    checkpoint_message: Literal["agent6", "conventional", "model"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "agent6": "Generate turn number and summary message",
+                "conventional": "Derive conventional subject from diff without model",
+                "model": "Ask model to write commit message",
+            }
+        },
+        default="agent6",
+        description=(
+            "Per-turn commit message style; generated messages use `agent6 turn N: <summary>` "
+            "or `type(scope): subject`; model messages use git facts and fall back to the "
+            "generated agent6 message with a warning on failure"
+        ),
     )
-    squash: GitCommitSquashConfig = pydantic.Field(default_factory=GitCommitSquashConfig)
+    squash_message: Literal["agent6", "conventional", "combine", "model"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "agent6": "Generate message from task and run summary",
+                "conventional": "Derive conventional subject from diff without model",
+                "combine": "Concatenate the git commit log",
+                "model": "Ask model to write commit message",
+            }
+        },
+        default="agent6",
+        description=(
+            "Squash commit message style; generated messages use the task's first clause, "
+            "then `continued: <steer>` for a run resumed with `--steer`, with the finish "
+            "summary as body or commit subjects as bullets; conventional subjects use "
+            "`type(scope): subject` with the same body; model messages use up to 64 KiB of "
+            "base-to-tip diff (marked if truncated), the task, continuation and execution "
+            "finish summaries, and AGENTS.md commit conventions; failure warns and falls "
+            "back to the generated agent6 message"
+        ),
+    )
 
     @pydantic.field_validator("trailer")
     @classmethod
@@ -222,10 +204,10 @@ class GitConfig(pydantic.BaseModel):
         default="tasks",
         description=(
             "Method for `agent6 sessions merge` to land a run on its base; a task's commit "
-            "takes the `[git.commit.squash]` message under the `model` style with the subtask's "
+            "follows `git.commit.squash_message` under the `model` style with the subtask's "
             "title and acceptance as its body, else the subtask's title; checkpoints outside "
-            "subtasks use `[git.commit.squash]`, so a run that never decomposed lands as one "
-            "commit; "
+            "subtasks follow `git.commit.squash_message`, so a run that never decomposed lands "
+            "as one commit; "
             "consolidation only, per-turn commits stay on the run's chain; `sessions merge "
             "-m` lands one commit with that message"
         ),

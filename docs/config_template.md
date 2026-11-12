@@ -295,10 +295,6 @@ See [Git](security.md#7-git) for where `sandbox.protect_git` enforces `git.contr
 
 <!-- config-table: git.commit -->
 
-### `[git.commit.checkpoint]` and `[git.commit.squash]`
-
-<!-- config-table: git.commit.checkpoint git.commit.squash -->
-
 ## `preset` (top-level)
 
 <!-- config-table: preset -->

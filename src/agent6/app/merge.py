@@ -135,7 +135,7 @@ def dispatch_merge(
 ) -> git_ops.MergeResult:
     """Run the method on the target through `plumb_merge`.
 
-    A squash builds its message per `[git.commit.squash].message`; an operator message
+    A squash builds its message per `[git.commit].squash_message`; an operator message
     overrides any style. `tasks` lands one squash per consecutive range of checkpoints
     that worked on one subtask: under the `model` style the model names the range's work
     and the subtask's title and acceptance follow as the body, under every other style the
@@ -186,7 +186,7 @@ def dispatch_merge(
         if node is None:
             return style_message(range_base, range_tip)
         record = task_commit_message(node)
-        if cfg.git.commit.squash.message != "model":
+        if cfg.git.commit.squash_message != "model":
             return record
         # The model names the range's work; the task stays its record, as the body.
         written = merge_message.model_squash_message(

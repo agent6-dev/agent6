@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The run's checkpoints: the per-turn commit on its chain.
 
-The subject follows `[git.commit.checkpoint].message`; the events are what
+The subject follows `[git.commit].checkpoint_message`; the events are what
 every fold counts a commit by. The loop decides when a turn commits.
 """
 
@@ -28,7 +28,7 @@ class Checkpoints:
 
     Attributes:
         chain: The run's commit chain.
-        style: `[git.commit.checkpoint].message`: agent6, conventional or model.
+        style: `[git.commit].checkpoint_message`: agent6, conventional or model.
         enabled: True in run mode; plan and ask never commit.
         provider: The provider that drafts the model style's subject.
         log: The run log line sink.

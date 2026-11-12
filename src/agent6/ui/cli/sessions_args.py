@@ -130,7 +130,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         default=None,
         help=(
             "Use this commit message for a squash or merge. Default: a squash follows"
-            " git.commit.squash.message; a merge uses `Merge <run branch>`."
+            " git.commit.squash_message; a merge uses `Merge <run branch>`."
         ),
     )
 

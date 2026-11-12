@@ -31,8 +31,8 @@ def squash_message(
     events: event_log.EventSink | None,
     warn: Callable[[str], None],
 ) -> str | None:
-    """Return the squash message per `[git.commit.squash].message`; None lets git combine."""
-    style = cfg.git.commit.squash.message
+    """Return the squash message per `[git.commit].squash_message`; None lets git combine."""
+    style = cfg.git.commit.squash_message
     rows = git_read.list_run_commits(cwd, base_sha, run_branch)
     if style == "combine":
         # Git's own SQUASH_MSG shape; the plumbing merge never runs `merge --squash`.

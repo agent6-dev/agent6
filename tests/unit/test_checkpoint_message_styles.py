@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`[git.commit.checkpoint].message` styles at the loop's auto-commit."""
+"""`[git.commit].checkpoint_message` styles at the loop's auto-commit."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from agent6.vcs import git_ops, git_read
 def _wf(
     tmp_path: pathlib.Path, style: str, provider: Any = None, logger: Any = print
 ) -> loop.Harness:
-    cfg = Config.model_validate({"git": {"commit": {"checkpoint": {"message": style}}}})
+    cfg = Config.model_validate({"git": {"commit": {"checkpoint_message": style}}})
     git_ops.init_repo(tmp_path)
     return loop.Harness(
         chain=run_chain.RunChain(

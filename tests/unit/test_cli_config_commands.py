@@ -751,9 +751,9 @@ def test_commit_trailer_validates_placeholders_and_shape(
 def test_checkpoint_style_refuses_combine(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The checkpoint table refuses `combine`, git's own squash message, while squash accepts it."""
-    assert _run(["config", "set", "git.commit.squash.message", "combine"]) == 0
-    assert _refuse(["config", "set", "git.commit.checkpoint.message", "combine"]) == 2
+    """The checkpoint style refuses `combine`, git's own squash message, while squash accepts it."""
+    assert _run(["config", "set", "git.commit.squash_message", "combine"]) == 0
+    assert _refuse(["config", "set", "git.commit.checkpoint_message", "combine"]) == 2
 
 
 def test_coauthor_is_gone(iso: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

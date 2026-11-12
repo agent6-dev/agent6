@@ -1849,7 +1849,7 @@ class Harness:
         """Return the per-turn commit writer."""
         return run_checkpoint.Checkpoints(
             chain=self.chain,
-            style=self.config.git.commit.checkpoint.message,
+            style=self.config.git.commit.checkpoint_message,
             enabled=self.mode == "run",
             provider=self.provider,
             log=self.log,
