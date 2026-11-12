@@ -586,7 +586,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     inputs.sandbox_overrides.auto_approve
                     if inputs.sandbox_overrides is not None
                     else False,
-                    prompt_relay.ApprovalRelay(inputs.prompts, layout.session_dir),
+                    prompt_relay.PromptRelay(inputs.prompts, layout.session_dir),
                 ),
                 lane_recoverer=app_lanes.build_lane_recoverer(
                     cfg, cwd, state_dir, mode=mode, reporter=reporter

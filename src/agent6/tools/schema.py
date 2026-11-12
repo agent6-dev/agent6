@@ -554,6 +554,9 @@ class FindReferencesInput(_ToolInput):
     symbol: str = pydantic.Field(min_length=1)
 
 
+QUESTION_MAX_CHARS = 2_000
+
+
 class UserQuestion(pydantic.BaseModel):
     """One question of an ask_user call.
 
@@ -565,7 +568,7 @@ class UserQuestion(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
-    question: str = pydantic.Field(min_length=1, max_length=2_000)
+    question: str = pydantic.Field(min_length=1, max_length=QUESTION_MAX_CHARS)
     options: tuple[Annotated[str, pydantic.StringConstraints(max_length=200)], ...] = (
         pydantic.Field(default=(), max_length=10)
     )

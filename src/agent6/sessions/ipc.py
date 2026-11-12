@@ -710,6 +710,57 @@ def write_question_answers(
     )
 
 
+def write_question_unanswered(session_dir: pathlib.Path, question_id: str, note: str) -> bool:
+    """Write that nobody will answer a question prompt, from the session that dispatched the asker.
+
+    A parent puts its child's question to its own operator; this is the outcome it hands
+    down when that operator gave none.
+
+    Args:
+        session_dir: The asking session's directory.
+        question_id: The question id.
+        note: The state the parent met, as the asking model reads it.
+
+    Returns:
+        False when another surface answered first; that answer stands.
+
+    Raises:
+        ValueError: The question id is not a plain file name.
+    """
+    return _publish_answer(
+        _answer_path(questions_dir(session_dir), question_id), json.dumps({_UNANSWERED: note})
+    )
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class QuestionReply:
+    """What a question's answer file held.
+
+    Attributes:
+        answers: One per question; a bare non-JSON file is one answer.
+        unanswered: Why nobody will answer (`write_question_unanswered`); "" when answered.
+    """
+
+    answers: tuple[str, ...]
+    unanswered: str = ""
+
+
+_UNANSWERED = "unanswered"
+
+
+def _question_reply(raw: str) -> QuestionReply:
+    """Return an answer file's text as the reply it holds."""
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return QuestionReply((raw,))
+    if isinstance(data, dict) and set(cast("dict[str, object]", data)) == {_UNANSWERED}:
+        return QuestionReply((), unanswered=str(cast("dict[str, object]", data)[_UNANSWERED]))
+    if isinstance(data, list):
+        return QuestionReply(tuple(str(x) for x in cast("list[object]", data)))
+    return QuestionReply((str(data),))
+
+
 def saved_question_answers(session_dir: pathlib.Path) -> tuple[str, ...]:
     """Return the ids of the questions whose answers wait on disk for the run to read.
 
@@ -736,11 +787,7 @@ def peek_question_answers(session_dir: pathlib.Path, question_id: str) -> tuple[
         raw = _answer_path(session_dir / QUESTION_DIR_NAME, question_id).read_text(encoding="utf-8")
     except OSError:
         return None
-    try:
-        data = json.loads(raw)
-    except ValueError:
-        return (raw,)
-    return tuple(str(x) for x in data) if isinstance(data, list) else (str(data),)
+    return _question_reply(raw).answers
 
 
 def question_answers_written(session_dir: pathlib.Path, question_id: str) -> bool:
@@ -754,6 +801,43 @@ def question_answers_written(session_dir: pathlib.Path, question_id: str) -> boo
         True when the answer file exists.
     """
     return _answer_path(session_dir / QUESTION_DIR_NAME, question_id).exists()
+
+
+def read_question_reply(
+    session_dir: pathlib.Path,
+    question_id: str,
+    *,
+    timeout_s: float = math.inf,
+    poll_s: float = 0.2,
+    live_dir: pathlib.Path | None = None,
+    dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
+) -> QuestionReply | None:
+    """Wait for a question prompt's outcome, from the harness.
+
+    Args:
+        session_dir: The session directory.
+        question_id: The question id.
+        timeout_s: The most to wait; by default as long as the front-end lives.
+        poll_s: The poll interval.
+        live_dir: The dir the liveness gate probes, as in `read_answer`.
+        dead_grace_s: How long the front-end may stay dead before the wait ends.
+
+    Returns:
+        The operator's answers, or the note that nobody will answer. None on a stop, a
+        dead front-end, or a timeout given.
+
+    Raises:
+        ValueError: The question id is not a plain file name.
+    """
+    target = _answer_path(questions_dir(session_dir), question_id)
+    raw = _await_answer(
+        target,
+        live_dir or session_dir,
+        timeout_s=timeout_s,
+        poll_s=poll_s,
+        dead_grace_s=dead_grace_s,
+    )
+    return None if raw is None else _question_reply(raw)
 
 
 def read_question_answers(
@@ -776,27 +860,21 @@ def read_question_answers(
         dead_grace_s: How long the front-end may stay dead before the wait ends.
 
     Returns:
-        The answers, one per question; a bare non-JSON file is one answer. None on a
+        The answers, one per question; none for a prompt nobody will answer. None on a
         stop, a dead front-end, or a timeout given.
 
     Raises:
         ValueError: The question id is not a plain file name.
     """
-    target = _answer_path(questions_dir(session_dir), question_id)
-    raw = _await_answer(
-        target,
-        live_dir or session_dir,
+    reply = read_question_reply(
+        session_dir,
+        question_id,
         timeout_s=timeout_s,
         poll_s=poll_s,
+        live_dir=live_dir,
         dead_grace_s=dead_grace_s,
     )
-    if raw is None:
-        return None
-    try:
-        data = json.loads(raw)
-    except ValueError:
-        return (raw,)
-    return tuple(str(x) for x in data) if isinstance(data, list) else (str(data),)
+    return None if reply is None else reply.answers
 
 
 # The steer bridge: one slot the loop reads at its boundary ("" continues, a verb acts, anything

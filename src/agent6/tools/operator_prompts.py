@@ -24,8 +24,9 @@ from agent6.tools import schema
 # or attach ("frontend"), a park until one attached ("await-frontend"), the detach choice
 # ("away-deny"), no terminal and no front-end ("headless-default", empty answers), a standing
 # grant ("session"), a machine state with nobody to ask ("headless"), an editor over ACP ("acp"),
-# a queued question nobody has answered yet ("queued") or its answer taken at a later execution
-# boundary ("late").
+# a queued question nobody has answered yet ("queued"), its answer taken at a later execution
+# boundary ("late"), or the session that dispatched this one handing down that its own operator
+# gave no answer ("parent").
 Source = Literal[
     "stdin",
     "frontend",
@@ -37,6 +38,7 @@ Source = Literal[
     "acp",
     "queued",
     "late",
+    "parent",
 ]
 # `answered`: the answers are in; `pending`: queued, they arrive later; `unanswered`: nobody could
 # answer and nothing is queued.

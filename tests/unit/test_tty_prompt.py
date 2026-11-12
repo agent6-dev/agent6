@@ -260,8 +260,8 @@ def test_a_headless_question_park_says_where_to_answer_and_that_it_was(
     """
     tty_lines = _no_terminal(monkeypatch, away="wait")
 
-    def _reply(_d: object, _r: object) -> tuple[str, ...]:
-        return ("yes",)
+    def _reply(_d: object, _r: object) -> sessions_ipc.QuestionReply:
+        return sessions_ipc.QuestionReply(("yes",))
 
     monkeypatch.setattr(sessions_ipc, "await_frontend_reply", _reply)
     ask = operator_prompts.OperatorPrompts(

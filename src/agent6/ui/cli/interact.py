@@ -203,6 +203,28 @@ def build_approver(
     return approve
 
 
+def _bridged(
+    request: operator_prompts.QuestionRequest, reply: ipc.QuestionReply
+) -> operator_prompts.QuestionAnswer:
+    """Return the outcome the bridge held: a front-end's answers, or a parent's "no answer".
+
+    Args:
+        request: The question prompt.
+        reply: What its answer file held.
+
+    Returns:
+        The answers, or an unanswered outcome carrying the dispatching session's note.
+    """
+    if reply.unanswered:
+        return operator_prompts.QuestionAnswer(
+            tuple("" for _ in request.questions),
+            "parent",
+            status="unanswered",
+            note=reply.unanswered,
+        )
+    return operator_prompts.QuestionAnswer(reply.answers, "frontend")
+
+
 def _await_front_end(
     session_dir: pathlib.Path, request: operator_prompts.QuestionRequest
 ) -> operator_prompts.QuestionAnswer:
@@ -217,13 +239,12 @@ def _await_front_end(
     """
     reply = ipc.await_frontend_reply(
         session_dir,
-        lambda: ipc.read_question_answers(
-            session_dir, request.id, timeout_s=20.0, dead_grace_s=8.0
-        ),
+        lambda: ipc.read_question_reply(session_dir, request.id, timeout_s=20.0, dead_grace_s=8.0),
     )
-    if isinstance(reply, tuple):
-        _note(f"{request.id} answered (frontend)")
-        return operator_prompts.QuestionAnswer(reply, "frontend")
+    if reply is not None:
+        answer = _bridged(request, reply)
+        _note(f"{request.id} {answer.status} ({answer.source})")
+        return answer
     _note(f"{request.id} unanswered: the wait was stopped")
     return operator_prompts.QuestionAnswer(
         tuple("" for _ in request.questions),
@@ -269,11 +290,12 @@ def build_questioner(
             # A run with no terminal says on stderr what it waits on and that it was answered.
             if not portable.has_controlling_tty():
                 park()
-            answers = ipc.read_question_answers(session_dir, request.id)
-            if answers is not None:
+            reply = ipc.read_question_reply(session_dir, request.id)
+            if reply is not None:
+                answer = _bridged(request, reply)
                 if parked:
-                    _note(f"{request.id} answered (frontend)")
-                return operator_prompts.QuestionAnswer(answers, "frontend")
+                    _note(f"{request.id} {answer.status} ({answer.source})")
+                return answer
         empty = tuple("" for _ in questions)
         away = ipc.away_mode(session_dir)
         if away == "deny":
@@ -298,10 +320,10 @@ def build_questioner(
                 questions, until=lambda: ipc.question_answers_written(session_dir, request.id)
             )
         if stdin_answers is None:
-            filed = ipc.read_question_answers(session_dir, request.id, timeout_s=0.0)
+            filed = ipc.read_question_reply(session_dir, request.id, timeout_s=0.0)
             if filed is not None:
                 steer_tty.tty_message("[agent6] answered elsewhere.\n")
-                return operator_prompts.QuestionAnswer(filed, "frontend")
+                return _bridged(request, filed)
             steer_tty.tty_message("[agent6] the terminal gave no answer.\n")
             return operator_prompts.QuestionAnswer(
                 empty,

@@ -339,7 +339,7 @@ def run_lane_to_completion(
         allowance: The lane's reserved share; None for the config's caps.
         contract: The harness-owned read-only conversation; None for work.
         clock: The wall clock the deadline is read against.
-        relay: Puts the lane's approval to the coordinator's operator while it waits; None
+        relay: Puts the lane's prompt to the coordinator's operator while it waits; None
             leaves it to whoever attaches to the lane.
 
     Returns:
@@ -744,7 +744,7 @@ def build_lane_spawner(
         auto_approve: The coordinator's own `--auto-approve`, forwarded to every lane.
         lane_away: Every lane's away-mode, without a relay.
         reporter: Receives the notes.
-        relay: Puts a waiting lane's approval to the coordinator's operator; with it every
+        relay: Puts a waiting lane's prompt to the coordinator's operator; with it every
             lane waits for that answer.
 
     Returns:
@@ -908,7 +908,7 @@ def build_coordinator_spawner(
         auto_approve: The run's own `--auto-approve`, forwarded to every lane.
         lane_away: Every lane's away-mode, without a relay.
         reporter: Receives the notes.
-        relay: Puts a waiting lane's approval to the run's operator.
+        relay: Puts a waiting lane's prompt to the run's operator.
 
     Returns:
         The dispatcher, or None.
