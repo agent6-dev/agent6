@@ -216,7 +216,7 @@ class _FakeSpawner:
             return lane_records.LaneResult(
                 spec=spec, session_dir=spec.worktree, branch=branch, ok=False, error="boom"
             )
-        subrun.clone_workspace(self.origin, spec.worktree)
+        subrun.clone_worktree(self.origin, spec.worktree)
         if spec.lane in self.branch_at_base:
             git_ops.create_branch(spec.worktree, branch)
         elif spec.lane not in self.no_commit:
@@ -418,7 +418,7 @@ def test_coordinator_dispatch_refuses_unknown_model(
     def _boom(*_a: object, **_k: object) -> None:
         raise AssertionError("clone must not happen before validation")
 
-    monkeypatch.setattr(subrun, "clone_workspace", _boom)
+    monkeypatch.setattr(subrun, "clone_worktree", _boom)
     dispatch = app_lanes.build_lane_spawner(
         _provider_cfg(),
         origin,
@@ -2208,7 +2208,7 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
 
     unmerged = scoped / "fan-a" / "lane-1"
     unmerged.parent.mkdir(parents=True)
-    subrun.clone_workspace(origin, unmerged)
+    subrun.clone_worktree(origin, unmerged)
     git_ops.create_branch(unmerged, "agent6/fan-a-l1")
     (unmerged / "x.txt").write_text("x\n", encoding="utf-8")
     _git(unmerged, "add", "-A")
@@ -2216,12 +2216,12 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
 
     merged = scoped / "fan-b" / "lane-1"
     merged.parent.mkdir(parents=True)
-    subrun.clone_workspace(origin, merged)
+    subrun.clone_worktree(origin, merged)
     git_ops.create_branch(merged, "agent6/fan-b-l1")  # tip == origin HEAD: nothing unique
 
     foreign = workdir / "other-repo-0" / "fan-c" / "lane-1"
     foreign.mkdir(parents=True)
-    subrun.clone_workspace(origin, foreign)
+    subrun.clone_worktree(origin, foreign)
     git_ops.create_branch(foreign, "agent6/fan-c-l1")
 
     for clone in (unmerged, merged):
@@ -2325,7 +2325,7 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
     cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(workdir)}}})
     lane = workdir / paths.repo_id(origin) / "fan-starting" / "lane-1"
     lane.parent.mkdir(parents=True)
-    subrun.clone_workspace(origin, lane)
+    subrun.clone_worktree(origin, lane)
     # No session dir yet: a lane between its clone and its first write looks
     # like one that never started, and a prune in that window must not win.
     assert worktrees.sweep_fanout_clones(origin, cfg) == (0, 1)
@@ -2344,7 +2344,7 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
 
     # A lane that died in preflight leaves a husk (a session dir with no
     # record and no worker): ended, so its clone goes too.
-    subrun.clone_workspace(origin, lane)
+    subrun.clone_worktree(origin, lane)
     (session / "logs.jsonl").unlink()
     assert worktrees.sweep_fanout_clones(origin, cfg) == (1, 0)
 
@@ -2365,7 +2365,7 @@ def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
     scoped = workdir / paths.repo_id(origin)
     lane = scoped / "fan-x" / "lane-1"
     lane.parent.mkdir(parents=True)
-    subrun.clone_workspace(origin, lane)
+    subrun.clone_worktree(origin, lane)
     git_ops.create_branch(lane, "agent6/fan-x-l1")
     (lane / "x.txt").write_text("lane work\n", encoding="utf-8")
     _git(lane, "add", "-A")
@@ -2397,7 +2397,7 @@ def test_sweep_leaves_a_dir_that_is_not_a_fan_out_group_alone(
     scoped = workdir / paths.repo_id(origin)
     theirs = scoped / "my-clone"
     theirs.parent.mkdir(parents=True)
-    subrun.clone_workspace(origin, theirs)
+    subrun.clone_worktree(origin, theirs)
     (theirs / "draft.txt").write_text("uncommitted\n", encoding="utf-8")
     notes = scoped / "notes"
     notes.mkdir()

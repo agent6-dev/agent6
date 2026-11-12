@@ -32,7 +32,7 @@ import pydantic
 
 from agent6 import budget as agent6_budget
 from agent6 import errors, kinds, paths
-from agent6.app import confine, role_providers, workspace_setup
+from agent6.app import confine, role_providers, worktree_setup
 from agent6.app import reporter as app_reporter
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
@@ -518,7 +518,7 @@ def _drive_state(
     in_clone = req.root != req.cwd
     setup_left: frozenset[str] = frozenset()
     if in_clone:
-        prepared = workspace_setup.prepare(cfg, req.root, runner=dispatcher, reporter=reporter)
+        prepared = worktree_setup.prepare(cfg, req.root, runner=dispatcher, reporter=reporter)
         if prepared.problem is not None:
             reporter.error(prepared.problem)
             return _result("setup_command_failed", None, budget)
@@ -768,7 +768,7 @@ def clone_at_machine_chain(origin: pathlib.Path, dest: pathlib.Path, chain_ref: 
     if dest.exists():
         shutil.rmtree(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    subrun.clone_workspace(origin, dest)
+    subrun.clone_worktree(origin, dest)
     tip = git_read.chain_tip(origin, chain_ref)
     if tip is not None:
         git_ops.fetch_branch(dest, origin, f"{chain_ref}:{chain_ref}")

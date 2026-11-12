@@ -11,7 +11,7 @@ import uuid
 
 from agent6 import evidence, kinds
 from agent6.app import reporter as app_reporter
-from agent6.app import workspace_setup
+from agent6.app import worktree_setup
 from agent6.config import Config
 from agent6.machine import EngineError
 from agent6.sandbox import jail
@@ -81,9 +81,7 @@ def tool_setup_failure(
     Raises:
         EngineError: Setup failed without a command result.
     """
-    prepared = workspace_setup.setup(
-        cfg, runner=_Runner(cfg, policy, events_log), reporter=reporter
-    )
+    prepared = worktree_setup.setup(cfg, runner=_Runner(cfg, policy, events_log), reporter=reporter)
     if prepared.problem is None:
         return None
     if prepared.result is not None:

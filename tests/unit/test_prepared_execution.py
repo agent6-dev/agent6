@@ -11,7 +11,7 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds, providers
-from agent6.app import execution, stamps, workspace_setup
+from agent6.app import execution, stamps, worktree_setup
 from agent6.app import reporter as app_reporter
 from agent6.app.session import runtime as session_runtime
 from agent6.config import Config, RoleModel
@@ -232,7 +232,7 @@ def test_run_execution_prepares_before_inference_and_reuses_the_session(
     order: list[str] = []
     real_open = jail_session.JailSession.open
     real_prepare = session_runtime.prepare_local_execution
-    real_workspace_prepare = workspace_setup.prepare
+    real_worktree_prepare = worktree_setup.prepare
     providers = mock.Mock(rm_role=RoleModel(provider="test", model="test"))
     frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
@@ -276,18 +276,18 @@ def test_run_execution_prepares_before_inference_and_reuses_the_session(
         assert inferred.argv == ("sh", "-c", "printf gate >> sequence")
         return current.with_verify_command(inferred.argv)
 
-    def observe_workspace(
+    def observe_worktree(
         current: Config,
         cwd: pathlib.Path,
         *,
-        runner: workspace_setup.SetupRunner,
+        runner: worktree_setup.SetupRunner,
         reporter: app_reporter.Reporter,
-    ) -> workspace_setup.Prepared:
+    ) -> worktree_setup.Prepared:
         assert order == ["prepare", "infer"] and len(opened) == 1
         assert isinstance(runner, dispatch.ToolDispatcher)
         assert runner.execution_target is opened[0].target
         order.append("workspace")
-        prepared = real_workspace_prepare(current, cwd, runner=runner, reporter=reporter)
+        prepared = real_worktree_prepare(current, cwd, runner=runner, reporter=reporter)
         assert prepared.ran and prepared.problem is None
         assert runner.run_verify().returncode == 0
         model = runner.dispatch("run_command", {"argv": ["sh", "-c", "printf model >> sequence"]})
@@ -300,7 +300,7 @@ def test_run_execution_prepares_before_inference_and_reuses_the_session(
 
     monkeypatch.setattr(jail_session.JailSession, "open", observe_open)
     monkeypatch.setattr(session_runtime, "prepare_local_execution", observe_prepare)
-    monkeypatch.setattr(workspace_setup, "prepare", observe_workspace)
+    monkeypatch.setattr(worktree_setup, "prepare", observe_worktree)
     inputs = execution.ExecutionInputs(
         explicit_leaves=frozenset(),
         session_id=session_layout.session_id,

@@ -26,7 +26,7 @@ from agent6.app import (
     resume_tree,
     run,
     stamps,
-    workspace_setup,
+    worktree_setup,
     worktrees,
 )
 from agent6.app import frontend as app_frontend
@@ -489,8 +489,8 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 f'    agent6 fork {session_id} --steer "..."'
             )
             return 2
-        if workspace_setup.session_needs_setup(layout.session_dir):
-            cfg = workspace_setup.infer_if_unset(cfg, repo, reporter=reporter, at=resume_base_sha)
+        if worktree_setup.session_needs_setup(layout.session_dir):
+            cfg = worktree_setup.infer_if_unset(cfg, repo, reporter=reporter, at=resume_base_sha)
 
         # Needs the config: the away grant is per scope, one per configured MCP server.
         app_frontend.settle_away_mode(

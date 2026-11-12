@@ -30,7 +30,7 @@ from agent6.app import (
     notify_hook,
     role_providers,
     stamps,
-    workspace_setup,
+    worktree_setup,
 )
 from agent6.app import frontend as app_frontend
 from agent6.app import lanes as app_lanes
@@ -489,10 +489,10 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             schema.RunCommandInput.TOOL_NAME in inputs.contract.allowed_tools
             and dispatcher.command_policy() != "deny"
         )
-        if runs_commands and workspace_setup.session_needs_setup(layout.session_dir):
+        if runs_commands and worktree_setup.session_needs_setup(layout.session_dir):
             # The run's own earlier files read untracked too: the chain never moves the index.
             before = git_read.untracked_paths(cwd) if mode == "run" else frozenset[str]()
-            prepared = workspace_setup.prepare(cfg, cwd, runner=dispatcher, reporter=reporter)
+            prepared = worktree_setup.prepare(cfg, cwd, runner=dispatcher, reporter=reporter)
             unready = prepared.problem
             if prepared.ran:
                 try:

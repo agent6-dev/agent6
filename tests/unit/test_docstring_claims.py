@@ -79,8 +79,8 @@ def test_resume_blocker_docstring_does_not_promise_resume_will_start() -> None:
 
 
 def test_setup_docstring_only_promises_to_skip_a_successful_setup() -> None:
-    text = _doc("app/workspace_setup.py", "session_needs_setup")
-    assert "setup that left the workspace ready" in text
+    text = _doc("app/worktree_setup.py", "session_needs_setup")
+    assert "setup that left the worktree ready" in text
     assert "a resume after one skips the command" in text
 
 

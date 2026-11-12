@@ -24,7 +24,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6 import errors, kinds, paths, portable
-from agent6.app import fork_worktrees, resume, stamps, workspace_setup, worktrees
+from agent6.app import fork_worktrees, resume, stamps, worktree_setup, worktrees
 from agent6.app import reporter as app_reporter
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, layer
@@ -435,12 +435,12 @@ def create_fork(
         )
         return "", 2
     if added and (
-        gate_refusal := workspace_setup.gate_refusal(
+        gate_refusal := worktree_setup.gate_refusal(
             plan.cfg,
             cwd,
             # Config outranks the source's pin on the fork's first execution.
             plan.cfg.harness.verify.command or plan.gate.command,
-            workspace="a fork's new worktree",
+            worktree="a fork's new worktree",
             at=plan.forked_from_sha or None,
         )
     ):

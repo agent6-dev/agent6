@@ -367,7 +367,7 @@ def test_import_retains_descendant_records_receipts_and_target_objects(
     subordinate_env.init_repo(repo)
     subordinate_env.create_record(repo, "parent")
     clone = short_repo / "worker"
-    subrun.clone_workspace(repo, clone)
+    subrun.clone_worktree(repo, clone)
     worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
     leaf = subordinate_env.create_record(
         repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="read_only"
@@ -433,7 +433,7 @@ def test_cleanup_keeps_a_live_descendant_even_when_all_commits_are_reachable(
     repo = short_repo / "origin"
     subordinate_env.init_repo(repo)
     clone = short_repo / "worker"
-    subrun.clone_workspace(repo, clone)
+    subrun.clone_worktree(repo, clone)
     worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
     leaf = subordinate_env.create_record(
         repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="read_only"
@@ -523,7 +523,7 @@ def test_stop_follows_clone_state_and_readonly_bucket_and_leaves_the_worker_unse
     subordinate_env.init_repo(repo)
     parent = subordinate_env.create_record(repo, "parent")
     clone = short_repo / "worker"
-    subrun.clone_workspace(repo, clone)
+    subrun.clone_worktree(repo, clone)
     worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
     leaf = subordinate_env.create_record(
         repo, "parent-p1-l1-r1-l1", parent=worker.name, mode="read_only"

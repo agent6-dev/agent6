@@ -4,10 +4,10 @@
 
 A `run --worktree` worktree, a fork's worktree, a lane's clone and a machine state's clone
 hold tracked files only. `[git.worktree].setup_command` runs once in each, through an injected
-runner using the workspace's command policy and jail. A session's manifest records that its
-workspace is set up. With no command configured, the `## Setup command` block of AGENTS.md
-supplies it from the workspace's base commit, never a model-written machine chain tip.
-A gate whose first word is a path git does not track cannot run in such a workspace until
+runner using the worktree's command policy and jail. A session's manifest records that its
+worktree is set up. With no command configured, the `## Setup command` block of AGENTS.md
+supplies it from the worktree's base commit, never a model-written machine chain tip.
+A gate whose first word is a path git does not track cannot run in such a worktree until
 a setup command builds it: with none, the start
 refuses before anything is created.
 """
@@ -44,7 +44,7 @@ def infer_if_unset(
 ) -> Config:
     """Return the config with the setup command AGENTS.md states, when none is configured.
 
-    Read once, in the origin, and carried in the config, so the workspace and every lane
+    Read once, in the origin, and carried in the config, so the worktree and every lane
     run the command the start named.
 
     Args:
@@ -70,7 +70,7 @@ def infer_if_unset(
 
 
 def _gate_path(gate: Sequence[str]) -> str:
-    """Return the gate's first word as a path into the workspace; "" for a name or a way out."""
+    """Return the gate's first word as a path into the worktree; "" for a name or a way out."""
     first = gate[0] if gate else ""
     if "/" not in first or pathlib.Path(first).is_absolute():
         return ""
@@ -78,19 +78,19 @@ def _gate_path(gate: Sequence[str]) -> str:
     return "" if path.startswith("..") else path
 
 
-def _no_setup_text(path: str, workspace: str) -> str:
+def _no_setup_text(path: str, worktree: str) -> str:
     """Return the refusal naming the gate's path and the two ways to state a setup command.
 
     Args:
         path: The gate's first word.
-        workspace: The workspace, for the message ("a new worktree").
+        worktree: The worktree, for the message ("a new worktree").
 
     Returns:
         The refusal: the reason, a bullet per way, and a line on working offline.
     """
     return (
         f"the verify gate runs `{path}`, a path git does not track, so it is absent in"
-        f" {workspace}, which holds tracked files only, and no setup command builds it there.\n"
+        f" {worktree}, which holds tracked files only, and no setup command builds it there.\n"
         "  - set one for this repository:  agent6 config set --repo git.worktree.setup_command"
         """ '["uv", "sync"]'\n"""
         "  - or commit it in AGENTS.md: a `## Setup command` heading over a fenced block\n"
@@ -111,16 +111,16 @@ def origin_gate(cfg: Config, origin: pathlib.Path) -> tuple[str, ...]:
 
 
 def gate_refusal(
-    cfg: Config, origin: pathlib.Path, gate: Sequence[str], *, workspace: str, at: str | None = None
+    cfg: Config, origin: pathlib.Path, gate: Sequence[str], *, worktree: str, at: str | None = None
 ) -> str | None:
-    """Return why a session could never run its gate in a new workspace, or None.
+    """Return why a session could never run its gate in a new worktree, or None.
 
     Args:
         cfg: The session's config.
-        origin: The checkout the workspace is cut from.
+        origin: The checkout the worktree is cut from.
         gate: The gate the session will be judged by.
-        workspace: The workspace, for the message ("a new worktree").
-        at: The commit the workspace is cut from; None reads HEAD's AGENTS.md and files.
+        worktree: The worktree, for the message ("a new worktree").
+        at: The commit the worktree is cut from; None reads HEAD's AGENTS.md and files.
 
     Returns:
         The refusal when the gate's first word is a path the commit does not hold and no
@@ -135,13 +135,13 @@ def gate_refusal(
         return None
     if path in git_read.tree_paths(origin, at or "HEAD"):
         return None
-    return _no_setup_text(gate[0], workspace)
+    return _no_setup_text(gate[0], worktree)
 
 
 def session_needs_setup(session_dir: pathlib.Path) -> bool:
     """Return whether the session's own worktree or clone still needs setup.
 
-    The manifest records a setup that left the workspace ready, so a resume after one skips
+    The manifest records a setup that left the worktree ready, so a resume after one skips
     the command and a fork's new worktree runs it.
 
     Args:
@@ -161,11 +161,11 @@ def session_needs_setup(session_dir: pathlib.Path) -> bool:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Prepared:
-    """What preparing a workspace found.
+    """What preparing a worktree found.
 
     Attributes:
-        problem: What is not ready, the output tail under it; None when the workspace is.
-        ran: Whether the setup command ran and left the workspace ready.
+        problem: What is not ready, the output tail under it; None when the worktree is.
+        ran: Whether the setup command ran and left the worktree ready.
         result: The setup outcome, or None when no command ran.
     """
 
@@ -175,11 +175,11 @@ class Prepared:
 
 
 class SetupRunner(Protocol):
-    """The command policy and execution that workspace preparation needs."""
+    """The command policy and execution that worktree preparation needs."""
 
     @property
     def isolation(self) -> kinds.IsolationLevel:
-        """Return the workspace's isolation level."""
+        """Return the worktree's isolation level."""
         ...
 
     def command_policy(self) -> str:
@@ -187,7 +187,7 @@ class SetupRunner(Protocol):
         ...
 
     def run_setup(self, argv: tuple[str, ...]) -> kinds.CommandResult:
-        """Run setup under the workspace's command policy and jail.
+        """Run setup under the worktree's command policy and jail.
 
         Args:
             argv: The setup command.
@@ -205,12 +205,12 @@ def prepare(
     runner: SetupRunner,
     reporter: app_reporter.Reporter,
 ) -> Prepared:
-    """Run the workspace's setup command, then check that the gate's path exists there.
+    """Run the worktree's setup command, then check that the gate's path exists there.
 
     Args:
         cfg: The session's config, its gate resolved.
-        root: The workspace.
-        runner: The workspace's command policy and jailed setup runner.
+        root: The worktree.
+        runner: The worktree's command policy and jailed setup runner.
         reporter: Receives the command line and its output.
 
     Returns:
@@ -233,7 +233,7 @@ def prepare(
             ran=False,
             result=result,
         )
-    return Prepared(_no_setup_text(gate[0], f"this workspace ({root})"), ran=False)
+    return Prepared(_no_setup_text(gate[0], f"this worktree ({root})"), ran=False)
 
 
 def setup(cfg: Config, *, runner: SetupRunner, reporter: app_reporter.Reporter) -> Prepared:
@@ -241,7 +241,7 @@ def setup(cfg: Config, *, runner: SetupRunner, reporter: app_reporter.Reporter) 
 
     Args:
         cfg: The config naming the setup command.
-        runner: The workspace's command policy and jailed setup runner.
+        runner: The worktree's command policy and jailed setup runner.
         reporter: Receives the command line, and the last lines of its output when it succeeds.
 
     Returns:
@@ -279,7 +279,7 @@ def _no_route_line(cfg: Config, isolation: kinds.IsolationLevel) -> str:
 
     Args:
         cfg: The config holding `sandbox.network`.
-        isolation: The workspace's isolation level; under `partial` or `none`, commands share
+        isolation: The worktree's isolation level; under `partial` or `none`, commands share
             the host's network.
 
     Returns:

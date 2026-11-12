@@ -536,7 +536,7 @@ Before any clone, a spec's models are checked against what a lane can run.
 
 The primitive is git plumbing in [subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/subrun.py), with no LLM, no UI, and no process spawning:
 
-- `clone_workspace(origin, dest)`: a plain `git clone` of a disposable lane workspace.
+- `clone_worktree(origin, dest)`: a plain `git clone` for a lane's own worktree.
 - `import_run(origin, lane_repo, branch, lane_session_dir)`: fetches the lane's branch and its retained session refs into the origin, refusing to overwrite an existing branch; the lane's record is in the origin's state already.
   With model git control it fetches HEAD into the lane's chain ref and creates its checked-out branch only when that name is free.
   Cleanup keeps a clone whose HEAD or ref tips the origin cannot reach, unless a merge stamp covers them.

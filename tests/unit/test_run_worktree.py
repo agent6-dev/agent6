@@ -28,7 +28,7 @@ from agent6.app import (
     fork_worktrees,
     preflight,
     role_providers,
-    workspace_setup,
+    worktree_setup,
     worktrees,
 )
 from agent6.app import lanes as app_lanes
@@ -532,7 +532,7 @@ def test_a_budget_stopped_lane_continues_with_the_fork_command_its_record_names(
     )
 
     def spawn(spec: lane_records.LaneSpec, task: str) -> lane_records.LaneResult:
-        subrun.clone_workspace(repo, spec.worktree)
+        subrun.clone_worktree(repo, spec.worktree)
         output, errors = io.StringIO(), io.StringIO()
         with (
             monkeypatch.context() as child,
@@ -1483,7 +1483,7 @@ def test_dispatch_setup_keeps_timeout_and_wraps_jail_unavailability(
 
     monkeypatch.setattr(jail_session.JailSession, "run", run)
     dispatcher = build_dispatcher(root=tmp_path, config=cfg)
-    prepared = workspace_setup.prepare(
+    prepared = worktree_setup.prepare(
         cfg,
         tmp_path,
         runner=dispatcher,
@@ -1540,7 +1540,7 @@ def test_a_failed_setup_command_says_when_it_ran_with_no_route_out(
     )
     dispatcher = _FailingSetup(isolation)
 
-    found = workspace_setup.prepare(
+    found = worktree_setup.prepare(
         cfg,
         tmp_path,
         runner=dispatcher,
@@ -1570,7 +1570,7 @@ def test_the_no_setup_refusal_says_the_command_runs_in_the_sandbox(
     )
     dispatcher = _FailingSetup("full")
 
-    text = workspace_setup.prepare(
+    text = worktree_setup.prepare(
         cfg,
         tmp_path,
         runner=dispatcher,

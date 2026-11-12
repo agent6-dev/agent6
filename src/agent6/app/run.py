@@ -23,7 +23,7 @@ from agent6.app import (
     fork_worktrees,
     preflight,
     stamps,
-    workspace_setup,
+    worktree_setup,
     worktrees,
 )
 from agent6.app import frontend as app_frontend
@@ -264,16 +264,16 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             return 2
 
     if worktree or stamps.parallel_lineage() is not None:
-        cfg = workspace_setup.infer_if_unset(cfg, repo, reporter=reporter, at=base_sha)
+        cfg = worktree_setup.infer_if_unset(cfg, repo, reporter=reporter, at=base_sha)
     # A new worktree and a lane's clone hold tracked files only: a gate neither can run refuses.
     if (worktree or opening is not None) and (
-        gate_refusal := workspace_setup.gate_refusal(
+        gate_refusal := worktree_setup.gate_refusal(
             cfg,
             repo,
             cfg.harness.verify.command
             if review_world is not None
-            else workspace_setup.origin_gate(cfg, repo),
-            workspace="a new worktree" if worktree else "a lane's clone",
+            else worktree_setup.origin_gate(cfg, repo),
+            worktree="a new worktree" if worktree else "a lane's clone",
             at=base_sha,
         )
     ):

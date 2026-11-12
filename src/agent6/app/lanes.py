@@ -162,7 +162,7 @@ def bridge_spawner(
     """
     branch = git_read.run_branch_for(spec.session_id)
     try:
-        subrun.clone_workspace(origin, spec.worktree)
+        subrun.clone_worktree(origin, spec.worktree)
         if at is not None:
             # A local clone hardlinks the whole odb, so the chain's commits are present.
             git_ops.checkout_detached(spec.worktree, at)

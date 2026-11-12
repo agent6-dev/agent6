@@ -20,12 +20,12 @@ class SubrunError(Exception):
     """A lane clone or import failed."""
 
 
-def clone_workspace(origin: pathlib.Path, dest: pathlib.Path) -> None:
-    """Clone the origin repo into a disposable lane workspace.
+def clone_worktree(origin: pathlib.Path, dest: pathlib.Path) -> None:
+    """Clone the origin repo into a lane's own worktree.
 
     Args:
         origin: The repo to clone.
-        dest: The workspace path, which must not exist.
+        dest: The worktree's path, which must not exist.
 
     Raises:
         SubrunError: When the clone fails.

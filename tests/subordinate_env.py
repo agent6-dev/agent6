@@ -80,7 +80,7 @@ def launch_worker(
     repo: pathlib.Path, clone: pathlib.Path, cfg: Config, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[pathlib.Path, lane_launch.LaneLaunch]:
     """Create a private worker launch and install its provenance in the environment."""
-    subrun.clone_workspace(repo, clone)
+    subrun.clone_worktree(repo, clone)
     sid = "parent-p1-l1"
     spec = lane_records.LaneSpec(1, sid, clone, None)
     into = lane_launch.launch_dir(paths.state_dir(repo), "parent-p1")

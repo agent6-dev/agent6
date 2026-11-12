@@ -20,7 +20,7 @@ from collections.abc import Callable, Mapping
 import pydantic
 
 from agent6 import budget, errors, kinds, paths
-from agent6.app import confine, preflight, workspace_setup, worktrees
+from agent6.app import confine, preflight, worktree_setup, worktrees
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import agent, bundle, crash_spend, host_preflight, state_configs, workspace
@@ -436,7 +436,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         if not base_commit:
             reporter.refuse("machine clones need a committed starting point")
             return 2
-        cfg = workspace_setup.infer_if_unset(cfg, cwd, reporter=reporter, at=base_commit)
+        cfg = worktree_setup.infer_if_unset(cfg, cwd, reporter=reporter, at=base_commit)
         if cfg is not configs.machine.config:
             # parallel.* is machine-wide: a state with no config table shares the machine's config.
             machine = dataclasses.replace(configs.machine, config=cfg)
