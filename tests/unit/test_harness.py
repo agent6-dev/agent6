@@ -7725,12 +7725,13 @@ def test_dispatch_returns_a_typed_result_and_injects_no_notice(tmp_path: pathlib
             )
         ]
 
-    ev = _EventCapture()
+    ev = _EventCapture(tmp_path / "run" / "logs.jsonl")
+    (tmp_path / "run").mkdir()
     wf = _wf(
         root=tmp_path,
         mode="run",
         bridge=operator_bridge.OperatorBridge(lane_spawner=spawner),
-        resume_state_path=tmp_path / "loop_state.json",
+        resume_state_path=tmp_path / "run" / "loop_state.json",
         events=ev,
     )
     conversation = loop_conversation.Conversation.from_wire(

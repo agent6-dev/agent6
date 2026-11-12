@@ -17,7 +17,7 @@ import sys
 
 import pydantic
 
-from agent6 import lane_records
+from agent6 import budget_reservations, lane_records
 from agent6.config import Config, ConfigError
 from agent6.sessions import ipc, manifest
 
@@ -43,7 +43,9 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
         session_id: The lane's session id.
         task: The task text, exactly as the lane's manifest records it.
         pins: The coordinator's pins, out of band of the task.
-        max_usd: The lane's spend cap; None keeps the config's.
+        max_usd: The coordinator's forwarded `--max-usd`; None keeps the config's.
+        allowance: The lane's reserved share of the parent's allowance, which sets every
+            cap; None when nothing was reserved.
         auto_approve: Whether the coordinator ran with `--auto-approve`.
         away: The lane's away mode: `wait` parks a question for `agent6 attach`, `deny`
             answers it empty.
@@ -62,6 +64,7 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     task: str = pydantic.Field(min_length=1)
     pins: tuple[str, ...] = ()
     max_usd: float | None = None
+    allowance: budget_reservations.BudgetAllowance | None = None
     auto_approve: bool = False
     away: ipc.AwayMode = "wait"
     config: pathlib.Path

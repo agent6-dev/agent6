@@ -218,7 +218,7 @@ Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ReadMediaRes
 
 - **Written by:** tools/{command_tools, control_tools, dag_tools, dispatch, edit_diag, fs_tools, nav_tools, skill_tools}
 - **Read by:** app/review_actions, harness/{guards, memory_touch, metric_sampler, review_seat, tool_effects, toolset, verify_gate}, tools/result_format
-- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (36 test files exercise it)
+- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (37 test files exercise it)
 
 ## Event union
 

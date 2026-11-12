@@ -2532,7 +2532,8 @@ Source: [`agent6.app.lane_launch.LaneLaunch`](https://github.com/agent6-dev/agen
 | `session_id` | `str` | The lane's session id. |
 | `task` | `str` | The task text, exactly as the lane's manifest records it. |
 | `pins` | `tuple[str, ...]` | The coordinator's pins, out of band of the task. |
-| `max_usd` | `float \| None` | The lane's spend cap; None keeps the config's. |
+| `max_usd` | `float \| None` | The coordinator's forwarded `--max-usd`; None keeps the config's. |
+| `allowance` | `BudgetAllowance \| None` | The lane's reserved share of the parent's allowance, which sets every cap; None when nothing was reserved. |
 | `auto_approve` | `bool` | Whether the coordinator ran with `--auto-approve`. |
 | `away` | `Literal['wait', 'deny', 'approve']` | The lane's away mode: `wait` parks a question for `agent6 attach`, `deny` answers it empty. |
 | `config` | `pathlib.Path` | The lane's config snapshot, beside this file; the lane's sole `--config`. |
@@ -2543,6 +2544,27 @@ Source: [`agent6.app.lane_launch.LaneLaunch`](https://github.com/agent6-dev/agen
 | `gate_source` | `Literal['', 'configured', 'inferred', 'adopted']` | Where the verify gate in the snapshot came from; "" for none. |
 | `operator_task` | `str \| None` | The task's words before composition; None when they are the task. |
 | `limits` | `LaneLimits \| None` | The turn cap and deadline the lane runs under; None for the config's own. |
+
+### DispatchRecord
+
+**Support: public.** The record of one dispatch.
+
+Source: [`agent6.sessions.lane_dispatch.DispatchRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lane_dispatch.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `version` | `int` | The record's shape; a newer one refuses the read. |
+| `identity` | `str` | The dispatch's id, the group id `<coordinator>-p<n>`. |
+| `source` | `Literal['operator', 'model', 'panel']` | Who asked. |
+| `owner` | `str` | The execution that made it. |
+| `turn` | `int` | The turn it was dispatched after. |
+| `base` | `str` | The chain tip the lanes were cut from. |
+| `segments` | `tuple[SegmentRecord, ...]` | The requested tasks. |
+| `children` | `tuple[ChildRecord, ...]` | The lanes, in lane order. |
+| `state` | `Literal['prepared', 'running', 'settling', 'joining', 'complete']` | How far the dispatch got. |
+| `message` | `str` | The result delivered for it, "" until complete. |
+| `delivered` | `bool` | Whether the result reached the conversation. |
+| `written_at` | `float` | When this version of the record was written, as epoch seconds. |
 
 ### SessionManifest
 
@@ -2981,6 +3003,18 @@ Source: [`agent6.ui.web.server.ConfigSetBody`](https://github.com/agent6-dev/age
 | `repo` | `bool` | Whether to write repo config rather than global config. |
 | `unset` | `bool` | Whether to remove the setting instead of assigning value. |
 
+### BudgetAllowance
+
+**Support: public.** One allowance in the three currencies, each with the cap's meaning.
+
+Source: [`agent6.budget_reservations.BudgetAllowance`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/budget_reservations.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `usd` | `float` | The USD cap: -1 unlimited, 0 refuse, > 0 the amount. |
+| `tokens` | `int` | The fallback-token cap, the same way. |
+| `plan_points` | `float` | The plan percentage-point cap, the same way. |
+
 ### LaneLimits
 
 **Support: public.** The ceiling a lane runs under.
@@ -2991,6 +3025,38 @@ Source: [`agent6.lane_records.LaneLimits`](https://github.com/agent6-dev/agent6/
 | --- | --- | --- |
 | `max_turns` | `int \| None` | The turn cap the lane's `harness.max_turns` is clamped to; None keeps the config's value. |
 | `deadline_at` | `float \| None` | The wall-clock second (epoch) the lane must have ended by; None for none. Wall-clock, since it crosses the process boundary into the lane. |
+
+### SegmentRecord
+
+**Support: public.** One requested task and its lane spec.
+
+Source: [`agent6.sessions.lane_dispatch.SegmentRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lane_dispatch.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `task` | `str` | The task text. |
+| `spec` | `str` | The lane spec as given. |
+| `lanes` | `int` | How many lanes the segment expanded to. |
+| `node_id` | `str \| None` | The DAG node the segment got, None without a graph. |
+
+### ChildRecord
+
+**Support: public.** One lane of the dispatch.
+
+Source: [`agent6.sessions.lane_dispatch.ChildRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lane_dispatch.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `session_id` | `str` | The lane's session id, fixed before launch. |
+| `lane` | `int` | Its number in the group. |
+| `task` | `str` | Its task text. |
+| `model` | `str \| None` | Its selector, None for the worker's own settings. |
+| `share` | `BudgetAllowance \| None` | Its share of the parent's allowance, None when nothing was reserved. |
+| `limits` | `LaneLimits \| None` | Its turn cap and deadline, None for the config's own. |
+| `join` | `JoinRecord \| None` | How it joined, None until it did. |
+| `usage` | `UsageRecord \| None` | What it used, None until settled with known usage. |
+| `settled` | `bool` | Whether its usage was charged and its share released. |
+| `outstanding` | `bool` | Whether its usage is unknown and its share stays held. |
 
 ### ModelsBrief
 
@@ -3530,6 +3596,33 @@ Source: [`agent6.review_records.FindingResolution`](https://github.com/agent6-de
 | `duplicate_of` | `str \| None` | The other finding for a duplicate resolution, or null. |
 | `commit` | `str \| None` | The associated correction commit, or null. |
 | `verify_id` | `str \| None` | The associated verification attempt, or null. |
+
+### JoinRecord
+
+**Support: public.** How one lane's work joined, with the chain tip on either side of the merge.
+
+Source: [`agent6.sessions.lane_dispatch.JoinRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lane_dispatch.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `branch` | `str` | The lane's branch. |
+| `status` | `Literal['joined', 'no_changes', 'conflict', 'failed']` | The join's outcome. |
+| `sha` | `str` | The merge commit, "" when none. |
+| `detail` | `str` | The failure's reason, "" when none. |
+| `target_before` | `str` | The chain tip before the join. |
+| `target_after` | `str` | The chain tip after it; equal to `target_before` when nothing merged. |
+
+### UsageRecord
+
+**Support: public.** What a lane used, as settled against the parent.
+
+Source: [`agent6.sessions.lane_dispatch.UsageRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lane_dispatch.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `usd` | `float` | The lane's metered spend. |
+| `usd_partial` | `bool` | Whether unpriced calls make it a lower bound. |
+| `tokens` | `int` | Its fallback-ledger tokens. |
 
 ### ModelBrief
 

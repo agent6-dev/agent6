@@ -754,6 +754,9 @@ class Harness:
             )
 
         try:
+            if self.budget is not None:
+                # A lane's settled spend stops the parent before its next call, not after it.
+                self.budget.check()
             return provider_call.call_with_media_recovery(
                 _logical_call,
                 conversation,
@@ -1725,6 +1728,13 @@ class Harness:
             log=self.log,
             emit=self.emit,
             emit_graph_snapshot=self._emit_graph_snapshot,
+            session_id=self.session_id,
+            execution_id=self.execution_id,
+            budget=self.budget,
+            session_dir=(
+                self.resume_state_path.parent if self.resume_state_path is not None else None
+            ),
+            lane_recoverer=self.bridge.lane_recoverer,
         )
 
     @functools.cached_property

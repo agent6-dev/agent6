@@ -72,6 +72,8 @@ class OperatorBridge:
             Injected by app, which owns range resolution and checkout selection.
         lane_spawner: The ui-side group spawner `/parallel` dispatches through; None (headless,
             or inside a lane) makes the directive answer with feedback and continue.
+        lane_recoverer: Finds an interrupted dispatch's lanes on resume: stops what runs,
+            imports what finished; None leaves such a dispatch diagnosed from its record.
     """
 
     steer_requested: Callable[[], bool] = dataclasses.field(default=lambda: False)
@@ -91,6 +93,7 @@ class OperatorBridge:
     )
     undo_forker: Callable[[], tuple[str, str] | None] | None = None
     lane_spawner: lane_records.GroupLaneSpawner | None = None
+    lane_recoverer: lane_records.LaneRecoverer | None = None
     review_preparer: Callable[[str], tuple[bool, str]] | None = None
 
 
@@ -329,7 +332,7 @@ class Steering:
             return True
         if segments is None:
             return False
-        # The dispatcher returns what happened; the steer's answer is this notice.
+        # The dispatcher returns what happened and records the delivery of its answer.
         result = self.parallel().dispatch(conversation, turn, state, segments, source="operator")
-        conversation.notice(result.message)
+        self.parallel().deliver(conversation, result)
         return True

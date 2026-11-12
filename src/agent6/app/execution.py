@@ -35,6 +35,7 @@ from agent6.app import (
     workspace_setup,
 )
 from agent6.app import frontend as app_frontend
+from agent6.app import lanes as app_lanes
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, RoleName
 from agent6.harness import (
@@ -569,6 +570,9 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     inputs.sandbox_overrides.auto_approve
                     if inputs.sandbox_overrides is not None
                     else False,
+                ),
+                lane_recoverer=app_lanes.build_lane_recoverer(
+                    cfg, cwd, state_dir, mode=mode, reporter=reporter
                 ),
             ),
             budget=budget,

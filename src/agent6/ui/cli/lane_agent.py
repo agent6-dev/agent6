@@ -104,7 +104,15 @@ def main() -> int:
     os.chdir(launch.workdir)
     if not preflight.require_git_repo(launch.workdir):
         return 2
-    budget = session_setup.BudgetOverrides(max_usd=launch.max_usd)
+    budget = (
+        session_setup.BudgetOverrides(
+            max_usd=launch.allowance.usd,
+            max_tokens_fallback=launch.allowance.tokens,
+            max_plan_points=launch.allowance.plan_points,
+        )
+        if launch.allowance is not None
+        else session_setup.BudgetOverrides(max_usd=launch.max_usd)
+    )
     sandbox = session_setup.SandboxOverrides(auto_approve=launch.auto_approve)
     try:
         effective = session_setup.load_session_config(

@@ -103,6 +103,7 @@ class _FakeGraph:
         self.entries: dict[str, models.TaskNode] = {}
         self.status_calls: list[tuple[str, str, str]] = []
         self.commit_calls: list[tuple[str, str]] = []
+        self.graph_version = 0
 
     def nodes(self) -> dict[str, models.TaskNode]:
         return dict(self.entries)
@@ -317,6 +318,9 @@ def _build_wf(
         ),
         call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_turns=max_turns,
+        # The dispatch record lives beside the snapshot: a session dir outside the repo.
+        resume_state_path=(events.path.parent if events is not None else repo.parent / "session")
+        / "loop_state.json",
     )
 
 
@@ -793,7 +797,7 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) 
     assert result.reason == "max_turns"
     # The failure is rendered truthfully on every surface.
     failed = events.of("loop.parallel.failed")
-    assert failed and failed[0]["group"] == "p1"
+    assert failed and failed[0]["group"] == "run-boom-p1"  # the stamped group id
     assert "disk full" in str(failed[0])
     texts = _user_texts(_final_messages(provider))
     assert any("disk full while cloning lane 2" in t for t in texts)

@@ -446,6 +446,7 @@ WEB = (
 )
 MODELS = (
     ("app.lane_launch", "LaneLaunch"),
+    ("sessions.lane_dispatch", "DispatchRecord"),
     ("sessions.manifest", "SessionManifest"),
     ("ui.cli.ps_cmd", "_Row"),
     ("viewmodel.state_types", "SessionState"),

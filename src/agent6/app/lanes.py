@@ -14,9 +14,10 @@ import time
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from agent6 import directive, errors, kinds, lane_records, paths
+from agent6 import budget as agent6_budget
+from agent6 import budget_reservations, directive, errors, kinds, lane_records, paths
 from agent6.app import compare as app_compare
-from agent6.app import lane_launch, lane_watch, parallel_results, workdirs
+from agent6.app import lane_launch, lane_watch, parallel_results, stop, workdirs
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError
 from agent6.context import memory
@@ -26,7 +27,13 @@ from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_ops, git_read
-from agent6.viewmodel import format, produced_result, summarize_session_dir
+from agent6.viewmodel import (
+    format,
+    produced_result,
+    session_is_live,
+    session_log,
+    summarize_session_dir,
+)
 
 
 class ParallelError(Exception):
@@ -146,6 +153,7 @@ def bridge_spawner(
     coordinator: str,
     gate_source: sessions_manifest.GateSource = "",
     limits: lane_records.LaneLimits | None = None,
+    allowance: budget_reservations.BudgetAllowance | None = None,
     runtime: LaneRuntime,
 ) -> lane_records.LaneResult:
     """Clone the origin and start the lane bootstrap detached in the clone.
@@ -170,6 +178,7 @@ def bridge_spawner(
         coordinator: The session every listing nests the lane under.
         gate_source: Where the gate in the lane's config came from, "" when it has none.
         limits: The turn cap and deadline the lane runs under; None for the config's own.
+        allowance: The lane's reserved share, which sets every cap; None for the config's.
         runtime: The front-end's spawn primitive.
 
     Returns:
@@ -211,6 +220,7 @@ def bridge_spawner(
                 gate_source=gate_source,
                 operator_task=operator_task,
                 limits=limits,
+                allowance=allowance,
             ),
         )
     except (lane_launch.LaunchError, OSError) as exc:
@@ -279,6 +289,7 @@ def run_lane_to_completion(
     stop_is_now: Callable[[], bool] | None = None,
     hard_stop: threading.Event | None = None,
     limits: lane_records.LaneLimits | None = None,
+    allowance: budget_reservations.BudgetAllowance | None = None,
     clock: Callable[[], float] = time.time,
 ) -> lane_records.LaneResult:
     """Run one subordinate lane to its end and import it into the origin.
@@ -318,6 +329,7 @@ def run_lane_to_completion(
             `now` when one arrives; `now` hands its command back and waits a bounded grace.
         hard_stop: Set to skip the grace.
         limits: The turn cap and deadline the lane runs under; None for the config's own.
+        allowance: The lane's reserved share; None for the config's caps.
         clock: The wall clock the deadline is read against.
 
     Returns:
@@ -338,6 +350,7 @@ def run_lane_to_completion(
             coordinator=coordinator,
             gate_source=gate_source,
             limits=limits,
+            allowance=allowance,
             runtime=runtime,
         )
     res = spawner(spec, task)
@@ -396,6 +409,44 @@ def run_lane_to_completion(
         return lane_records.LaneResult(
             spec=res.spec, session_dir=res.session_dir, branch=res.branch, ok=False, error=str(exc)
         )
+    return land_lane(
+        res,
+        imported,
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        group=group,
+        reporter=reporter,
+        overdue=overdue,
+    )
+
+
+def land_lane(
+    res: lane_records.LaneResult,
+    imported: lane_records.Imported,
+    *,
+    cfg: Config,
+    origin: pathlib.Path,
+    origin_state: pathlib.Path,
+    group: str,
+    reporter: app_reporter.Reporter,
+    overdue: bool = False,
+) -> lane_records.LaneResult:
+    """Finish an imported lane: carry its memory back, clean its clone, read its outcome.
+
+    Args:
+        res: The lane as it ran.
+        imported: What the import landed.
+        cfg: The origin's effective config.
+        origin: The repository.
+        origin_state: The origin's state dir.
+        group: The group the lane belongs to.
+        reporter: Receives the notes.
+        overdue: Whether the lane was ended by its deadline.
+
+    Returns:
+        The lane's result over the imported dir, its usage read from its record.
+    """
     dest = imported.session_dir
     parallel_results.carry_back(
         paths.state_dir(res.spec.workdir),
@@ -414,30 +465,175 @@ def run_lane_to_completion(
         launch_dir=lane_launch.launch_dir(origin_state, group),
         cfg=cfg,
     )
+    return recorded_result(res.spec, res.branch, dest, imported, origin=origin, overdue=overdue)
+
+
+def recorded_result(
+    spec: lane_records.LaneSpec,
+    branch: str,
+    dest: pathlib.Path,
+    imported: lane_records.Imported,
+    *,
+    origin: pathlib.Path,
+    overdue: bool = False,
+) -> lane_records.LaneResult:
+    """Return a lane's result from its imported record: its outcome, its work, its usage.
+
+    Args:
+        spec: The lane.
+        branch: Its branch.
+        dest: Its imported run dir.
+        imported: What the import landed.
+        origin: The repository.
+        overdue: Whether the lane was ended by its deadline.
+
+    Returns:
+        `ok` only for a deliberate end; the usage is read either way.
+    """
     summary = summarize_session_dir(dest)
+    usage = lane_usage(dest)
     if not produced_result(summary.status):
         # Only a deliberate end joins the coordinator as a success.
         return lane_records.LaneResult(
             spec=spec,
             session_dir=dest,
-            branch=res.branch,
+            branch=branch,
             ok=False,
             error=("ended at its deadline: " if overdue else "")
             + f"no result ({format.status_label(summary.status, summary.detail)});"
-            f" {parallel_results.imported_branch_note(origin, res.branch)}",
+            f" {parallel_results.imported_branch_note(origin, branch)}",
             imported_ref=imported.ref,
             imported_tip=imported.tip,
+            usage=usage,
         )
     return lane_records.LaneResult(
         spec=spec,
         session_dir=dest,
-        branch=res.branch,
+        branch=branch,
         ok=True,
         error="",
         imported_ref=imported.ref,
         imported_tip=imported.tip,
         has_commits=lane_has_commits(dest, imported),
+        usage=usage,
     )
+
+
+def lane_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement:
+    """Read what a lane used from its journal, as its parent settles it.
+
+    Args:
+        session_dir: The lane's imported run dir.
+
+    Returns:
+        The lane's spend and its last plan reading; a journal with no budget row reads as
+        nothing spent.
+    """
+    scan = session_log.scan_session_log(session_dir / sessions_layout.LOGS_NAME)
+    provider = parallel_results.lane_provider(session_dir)
+    readings = ((provider, scan.plan_usage),) if scan.plan_usage is not None and provider else ()
+    return agent6_budget.UsageSettlement(
+        usd=scan.cost_usd or 0.0,
+        usd_partial=scan.usd_partial,
+        tokens=0,
+        plan_readings=readings,
+    )
+
+
+def recover_lanes(
+    group: str,
+    children: Sequence[str],
+    *,
+    cfg: Config,
+    origin: pathlib.Path,
+    origin_state: pathlib.Path,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
+) -> list[lane_records.LaneResult]:
+    """Return an interrupted group's lanes: the live stopped, the finished imported.
+
+    A lane with no session dir under the origin never started. A live one is stopped as
+    `agent6 stop` stops a run and waited for. One whose record is still only in its clone
+    (the live symlink) is imported; one already imported is read as it stands.
+
+    Args:
+        group: The group id.
+        children: The lanes' session ids, in lane order.
+        cfg: The origin's effective config.
+        origin: The repository.
+        origin_state: The origin's state dir.
+        reporter: Receives the notes.
+
+    Returns:
+        One result per lane that has a session dir, in lane order.
+    """
+    runs = sessions_layout.bucket_dir(origin_state, "runs")
+    workdir_root = workdirs.subordinate_workdir_root(cfg, origin, group)
+    results: list[lane_records.LaneResult] = []
+    for lane, session_id in enumerate(children, start=1):
+        lane_dir = runs / session_id
+        if not lane_dir.exists() and not lane_dir.is_symlink():
+            continue
+        spec = lane_records.LaneSpec(lane, session_id, workdir_root / f"lane-{lane}", None)
+        branch = git_read.run_branch_for(session_id)
+        if session_is_live(lane_dir):
+            outcome = stop.stop_session(lane_dir, wait_s=lane_watch.STOP_GRACE_S)
+            reporter.note(f"lane {lane} [{session_id}]: {outcome.message}")
+        if lane_dir.is_symlink():
+            real = lane_dir.resolve()
+            res = lane_records.LaneResult(spec, real, branch, True, "")
+            try:
+                imported = parallel_results.import_lane(res, origin, origin_state, None)
+            except subrun.SubrunError as exc:
+                results.append(dataclasses.replace(res, ok=False, error=str(exc)))
+                continue
+            results.append(
+                land_lane(
+                    res,
+                    imported,
+                    cfg=cfg,
+                    origin=origin,
+                    origin_state=origin_state,
+                    group=group,
+                    reporter=reporter,
+                )
+            )
+            continue
+        ref = branch if git_read.branch_exists(origin, branch) else ""
+        tip = (git_read.branch_tip_sha(origin, branch) or "") if ref else ""
+        imported = lane_records.Imported(lane_dir, ref, tip)
+        results.append(recorded_result(spec, branch, lane_dir, imported, origin=origin))
+    return results
+
+
+def build_lane_recoverer(
+    cfg: Config,
+    origin: pathlib.Path,
+    origin_state: pathlib.Path,
+    *,
+    mode: str,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
+) -> lane_records.LaneRecoverer | None:
+    """Build the recoverer a resumed run's loop reconciles interrupted dispatches with.
+
+    Args:
+        cfg: The run's config.
+        origin: The repository.
+        origin_state: The origin's state dir.
+        mode: The session mode; only a run dispatches.
+        reporter: Receives the notes.
+
+    Returns:
+        The recoverer, or None where no dispatch could have happened.
+    """
+    if mode != "run" or os.environ.get("AGENT6_SUBRUN"):
+        return None
+
+    def recover(group: str, children: Sequence[str]) -> list[lane_records.LaneResult]:
+        return recover_lanes(
+            group, children, cfg=cfg, origin=origin, origin_state=origin_state, reporter=reporter
+        )
+
+    return recover
 
 
 def lane_has_commits(session_dir: pathlib.Path, imported: lane_records.Imported) -> bool:
@@ -582,6 +778,8 @@ def build_lane_spawner(
                 should_stop=should_stop,
                 stop_is_now=stop_is_now,
                 hard_stop=hard_stop,
+                limits=lane.limits,
+                allowance=lane.allowance,
             )
 
         pairs = list(zip(specs, lanes, strict=True))

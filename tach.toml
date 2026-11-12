@@ -29,6 +29,7 @@ path = "agent6.app"
 depends_on = [
   "agent6",
   "agent6.budget",
+  "agent6.budget_reservations",
   "agent6.child_env",
   "agent6.config",
   "agent6.config.io",
@@ -204,6 +205,7 @@ depends_on = [
   # subrun lands a finished lane's session dir in the ORIGIN state dir; the
   # bucket layout has one owner rather than a second spelling here.
   "agent6.sessions.journal",
+  "agent6.sessions.lane_dispatch",
   "agent6.sessions.layout",
   "agent6.sessions.objects",
   "agent6.sessions.process",
@@ -775,7 +777,7 @@ depends_on = []
 
 [[modules]]
 path = "agent6.lane_records"
-depends_on = ["agent6.kinds"]
+depends_on = ["agent6.budget", "agent6.budget_reservations", "agent6.kinds"]
 
 [[modules]]
 path = "agent6.task_text"
@@ -874,6 +876,10 @@ depends_on = [
   "agent6.tools.dispatch",
   "agent6.viewmodel",
 ]
+
+[[modules]]
+path = "agent6.sessions.lane_dispatch"
+depends_on = ["agent6.budget_reservations", "agent6.lane_records", "agent6.portable"]
 
 [[modules]]
 path = "agent6.sessions.layout"

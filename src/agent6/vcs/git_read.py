@@ -385,6 +385,27 @@ def run_ref_tips(path: pathlib.Path) -> dict[str, str]:
     return out
 
 
+def merge_commit_for(path: pathlib.Path, ref: str, tip: str) -> str | None:
+    """Return the merge commit on `ref` whose second parent is `tip`, or None.
+
+    Args:
+        path: The repository.
+        ref: The ref whose history holds the merge.
+        tip: The commit merged in.
+
+    Returns:
+        The merge commit's sha, or None when no merge on the ref brought the tip in.
+    """
+    res = git_command.run(path, "rev-list", "--merges", "--parents", ref, check=False)
+    if not res.ok:
+        return None
+    for line in res.stdout.splitlines():
+        parts = line.split()
+        if len(parts) > 2 and tip in parts[2:]:
+            return parts[0]
+    return None
+
+
 def is_ancestor(path: pathlib.Path, maybe_ancestor: str, ref: str) -> bool:
     """Return whether the first commit is reachable from the second."""
     return git_command.run(path, "merge-base", "--is-ancestor", maybe_ancestor, ref, check=False).ok

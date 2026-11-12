@@ -157,6 +157,7 @@ When the lanes return, each joins the run's chain in dispatch order and one noti
 
 A fan-out group has no model loop: steer one of its lanes instead.
 `agent6 stop ID` on a session with live lanes stops the lanes too, by the lineage their manifests record, and still does when the session itself has already ended.
+A run interrupted while its lanes ran finishes that dispatch first when resumed: lanes still running are stopped, finished ones are imported and joined once, their spend is settled once, and the model hears the group's outcome before its first call.
 The refusal names the lane session IDs.
 While a steer waits on disk, `sessions show`, the TUI header and the web session status show `steer queued, not yet delivered` with its text and the count waiting behind it.
 Steers sent while one waits queue in order and reach the model one per step; `abort`, `exit`, `/undo` and `detach` take the slot at once.

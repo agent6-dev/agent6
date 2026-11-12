@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from agent6 import terminal
 from agent6.harness import loop_conversation, loop_snapshot, loop_state
-from agent6.sessions import journal
+from agent6.sessions import journal, lane_dispatch
 from agent6.tools import operator_prompts
 from agent6.vcs import git_ops
 
@@ -229,6 +229,11 @@ def execution_opening(
         operator_state(harness, conversation, state)
         return None
     resume_opening(harness, conversation, state)
+    # An interrupted dispatch is finished or diagnosed before the first call.
+    if harness.resume_state_path is not None and (
+        lane_dispatch.records_dir(harness.resume_state_path.parent).is_dir()
+    ):
+        harness.parallel.reconcile(state, conversation)
     return seeded_steer(harness, conversation, turn, state)
 
 

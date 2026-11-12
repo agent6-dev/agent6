@@ -565,6 +565,40 @@ class BudgetTracker:
             self._reservations[identity] = grant
             return grant
 
+    def restore(
+        self,
+        identity: str,
+        shares: Sequence[tuple[str, budget_reservations.BudgetAllowance]],
+        *,
+        owner: str,
+        settled: frozenset[str] = frozenset(),
+    ) -> budget_reservations.BudgetReservation:
+        """Hold a grant a prior execution recorded, as it was: never a second split.
+
+        Args:
+            identity: The dispatch's id.
+            shares: Each lane's session id and recorded share.
+            owner: The execution that made the grant.
+            settled: The lanes that execution already settled; their shares are not held.
+
+        Returns:
+            The grant, the existing one when this execution already holds it.
+        """
+        with self._lock:
+            existing = self._reservations.get(identity)
+            if existing is not None:
+                return existing
+            grant = budget_reservations.BudgetReservation(
+                identity=identity, owner=owner, shares=tuple(shares), settled=settled
+            )
+            self._reservations[identity] = grant
+            return grant
+
+    def release(self, identity: str) -> None:
+        """Drop a grant whose lanes never launched; nothing was used, nothing stays held."""
+        with self._lock:
+            self._reservations.pop(identity, None)
+
     def settle_lane(
         self, identity: str, child: str, usage: UsageSettlement | None
     ) -> budget_reservations.BudgetReservation:

@@ -11,14 +11,45 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
+from collections.abc import Sequence
 from typing import Literal, Protocol
 
-from agent6 import kinds
+from agent6 import budget, budget_reservations, kinds
 
 # Who asked for a dispatch: the operator's steer, the model's tool call, or a review panel.
 DispatchSource = Literal["operator", "model", "panel"]
 # How one lane's work joined the coordinator's chain.
 JoinStatus = Literal["joined", "no_changes", "conflict", "failed"]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class LaneLimits:
+    """The ceiling a lane runs under.
+
+    Attributes:
+        max_turns: The turn cap the lane's `harness.max_turns` is clamped to; None keeps the
+            config's value.
+        deadline_at: The wall-clock second (epoch) the lane must have ended by; None for none.
+            Wall-clock, since it crosses the process boundary into the lane.
+    """
+
+    max_turns: int | None = None
+    deadline_at: float | None = None
+
+    def clamp_turns(self, configured: int) -> int:
+        """Return the lane's turn cap: the smaller of the configured value and the cap.
+
+        Args:
+            configured: `harness.max_turns`, -1 for unlimited.
+
+        Returns:
+            The configured value under the cap; a configured -1 cannot lift the cap.
+        """
+        if self.max_turns is None:
+            return configured
+        if configured < 0:
+            return self.max_turns
+        return min(configured, self.max_turns)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -30,11 +61,15 @@ class LaneTask:
         model: The lane's selector (a role name or `[provider/]model`), None for the
             worker's own settings.
         pins: The operator's pins, passed beside the task so the lane's manifest task stays clean.
+        allowance: The lane's share of the parent's allowance; None for the config's caps.
+        limits: The lane's turn cap and deadline; None for the config's own.
     """
 
     task: str
     model: str | None
     pins: tuple[str, ...] = ()
+    allowance: budget_reservations.BudgetAllowance | None = None
+    limits: LaneLimits | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -85,6 +120,8 @@ class LaneResult:
         has_commits: Whether the imported tip holds commits beyond the lane's base.
         pid: The lane process the spawn started, 0 when none did; a child that never
             reported its session dir is stopped through it.
+        usage: What the lane used, read from its imported record; None when no record
+            came back.
     """
 
     spec: LaneSpec
@@ -96,36 +133,7 @@ class LaneResult:
     imported_tip: str = ""
     has_commits: bool = False
     pid: int = 0
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class LaneLimits:
-    """The ceiling a lane runs under.
-
-    Attributes:
-        max_turns: The turn cap the lane's `harness.max_turns` is clamped to; None keeps the
-            config's value.
-        deadline_at: The wall-clock second (epoch) the lane must have ended by; None for none.
-            Wall-clock, since it crosses the process boundary into the lane.
-    """
-
-    max_turns: int | None = None
-    deadline_at: float | None = None
-
-    def clamp_turns(self, configured: int) -> int:
-        """Return the lane's turn cap: the smaller of the configured value and the cap.
-
-        Args:
-            configured: `harness.max_turns`, -1 for unlimited.
-
-        Returns:
-            The configured value under the cap; a configured -1 cannot lift the cap.
-        """
-        if self.max_turns is None:
-            return configured
-        if configured < 0:
-            return self.max_turns
-        return min(configured, self.max_turns)
+    usage: budget.UsageSettlement | None = None
 
 
 class LaneSpawner(Protocol):
@@ -149,6 +157,14 @@ class GroupLaneSpawner(Protocol):
         self, lanes: list[LaneTask], group: str, *, at: str | None = None
     ) -> list[LaneResult]:
         """Run the lanes as one group, from the commit `at` when given, in dispatch order."""
+        ...
+
+
+class LaneRecoverer(Protocol):
+    """Find an interrupted group's lanes, stop what still runs and import what finished."""
+
+    def __call__(self, group: str, children: Sequence[str]) -> list[LaneResult]:
+        """Return a result per lane found; a lane with no session dir is missing."""
         ...
 
 

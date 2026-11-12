@@ -672,6 +672,8 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
 
 ### 9. State and locks
 
+- A live run's lane dispatches are recorded under its session dir (`dispatch/<group>.json`), written by the harness alone before any lane launches and advanced at each boundary; a resume reads them to finish or diagnose an interrupted dispatch without launching a lane again, reserving twice or merging twice; no UI writes them.
+
 - An in-process `GraphCurator` owns the task graph ([the curator and its locks](architecture.md#the-curator-and-its-locks))
     - every mutation validates against a pydantic schema before writing
 - Per-repo state lives at `$XDG_STATE_HOME/agent6/<repo-id>/`, outside the working directory jailed commands run in.
