@@ -589,10 +589,8 @@ def _finishing_workflow(turns: int) -> type:
     return _Workflow
 
 
-def test_the_chown_runs_after_the_auto_merge_writes(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Under sudo the chown is the last teardown step, after the merge's root writes."""
+def _teardown_order(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Run one finishing execution with `git.auto_merge` on and return its teardown steps."""
     state = tmp_path / "state"
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="sess-ORDER1")
     layout.ensure()
@@ -627,7 +625,31 @@ def test_the_chown_runs_after_the_auto_merge_writes(
         cwd=tmp_path,
         state_dir=state,
     )
-    assert order == ["steer", "session", "dispatcher", "auto_merge", "chown"]
+    return order
+
+
+def test_the_chown_runs_after_the_auto_merge_writes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under sudo the chown is the last teardown step, after the merge's root writes."""
+    monkeypatch.delenv("AGENT6_SUBRUN", raising=False)
+    assert _teardown_order(tmp_path, monkeypatch) == [
+        "steer",
+        "session",
+        "dispatcher",
+        "auto_merge",
+        "chown",
+    ]
+
+
+def test_a_lane_never_lands_itself(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A lane with `git.auto_merge` on leaves its branch to the session that dispatched it.
+
+    It merged into its throwaway clone's base branch and stamped itself merged, so every
+    listing read the lane merged while the operator's repository never got the work.
+    """
+    monkeypatch.setenv("AGENT6_SUBRUN", "1")
+    assert _teardown_order(tmp_path, monkeypatch) == ["steer", "session", "dispatcher", "chown"]
 
 
 @pytest.mark.parametrize(

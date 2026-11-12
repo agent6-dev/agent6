@@ -720,7 +720,9 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 cleanup.callback(steer_state.restore)
                 # A stop never read at a boundary would stop the next execution at its first.
                 cleanup.callback(ipc.clear_stop_request, layout.session_dir)
-            if not interrupted and result is not None and cfg.git.auto_merge and mode == "run":
+            # A lane's base branch is its throwaway clone's: its dispatcher lands the work.
+            lands_itself = cfg.git.auto_merge and mode == "run" and not lane_launch.is_lane()
+            if not interrupted and result is not None and lands_itself:
                 if finalize.auto_merge_eligible(result):
                     finalize.finalize_auto_merge(
                         cwd,
