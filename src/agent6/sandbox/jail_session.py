@@ -169,6 +169,13 @@ class JailSession:
     _stderr: jail_protocol.Stderr | None = None
     _request_id: int = 0
     _close_error: str | None = None
+    # Why the launcher was abandoned; every later request repeats it.
+    _failure: str = ""
+
+    def _stderr_since_startup(self) -> str:
+        """Return what the launcher wrote to stderr after setup; the caller surfaced the rest."""
+        text = self._stderr.text() if self._stderr is not None else ""
+        return text.removeprefix(self.startup_stderr).strip()
 
     @classmethod
     def open(
@@ -494,7 +501,8 @@ class JailSession:
             data = bytes(read.data)
         except ValueError as exc:
             _abandon_launcher(self._proc, self._stderr)
-            raise jail.JailUnavailableError(f"invalid background read response: {exc}") from exc
+            self._failure = f"invalid background read response: {exc}"
+            raise jail.JailUnavailableError(self._failure) from exc
         if (
             read.offset != offset
             or read.next_offset != offset + len(data)
@@ -503,7 +511,8 @@ class JailSession:
             or (not data and offset < read.size)
         ):
             _abandon_launcher(self._proc, self._stderr)
-            raise jail.JailUnavailableError("invalid background read offsets or size")
+            self._failure = "invalid background read offsets or size"
+            raise jail.JailUnavailableError(self._failure)
         return BackgroundRead(
             data=data,
             next_offset=read.next_offset,
@@ -562,6 +571,8 @@ class JailSession:
             jail.JailUnavailableError: The launcher is gone or answered badly; never the
                 raw pipe error, which no handler in the run catches.
         """
+        if self._failure:
+            raise jail.JailUnavailableError(f"jail session ended earlier: {self._failure}")
         assert self._proc.stdin is not None and self._proc.stdout is not None
         self._request_id += 1
         data = jail_protocol.frame({**request, "id": self._request_id})
@@ -586,10 +597,11 @@ class JailSession:
                 raise jail.JailUnavailableError("jail session launcher instance changed")
             return answer.model_dump(exclude={"instance"})
         except (EOFError, OSError, ValueError, jail.JailUnavailableError) as exc:
-            err = self._stderr.text() if self._stderr is not None else ""
+            err = self._stderr_since_startup()
             _abandon_launcher(self._proc, self._stderr)
+            self._failure = f"{exc}" + (f": {err}" if err else "")
             raise jail.JailUnavailableError(
-                f"jail session protocol failed: {exc}" + (f": {err}" if err else "")
+                f"jail session protocol failed: {self._failure}"
             ) from exc
 
     def close(self) -> str:
@@ -619,9 +631,12 @@ class JailSession:
         with contextlib.suppress(subprocess.TimeoutExpired, OSError):
             self._proc.wait(timeout=max(0.0, deadline - time.monotonic()))
         code = self._proc.poll()
-        detail = self._stderr.text() if self._stderr is not None else ""
+        detail = self._stderr_since_startup()
         self._close_error = (
-            "" if code == 0 else f"job cleanup unknown: jail supervisor exit {code}: {detail}"
+            ""
+            if code == 0
+            else f"job cleanup unknown: jail supervisor exit {code}"
+            + (f": {detail}" if detail else "")
         )
         _abandon_launcher(self._proc, self._stderr)
         return self._close_error

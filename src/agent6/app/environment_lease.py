@@ -378,16 +378,16 @@ def _settle(
     """Return the lease after the session's release and what the release observed."""
     owner = lease.owner
     if owner is None or owner.session_id != session_id:
-        return lease, kinds.EnvironmentOutcome("left_running", lease.lost or "attached, not owned")
+        return lease, _left(host_root, options, lease.lost or "attached, not owned")
     live = sorted(b.session_id for b in lease.borrowers if _alive(state_dir, b.session_id))
     ended = sorted(b.session_id for b in lease.borrowers if b.session_id not in live)
     if live:
-        return lease, kinds.EnvironmentOutcome("left_running", f"still attached: {', '.join(live)}")
+        return lease, _left(host_root, options, f"still attached: {', '.join(live)}")
     if ended:
         reason = f"attached runs ended without releasing: {', '.join(ended)}"
-        return lease, kinds.EnvironmentOutcome("left_running", reason)
+        return lease, _left(host_root, options, reason)
     if not options.stop:
-        return lease, kinds.EnvironmentOutcome("left_running", "owned; container.stop unset")
+        return lease, _left(host_root, options, "owned; container.stop unset")
     outcome = _stop(host_root, options)
     lease = lease.model_copy(
         update={
@@ -412,11 +412,44 @@ def _stop(host_root: pathlib.Path, options: container.ContainerOptions) -> kinds
         container.run_lifecycle(options.stop, what="container.stop")
     except container.ContainerError as exc:
         return kinds.EnvironmentOutcome("unknown", str(exc))
-    observe = dataclasses.replace(options, start=(), stop=())
+    state, seen = presence(host_root, options)
+    if state == "absent":
+        return kinds.EnvironmentOutcome("stopped", f"container.stop ran; {seen}")
+    if state == "running":
+        return kinds.EnvironmentOutcome("unknown", "container.stop ran; the container still runs")
+    return kinds.EnvironmentOutcome("unknown", f"container.stop ran; {seen}")
+
+
+def presence(
+    host_root: pathlib.Path, options: container.ContainerOptions
+) -> tuple[Literal["running", "absent", "unknown"], str]:
+    """Look for the environment now.
+
+    Args:
+        host_root: The host workspace.
+        options: The operator's selection.
+
+    Returns:
+        Whether discovery sees the dev container, and the words for what it saw.
+    """
+    if options.exec:
+        return "unknown", "behind container.exec its state is not observed"
     try:
-        container.discover(host_root, observe)
+        container.discover(host_root, dataclasses.replace(options, start=(), stop=()))
     except container.ContainerNotFoundError:
-        return kinds.EnvironmentOutcome("stopped", "container.stop ran; no running dev container")
+        return "absent", "no running dev container"
     except container.ContainerError as exc:
-        return kinds.EnvironmentOutcome("unknown", f"container.stop ran; observation failed: {exc}")
-    return kinds.EnvironmentOutcome("unknown", "container.stop ran; the container still runs")
+        return "unknown", f"observation failed: {exc}"
+    return "running", "the dev container runs"
+
+
+def _left(
+    host_root: pathlib.Path, options: container.ContainerOptions, reason: str
+) -> kinds.EnvironmentOutcome:
+    """Return left_running once the container is seen running, else what was seen."""
+    state, seen = presence(host_root, options)
+    if state == "running":
+        return kinds.EnvironmentOutcome("left_running", reason)
+    if state == "absent":
+        return kinds.EnvironmentOutcome("stopped", f"{reason}; {seen} when the run ended")
+    return kinds.EnvironmentOutcome("unknown", f"{reason}; {seen}")

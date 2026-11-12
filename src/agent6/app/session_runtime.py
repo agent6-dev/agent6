@@ -532,6 +532,7 @@ def prepare_container_execution(
         session=session,
         grants=tools_policy.resolve_grants(cfg, root),
         lifecycle=settle,
+        environment_state=lambda: environment_lease.presence(root, options)[1],
     )
 
 

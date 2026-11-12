@@ -16,7 +16,7 @@ from agent6 import kinds, paths
 from agent6.app import environment_lease, session_runtime
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
-from agent6.sandbox import container
+from agent6.sandbox import container, jail
 from agent6.sessions import journal, layout, process
 
 _ID = "a" * 64
@@ -222,6 +222,37 @@ def test_a_prepared_run_journals_its_start_and_its_lease(
     )
     assert notes[0].endswith(f"container: starting: {options.start[0]}")
     assert notes[1].endswith("container: started by this run; owned")
+
+
+def test_a_command_that_cannot_reach_the_container_says_whether_it_runs(
+    fake: Fake, workspace: pathlib.Path, state_dir: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A jail failure under a container ends with the container's observed state.
+
+    With the container killed mid-run, the command's error named a protocol frame and the
+    launcher's start banner, and nothing said the container was gone.
+    """
+    fake.running(_ID)
+    for name in ("exposures", "check_checkout", "check_hidden_paths"):
+        monkeypatch.setattr(container, name, mock.Mock(return_value=()))
+    monkeypatch.setattr(container, "prepare", mock.Mock())
+    access = session_runtime.prepare_container_execution(
+        Config(),
+        workspace,
+        fake.options(),
+        state_dir=state_dir,
+        session_id="r1",
+        execution_id="e1",
+        reporter=app_reporter.Reporter(out=lambda _s: None, err=lambda _s: None),
+    )
+    lost = jail.JailUnavailableError("jail session protocol failed: no frame")
+    assert access.unavailable(lost) == (
+        "jail unavailable: jail session protocol failed: no frame; the dev container runs"
+    )
+    fake.running()
+    assert access.unavailable(lost) == (
+        "jail unavailable: jail session protocol failed: no frame; no running dev container"
+    )
 
 
 def test_the_owner_stops_what_it_started(
@@ -431,8 +462,39 @@ def test_an_opaque_exec_prefix_is_never_owned(
     outcome = environment_lease.release(
         state_dir, held.ref, session_id="r1", host_root=workspace, options=options
     )
-    assert outcome == kinds.EnvironmentOutcome("left_running", "attached, not owned")
+    assert outcome == kinds.EnvironmentOutcome(
+        "unknown", "attached, not owned; behind container.exec its state is not observed"
+    )
     assert (fake.markers / _ID).exists()
+
+
+def test_a_borrower_whose_container_is_gone_does_not_read_left_running(
+    fake: Fake, workspace: pathlib.Path, state_dir: pathlib.Path
+) -> None:
+    """A release looks before it says left running.
+
+    A borrowed container killed mid-run ended as "Environment left running: attached, not
+    owned" while the runtime listed it exited.
+    """
+    fake.running(_ID)
+    options = fake.options()
+    held = environment_lease.acquire(
+        state_dir, workspace, options, session_id="r1", execution_id="e1"
+    )
+    assert held.role == "borrower"
+    fake.running()
+    outcome = environment_lease.release(
+        state_dir, held.ref, session_id="r1", host_root=workspace, options=options
+    )
+    assert outcome == kinds.EnvironmentOutcome(
+        "stopped", "attached, not owned; no running dev container when the run ended"
+    )
+    assert environment_lease.presence(workspace, options) == (
+        "absent",
+        "no running dev container",
+    )
+    fake.running(_ID)
+    assert environment_lease.presence(workspace, options) == ("running", "the dev container runs")
 
 
 def test_a_checkout_outside_the_mounted_workspace_refuses(

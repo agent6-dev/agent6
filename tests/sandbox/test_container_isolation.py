@@ -77,8 +77,11 @@ def test_a_prepared_container_run_settles_its_lease_through_the_dispatcher(
     rows = [json.loads(line) for line in saved.logs_path.read_text().splitlines()]
     environments = [row for row in rows if row["type"] == "execution.environment"]
     assert len(environments) == 1
-    assert environments[0]["outcome"] == "left_running"
-    assert environments[0]["reason"] == "attached, not owned"
+    # Behind an exec prefix nothing can look for the container, so the release claims no state.
+    assert environments[0]["outcome"] == "unknown"
+    assert environments[0]["reason"] == (
+        "attached, not owned; behind container.exec its state is not observed"
+    )
     targets = [row for row in rows if row["type"] == "execution.target"]
     assert targets and targets[0]["target"]["lifecycle_ref"] == key
     after = environment_lease.read_lease(state_dir, key)

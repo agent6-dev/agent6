@@ -308,7 +308,8 @@ A resumed owner keeps ownership of the same container and loses it to a replacem
 
 `release` removes the session's borrower entry.
 The owner stops the environment through the stop command only when no borrower is live, none ended without releasing, and a stop command is set; the observation afterwards decides `stopped` or `unknown`.
-Every other case is `left_running` with its reason, and a lease whose owner's worker died is reported as orphaned, never inherited.
+Every other case looks for the container first: `left_running` with its reason when discovery sees it, `stopped` when no dev container runs, `unknown` behind `container.exec` or when the look fails.
+A lease whose owner's worker died is reported as orphaned, never inherited.
 `session_runtime.prepare_container_execution` composes acquisition, the checkout mapping check (`container.check_checkout`: a linked worktree, fork, review worktree or machine clone outside the mounted workspace, or a `.git` pointer outside it, refuses before any command), launcher preparation and the lifecycle hook on `JailAccess`; the dispatcher reports the hook's outcome as `execution.environment` after the session closed and its jobs settled.
 `sandbox.isolation = "container"` selects this path: `execution.run_execution` prepares it in place of the local session, the fan-out and the machine lifecycles refuse under it, and `agent6 exec` names the runtime's own exec instead.
 

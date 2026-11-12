@@ -532,6 +532,41 @@ def test_session_drains_runtime_stderr_independently(
         session.close()
 
 
+def test_a_failed_session_reports_what_followed_startup_and_repeats_its_cause(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A dead launcher's error carries its stderr since startup; later requests name the cause.
+
+    A container session's launcher prints its routine UNCONFINED line at startup. As the tail
+    of every later error it read as if the sandbox had failed open, and the next command's
+    error was "write to closed file".
+    """
+    ready = "print(json.dumps({'ready':True,'protocol':4,'instance':'a'*32}), flush=True)\n"
+    _peer(
+        tmp_path,
+        monkeypatch,
+        "sys.stderr.write('startup banner\\n'); sys.stderr.flush()\n"
+        + ready
+        + "sys.stdin.readline()\n"
+        + "sys.stderr.write('late diagnostic\\n'); sys.stderr.flush()\n"
+        + "sys.exit(3)\n",
+    )
+    session = jail_session.JailSession.open(
+        kinds.JailPolicy(cwd=tmp_path, argv=(), isolation="none")
+    )
+    try:
+        assert session.startup_stderr == "startup banner"
+        with pytest.raises(jail.JailUnavailableError, match="protocol failed") as first:
+            session.run(("true",))
+        assert "late diagnostic" in str(first.value)
+        assert "startup banner" not in str(first.value)
+        with pytest.raises(jail.JailUnavailableError, match="ended earlier") as second:
+            session.run(("true",))
+        assert "late diagnostic" in str(second.value) and "closed file" not in str(second.value)
+    finally:
+        assert "startup banner" not in session.close()
+
+
 def test_session_bounds_outgoing_requests(tmp_path: pathlib.Path) -> None:
     """An oversized request is refused locally without desynchronising the session."""
     session = jail_session.JailSession.open(

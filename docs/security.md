@@ -796,6 +796,7 @@ A same-user process or container administrator can tamper with the environment; 
 
 **Observed failure behaviour** (`tests/sandbox/test_container_transport.py`, `test_container_runtime.py`).
 A lost runtime client, a lost agent process or a closed channel ends the launcher and every job it owns; the record reads unknown, never settled.
+A command that cannot reach its container says whether the dev container still runs, and every later command names the first failure.
 A stop reaches a foreground command within a few polls; a backgrounded command and a `setsid` escapee end with their job's subreaper, and a sibling session or an unrelated container process lives on.
 Output past the retained cap comes back cut with the session alive.
 A container replaced under a lease is attached, never owned.

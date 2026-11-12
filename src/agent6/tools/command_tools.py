@@ -30,6 +30,8 @@ class JailAccess:
     owns_network: bool = False
     # Settles the environment's lifecycle after the session closed; None means agent6 manages none.
     lifecycle: Callable[[], kinds.EnvironmentOutcome] | None = None
+    # Says what the environment looks like now, for a command that could not reach it.
+    environment_state: Callable[[], str] | None = None
 
     def close(self) -> str:
         """Close the session before releasing its local storage and owned network.
@@ -44,6 +46,11 @@ class JailAccess:
                 self.temp.cleanup()
             if self.owns_network and self.network is not None:
                 self.network.close()
+
+    def unavailable(self, exc: jail.JailUnavailableError) -> str:
+        """Return a jail failure's words, with the environment's state when it is observed."""
+        seen = self.environment_state() if self.environment_state is not None else ""
+        return f"jail unavailable: {exc}" + (f"; {seen}" if seen else "")
 
     def settle_environment(self) -> kinds.EnvironmentOutcome:
         """Report the environment's lifecycle once the session is closed.
@@ -165,7 +172,7 @@ def run_model_command(
             interrupted=interrupted,
         )
     except jail.JailUnavailableError as exc:
-        raise tool_errors.ToolError(f"jail unavailable: {exc}") from exc
+        raise tool_errors.ToolError(access.unavailable(exc)) from exc
     if isinstance(outcome, kinds.CommandResult):
         return result_format.exec_result(outcome)
     view = shells.adopt(outcome, session=access.session)
@@ -288,7 +295,7 @@ def run_argv_raw(
         # The operator's gate needs a verdict, not a handle.
         outcome = access.session.run(argv, env=policy.env, timeout_s=policy.timeout_s)
     except jail.JailUnavailableError as exc:
-        raise tool_errors.ToolError(f"{label}: jail unavailable: {exc}") from exc
+        raise tool_errors.ToolError(f"{label}: {access.unavailable(exc)}") from exc
     if isinstance(outcome, kinds.BackgroundHandoff):  # pragma: no cover - no check-in was asked for
         raise tool_errors.ToolError(
             f"{label}: the jail handed back a command that was never detachable"
