@@ -16,6 +16,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from agent6 import budget, evidence, kinds
+from agent6.sessions import journal
 from agent6.viewmodel import events as viewmodel_events
 from agent6.viewmodel import format, review, session_status, transcript_items, transcript_text
 
@@ -124,7 +125,7 @@ class TranscriptFold:
             self._last_ep = ep
             if self._first_ep is None:
                 self._first_ep = ep
-        if etype in viewmodel_events.SESSION_START_EVENTS:
+        if etype in journal.SESSION_START_EVENTS:
             self._mode = str(event.get("mode", "")) or self._mode
             # The receipt is the execution's own.
             self._first_ep = ep
@@ -284,7 +285,7 @@ class TranscriptFold:
             if body:
                 out.append(transcript_items.TranscriptItem(kind, body=body))
             return out
-        if etype in viewmodel_events.SESSION_START_EVENTS:
+        if etype in journal.SESSION_START_EVENTS:
             out = self.settle_open_calls("the run ended")
             if etype == "session.start":
                 task = str(event.get("user_task", ""))

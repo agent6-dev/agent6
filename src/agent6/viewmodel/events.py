@@ -1,16 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Type the logs.jsonl event families the session fold consumes.
+"""Read logs.jsonl rows into the journal's records, with the coercions old run dirs need.
 
-The write vocabulary lives in `agent6.sessions.event_schema`; tests check `EventSink` writes
-against it, but production writes stay unchecked. `parse_event` turns one raw dict into
-one of the frozen families here, or a `RawEvent` for every other type, which the fold
-drops: an old run dir folds without a crash whatever it holds.
-
-Frozen dataclasses, not pydantic: logs.jsonl is append-only history, so each family
-holds the exact coercion old run dirs were written against (`str()`, `int()`, `bool()`
-with per-field defaults, `as_int`'s swallow-to-zero, the isinstance guards) in one
-place, where a pydantic model would impose its own coercion and failure semantics.
+The vocabulary is `agent6.sessions.journal`; this module is its tolerant reader. Each
+family keeps the exact coercion old run dirs were written against (`str()`, `int()`,
+`bool()` with per-field defaults, `as_int`'s swallow-to-zero, the isinstance guards), so a
+run dir folds without a crash whatever it holds. Every other row is a `RawEvent`, which
+the fold drops.
 """
 
 from __future__ import annotations
@@ -18,35 +14,30 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import json
-from typing import Any, cast
+from typing import Any
 
 from agent6 import evidence, kinds
+from agent6.sessions import journal
 
-# A fresh run emits session.start; a resumed execution emits only session.resume.
-SESSION_START_EVENTS = frozenset({"session.resume", "session.start"})
 # The calls that end a session rather than work on it; literals, so no tools import.
 FINISH_TOOLS = frozenset({"finish_session", "finish_planning"})
 
 
 def verification_word(value: object) -> kinds.Verification | None:
-    """Return a recorded final verification word, or None when unknown."""
-    match value:
-        case "passed" | "failed" | "unverified" | "not_applicable":
-            return cast(kinds.Verification, value)
-        case _:
-            return None
+    """Return the verification word a journal row carries, or None for anything else."""
+    if value in ("passed", "failed", "unverified", "not_applicable"):
+        return value
+    return None
 
 
 def event_epoch(value: object) -> float | None:
-    """Return an event `ts` as epoch seconds, None when unparseable.
-
-    Accepts the ISO-8601 string `EventSink` writes as well as a bare number.
+    """Return a row's `ts` as epoch seconds: ISO 8601 text or a number; None otherwise.
 
     Args:
-        value: The raw `ts` field.
+        value: The envelope's timestamp as read.
 
     Returns:
-        The epoch seconds, or None for a bool, a non-ISO string or any other type.
+        The epoch seconds, or None for a value no clock wrote.
     """
     if isinstance(value, bool):
         return None
@@ -95,168 +86,12 @@ def readable_summary(value: Any) -> str:
     return str(value)
 
 
-def _seat_index(raw: dict[str, Any]) -> int | None:
-    """Return the panel seat index a role event carries, None outside a panel."""
-    value = raw.get("seat_index")
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
-
-
 def as_int(value: object) -> int:
     """Return an event field as an int, 0 for anything unusable."""
     try:
         return int(value)  # type: ignore[arg-type]  # int() rejects bad types itself
     except (TypeError, ValueError):
         return 0
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class SessionStart:
-    """session.start: a fresh run began on the task text."""
-
-    user_task: str
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class ResumeStart:
-    """session.resume: a finished or stopped run restarts with an optional steer."""
-
-    user_task: str = ""
-    steer: str = ""
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class GraphUpdate:
-    """graph.update: the task tree and its cursor.
-
-    Attributes:
-        nodes: The raw node map; the tree builder walks it with isinstance guards
-            for cycles, duplicates and malformed values, so it is not coerced here.
-        cursor: The id of the task in progress, None when none is.
-    """
-
-    nodes: Any
-    cursor: str | None
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class DiffUpdated:
-    """diff.updated: the run's cumulative patch and the commit it reaches."""
-
-    patch: str
-    sha: str
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class AutoCommit:
-    """One per-turn commit on the run's chain (`loop.auto_commit`)."""
-
-    turn: int
-    sha: str
-    subject: str
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class RoleCall:
-    """role.call: a model call began for a role; `model_call_id` pairs it with its result."""
-
-    role: str
-    model: str
-    provider: str
-    model_call_id: str = ""
-    seat_index: int | None = None
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class RoleResult:
-    """role.result: a model call returned, with its identity, outcome and token counts."""
-
-    tokens_in: int
-    cache_read: int
-    cache_creation: int
-    tokens_out: int = 0
-    ok: bool = True
-    role: str = ""
-    model: str = ""
-    provider: str = ""
-    model_call_id: str = ""
-    seat_index: int | None = None
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class RoleTextDelta:
-    """role.text_delta: a streamed piece of the assistant's text."""
-
-    text: str
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class RoleThinkingDelta:
-    """role.thinking_delta: a streamed piece of the assistant's thinking."""
-
-    text: str
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class ToolCall:
-    """tool.call: a tool was dispatched.
-
-    Attributes:
-        name: The tool's name.
-        args: The raw args; rendered per value and isinstance-checked downstream, so a
-            garbled value degrades instead of raising.
-        call_id: The correlation id stamped per dispatch; None on a log without ids.
-    """
-
-    name: str
-    args: Any
-    call_id: int | None = None
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class ToolResult:
-    """tool.result: a tool returned.
-
-    Attributes:
-        name: The tool's name.
-        ok: The tool's verdict.
-        summary: The result's one-line summary.
-        call_id: The correlation id of the matching call; None on a log without ids.
-    """
-
-    name: str
-    ok: bool
-    summary: str
-    call_id: int | None = None
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class VerifyStart:
-    """verify.start: a verification attempt began, before any required approval."""
-
-    cmd: tuple[str, ...]
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class VerifyEnd:
-    """verify.end: the verify gate finished, with its exit code and output tails.
-
-    Attributes:
-        cmd: The gate's argv.
-        exit_code: The exit code.
-        duration_s: How long it ran.
-        stdout_tail: The capped stdout tail.
-        stderr_tail: The capped stderr tail.
-        timeout_s: The gate's wall-clock limit, 0.0 when the event carried none.
-    """
-
-    cmd: tuple[str, ...]
-    exit_code: int | None
-    duration_s: float
-    stdout_tail: str
-    stderr_tail: str
-    timeout_s: float = 0.0
-    outcome: str = ""
-    reason: str = ""
 
 
 def verify_limit_hit(outcome: str | None, timeout_s: object) -> float:
@@ -282,72 +117,6 @@ def verify_limit_hit(outcome: str | None, timeout_s: object) -> float:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class BudgetUpdate:
-    """budget.update: the cumulative token and spend figures.
-
-    Attributes:
-        input_total: Input tokens so far.
-        output_total: Output tokens so far.
-        cache_read_total: The cached side of the input; 0 in a journal written before
-            it was recorded.
-        cache_creation_total: Cache-creation tokens so far.
-        usd_total: Spend so far.
-        usd_partial: Some of the spend is unpriced, so `usd_total` is a lower bound.
-        usd_cap: The execution's spend cap; -1 for unlimited.
-        tokens_unmetered: Tokens no price list covered.
-        tokens_fallback_cap: The token cap that stands in for an unpriceable run.
-        plan_used_percent: Subscription plan usage, 0 when the provider is not plan-metered.
-        plan_consumed: Plan points consumed by this run.
-        plan_cap: The plan's points cap.
-        plan_resets_at: When the plan window resets, as epoch seconds.
-    """
-
-    input_total: int
-    output_total: int
-    cache_read_total: int
-    cache_creation_total: int
-    usd_total: float
-    usd_partial: bool
-    usd_cap: float
-    tokens_unmetered: int
-    tokens_fallback_cap: int
-    plan_used_percent: float = 0.0
-    plan_consumed: float = 0.0
-    plan_cap: float = 0.0
-    plan_resets_at: float = 0.0
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class ApprovalPrompt:
-    """approval.prompt: the run is waiting for an operator's yes or no.
-
-    Attributes:
-        id: The prompt's id, matched by the answer.
-        prompt: The words shown to the operator.
-        standing: An "allow all" would cover calls beyond this one, so a front-end
-            offers the button; a log written before the field existed folds True.
-        asked_ep: When it was asked, as epoch seconds, for the waiting status's age;
-            None when the line carried no parseable ts.
-        call_id: The dispatched tool call the prompt gates; None for one gating no call
-            (a verify the harness runs itself) or a log written before the field.
-    """
-
-    id: str
-    prompt: str
-    standing: bool = True
-    asked_ep: float | None = None
-    call_id: int | None = None
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class ApprovalAnswer:
-    """approval.answer: an operator answered an approval prompt."""
-
-    id: str
-    approved: bool
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
 class EventQuestion:
     """One question of a question.prompt, with its offered options."""
 
@@ -355,131 +124,18 @@ class EventQuestion:
     options: tuple[str, ...]
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
-class QuestionPrompt:
-    """question.prompt: the run is waiting for an operator's answers.
-
-    Attributes:
-        id: The prompt's id, matched by the answer.
-        questions: The questions asked.
-        asked_ep: When it was asked, as epoch seconds, for the waiting status's age.
-        call_id: The gated `ask_user` call; None for a pre-run question.
-        wait: Whether the call waits for the answers; a queued question is answered later.
-    """
-
-    id: str
-    questions: tuple[EventQuestion, ...]
-    asked_ep: float | None = None
-    call_id: int | None = None
-    wait: bool = True
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class QuestionAnswer:
-    """question.answer: the answers to a question prompt.
-
-    Attributes:
-        id: The prompt's id.
-        answers: One answer per question.
-        unseen: Nobody could answer and nothing is queued, so the answers are empty.
-        source: Who answered; `late` for a queued question's answers taken at a boundary.
-    """
-
-    id: str
-    answers: tuple[str, ...]
-    unseen: bool = False
-    source: str = ""
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class PinAdded:
-    """loop.pin.added: an operator /pin instruction was recorded."""
-
-    text: str
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class PinsRestored:
-    """loop.pin.restored: a resume or fork execution restored the snapshot's pins.
-
-    The full list replaces the fold's pins: a fork's fresh log carries only this event.
-    """
-
-    pins: tuple[str, ...]
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class CompactRestored:
-    """loop.compact.restored: the elision markers a restored context carries.
-
-    The counts replace the fold's: a fork's fresh log has no compact.dropped events.
-    """
-
-    elided: int
-    gists: int
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class CompactDropped:
-    """loop.compact.dropped: tier-1 elision, with the elided call identities."""
-
-    n: int
-    calls: tuple[str, ...]
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class CompactGists:
-    """loop.compact.gists: gists created and demoted in a tier-1 pass."""
-
-    gisted: int
-    demoted: int
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class CompactSummarised:
-    """loop.compact.summarise.done: a tier-2 restart replaced the history.
-
-    Every elision marker and gist the context held went with it.
-    """
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class SteerRequested:
-    """session.steer_requested: an operator Ctrl-C mid-run."""
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class SessionStranded:
-    """A finished run left its edits uncommitted with no commit landed (`session.stranded`)."""
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class SessionEnd:
-    """session.stop: the execution ended.
-
-    Attributes:
-        verification: The final verification word, or None when unknown.
-        reason: The end reason word.
-        summary: The end sentence; "" for a journal that carries none.
-        scoped: The gate ran scoped to the tests nearest the run's diff because the
-            full command overran `verify_timeout_s`, so a pass is qualified.
-    """
-
-    verification: kinds.Verification | None
-    reason: str
-    summary: str = ""
-    scoped: bool = False
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class SessionUndone:
-    """session.undone: /undo forked this run.
-
-    Surfaces follow the child with the undone text back in the composer.
-    """
-
-    new_session_id: str
-    undone_text: str
+def question_rows(questions: Any) -> tuple[EventQuestion, ...]:
+    """Return a question.prompt's questions as typed rows; a malformed entry is skipped."""
+    if not isinstance(questions, (list, tuple)):
+        return ()
+    return tuple(
+        EventQuestion(
+            question=str(q.get("question", "")),
+            options=tuple(str(o) for o in (q.get("options", ()) or ())),
+        )
+        for q in questions
+        if isinstance(q, dict)
+    )
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -493,57 +149,41 @@ class RawEvent:
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
-Event = (
-    SessionStart
-    | ResumeStart
-    | GraphUpdate
-    | DiffUpdated
-    | AutoCommit
-    | RoleCall
-    | RoleResult
-    | RoleTextDelta
-    | RoleThinkingDelta
-    | ToolCall
-    | ToolResult
-    | VerifyStart
-    | VerifyEnd
-    | BudgetUpdate
-    | ApprovalPrompt
-    | ApprovalAnswer
-    | QuestionPrompt
-    | QuestionAnswer
-    | PinAdded
-    | PinsRestored
-    | CompactRestored
-    | CompactDropped
-    | CompactGists
-    | CompactSummarised
-    | SteerRequested
-    | SessionEnd
-    | SessionStranded
-    | SessionUndone
-    | RawEvent
-)
+Event = journal.Event | RawEvent
+
+
+def _text(raw: dict[str, Any], key: str) -> str:
+    return str(raw.get(key, "") or "")
+
+
+def _strings(value: Any) -> tuple[str, ...]:
+    return tuple(str(x) for x in value) if isinstance(value, (list, tuple)) else ()
+
+
+def _seat_index(raw: dict[str, Any]) -> int | None:
+    """Return the panel seat index a role event carries, None outside a panel."""
+    value = raw.get("seat_index")
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _call_id(raw: dict[str, Any]) -> int | None:
     """Return the event's `call_id` when it is an int, else None."""
     cid = raw.get("call_id")
-    return cid if isinstance(cid, int) else None
+    return cid if isinstance(cid, int) and not isinstance(cid, bool) else None
 
 
 def parse_event(raw: dict[str, Any]) -> Event:
-    """Parse one raw logs.jsonl event into its typed family.
+    """Parse one raw logs.jsonl row into its journal record.
 
     A malformed field inside a known family (a torn numeric in `verify.end`) degrades
     to `RawEvent` like an unknown type: the fold runs unwrapped inside live tails, so
     it never raises on a line an interrupted writer left behind.
 
     Args:
-        raw: The event dict as read from the journal.
+        raw: The row as read from the journal.
 
     Returns:
-        The typed family, or `RawEvent` for every other type.
+        The record, or `RawEvent` for every other type.
     """
     try:
         return _parse_known(raw)
@@ -552,13 +192,13 @@ def parse_event(raw: dict[str, Any]) -> Event:
 
 
 def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912  # one branch per event type
-    """Parse a raw event by type, one coercion per family.
+    """Parse a row by type, one coercion per family.
 
     Args:
-        raw: The event dict as read from the journal.
+        raw: The row as read from the journal.
 
     Returns:
-        The typed family, or `RawEvent` for an unknown type.
+        The record, or `RawEvent` for an unknown type.
 
     Raises:
         ValueError: A known family's field cannot be coerced.
@@ -566,10 +206,20 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
     """
     match raw.get("type", ""):
         case "session.start":
-            return SessionStart(user_task=str(raw.get("user_task", "")))
+            return journal.SessionStart(
+                user_task=_text(raw, "user_task"),
+                mode=_text(raw, "mode"),
+                execution_id=_text(raw, "execution_id"),
+            )
         case "session.resume":
-            return ResumeStart(
-                user_task=str(raw.get("user_task", "")), steer=str(raw.get("steer", ""))
+            return journal.SessionResume(
+                session_id=_text(raw, "session_id"),
+                user_task=_text(raw, "user_task"),
+                steer=_text(raw, "steer"),
+                mode=_text(raw, "mode"),
+                turn=as_int(raw.get("turn")),
+                messages=as_int(raw.get("messages")),
+                execution_id=_text(raw, "execution_id"),
             )
         case "graph.update":
             nodes = raw.get("nodes", {}) or {}
@@ -577,74 +227,81 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 # An empty-dict fold would replace the task tree; RawEvent keeps the last one.
                 raise ValueError("graph.update nodes must be an object")
             cursor = raw.get("cursor")
-            return GraphUpdate(
-                nodes=nodes,
-                cursor=cursor if isinstance(cursor, str) else None,
+            return journal.GraphUpdate(
+                nodes=nodes, cursor=cursor if isinstance(cursor, str) else None
             )
         case "diff.updated":
-            return DiffUpdated(patch=str(raw.get("patch", "")), sha=str(raw.get("sha", "")))
+            return journal.DiffUpdated(patch=_text(raw, "patch"), sha=_text(raw, "sha"))
         case "loop.auto_commit":
-            return AutoCommit(
+            return journal.LoopAutoCommit(
                 # Journals written before the turn rename stamp `iteration`.
                 turn=as_int(raw.get("turn", raw.get("iteration"))),
-                sha=str(raw.get("sha") or ""),
-                subject=str(raw.get("subject") or ""),
+                sha=_text(raw, "sha"),
+                subject=_text(raw, "subject"),
             )
         case "role.call":
-            return RoleCall(
-                role=str(raw.get("role", "")),
-                model=str(raw.get("model", "")),
-                provider=str(raw.get("provider", "")),
-                model_call_id=str(raw.get("model_call_id", "")),
+            return journal.RoleCall(
+                role=_text(raw, "role"),
+                model=_text(raw, "model"),
+                provider=_text(raw, "provider"),
+                model_call_id=_text(raw, "model_call_id"),
                 seat_index=_seat_index(raw),
             )
         case "role.result":
-            return RoleResult(
+            return journal.RoleResult(
+                role=_text(raw, "role"),
+                model=_text(raw, "model"),
+                provider=_text(raw, "provider"),
+                model_call_id=_text(raw, "model_call_id"),
+                seat_index=_seat_index(raw),
+                ok=raw.get("ok") is not False,
                 tokens_in=as_int(raw.get("tokens_in")),
+                tokens_out=as_int(raw.get("tokens_out")),
                 cache_read=as_int(raw.get("cache_read")),
                 cache_creation=as_int(raw.get("cache_creation")),
-                tokens_out=as_int(raw.get("tokens_out")),
-                ok=raw.get("ok") is not False,
-                role=str(raw.get("role", "")),
-                model=str(raw.get("model", "")),
-                provider=str(raw.get("provider", "")),
-                model_call_id=str(raw.get("model_call_id", "")),
-                seat_index=_seat_index(raw),
             )
         case "role.text_delta":
-            return RoleTextDelta(text=str(raw.get("text", "")))
+            return journal.RoleTextDelta(role=_text(raw, "role"), text=_text(raw, "text"))
         case "role.thinking_delta":
-            return RoleThinkingDelta(text=str(raw.get("text", "")))
+            return journal.RoleThinkingDelta(role=_text(raw, "role"), text=_text(raw, "text"))
         case "tool.call":
             args = raw.get("args")
-            return ToolCall(
-                name=str(raw.get("name", "")),
+            return journal.ToolCall(
+                name=_text(raw, "name"),
                 # The call happened even with garbled args, and args is display-only downstream.
                 args=args if isinstance(args, dict) else {},
                 call_id=_call_id(raw),
             )
         case "tool.result":
-            return ToolResult(
-                name=str(raw.get("name", "")),
+            return journal.ToolResult(
+                name=_text(raw, "name"),
                 ok=tool_result_ok(raw.get("ok")),
                 summary=readable_summary(raw.get("summary", "")),
                 call_id=_call_id(raw),
             )
         case "verify.start":
-            return VerifyStart(cmd=tuple(str(x) for x in raw.get("cmd", []) or []))
+            return journal.VerifyStart(
+                cmd=_strings(raw.get("cmd", []) or []),
+                scoped=bool(raw.get("scoped", False)),
+                selected_paths=_strings(raw.get("selected_paths", []) or []),
+                timeout_s=float(raw.get("timeout_s", 0.0) or 0.0),
+            )
         case "verify.end":
-            return VerifyEnd(
-                cmd=tuple(str(x) for x in raw.get("cmd", []) or []),
+            return journal.VerifyEnd(
+                cmd=_strings(raw.get("cmd", []) or []),
+                scoped=bool(raw.get("scoped", False)),
+                selected_paths=_strings(raw.get("selected_paths", []) or []),
                 exit_code=int(raw["exit_code"]) if raw.get("exit_code") is not None else None,
                 duration_s=float(raw.get("duration_s", 0.0)),
-                stdout_tail=str(raw.get("stdout_tail", "")),
-                stderr_tail=str(raw.get("stderr_tail", "")),
+                stdout_tail=_text(raw, "stdout_tail"),
+                stderr_tail=_text(raw, "stderr_tail"),
                 timeout_s=float(raw.get("timeout_s", 0.0) or 0.0),
                 outcome=evidence.outcome(raw),
-                reason=str(raw.get("reason", "")),
+                reason=_text(raw, "reason"),
+                baseline=bool(raw.get("baseline", False)),
             )
         case "budget.update":
-            return BudgetUpdate(
+            return journal.BudgetUpdate(
                 input_total=int(raw.get("input_total", 0)),
                 output_total=int(raw.get("output_total", 0)),
                 cache_read_total=int(raw.get("cache_read_total", 0)),
@@ -661,74 +318,81 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 plan_resets_at=float(raw.get("plan_resets_at", 0.0)),
             )
         case "approval.prompt":
-            return ApprovalPrompt(
-                id=str(raw.get("id", "")),
-                prompt=str(raw.get("prompt", "")),
+            return journal.ApprovalPrompt(
+                id=_text(raw, "id"),
+                prompt=_text(raw, "prompt"),
                 standing=bool(raw.get("standing", True)),
-                asked_ep=event_epoch(raw.get("ts")),
                 call_id=_call_id(raw),
             )
         case "approval.answer":
-            return ApprovalAnswer(
-                id=str(raw.get("id", "")), approved=bool(raw.get("approved", False))
+            return journal.ApprovalAnswer(
+                id=_text(raw, "id"),
+                approved=bool(raw.get("approved", False)),
+                source=_text(raw, "source"),
             )
         case "question.prompt":
-            questions = tuple(
-                EventQuestion(
-                    question=str(q.get("question", "")),
-                    options=tuple(str(o) for o in (q.get("options", ()) or ())),
-                )
-                for q in (raw.get("questions", ()) or ())
-                if isinstance(q, dict)
-            )
-            return QuestionPrompt(
-                id=str(raw.get("id", "")),
-                questions=questions,
-                asked_ep=event_epoch(raw.get("ts")),
+            questions = raw.get("questions", ()) or ()
+            return journal.QuestionPrompt(
+                id=_text(raw, "id"),
+                questions=[q for q in questions if isinstance(q, dict)]
+                if isinstance(questions, (list, tuple))
+                else (),
                 call_id=_call_id(raw),
                 wait=raw.get("wait") is not False,
             )
         case "question.answer":
-            raw_ans = raw.get("answers", ()) or ()
-            answers = tuple(str(a) for a in raw_ans) if isinstance(raw_ans, (list, tuple)) else ()
-            return QuestionAnswer(
-                id=str(raw.get("id", "")),
-                answers=answers,
+            return journal.QuestionAnswer(
+                id=_text(raw, "id"),
+                answers=_strings(raw.get("answers", ()) or ()),
                 unseen=raw.get("unseen") is True,
-                source=str(raw.get("source", "")),
+                source=_text(raw, "source"),
             )
         case "loop.pin.added":
-            return PinAdded(text=str(raw.get("text", "")))
+            return journal.LoopPinAdded(
+                text=_text(raw, "text"),
+                chars=as_int(raw.get("chars")),
+                count=as_int(raw.get("count")),
+            )
         case "loop.pin.restored":
-            raw_pins = raw.get("pins", ()) or ()
-            pins = tuple(str(x) for x in raw_pins) if isinstance(raw_pins, (list, tuple)) else ()
-            return PinsRestored(pins=pins)
+            return journal.LoopPinRestored(
+                pins=_strings(raw.get("pins", ()) or ()), count=as_int(raw.get("count"))
+            )
         case "loop.compact.restored":
-            return CompactRestored(elided=as_int(raw.get("elided")), gists=as_int(raw.get("gists")))
+            return journal.LoopCompactRestored(
+                elided=as_int(raw.get("elided")), gists=as_int(raw.get("gists"))
+            )
         case "loop.compact.dropped":
-            raw_calls = raw.get("calls", ()) or ()
-            calls = tuple(str(c) for c in raw_calls) if isinstance(raw_calls, (list, tuple)) else ()
-            return CompactDropped(n=as_int(raw.get("n")), calls=calls)
+            return journal.LoopCompactDropped(
+                n=as_int(raw.get("n")), calls=_strings(raw.get("calls", ()) or ())
+            )
         case "loop.compact.gists":
-            return CompactGists(
-                gisted=as_int(raw.get("gisted")), demoted=as_int(raw.get("demoted"))
+            return journal.LoopCompactGists(
+                gisted=as_int(raw.get("gisted")),
+                demoted=as_int(raw.get("demoted")),
+                paths=_strings(raw.get("paths", ()) or ()),
+                demoted_paths=_strings(raw.get("demoted_paths", ()) or ()),
             )
         case "loop.compact.summarise.done":
-            return CompactSummarised()
+            return journal.LoopCompactSummariseDone(
+                summary_chars=as_int(raw.get("summary_chars")),
+                summary=_text(raw, "summary"),
+                kept_messages=as_int(raw.get("kept_messages")),
+            )
         case "session.steer_requested":
-            return SteerRequested()
+            return journal.SessionSteerRequested(source=_text(raw, "source"))
         case "session.undone":
-            return SessionUndone(
-                new_session_id=str(raw.get("new_session_id", "") or ""),
-                undone_text=str(raw.get("undone_text", "") or ""),
+            return journal.SessionUndone(
+                new_session_id=_text(raw, "new_session_id"), undone_text=_text(raw, "undone_text")
             )
         case "session.stranded":
-            return SessionStranded()
+            return journal.SessionStranded()
         case "session.stop":
-            return SessionEnd(
+            return journal.SessionStop(
+                execution_id=_text(raw, "execution_id"),
+                reason=_text(raw, "reason"),
+                turns=as_int(raw.get("turns")),
                 verification=verification_word(raw.get("verification")),
-                reason=str(raw.get("reason", "") or ""),
-                summary=str(raw.get("summary", "") or ""),
+                summary=_text(raw, "summary"),
                 scoped=bool(raw.get("scoped", False)),
             )
         case other:

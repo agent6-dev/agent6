@@ -13,14 +13,13 @@ import subprocess
 import sys
 
 from agent6 import errors, paths
-from agent6.sessions import id, ipc, process
+from agent6.sessions import id, ipc, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import schema
 from agent6.ui.cli import common, console_render, interact
 from agent6.viewmodel import (
     StatusFacts,
     event_epoch,
-    events,
     format,
     scan_session_log,
     session_is_live,
@@ -335,7 +334,7 @@ class _PromptWatch:
                 source = event.get("source")
                 self.closed_by = ipc.ANSWERED_ELSEWHERE + (f" (source: {source})" if source else "")
                 return True
-            if etype == "session.stop" or etype in events.SESSION_START_EVENTS:
+            if etype == "session.stop" or etype in journal.SESSION_START_EVENTS:
                 self.closed_by = _RUN_ENDED
                 return True
         if not alive:
@@ -387,7 +386,7 @@ class _CliFrontEnd:
             scanned += 1
             etype = str(ev.get("type", ""))
             pid = str(ev.get("id", ""))
-            if etype in events.SESSION_START_EVENTS:
+            if etype in journal.SESSION_START_EVENTS:
                 self._new_session()
                 # A prompt from an earlier execution pauses nothing; `agent6 answer` takes it.
                 open_prompts.clear()
@@ -462,12 +461,12 @@ class _CliFrontEnd:
         if self._replayed > 0:
             # Inside the pre-scan's window: keep the bookkeeping in step, never prompt.
             self._replayed -= 1
-            if etype in events.SESSION_START_EVENTS:
+            if etype in journal.SESSION_START_EVENTS:
                 self._new_session()
             elif etype in ("approval.answer", "question.answer"):
                 self._answered.add(pid)
             return
-        if etype in events.SESSION_START_EVENTS:
+        if etype in journal.SESSION_START_EVENTS:
             self._new_session()
             return
         if etype in ("approval.answer", "question.answer"):

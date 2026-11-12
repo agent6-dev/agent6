@@ -24,12 +24,12 @@ from rich import text as rich_text
 from textual import app, containers, geometry, screen, timer, widgets
 from textual.css import query
 
+from agent6.sessions import journal
 from agent6.ui.tui import clipboard, composer, logview, menubar, screen_chrome, settings
 from agent6.ui.tui import prompts as tui_prompts
 from agent6.viewmodel import (
     ApprovalPrompt,
     approval_parts,
-    events,
     format,
     policy,
     transcript,
@@ -405,7 +405,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
             event: The next raw event from the session's log.
         """
         etype = event.get("type")
-        if etype in events.SESSION_START_EVENTS:
+        if etype in journal.SESSION_START_EVENTS:
             # An unanswered approval belongs to the execution that ended.
             self._approval = None
             self._approval_done = None

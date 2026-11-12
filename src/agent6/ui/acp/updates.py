@@ -14,8 +14,8 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from agent6 import directive, evidence
+from agent6.sessions import journal
 from agent6.viewmodel import (
-    events,
     receipt,
     session_status,
     state_view,
@@ -143,7 +143,7 @@ class RunInfo:
         """Return the notifications the event owes beyond the fold's items.
 
         Args:
-            event: One journal event.
+            event: One rows event.
 
         Returns:
             The title and the commands at `session.start`; the usage once a call's
@@ -227,7 +227,7 @@ class RunInfo:
 
 
 def replay(
-    journal: Iterable[dict[str, Any]],
+    rows: Iterable[dict[str, Any]],
     *,
     acp_session_id: str,
     cwd: pathlib.Path,
@@ -236,7 +236,7 @@ def replay(
     """Replay a recorded run through the shared fold and ACP projection.
 
     Args:
-        journal: The run's events in emission order.
+        rows: The run's events in emission order.
         acp_session_id: The conversation id, also the recorded run's id.
         cwd: The working directory for tool locations.
         notify: Sends each notification before load returns; None only counts executions.
@@ -245,7 +245,7 @@ def replay(
         The number of recorded executions, for the next prompt's tool call ids.
     """
     if notify is None:
-        return sum(event.get("type") in events.SESSION_START_EVENTS for event in journal)
+        return sum(event.get("type") in journal.SESSION_START_EVENTS for event in rows)
     fold = transcript.TranscriptFold()
     execution = 0
     announced: set[str] = set()
@@ -264,7 +264,7 @@ def replay(
         if item.kind in ("tool", "verify"):
             announced.add(wire_id)
 
-    for event in journal:
+    for event in rows:
         event_type = event.get("type")
         paths = result_paths(event) if event_type == "tool.result" else ()
         for item in fold.feed(event):
@@ -273,7 +273,7 @@ def replay(
                 # The fold's task is a headline; a loaded conversation keeps the full prompt.
                 wire_item = dataclasses.replace(item, body=str(event.get("user_task", "")))
             send(wire_item, paths)
-        if event_type in events.SESSION_START_EVENTS:
+        if event_type in journal.SESSION_START_EVENTS:
             # The fold settles the previous execution's open calls before this boundary.
             execution += 1
             announced.clear()

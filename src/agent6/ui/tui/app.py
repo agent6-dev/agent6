@@ -37,7 +37,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6.app import fork, reporter, stop, undo
 from agent6.models import choices
-from agent6.sessions import ipc, layout, process, shells
+from agent6.sessions import ipc, journal, layout, process, shells
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui import directive_actions, spawn
 from agent6.ui.tui import composer, conversation, dashboard, modals, new_work, prompts, theme
@@ -45,7 +45,6 @@ from agent6.vcs import git_read
 from agent6.viewmodel import (
     SessionState,
     context_fill,
-    events,
     format,
     listing,
     restate,
@@ -61,7 +60,7 @@ _ANSWER_LOST = "the session is not live; the answer reached nothing (a resume re
 
 # Events that recompute dir_status at once, not on the ~1s heartbeat: the chip and both
 # composer bars route off it, so serving the previous state for a heartbeat lies.
-_STATUS_NOW_EVENTS = events.SESSION_START_EVENTS | {
+_STATUS_NOW_EVENTS = journal.SESSION_START_EVENTS | {
     "session.stop",
     "approval.prompt",
     "approval.answer",
@@ -315,7 +314,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             # The fork is the continuation. The operator can resend the message taken back.
             self._fill_composers(self.state.undone_text)
             self.notify(f"undone: continue as {self.state.undone_to}; your message is back to edit")
-        if event.get("type") in events.SESSION_START_EVENTS:
+        if event.get("type") in journal.SESSION_START_EVENTS:
             # A boundary restarts the prompt id counters; a stale seen-set would swallow the new
             # session's first prompts and the run would block on a modal that never opens.
             self._prompts.reset()
@@ -340,7 +339,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         for item in self._transcript.feed(event):
             if item.kind == "verify":
                 self.verification_item = item
-        if event.get("type") in events.SESSION_START_EVENTS:
+        if event.get("type") in journal.SESSION_START_EVENTS:
             self.verification_item = None
 
     @property

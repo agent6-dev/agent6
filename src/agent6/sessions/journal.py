@@ -1418,7 +1418,12 @@ class ToolCall(Event):
     args: dict[str, Any] = pydantic.Field(
         description="Tool argument preview, or the skill invocation's argument text.",
     )
-    call_id: int = pydantic.Field(description="The tool call correlated with this event.")
+    call_id: int | None = pydantic.Field(
+        default=None,
+        description=(
+            "The tool call correlated with this event; null in a journal written before ids."
+        ),
+    )
 
 
 class ToolResult(Event):
@@ -1428,7 +1433,12 @@ class ToolResult(Event):
     name: str = pydantic.Field(description="Tool or skill name.")
     ok: bool = pydantic.Field(description="Whether the operation succeeded.")
     summary: str = pydantic.Field(description="The result or outcome in words.")
-    call_id: int = pydantic.Field(description="The tool call correlated with this event.")
+    call_id: int | None = pydantic.Field(
+        default=None,
+        description=(
+            "The tool call correlated with this event; null in a journal written before ids."
+        ),
+    )
     paths: Sequence[Any] | None = pydantic.Field(
         default=None,
         description="Affected repository-relative paths.",

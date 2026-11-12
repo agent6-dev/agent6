@@ -237,7 +237,8 @@ def test_every_prompt_event_has_exactly_one_emitter() -> None:
     The prompt and answer pairs are journaled in one place; a front-end that journals its own copy
     drifts (its own counter, its own idea of the gated call).
     """
-    emits = re.compile(r"journal\.(Approval|Question)(Prompt|Answer)\(")
+    # A record handed to a sink is an emit; a reader's `case` or `return` of one is not.
+    emits = re.compile(r"(?:_journal|emit)\(\s*journal\.(Approval|Question)(Prompt|Answer)\(")
     sites: dict[str, set[str]] = {}
     for path in _SRC.rglob("*.py"):
         for match in emits.finditer(path.read_text(encoding="utf-8")):

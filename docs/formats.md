@@ -1326,7 +1326,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `name` | `str` | Tool or skill name. |
 | `args` | `object` | Tool argument preview, or the skill invocation's argument text. |
-| `call_id` | `int` | The tool call correlated with this event. |
+| `call_id` | `int, optional` | The tool call correlated with this event; null in a journal written before ids. |
 
 ### tool.result
 
@@ -1337,7 +1337,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `name` | `str` | Tool or skill name. |
 | `ok` | `bool` | Whether the operation succeeded. |
 | `summary` | `str` | The result or outcome in words. |
-| `call_id` | `int` | The tool call correlated with this event. |
+| `call_id` | `int, optional` | The tool call correlated with this event; null in a journal written before ids. |
 | `paths` | `list, optional` | Affected repository-relative paths. |
 | `stdout_tail` | `str, optional` | Capped standard-output tail. |
 | `stderr_tail` | `str, optional` | Capped standard-error tail. |

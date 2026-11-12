@@ -222,16 +222,14 @@ Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ReadMediaRes
 
 ## Event union
 
-[`agent6.viewmodel.events`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/events.py) &middot; tagged union of 29 frozen families
+[`agent6.viewmodel.events`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/events.py) &middot; mutable container + 2 frozen turn types
 
-Type the logs.jsonl event families the session fold consumes.
+Read logs.jsonl rows into the journal's records, with the coercions old run dirs need.
 
 Public fields: [Formats](formats.md#journal).
 
-Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommit`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `SessionEnd`, `SessionStranded`, `SessionUndone`, `RawEvent`
-
 - **Written by:** viewmodel/events
-- **Read by:** harness/review_session, ui/acp/updates, ui/cli/{console_render, machine_cmds, plan_watch, repl}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, listing, log_line, review, session_log, state, state_view, transcript, transcript_items, transcript_text}
+- **Read by:** harness/review_session, ui/cli/{console_render, machine_cmds, plan_watch, repl}, ui/tui/machines, viewmodel/{__init__, listing, log_line, review, session_log, state, state_view, transcript, transcript_items, transcript_text}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (7 test files exercise it)
 
 ## MachineSpec

@@ -20,6 +20,7 @@ from agent6 import evidence
 from agent6.context import memory
 from agent6.prompts import review
 from agent6.providers import Provider, ProviderError, ProviderResponse
+from agent6.sessions import journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import sessions
 from agent6.viewmodel import events as viewmodel_events
@@ -213,9 +214,9 @@ def _unseen_questions(
     if event.get("type") not in ("question.prompt", "question.answer"):
         return ()
     match viewmodel_events.parse_event(event):
-        case viewmodel_events.QuestionPrompt(id=qid, questions=questions):
-            prompts[qid] = tuple(q.question for q in questions)
-        case viewmodel_events.QuestionAnswer(id=qid, unseen=unseen):
+        case journal.QuestionPrompt(id=qid, questions=questions):
+            prompts[qid] = tuple(q.question for q in viewmodel_events.question_rows(questions))
+        case journal.QuestionAnswer(id=qid, unseen=unseen):
             texts = prompts.pop(qid, ())
             return texts if unseen else ()
         case _:

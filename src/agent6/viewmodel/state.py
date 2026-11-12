@@ -15,7 +15,7 @@ from typing import Any
 
 from agent6 import terminal
 from agent6.graph import models
-from agent6.sessions import layout, process
+from agent6.sessions import journal, layout, process
 from agent6.viewmodel import events, format, log_line, review, session_status, state_types
 
 
@@ -103,7 +103,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
         state = dataclasses.replace(state, log_tail=new_log, log_count=state.log_count + 1)
 
     match events.parse_event(event):
-        case events.SessionStart(user_task=task):
+        case journal.SessionStart(user_task=task):
             # The ask REPL re-runs on one log, so a second start clears the prior end.
             # No banking, unlike ResumeStart: the REPL's one tracker is already cumulative.
             return dataclasses.replace(
@@ -126,7 +126,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 tool_count=0,
             )
 
-        case events.ResumeStart(user_task=task, steer=steer):
+        case journal.SessionResume(user_task=task, steer=steer):
             # The new execution's counters start fresh: bank the spend, zero the rest.
             return dataclasses.replace(
                 state,
@@ -161,20 +161,20 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 ),
             )
 
-        case events.GraphUpdate(nodes=nodes, cursor=cursor):
+        case journal.GraphUpdate(nodes=nodes, cursor=cursor):
             return dataclasses.replace(
                 state,
                 tasks=task_tree_views(nodes, cursor),
                 cursor_task_id=cursor,
             )
 
-        case events.AutoCommit(turn=turn, sha=sha, subject=subject):
+        case journal.LoopAutoCommit(turn=turn, sha=sha, subject=subject):
             if not sha:
                 return state
             commit = state_types.RunCommit(turn=turn, sha=sha, subject=subject)
             return dataclasses.replace(state, commits=(*state.commits, commit))
 
-        case events.DiffUpdated(patch=patch, sha=sha):
+        case journal.DiffUpdated(patch=patch, sha=sha):
             entry = state_types.DiffView(patch=patch, task_id=state.cursor_task_id, sha=sha)
             return dataclasses.replace(
                 state,
@@ -182,7 +182,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 recent_diffs=_push_bounded(state.recent_diffs, entry, _MAX_DIFF_HISTORY),
             )
 
-        case events.RoleCall(role=role, model=model, provider=provider):
+        case journal.RoleCall(role=role, model=model, provider=provider):
             prior = state.last_role
             return dataclasses.replace(
                 state,
@@ -198,7 +198,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 ),
             )
 
-        case events.RoleTextDelta(text=piece):
+        case journal.RoleTextDelta(text=piece):
             # Scrub the concatenation: an escape sequence can arrive split across deltas.
             last = state.last_role
             if last is None or not last.in_flight or not piece:
@@ -209,7 +209,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 last_role=dataclasses.replace(last, streamed_text=joined[-_STREAM_TAIL:]),
             )
 
-        case events.RoleThinkingDelta(text=piece):
+        case journal.RoleThinkingDelta(text=piece):
             last = state.last_role
             if last is None or not last.in_flight or not piece:
                 return state
@@ -219,11 +219,11 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 last_role=dataclasses.replace(last, streamed_thinking=joined[-_STREAM_TAIL:]),
             )
 
-        case events.RoleResult(tokens_in=tin, cache_read=cr, cache_creation=cc):
+        case journal.RoleResult(tokens_in=tin, cache_read=cr, cache_creation=cc):
             last = state.last_role
             if last is None:
                 return state
-            ctx = tin + cr + cc
+            ctx = (tin or 0) + (cr or 0) + (cc or 0)
             return dataclasses.replace(
                 state,
                 last_role=dataclasses.replace(
@@ -231,7 +231,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 ),
             )
 
-        case events.ToolCall(name=name, args=raw_args, call_id=cid):
+        case journal.ToolCall(name=name, args=raw_args, call_id=cid):
             tc = state_types.ToolCallView(
                 name=name,
                 args_preview=log_line.render_args(raw_args),
@@ -242,7 +242,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             )
             finish_summary = state.finish_summary
             finish = name in events.FINISH_TOOLS
-            if finish and isinstance(raw_args, dict):
+            if finish:
                 finish_summary = str(raw_args.get("summary", "")).strip() or finish_summary
             return dataclasses.replace(
                 state,
@@ -251,7 +251,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 finish_summary=finish_summary,
             )
 
-        case events.ToolResult(name=name, ok=ok, summary=summary, call_id=cid):
+        case journal.ToolResult(name=name, ok=ok, summary=summary, call_id=cid):
             if not state.tool_calls:
                 return state
             if cid is not None:
@@ -279,10 +279,10 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 tool_calls=(*state.tool_calls[:-1], updated_last),
             )
 
-        case events.VerifyStart(cmd=cmd):
-            return dataclasses.replace(state, last_verify=state_types.VerifyView(cmd=cmd))
+        case journal.VerifyStart(cmd=cmd):
+            return dataclasses.replace(state, last_verify=state_types.VerifyView(cmd=tuple(cmd)))
 
-        case events.VerifyEnd(
+        case journal.VerifyEnd(
             cmd=cmd,
             exit_code=code,
             duration_s=dur,
@@ -295,7 +295,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             return dataclasses.replace(
                 state,
                 last_verify=state_types.VerifyView(
-                    cmd=cmd,
+                    cmd=tuple(cmd),
                     exit_code=code,
                     duration_s=dur,
                     stdout_tail=out,
@@ -306,7 +306,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 ),
             )
 
-        case events.BudgetUpdate(
+        case journal.BudgetUpdate(
             input_total=it,
             output_total=ot,
             cache_read_total=cr,
@@ -326,46 +326,50 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             return dataclasses.replace(
                 state,
                 budget=state_types.BudgetView(
-                    input_total=it,
-                    output_total=ot,
-                    cache_read_total=cr,
-                    cache_creation_total=cc,
+                    input_total=it or 0,
+                    output_total=ot or 0,
+                    cache_read_total=cr or 0,
+                    cache_creation_total=cc or 0,
                     usd_total=state.budget.usd_prior_executions + usd,
                     usd_prior_executions=state.budget.usd_prior_executions,
-                    usd_partial=partial or state.budget.usd_partial,
-                    usd_cap=ucap,
-                    tokens_unmetered=unmet,
-                    tokens_fallback_cap=fcap,
-                    plan_used_percent=plan_pct,
-                    plan_consumed=state.budget.plan_prior_executions + plan_used,
+                    usd_partial=bool(partial) or state.budget.usd_partial,
+                    usd_cap=ucap or 0.0,
+                    tokens_unmetered=unmet or 0,
+                    tokens_fallback_cap=fcap or 0,
+                    plan_used_percent=plan_pct or 0.0,
+                    plan_consumed=state.budget.plan_prior_executions + (plan_used or 0.0),
                     plan_prior_executions=state.budget.plan_prior_executions,
-                    plan_cap=plan_cap,
-                    plan_resets_at=plan_resets,
+                    plan_cap=plan_cap or 0.0,
+                    plan_resets_at=plan_resets or 0.0,
                 ),
             )
 
-        case events.ApprovalPrompt(id=aid, prompt=prompt, standing=standing, asked_ep=asked_ep):
+        case journal.ApprovalPrompt(id=aid, prompt=prompt, standing=standing):
             ap = state_types.ApprovalPrompt(
-                id=aid, prompt=prompt, standing=standing, asked_ep=asked_ep
+                id=aid,
+                prompt=prompt,
+                standing=standing,
+                asked_ep=events.event_epoch(event.get("ts")),
             )
             return dataclasses.replace(state, approvals=(*state.approvals, ap))
 
-        case events.ApprovalAnswer(id=wanted_id, approved=approved):
+        case journal.ApprovalAnswer(id=wanted_id, approved=approved):
             new = tuple(
                 dataclasses.replace(a, answered=True, approved=approved) if a.id == wanted_id else a
                 for a in state.approvals
             )
             return dataclasses.replace(state, approvals=new)
 
-        case events.QuestionPrompt(id=qid, questions=qs, asked_ep=asked_ep, wait=wait):
+        case journal.QuestionPrompt(id=qid, questions=qs, wait=wait):
             questions = tuple(
-                state_types.Question(question=q.question, options=q.options) for q in qs
+                state_types.Question(question=q.question, options=q.options)
+                for q in events.question_rows(qs)
             )
             qp = state_types.QuestionPrompt(
                 id=qid,
                 questions=questions,
                 from_harness=not state.started or state.finished,
-                asked_ep=asked_ep,
+                asked_ep=events.event_epoch(event.get("ts")),
                 wait=wait,
                 blocking=wait,
             )
@@ -373,9 +377,9 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             kept = tuple(q for q in state.questions if q.id != qid)
             return dataclasses.replace(state, questions=(*kept, qp))
 
-        case events.QuestionAnswer(id=wanted, answers=answers, unseen=unseen, source=source):
+        case journal.QuestionAnswer(id=wanted, answers=answers, unseen=unseen, source=source):
             new_q = tuple(
-                dataclasses.replace(q, answered=True, answers=answers, source=source)
+                dataclasses.replace(q, answered=True, answers=tuple(answers), source=source)
                 if q.id == wanted
                 else q
                 for q in state.questions
@@ -387,49 +391,49 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 unattended_questions=state.unattended_questions + (1 if unseen else 0),
             )
 
-        case events.PinAdded(text=text):
+        case journal.LoopPinAdded(text=text):
             return dataclasses.replace(state, pins=(*state.pins, text))
 
-        case events.PinsRestored(pins=pins):
-            return dataclasses.replace(state, pins=pins)
+        case journal.LoopPinRestored(pins=pins):
+            return dataclasses.replace(state, pins=tuple(pins))
 
-        case events.CompactRestored(elided=elided, gists=gists):
+        case journal.LoopCompactRestored(elided=elided, gists=gists):
             return dataclasses.replace(state, compact_elided=elided, compact_gists_live=gists)
 
-        case events.CompactDropped(n=n):
+        case journal.LoopCompactDropped(n=n):
             return dataclasses.replace(state, compact_elided=state.compact_elided + n)
 
-        case events.CompactGists(gisted=gisted, demoted=demoted):
+        case journal.LoopCompactGists(gisted=gisted, demoted=demoted):
             live = max(0, state.compact_gists_live + gisted - demoted)
             return dataclasses.replace(state, compact_gists_live=live)
 
-        case events.CompactSummarised():
+        case journal.LoopCompactSummariseDone():
             return dataclasses.replace(state, compact_elided=0, compact_gists_live=0)
 
-        case events.SteerRequested():
+        case journal.SessionSteerRequested():
             return dataclasses.replace(state, steer_requests=state.steer_requests + 1)
 
-        case events.SessionEnd(
+        case journal.SessionStop(
             verification=verification, reason=reason, summary=summary, scoped=scoped
         ):
             return dataclasses.replace(
                 state,
                 finished=True,
-                verification=verification,
+                verification=events.verification_word(verification),
                 stop_reason=reason,
-                end_summary=session_status.end_text(reason, summary, state.finish_summary),
-                verify_scoped=scoped,
+                end_summary=session_status.end_text(reason, summary or "", state.finish_summary),
+                verify_scoped=bool(scoped),
                 # The worker is on no task after the end: each draws its own status.
                 tasks=tuple(dataclasses.replace(t, is_cursor=False, glyph="") for t in state.tasks),
             )
 
-        case events.SessionStranded():
+        case journal.SessionStranded():
             return dataclasses.replace(state, stranded=True)
 
-        case events.SessionUndone(new_session_id=new_id, undone_text=text):
+        case journal.SessionUndone(new_session_id=new_id, undone_text=text):
             return dataclasses.replace(state, undone_to=new_id, undone_text=text)
 
-        case events.RawEvent():
+        case _:
             return state
 
 

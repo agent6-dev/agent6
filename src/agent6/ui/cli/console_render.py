@@ -19,6 +19,7 @@ from collections.abc import Callable, Generator
 from typing import Any, TextIO
 
 from agent6 import terminal
+from agent6.sessions import journal
 from agent6.ui.cli import task_tree, terminal_guard
 from agent6.viewmodel import events, format, transcript, transcript_items, transcript_style
 
@@ -202,7 +203,7 @@ class ConsoleView:
                 self._render(
                     dataclasses.replace(item, body="") if answered and item.kind == "done" else item
                 )
-            if etype in events.SESSION_START_EVENTS and self._policy is not None:
+            if etype in journal.SESSION_START_EVENTS and self._policy is not None:
                 policy = self._policy()
                 if policy:
                     self._line(self._c("dim", f"  {policy}") + "\n")
