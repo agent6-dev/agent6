@@ -21,7 +21,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, kinds, paths
+from agent6 import errors, kinds, paths, review_records
 from agent6.app import (
     conversation_state,
     finalize,
@@ -93,6 +93,7 @@ class ExecutionInputs:
             granted to its jail beyond the workspace.
         worker_lock_fd: The lifecycle's held session writer lock, shared with auto-merge.
         base_rules: A review session's base-tree AGENTS.md, in place of the checkout's.
+        review_target: A review session's comparison and its diff, for the panel.
     """
 
     session_id: str
@@ -122,6 +123,7 @@ class ExecutionInputs:
     worktree_git_dir: pathlib.Path | None = None
     worker_lock_fd: int | None = None
     base_rules: str | None = None
+    review_target: tuple[review_records.ReviewTarget, str] | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -521,6 +523,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             ),
             config=cfg,
             base_rules=inputs.base_rules,
+            review_target=inputs.review_target,
             standing_goal=inputs.standing_goal,
             interactive=inputs.interactive and mode == "run",
             initial_pins=inputs.pins,

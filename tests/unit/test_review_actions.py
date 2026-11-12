@@ -192,6 +192,36 @@ def test_fix_uses_stored_evidence_and_queues_a_second_fix(
         process.clear_worker_pid(saved.session_dir)
 
 
+def test_an_ask_session_reads_and_resolves_its_findings_but_cannot_fix(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A `/review` ask has no edit tools: Fix is not offered and a request names the run."""
+    from agent6.app import stamps
+    from agent6.sessions import manifest
+
+    saved = review_helpers.reviewed_session(tmp_path)
+    stamps.write_manifest(
+        saved.manifest_path, manifest.SessionManifest(session_id=saved.session_id, mode="ask")
+    )
+    view = review_actions.read_review(saved.session_dir)
+    assert view.findings and review_actions.fixable_findings(saved.session_dir, view) == ()
+    request = review_records.FindingAction(
+        request_id="fix", expected_version=1, action="fix", resume=True
+    )
+    with pytest.raises(review_actions.ReviewActionError, match="ask session has no edit tools"):
+        review_actions.act(
+            saved.session_dir, "f1", request, source="cli", resume=lambda _t: "", wait_s=0
+        )
+    resolve = review_records.FindingAction(
+        request_id="resolve",
+        expected_version=1,
+        action="resolve",
+        resolution=review_records.FindingResolution(disposition="fixed", reason="by hand"),
+    )
+    review_actions.act(saved.session_dir, "f1", resolve, source="cli", wait_s=0)
+    assert review_actions.read_review(saved.session_dir).findings[0].status == "resolved"
+
+
 def test_one_steer_carries_several_findings_with_a_result_each(tmp_path: pathlib.Path) -> None:
     """A batch Fix writes one instruction naming every finding and records each one's request."""
     saved = review_helpers.reviewed_session(tmp_path)

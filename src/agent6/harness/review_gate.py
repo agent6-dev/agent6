@@ -487,6 +487,63 @@ class Reviewer:
         block_on: review_panel.ReviewBlockOn = (
             self.settings.block_on if trigger == "before_finish" else "none"
         )
+        return self._sit(
+            state, identity, target, diff, block_on=block_on, turn=turn, trigger=trigger
+        )
+
+    def review_target(
+        self, state: loop_state.LoopState, target: review_records.ReviewTarget, diff: str
+    ) -> CritiqueResult | None:
+        """Sit the panel over a `/review` session's target once, as the session starts.
+
+        The findings land in the journal like an in-loop panel's, so the Findings card,
+        Resolve and Fix read them; the worker's first message carries them too.
+
+        Args:
+            state: The execution's state.
+            target: The reviewed comparison.
+            diff: Its whole diff.
+
+        Returns:
+            The critique, never blocking; None when the panel was skipped.
+        """
+        panel_id = uuid.uuid4().hex
+        identity: dict[str, Any] = dict(
+            panel_id=panel_id, execution_id=state.execution_id, turn=0, trigger="review_target"
+        )
+        if not diff.strip():
+            self.emit(journal.LoopReviewSkipped(**identity, reason="no_diff"))
+            return None
+        return self._sit(
+            state, identity, target, diff, block_on="none", turn=0, trigger="review_target"
+        )
+
+    def _sit(
+        self,
+        state: loop_state.LoopState,
+        identity: dict[str, Any],
+        target: review_records.ReviewTarget,
+        diff: str,
+        *,
+        block_on: review_panel.ReviewBlockOn,
+        turn: int,
+        trigger: str,
+    ) -> CritiqueResult | None:
+        """Run the seats over one target and record the panel.
+
+        Args:
+            state: The execution's state.
+            identity: The panel's identity fields for its events.
+            target: The reviewed comparison.
+            diff: Its diff.
+            block_on: The gating rule.
+            turn: The turn the panel sits at.
+            trigger: What called the panel.
+
+        Returns:
+            The critique; None when the panel was skipped or reused the prior one.
+        """
+        panel_id = str(identity["panel_id"])
         roster = tuple(
             review_records.SeatAssignment(i, s.model, s.focus, s.scope, s.temperature)
             for i, s in enumerate(self.settings.reviewers)

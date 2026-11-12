@@ -13,6 +13,7 @@ import pydantic
 
 from agent6 import review_records
 from agent6.sessions import event_log, ipc, journal, layout, lock, process
+from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import results, tool_errors
 from agent6.viewmodel import review, session_log
 
@@ -275,6 +276,14 @@ def _fix_queued(session_dir: pathlib.Path, finding_id: str) -> bool:
     return f"Review finding {finding_id}\n" in slot
 
 
+def without_edit_tools(session_dir: pathlib.Path) -> bool:
+    """Return whether the session is an ask, which has no edit tools to fix a finding with."""
+    try:
+        return sessions_manifest.read_manifest(session_dir).mode == "ask"
+    except sessions_manifest.ManifestError:
+        return False
+
+
 def fixable_findings(session_dir: pathlib.Path, view: review.ReviewView) -> tuple[str, ...]:
     """Return the open findings a Fix can take: none with a Fix queued or of unknown delivery.
 
@@ -283,8 +292,10 @@ def fixable_findings(session_dir: pathlib.Path, view: review.ReviewView) -> tupl
         view: The session's review fold.
 
     Returns:
-        The finding ids, in the fold's order.
+        The finding ids, in the fold's order; none for an ask session, which cannot edit.
     """
+    if without_edit_tools(session_dir):
+        return ()
     return tuple(
         f.finding_id
         for f in view.findings
@@ -306,6 +317,10 @@ def _validate(
             f"stale review version {action.expected_version}; current version is {view.version}"
         )
     if action.action == "fix":
+        if without_edit_tools(session_dir):
+            raise ReviewActionError(
+                'an ask session has no edit tools to fix with; start agent6 run "/review TARGET"'
+            )
         for finding in findings:
             if finding.status != "open":
                 raise ReviewActionError(

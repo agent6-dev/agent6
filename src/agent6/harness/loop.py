@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, kinds, media, task_text, terminal
+from agent6 import errors, kinds, media, review_records, task_text, terminal
 from agent6.config import Config
 from agent6.context import memory as agent6_memory
 from agent6.context import skills
@@ -118,6 +118,8 @@ class Harness:
         operator_edits: The paths the operator changed between executions and left in the
             tree; a resumed execution names them to the model before its first call.
         standing_goal: The operator's `run --standing` goal, seeded under the root; "" is none.
+        review_target: A `/review` session's comparison and its diff; the panel sits on it
+            once as the session starts, so the Findings card reads the reviewed branch.
         base_rules: A review session's base-tree AGENTS.md, which binds it in place of the
             checkout's; None outside a review.
         interactive: An operator is watching and can steer live, so a quiet turn parks for a
@@ -163,6 +165,7 @@ class Harness:
     operator_edits: Sequence[str] = ()
     standing_goal: str = ""
     base_rules: str | None = None
+    review_target: tuple[review_records.ReviewTarget, str] | None = None
     # The gate a resumed execution carried from the last one, set before the state is built.
     adopted_on_resume: tuple[str, ...] = ()
     interactive: bool = False
@@ -393,6 +396,16 @@ class Harness:
 
     # ---- the turn pipeline ---------------------------------------------------
 
+    def _sit_review_target(
+        self, state: loop_state.LoopState, conversation: loop_conversation.Conversation
+    ) -> None:
+        """Sit the panel on a `/review` session's range before the worker reads it."""
+        if self.review_target is None or not self.reviewer.available():
+            return
+        critique = self.reviewer.review_target(state, *self.review_target)
+        if critique is not None:
+            conversation.notice(review_panel.review_notice(critique.text))
+
     def _drive_loop(  # noqa: PLR0911, PLR0912
         self,
         *,
@@ -441,6 +454,7 @@ class Harness:
                 return self._unexecutable_abort(exc, turn=start_turn, state=state)
             # The start gate is the harness's time: the stagnation window opens at the first turn.
             state.stagnation = guards.StagnationGuard(wait_at_start=self.dispatcher.operator_wait_s)
+            self._sit_review_target(state, conversation)
         # The allowance is this execution's: a resumed one re-arms it (-1 is unbounded).
         for turn in (
             range(start_turn, start_turn + self.max_turns)

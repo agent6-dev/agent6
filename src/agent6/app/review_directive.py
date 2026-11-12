@@ -21,7 +21,17 @@ class ReviewDirectiveError(Exception):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewWorld:
-    """The resolved comparison, first message, checkout requirement, head branch and rules."""
+    """The resolved comparison, first message, checkout requirement, head branch and rules.
+
+    Attributes:
+        target: The immutable comparison.
+        message: The first message: the resolved revisions, the rules, the stat and the patch.
+        needs_worktree: Whether the head needs a detached worktree.
+        empty: Whether there is nothing to review.
+        head_branch: The local branch the reviewed head is, or "" for a commit or a tag.
+        rules: The base tree's AGENTS.md text.
+        diff: The whole comparison diff, which the review panel grounds its findings on.
+    """
 
     target: review_records.ReviewTarget
     message: str
@@ -29,6 +39,7 @@ class ReviewWorld:
     empty: bool
     head_branch: str = ""
     rules: str = ""
+    diff: str = ""
 
 
 def build(root: pathlib.Path, target: str, *, hide: tuple[str, ...] = ()) -> ReviewWorld:
@@ -112,6 +123,7 @@ def build(root: pathlib.Path, target: str, *, hide: tuple[str, ...] = ()) -> Rev
         False,
         head_branch=_head_branch(root, resolved, status, head_name),
         rules=rules.text,
+        diff=compared.diff,
     )
 
 

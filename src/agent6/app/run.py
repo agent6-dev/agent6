@@ -568,6 +568,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 worktree_git_dir=worktree_git_dir,
                 worker_lock_fd=worker_lock_fd,
                 base_rules=review_world.rules if review_world is not None else None,
+                review_target=(
+                    (review_world.target, review_world.diff) if review_world is not None else None
+                ),
             ),
             frontend=frontend,
             reporter=reporter,

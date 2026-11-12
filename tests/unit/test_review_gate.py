@@ -18,9 +18,13 @@ import types
 from typing import Any
 from unittest import mock
 
+import pytest
+
+from agent6 import review_records
 from agent6.harness import (
     loop,
     loop_conversation,
+    loop_state,
     provider_call,
     quiet_turns,
     review_gate,
@@ -833,3 +837,115 @@ def test_before_finish_panel_reviews_a_model_controlled_run(tmp_path: pathlib.Pa
     assert panel.calls == 1
     rows = [json.loads(line) for line in log.read_text().splitlines()]
     assert [row["reason"] for row in rows if row["type"] == "loop.review.skipped"] == []
+
+
+_TARGET_DIFF = (
+    "diff --git a/a.py b/a.py\n"
+    "index 0000000..1111111 100644\n"
+    "--- a/a.py\n"
+    "+++ b/a.py\n"
+    "@@ -1 +1 @@\n"
+    "-x = 1\n"
+    "+x = 2\n"
+)
+_SEAT_REPLY = json.dumps(
+    {
+        "verdict": "block",
+        "summary": "one defect",
+        "findings": [
+            {
+                "category": "correctness",
+                "severity": "block",
+                "title": "x = 2 breaks the invariant",
+                "detail": "the caller expects 1",
+                "location": {"path": "a.py", "side": "head", "start_line": 1, "end_line": 1},
+            }
+        ],
+    }
+)
+
+
+def _target_reviewer(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, events: list[Any]
+) -> review_gate.Reviewer:
+    """Return a reviewer with one scripted seat and no git behind its grounding."""
+    provider = mock.MagicMock()
+    provider.call.return_value = _resp(_SEAT_REPLY)
+    seat = review_gate.ReviewSeat(focus="correctness", model="p/m", provider=provider)
+
+    def rules(*_args: Any, **_kwargs: Any) -> review_records.ReviewRules:
+        return review_records.ReviewRules()
+
+    def matching(*_args: Any) -> tuple[dict[str, str], tuple[review_records.Finding, ...]]:
+        return {}, ()
+
+    monkeypatch.setattr(review_gate.repo_context, "review_rules", rules)
+    monkeypatch.setattr(review_gate.review_history, "matching_findings", matching)
+
+    def observations(
+        panel_id: str, verdicts: Any, known: Any, **_kw: Any
+    ) -> tuple[review_records.FindingObservation, ...]:
+        return tuple(
+            review_records.FindingObservation("f-1", panel_id, f, (v.seat_index,))
+            for v in verdicts
+            for f in v.findings
+        )
+
+    monkeypatch.setattr(review_gate.review_history, "observations", observations)
+    return review_gate.Reviewer(
+        settings=review_gate.ReviewSettings(trigger="before_finish", reviewers=[seat]),
+        chain=mock.MagicMock(root=tmp_path),
+        hide=(),
+        review_tools=lambda: ([], mock.MagicMock()),
+        budget_remaining=lambda: None,
+        log=_silent,
+        emit=events.append,
+    )
+
+
+def _state() -> loop_state.LoopState:
+    return loop_state.LoopState(
+        original_task="/review feature-x",
+        execution_id="e1",
+        review_panels=(),
+        operator_task="",
+        tool_calls=0,
+        root_task_id=None,
+        system="",
+    )
+
+
+def test_a_review_session_panel_sits_on_its_target_once(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The panel records the reviewed range as its target; the same range is reused, not re-sat."""
+    events: list[Any] = []
+    reviewer = _target_reviewer(tmp_path, monkeypatch, events)
+    target = review_records.ReviewTarget("b", "bt", "h", "ht", "h", (), "revisions")
+    state = _state()
+    critique = reviewer.review_target(state, target, _TARGET_DIFF)
+    assert critique is not None and critique.satisfied
+    assert "x = 2 breaks the invariant" in critique.text
+    kinds = [type(e).__name__ for e in events]
+    assert kinds == ["LoopReviewStart", "LoopReviewSeat", "LoopReviewPanel"]
+    start, _seat, panel = events
+    assert start.trigger == "review_target" and start.turn == 0
+    assert start.target["head_tree"] == "ht" and start.target["base_tree"] == "bt"
+    assert panel.trigger == "review_target" and panel.block_on == "none" and not panel.blocked
+    assert [o["finding"]["title"] for o in panel.findings] == ["x = 2 breaks the invariant"]
+    assert len(state.review_panels) == 1
+    # A resume of the session reads the recorded panel; the trees did not change.
+    again = reviewer.review_target(state, target, _TARGET_DIFF)
+    assert again is not None and "reused" in again.text
+    assert type(events[-1]).__name__ == "LoopReviewReused"
+
+
+def test_a_review_target_without_a_diff_is_skipped(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[Any] = []
+    reviewer = _target_reviewer(tmp_path, monkeypatch, events)
+    target = review_records.ReviewTarget("b", "bt", "h", "bt", "h", (), "revisions")
+    assert reviewer.review_target(_state(), target, "  \n") is None
+    (skipped,) = events
+    assert type(skipped).__name__ == "LoopReviewSkipped" and skipped.reason == "no_diff"

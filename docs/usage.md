@@ -222,7 +222,9 @@ A clean checkout at the range's head is reviewed in place; otherwise startup pre
 A live session cannot change trees: a request for another tree names the `agent6 ask "/review TARGET"` command to start one.
 A bare run review cannot stash the changes it reviews; use ask or choose `git.dirty_tree = "include"`.
 The first message carries resolved revisions, a diff stat, up to 64 KiB of patch and the base tree's `AGENTS.md` rules.
-The answer is markdown in the session, not stored findings or a review journal.
+With the review panel on (`[review].trigger` not `off`), the panel sits on the reviewed range as the session starts and records its findings like an in-loop panel: the Findings card, `sessions findings`, Resolve and Fix read them, and the worker's answer follows with the findings in hand.
+Fix needs edit tools: an ask session's findings are read and resolved, and `agent6 run "/review TARGET"` fixes them.
+With the panel off, the answer is the worker's markdown alone.
 
 ```sh
 agent6 plan "refactor the config loader"      # no edit tools; run --from <id> executes it

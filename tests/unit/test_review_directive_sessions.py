@@ -127,6 +127,72 @@ def assert_no_review_store(repo: pathlib.Path, directory: pathlib.Path) -> None:
     assert not any(event["type"].startswith("loop.review.") for event in events)
 
 
+class SeatProvider:
+    """One review seat that blocks on the reviewed line."""
+
+    def call(self, **_kwargs: Any) -> providers.ProviderResponse:
+        reply = {
+            "verdict": "block",
+            "summary": "one defect",
+            "findings": [
+                {
+                    "category": "correctness",
+                    "severity": "block",
+                    "title": "x = 2 breaks the invariant",
+                    "detail": "the caller expects 1",
+                    "location": {"path": "a.py", "side": "head", "start_line": 1, "end_line": 1},
+                }
+            ],
+        }
+        return providers.ProviderResponse(
+            text=json.dumps(reply),
+            tool_uses=(),
+            stop_reason="end_turn",
+            input_tokens=10,
+            output_tokens=5,
+            cache_read_tokens=0,
+            cache_creation_tokens=0,
+        )
+
+
+def test_the_panel_sits_on_the_reviewed_branch_and_records_its_findings(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With the panel on, an ask review journals a panel over the branch; Fix stays a run's."""
+    from agent6.app import review_actions
+    from agent6.harness import review_gate
+
+    config_path = repo.parent / "config" / "agent6" / "config.toml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'trigger = "off"', 'trigger = "before_finish"'
+        ),
+        encoding="utf-8",
+    )
+
+    def seats(*_args: Any, **_kwargs: Any) -> list[review_gate.ReviewSeat]:
+        return [review_gate.ReviewSeat(focus="correctness", model="p/m", provider=SeatProvider())]
+
+    monkeypatch.setattr(role_providers, "build_review_seats", seats)
+    world_tests.git(repo, "switch", "-q", "main")
+    provider = ScriptedReview()
+    install(monkeypatch, provider)
+    assert cli("ask", "/review feature-x") == 0
+    directory = session(repo, "ask")
+    events = [json.loads(line) for line in (directory / "logs.jsonl").read_text().splitlines()]
+    (panel,) = [e for e in events if e["type"] == "loop.review.panel"]
+    assert panel["trigger"] == "review_target" and panel["turn"] == 0
+    assert panel["target"]["head_tree"] == world_tests.git(repo, "rev-parse", "feature-x^{tree}")
+    assert panel["target"]["base_tree"] == world_tests.git(repo, "rev-parse", "main^{tree}")
+    assert [o["finding"]["title"] for o in panel["findings"]] == ["x = 2 breaks the invariant"]
+    # The worker read the findings with the patch.
+    assert "x = 2 breaks the invariant" in json.dumps(provider.calls[0]["messages"])
+    assert cli_main(["sessions", "findings", directory.name]) == 0
+    assert "x = 2 breaks the invariant" in capsys.readouterr().out
+    view = review_actions.read_review(directory)
+    assert view.findings and review_actions.fixable_findings(directory, view) == ()
+
+
 def test_ask_bare_review_supplies_the_patch_without_edit_tools(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
