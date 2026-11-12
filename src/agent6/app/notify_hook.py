@@ -11,9 +11,11 @@ from __future__ import annotations
 import pathlib
 import subprocess
 from collections.abc import Callable, Sequence
+from typing import Any
 
 from agent6 import child_env
 from agent6.config import NotifyConfig
+from agent6.viewmodel import format
 
 
 def hook_env(**agent6_vars: str) -> dict[str, str]:
@@ -77,9 +79,10 @@ def fire(
 
     Args:
         notify: The notify config.
-        event: `session.end`, `machine.notify` or `machine.end`.
-        message: The end reason, or the machine's notify message.
-        level: `ok` or `failed` for an end; `info`, `warn` or `error` for a machine notify.
+        event: `session.waiting`, `session.end`, `machine.notify` or `machine.end`.
+        message: The prompt's first line, the end reason, or the machine's notify message.
+        level: `info` for a wait or a machine notify (`warn`, `error` as the machine says);
+            `ok` or `failed` for an end.
         note: Receives a failure note.
         **subject: The `AGENT6_SESSION_*` or `AGENT6_MACHINE_*` facts.
     """
@@ -94,6 +97,42 @@ def fire(
     run_notify_hook(
         notify.on_event, env, timeout_s=notify.timeout_s, label="notify.on_event", note=note
     )
+
+
+def attention(
+    notify: NotifyConfig,
+    *,
+    session_id: str,
+    session_dir: pathlib.Path,
+    note: Callable[[str], None],
+) -> Callable[[dict[str, Any]], None]:
+    """Return a journal listener that fires `session.waiting` as a prompt opens.
+
+    Args:
+        notify: The notify config.
+        session_id: The session's id.
+        session_dir: The session's directory.
+        note: Receives a failure note.
+
+    Returns:
+        The listener for `EventSink.subscribe`; every row that is not a prompt is ignored.
+    """
+
+    def listen(event: dict[str, Any]) -> None:
+        asked = format.attention_line(event)
+        if asked is None:
+            return
+        fire(
+            notify,
+            "session.waiting",
+            message=asked,
+            level="info",
+            note=note,
+            AGENT6_SESSION_ID=session_id,
+            AGENT6_SESSION_DIR=str(session_dir),
+        )
+
+    return listen
 
 
 def session_end(

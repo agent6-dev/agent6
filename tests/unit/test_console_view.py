@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
+import datetime
 import io
+import time
 from typing import Any
 
 import pytest
@@ -18,6 +20,52 @@ def _render(events: list[dict[str, object]]) -> str:
     for event in events:
         view.feed(event)
     return buf.getvalue()
+
+
+def _now_iso(offset_s: float = 0.0) -> str:
+    return datetime.datetime.fromtimestamp(time.time() - offset_s, datetime.UTC).isoformat()
+
+
+def test_a_fresh_prompt_or_end_sends_a_desktop_notice(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A prompt opening and the end notify the desktop; a replayed old row is history."""
+    sent: list[tuple[str, str]] = []
+
+    def record(title: str, body: str = "") -> bool:
+        sent.append((title, body))
+        return True
+
+    monkeypatch.setattr(console_render.notify, "desktop_notify", record)
+    _render(
+        [
+            {"type": "session.start", "user_task": "t", "ts": _now_iso()},
+            {
+                "type": "approval.prompt",
+                "id": "approval-1",
+                "prompt": "run tests?",
+                "ts": _now_iso(),
+            },
+            {
+                "type": "question.prompt",
+                "id": "question-1",
+                "questions": [{"question": "Which port?", "options": []}],
+                "wait": True,
+                "ts": _now_iso(),
+            },
+            # Yesterday's prompt, fed by an attach that catches up on the log: not news.
+            {"type": "approval.prompt", "id": "approval-0", "prompt": "old", "ts": _now_iso(86400)},
+            {
+                "type": "session.stop",
+                "verification": "passed",
+                "reason": "finish_session",
+                "ts": _now_iso(),
+            },
+        ]
+    )
+    assert sent == [
+        ("agent6: run needs you", "run tests?"),
+        ("agent6: run needs you", "Which port?"),
+        ("agent6: run passed", ""),
+    ]
 
 
 def test_reasoning_tool_call_and_result_all_render() -> None:

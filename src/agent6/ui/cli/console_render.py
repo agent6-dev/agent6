@@ -16,12 +16,20 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Generator
-from typing import Any, TextIO
+from typing import Any, TextIO, cast
 
-from agent6 import terminal
+from agent6 import kinds, terminal
 from agent6.sessions import journal
+from agent6.ui import notify
 from agent6.ui.cli import task_tree, terminal_guard
-from agent6.viewmodel import events, format, transcript, transcript_items, transcript_style
+from agent6.viewmodel import (
+    events,
+    format,
+    session_status,
+    transcript,
+    transcript_items,
+    transcript_style,
+)
 
 _ANSI = {
     "dim": "\033[2m",
@@ -61,6 +69,8 @@ _STYLE_ANSI: dict[transcript_style.StyleName, str] = {
 }
 
 _FLUSH_EVERY_S = 0.03  # coalesces streaming-delta flushes; see ConsoleView._raw
+# A prompt or an end older than this is a replay's history, not news to announce.
+_ATTENTION_FRESH_S = 60.0
 _HEARTBEAT_TICK_S = 0.5  # how often the spinner refreshes
 _STALL_AFTER_S = 1.5  # the heartbeat shows once output has been silent this long
 # Drawing the spinner mid-block splits a streamed word in two, and slow token cadence
@@ -144,6 +154,8 @@ class ConsoleView:
             # Anchored per event: a replay can end on an event that renders nothing yet.
             self._event_ep = events.event_epoch(event.get("ts"))
             self._bump_idle()
+            if etype in ("approval.prompt", "question.prompt", "session.stop"):
+                self._attention(event)
             # Active through a jailed command too, which runs between role.result and role.call.
             if etype in ("session.start", "role.call", "tool.call"):
                 self._active = True
@@ -307,6 +319,25 @@ class ConsoleView:
         if self._status_active:
             terminal_guard.raw_stream(self._out).write("\r\x1b[2K")
             self._status_active = False
+
+    def _attention(self, event: dict[str, Any]) -> None:
+        """Ring and send a desktop notice for a fresh prompt or end; a replayed row is history."""
+        if self._event_ep is None or time.time() - self._event_ep > _ATTENTION_FRESH_S:
+            return
+        who = self._session_id or "run"
+        if event.get("type") == "session.stop":
+            word, detail = session_status.status_word(
+                finished=True,
+                verification=cast("kinds.Verification | None", event.get("verification")),
+                stop_reason=str(event.get("reason", "")),
+                scoped=bool(event.get("scoped", False)),
+            )
+            title, body = f"agent6: {who} {word}", detail
+        else:
+            title, body = f"agent6: {who} needs you", format.attention_line(event) or ""
+        if self._out.isatty():
+            self._raw("\a")
+        notify.desktop_notify(title, body)
 
     def _raw(self, text: str) -> None:
         """Write without bumping the idle timer, flushing at most every `_FLUSH_EVERY_S`.

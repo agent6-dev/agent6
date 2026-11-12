@@ -777,6 +777,78 @@ def test_hub_repaints_a_dying_run_without_a_keypress(
     asyncio.run(scenario())
 
 
+def test_attention_notice_names_a_wait_and_an_end() -> None:
+    """The hub announces a session that starts waiting, or a live one that ended; nothing else."""
+    from agent6.ui.tui import home as tui_home
+    from agent6.viewmodel import listing as viewmodel_listing
+    from agent6.viewmodel import session_status
+
+    def summary(status: str, detail: str = "") -> viewmodel_listing.SessionSummary:
+        return viewmodel_listing.SessionSummary(
+            session_id="r1",
+            mode="run",
+            task_label=session_status.TaskLabel("fix the clock"),
+            status=status,
+            detail=detail,
+            cost_usd=0.0,
+            usd_partial=False,
+            last_activity=0.0,
+        )
+
+    assert tui_home.attention_notice("running", summary("running")) is None
+    assert tui_home.attention_notice("running", summary("waiting", "needs answer")) == (
+        "r1 needs you",
+        "needs answer",
+    )
+    ended = tui_home.attention_notice("running", summary("passed"))
+    assert ended is not None and ended[0] == "r1 passed"
+    assert tui_home.attention_notice("passed", summary("stale")) is None
+
+
+def test_the_hub_announces_a_run_that_starts_waiting(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A poll that finds a running session now waiting toasts and sends a desktop notice."""
+    from textual import widgets
+
+    from agent6.ui.tui import home as tui_home
+
+    monkeypatch.setattr(tui_home, "_HUB_POLL_S", 0.2)
+    sent: list[tuple[str, str]] = []
+
+    def record(title: str, body: str = "") -> bool:
+        sent.append((title, body))
+        return True
+
+    monkeypatch.setattr(tui_home.notify, "desktop_notify", record)
+    a6 = tmp_path / ".agent6"
+    rd = _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "t"}])
+    (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+
+    async def scenario() -> None:
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
+        async with app.run_test(size=(140, 40)) as pilot:
+
+            def status_cell() -> str:
+                table = app.screen.query_one("#sessions", widgets.DataTable)
+                return str(table.get_row_at(0)[1]) if table.row_count else ""
+
+            await waits.wait_for(pilot, lambda: "running" in status_cell(), "the running row")
+            assert sent == []  # the first poll seeds, it announces nothing
+            with (rd / "logs.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(
+                    json.dumps(
+                        {"type": "approval.prompt", "id": "approval-1", "prompt": "run tests?"}
+                    )
+                    + "\n"
+                )
+            await waits.wait_for(pilot, lambda: bool(sent), "the desktop notice")
+            assert sent[0][0] == "agent6: r1 needs you"
+            assert "waiting" in status_cell()
+
+    asyncio.run(scenario())
+
+
 def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

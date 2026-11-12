@@ -582,7 +582,7 @@ Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/
 ## `[notify]` (optional)
 
 `on_event` is one operator argv on the host for every notification, with a minimal env (PATH/HOME/locale/desktop-bus), never your full environment.
-`AGENT6_NOTIFY_EVENT` names the event (`session.end`, `machine.notify`, `machine.end`), `AGENT6_NOTIFY_MESSAGE` carries the end reason or the machine's message, and `AGENT6_NOTIFY_LEVEL` reads `ok` or `failed` for an end and `info`, `warn` or `error` for a machine notify.
+`AGENT6_NOTIFY_EVENT` names the event (`session.waiting` as a prompt opens, `session.end`, `machine.notify`, `machine.end`), `AGENT6_NOTIFY_MESSAGE` carries the prompt's first line, the end reason or the machine's message, and `AGENT6_NOTIFY_LEVEL` reads `info` for a wait, `ok` or `failed` for an end and `info`, `warn` or `error` for a machine notify.
 A session adds `AGENT6_SESSION_ID/DIR/OK/VERIFIED/REASON`: `OK=1` means the agent stopped deliberately; `VERIFIED` is what the gate said; a hook that wants "green" reads the second.
 A machine adds `AGENT6_MACHINE_ID/DIR/STATE`.
 Global/repo config only (a machine `[config]` overlay setting `on_event` is rejected).
@@ -590,7 +590,7 @@ Fan out to ntfy/Pushover/email/Telegram yourself.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `on_event` | `[]` | argv command on every notification (a session's end, a machine's notify and end), no shell; the event in `AGENT6_NOTIFY_EVENT/MESSAGE/LEVEL`, the subject in `AGENT6_SESSION_*` or `AGENT6_MACHINE_*`; no hook when empty |
+| `on_event` | `[]` | argv command on every notification (a session's wait for an answer and its end, a machine's notify and end), no shell; the event in `AGENT6_NOTIFY_EVENT/MESSAGE/LEVEL`, the subject in `AGENT6_SESSION_*` or `AGENT6_MACHINE_*`; no hook when empty |
 | `timeout_s` | `30.0` | Seconds the hook may run before it is killed. |
 
 ## `[web]`

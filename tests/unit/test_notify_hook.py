@@ -177,6 +177,38 @@ def test_the_old_hook_keys_are_refused_with_the_replacement(
             raise
 
 
+def test_a_prompt_opening_fires_session_waiting(tmp_path: pathlib.Path) -> None:
+    """The listener fires `session.waiting` with the prompt's first line; other rows pass."""
+    out = tmp_path / "waiting.json"
+    listen = notify_hook.attention(
+        NotifyConfig(on_event=("python3", "-c", _DUMP_AGENT6_VARS, str(out))),
+        session_id="r1",
+        session_dir=tmp_path,
+        note=reporter.STDIO_REPORTER.note,
+    )
+    listen({"type": "role.call", "role": "worker"})
+    assert not out.exists()
+    listen({"type": "approval.prompt", "id": "approval-1", "prompt": "run `rm -rf build`?\nmore"})
+    env = json.loads(out.read_text(encoding="utf-8"))
+    assert env == {
+        "AGENT6_NOTIFY_EVENT": "session.waiting",
+        "AGENT6_NOTIFY_MESSAGE": "run `rm -rf build`?",
+        "AGENT6_NOTIFY_LEVEL": "info",
+        "AGENT6_SESSION_ID": "r1",
+        "AGENT6_SESSION_DIR": str(tmp_path),
+    }
+    listen(
+        {
+            "type": "question.prompt",
+            "id": "question-1",
+            "questions": [{"question": "Which port?", "options": []}],
+            "wait": False,
+        }
+    )
+    env = json.loads(out.read_text(encoding="utf-8"))
+    assert env["AGENT6_NOTIFY_MESSAGE"] == "queued question: Which port?"
+
+
 def test_notify_hook_env_carries_no_secrets(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -58,8 +58,26 @@ function enableNotifications() {
   Notification.requestPermission().then(p => toast(p === 'granted' ? 'notifications on' : 'notifications ' + p));
 }
 // Fire an OS notification when permitted; always safe (never throws into a repaint).
+function osNotifyOn() { return 'Notification' in window && Notification.permission === 'granted'; }
 function osNotify(title, body) {
-  try { if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body: body || '', icon: '/icon.svg' }); } catch (_) {}
+  try { if (osNotifyOn()) new Notification(title, { body: body || '', icon: '/icon.svg' }); } catch (_) {}
+}
+// Attention on the hub: a session that starts waiting on an answer, or ends, is announced once
+// as a toast and an OS notification (when granted). The first paint seeds silently, as the
+// machine view does, so opening the hub replays nothing.
+const LIVE_WORDS = ['running', 'starting', 'waiting'];
+function seedStatuses(rows) { const m = {}; for (const r of rows || []) m[r.session_id] = r.status; return m; }
+function announceSessions(prev, rows) {
+  for (const r of rows || []) {
+    const before = prev[r.session_id];
+    if (before === undefined || before === r.status) continue;
+    let title = '';
+    if (r.status === 'waiting') title = `${r.session_id} needs you`;
+    else if (LIVE_WORDS.includes(before) && !LIVE_WORDS.includes(r.status)) title = `${r.session_id} ${r.label || r.status}`;
+    if (!title) continue;
+    toast(title);
+    osNotify('agent6: ' + title, firstLine(r.task, 120));
+  }
 }
 
 // --- helpers -----------------------------------------------------------------
@@ -546,7 +564,7 @@ function paintSession(r, it, g) {
   // Review fills the new-work composer with `/review <branch>`; Merge lands the branch
   // through `sessions merge`. Both need a finished run whose branch exists; Merge also
   // needs commits no merge stamped. A fan-out has no branch of its own.
-  const live = ['running', 'starting', 'waiting'].includes(r.status);
+  const live = LIVE_WORDS.includes(r.status);
   if (r.branch && !live) {
     const review = el('button', 'mini', 'Review');
     review.onclick = (e) => { e.stopPropagation(); handToNewWork({ task: '/review ' + r.branch }); location.hash = '#/'; route(); };
@@ -602,6 +620,10 @@ function sessionsCard(sessions) {
   const card = listCard('', sessions, 'no sessions yet', paintSession);
   // Maintenance, the actions the TUI's File menu holds, sits in one row above the list.
   const toolbar = el('div', 'toolbar');
+  // OS notifications for a session that starts waiting or ends need a granted permission.
+  const bell = el('button', 'mini', '🔔 Notifications');
+  bell.onclick = enableNotifications;
+  toolbar.appendChild(bell);
   const action = (label, run) => { const b = el('button', 'mini danger', label); b.onclick = run; toolbar.appendChild(b); };
   // The CLI's --delete-squashed as its own entry: with the default squash
   // method every merged run's branch is unreachable, so a plain prune
@@ -679,6 +701,7 @@ async function renderHub(focus, gen) {
     return lists;
   };
   let lists = build(data);
+  let statuses = seedStatuses(data.sessions);
   view.appendChild(lists);
   view.appendChild(machinesTab ? createMachineDock() : newWorkDock(data.presets, data.preset_default_label, data.sessions));
   // Without this the hub paints once, so a lane that finished, failed or
@@ -686,11 +709,14 @@ async function renderHub(focus, gen) {
   // already-active tab does not re-enter route(). Refresh the lists only: a
   // whole-view repaint would discard text typed into the dock's composer.
   const refreshLists = async () => {
-    if (document.hidden) return; // a background tab has nobody to mislead
+    // A background tab has nobody to mislead, unless it may notify: then it keeps watching.
+    if (document.hidden && !osNotifyOn()) return;
     if (gen !== undefined && gen !== routeGen) return; // superseded; closeLive() clears us
     try {
       const next = await getJSON('/api/hub');
       if (gen !== undefined && gen !== routeGen) return;
+      announceSessions(statuses, next.sessions);
+      statuses = seedStatuses(next.sessions);
       const fresh = build(next);
       lists.replaceWith(fresh);
       lists = fresh;
@@ -1114,7 +1140,7 @@ async function openSwitcher() {
       o.appendChild(head);
       const where = [r.worktree ? 'worktree ' + r.worktree : 'this checkout', r.branch && 'ref ' + r.branch, r.when].filter(Boolean).join(' · ');
       o.appendChild(el('div', 'muted', where));
-      const live = ['running', 'starting', 'waiting'].includes(r.status);
+      const live = LIVE_WORDS.includes(r.status);
       if (r.branch && !live) {
         const acts = el('div', 'row');
         const review = el('button', 'mini', 'Review code');

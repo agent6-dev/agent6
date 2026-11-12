@@ -334,10 +334,12 @@ class NotifyConfig(pydantic.BaseModel):
     under `child_env.curated_env` (never a provider key); a failed hook is logged and leaves
     the exit code. Its environment carries:
 
-    - `AGENT6_NOTIFY_EVENT`: `session.end`, `machine.notify` or `machine.end`
-    - `AGENT6_NOTIFY_MESSAGE`: the end reason, or the machine's notify message
-    - `AGENT6_NOTIFY_LEVEL`: `ok` or `failed` for an end; `info`, `warn` or `error` for a
-      machine notify
+    - `AGENT6_NOTIFY_EVENT`: `session.waiting`, `session.end`, `machine.notify` or
+      `machine.end`
+    - `AGENT6_NOTIFY_MESSAGE`: the prompt's first line, the end reason, or the machine's
+      notify message
+    - `AGENT6_NOTIFY_LEVEL`: `info` for a wait; `ok` or `failed` for an end; `info`, `warn`
+      or `error` for a machine notify
     - a session adds `AGENT6_SESSION_ID` (the session id under the per-repo state dir),
       `AGENT6_SESSION_DIR` (the absolute path of the session dir), `AGENT6_SESSION_OK` (`1`
       when the harness finished cleanly, else `0`), `AGENT6_SESSION_REASON` (the end reason:
@@ -353,7 +355,8 @@ class NotifyConfig(pydantic.BaseModel):
     on_event: validation.Argv = pydantic.Field(
         default=(),
         description=(
-            "argv command on every notification (a session's end, a machine's notify and end), "
+            "argv command on every notification (a session's wait for an answer and its end, a "
+            "machine's notify and end), "
             "no shell; the event in `AGENT6_NOTIFY_EVENT/MESSAGE/LEVEL`, the subject in "
             "`AGENT6_SESSION_*` or `AGENT6_MACHINE_*`; no hook when empty"
         ),

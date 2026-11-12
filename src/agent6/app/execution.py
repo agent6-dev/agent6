@@ -420,6 +420,14 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         if not console_stream:
             # Headless, the fold's markers reach no view: a degraded jail is said once here.
             events.subscribe(functools.partial(headless_marker, log=loop_log))
+        events.subscribe(
+            notify_hook.attention(
+                cfg.notify,
+                session_id=layout.session_id,
+                session_dir=layout.session_dir,
+                note=reporter.note,
+            )
+        )
         tools = session_runtime.build_session_tools(
             cfg,
             cwd=cwd,

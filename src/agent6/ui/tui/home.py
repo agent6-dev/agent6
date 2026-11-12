@@ -31,7 +31,7 @@ from agent6 import errors
 from agent6.config import ConfigError, layer
 from agent6.models import choices
 from agent6.sessions import layout, manifest
-from agent6.ui import keymap, spawn
+from agent6.ui import keymap, notify, spawn
 from agent6.ui.tui import (
     config_page,
     files,
@@ -87,6 +87,27 @@ def _sync_columns(table: widgets.DataTable[Any], width: int) -> tuple[str, ...]:
         table.add_columns(*labels)
     table.clear()
     return labels
+
+
+def attention_notice(before: str, summary: SessionSummary) -> tuple[str, str] | None:
+    """Return the title and body announcing a session's transition, or None for none.
+
+    Args:
+        before: The session's status at the last poll.
+        summary: The session now.
+
+    Returns:
+        `needs you` when it started waiting on an answer; its end label when a live session
+        ended; None otherwise.
+    """
+    now = summary.status
+    if before == now:
+        return None
+    if now == "waiting":
+        return f"{summary.session_id} needs you", summary.detail
+    if before in session_status.LIVE_STATUS_WORDS and now not in session_status.LIVE_STATUS_WORDS:
+        return f"{summary.session_id} {_status_cell(summary).plain}", summary.task_label.task[:200]
+    return None
 
 
 def _status_cell(summary: SessionSummary, *, narrow: bool = False) -> text.Text:
@@ -176,6 +197,8 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self._runs: list[pathlib.Path] = []
         # The poll's rows by session id, so `check_action` never re-folds a session.
         self._summaries: dict[str, SessionSummary] = {}
+        # The last poll's status per session; None before the first, which announces nothing.
+        self._statuses: dict[str, str] | None = None
         # The fan-outs listed, by coordinator id, and the ones the operator expanded.
         self._fanouts: dict[str, viewmodel_listing.ListingRow] = {}
         self._expanded: set[str] = set()
@@ -205,6 +228,18 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
     def on_screen_resume(self) -> None:
         """Refill on return from a pushed screen, which also restores the sub-title."""
         self.action_refresh()
+
+    def _announce(self, rows: dict[str, SessionSummary]) -> None:
+        """Toast and desktop-notify a session that started waiting or ended since the last poll."""
+        if self._statuses is not None:
+            for sid, summary in rows.items():
+                before = self._statuses.get(sid)
+                notice = attention_notice(before, summary) if before is not None else None
+                if notice is not None:
+                    title, body = notice
+                    self.app.notify(body or title, title=title, timeout=8.0)
+                    notify.desktop_notify(f"agent6: {title}", body)
+        self._statuses = {sid: s.status for sid, s in rows.items()}
 
     def _poll(self) -> None:
         """Refill while the hub is the top screen; a rebuild under a modal would shift its rows."""
@@ -285,6 +320,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             )
         self._runs = survivors
         self._summaries = rows
+        self._announce(rows)
         if selected:
             row = next((i for i, rd in enumerate(survivors) if rd.name == selected), None)
             if row is not None:

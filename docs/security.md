@@ -724,7 +724,7 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
     - `machine check` verifies every entry and static reference resolves inside the bundle (escaping symlinks rejected)
 - Scripts are committed, never fetched or generated at run time
     - the `.asm.toml` and `scripts/` are read-only in every jail during a run
-- Front-ends render `machine.notify` as an overlay, and `attach` / TUI call `notify-send` with fixed argv, so a model message is inert data.
+- Front-ends render `machine.notify` as an overlay, and `attach` / TUI call `notify-send` with fixed argv for a machine's notify and for a session that waits or ends, so a model message is inert data.
 - The out-of-band hook `[notify].on_event` runs an operator argv on the host with the minimal `hook_env` env plus `AGENT6_NOTIFY_*` and `AGENT6_MACHINE_*`.
 
 ### Container discovery boundary
@@ -841,7 +841,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
   Argv is the agent6 exe plus the question the operator typed, with `--` before it.
 - `ui/spawn.py`: the shared front-end spawn helper.
   Spawns the agent6 CLI detached for run and machine launches (`machine create` and `machine run`), and captures `sessions merge` / `prune` / `remove` / `review` and `config set` / `unset`.
-- `ui/notify.py`: `notify-send` with fixed argv (exe, `--`, two positional data args, no shell) for the device-present machine notification.
+- `ui/notify.py`: `notify-send` with fixed argv (exe, `--`, two positional data args, no shell) for the device-present notices: a machine's notify, a session that waits or ends.
 - `ui/cli/` helpers:
     - `connect_oauth.py`: the platform's URL opener (`xdg-open`, `open`) for a sign-in URL built from the operator's configuration, with the curated environment; never `$BROWSER`'s command template
     - `plan_watch.py`: `$EDITOR` for plan editing

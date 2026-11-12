@@ -15,7 +15,7 @@ import pathlib
 import shlex
 import time
 from collections.abc import Mapping
-from typing import Literal
+from typing import Any, Literal
 
 from agent6 import budget, paths, terminal
 from agent6.sessions import manifest
@@ -204,6 +204,32 @@ def format_usage_cell(
         return dollars
     points = f"{plan_points:g}pt"
     return f"{points} + {dollars}" if dollars else points
+
+
+def attention_line(event: Mapping[str, Any]) -> str | None:
+    """Return what a prompt row asks the operator, or None for a row that is not a prompt.
+
+    Args:
+        event: A journal row.
+
+    Returns:
+        An approval's first line, or a question's first text (`queued question: ...` when the
+        run does not wait), cut at 200 characters; None for every other row.
+    """
+    kind = event.get("type")
+    if kind == "approval.prompt":
+        head = str(event.get("prompt", "")).strip().splitlines()
+        text = head[0] if head else "approval"
+    elif kind == "question.prompt":
+        questions = event.get("questions") or []
+        first = questions[0] if isinstance(questions, list) and questions else {}
+        text = str(first.get("question", "")) if isinstance(first, dict) else ""
+        text = text.strip().splitlines()[0] if text.strip() else "question"
+        if event.get("wait") is False:
+            text = f"queued question: {text}"
+    else:
+        return None
+    return text if len(text) <= 200 else text[:199] + "…"
 
 
 def duration_words(seconds: float) -> str:
