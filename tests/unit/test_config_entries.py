@@ -393,3 +393,27 @@ def test_entries_and_reviewers_land_under_the_selected_preset(tmp_path: pathlib.
     assert io.read_toml_file(target)["presets"]["fast"]["review"]["reviewers"] == []
     assert write.remove_entry(tmp_path, provider, "acme", preset="fast").removed is True
     assert "providers" not in io.read_toml_file(target)["presets"]["fast"]
+
+
+def test_a_write_under_a_built_in_preset_keeps_the_built_ins_values(tmp_path: pathlib.Path) -> None:
+    """The first `presets.review.*` write copies the built-in in, so `review` keeps its seats.
+
+    A `[presets.<name>]` table replaces the built-in of that name wholesale; one page edit
+    under a selected built-in dropped every other value it set.
+    """
+    assert write.set_config_value(tmp_path, "presets.review.sandbox.network", "host") is None
+    saved = io.read_toml_file(paths.global_config_path())["presets"]["review"]
+    assert saved["sandbox"] == {"network": "host"}
+    assert saved["review"]["trigger"] == "before_finish"
+    assert saved["review"]["reviewers"] == [
+        {"focus": "security"},
+        {"focus": "correctness"},
+        {"focus": "tests"},
+    ]
+    # A second write under the same name seeds nothing more.
+    assert write.set_config_value(tmp_path, "presets.review.review.concurrency", "2") is None
+    saved = io.read_toml_file(paths.global_config_path())["presets"]["review"]
+    assert saved["review"]["concurrency"] == 2 and saved["sandbox"] == {"network": "host"}
+    assert write.set_config_value(tmp_path, "preset", "review") is None
+    eff = layer.load_effective(tmp_path)
+    assert eff.config.sandbox.network == "host" and len(eff.config.review.reviewers) == 3

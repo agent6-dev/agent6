@@ -334,6 +334,8 @@ reviewers = [
 ]
 ```
 
+The first write under a built-in's name (`agent6 config set presets.review.sandbox.network host`, or a page edit with `preset = "review"`) copies the built-in's values into the table first, so the rest of it stays.
+
 ## `[harness]`
 
 <!-- config-table: harness -->

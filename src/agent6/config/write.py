@@ -25,7 +25,15 @@ import pydantic_core
 
 from agent6 import errors as agent6_errors
 from agent6 import paths, portable
-from agent6.config import harness_config, io, layer, layer_data, provider_config, validation
+from agent6.config import (
+    harness_config,
+    io,
+    layer,
+    layer_data,
+    layer_presets,
+    provider_config,
+    validation,
+)
 from agent6.config import model as config_model
 
 
@@ -602,6 +610,28 @@ def names_a_section(dotted_key: str) -> bool:
     return True
 
 
+def _seed_builtin_preset(repo_root: pathlib.Path, target: pathlib.Path, key: str) -> None:
+    """Copy a built-in preset's values into the target before the first write under its name.
+
+    A `[presets.<name>]` table replaces the built-in of that name wholesale, so a write that
+    created the table with one leaf would drop the rest of the built-in.
+
+    Args:
+        repo_root: The repo, whose layers may already hold the table.
+        target: The file being written, inside its write lock.
+        key: The dotted key being written.
+    """
+    parts = io.split_key(key)
+    if len(parts) < 3 or parts[0] != "presets" or parts[1] not in layer_presets.BUILTIN_PRESETS:
+        return
+    if preset_layer(repo_root, parts[1]) is not None:
+        return
+    for leaf, value in layer_data.flatten_leaves(layer_presets.BUILTIN_PRESETS[parts[1]]).items():
+        io.upsert_toml_leaf(
+            target, io.render_key(("presets", parts[1], *io.split_key(leaf))), value
+        )
+
+
 def set_config_value(
     repo_root: pathlib.Path, dotted_key: str, raw_value: str, *, to_repo: bool = False
 ) -> str | None:
@@ -632,6 +662,7 @@ def set_config_value(
         prior = agent6_errors.read_operator_file(target) if target.is_file() else None
         io.read_toml_file(target)  # refuse line surgery on a file that does not parse
         was_valid = merged_config_error(repo_root) is None
+        _seed_builtin_preset(repo_root, target, dotted_key)
         if isinstance(parsed, dict) and names_a_section(dotted_key):
             if not parsed:
                 raise validation.ConfigError(
@@ -691,6 +722,7 @@ def set_config_table(
         prior = agent6_errors.read_operator_file(target) if target.is_file() else None
         io.read_toml_file(target)  # refuse line surgery on a file that does not parse
         was_valid = merged_config_error(repo_root) is None
+        _seed_builtin_preset(repo_root, target, table)
         io.upsert_toml_table(target, table, fields)
         return revalidate_write(
             repo_root,
@@ -1136,6 +1168,7 @@ def set_config_leaves(
         prior = agent6_errors.read_operator_file(target) if target.is_file() else None
         io.read_toml_file(target)  # refuse line surgery on a file that does not parse
         was_valid = merged_config_error(repo_root) is None
+        _seed_builtin_preset(repo_root, target, table)
         try:
             for key, val in fields.items():
                 if val is not None:
