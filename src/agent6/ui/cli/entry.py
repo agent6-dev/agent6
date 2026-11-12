@@ -233,17 +233,8 @@ def _dispatch_run_task(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
             "--parallel cannot combine with -i or --tui (each lane runs headless and detached)."
         )
         return 2
-    if parallel and args.session_id:
-        common.error("--parallel cannot combine with --session-id (each lane mints its own id).")
-        return 2
     if parallel and args.standing:
         common.error("--parallel cannot combine with --standing (the lanes take no standing goal).")
-        return 2
-    if parallel and getattr(args, "worktree", False):
-        common.refuse(
-            "--parallel cannot combine with --worktree (each lane already works in its own"
-            " clone); drop one of the two."
-        )
         return 2
     seed_from, source_session_id = getattr(args, "seed_from", ""), ""
     if not args.task and seed_from:

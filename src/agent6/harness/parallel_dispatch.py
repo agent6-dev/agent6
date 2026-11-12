@@ -420,7 +420,7 @@ class ParallelDispatcher:
         failures = [
             p
             for p, j in zip(payload, joins, strict=True)
-            if j.status not in ("joined", "no_changes", "outranked")
+            if j.status not in ("joined", "no_changes", "ranked")
         ]
         if failures:
             self.emit(journal.ParallelFailed(group=record.identity, lanes=failures))
@@ -495,6 +495,7 @@ class ParallelDispatcher:
         if record.join_policy == "rank" and record.ranking is None:
             record = self.ranked(record, by_id)
         order = record.ranking.order if record.ranking is not None else ()
+        first = next(iter(order), "")
         for child in record.children:
             if child.join is not None:
                 continue
@@ -508,10 +509,17 @@ class ParallelDispatcher:
                     "",
                     (res.error or res.stopped_by) if res is not None else "no imported record",
                 )
-            elif child.session_id in order[1:] and res is not None:
+            elif (
+                res is not None
+                and child.session_id in order
+                # The first lane joins where the run has a chain; under `git.control = "model"`
+                # it has none, and every lane is placed and left on its ref.
+                and (child.session_id != first or not self.chain.ref)
+            ):
                 # Its branch stays imported: the operator can still merge it by hand.
                 place = f"{order.index(child.session_id) + 1} of {len(order)}"
-                join = lane_records.LaneJoin(child.session_id, res.branch, "outranked", "", place)
+                held = res.imported_ref or res.branch
+                join = lane_records.LaneJoin(child.session_id, held, "ranked", "", place)
             else:
                 join = self.join_child(child, res)
             record = record.with_child(

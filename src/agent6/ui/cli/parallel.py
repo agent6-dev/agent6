@@ -109,6 +109,35 @@ def _sandbox_refusal(cfg: Config, origin: pathlib.Path) -> str | None:
     return None
 
 
+def spec_refusal(cfg: Config, spec: str) -> str | None:
+    """Return why a `--parallel` spec cannot run, before any session exists.
+
+    A model the cache cannot check warns and proceeds.
+
+    Args:
+        cfg: The effective config.
+        spec: The `--parallel` lane spec.
+
+    Returns:
+        The refusal: a bad count, a lane over `[harness.parallel].max_lanes`, or a selector
+        that names no model; None when the spec can run.
+    """
+    try:
+        settings = app_lanes.lane_settings(
+            cfg, directive.parse_spec(spec, limit=cfg.harness.parallel.max_lanes)
+        )
+    except (ConfigError, directive.DirectiveError) as exc:
+        return str(exc)
+    verdict = validate.validate_spec_models(
+        [chosen.route if chosen is not None else None for chosen in settings], cfg
+    )
+    if verdict.refused:
+        return validate.refusal_message(verdict, directive=False)
+    if verdict.warned:
+        common.warn(f"{validate.warning_message(verdict)}")
+    return None
+
+
 def dispatch_parallel(
     cfg: Config,
     task: str,

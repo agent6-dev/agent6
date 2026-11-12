@@ -1058,10 +1058,15 @@ def test_a_run_that_opens_with_a_ranked_dispatch_lands_the_winner_and_calls_no_m
     files = _git(repo, "ls-tree", "--name-only", "refs/agent6/coord").split()
     assert files == ["README.md", "lane2.txt"]
     (joined,) = events.of("parallel.joined")
-    assert [lane["status"] for lane in joined["lanes"]] == ["outranked", "joined", "outranked"]
+    assert [lane["status"] for lane in joined["lanes"]] == ["ranked", "joined", "ranked"]
     (stop,) = events.of("session.stop")
     assert stop["reason"] == "lanes_ranked"
-    assert "ranked 3 of 3; not joined" in stop["summary"]
+    assert stop["summary"].splitlines() == [
+        "3 of 3 lane(s) ranked:",
+        "  session-p1-l1: 2 of 3; agent6/session-p1-l1 holds its work",
+        "  session-p1-l2: first; joined at " + _git(repo, "rev-parse", "refs/agent6/coord")[:12],
+        "  session-p1-l3: 3 of 3; agent6/session-p1-l3 holds its work",
+    ]
 
 
 def test_an_opening_whose_lanes_all_fail_ends_with_no_lane_result(

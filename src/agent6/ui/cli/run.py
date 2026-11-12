@@ -14,8 +14,8 @@ import pathlib
 import sys
 import time
 
-from agent6 import errors, kinds, paths, portable
-from agent6.app import frontend, preflight, reporter, run
+from agent6 import directive, errors, kinds, paths, portable
+from agent6.app import frontend, preflight, run
 from agent6.app import lanes as app_lanes
 from agent6.app.session import setup as session_setup
 from agent6.config import (
@@ -28,7 +28,6 @@ from agent6.ui import btw, spawn, steer
 from agent6.ui.cli import (
     ask,
     common,
-    compare_ranking,
     console_render,
     interact,
     live,
@@ -208,8 +207,11 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
                 )
             )
         ),
-        build_judge_provider=compare_ranking._reviewer_provider,
-        judging_status=compare_ranking._judging_status,
+        # The lane runtime owns the judge's two pieces; read at the call, as the spawner is.
+        build_judge_provider=lambda cfg, sink, budget, events: (
+            cli_parallel.lane_runtime().build_provider(cfg, sink, budget, events)
+        ),
+        judging_status=lambda: cli_parallel.lane_runtime().judging_status(),
         agent6_exe=spawn.agent6_exe,
         spawn_detached_resume=lambda cwd, sid, flags: spawn.spawn_detached_resume(
             cwd, sid, config_paths=config_paths, flags=flags
@@ -264,7 +266,7 @@ def _compose_task(
     return ComposedTask(f"{seed.text}\n\n{task}" if task else seed.text, seed.source_session_id)
 
 
-def _cmd_run(  # noqa: PLR0911
+def _cmd_run(
     config_paths: tuple[pathlib.Path, ...],
     task: str,
     *,
@@ -340,7 +342,6 @@ def _cmd_run(  # noqa: PLR0911
         return 2
     task = composed.text
     source_session_id = composed.source_session_id or source_session_id
-    role = kinds.session_kind(mode).role
 
     # `@path` references inline the files verbatim before the harness sees the task.
     task = task_refs.expand_task_file_refs(task, pathlib.Path.cwd())
@@ -348,7 +349,8 @@ def _cmd_run(  # noqa: PLR0911
         common.error(problem)
         return 2
 
-    # `--parallel` routes after the config walls and before the single-run preflight; run mode only.
+    # `--parallel` is a run that opens with a dispatch joined by rank; run mode only.
+    opening: directive.Segment | None = None
     if parallel_spec and mode == "run":
         # Depth 1: a subordinate lane (AGENT6_SUBRUN) must never itself fan out.
         if os.environ.get("AGENT6_SUBRUN"):
@@ -356,22 +358,11 @@ def _cmd_run(  # noqa: PLR0911
                 "--parallel is unavailable inside a subordinate run (parallel dispatch is depth 1)."
             )
             return 2
-        # run_task's route preflight, early so the fan-out refuses before cloning.
-        if not preflight.route_preflight(
-            cfg, role, reporter=reporter.STDIO_REPORTER, model_flag=model
-        ):
+        # Before any session exists: a spec that cannot run names its reason here.
+        if (refusal := cli_parallel.spec_refusal(cfg, parallel_spec)) is not None:
+            common.refuse(refusal)
             return 2
-        return cli_parallel.dispatch_parallel(
-            cfg,
-            task,
-            parallel_spec,
-            operator_task=operator_task,
-            explicit_leaves=explicit_leaves,
-            cwd=pathlib.Path.cwd(),
-            max_usd=budget_overrides.max_usd if budget_overrides is not None else None,
-            auto_approve=sandbox_overrides.auto_approve if sandbox_overrides is not None else False,
-            pins=pins,
-        )
+        opening = directive.Segment(task=task, spec=parallel_spec)
 
     return run.run_task(
         cfg,
@@ -394,4 +385,5 @@ def _cmd_run(  # noqa: PLR0911
         worktree=worktree,
         config_paths=config_paths,
         config_sources=effective.sources,
+        opening=opening,
     )

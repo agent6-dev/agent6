@@ -116,17 +116,22 @@ def _screen_candidates(
 
 
 def _fanout_lanes(cwd: pathlib.Path, parallel_id: str) -> tuple[str, ...]:
-    """Return the lane ids of a fan-out in lane order; empty when no run names it.
+    """Return the lane ids of a ranked group in lane order; empty when no run names it.
 
     Args:
         cwd: The repo.
-        parallel_id: The fan-out's id, as each lane's manifest records it.
+        parallel_id: The group's id as each lane's manifest records it, or the id of the
+            run that ranked it.
 
     Returns:
-        The lane ids; empty when no run names the fan-out.
+        The lane ids; empty when no run names the group.
     """
     lanes: list[tuple[int, str]] = []
     runs = common._runs_dir(cwd)
+    # A run that ranked a group names it in its comparison stamp.
+    record = comparison.session_comparison(runs / parallel_id) if runs.is_dir() else None
+    if record is not None and record.group:
+        parallel_id = record.group
     if runs.is_dir():
         for d in runs.iterdir():
             with contextlib.suppress(sessions_manifest.ManifestError):

@@ -163,24 +163,12 @@ def test_run_continue_flag_is_gone(tmp_path: pathlib.Path, monkeypatch: pytest.M
     assert exc.value.code == 2
 
 
-def test_parallel_refuses_an_explicit_run_id(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    # Each lane mints its own run id, so --session-id is refused like -i and --tui.
-    monkeypatch.chdir(tmp_path)
-    rc = main(["run", "--parallel", "2", "--session-id", "myid", "task"])
-    assert rc == 2
-    assert "--session-id" in capsys.readouterr().err
-
-
 def test_parallel_refuses_a_standing_goal(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`--parallel` refuses `--standing`, which reaches no lane, as it refuses --session-id."""
+    """`--parallel` refuses `--standing`, which reaches no lane."""
     monkeypatch.chdir(tmp_path)
     rc = main(["run", "--parallel", "2", "--standing", "keep tests green", "task"])
     assert rc == 2

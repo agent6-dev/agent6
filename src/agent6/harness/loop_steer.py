@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from agent6 import terminal
-from agent6.harness import loop_conversation, loop_snapshot, loop_state
+from agent6.harness import loop_conversation, loop_snapshot, loop_state, parallel_join
 from agent6.sessions import journal, lane_dispatch
 from agent6.tools import operator_prompts, tool_errors
 from agent6.vcs.git import ops as git_ops
@@ -147,24 +147,26 @@ def ranked_opening(
     stopped = operator_stop(harness, turn, state)
     if stopped is not None:
         return stopped
-    landed = [join for join in result.lanes if join.status in ("joined", "no_changes")]
+    # A refusal before any lane ran has no lanes to word: its own message is the summary.
+    summary = parallel_join.rank_summary(result.lanes) if result.lanes else result.message
+    landed = [join for join in result.lanes if join.status in ("joined", "no_changes", "ranked")]
     if not landed:
         spent = harness.budget is not None and harness.budget.is_exhausted()
         return harness.finish(
             state,
             loop_snapshot.End(
-                "budget_exhausted" if spent else "no_lane_result", result.message, roots=False
+                "budget_exhausted" if spent else "no_lane_result", summary, roots=False
             ),
             turn=turn,
         )
-    if landed[0].status == "joined":
+    if any(join.status == "joined" for join in landed):
         try:
             harness.gate.after_rank_join(state)
         except tool_errors.OperatorCommandUnexecutableError as exc:
             return harness.unexecutable_abort(exc, turn=turn, state=state)
     return harness.finish(
         state,
-        loop_snapshot.End("lanes_ranked", result.message, completed=True, verdict="grounded"),
+        loop_snapshot.End("lanes_ranked", summary, completed=True, verdict="grounded"),
         turn=turn,
     )
 

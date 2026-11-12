@@ -152,9 +152,9 @@ def test_a_rank_join_lands_the_first_ranked_lane_alone(repo: pathlib.Path) -> No
     result = _dispatch(_dispatcher(repo, lanes, events))
 
     assert [(j.session_id, j.status, j.detail) for j in result.lanes] == [
-        ("root-p1-l1", "outranked", "3 of 3"),
+        ("root-p1-l1", "ranked", "3 of 3"),
         ("root-p1-l2", "joined", ""),
-        ("root-p1-l3", "outranked", "2 of 3"),
+        ("root-p1-l3", "ranked", "2 of 3"),
     ]
     chain = git_read.chain_ref_for("root")
     assert _git(repo, "rev-parse", f"{chain}^{{tree}}") == _git(
@@ -172,7 +172,7 @@ def test_a_rank_join_lands_the_first_ranked_lane_alone(repo: pathlib.Path) -> No
     assert "  - root-p1-l3 (agent6/root-p1-l3): ranked 2 of 3; not joined" in result.message
     assert not [e for e in events if isinstance(e, journal.ParallelFailed)]
     (joined,) = [e for e in events if isinstance(e, journal.ParallelJoined)]
-    assert [lane["status"] for lane in joined.lanes] == ["outranked", "joined", "outranked"]
+    assert [lane["status"] for lane in joined.lanes] == ["ranked", "joined", "ranked"]
 
 
 def test_a_resumed_rank_join_neither_ranks_nor_merges_again(repo: pathlib.Path) -> None:
@@ -193,7 +193,7 @@ def test_a_resumed_rank_join_neither_ranks_nor_merges_again(repo: pathlib.Path) 
 
     assert len(lanes.ranked) == 1
     assert _git(repo, "rev-parse", git_read.chain_ref_for("root")) == tip
-    assert [j.status for j in result.lanes] == ["outranked", "joined", "outranked"]
+    assert [j.status for j in result.lanes] == ["ranked", "joined", "ranked"]
 
 
 def test_a_lane_without_a_result_is_not_ranked(repo: pathlib.Path) -> None:
@@ -205,7 +205,7 @@ def test_a_lane_without_a_result_is_not_ranked(repo: pathlib.Path) -> None:
 
     assert lanes.ranked == [["root-p1-l1", "root-p1-l2"]]
     assert [(j.status, j.detail) for j in result.lanes] == [
-        ("outranked", "2 of 2"),
+        ("ranked", "2 of 2"),
         ("joined", ""),
         ("failed", "no result (failed · crashed)"),
     ]
@@ -233,8 +233,8 @@ def test_a_ranker_that_leaves_a_lane_out_still_places_it(repo: pathlib.Path) -> 
 
     assert _record(repo).ranking is not None
     assert [(j.status, j.detail) for j in result.lanes] == [
-        ("outranked", "2 of 3"),
-        ("outranked", "3 of 3"),
+        ("ranked", "2 of 3"),
+        ("ranked", "3 of 3"),
         ("joined", ""),
     ]
 
@@ -250,9 +250,9 @@ def test_a_rank_join_without_a_ranker_is_refused_before_any_clone(repo: pathlib.
     assert lane_dispatch.read_records(repo.parent / "root") == ()
 
 
-def test_an_outranked_lane_reads_as_its_place_in_the_task_graph_note() -> None:
+def test_a_ranked_lane_reads_as_its_place_in_the_task_graph_note() -> None:
     """The DAG note says where the lane placed, not that it failed."""
-    join = lane_records.LaneJoin("root-p1-l1", "agent6/root-p1-l1", "outranked", "", "3 of 3")
+    join = lane_records.LaneJoin("root-p1-l1", "agent6/root-p1-l1", "ranked", "", "3 of 3")
 
     assert parallel_join.lane_note(join) == "root-p1-l1 ranked 3 of 3; not joined"
 

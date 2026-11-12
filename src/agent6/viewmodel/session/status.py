@@ -209,8 +209,12 @@ def status_word(
         "settled": ("finished", not_green),
         # The gate was red at the base and red at the finish; the failures were not compared.
         "gate_red_at_base": ("finished", "gate red at base"),
-        # A fan-out's own end: its lanes carry the gate verdicts, and no model finished it.
-        "lanes_ranked": ("finished", "lanes ranked"),
+        # A run that opened with a ranked dispatch: no model finished it, and the gate judged
+        # the tree the best-ranked lane left.
+        "lanes_ranked": (
+            "finished",
+            "lanes ranked" if verification in ("passed", "not_applicable", None) else not_green,
+        ),
     }
     if stop_reason in own_word:
         word, detail = own_word[stop_reason]

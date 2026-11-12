@@ -204,6 +204,7 @@ def print_ranked_candidates(
     merged_into: Mapping[str, str] | None = None,
     committed: Mapping[str, bool] | None = None,
     model_refs: Mapping[str, str] | None = None,
+    joins: str = "",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
     """Print the ranked table, the total spend and the judge's rationale.
@@ -219,6 +220,8 @@ def print_ranked_candidates(
         committed: Whether a candidate's branch holds a commit, by session id; one named
             False has nothing to merge.
         model_refs: Imported work locations for model-controlled lanes.
+        joins: The run the first-ranked candidate joins, when a rank join lands it; "" when
+            nothing lands by this ranking.
         reporter: The output channels.
     """
     if not outcome.ranking:
@@ -240,6 +243,8 @@ def print_ranked_candidates(
                 if model_refs[rid]
                 else "no imported work ref (git was model-controlled)"
             )
+        elif joins and rnk == 1 and (committed or {}).get(rid, True):
+            landing = f"joins {joins}; merge with: agent6 sessions merge {joins}"
         elif (committed or {}).get(rid, True):
             landing = f"merge with: agent6 sessions merge {rid}"
         else:

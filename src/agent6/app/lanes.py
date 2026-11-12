@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import contextlib
 import dataclasses
 import functools
 import os
@@ -37,6 +38,7 @@ from agent6.viewmodel import (
     session_is_live,
     summarize_session_dir,
     tail_events,
+    wire,
 )
 from agent6.viewmodel.session import log as session_log
 
@@ -823,11 +825,20 @@ def build_lane_ranker(
                 judge_cost_partial=outcome.judge_cost_partial,
             )
         )
+        # A lane whose model owned git has no branch of agent6's: the table names its ref.
+        model_refs: dict[str, str] = {}
+        for res in results:
+            with contextlib.suppress(sessions_manifest.ManifestError):
+                manifest = sessions_manifest.read_manifest(res.session_dir)
+                if manifest.git_control == "model":
+                    model_refs[res.spec.session_id] = wire.commits_ref(manifest, origin)
         app_compare.print_ranked_candidates(
             candidates,
             outcome,
             rows=rows,
             committed={res.spec.session_id: res.has_commits for res in results},
+            model_refs=model_refs,
+            joins=coordinator_dir.name,
             reporter=reporter,
         )
         return lane_records.Ranking(

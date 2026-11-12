@@ -632,15 +632,27 @@ def test_outside_a_git_repository_refuses(
     assert "is not a git repository" in err and "git init" in err
 
 
-def test_parallel_and_worktree_together_refuse(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_parallel_is_a_run_that_takes_a_worktree_and_an_id(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A fan-out's lanes already own a clone each; the pair is refused before anything runs."""
-    repo = _repo(tmp_path, monkeypatch)
+    """`run --parallel` reaches the run lifecycle with its opening, its worktree and its id."""
+    from agent6 import directive
+    from agent6.app import run as app_run
 
-    assert cli_main(["run", "--worktree", "--parallel", "2", "task"]) == 2
-    assert "REFUSING: --parallel cannot combine with --worktree" in capsys.readouterr().err
-    assert _worktrees(repo) == [str(repo)]
+    _repo(tmp_path, monkeypatch)
+    seen: dict[str, Any] = {}
+
+    def run_task(_cfg: object, task: str, **kwargs: Any) -> int:
+        seen.update(kwargs, task=task)
+        return 0
+
+    monkeypatch.setattr(app_run, "run_task", run_task)
+
+    argv = ["run", "--worktree", "--session-id", "myid", "--parallel", "2", "task"]
+    assert cli_main(argv) == 0
+
+    assert seen["opening"] == directive.Segment(task="task", spec="2")
+    assert (seen["worktree"], seen["session_id"], seen["task"]) == (True, "myid", "task")
 
 
 def test_model_controlled_git_refuses_where_the_jail_confines_the_git_dir(

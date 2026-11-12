@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import pathlib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import pydantic
 
@@ -96,7 +96,7 @@ def lane_note(j: lane_records.LaneJoin) -> str:
         return f"{j.session_id} made no changes{stopped}"
     if j.status == "conflict":
         return f"{j.session_id} conflicted; merge manually"
-    if j.status == "outranked":
+    if j.status == "ranked":
         return f"{j.session_id} ranked {j.detail}; not joined"
     return f"{j.session_id} failed: {j.detail}"
 
@@ -128,7 +128,7 @@ def summary_text(group: str, lanes: list[lane_records.LaneJoin]) -> str:
                 f" conflicted. It exists locally for the operator (`git merge {j.branch}`);"
                 " continue without it."
             )
-        elif j.status == "outranked":
+        elif j.status == "ranked":
             lines.append(
                 f"  - {j.session_id} ({j.branch}): ranked {j.detail}; not joined, the branch"
                 " holds its work."
@@ -138,6 +138,33 @@ def summary_text(group: str, lanes: list[lane_records.LaneJoin]) -> str:
         if report := j.report.strip():
             lines.append("    summary: " + report.replace("\n", "\n      "))
     lines.append("Review what landed and continue.")
+    return "\n".join(lines)
+
+
+def rank_summary(lanes: Sequence[lane_records.LaneJoin]) -> str:
+    """Return what a rank join did, for the operator: one line per lane, in lane order.
+
+    Args:
+        lanes: Each lane's join.
+
+    Returns:
+        The count line and each lane's outcome: joined, changed nothing, its place with the
+        branch that holds its work, or its failure.
+    """
+    ranked = sum(1 for j in lanes if j.status in ("joined", "no_changes", "ranked"))
+    lines = [f"{ranked} of {len(lanes)} lane(s) ranked:"]
+    for j in lanes:
+        if j.status == "joined":
+            what = f"first; joined at {j.sha[:12]}"
+        elif j.status == "no_changes":
+            what = "first; it changed nothing"
+        elif j.status == "ranked":
+            what = f"{j.detail}; {j.branch} holds its work"
+        elif j.status == "conflict":
+            what = f"first; its merge conflicted, {j.branch} holds its work"
+        else:
+            what = f"no result: {j.detail}"
+        lines.append(f"  {j.session_id}: {what}")
     return "\n".join(lines)
 
 

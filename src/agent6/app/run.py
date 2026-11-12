@@ -75,6 +75,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     config_sources: Mapping[str, str] | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
     contract: kinds.ConversationContract | None = None,
+    opening: directive.Segment | None = None,
 ) -> int:
     """Run one session from preflight to finalize; the sole `agent6 run` path.
 
@@ -115,6 +116,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         reporter: Receives every refusal and note.
         contract: The bounded conversation a `read_only` session drives; None for every
             other mode.
+        opening: `run --parallel`'s spec and task: the run dispatches it in place of its
+            first model call, joins the best-ranked lane and ends; None for a run that
+            opens with the model.
 
     Returns:
         The process exit code.
@@ -566,6 +570,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 operator_task=operator_task,
                 gate=_gate if contract is None else _no_gate,
                 contract=contract,
+                opening=opening,
                 chain_branch=run_branch,
                 base_sha=base_sha,
                 untracked_at_start=untracked_at_start,

@@ -4148,9 +4148,12 @@ def test_model_parallel_import_keeps_lane_commits(
 
     monkeypatch.setattr(role_providers, "build_role_provider", provider)
 
+    one_at_a_time = threading.Lock()
+
     def spawn(argv: list[str], cwd: pathlib.Path, **kw: Any) -> tuple[pathlib.Path, int, str]:
         clones.append(cwd)
-        with monkeypatch.context() as child:
+        # A lane runs in this process, which has one cwd and one environment.
+        with one_at_a_time, monkeypatch.context() as child:
             child.chdir(cwd)
             for key, value in kw["env"].items():
                 if key.startswith("AGENT6_"):

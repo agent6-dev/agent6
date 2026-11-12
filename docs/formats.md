@@ -3726,7 +3726,7 @@ Source: [`agent6.sessions.lane_dispatch.JoinRecord`](https://github.com/agent6-d
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `branch` | `str` | The lane's branch. |
-| `status` | `Literal['joined', 'no_changes', 'conflict', 'failed', 'outranked']` | The join's outcome. |
+| `status` | `Literal['joined', 'no_changes', 'conflict', 'failed', 'ranked']` | The join's outcome. |
 | `sha` | `str` | The merge commit, "" when none. |
 | `detail` | `str` | The failure's reason, or what stopped a lane whose work still joined; "" when neither. |
 | `target_before` | `str` | The chain tip before the join. |

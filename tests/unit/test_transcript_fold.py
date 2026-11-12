@@ -751,7 +751,7 @@ def test_every_stop_reason_has_a_done_line_label() -> None:
     for reason, label in _DONE_LABELS.items():
         verification = (
             "passed"
-            if reason in ("silent_finish", "metric_plateau", "verify_settled")
+            if reason in ("silent_finish", "metric_plateau", "verify_settled", "lanes_ranked")
             else "unverified"
         )
         done = next(

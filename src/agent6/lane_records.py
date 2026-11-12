@@ -22,7 +22,7 @@ DispatchSource = Literal["operator", "model", "panel"]
 # best-ranked one alone.
 JoinPolicy = Literal["merge", "record_only", "rank"]
 # How one lane's work joined the coordinator's chain.
-JoinStatus = Literal["joined", "no_changes", "conflict", "failed", "outranked"]
+JoinStatus = Literal["joined", "no_changes", "conflict", "failed", "ranked"]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -231,9 +231,10 @@ class LaneJoin:
         status: `joined` (merged, `sha` set), `no_changes` (ended with a result and no commit
             beyond its base; nothing to merge), `conflict` (imported, the merge conflicted,
             the ref exists locally), `failed` (no result or nothing importable) or
-            `outranked` (a rank join landed another lane; the branch holds this one's work).
+            `ranked` (a rank join placed the lane and did not join it: another lane landed,
+            or the run has no chain to join onto; the branch holds this one's work).
         sha: The merge commit, or "".
-        detail: The failure's reason; an outranked lane's place (`2 of 3`); for a lane that
+        detail: The failure's reason; a ranked lane's place (`2 of 3`); for a lane that
             joined or had nothing to join, what stopped it when its coordinator did; else "".
         report: What the lane said at its end, its finish summary; "" when it gave none.
     """
