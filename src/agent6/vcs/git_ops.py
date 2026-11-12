@@ -488,6 +488,24 @@ def _advance_run_branch(
         _bring_index_forward(path, branch, expected, sha)
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class ChainMerge:
+    """What merging a branch into the run's chain left behind.
+
+    Attributes:
+        branch: The rev merged in, as the operator named it.
+        sha: The chain's tip after the merge: the merge commit, or the unchanged tip when the
+            chain already held the rev.
+        merged: Whether a merge commit was made.
+        conflicts: The paths whose files carry conflict markers for the run to resolve.
+    """
+
+    branch: str
+    sha: str
+    merged: bool
+    conflicts: tuple[str, ...] = ()
+
+
 def chain_merge(
     path: pathlib.Path,
     merge_rev: str,
@@ -518,6 +536,94 @@ def chain_merge(
     Raises:
         GitError: The ref does not exist and no fallback parent was given.
     """
+    merged = _chain_merge(
+        path,
+        merge_rev,
+        message,
+        ref=ref,
+        fallback_parent=fallback_parent,
+        identity=identity,
+        also_branch=also_branch,
+        keep_conflicts=False,
+    )
+    return None if merged is None else merged.sha
+
+
+def chain_merge_with_markers(
+    path: pathlib.Path,
+    merge_rev: str,
+    message: str,
+    *,
+    ref: str,
+    fallback_parent: str | None = None,
+    identity: git_read.CommitIdentity | None = None,
+    also_branch: str | None = None,
+) -> ChainMerge:
+    """Merge a rev into the chain, committing a conflict's markers for the run to resolve.
+
+    The merge commit's tree is what `git merge` would leave in a worktree: the clean merge
+    where it merges, both sides between markers where it does not. The worktree follows it,
+    so the resumed run's first task is the markers.
+
+    Args:
+        path: The repository.
+        merge_rev: The commit to merge in.
+        message: The merge commit's message.
+        ref: The chain ref, advanced to the result.
+        fallback_parent: The base when the ref does not exist yet.
+        identity: The author and committer overrides.
+        also_branch: A visible branch moved with the ref.
+
+    Returns:
+        The tip, whether a merge commit was made and the conflicted paths.
+
+    Raises:
+        GitError: The ref does not exist and no fallback parent was given, or the worktree
+            differs from the chain tip.
+    """
+    merged = _chain_merge(
+        path,
+        merge_rev,
+        message,
+        ref=ref,
+        fallback_parent=fallback_parent,
+        identity=identity,
+        also_branch=also_branch,
+        keep_conflicts=True,
+    )
+    assert merged is not None  # a kept conflict is a result, never None
+    return merged
+
+
+def _chain_merge(
+    path: pathlib.Path,
+    merge_rev: str,
+    message: str,
+    *,
+    ref: str,
+    fallback_parent: str | None,
+    identity: git_read.CommitIdentity | None,
+    also_branch: str | None,
+    keep_conflicts: bool,
+) -> ChainMerge | None:
+    """Merge a rev into the chain; a conflict is kept as markers or returned as None.
+
+    Args:
+        path: The repository.
+        merge_rev: The commit to merge in.
+        message: The merge commit's message.
+        ref: The chain ref, advanced to the result.
+        fallback_parent: The base when the ref does not exist yet.
+        identity: The author and committer overrides.
+        also_branch: A visible branch moved with the ref.
+        keep_conflicts: Commit a conflicted tree with its markers instead of returning None.
+
+    Returns:
+        The merge, or None for a conflict not kept.
+
+    Raises:
+        GitError: The ref does not exist and no fallback parent was given.
+    """
     ours = git_read.chain_tip(path, ref) or fallback_parent
     if ours is None:
         raise errors.GitError(f"chain ref {ref} does not exist and no fallback parent was given")
@@ -525,14 +631,14 @@ def chain_merge(
         path, "rev-parse", "--verify", f"{merge_rev}^{{commit}}"
     ).stdout.strip()
     if git_read.is_ancestor(path, theirs, ours):
-        return ours
+        return ChainMerge(merge_rev, ours, merged=False)
+    conflicts: tuple[str, ...] = ()
     if git_read.is_ancestor(path, ours, theirs):
         sha = theirs
     else:
-        res = git_command.run(path, "merge-tree", "--write-tree", ours, theirs, check=False)
-        if res.returncode != 0:
+        tree, conflicts = _merge_tree(path, ours, theirs, merge_base=None, keep_conflicts=True)
+        if conflicts and not keep_conflicts:
             return None
-        tree = res.stdout.strip().splitlines()[0]
         sha = git_command.run(
             path,
             "commit-tree",
@@ -548,7 +654,7 @@ def chain_merge(
     git_command.run(path, "update-ref", ref, sha)
     sync_worktree(path, ours, sha)
     _advance_run_branch(path, also_branch, sha, expected=ours)
-    return sha
+    return ChainMerge(merge_rev, sha, merged=True, conflicts=conflicts)
 
 
 def chain_continue_from(
@@ -677,7 +783,12 @@ def fetch_branch(path: pathlib.Path, remote_path: pathlib.Path, refspec: str) ->
 
 
 def _merge_tree(
-    path: pathlib.Path, ours: str, theirs: str, merge_base: str | None
+    path: pathlib.Path,
+    ours: str,
+    theirs: str,
+    merge_base: str | None,
+    *,
+    keep_conflicts: bool = False,
 ) -> tuple[str, tuple[str, ...]]:
     """Merge two commits into a tree without touching the worktree.
 
@@ -686,9 +797,12 @@ def _merge_tree(
         ours: The first parent.
         theirs: The commit merged in.
         merge_base: The base to use instead of the one git would find.
+        keep_conflicts: Return the conflicted tree's oid (markers in its blobs) with the
+            paths, in place of "".
 
     Returns:
-        The merged tree's oid and no paths, or "" and the conflicted paths.
+        The merged tree's oid and no paths, or the conflicted paths with "" (or the
+        conflicted tree's oid when kept).
 
     Raises:
         GitError: The merge failed outright; on an unsupported git, the error says so.
@@ -704,7 +818,7 @@ def _merge_tree(
             if not line.strip():
                 break
             paths.append(line)
-        return "", tuple(paths)
+        return (lines[0].strip() if keep_conflicts else ""), tuple(paths)
     if res.returncode != 0 or not lines:
         error = git_command.failure(args, res.returncode, res.stdout, res.stderr)
         raise error

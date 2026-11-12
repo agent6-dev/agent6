@@ -183,6 +183,17 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         ),
     )
     resume_p.add_argument(
+        "--merge",
+        default="",
+        metavar="BRANCH",
+        dest="merge_from",
+        help=(
+            "Merge BRANCH into the run's work before its first turn; a conflict's markers stay"
+            " in the files for the run to resolve. `sessions merge` names this command when a"
+            " landing conflicts."
+        ),
+    )
+    resume_p.add_argument(
         "--force",
         action="store_true",
         help=(

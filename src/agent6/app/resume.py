@@ -39,7 +39,7 @@ from agent6.harness import loop_snapshot, repo_context
 from agent6.sessions import id, ipc, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_read
+from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import listing, session_log
 
 
@@ -190,6 +190,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     steer: str = "",
     interactive: bool = False,
     model: str = "",
+    merge_from: str = "",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> int:
     """Resume a paused or crashed session from its snapshot.
@@ -212,6 +213,8 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         steer: An operator follow-up queued for the loop's first boundary.
         interactive: Whether the ask REPL drives the session.
         model: The `--model` value for this execution.
+        merge_from: A branch to merge into the run's chain before the first turn, its
+            conflicts left as markers for the run to resolve; "" merges nothing.
         reporter: Receives every refusal and note.
 
     Returns:
@@ -280,7 +283,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         reporter.refuse(listing.undone_refusal(session_id, scan.undone_to))
         lock.release_single_writer(worker_lock_fd)
         return 2
-    if not steer.strip() and new_work:
+    if not steer.strip() and not merge_from and new_work:
         reporter.refuse(listing.needs_new_work_refusal(session_id))
         lock.release_single_writer(worker_lock_fd)
         return 2
@@ -672,6 +675,25 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 f"this run's earlier work landed on {manifest.base_branch}; its diff and"
                 f" next merge start at {moved[:12]}"
             )
+        merged_in: git_ops.ChainMerge | None = None
+        if merge_from:
+            if mode != "run":
+                reporter.refuse(f"--merge continues a run's work; {session_id} is a {mode}")
+                return 2
+            try:
+                merged_in = git_ops.chain_merge_with_markers(
+                    cwd,
+                    merge_from,
+                    f"agent6: merge {merge_from} into the run's work",
+                    ref=git_read.chain_ref_for(session_id),
+                    fallback_parent=resume_base_sha,
+                    identity=identity,
+                    also_branch=run_branch or None,
+                )
+            except errors.GitError as exc:
+                reporter.error(f"cannot merge {merge_from} into this run's work: {exc}")
+                return 2
+            reporter.note(resume_chain.merged_in_line(merged_in))
         driver = cfg.models.resolve(role)
         if (
             recorded is not None
@@ -751,6 +773,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 ask_transcript_task=steer.strip() or manifest.user_task,
                 resume_steer=steer,
                 operator_edits=stashed.kept,
+                merged_in=merged_in,
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,
                 resuming=True,

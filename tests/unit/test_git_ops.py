@@ -1625,6 +1625,38 @@ def test_chain_merge_conflict_leaves_chain_and_worktree_alone(tmp_path: pathlib.
     assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "ours\n"
 
 
+def test_chain_merge_with_markers_commits_the_conflict_for_the_run_to_resolve(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A kept conflict lands as a two-parent commit whose tree carries git's markers."""
+    _init_repo(tmp_path)
+    head0 = _rev(tmp_path, "HEAD")
+    (tmp_path / "b.txt").write_text("ours\n", encoding="utf-8")
+    s1 = git_ops.chain_commit(
+        tmp_path, "agent6 turn 1", ref="refs/agent6/t6", fallback_parent=head0
+    )
+    assert s1 is not None
+    lane = _lane_commit(tmp_path, head0, "b.txt", "theirs\n")
+
+    merged = git_ops.chain_merge_with_markers(
+        tmp_path, lane, "merge lane", ref="refs/agent6/t6", also_branch=None
+    )
+    assert merged.merged and merged.conflicts == ("b.txt",) and merged.branch == lane
+    assert _rev(tmp_path, "refs/agent6/t6") == merged.sha
+    parents = subprocess.run(
+        ["git", "-C", str(tmp_path), "rev-list", "--parents", "-n", "1", merged.sha],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert parents[1:] == [s1, lane]
+    text = (tmp_path / "b.txt").read_text(encoding="utf-8")
+    assert "<<<<<<<" in text and "ours" in text and "theirs" in text and ">>>>>>>" in text
+    # The chain now holds the lane: merging it again is nothing new.
+    again = git_ops.chain_merge_with_markers(tmp_path, lane, "again", ref="refs/agent6/t6")
+    assert not again.merged and again.sha == merged.sha and again.conflicts == ()
+
+
 def test_chain_commit_keeps_tracked_but_ignored_files(tmp_path: pathlib.Path) -> None:
     """A file committed before it was gitignored stays tracked in every chain commit.
 

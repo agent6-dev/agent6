@@ -8,9 +8,11 @@ import time
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from agent6 import terminal
 from agent6.harness import loop_conversation, loop_snapshot, loop_state
 from agent6.sessions import journal
 from agent6.tools import operator_prompts
+from agent6.vcs import git_ops
 
 if TYPE_CHECKING:
     from agent6.harness import loop
@@ -170,6 +172,31 @@ def resume_opening(
     pending = harness.prompts.pending()
     if pending:
         conversation.notice(pending_notice(pending))
+
+
+def merged_in_notice(merged: git_ops.ChainMerge) -> str:
+    """Return the opening notice for a branch merged into the run's work before this execution.
+
+    Args:
+        merged: What the merge left behind.
+
+    Returns:
+        The branch and commit, then the paths carrying conflict markers and what to do with
+        them; or that the work already held the branch.
+    """
+    if not merged.merged:
+        return f"The run's work already contains {merged.branch}; nothing was merged in."
+    head = (
+        f"{merged.branch} was merged into this run's work before this execution"
+        f" (commit {merged.sha[:12]})."
+    )
+    if not merged.conflicts:
+        return f"{head} No conflicts. Check the merged result against the task before finishing."
+    shown = ", ".join(terminal.printable_name(p) for p in merged.conflicts)
+    return (
+        f"{head} Conflicts were left as markers in: {shown}. Resolve each one keeping both"
+        " intents, remove every marker, and keep the verify command green before finishing."
+    )
 
 
 def execution_opening(

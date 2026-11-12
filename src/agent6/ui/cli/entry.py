@@ -834,6 +834,7 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
         steer=args.steer,
         interactive=getattr(args, "interactive", False),
         model=getattr(args, "model", ""),
+        merge_from=getattr(args, "merge_from", ""),
     )
     # A resumed execution ends the way a fresh one does; the TUI owns its screen.
     return rc if args.tui else _prompt_for_the_next_input(args, rc, session_id)

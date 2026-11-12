@@ -52,7 +52,7 @@ from agent6.sessions import event_log, ipc, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import command_tools, dispatch, operator_prompts, target_policy
-from agent6.vcs import commit_message, git_read
+from agent6.vcs import commit_message, git_ops, git_read
 from agent6.viewmodel import policy, transcript_text
 
 
@@ -87,6 +87,8 @@ class ExecutionInputs:
         pins: The pinned notes.
         resuming: Whether this is a resumed execution.
         resume_steer: The steer that started this resumed execution.
+        merged_in: A branch merged into the run's chain before this execution, for the
+            model's first turn.
         operator_edits: The paths the operator changed between executions and left in the
             tree for the run; the model hears their names at its first turn.
         worktree_git_dir: The recorded repository git dir of a session in a linked worktree,
@@ -120,6 +122,7 @@ class ExecutionInputs:
     resuming: bool = False
     resume_steer: str = ""
     operator_edits: tuple[str, ...] = ()
+    merged_in: git_ops.ChainMerge | None = None
     worktree_git_dir: pathlib.Path | None = None
     worker_lock_fd: int | None = None
     base_rules: str | None = None
@@ -572,6 +575,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             state_dir=state_dir,
             resume_state_path=inputs.resume_state_path,
             operator_edits=inputs.operator_edits,
+            merged_in=inputs.merged_in,
             mode=mode,
             plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
             review=review_gate.ReviewSettings(

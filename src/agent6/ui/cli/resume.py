@@ -26,6 +26,7 @@ def _cmd_resume(
     steer: str = "",
     interactive: bool = False,
     model: str = "",
+    merge_from: str = "",
 ) -> int:
     """Resume a paused or crashed run from its snapshot.
 
@@ -40,6 +41,7 @@ def _cmd_resume(
         steer: A steering instruction for the first safe boundary.
         interactive: Stay attached for a conversation.
         model: The `--model` override.
+        merge_from: The `--merge BRANCH` value; "" merges nothing.
 
     Returns:
         The exit code from `app.resume.resume_task`.
@@ -60,4 +62,5 @@ def _cmd_resume(
         steer=steer,
         interactive=interactive,
         model=model,
+        merge_from=merge_from,
     )

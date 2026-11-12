@@ -72,6 +72,7 @@ from agent6.providers import (
 )
 from agent6.sessions import journal, process
 from agent6.tools import dispatch, operator_prompts, schema, tool_errors
+from agent6.vcs import git_ops
 
 # Bytes a repeated tool result must exceed before the dedupe stub replaces it.
 _DEDUPE_MIN_CHARS = 500
@@ -115,6 +116,8 @@ class Harness:
             fresh runs only, a resume restores pins from the snapshot.
         resume_state_path: Where the provider-agnostic resume snapshot is written before
             every model call; None writes none.
+        merged_in: A branch merged into the run's chain before this execution, with the
+            paths its conflict markers wait in; the model hears it at its first turn.
         operator_edits: The paths the operator changed between executions and left in the
             tree; a resumed execution names them to the model before its first call.
         standing_goal: The operator's `run --standing` goal, seeded under the root; "" is none.
@@ -163,6 +166,7 @@ class Harness:
     initial_pins: Sequence[str] = ()
     resume_state_path: pathlib.Path | None = None
     operator_edits: Sequence[str] = ()
+    merged_in: git_ops.ChainMerge | None = None
     standing_goal: str = ""
     base_rules: str | None = None
     review_target: tuple[review_records.ReviewTarget, str] | None = None
@@ -371,6 +375,8 @@ class Harness:
                 " Any earlier notice withholding the gate"
                 " applied only to that execution. This is not a verify verdict."
             )
+        if self.merged_in is not None:
+            conversation.notice(loop_steer.merged_in_notice(self.merged_in))
         if self.operator_edits:
             # The model's last read of these files is stale; said before the steer that
             # started this execution, so the steer stays the operator's last word.

@@ -279,10 +279,16 @@ def _cmd_merge(
         common.error(f"{outcome.error}")
         return 1
     if outcome.status == "conflict":
+        resume = (
+            "Resolve them in the run's own worktree:\n"
+            f"    agent6 resume {plan.layout.session_id} --merge {plan.target}\n"
+            if plan.manifest.worktree is not None
+            else ""
+        )
         print(
             f"CONFLICT: merging {plan.run_branch} into {plan.target} hit conflicts in "
-            f"{', '.join(outcome.conflicts)}. Your checkout is untouched (no partial "
-            f"merge); resolve it by hand if you want:\n"
+            f"{', '.join(outcome.conflicts)}. Your checkout is untouched (no partial merge).\n"
+            f"{resume}Or by hand:\n"
             f"    {_manual_merge_cmd(cwd, plan)}",
             file=sys.stderr,
         )

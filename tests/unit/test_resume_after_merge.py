@@ -8,6 +8,7 @@ checked out.
 
 from __future__ import annotations
 
+import json
 import pathlib
 import subprocess
 from typing import Any
@@ -64,6 +65,18 @@ class _Scripted:
             cache_creation_tokens=0,
             raw={"content": [*([{"type": "text", "text": text}] if text else []), *tools]},
         )
+
+
+class _Recording(_Scripted):
+    """A scripted provider that keeps each call's messages."""
+
+    def __init__(self, script: list[_Step]) -> None:
+        super().__init__(script)
+        self.seen: list[str] = []
+
+    def call(self, **kw: Any) -> ProviderResponse:
+        self.seen.append(json.dumps(kw["messages"]))
+        return super().call(**kw)
 
 
 def _edit(path: str, content: str) -> _Step:
@@ -167,6 +180,46 @@ def test_a_resume_after_a_squash_merge_continues_from_head(
     assert "y.txt" in shown and "r.md" not in shown and "z.txt" not in shown
     assert cli_main(["sessions", "merge", "land-SQUASH"]) == 0
     assert _changed(repo, head, "main") == ["y.txt"]
+
+
+def test_a_conflicting_landing_is_resolved_by_a_resume_that_merges_the_branch_in(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """`resume --merge main` merges main into the run's chain in its worktree, markers and all.
+
+    The model hears the conflicted path at its first turn, resolves it, and the next landing
+    squashes only the resolved work: the chain now descends from main's tip.
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))  # the worktree's home
+    repo = _setup(tmp_path, monkeypatch)
+    run = ["run", "--worktree", "--session-id", "land-MERGEIN", "t"]
+    assert _play(monkeypatch, run, [_edit("a.py", "x = 2\n"), _finish()]) == 0
+    (repo / "a.py").write_text("x = 3\n", encoding="utf-8")
+    _git(repo, "commit", "-qam", "main moved the same line")
+    main_tip = _git(repo, "rev-parse", "HEAD")
+    assert cli_main(["sessions", "merge", "land-MERGEIN"]) == 1
+    err = capfd.readouterr().err
+    assert "CONFLICT" in err and "    agent6 resume land-MERGEIN --merge main" in err
+
+    prov = _Recording([_edit("a.py", "x = 23\n"), _finish()])
+
+    def factory(*_args: Any, **_kwargs: Any) -> _Recording:
+        return prov
+
+    monkeypatch.setattr(role_providers, "build_role_provider", factory)
+    assert cli_main(["resume", "land-MERGEIN", "--merge", "main"]) == 0
+    seen = prov.seen
+    out = capfd.readouterr().err
+    assert "merged main into the run's work" in out and "conflict markers left in a.py" in out
+    first = seen[0]
+    assert "main was merged into this run's work" in first and "markers in: a.py" in first
+    chain = git_read.chain_ref_for("land-MERGEIN")
+    log = _git(repo, "rev-list", "--parents", chain).splitlines()
+    merge_commit = next(line for line in log if len(line.split()) == 3)
+    assert main_tip in merge_commit.split()[1:]
+    assert cli_main(["sessions", "merge", "land-MERGEIN"]) == 0
+    assert _git(repo, "show", "main:a.py") == "x = 23"
+    assert _changed(repo, main_tip, "main") == ["a.py"]
 
 
 def test_a_resumed_run_merges_cleanly_after_prune_delete_squashed(

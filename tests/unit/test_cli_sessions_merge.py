@@ -357,9 +357,32 @@ def test_a_conflicting_merge_prints_a_by_hand_command_that_runs_from_this_checko
     _git(tmp_path, "checkout", "-q", "--", "README.md")
     _git(tmp_path, "checkout", "-q", "-b", "elsewhere")
     assert main(["sessions", "merge", "run-CONF11"]) == 1
-    assert (
-        "    git checkout main && git merge --squash agent6/run-CONF11" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "    git checkout main && git merge --squash agent6/run-CONF11" in err
+    # A run in the checkout has no worktree of its own to resolve the conflict in.
+    assert "agent6 resume" not in err
+
+
+def test_a_conflicting_merge_of_a_worktree_run_names_the_resume_that_resolves_it(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-CONF22", commits=[("README.md", "theirs\n", "agent6 turn 1")])
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="run-CONF22"
     )
+    recorded = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    recorded["worktree"] = str(tmp_path / "worktrees" / "run-CONF22")
+    recorded["worktree_git_dir"] = str(tmp_path / ".git")
+    layout.manifest_path.write_text(json.dumps(recorded), encoding="utf-8")
+    (tmp_path / "README.md").write_text("ours\n", encoding="utf-8")
+    _git(tmp_path, "commit", "-qam", "main moved")
+
+    assert main(["sessions", "merge", "run-CONF22"]) == 1
+    err = capsys.readouterr().err
+    assert "CONFLICT" in err and "README.md" in err
+    assert "    agent6 resume run-CONF22 --merge main" in err
+    assert "    git merge --squash agent6/run-CONF22" in err
 
 
 def test_runs_merge_refuses_unknown_into_without_creating_it(

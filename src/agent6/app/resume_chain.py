@@ -15,6 +15,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
+from agent6 import terminal
 from agent6.app import merge
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -160,6 +161,19 @@ def branch_off_the_chain(
     if not branch or chain is None or tip is None or tip == chain:
         return None
     return branch, tip, git_read.is_ancestor(cwd, chain, tip)
+
+
+def merged_in_line(merged: git_ops.ChainMerge) -> str:
+    """Return the console line for a branch merged into the run's chain at a resume."""
+    if not merged.merged:
+        return f"the run's work already contains {merged.branch}; nothing merged in"
+    if not merged.conflicts:
+        return f"merged {merged.branch} into the run's work ({merged.sha[:12]}); no conflicts"
+    shown = ", ".join(terminal.printable_name(p) for p in merged.conflicts)
+    return (
+        f"merged {merged.branch} into the run's work ({merged.sha[:12]}); conflict markers"
+        f" left in {shown} for the run to resolve"
+    )
 
 
 def off_chain_refusal(session_id: str, branch: str, tip: str, *, ahead: bool) -> str:
