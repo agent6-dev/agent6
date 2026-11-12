@@ -562,6 +562,9 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - `sandbox.isolation = "none"` with auto-approved `run_command` adds a one-time gate: `Continue? [y/N]` interactively, a warning in CI and `machine run`.
 - A prompt with no operator to answer it: a headless run refuses to start under `ask` unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park it for a front-end) or `approve` (grant every scope).
   An unattended machine auto-denies.
+- A lane or review seat a run dispatched puts its approval to that run's operator: the prompt shows on the run, named for the lane, and the answer goes back over the session's file bridge, which no jail can reach.
+  An "allow all" or "deny all" given on the run covers its lanes for that scope.
+  A `run --parallel` fan-out's lanes still wait for an answer on the lane itself.
 - `agent6 mcp serve` has no operator at all, so the tools that would prompt are not published.
   Under `run_commands = "ask"` or `"deny"` its command tools are absent from `tools/list`, and a client that names one is told which setting withheld it ([the tools](acp.md#as-an-mcp-server)).
 

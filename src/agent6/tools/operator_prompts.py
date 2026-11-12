@@ -266,6 +266,7 @@ class OperatorPrompts:
                 id=request.id,
                 prompt=prompt,
                 standing=bool(scope),
+                scope=scope,
                 call_id=call_id,
             )
         )

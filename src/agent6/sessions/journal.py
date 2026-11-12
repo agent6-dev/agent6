@@ -75,6 +75,10 @@ class ApprovalPrompt(Event):
     standing: bool = pydantic.Field(
         description="Whether approval can cover later calls in this scope.",
     )
+    scope: str | None = pydantic.Field(
+        default=None,
+        description="What a standing answer covers: command or mcp.<server>; null for none.",
+    )
     call_id: int | None = pydantic.Field(
         default=None,
         description="The tool call correlated with this event.",

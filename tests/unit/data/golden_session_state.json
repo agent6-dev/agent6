@@ -119,6 +119,7 @@
       "id": "approval-1",
       "prompt": "Allow run_command: rm -rf build",
       "standing": true,
+      "scope": null,
       "answered": true,
       "approved": true,
       "asked_at": 1784023209.0,

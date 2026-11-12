@@ -169,6 +169,7 @@ A fan-out group has no model loop: steer one of its lanes instead.
 `agent6 stop ID` on a session with live lanes stops its descendants too, by the lineage their manifests record, including read-only leaves behind a worker that already ended.
 Worker import preserves descendant records and receipts in the original repository's state directory before clone cleanup.
 Their spend is included in the worker's total, not an extra charge, and their evidence certifies only the child's reviewed target, not the top-level tree.
+A lane that needs an approval asks on the run that dispatched it: the prompt names the lane, and a standing answer given there covers the run's lanes.
 A run interrupted while its lanes ran finishes that dispatch first when resumed: lanes still running are stopped, finished ones are imported and joined once, their spend is settled once, and the model hears the group's outcome before its first call.
 Every session that dispatched lanes shows them: `sessions show`, the hubs and `attach --json` list a run's lanes under it whether it is a `run --parallel` fan-out or a run that used `/parallel`, and the run's receipt carries a `Lanes` section (one line per lane: its join, its spend) with the spend the lanes added to the run's total named, so the total is read as inclusive.
 The refusal names the lane session IDs.

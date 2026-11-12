@@ -297,6 +297,7 @@ def run_lane_to_completion(
     allowance: budget_reservations.BudgetAllowance | None = None,
     contract: kinds.ConversationContract | None = None,
     clock: Callable[[], float] = time.time,
+    relay: Callable[[pathlib.Path, str], None] | None = None,
 ) -> lane_records.LaneResult:
     """Run one subordinate lane to its end and import it into the origin.
 
@@ -338,6 +339,8 @@ def run_lane_to_completion(
         allowance: The lane's reserved share; None for the config's caps.
         contract: The harness-owned read-only conversation; None for work.
         clock: The wall clock the deadline is read against.
+        relay: Puts the lane's approval to the coordinator's operator while it waits; None
+            leaves it to whoever attaches to the lane.
 
     Returns:
         The lane's result, its `session_dir` the imported dir on success.
@@ -372,12 +375,18 @@ def run_lane_to_completion(
     lane_watch.symlink_lane(origin_state, res)
     deadline_at = limits.deadline_at if limits is not None else None
     overdue = False
+    kind = "seat" if contract is not None else "lane"
     if not lane_watch.await_lane(
         res,
         poll_interval_s=poll_interval_s,
         should_stop=should_stop,
         deadline_at=deadline_at,
         clock=clock,
+        on_waiting=(
+            (lambda: relay(res.session_dir, f"{kind} {spec.lane} {spec.session_id}"))
+            if relay is not None
+            else None
+        ),
     ):
         overdue = deadline_at is not None and clock() >= deadline_at
         immediate = overdue or stop_is_now is None or stop_is_now()
@@ -715,6 +724,7 @@ def build_lane_spawner(
     auto_approve: bool = False,
     lane_away: ipc.AwayMode = "wait",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
+    relay: Callable[[pathlib.Path, str], None] | None = None,
 ) -> lane_records.GroupLaneSpawner:
     """Build the group dispatcher the loop calls at a `/parallel` boundary.
 
@@ -732,12 +742,16 @@ def build_lane_spawner(
         runtime: The front-end's primitives.
         max_usd: Each lane's spend cap.
         auto_approve: The coordinator's own `--auto-approve`, forwarded to every lane.
-        lane_away: Every lane's away-mode.
+        lane_away: Every lane's away-mode, without a relay.
         reporter: Receives the notes.
+        relay: Puts a waiting lane's approval to the coordinator's operator; with it every
+            lane waits for that answer.
 
     Returns:
         The dispatcher.
     """
+    if relay is not None:
+        lane_away = "wait"
 
     def dispatch(
         lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
@@ -833,6 +847,7 @@ def build_lane_spawner(
                 limits=lane.limits,
                 allowance=lane.allowance,
                 contract=lane.contract,
+                relay=relay,
             )
 
         pairs = list(zip(specs, lanes, strict=True))
@@ -875,6 +890,7 @@ def build_coordinator_spawner(
     auto_approve: bool = False,
     lane_away: ipc.AwayMode = "wait",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
+    relay: Callable[[pathlib.Path, str], None] | None = None,
 ) -> lane_records.GroupLaneSpawner | None:
     """Build the `/parallel` dispatcher for a run's loop, or None when dispatch is unavailable.
 
@@ -890,8 +906,9 @@ def build_coordinator_spawner(
         runtime: The front-end's primitives.
         max_usd: Each lane's spend cap.
         auto_approve: The run's own `--auto-approve`, forwarded to every lane.
-        lane_away: Every lane's away-mode.
+        lane_away: Every lane's away-mode, without a relay.
         reporter: Receives the notes.
+        relay: Puts a waiting lane's approval to the run's operator.
 
     Returns:
         The dispatcher, or None.
@@ -911,4 +928,5 @@ def build_coordinator_spawner(
         auto_approve=auto_approve,
         lane_away=lane_away,
         reporter=reporter,
+        relay=relay,
     )

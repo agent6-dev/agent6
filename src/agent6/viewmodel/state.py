@@ -268,11 +268,12 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 ),
             )
 
-        case journal.ApprovalPrompt(id=aid, prompt=prompt, standing=standing):
+        case journal.ApprovalPrompt(id=aid, prompt=prompt, standing=standing, scope=scope):
             ap = state_types.ApprovalPrompt(
                 id=aid,
                 prompt=prompt,
                 standing=standing,
+                scope=scope,
                 asked_at=events.event_epoch(event.get("ts")),
             )
             return dataclasses.replace(state, approvals=(*state.approvals, ap))

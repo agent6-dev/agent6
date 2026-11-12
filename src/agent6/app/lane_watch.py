@@ -58,6 +58,7 @@ def await_lane(
     should_stop: Callable[[], bool] | None = None,
     deadline_at: float | None = None,
     clock: Callable[[], float] = time.time,
+    on_waiting: Callable[[], None] | None = None,
 ) -> bool:
     """Block until the lane is terminal, or until the stop check or the deadline ends the wait.
 
@@ -67,6 +68,8 @@ def await_lane(
         should_stop: The coordinator's abort channel, read between polls.
         deadline_at: The wall-clock second the wait ends at; None for no deadline.
         clock: The wall clock.
+        on_waiting: Called on each poll that finds the lane waiting on its operator; the
+            parent answers there. None leaves the prompt to whoever attaches to the lane.
 
     Returns:
         True when the lane ended, False when the stop check or the deadline ended the wait.
@@ -79,6 +82,8 @@ def await_lane(
             return False
         if deadline_at is not None and clock() >= deadline_at:
             return False
+        if on_waiting is not None and summary.status == "waiting":
+            on_waiting()
         time.sleep(poll_interval_s)
 
 

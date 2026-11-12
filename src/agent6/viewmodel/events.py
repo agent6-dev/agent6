@@ -486,6 +486,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 id=_text(raw, "id"),
                 prompt=_text(raw, "prompt"),
                 standing=bool(raw.get("standing", True)),
+                scope=raw["scope"] if isinstance(raw.get("scope"), str) else None,
                 call_id=_call_id(raw),
             )
         case "approval.answer":

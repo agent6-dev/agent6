@@ -383,6 +383,8 @@ class ApprovalPrompt:
         id: The prompt's id.
         prompt: The prompt's words.
         standing: An "allow all" is on offer for this prompt.
+        scope: What a standing answer covers; None when none is on offer or the journal
+            did not record it.
         answered: An answer was folded.
         approved: The answer; None until answered.
         asked_at: When it was asked, for the waiting status's age.
@@ -391,6 +393,7 @@ class ApprovalPrompt:
     id: str
     prompt: str
     standing: bool = True
+    scope: str | None = None
     answered: bool = False
     approved: bool | None = None
     asked_at: float | None = None

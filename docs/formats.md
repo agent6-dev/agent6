@@ -70,6 +70,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `id` | `str` | Approval prompt identifier. |
 | `prompt` | `str` | The words presented to the operator. |
 | `standing` | `bool` | Whether approval can cover later calls in this scope. |
+| `scope` | `str, optional` | What a standing answer covers: command or mcp.<server>; null for none. |
 | `call_id` | `int, optional` | The tool call correlated with this event. |
 
 ### btw.answered
@@ -3447,6 +3448,7 @@ Source: [`agent6.viewmodel.state_types.ApprovalPrompt`](https://github.com/agent
 | `id` | `str` | The prompt's id. |
 | `prompt` | `str` | The prompt's words. |
 | `standing` | `bool` | An "allow all" is on offer for this prompt. |
+| `scope` | `str \| None` | What a standing answer covers; None when none is on offer or the journal did not record it. |
 | `answered` | `bool` | An answer was folded. |
 | `approved` | `bool \| None` | The answer; None until answered. |
 | `asked_at` | `float \| None` | When it was asked, for the waiting status's age. |
