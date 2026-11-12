@@ -1398,7 +1398,8 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
     weigh.
     """
     from agent6.app import session_runtime
-    from agent6.harness import nudges, review_panel, verify_gate
+    from agent6.harness import nudges, verify_gate
+    from agent6.harness.review import panel as review_panel
     from agent6.providers import CLAUDE_CODE_PERSIST_BYTES
     from agent6.tools import results
 

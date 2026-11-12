@@ -12,7 +12,8 @@ from tests import review_traces, subordinate_env
 
 from agent6 import budget
 from agent6.app import role_providers
-from agent6.harness import review_gate, review_panel
+from agent6.harness.review import gate as review_gate
+from agent6.harness.review import panel as review_panel
 
 
 def main() -> None:

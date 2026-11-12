@@ -37,11 +37,11 @@ from agent6.harness import (
     operator_bridge,
     provider_call,
     quiet_turns,
-    review_gate,
     run_chain,
     tool_effects,
     verify_verdict,
 )
+from agent6.harness.review import gate as review_gate
 from agent6.providers import ProviderError, ProviderResponse
 from agent6.sandbox import tool_paths
 from agent6.sessions import event_log, ipc, journal, process

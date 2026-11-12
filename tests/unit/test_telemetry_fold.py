@@ -10,7 +10,7 @@ import pathlib
 from typing import Any
 
 from agent6 import review_records
-from agent6.harness import review_panel
+from agent6.harness.review import panel as review_panel
 from agent6.viewmodel import telemetry, telemetry_metrics, telemetry_records
 from tests import review_helpers
 

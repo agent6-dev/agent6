@@ -12,7 +12,7 @@ import pytest
 
 from agent6 import paths, providers
 from agent6.app import role_providers, session_runtime
-from agent6.harness import review_gate
+from agent6.harness.review import gate as review_gate
 from agent6.sessions import manifest
 from agent6.ui import directive_actions
 from agent6.ui.cli import cli_main, session_prompt

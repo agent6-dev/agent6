@@ -2161,7 +2161,7 @@ def test_a_diff_carries_a_b_prefixes_whatever_the_diff_config_says(tmp_path: pat
     citation matched.
     """
     from agent6 import review_records
-    from agent6.harness import review_panel
+    from agent6.harness.review import panel as review_panel
 
     _init_repo(tmp_path)
     base = _rev(tmp_path, "HEAD")

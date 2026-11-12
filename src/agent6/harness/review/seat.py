@@ -10,7 +10,8 @@ from typing import Any
 import pydantic
 
 from agent6 import review_records
-from agent6.harness import llm_json, review_panel
+from agent6.harness import llm_json
+from agent6.harness.review import panel as review_panel
 from agent6.sessions import completion
 from agent6.vcs import git_files
 

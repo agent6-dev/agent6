@@ -18,7 +18,8 @@ from agent6 import paths
 from agent6.app import reporter as app_reporter
 from agent6.app import role_providers, session_setup
 from agent6.config import Config, ConfigError
-from agent6.harness import repo_context, review_session
+from agent6.harness import repo_context
+from agent6.harness.review import session as review_session
 from agent6.providers import ProviderError, TranscriptSink
 from agent6.sessions import layout as sessions_layout
 from agent6.viewmodel import scan_session_log, session_is_live

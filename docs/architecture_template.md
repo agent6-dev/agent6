@@ -92,7 +92,7 @@ Retention never moves the operator's index, HEAD, visible branches or run chain.
 The current seat executor consumes that context; lane execution is not enabled by preparation.
 Unreadable targets or failed retention skip the panel with `target_unreadable`, never substitute the chain tip for unreadable worktree content.
 The refs survive chain pruning and are removed with their owning session record (`sessions remove`, including `--asks`).
-`harness/review_history.py` restores those records on resume.
+`harness/review/history.py` restores those records on resume.
 Only exact normalized finding content, location and the cited blob identify a repeat.
 The journal keeps repeated observations even when the worker feedback omits them.
 Findings cut from the feedback notice remain eligible for a later notice.
@@ -500,7 +500,7 @@ The web Findings card reads the same review fold as the merge guard.
 `client_git_diff.js` owns each diff request's lifetime; `client_review.js` attaches findings through the source renderer's line attributes only when both comparison trees match.
 Reviewed file links keep the panel and side, so Files reads the cited version rather than the working tree.
 
-`agent6 sessions review <id>` ([harness/review_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/review_session.py)) reviews a finished session's record: the journal folds into a digest (the task, the steers and rulings, the verify runs, the tool errors, the harness notices, the memory facts the session wrote, the conversation's tail, every list capped and the cap named), the reviewer role reads it beside the repo's memory index, and the markdown names how the run ended, what went wrong and why, what the operator corrected, candidate memory facts and AGENTS.md lines with their evidence, and the memory entries the record contradicts.
+`agent6 sessions review <id>` ([harness/review/session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/review/session.py)) reviews a finished session's record: the journal folds into a digest (the task, the steers and rulings, the verify runs, the tool errors, the harness notices, the memory facts the session wrote, the conversation's tail, every list capped and the cap named), the reviewer role reads it beside the repo's memory index, and the markdown names how the run ended, what went wrong and why, what the operator corrected, candidate memory facts and AGENTS.md lines with their evidence, and the memory entries the record contradicts.
 It writes nothing to the repo or the memory: the operator turns a candidate into `agent6 memory add` or an AGENTS.md line, or leaves it.
 
 ## Session review directive
@@ -786,7 +786,7 @@ A run started from a hub, or detached mid-run with `/detach`, keeps going with n
 A pass covers the final tree only when both observations and the end tree match; commit identity alone does not invalidate unchanged content.
 `viewmodel/receipt.py` derives `ReceiptView` from the journal and manifest, with no second receipt file or duplicate event.
 The CLI `sessions receipt`, web receipt route, TUI screen and ACP `/receipt` read that view without a provider call, verification run or environment probe.
-`VerifyRun` in `harness/review_session.py` retains IDs, trees and capture facts in the bounded digest supplied to `sessions review`.
+`VerifyRun` in `harness/review/session.py` retains IDs, trees and capture facts in the bounded digest supplied to `sessions review`.
 
 `execution.target` owns the immutable environment evidence for an execution; `app/stamps.py` mirrors its persistence-safe `kinds.ExecutionTargetStamp` into the manifest as history, not a current-target pointer.
 The stamp retains both roots, user, HOME, effective controls, environment inheritance policy and variable names, never environment values.
@@ -829,7 +829,7 @@ Every other approval publishes as `approval.prompt` before its answer.
 | Tool dispatch | [tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py) |
 | Agent loop | [harness/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/loop.py) |
 | Prompt text | [prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (templates and seat renderers the loop, review, judge, and machine assemble; `compaction.py` holds the summariser, gist and restart-notice prompts) |
-| Review panel | `harness/review_panel.py`, `harness/review_seat.py` and `harness/review_gate.py` |
+| Review panel | `harness/review/panel.py`, `harness/review/seat.py` and `harness/review/gate.py` |
 | Jail sessions and detached jobs | [sandbox/jail_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_session.py), [sandbox/jail_jobs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_jobs.py) |
 | Jail launcher | [sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py) (Python), [jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs) (Rust) |
 | Git policy | [git_policy.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git_policy.py) |

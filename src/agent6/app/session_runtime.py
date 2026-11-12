@@ -32,7 +32,8 @@ from agent6.app import (
 from agent6.app import reporter as app_reporter
 from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.graph import curator as graph_curator
-from agent6.harness import compaction_elision, review_gate
+from agent6.harness import compaction_elision
+from agent6.harness.review import gate as review_gate
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox import container, detect, jail, jail_session
 from agent6.sessions import event_log, journal

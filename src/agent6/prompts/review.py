@@ -4,7 +4,7 @@
 
 The run review (`sessions review`) reads a finished session's record; each adversarial seat
 sees the panel prompt, or its repo-scope variant, with a `{focus}` placeholder.
-`harness.review_session` and `harness.review_seat` own the calls.
+`harness.review.session` and `harness.review.seat` own the calls.
 """
 
 from __future__ import annotations

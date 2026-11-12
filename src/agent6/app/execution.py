@@ -46,9 +46,9 @@ from agent6.harness import (
     loop_snapshot,
     operator_bridge,
     provider_call,
-    review_gate,
     run_chain,
 )
+from agent6.harness.review import gate as review_gate
 from agent6.providers import TranscriptSink
 from agent6.sandbox import jail
 from agent6.sessions import event_log, ipc, journal, process

@@ -13,14 +13,10 @@ import pydantic
 
 from agent6 import budget, errors, kinds, lane_records, review_records, terminal
 from agent6.config import ReviewScope
-from agent6.harness import (
-    parallel_dispatch,
-    repo_context,
-    review_history,
-    review_panel,
-    review_seat,
-    run_chain,
-)
+from agent6.harness import parallel_dispatch, repo_context, run_chain
+from agent6.harness.review import history as review_history
+from agent6.harness.review import panel as review_panel
+from agent6.harness.review import seat as review_seat
 from agent6.prompts import review
 from agent6.sessions import completion, journal, layout
 from agent6.vcs import git_read

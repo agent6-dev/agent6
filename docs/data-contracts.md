@@ -33,7 +33,7 @@ Scan session dirs into the listing rows every front-end's hub shows.
 Public fields: [Formats](formats.md#cli-json).
 
 - **Written by:** ui/cli/sessions_cmds, ui/web/model
-- **Read by:** app/{btw, compare, finalize, fork, fork_worktrees, lane_watch, lanes, parallel_results, preflight, resume, review_recap, run, stop}, harness/review_session, ui/{mcp_server, spawn}, ui/acp/session, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_merge, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home, new_work}, ui/web/{actions, git_model, review_routes, sse}, viewmodel/{__init__, lanes, state_view, wire}
+- **Read by:** app/{btw, compare, finalize, fork, fork_worktrees, lane_watch, lanes, parallel_results, preflight, resume, review_recap, run, stop}, harness/review/session, ui/{mcp_server, spawn}, ui/acp/session, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_merge, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home, new_work}, ui/web/{actions, git_model, review_routes, sse}, viewmodel/{__init__, lanes, state_view, wire}
 - **Guarded by:** [test_cli_sessions_list.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_cli_sessions_list.py) (27 test files exercise it)
 
 ## CLI session status
@@ -128,7 +128,7 @@ Define immutable review evidence and validate review boundary payloads.
 
 Public fields: [Formats](formats.md#typed-records).
 
-- **Written by:** app/review_actions, harness/{review_gate, review_history, review_panel, review_seat}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
+- **Written by:** app/review_actions, harness/review/{gate, history, panel, seat}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
 - **Read by:** kinds, app/{execution, review_directive}, harness/{loop, loop_state, repo_context, run_chain}, sessions/completion, ui/acp/review, ui/tui/{diff_pane, review}, vcs/review_rule_reader, viewmodel/review
 - **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (21 test files exercise it)
 
@@ -229,7 +229,7 @@ Read logs.jsonl rows into the journal's records, with the coercions old run dirs
 Public fields: [Formats](formats.md#journal).
 
 - **Written by:** viewmodel/events
-- **Read by:** app/lanes, harness/review_session, ui/cli/{ask, console_render, machine_cmds, plan_watch, repl}, ui/tui/machines, viewmodel/{__init__, listing, log_line, review, session_core, session_log, state, telemetry, transcript, transcript_items, transcript_text}
+- **Read by:** app/lanes, harness/review/session, ui/cli/{ask, console_render, machine_cmds, plan_watch, repl}, ui/tui/machines, viewmodel/{__init__, listing, log_line, review, session_core, session_log, state, telemetry, transcript, transcript_items, transcript_text}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (8 test files exercise it)
 
 ## MachineSpec

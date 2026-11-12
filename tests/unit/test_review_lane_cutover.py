@@ -7,7 +7,9 @@ import pytest
 
 from agent6 import budget, kinds, lane_records, review_records
 from agent6.app import role_providers
-from agent6.harness import parallel_dispatch, review_gate, review_seat, toolset
+from agent6.harness import parallel_dispatch, toolset
+from agent6.harness.review import gate as review_gate
+from agent6.harness.review import seat as review_seat
 from agent6.sessions import completion
 from tests import review_traces, subordinate_env
 
@@ -96,7 +98,7 @@ def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
 
 @pytest.mark.parametrize("scope", ["diff", "repo"])
 def test_real_panel_runs_bound_read_only_sessions(short_repo: pathlib.Path, scope: str) -> None:
-    from agent6.harness import review_panel
+    from agent6.harness.review import panel as review_panel
     from agent6.viewmodel import receipt
 
     repo = short_repo / "origin"
@@ -145,7 +147,7 @@ def test_real_panel_runs_bound_read_only_sessions(short_repo: pathlib.Path, scop
 def test_failed_artifacts_keep_the_actual_diagnostic(
     short_repo: pathlib.Path, failure: str
 ) -> None:
-    from agent6.harness import review_panel
+    from agent6.harness.review import panel as review_panel
 
     repo = short_repo / "origin"
     subordinate_env.init_repo(repo)
@@ -297,7 +299,7 @@ def test_worker_child_schedules_its_panel_without_certifying_parent(
 
 
 def test_repo_seat_reads_retained_target_not_head_or_live_tree(short_repo: pathlib.Path) -> None:
-    from agent6.harness import review_panel
+    from agent6.harness.review import panel as review_panel
 
     repo = short_repo / "origin"
     subordinate_env.init_repo(repo)

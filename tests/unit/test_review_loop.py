@@ -17,14 +17,9 @@ from unittest import mock
 import pytest
 
 from agent6 import review_records
-from agent6.harness import (
-    loop,
-    loop_conversation,
-    repo_context,
-    review_gate,
-    review_panel,
-    run_chain,
-)
+from agent6.harness import loop, loop_conversation, repo_context, run_chain
+from agent6.harness.review import gate as review_gate
+from agent6.harness.review import panel as review_panel
 from agent6.sessions import event_log, journal
 from agent6.tools import results
 from agent6.vcs import git_read
@@ -567,7 +562,9 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     shared `panel_is_inconclusive` and `inconclusive_note` owner, and the gate still lets the finish
     through, since a panel never deadlocks a run.
     """
-    from agent6.harness import loop_state, review_gate, review_panel
+    from agent6.harness import loop_state
+    from agent6.harness.review import gate as review_gate
+    from agent6.harness.review import panel as review_panel
 
     abstain = review_records.ReviewVerdict(
         seat_index=0, focus="s", model_route="m", verdict="abstain", error="output hit the cap"

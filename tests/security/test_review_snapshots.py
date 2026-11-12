@@ -8,7 +8,8 @@ from unittest import mock
 import pytest
 
 from agent6 import review_records
-from agent6.harness import loop_state, repo_context, review_gate, run_chain
+from agent6.harness import loop_state, repo_context, run_chain
+from agent6.harness.review import gate as review_gate
 from agent6.sessions import event_log
 from agent6.vcs import git_files, git_read, review
 from tests import review_helpers, review_lane_env

@@ -9,14 +9,10 @@ from unittest import mock
 import pytest
 
 from agent6 import errors
-from agent6.harness import (
-    loop_state,
-    repo_context,
-    review_gate,
-    review_panel,
-    review_seat,
-    run_chain,
-)
+from agent6.harness import loop_state, repo_context, run_chain
+from agent6.harness.review import gate as review_gate
+from agent6.harness.review import panel as review_panel
+from agent6.harness.review import seat as review_seat
 from agent6.sessions import event_log
 from agent6.vcs import git_files, git_read
 from tests import review_helpers, review_lane_env
@@ -418,7 +414,7 @@ def test_the_review_target_is_the_worktree_while_edits_sit_uncommitted(repo: pat
 def test_earlier_findings_whose_tree_is_gone_match_nothing(repo: pathlib.Path) -> None:
     """A legacy worktree target with a pruned tree matches no finding."""
     from agent6 import review_records
-    from agent6.harness import review_history
+    from agent6.harness.review import history as review_history
 
     (repo / "foo.py").write_text("x = 1\n")
     tree = _commit(repo)

@@ -27,9 +27,9 @@ from agent6.harness import (
     loop_state,
     provider_call,
     quiet_turns,
-    review_gate,
     run_chain,
 )
+from agent6.harness.review import gate as review_gate
 from agent6.providers import ProviderResponse
 from agent6.sessions import event_log, journal
 from agent6.tools import results

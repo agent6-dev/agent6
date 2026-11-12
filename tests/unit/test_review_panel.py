@@ -14,7 +14,7 @@ import dataclasses
 from typing import Any, Literal
 
 from agent6 import review_records
-from agent6.harness import review_panel
+from agent6.harness.review import panel as review_panel
 from agent6.vcs import review
 
 # A real unified diff touching foo.py new-lines 10..14 and creating bar.py 1..2.
@@ -309,7 +309,7 @@ def test_a_pass_verdict_cannot_contribute_a_blocking_vote() -> None:
 
 def test_quoted_paths_ground_by_their_name() -> None:
     """Git quotes a non-ASCII name in octal; the quoted form never matched a citation."""
-    from agent6.harness import review_seat
+    from agent6.harness.review import seat as review_seat
 
     diff = (
         'diff --git "a/caf\\303\\251.py" "b/caf\\303\\251.py"\n'
@@ -346,7 +346,7 @@ def test_quoted_paths_ground_by_their_name() -> None:
 
 def test_a_lone_surrogate_in_a_quoted_citation_grounds_nothing() -> None:
     """A seat's quoted path holding a lone surrogate raised out of the decoder; the panel died."""
-    from agent6.harness import review_seat
+    from agent6.harness.review import seat as review_seat
 
     cited = review_seat.coerce_findings(
         [
@@ -368,7 +368,7 @@ def test_a_lone_surrogate_in_a_quoted_citation_grounds_nothing() -> None:
 
 def test_quoted_hunkless_entries_and_literal_quote_names_ground() -> None:
     """A quoted header without hunks registered no path; a name holding quotes was unquoted away."""
-    from agent6.harness import review_seat
+    from agent6.harness.review import seat as review_seat
 
     diff = (
         'diff --git "a/caf\\303\\251.py" "b/caf\\303\\251.py"\n'
@@ -612,7 +612,7 @@ def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
 
     A configured gate may not have run yet.
     """
-    from agent6.harness import review_seat  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness.review import seat as review_seat  # pyright: ignore[reportPrivateUsage]
 
     prompt = review_seat.build_user_message(review_panel.ReviewContext(task="t"))
     assert "VERIFY: not run." in prompt and "none configured" not in prompt
@@ -620,7 +620,7 @@ def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
 
 def test_prior_findings_notice_distinguishes_base_and_head_locations() -> None:
     """Keep the prior findings' sides visible at the same path and line."""
-    from agent6.harness import review_seat  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness.review import seat as review_seat  # pyright: ignore[reportPrivateUsage]
 
     prior = (
         _block("security", _location("foo.py", 11, side="base")),
@@ -631,7 +631,7 @@ def test_prior_findings_notice_distinguishes_base_and_head_locations() -> None:
 
 
 def test_the_seat_prompt_carries_the_whole_large_diff() -> None:
-    from agent6.harness import review_seat  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness.review import seat as review_seat  # pyright: ignore[reportPrivateUsage]
 
     diff = "start\n" + "x" * 200_000 + "\nend"
     prompt = review_seat.build_user_message(review_panel.ReviewContext(task="t", diff=diff))

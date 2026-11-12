@@ -21,7 +21,7 @@ from agent6 import kinds, paths
 from agent6.app import role_providers, session_setup
 from agent6.config import Config
 from agent6.context import memory
-from agent6.harness import review_session
+from agent6.harness.review import session as review_session
 from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
 from agent6.sessions import journal, process
 from agent6.sessions import layout as sessions_layout

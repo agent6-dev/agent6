@@ -425,7 +425,7 @@ def test_unreadable_journal_tail_cannot_certify_a_review(tmp_path: pathlib.Path)
 
 def test_a_panel_row_with_an_unknown_field_is_unreadable_evidence(tmp_path: pathlib.Path) -> None:
     """Unknown fields on a panel row were ignored; the row is refused and both readers say so."""
-    from agent6.harness import review_history
+    from agent6.harness.review import history as review_history
 
     enveloped = {**_panel(), "ts": "2026-10-25T00:00:00+00:00"}
     assert not state.fold_session([enveloped]).review.read_failure

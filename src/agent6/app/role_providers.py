@@ -23,7 +23,8 @@ from agent6.config import (
     RoleName,
     secret_store,
 )
-from agent6.harness import provider_call, review_gate
+from agent6.harness import provider_call
+from agent6.harness.review import gate as review_gate
 from agent6.models import cache as models_cache
 from agent6.models import registry as models_registry
 from agent6.providers import (

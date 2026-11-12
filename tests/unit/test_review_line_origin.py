@@ -8,7 +8,7 @@ from unittest import mock
 import pytest
 
 from agent6 import review_records
-from agent6.harness import review_history
+from agent6.harness.review import history as review_history
 from agent6.vcs import git_files, git_read
 from tests import review_helpers
 

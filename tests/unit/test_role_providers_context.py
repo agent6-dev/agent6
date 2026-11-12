@@ -13,7 +13,8 @@ from agent6 import budget
 from agent6.app import conversation_state, role_providers, session_runtime
 from agent6.config import ReviewerConfig
 from agent6.config import model as config_model
-from agent6.harness import review_gate, review_panel
+from agent6.harness.review import gate as review_gate
+from agent6.harness.review import panel as review_panel
 from agent6.providers import provider_types, stream_lifecycle, transport
 from agent6.sessions import event_log
 from tests import review_traces, subordinate_env

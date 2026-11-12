@@ -61,9 +61,6 @@ from agent6.harness import (
     provider_call,
     quiet_turns,
     repo_context,
-    review_gate,
-    review_history,
-    review_panel,
     run_chain,
     run_checkpoint,
     standing_goal,
@@ -72,6 +69,9 @@ from agent6.harness import (
     verify_gate,
     verify_verdict,
 )
+from agent6.harness.review import gate as review_gate
+from agent6.harness.review import history as review_history
+from agent6.harness.review import panel as review_panel
 from agent6.providers import (
     Provider,
     ProviderAborted,

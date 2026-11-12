@@ -13,7 +13,10 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds
-from agent6.harness import llm_json, review_gate, review_panel, review_seat
+from agent6.harness import llm_json
+from agent6.harness.review import gate as review_gate
+from agent6.harness.review import panel as review_panel
+from agent6.harness.review import seat as review_seat
 from agent6.providers import Provider, ProviderError
 from agent6.sessions import journal
 from agent6.tools import results

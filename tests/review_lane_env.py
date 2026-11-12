@@ -9,15 +9,9 @@ from typing import Any, Protocol
 
 from agent6 import budget, kinds, lane_records, media, review_records
 from agent6.config import Config
-from agent6.harness import (
-    loop,
-    operator_bridge,
-    parallel_dispatch,
-    provider_call,
-    review_gate,
-    review_panel,
-    run_chain,
-)
+from agent6.harness import loop, operator_bridge, parallel_dispatch, provider_call, run_chain
+from agent6.harness.review import gate as review_gate
+from agent6.harness.review import panel as review_panel
 from agent6.providers import ProviderResponse
 from agent6.sessions import event_log, journal
 from agent6.tools import dispatch as tools_dispatch

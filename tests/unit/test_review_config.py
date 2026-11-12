@@ -17,7 +17,8 @@ import pytest
 from agent6 import paths
 from agent6.app import role_providers
 from agent6.config import Config, ReviewConfig, io, layer_data
-from agent6.harness import review_gate, review_panel
+from agent6.harness.review import gate as review_gate
+from agent6.harness.review import panel as review_panel
 from agent6.ui.cli import cli_main
 from agent6.viewmodel import config_view
 from tests import review_lane_env
