@@ -8,7 +8,7 @@ import tomllib
 import pytest
 
 from agent6 import kinds, lane_records, paths
-from agent6.app import lane_envelope, session_setup, stamps, workdirs
+from agent6.app import lane_launch, session_setup, stamps, workdirs
 from agent6.config import Config, ConfigError, RoleModel
 from tests import lane_env
 
@@ -56,9 +56,11 @@ def test_four_explicit_routes_without_default_are_not_runnable(
             },
         }
     )
-    written = workdirs.write_lane_config(cfg, lane, explicit_leaves=frozenset())
+    written = workdirs.write_lane_config(
+        cfg, lane, explicit_leaves=frozenset(), into=lane.workdir.parent / "launch"
+    )
     assert "default" not in tomllib.loads(written.path.read_text())["models"]
-    for name in (lane_envelope.ENV, "AGENT6_SUBRUN"):
+    for name in (lane_launch.ENV, "AGENT6_SUBRUN"):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(ConfigError, match=r"No models\.default\.model configured"):
         session_setup.load_session_config(lane.workdir, (written.path,), mode="run")
@@ -68,7 +70,9 @@ def test_four_explicit_routes_without_default_are_not_runnable(
 
 
 def test_snapshot_writes_resolved_roles(lane: lane_records.LaneSpec) -> None:
-    path = workdirs.write_lane_config(resolved_config(), lane, explicit_leaves=frozenset()).path
+    path = workdirs.write_lane_config(
+        resolved_config(), lane, explicit_leaves=frozenset(), into=lane.workdir.parent / "launch"
+    ).path
     models = tomllib.loads(path.read_text())["models"]
     assert models == {
         "default": {"model": "p/base"},
@@ -83,7 +87,9 @@ def test_snapshot_reloads_resolved_sampling(
     lane: lane_records.LaneSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = resolved_config()
-    path = workdirs.write_lane_config(cfg, lane, explicit_leaves=frozenset()).path
+    path = workdirs.write_lane_config(
+        cfg, lane, explicit_leaves=frozenset(), into=lane.workdir.parent / "launch"
+    ).path
     lane_env.mark_lane(monkeypatch, path.parent, config=path)
     effective = session_setup.load_session_config(lane.workdir, (path,), mode="run")
     worker = effective.config.models.resolve("worker")
@@ -146,7 +152,9 @@ def test_snapshot_notes_only_unrepresentable_temperatures(
     routed = lane_records.LaneSpec(
         lane=1, session_id="fan-l1", workdir=lane.workdir, settings=cfg.lane_settings("p/lane")
     )
-    written = workdirs.write_lane_config(cfg, routed, explicit_leaves=frozenset())
+    written = workdirs.write_lane_config(
+        cfg, routed, explicit_leaves=frozenset(), into=routed.workdir.parent / "launch"
+    )
     assert written.notes == (
         ("models.worker.temperature: selected None; TOML key omitted; reload uses 0.0.",)
         if temperature is None
@@ -163,7 +171,9 @@ def test_snapshot_discards_preset_models_but_keeps_other_preset_values(
         'preset = "custom"\n[presets.custom.models.worker]\neffort = "max"\n'
         '[presets.custom.sandbox]\nprotect_git = "off"\n'
     )
-    written = workdirs.write_lane_config(resolved_config(), lane, explicit_leaves=frozenset())
+    written = workdirs.write_lane_config(
+        resolved_config(), lane, explicit_leaves=frozenset(), into=lane.workdir.parent / "launch"
+    )
     lane_env.mark_lane(monkeypatch, written.path.parent, config=written.path)
     effective = session_setup.load_session_config(lane.workdir, (written.path,), mode="run")
     worker = effective.config.models.resolve("worker")
@@ -178,14 +188,16 @@ def test_snapshot_discards_preset_models_but_keeps_other_preset_values(
 def test_lineage_refuses_malformed_config_notes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, raw: str
 ) -> None:
-    """A lane envelope whose notes are not a list of strings refuses the lineage read."""
+    """A launch file whose notes are not a list of strings refuses the lineage read."""
     path = tmp_path / "lane-1.json"
-    path.write_text(
-        '{"config": "/x/lane-1-config.toml", "coordinator": "co", "group": "fan", "lane": 1,'
-        f' "notes": {raw}}}'
+    lane_launch.write_private(
+        path,
+        '{"workdir": "/x/lane-1", "session_id": "fan-l1", "task": "t",'
+        ' "config": "/x/lane-1-config.toml", "coordinator": "co", "group": "fan", "lane": 1,'
+        f' "notes": {raw}}}',
     )
-    monkeypatch.setenv(lane_envelope.ENV, str(path))
-    with pytest.raises(ConfigError, match="lane envelope"):
+    monkeypatch.setenv(lane_launch.ENV, str(path))
+    with pytest.raises(ConfigError, match="lane launch"):
         stamps.parallel_lineage()
 
 
@@ -193,8 +205,8 @@ def test_lineage_refuses_malformed_config_notes(
     ("broken", "refusal"),
     [
         ("path", "lane snapshot"),
-        ("envelope", "lane envelope"),
-        ("lineage", "lane envelope"),
+        ("envelope", "lane launch"),
+        ("lineage", "lane launch"),
         ("models", "lane snapshot"),
         ("default_sampling", "lane snapshot"),
     ],
@@ -202,12 +214,14 @@ def test_lineage_refuses_malformed_config_notes(
 def test_marked_snapshot_refuses_mismatch_or_malformed_models(
     lane: lane_records.LaneSpec, monkeypatch: pytest.MonkeyPatch, broken: str, refusal: str
 ) -> None:
-    path = workdirs.write_lane_config(resolved_config(), lane, explicit_leaves=frozenset()).path
+    path = workdirs.write_lane_config(
+        resolved_config(), lane, explicit_leaves=frozenset(), into=lane.workdir.parent / "launch"
+    ).path
     envelope = lane_env.mark_lane(monkeypatch, path.parent, config=path)
     if broken == "path":
         lane_env.mark_lane(monkeypatch, path.parent, config=path.with_suffix(".other"))
     elif broken == "envelope":
-        monkeypatch.setenv(lane_envelope.ENV, str(path.parent / "missing.json"))
+        monkeypatch.setenv(lane_launch.ENV, str(path.parent / "missing.json"))
     elif broken == "lineage":
         envelope.write_text(envelope.read_text().replace('"lane": 1', '"lane": 0'))
     elif broken == "models":

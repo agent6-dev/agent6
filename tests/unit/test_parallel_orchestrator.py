@@ -29,7 +29,7 @@ import pytest
 from agent6 import directive, kinds, lane_records, paths, portable
 from agent6.app import (
     compare,
-    lane_envelope,
+    lane_launch,
     lane_watch,
     parallel,
     parallel_results,
@@ -45,16 +45,16 @@ from agent6.harness import subrun
 from agent6.providers import ProviderResponse
 from agent6.sessions import ipc, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import cli_main, main
+from agent6.ui.cli import cli_main, lane_agent, main
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import listing, session_log, session_status
 
 
-def _envelope(env: dict[str, str]) -> lane_envelope.LaneEnvelope:
+def _launch_of(env: dict[str, str]) -> lane_launch.LaneLaunch:
     """Read the envelope a spawned lane's environment names."""
-    return lane_envelope.LaneEnvelope.model_validate_json(
-        pathlib.Path(env[lane_envelope.ENV]).read_text(encoding="utf-8")
+    return lane_launch.LaneLaunch.model_validate_json(
+        pathlib.Path(env[lane_launch.ENV]).read_text(encoding="utf-8")
     )
 
 
@@ -661,26 +661,31 @@ def test_coordinator_dispatch_aborts_promptly_on_a_lane_thread_raise(
     assert seen.get("lane1_released_by_stop") is True  # hard_stop actually fired
 
 
-def test_bridge_spawner_argv_ends_options_before_task(
+def test_bridge_spawner_keeps_the_task_out_of_the_argv(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
-    """The lane spawner puts every flag before `--` and the task after it.
+    """The lane's argv is the fixed bootstrap; the task, its words and the cap ride the launch file.
 
-    A task that looks like a flag can never be parsed as one, matching the web and TUI spawns. The
-    agent6 executable is folded into the injected `spawn`, so the argv it receives starts at the
-    subcommand.
+    A task that looks like a flag is never parsed as one, since nothing parses it: the
+    bootstrap reads the file `AGENT6_LANE` names.
     """
     captured: list[list[str]] = []
     words = "Keep <file>literal</file>. " + "detail " * 800
 
     def fake_spawn(
         argv: list[str], workdir: pathlib.Path, **_k: object
-    ) -> tuple[pathlib.Path, str]:
+    ) -> tuple[pathlib.Path, int, str]:
         captured.append(list(argv))
         env = _k["env"]
         assert isinstance(env, dict)
-        assert _envelope(env).operator_task == words
-        return workdir, ""
+        launch = _launch_of(env)
+        assert (launch.operator_task, launch.task, launch.max_usd) == (
+            words,
+            "--allow-root pwn",
+            2.0,
+        )
+        assert launch.workdir == workdir and launch.session_id == "fan-l1"
+        return workdir, 1, ""
 
     cfg = Config()
     spec = lane_records.LaneSpec(
@@ -703,10 +708,9 @@ def test_bridge_spawner_argv_ends_options_before_task(
     )
 
     argv = captured[-1]
-    assert argv[:1] == ["run"]  # the exe is prepended inside the injected spawn
-    dd = argv.index("--")
-    assert {"--session-id", "--config", "--max-usd"} <= set(argv[:dd])  # flags precede `--`
-    assert argv[dd + 1 :] == ["--allow-root pwn"]  # task is the sole element after
+    assert argv == lane_launch.bootstrap_argv()
+    assert argv[argv.index("-m") - 1 :: -1][-1] == argv[0]  # the interpreter leads
+    assert not any("pwn" in word or "detail" in word for word in argv)
 
 
 def test_a_lane_is_seeded_with_the_repos_memory(
@@ -725,8 +729,8 @@ def test_a_lane_is_seeded_with_the_repos_memory(
 
     def fake_spawn(
         _argv: list[str], workdir: pathlib.Path, **_k: object
-    ) -> tuple[pathlib.Path, str]:
-        return workdir, ""
+    ) -> tuple[pathlib.Path, int, str]:
+        return workdir, 1, ""
 
     spec = lane_records.LaneSpec(
         lane=1,
@@ -746,20 +750,22 @@ def test_a_lane_is_seeded_with_the_repos_memory(
     assert "Ship the rename?" in memory.decisions_text(lane_state)
 
 
-def test_bridge_spawner_argv_includes_auto_approve_when_set(
+def test_bridge_spawner_launch_carries_auto_approve_when_set(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """A coordinator or fan-out started with `--auto-approve` forwards it to the lane.
 
     Otherwise the lane sits on `run_commands=ask` with nothing to answer it.
     """
-    captured: list[list[str]] = []
+    captured: list[lane_launch.LaneLaunch] = []
 
     def fake_spawn(
         argv: list[str], workdir: pathlib.Path, **_k: object
-    ) -> tuple[pathlib.Path, str]:
-        captured.append(list(argv))
-        return workdir, ""
+    ) -> tuple[pathlib.Path, int, str]:
+        env = _k["env"]
+        assert isinstance(env, dict)
+        captured.append(_launch_of(env))
+        return workdir, 1, ""
 
     cfg = Config()
     spec = lane_records.LaneSpec(
@@ -775,21 +781,21 @@ def test_bridge_spawner_argv_includes_auto_approve_when_set(
         coordinator="co",
     )  # fmt: skip
 
-    argv = captured[-1]
-    dd = argv.index("--")
-    assert "--auto-approve" in argv[:dd]  # precedes the `--` separator, like --max-usd
+    assert captured[-1].auto_approve is True
 
 
-def test_bridge_spawner_argv_omits_auto_approve_by_default(
+def test_bridge_spawner_launch_omits_auto_approve_by_default(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
-    captured: list[list[str]] = []
+    captured: list[lane_launch.LaneLaunch] = []
 
     def fake_spawn(
         argv: list[str], workdir: pathlib.Path, **_k: object
-    ) -> tuple[pathlib.Path, str]:
-        captured.append(list(argv))
-        return workdir, ""
+    ) -> tuple[pathlib.Path, int, str]:
+        env = _k["env"]
+        assert isinstance(env, dict)
+        captured.append(_launch_of(env))
+        return workdir, 1, ""
 
     cfg = Config()
     spec = lane_records.LaneSpec(
@@ -804,7 +810,7 @@ def test_bridge_spawner_argv_omits_auto_approve_by_default(
         coordinator="co",
     )  # fmt: skip
 
-    assert "--auto-approve" not in captured[-1]
+    assert captured[-1].auto_approve is False and captured[-1].max_usd is None
 
 
 def test_run_lane_to_completion_forwards_auto_approve_to_the_default_spawner(
@@ -1222,7 +1228,7 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
         before: set[pathlib.Path],
         list_dirs: Any,
         env: dict[str, str],
-    ) -> tuple[pathlib.Path, str]:
+    ) -> tuple[pathlib.Path, int, str]:
         del before, list_dirs
         # A detached child's stdout and stderr are not the fan-out's own streams.
         lane_output, lane_errors = io.StringIO(), io.StringIO()
@@ -1235,12 +1241,15 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
             for key, value in env.items():
                 if key.startswith("AGENT6_"):
                     child.setenv(key, value)
-            assert cli_main(argv) == (0 if exit_code == 0 else 1), (
+            # The bootstrap exports the away mode; set through the patch so it is undone.
+            child.setenv("AGENT6_DETACHED_AWAY", "wait")
+            assert argv == lane_launch.bootstrap_argv()
+            assert lane_agent.main() == (0 if exit_code == 0 else 1), (
                 lane_errors.getvalue() + lane_output.getvalue()
             )
             assert (cwd / ".setup-count").read_text(encoding="utf-8").splitlines() == ["ran"]
             (session_dir,) = (paths.state_dir(cwd) / "sessions" / "runs").iterdir()
-        return session_dir, ""
+        return session_dir, 1, ""
 
     lanes = _specs(tmp_path, cfg, "setup-fan", "2")
     state = paths.state_dir(origin)
@@ -2964,7 +2973,10 @@ def test_lane_config_forces_a_run_branch(tmp_path: pathlib.Path) -> None:
         settings=None,
     )
     path = workdirs.write_lane_config(
-        cfg, spec, explicit_leaves=frozenset({"git.branch_per_run"})
+        cfg,
+        spec,
+        explicit_leaves=frozenset({"git.branch_per_run"}),
+        into=spec.workdir.parent / "launch",
     ).path
     written = tomllib.loads(path.read_text(encoding="utf-8"))
     assert written["git"]["branch_per_run"] is True
@@ -2990,9 +3002,9 @@ def test_lane_config_carries_the_lane_route(tmp_path: pathlib.Path) -> None:
         settings=kinds.ModelSettings(kinds.ModelRoute("p", "other")),
     )
     written = tomllib.loads(
-        workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset()).path.read_text(
-            encoding="utf-8"
-        )
+        workdirs.write_lane_config(
+            cfg, spec, explicit_leaves=frozenset(), into=spec.workdir.parent / "launch"
+        ).path.read_text(encoding="utf-8")
     )
     assert "provider" not in written["models"]["worker"]
     assert written["models"]["worker"]["model"] == "p/other"
@@ -3241,11 +3253,11 @@ def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
 
     def fake_spawn(
         argv: list[str], workdir: pathlib.Path, **kw: object
-    ) -> tuple[pathlib.Path, str]:
+    ) -> tuple[pathlib.Path, int, str]:
         env = kw.get("env")
         assert isinstance(env, dict)
         captured.append(env)
-        return workdir, ""
+        return workdir, 1, ""
 
     for lane, away in enumerate(("wait", "deny"), start=1):
         spec = lane_records.LaneSpec(
@@ -3261,7 +3273,7 @@ def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
             runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         )  # fmt: skip
         assert result.ok, result.error
-        assert captured[-1]["AGENT6_DETACHED_AWAY"] == away
+        assert _launch_of(captured[-1]).away == away
 
 
 def test_lane_is_self_describing_from_birth(
@@ -3282,11 +3294,11 @@ def test_lane_is_self_describing_from_birth(
 
     def fake_spawn(
         argv: list[str], workdir: pathlib.Path, **kw: object
-    ) -> tuple[pathlib.Path, str]:
+    ) -> tuple[pathlib.Path, int, str]:
         env = kw.get("env")
         assert isinstance(env, dict)
         captured.append(env)
-        return workdir, ""
+        return workdir, 1, ""
 
     spec = lane_records.LaneSpec(
         lane=2,
@@ -3299,12 +3311,12 @@ def test_lane_is_self_describing_from_birth(
         fanout_id="fan", coordinator="co", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         gate_source="inferred",
     )  # fmt: skip
-    envelope = _envelope(captured[-1])
+    envelope = _launch_of(captured[-1])
     assert (envelope.coordinator, envelope.group, envelope.lane) == ("co", "fan", 2)
     assert envelope.gate_source == "inferred"
 
     # The writer records it from the envelope, exactly as the spawned lane would.
-    monkeypatch.setenv(lane_envelope.ENV, captured[-1][lane_envelope.ENV])
+    monkeypatch.setenv(lane_launch.ENV, captured[-1][lane_launch.ENV])
     layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="fan-l2")
     layout.ensure()
     stamps.write_session_manifest(
@@ -3320,7 +3332,7 @@ def test_lane_is_self_describing_from_birth(
     assert m.parallel == sessions_manifest.ParallelLineage(group="fan", lane=2, coordinator="co")
 
     # An ordinary run records no lineage.
-    monkeypatch.delenv(lane_envelope.ENV)
+    monkeypatch.delenv(lane_launch.ENV)
     layout2 = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="plain-run")
     layout2.ensure()
     stamps.write_session_manifest(
@@ -3369,10 +3381,10 @@ def test_lane_sampling_notes_survive_import_and_reach_both_reports(
         settings=None,
     )
 
-    def child(argv: list[str], cwd: pathlib.Path, **kwargs: Any) -> tuple[pathlib.Path, str]:
-        config_path = pathlib.Path(argv[argv.index("--config") + 1])
+    def child(argv: list[str], cwd: pathlib.Path, **kwargs: Any) -> tuple[pathlib.Path, int, str]:
+        assert argv == lane_launch.bootstrap_argv()
         env = kwargs["env"]
-        assert _envelope(env).config == config_path
+        config_path = _launch_of(env).config
         with monkeypatch.context() as patch:
             for name, value in env.items():
                 patch.setenv(name, value)
@@ -3411,7 +3423,7 @@ def test_lane_sampling_notes_survive_import_and_reach_both_reports(
             reporter=reporter.STDIO_REPORTER,
         )
         assert note in capsys.readouterr().out
-        return layout.session_dir, ""
+        return layout.session_dir, 1, ""
 
     result = app_lanes.bridge_spawner(
         spec,
@@ -3439,6 +3451,7 @@ def test_lane_sampling_notes_survive_import_and_reach_both_reports(
         origin=origin,
         workdir_root=spec.workdir.parent,
         base=spec.workdir.parent,
+        launch_dir=spec.workdir.parent / "launch",
         cfg=cfg,
     )
     imported = paths.state_dir(origin) / "sessions" / "runs" / spec.session_id
@@ -3510,13 +3523,13 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
         before: set[pathlib.Path],
         list_dirs: Callable[[], list[pathlib.Path]],
         env: dict[str, str],
-    ) -> tuple[pathlib.Path | None, str]:
+    ) -> tuple[pathlib.Path | None, int, str]:
         assert cwd == lanes[0].workdir
         assert not before and not list_dirs()
-        envelope = _envelope(env)
+        envelope = _launch_of(env)
         assert (envelope.coordinator, envelope.group, envelope.lane) == ("failed11", "failed11", 1)
         assert workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
-        return None, "lane refused before creating a session"
+        return None, 1, "lane refused before creating a session"
 
     failed_runtime = dataclasses.replace(runtime, spawn=fail_spawn)
 
@@ -4129,16 +4142,18 @@ def test_model_parallel_import_keeps_lane_commits(
 
     monkeypatch.setattr(role_providers, "build_role_provider", provider)
 
-    def spawn(argv: list[str], cwd: pathlib.Path, **kw: Any) -> tuple[pathlib.Path, str]:
+    def spawn(argv: list[str], cwd: pathlib.Path, **kw: Any) -> tuple[pathlib.Path, int, str]:
         clones.append(cwd)
         with monkeypatch.context() as child:
             child.chdir(cwd)
             for key, value in kw["env"].items():
                 if key.startswith("AGENT6_"):
                     child.setenv(key, value)
-            assert cli_main(argv) == 0
+            child.setenv("AGENT6_DETACHED_AWAY", "wait")
+            assert argv == lane_launch.bootstrap_argv()
+            assert lane_agent.main() == 0
             (session,) = (paths.state_dir(cwd) / "sessions" / "runs").iterdir()
-        return session, ""
+        return session, 1, ""
 
     def no_judge(*_a: Any, **_kw: Any) -> Any:
         from agent6.providers import ProviderError
@@ -4207,6 +4222,7 @@ def test_cleanup_keeps_unreachable_model_head(
         origin=origin,
         workdir_root=spec.workdir.parent,
         base=spec.workdir.parent,
+        launch_dir=spec.workdir.parent / "launch",
         cfg=cfg,
         note_keep=lambda _p, why: notes.append(why),
     )

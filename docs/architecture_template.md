@@ -532,9 +532,10 @@ The primitive is git plumbing in [subrun.py](https://github.com/agent6-dev/agent
 [app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) drives the fan-out session: spawn, await, import, rank, report.
 [app/parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel_results.py) imports the finished lanes, carries memory and decisions back, and stamps and prints the ranking.
 [app/workdirs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/workdirs.py) resolves `[workspace].base_dir` for clones and linked worktrees, writes lane configs, recovers orphaned lanes and removes imported or safely swept clones.
-The detached spawn `app/lanes.py` drives (`ui.spawn`'s `spawn_and_locate`, the path the web and TUI hubs start a run with) is injected as a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`, and liveness probes use `sessions.process` and stop requests use the run-dir bridge (`sessions.ipc`).
+The detached spawn `app/lanes.py` drives (`ui.spawn`'s `spawn_lane`: the fixed `python -P -E -m agent6.ui.cli.lane_agent` argv, the child's pid kept) is injected as a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`; liveness probes use `sessions.process` and stop requests use the run-dir bridge (`sessions.ipc`).
+A lane's task, pins, caps, away mode and lineage travel in its launch file (`app/lane_launch.py`, `0600` under `<origin_state>/launch/<group>/`), beside its config snapshot; the bootstrap validates both and drives `app.run.run_task` with the CLI's session seam.
 
-**`agent6 run --parallel N|selector,...`** resolves each selector (a role name, or `[provider/]model` on the worker's effort and temperature) to one `kinds.ModelSettings` through `Config.lane_settings`, the resolver every entry point shares, and plans one `LaneSpec` per lane, each spawned as an ordinary detached `agent6 run` with its own jail and `run_commands` policy.
+**`agent6 run --parallel N|selector,...`** resolves each selector (a role name, or `[provider/]model` on the worker's effort and temperature) to one `kinds.ModelSettings` through `Config.lane_settings`, the resolver every entry point shares, and plans one `LaneSpec` per lane, each started through the lane bootstrap as an ordinary detached run with its own jail and `run_commands` policy.
 
 `app.workdirs.write_lane_config` uses `config.lane_snapshot` to materialize the parent's resolved worker, planner, reviewer and helper routes and sampling settings, with the lane's worker route override applied.
 The snapshot keeps only the route in `models.default`; it omits sampling keys only for resolved `None` values.
@@ -814,7 +815,7 @@ agent6 also sets markers for its own children:
 
 - `AGENT6_SUBRUN=1`: subordinate work (a lane, a machine state, a `/btw` question), which never fans out itself ([Parallel runs](#parallel-runs)).
 - `AGENT6_STREAM_TO_LOG=1`: a detached spawn or lane emits its stream deltas as events with no console echo.
-- `AGENT6_LANE=<path>`: the lane's envelope (`app/lane_envelope.py`): the config snapshot the lane's sole `--config` must name, its serialization loss notes, the lineage the lane's manifest records, the origin of the verify gate the coordinator resolved, and the operator's task; a missing or malformed envelope, or another `--config`, refuses the load.
+- `AGENT6_LANE=<path>`: the lane's launch file (`app/lane_launch.py`): the task and pins, the caps and away mode, the config snapshot the lane's sole `--config` must name, its serialization loss notes, the lineage the lane's manifest records, the origin of the verify gate the coordinator resolved, and the operator's task; the bootstrap refuses a missing, malformed, foreign-owned or exposed file, and the config load refuses another `--config`.
 
 ## Pre-1.0 stability
 

@@ -42,22 +42,20 @@ def lane_runtime() -> app_lanes.LaneRuntime:
         before: set[pathlib.Path],
         list_dirs: Callable[[], list[pathlib.Path]],
         env: dict[str, str],
-    ) -> tuple[pathlib.Path | None, str]:
-        """Spawn a detached agent6 process and locate its session dir.
+    ) -> tuple[pathlib.Path | None, int, str]:
+        """Spawn a detached lane and locate its session dir.
 
         Args:
-            argv: The agent6 subcommand and flags, without the executable.
+            argv: The full command, the lane bootstrap.
             cwd: Where to spawn.
             before: The session dirs that existed before the spawn.
             list_dirs: Lists the candidate session dirs.
             env: The child's environment.
 
         Returns:
-            The session dir and an error text, from `spawn_and_locate`.
+            The session dir, the pid and an error text, from `spawn_lane`.
         """
-        return ui_spawn.spawn_and_locate(
-            [ui_spawn.agent6_exe(), *argv], cwd, before=before, list_dirs=list_dirs, env=env
-        )
+        return ui_spawn.spawn_lane(argv, cwd, before=before, list_dirs=list_dirs, env=env)
 
     return app_lanes.LaneRuntime(
         spawn=spawn,

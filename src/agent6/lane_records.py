@@ -83,6 +83,8 @@ class LaneResult:
         imported_ref: The ref the import landed the lane's work in; "" when none.
         imported_tip: That ref's commit; "" when none.
         has_commits: Whether the imported tip holds commits beyond the lane's base.
+        pid: The lane process the spawn started, 0 when none did; a child that never
+            reported its session dir is stopped through it.
     """
 
     spec: LaneSpec
@@ -93,6 +95,7 @@ class LaneResult:
     imported_ref: str = ""
     imported_tip: str = ""
     has_commits: bool = False
+    pid: int = 0
 
 
 class LaneSpawner(Protocol):

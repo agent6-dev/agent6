@@ -15,7 +15,7 @@ from typing import Protocol
 
 from agent6 import directive, errors, kinds, lane_records, paths
 from agent6.app import compare as app_compare
-from agent6.app import lane_envelope, lane_watch, parallel_results, workdirs
+from agent6.app import lane_launch, lane_watch, parallel_results, workdirs
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError
 from agent6.context import memory
@@ -43,18 +43,19 @@ class SpawnRun(Protocol):
         before: set[pathlib.Path],
         list_dirs: Callable[[], list[pathlib.Path]],
         env: dict[str, str],
-    ) -> tuple[pathlib.Path | None, str]:
+    ) -> tuple[pathlib.Path | None, int, str]:
         """Spawn the command and wait for its session dir.
 
         Args:
-            argv: The agent6 subcommand and flags, without the executable.
+            argv: The full command: the interpreter, its flags and the bootstrap module.
             cwd: Where to spawn.
             before: The session dirs that existed before the spawn.
             list_dirs: Lists the candidate session dirs.
             env: The child's environment.
 
         Returns:
-            `(session_dir, "")` once a new dir with a log appears, else `(None, error)`.
+            `(session_dir, pid, "")` once a new dir with a log appears, else
+            `(None, pid, error)`, the pid 0 when nothing started.
         """
         ...
 
@@ -145,7 +146,10 @@ def bridge_spawner(
     gate_source: sessions_manifest.GateSource = "",
     runtime: LaneRuntime,
 ) -> lane_records.LaneResult:
-    """Clone the origin and spawn a detached `agent6 run` in the clone.
+    """Clone the origin and start the lane bootstrap detached in the clone.
+
+    The task, pins, caps and lineage travel in the lane's launch file under the origin's
+    state dir; the host argv is the fixed bootstrap.
 
     Args:
         spec: The lane.
@@ -155,8 +159,8 @@ def bridge_spawner(
         cfg: The origin's effective config.
         explicit_leaves: The dotted leaves the origin's config layers set.
         origin: The repository.
-        max_usd: The lane's spend cap, forwarded to its argv.
-        auto_approve: The fan-out's own `--auto-approve`, forwarded to its argv.
+        max_usd: The lane's spend cap.
+        auto_approve: The fan-out's own `--auto-approve`, forwarded.
         lane_away: The lane's away-mode: "wait" parks a question for `agent6 attach`,
             "deny" answers it empty.
         at: A commit to detach the clone at; the coordinator's chain tip.
@@ -179,8 +183,36 @@ def bridge_spawner(
         return lane_records.LaneResult(
             spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
         )
-    config = workdirs.write_lane_config(cfg, spec, explicit_leaves=explicit_leaves)
-    config_path = config.path
+    # The lane's own manifest records its lineage, so a coordinator death orphans nothing; the
+    # gate's origin was resolved in the origin, where the repo signals are.
+    private = lane_launch.launch_dir(paths.state_dir(origin), fanout_id)
+    try:
+        config = workdirs.write_lane_config(
+            cfg, spec, explicit_leaves=explicit_leaves, into=private
+        )
+        launch_path = lane_launch.write(
+            private,
+            lane_launch.LaneLaunch(
+                workdir=spec.workdir,
+                session_id=spec.session_id,
+                task=task,
+                pins=tuple(pins),
+                max_usd=max_usd,
+                auto_approve=auto_approve,
+                away=lane_away,
+                config=config.path,
+                notes=config.notes,
+                coordinator=coordinator,
+                group=fanout_id,
+                lane=spec.lane,
+                gate_source=gate_source,
+                operator_task=operator_task,
+            ),
+        )
+    except (lane_launch.LaunchError, OSError) as exc:
+        return lane_records.LaneResult(
+            spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
+        )
     lane_state = paths.state_dir(spec.workdir)
     # The clone's state dir is empty; the origin's memory and rulings are seeded into it.
     memory.seed_store(paths.state_dir(origin), lane_state)
@@ -191,53 +223,30 @@ def bridge_spawner(
             return []
         return [p for p in lane_runs.iterdir() if p.is_dir()]
 
-    argv = [
-        "run",
-        "--session-id",
-        spec.session_id,
-        "--config",
-        str(config_path),
-    ]
-    if max_usd is not None:
-        argv += ["--max-usd", f"{max_usd:g}"]
-    if auto_approve:
-        argv += ["--auto-approve"]
-    for pin in pins:
-        # Pins ride out of band, so the lane's manifest task stays the task.
-        argv += ["--pin", pin]
-    # `--` so a task that looks like a flag is never parsed as one.
-    argv += ["--", task]
-    # The lane's own manifest records its lineage, so a coordinator death orphans nothing; the
-    # gate's origin was resolved in the origin, where the repo signals are.
-    envelope_path = spec.workdir.parent / f"lane-{spec.lane}.json"
-    lane_envelope.write(
-        envelope_path,
-        lane_envelope.LaneEnvelope(
-            config=config_path,
-            notes=config.notes,
-            coordinator=coordinator,
-            group=fanout_id,
-            lane=spec.lane,
-            gate_source=gate_source,
-            operator_task=operator_task,
-        ),
-    )
     # AGENT6_SUBRUN keeps a lane from fanning out itself: depth 1 by construction.
     markers = {
         "AGENT6_STREAM_TO_LOG": "1",
-        "AGENT6_DETACHED_AWAY": lane_away,
         "AGENT6_SUBRUN": "1",
-        lane_envelope.ENV: str(envelope_path),
+        lane_launch.ENV: str(launch_path),
     }
-    session_dir, err = runtime.spawn(
-        argv, spec.workdir, before=set(), list_dirs=list_dirs, env={**os.environ, **markers}
+    session_dir, pid, err = runtime.spawn(
+        lane_launch.bootstrap_argv(),
+        spec.workdir,
+        before=set(),
+        list_dirs=list_dirs,
+        env={**os.environ, **markers},
     )
     if session_dir is None:
         return lane_records.LaneResult(
-            spec=spec, session_dir=lane_runs / spec.session_id, branch=branch, ok=False, error=err
+            spec=spec,
+            session_dir=lane_runs / spec.session_id,
+            branch=branch,
+            ok=False,
+            error=err,
+            pid=pid,
         )
     return lane_records.LaneResult(
-        spec=spec, session_dir=session_dir, branch=branch, ok=True, error=""
+        spec=spec, session_dir=session_dir, branch=branch, ok=True, error="", pid=pid
     )
 
 
@@ -374,6 +383,7 @@ def run_lane_to_completion(
         note_keep=lambda path, why: reporter.note(f"kept {path}: {why}"),
         workdir_root=res.spec.workdir.parent,
         base=workdirs.workdir_base(cfg, origin),
+        launch_dir=lane_launch.launch_dir(origin_state, group),
         cfg=cfg,
     )
     summary = summarize_session_dir(dest)

@@ -12,6 +12,7 @@ import shutil
 from collections.abc import Callable
 
 from agent6 import errors, lane_records, paths
+from agent6.app import lane_launch
 from agent6.config import Config, lane_snapshot
 from agent6.harness import subrun
 from agent6.sessions import layout as sessions_layout
@@ -236,7 +237,11 @@ class LaneConfig:
 
 
 def write_lane_config(
-    cfg: Config, spec: lane_records.LaneSpec, *, explicit_leaves: frozenset[str]
+    cfg: Config,
+    spec: lane_records.LaneSpec,
+    *,
+    explicit_leaves: frozenset[str],
+    into: pathlib.Path,
 ) -> LaneConfig:
     """Write the origin's explicit settings and non-default lane values to `--config`.
 
@@ -246,19 +251,23 @@ def write_lane_config(
         cfg: The origin's effective config.
         spec: The lane.
         explicit_leaves: The dotted leaves the origin's config layers set.
+        into: The lane's private launch dir, created private when missing.
 
     Returns:
         The config file's path and serialization loss notes.
+
+    Raises:
+        LaunchError: The dir cannot be private.
     """
     lane_cfg = cfg.with_model_settings("worker", spec.settings)
     # The import fetches the lane's branch, so branch_per_run stays on.
     lane_cfg = lane_cfg.model_copy(
         update={"git": lane_cfg.git.model_copy(update={"branch_per_run": True})}
     )
-    config_path = spec.workdir.parent / f"lane-{spec.lane}-config.toml"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
+    lane_launch.private_dir(into)
+    config_path = into / f"lane-{spec.lane}-config.toml"
     snapshot = lane_snapshot.build(lane_cfg, explicit_leaves=explicit_leaves)
-    config_path.write_text(snapshot.text, encoding="utf-8")
+    lane_launch.write_private(config_path, snapshot.text)
     return LaneConfig(config_path, snapshot.notes)
 
 
@@ -268,13 +277,14 @@ def cleanup(
     origin: pathlib.Path,
     workdir_root: pathlib.Path,
     base: pathlib.Path,
+    launch_dir: pathlib.Path,
     cfg: Config,
     note_keep: Callable[[pathlib.Path, str], None] = lambda _path, _why: None,
 ) -> None:
-    """Tear down the clone, state dir, jail home and config of each imported lane, best-effort.
+    """Tear down the clone, state dir, jail home and launch files of each imported lane.
 
-    Every level from the group dir up to the per-repo base is removed once empty,
-    never the dir above it.
+    Best-effort. Every level from the group dir up to the per-repo base is removed once
+    empty, never the dir above it; the group's launch dir goes the same way.
 
     Args:
         imported: The lanes whose import landed.
@@ -282,6 +292,7 @@ def cleanup(
         note_keep: Receives the kept clone and reason.
         workdir_root: The group dir.
         base: The per-repo base dir.
+        launch_dir: The group's private launch dir.
         cfg: The run's config.
     """
     for spec in imported:
@@ -303,7 +314,11 @@ def cleanup(
         shutil.rmtree(paths.state_dir(spec.workdir), ignore_errors=True)
         shutil.rmtree(paths.jail_cache_home(spec.workdir), ignore_errors=True)
         shutil.rmtree(spec.workdir, ignore_errors=True)
-        (spec.workdir.parent / f"lane-{spec.lane}-config.toml").unlink(missing_ok=True)
+        (launch_dir / f"lane-{spec.lane}-config.toml").unlink(missing_ok=True)
+        (launch_dir / f"lane-{spec.lane}.json").unlink(missing_ok=True)
+    for level in (launch_dir, launch_dir.parent):
+        with contextlib.suppress(OSError):
+            level.rmdir()  # succeeds only once every group's files are gone
     level = workdir_root
     while level.is_relative_to(base):
         with contextlib.suppress(OSError):

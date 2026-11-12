@@ -119,15 +119,28 @@ def _plan_text_for_run(plan_path: pathlib.Path, session_id: str) -> str | None:
 
 
 def cli_main(argv: list[str] | None = None) -> int:
-    """Run the CLI, sorting failures by fault.
+    """Run the CLI, sorting failures by fault (`run_guarded`).
 
-    An `OperatorError` prints as a refusal at exit 2, no traceback. A closed output pipe
-    (`agent6 ... | head`) ends quietly at 141, as SIGPIPE would. Anything else
-    is a bug: one line plus a saved traceback, exit 1; `AGENT6_DEBUG=1` re-raises it.
     `main` stays unguarded so tests see real tracebacks.
 
     Args:
         argv: The arguments; `sys.argv[1:]` when None.
+
+    Returns:
+        The exit code.
+    """
+    return run_guarded(lambda: main(argv))
+
+
+def run_guarded(body: Callable[[], int]) -> int:
+    """Run an entry point, sorting failures by fault.
+
+    An `OperatorError` prints as a refusal at exit 2, no traceback. A closed output pipe
+    (`agent6 ... | head`) ends quietly at 141, as SIGPIPE would. Anything else
+    is a bug: one line plus a saved traceback, exit 1; `AGENT6_DEBUG=1` re-raises it.
+
+    Args:
+        body: The entry point.
 
     Returns:
         The exit code.
@@ -138,7 +151,7 @@ def cli_main(argv: list[str] | None = None) -> int:
     with terminal_guard.guarded_terminal():
         try:
             try:
-                return main(argv)
+                return body()
             finally:
                 # A short answer still sits in stdout's buffer: a closed pipe fails it here, in
                 # the handler's reach, not at the interpreter's exit (120 and a diagnostic).

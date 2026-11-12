@@ -685,10 +685,13 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
 
 `agent6 run --parallel` and a live run's `/parallel` steer directive (see [architecture.md, Parallel runs](architecture.md#parallel-runs)) each spawn subordinate work.
 
-- Every lane is an ordinary run: a detached `agent6 run` on its own clone, its own jail per `sandbox.isolation`, its own `run_commands` policy
+- Every lane is an ordinary run on its own clone, its own jail per `sandbox.isolation`, its own `run_commands` policy, started by the fixed bootstrap `python -P -E -m agent6.ui.cli.lane_agent`
+    - the task, pins, caps, away mode and lineage travel in a launch file under the origin's state dir (`<state>/launch/<group>/lane-<n>.json`, `0600` in a `0700` dir, the config snapshot beside it); nothing model-written reaches the host argv
+    - the bootstrap reads the file `AGENT6_LANE` names through `O_NOFOLLOW` and refuses a symlink, a foreign owner, a mode others can read or a dir others can write; `-P` keeps the clone off `sys.path` and `-E` ignores `PYTHONPATH`, so a planted `agent6/` or `sitecustomize.py` never imports (`tests/security/test_lane_launch_boundary.py`)
+    - a detached lane has no terminal: a `run_commands = "ask"` prompt parks (`wait`) or is answered empty (`deny`) by the launch file's away mode, never approved
 - Every spawned lane carries `AGENT6_SUBRUN=1`; both the `--parallel` flag and the coordinator's `lane_spawner` wiring refuse when it is set, so a lane cannot fan out or dispatch again.
 - A lane's config carries key references, never secret values
-    - the orchestrator writes each lane a `--config` via `materialize()` (the resolved `Config`: provider `base_url`, `api_key_env` names)
+    - the coordinator writes each lane's config snapshot beside its launch file (the resolved `Config`: provider `base_url`, `api_key_env` names)
     - the lane reads the same `secrets.toml` or provider env var as any other run
 - Lane git plumbing (clone, fetch, merge) goes through `git_ops.py` and its private runner; lane spawning goes through `ui/spawn.py` (see the [subprocess allowlist](#12-host-side-subprocess-allowlist)).
 - A lane starts from committed state only
@@ -840,7 +843,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `ui/btw.py`: spawns `agent6 ask` detached for `/btw` (every composer).
   Argv is the agent6 exe plus the question the operator typed, with `--` before it.
 - `ui/spawn.py`: the shared front-end spawn helper.
-  Spawns the agent6 CLI detached for run and machine launches (`machine create` and `machine run`), and captures `sessions merge` / `prune` / `remove` / `review` and `config set` / `unset`.
+  Spawns the agent6 CLI detached for run and machine launches (`machine create` and `machine run`) and the fixed lane bootstrap (`spawn_lane`, which keeps the child's pid), and captures `sessions merge` / `prune` / `remove` / `review` and `config set` / `unset`.
 - `ui/notify.py`: `notify-send` with fixed argv (exe, `--`, two positional data args, no shell) for the device-present notices: a machine's notify, a session that waits or ends.
 - `ui/cli/` helpers:
     - `connect_oauth.py`: the platform's URL opener (`xdg-open`, `open`) for a sign-in URL built from the operator's configuration, with the curated environment; never `$BROWSER`'s command template

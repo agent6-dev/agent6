@@ -292,6 +292,9 @@ _COMMAND_GROUPS = frozenset({"machine", "sessions", "config"})
 
 def subcommand_label(argv: list[str]) -> str:
     """Return the subcommand the argv names, for diagnostics: "machine run", not "machine"."""
+    if "-m" in argv and argv.index("-m") + 1 < len(argv):
+        # A `python -m agent6.ui.cli.lane_agent` bootstrap reads as "lane agent".
+        return argv[argv.index("-m") + 1].rsplit(".", 1)[-1].replace("_", " ")
     if len(argv) < 2:
         return argv[0]
     label = argv[1]
@@ -410,7 +413,7 @@ def spawn_and_confirm(
     Returns:
         "" once the child owns its work, else why it did not.
     """
-    _, err = _spawn_and_wait(
+    _, _pid, err = _spawn_and_wait(
         argv,
         cwd,
         ready=lambda pid: True if started(pid) else None,
@@ -480,6 +483,36 @@ def spawn_and_locate(
     Returns:
         The new dir and "", or None and why.
     """
+    found, _pid, err = spawn_lane(
+        argv, cwd, before=before, list_dirs=list_dirs, env=env, timeout_s=timeout_s
+    )
+    return found, err
+
+
+def spawn_lane(
+    argv: list[str],
+    cwd: pathlib.Path,
+    *,
+    before: set[pathlib.Path],
+    list_dirs: Callable[[], list[pathlib.Path]],
+    env: dict[str, str] | None = None,
+    timeout_s: float = 25.0,
+) -> tuple[pathlib.Path | None, int, str]:
+    """Spawn a lane detached, locate its session dir and keep the child's pid.
+
+    The pid lets the coordinator stop a child that never reports a session dir.
+
+    Args:
+        argv: The command.
+        cwd: The clone.
+        before: The session dirs that existed before the spawn.
+        list_dirs: Lists the session dirs now.
+        env: The child's environment; None inherits this process's.
+        timeout_s: How long to wait for the dir.
+
+    Returns:
+        The new dir, the pid and "", or None, the pid (0 when nothing started) and why.
+    """
     return _spawn_and_wait(
         argv, cwd, ready=lambda pid: _located(list_dirs, before, pid), env=env, timeout_s=timeout_s
     )
@@ -493,7 +526,7 @@ def _spawn_and_wait[T](
     env: dict[str, str] | None,
     timeout_s: float,
     clean_exit: T | None = None,
-) -> tuple[T | None, str]:
+) -> tuple[T | None, int, str]:
     """Spawn the argv detached with a stderr capture and poll until the child reports ready.
 
     Non-TTY stdio and a new session, so the child never opens its own TUI.
@@ -508,8 +541,9 @@ def _spawn_and_wait[T](
             its exit instead.
 
     Returns:
-        The answer and "", or None and the child's stderr tail, its exit code when it
-        said nothing, or what it said so far at the timeout.
+        The answer, the child's pid and "", or None, the pid (0 when nothing started) and
+        the child's stderr tail, its exit code when it said nothing, or what it said so far
+        at the timeout.
     """
     label = subcommand_label(argv)
     err = tempfile.NamedTemporaryFile(  # noqa: SIM115  # closed in finally
@@ -527,22 +561,22 @@ def _spawn_and_wait[T](
                 env=env,
             )
         except OSError as exc:
-            return None, f"failed to start agent6 {label}: {exc}"
+            return None, 0, f"failed to start agent6 {label}: {exc}"
         jail.keep_out_of_the_sweep(proc.pid)
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             if (found := ready(proc.pid)) is not None:
-                return found, ""
+                return found, proc.pid, ""
             rc = proc.poll()
             if rc is not None:
                 # The answer may have landed in the same instant.
                 if (found := ready(proc.pid)) is not None:
-                    return found, ""
+                    return found, proc.pid, ""
                 if rc == 0 and clean_exit is not None:
-                    return clean_exit, ""
-                return None, _child_exit_message(label, rc, _stderr_tail(err))
+                    return clean_exit, proc.pid, ""
+                return None, proc.pid, _child_exit_message(label, rc, _stderr_tail(err))
             time.sleep(0.2)
-        return None, _not_started_message(label, timeout_s, _stderr_tail(err))
+        return None, proc.pid, _not_started_message(label, timeout_s, _stderr_tail(err))
     finally:
         # The child keeps the unlinked inode as its stderr; its real output is its own log.
         err.close()

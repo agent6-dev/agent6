@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from agent6 import __version__, evidence, kinds, portable, task_text
-from agent6.app import lane_envelope
+from agent6.app import lane_launch
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ReviewerConfig, RoleModel
 from agent6.models import registry
@@ -225,7 +225,7 @@ def lane_gate_source() -> manifest.GateSource:
     Returns:
         The gate's origin, "" outside a lane or when the coordinator passed none.
     """
-    envelope = lane_envelope.read()
+    envelope = lane_launch.read()
     return envelope.gate_source if envelope is not None else ""
 
 
@@ -240,7 +240,7 @@ def parallel_lineage() -> manifest.ParallelLineage | None:
     Raises:
         ConfigError: The lane's envelope is missing or malformed.
     """
-    envelope = lane_envelope.read()
+    envelope = lane_launch.read()
     if envelope is None:
         return None
     return manifest.ParallelLineage(

@@ -15,7 +15,7 @@ import sys
 import time
 
 from agent6 import errors, kinds, paths, portable
-from agent6.app import frontend, lane_envelope, preflight, reporter, run, session_setup
+from agent6.app import frontend, preflight, reporter, run, session_setup
 from agent6.app import lanes as app_lanes
 from agent6.config import (
     Config,
@@ -313,10 +313,7 @@ def _cmd_run(  # noqa: PLR0911
     Returns:
         The exit code; 2 on a refusal.
     """
-    envelope = lane_envelope.read()
-    if envelope is not None and envelope.operator_task is not None:
-        operator_task = envelope.operator_task
-    elif operator_task is None:
+    if operator_task is None:
         operator_task = task
     # The git wall first, so a scratch dir does not clear every other wall before hitting it.
     if mode != "ask" and not preflight.require_git_repo(pathlib.Path.cwd()):

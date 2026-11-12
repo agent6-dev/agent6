@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import http.server
-import json
 import pathlib
 import subprocess
-import threading
 import time
 from collections.abc import Iterator
 from typing import Any
@@ -19,62 +16,14 @@ from agent6.config import Config, RoleModel
 from agent6.sessions import manifest, process
 from agent6.ui.cli import parallel
 from agent6.viewmodel import session_log
+from tests import lane_env
 
 
 @pytest.fixture
 def local_provider() -> Iterator[tuple[str, list[dict[str, Any]]]]:
     """Answer a real child's model call with finish_session, without a paid provider."""
-    calls: list[dict[str, Any]] = []
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(b'{"object":"list","data":[]}')
-
-        def do_POST(self) -> None:
-            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            calls.append(body)
-            message = {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {
-                        "index": 0,
-                        "id": "finish-1",
-                        "type": "function",
-                        "function": {
-                            "name": "finish_session",
-                            "arguments": json.dumps({"summary": "Local lane completed."}),
-                        },
-                    }
-                ],
-            }
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.end_headers()
-            chunk = {
-                "id": "local-1",
-                "object": "chat.completion.chunk",
-                "model": body["model"],
-                "choices": [{"index": 0, "delta": message, "finish_reason": "tool_calls"}],
-                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-            }
-            self.wfile.write(("data: " + json.dumps(chunk) + "\n\ndata: [DONE]\n\n").encode())
-
-        def log_message(self, format: str, *args: object) -> None:
-            del format, args
-
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_port}/v1", calls
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
+    with lane_env.scripted_provider() as served:
+        yield served
 
 
 def test_detached_lane_loads_snapshot_and_records_notes(

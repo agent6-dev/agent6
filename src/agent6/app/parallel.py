@@ -23,6 +23,7 @@ from collections.abc import Sequence
 from agent6 import errors, kinds, lane_records
 from agent6.app import compare as app_compare
 from agent6.app import (
+    lane_launch,
     lane_watch,
     parallel_results,
     preflight,
@@ -349,6 +350,7 @@ def _drive_fanout(
         note_keep=lambda path, why: reporter.note(f"kept {path}: {why}"),
         workdir_root=lanes[0].workdir.parent,
         base=workdirs.workdir_base(cfg, origin),
+        launch_dir=lane_launch.launch_dir(origin_state, fanout_id),
         cfg=cfg,
     )
 

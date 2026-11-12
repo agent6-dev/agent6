@@ -146,7 +146,10 @@ def _lane_snapshot(
         lane=1, session_id="fan-l1", workdir=tmp_path / "lanes" / "lane-1", settings=None
     )
     snapshot = workdirs.write_lane_config(
-        effective.config, spec, explicit_leaves=effective.explicit_leaves
+        effective.config,
+        spec,
+        explicit_leaves=effective.explicit_leaves,
+        into=spec.workdir.parent / "launch",
     ).path
     lane_env.mark_lane(monkeypatch, snapshot.parent, config=snapshot, gate_source=gate_source)
     return snapshot
@@ -533,10 +536,12 @@ def test_a_budget_stopped_lane_continues_with_the_reports_fork_command(
             contextlib.redirect_stderr(errors),
         ):
             child.chdir(spec.workdir)
-            snapshot = workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset()).path
+            snapshot = workdirs.write_lane_config(
+                cfg, spec, explicit_leaves=frozenset(), into=spec.workdir.parent / "launch"
+            ).path
             lane_env.mark_lane(
                 child,
-                spec.workdir.parent,
+                snapshot.parent,
                 config=snapshot,
                 coordinator="capped-fan",
                 group="capped-fan",

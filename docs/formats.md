@@ -2520,15 +2520,22 @@ Source: [`viewmodel.receipt.as_dict`](https://github.com/agent6-dev/agent6/blob/
 Other records are nested objects used by the CLI and web serializers above.
 Properties are absent unless a serializer adds them explicitly.
 
-### LaneEnvelope
+### LaneLaunch
 
-**Support: public.** What a lane knows about itself that no config layer holds.
+**Support: public.** What a lane needs to start, and what it knows about itself that no config layer holds.
 
-Source: [`agent6.app.lane_envelope.LaneEnvelope`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lane_envelope.py).
+Source: [`agent6.app.lane_launch.LaneLaunch`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lane_launch.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `config` | `pathlib.Path` | The lane's config snapshot; the lane's sole `--config` must name it. |
+| `workdir` | `pathlib.Path` | The lane's clone, the run's cwd. |
+| `session_id` | `str` | The lane's session id. |
+| `task` | `str` | The task text, exactly as the lane's manifest records it. |
+| `pins` | `tuple[str, ...]` | The coordinator's pins, out of band of the task. |
+| `max_usd` | `float \| None` | The lane's spend cap; None keeps the config's. |
+| `auto_approve` | `bool` | Whether the coordinator ran with `--auto-approve`. |
+| `away` | `Literal['wait', 'deny', 'approve']` | The lane's away mode: `wait` parks a question for `agent6 attach`, `deny` answers it empty. |
+| `config` | `pathlib.Path` | The lane's config snapshot, beside this file; the lane's sole `--config`. |
 | `notes` | `tuple[str, ...]` | The snapshot's serialization loss notes, recorded in the lane's manifest. |
 | `coordinator` | `str` | The session every listing nests the lane under. |
 | `group` | `str` | The fan-out the lane belongs to. |
