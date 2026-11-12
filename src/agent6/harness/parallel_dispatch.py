@@ -481,7 +481,7 @@ class ParallelDispatcher:
     ) -> lane_dispatch.DispatchRecord:
         """Join each lane not yet joined, in lane order, recording each join as it lands.
 
-        A rank join ranks first, once, and joins the lane ranked first alone.
+        A rank join ranks first, once, and joins its winner alone; with no winner it joins none.
 
         Args:
             record: The dispatch's record.
@@ -495,7 +495,7 @@ class ParallelDispatcher:
         if record.join_policy == "rank" and record.ranking is None:
             record = self.ranked(record, by_id)
         order = record.ranking.order if record.ranking is not None else ()
-        first = next(iter(order), "")
+        winner = record.ranking.winner if record.ranking is not None else ""
         for child in record.children:
             if child.join is not None:
                 continue
@@ -512,9 +512,9 @@ class ParallelDispatcher:
             elif (
                 res is not None
                 and child.session_id in order
-                # The first lane joins where the run has a chain; under `git.control = "model"`
+                # The winner joins where the run has a chain; under `git.control = "model"`
                 # it has none, and every lane is placed and left on its ref.
-                and (child.session_id != first or not self.chain.ref)
+                and (child.session_id != winner or not self.chain.ref)
             ):
                 # Its branch stays imported: the operator can still merge it by hand.
                 place = f"{order.index(child.session_id) + 1} of {len(order)}"
@@ -572,7 +572,10 @@ class ParallelDispatcher:
         record = record.model_copy(
             update={
                 "ranking": lane_dispatch.RankRecord(
-                    order=tuple(order), ranked_by=ranking.ranked_by, rationale=ranking.rationale
+                    order=tuple(order),
+                    ranked_by=ranking.ranked_by,
+                    rationale=ranking.rationale,
+                    winner=ranking.winner if ranking.winner in order else "",
                 )
             }
         )

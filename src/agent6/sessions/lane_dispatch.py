@@ -84,11 +84,13 @@ class RankRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         order: The ranked lanes' session ids, best first; empty when no lane had a result.
         ranked_by: `judge` or `mechanical`.
         rationale: The judges' words; "" for the mechanical order.
+        winner: The one lane the join lands; "" when the order crowns none.
     """
 
     order: tuple[str, ...]
     ranked_by: Literal["judge", "mechanical"] = "mechanical"
     rationale: str = ""
+    winner: str = ""
 
 
 class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):

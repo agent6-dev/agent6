@@ -842,7 +842,10 @@ def build_lane_ranker(
             reporter=reporter,
         )
         return lane_records.Ranking(
-            order=outcome.ranking, ranked_by=outcome.ranked_by, rationale=outcome.rationale
+            order=outcome.ranking,
+            ranked_by=outcome.ranked_by,
+            rationale=outcome.rationale,
+            winner=parallel_results.ranked_winner(candidates, outcome.ranking),
         )
 
     return rank

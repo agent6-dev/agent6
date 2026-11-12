@@ -126,7 +126,7 @@ def ranked_opening(
 ) -> loop_snapshot.SessionResult:
     """Run the dispatch a run opens with, joined by rank, and end the run on what landed.
 
-    The lane ranked first joins the run's chain; the run's own gate then judges the joined
+    The ranking's winner joins the run's chain; the run's own gate then judges the joined
     tree. No model call is made: a resume with a steer continues from there.
 
     Args:
@@ -136,8 +136,9 @@ def ranked_opening(
         state: The execution's state.
 
     Returns:
-        The end: `lanes_ranked` when a lane ended with a result, `budget_exhausted` when the
-        budget ended them all, `no_lane_result` otherwise, or the operator's stop.
+        The end: `lanes_ranked` when a lane joined (or, with no chain to join onto, was
+        placed), `no_lane_passed` when the ranking crowned none, `budget_exhausted` when the
+        budget ended every lane, `no_lane_result` otherwise, or the operator's stop.
     """
     assert harness.opening is not None
     result = harness.parallel.dispatch(
@@ -149,17 +150,20 @@ def ranked_opening(
         return stopped
     # A refusal before any lane ran has no lanes to word: its own message is the summary.
     summary = parallel_join.rank_summary(result.lanes) if result.lanes else result.message
-    landed = [join for join in result.lanes if join.status in ("joined", "no_changes", "ranked")]
+    statuses = {join.status for join in result.lanes}
+    # Without a chain (`git.control = "model"`) a placed lane is the whole outcome.
+    landed = statuses & {"joined", "no_changes"} or ("ranked" in statuses and not harness.chain.ref)
     if not landed:
         spent = harness.budget is not None and harness.budget.is_exhausted()
-        return harness.finish(
-            state,
-            loop_snapshot.End(
-                "budget_exhausted" if spent else "no_lane_result", summary, roots=False
-            ),
-            turn=turn,
+        reason: loop_snapshot.SessionEndReason = (
+            "no_lane_passed"
+            if "ranked" in statuses
+            else "budget_exhausted"
+            if spent
+            else "no_lane_result"
         )
-    if any(join.status == "joined" for join in landed):
+        return harness.finish(state, loop_snapshot.End(reason, summary, roots=False), turn=turn)
+    if "joined" in statuses:
         try:
             harness.gate.after_rank_join(state)
         except tool_errors.OperatorCommandUnexecutableError as exc:

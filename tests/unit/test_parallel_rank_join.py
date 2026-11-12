@@ -14,10 +14,12 @@ from typing import Any, cast
 
 import pytest
 
-from agent6 import budget, directive, lane_records, paths
+from agent6 import budget, directive, kinds, lane_records, paths
 from agent6.app import lanes as app_lanes
+from agent6.app import parallel_results
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
+from agent6.harness import judge as harness_judge
 from agent6.harness import (
     loop_conversation,
     loop_state,
@@ -59,11 +61,17 @@ class _Lanes:
     """A group spawner that returns the prepared branches, and a ranker that counts its calls."""
 
     def __init__(
-        self, repo: pathlib.Path, order: Sequence[int], *, failed: Sequence[int] = ()
+        self,
+        repo: pathlib.Path,
+        order: Sequence[int],
+        *,
+        failed: Sequence[int] = (),
+        crowns: bool = True,
     ) -> None:
         self.repo = repo
         self.order = tuple(f"root-p1-l{lane}" for lane in order)
         self.failed = set(failed)
+        self.crowns = crowns
         self.ranked: list[list[str]] = []
         self.results: list[lane_records.LaneResult] = []
 
@@ -94,10 +102,12 @@ class _Lanes:
     ) -> lane_records.Ranking:
         assert group == "root-p1"
         self.ranked.append([res.spec.session_id for res in results])
+        order = tuple(rid for rid in self.order if rid in self.ranked[-1])
         return lane_records.Ranking(
-            order=tuple(rid for rid in self.order if rid in self.ranked[-1]),
+            order=order,
             ranked_by="judge",
             rationale="two reads best",
+            winner=order[0] if order and self.crowns else "",
         )
 
 
@@ -168,6 +178,7 @@ def test_a_rank_join_lands_the_first_ranked_lane_alone(repo: pathlib.Path) -> No
         order=("root-p1-l2", "root-p1-l3", "root-p1-l1"),
         ranked_by="judge",
         rationale="two reads best",
+        winner="root-p1-l2",
     )
     assert "  - root-p1-l3 (agent6/root-p1-l3): ranked 2 of 3; not joined" in result.message
     assert not [e for e in events if isinstance(e, journal.ParallelFailed)]
@@ -237,6 +248,51 @@ def test_a_ranker_that_leaves_a_lane_out_still_places_it(repo: pathlib.Path) -> 
         ("ranked", "3 of 3"),
         ("joined", ""),
     ]
+
+
+def test_a_ranking_that_crowns_no_lane_joins_none(repo: pathlib.Path) -> None:
+    """The order is a judge's; a ranking with no winner places every lane and merges nothing."""
+    lanes = _Lanes(repo, order=(2, 1, 3), crowns=False)
+
+    result = _dispatch(_dispatcher(repo, lanes, []))
+
+    assert [(j.status, j.detail) for j in result.lanes] == [
+        ("ranked", "2 of 3"),
+        ("ranked", "1 of 3"),
+        ("ranked", "3 of 3"),
+    ]
+    assert git_read.chain_tip(repo, git_read.chain_ref_for("root")) is None
+    record = _record(repo)
+    assert record.ranking is not None and record.ranking.winner == ""
+
+
+@pytest.mark.parametrize(
+    ("gates", "ranking", "winner"),
+    [
+        (("passed", "passed"), ("a", "b"), "a"),
+        (("not_applicable", "not_applicable"), ("b", "a"), "b"),
+        # A lane that did not verify, ranked over one that did, is not crowned.
+        (("failed", "passed"), ("a", "b"), ""),
+        (("unverified", "passed"), ("a", "b"), ""),
+        (("failed", "passed"), ("b", "a"), "b"),
+        # Every gate ran red: nobody wins.
+        (("failed", "failed"), ("a", "b"), ""),
+        (("unverified", "unverified"), ("a", "b"), ""),
+    ],
+)
+def test_the_winner_is_a_verified_lane_or_nobody(
+    gates: tuple[kinds.Verification, kinds.Verification], ranking: tuple[str, ...], winner: str
+) -> None:
+    """The judge's order is model output: it cannot crown a red lane over a green one."""
+    candidates = [
+        harness_judge.CandidateBrief(
+            session_id=sid, task="t", diff="", verification=gate, cost_usd=0.0
+        )
+        for sid, gate in zip(("a", "b"), gates, strict=True)
+    ]
+
+    assert parallel_results.ranked_winner(candidates, ranking) == winner
+    assert parallel_results.ranked_winner(candidates, ()) == ""
 
 
 def test_a_rank_join_without_a_ranker_is_refused_before_any_clone(repo: pathlib.Path) -> None:
@@ -332,7 +388,10 @@ def test_the_apps_ranker_judges_the_imported_work_and_records_the_outcome(
     ranking = ranker(results, group="root-p1", base="")
 
     assert ranking == lane_records.Ranking(
-        order=("root-p1-l2", "root-p1-l1"), ranked_by="judge", rationale="two is tidier"
+        order=("root-p1-l2", "root-p1-l1"),
+        ranked_by="judge",
+        rationale="two is tidier",
+        winner="root-p1-l2",
     )
     (shown,) = judge.shown
     assert "--- CANDIDATE root-p1-l1 ---" in shown and "+lane 1" in shown and "+lane 2" in shown

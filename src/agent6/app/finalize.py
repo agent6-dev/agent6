@@ -66,10 +66,13 @@ def session_exit_code(
 
     Returns:
         0 for a green, gateless or unjudged finish, 130 an operator stop, 3 budget, 4 red or
-        unverified under a harness gate, 5 stranded, 1 else.
+        unverified under a harness gate and a `run --parallel` run whose lanes' gates crowned
+        none, 5 stranded, 1 else.
     """
     if result.reason in session_status.OPERATOR_STOPS:
         return EXIT_OPERATOR_STOP
+    if result.reason == "no_lane_passed":
+        return EXIT_VERIFY_FAILED
     if result.completed:
         if result.verification == "failed" or (
             result.verification == "unverified" and harness_gate

@@ -1004,15 +1004,16 @@ def test_coordinator_spawner_gate_under_subrun(
 # A run that opens with a ranked dispatch (`run --parallel`).
 
 
-def _ranker(order: tuple[int, ...]) -> Any:
-    """Rank a group's lanes in the given lane order, by number."""
+def _ranker(order: tuple[int, ...], *, crowns: bool = True) -> Any:
+    """Rank a group's lanes in the given lane order, by number; `crowns` off names no winner."""
 
     def rank(
         results: Sequence[lane_records.LaneResult], *, group: str, base: str
     ) -> lane_records.Ranking:
         by_lane = {res.spec.lane: res.spec.session_id for res in results}
+        ranked = tuple(by_lane[n] for n in order if n in by_lane)
         return lane_records.Ranking(
-            order=tuple(by_lane[n] for n in order if n in by_lane), ranked_by="judge"
+            order=ranked, ranked_by="judge", winner=ranked[0] if ranked and crowns else ""
         )
 
     return rank
@@ -1025,6 +1026,7 @@ def _opening_wf(
     *,
     order: tuple[int, ...],
     verify_command: tuple[str, ...] = (),
+    crowns: bool = True,
 ) -> tuple[loop.Harness, mock.MagicMock]:
     provider = mock.MagicMock()
     wf = _build_wf(
@@ -1036,7 +1038,7 @@ def _opening_wf(
         verify_command=verify_command,
     )
     wf.opening = directive.Segment(task="add a lane file", spec="3")
-    wf.bridge = dataclasses.replace(wf.bridge, lane_ranker=_ranker(order))
+    wf.bridge = dataclasses.replace(wf.bridge, lane_ranker=_ranker(order, crowns=crowns))
     return wf, provider
 
 
@@ -1104,3 +1106,22 @@ def test_a_stop_asked_while_the_opening_ran_ends_the_run_as_a_stop(
     assert provider.call.call_count == 0
     assert (result.reason, result.completed) == ("steer_abort", False)
     assert [stop["reason"] for stop in events.of("session.stop")] == ["steer_abort"]
+
+
+def test_an_opening_whose_ranking_crowns_no_lane_ends_no_lane_passed(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Every lane is placed, none is joined, and the run does not read as ranked work."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    spawner = _FakeGroupSpawner(repo, "session", tmp_path / "wt")
+    events = _FakeEvents(tmp_path / "session" / "logs.jsonl")
+    wf, provider = _opening_wf(repo, spawner, events, order=(1, 2, 3), crowns=False)
+
+    result = wf.run("add a lane file")
+
+    assert provider.call.call_count == 0
+    assert (result.reason, result.completed) == ("no_lane_passed", False)
+    assert git_read.chain_tip(repo, "refs/agent6/coord") is None
+    (joined,) = events.of("parallel.joined")
+    assert [lane["status"] for lane in joined["lanes"]] == ["ranked", "ranked", "ranked"]

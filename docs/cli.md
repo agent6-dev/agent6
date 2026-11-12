@@ -220,7 +220,7 @@ Every end has one reason (`stop_reason` in `agent6 sessions show --json` and `se
 | `calls_exhausted` | `failed · calls exhausted` | `1` |
 | `gate_stale` | `finished · gate stale` | `4` (gate red, gate timed out, unverified under a harness gate), `0` (unverified with the harness gate off) |
 | `gate_red_at_base` | `finished · gate red at base` | `4` |
-| `lanes_ranked` | `finished · lanes ranked` | `0` |
+| `lanes_ranked` | `finished · lanes ranked`, `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `0` (gate green, no gate, unverified with the harness gate off), `4` (gate red, gate timed out, unverified under a harness gate) |
 | `no_lane_result` | `failed · no lane result` | `1` |
 | `no_lane_passed` | `failed · no lane passed` | `4` |
 

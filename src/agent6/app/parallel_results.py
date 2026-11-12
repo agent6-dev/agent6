@@ -8,7 +8,7 @@ import contextlib
 import dataclasses
 import pathlib
 import threading
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from agent6 import budget as agent6_budget
 from agent6 import kinds, lane_records, paths
@@ -98,22 +98,38 @@ def stamp_compare_outcomes(
     if err is not None:
         reporter.note(f"group [{group}]: the comparison stamp failed: {err}")
     of = len(candidates)
-    crown = fanout_exit_code(candidates) != finalize.EXIT_VERIFY_FAILED
-    any_verified = any(c.verification == "passed" for c in candidates)
-    by_id = {c.session_id: c for c in candidates}
+    crowned = ranked_winner(candidates, outcome.ranking)
     for rank_pos, session_id in enumerate(outcome.ranking, start=1):
-        winner = (
-            rank_pos == 1
-            and crown
-            and (not any_verified or by_id[session_id].verification == "passed")
-        )
         placement = sessions_manifest.PlacementStamp(
-            rank=rank_pos, of=of, winner=winner, group=group
+            rank=rank_pos, of=of, winner=session_id == crowned, group=group
         )
         # A judged fan-out ranks run lanes.
         err = stamp(lane_watch.lane_link(origin_state, session_id, mode="run"), placement=placement)
         if err is not None:
             reporter.note(f"lane [{session_id}]: imported, but the placement stamp failed: {err}")
+
+
+def ranked_winner(candidates: list[judge.CandidateBrief], ranking: Sequence[str]) -> str:
+    """Return the lane a ranking crowns, or "" when it crowns none.
+
+    The judge's order is model output: rank 1 wins unless every gate ran red, and only a
+    verified lane wins when any verified.
+
+    Args:
+        candidates: The ranked lanes.
+        ranking: Their ids, best first.
+
+    Returns:
+        The winner's session id, or "".
+    """
+    if not ranking:
+        return ""
+    first = next(c for c in candidates if c.session_id == ranking[0])
+    crown = fanout_exit_code(candidates) != finalize.EXIT_VERIFY_FAILED
+    any_verified = any(c.verification == "passed" for c in candidates)
+    return (
+        first.session_id if crown and (not any_verified or first.verification == "passed") else ""
+    )
 
 
 def carry_back(

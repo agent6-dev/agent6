@@ -198,11 +198,14 @@ class Ranking:
         order: The ranked lanes' session ids, best first.
         ranked_by: `judge` when a judge's ranking ordered them, else `mechanical`.
         rationale: The judges' words; "" for the mechanical order.
+        winner: The lane the join lands, or "" when the order crowns none: every gate ran
+            red, or a lane that did not verify was ranked over one that did.
     """
 
     order: tuple[str, ...]
     ranked_by: Literal["judge", "mechanical"] = "mechanical"
     rationale: str = ""
+    winner: str = ""
 
 
 class LaneRanker(Protocol):

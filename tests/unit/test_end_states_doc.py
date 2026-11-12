@@ -55,7 +55,7 @@ _COMPLETED: dict[str, tuple[_Gate, ...]] = {
     "ask_repl_empty": (_NO_GATE,),
     "gate_stale": _NOT_GREEN,
     "gate_red_at_base": (_RED,),
-    "lanes_ranked": (_GREEN, _NO_GATE),
+    "lanes_ranked": _ANY_GATE,
 }
 # Exit codes another owner decides: `execution` for the operator's undo and detach, the
 # fan-out for its own verdict, and the CLI for a closed output pipe.

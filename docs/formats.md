@@ -3138,6 +3138,7 @@ Source: [`agent6.sessions.lane_dispatch.RankRecord`](https://github.com/agent6-d
 | `order` | `tuple[str, ...]` | The ranked lanes' session ids, best first; empty when no lane had a result. |
 | `ranked_by` | `Literal['judge', 'mechanical']` | `judge` or `mechanical`. |
 | `rationale` | `str` | The judges' words; "" for the mechanical order. |
+| `winner` | `str` | The one lane the join lands; "" when the order crowns none. |
 
 ### SegmentRecord
 
