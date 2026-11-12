@@ -232,6 +232,12 @@ def _usage(
         plan_cap=row.plan_cap,
     )
     session = state_types.SessionUsage(
+        settled_lanes=tuple(sorted(set(prior.session.settled_lanes).union(row.settled_lanes))),
+        unmetered_tokens=(
+            prior.session.unmetered_tokens
+            - prior.execution.unmetered_tokens
+            + execution.unmetered_tokens
+        ),
         usd=banked_usd + row.usd_total,
         usd_partial=bool(row.usd_partial) or prior.session.usd_partial,
         plan_observed_points=banked_points + (row.plan_observed_points or 0.0),

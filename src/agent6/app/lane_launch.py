@@ -79,6 +79,39 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     contract: kinds.ConversationContract | None = None
 
 
+def dispatch_authority(
+    cfg: Config, *, mode: str, session_id: str, root: pathlib.Path
+) -> lane_records.DispatchAuthority:
+    """Resolve authority from the private launch, never from a tool or steer argument.
+
+    Args:
+        cfg: The effective configuration, including review authorization.
+        mode: The execution mode.
+        session_id: The execution's session id, bound to its launch.
+        root: The execution's checkout, bound to its launch.
+
+    Returns:
+        Work authority only outside subordinate runs; panel authority only in workers.
+    """
+    launch = read()
+    subordinate = launch is not None or bool(os.environ.get("AGENT6_SUBRUN"))
+    worker = mode == "run"
+    if subordinate:
+        worker = (
+            worker
+            and launch is not None
+            and launch.contract is None
+            and launch.session_id == session_id
+            and launch.workdir.resolve() == root.resolve()
+        )
+    deadline = launch.limits.deadline_at if launch is not None and launch.limits else None
+    return lane_records.DispatchAuthority(
+        work=worker and not subordinate,
+        panels=worker and cfg.review.trigger != "off",
+        deadline_at=deadline,
+    )
+
+
 def apply_limits(cfg: Config, limits: lane_records.LaneLimits | None) -> Config:
     """Return the config with `harness.max_turns` clamped to the lane's cap.
 

@@ -101,6 +101,9 @@ class BudgetUpdate(Event):
     """The tracker's accounting since this process began, its caps and the account's reading."""
 
     TYPE: ClassVar[str] = "budget.update"
+    settled_lanes: tuple[str, ...] = pydantic.Field(
+        default=(), description="Child session IDs included in this execution's cumulative spend."
+    )
     usd_total: float = pydantic.Field(
         description=(
             "Cumulative USD spend across provider/model routes, including purchased credits."

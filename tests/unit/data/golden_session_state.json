@@ -91,6 +91,8 @@
   "environment": null,
   "budget": {
     "session": {
+      "unmetered_tokens": 0,
+      "settled_lanes": [],
       "usd": 0.004841036,
       "usd_partial": false,
       "plan_observed_points": 0.0

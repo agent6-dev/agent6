@@ -25,6 +25,7 @@ from agent6 import errors, kinds, paths, review_records
 from agent6.app import (
     conversation_state,
     finalize,
+    lane_launch,
     notify_hook,
     review_actions,
     review_directive,
@@ -565,7 +566,10 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 review_preparer=functools.partial(
                     review_directive.live, root=cwd, hide=cfg.sandbox.hide_paths
                 ),
-                # None in plan and ask, and inside a lane.
+                lane_authority=lane_launch.dispatch_authority(
+                    cfg, mode=mode, session_id=inputs.session_id, root=cwd
+                ),
+                # Subordinate workers retain only harness-panel authority.
                 lane_spawner=frontend.build_coordinator_spawner(
                     cfg,
                     inputs.explicit_leaves,

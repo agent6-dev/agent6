@@ -16,7 +16,7 @@ from agent6.app import role_providers
 from agent6.config import layer
 from agent6.harness import review_gate, review_history, review_panel
 from agent6.providers import provider_types
-from agent6.sessions import event_log, journal, layout, manifest
+from agent6.sessions import budget_events, event_log, journal, layout, manifest
 from agent6.vcs import git_read, review
 from agent6.viewmodel import receipt
 
@@ -139,7 +139,7 @@ def run(
     )
     events.emit(journal.LoopReviewPanel(**record.model_dump(mode="json")))
     tracker.settle()
-    events.emit(journal.BudgetUpdate(**role_providers.budget_update_fields(tracker)))
+    events.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(tracker)))
     events.emit(
         journal.SessionStop(
             execution_id=execution_id,

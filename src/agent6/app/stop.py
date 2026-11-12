@@ -27,7 +27,7 @@ import signal
 import time
 
 from agent6.sandbox import jail
-from agent6.sessions import ipc, layout, manifest, process, shells
+from agent6.sessions import ipc, lineage, manifest, process, shells
 from agent6.viewmodel import listing, session_is_live, session_status, summarize_session_dir
 
 STOP_WAIT_S = 5.0  # a run that reads its requests ends within this
@@ -199,13 +199,8 @@ def _is_fanout(session_dir: pathlib.Path) -> bool:
 
 
 def _live_lanes(session_dir: pathlib.Path) -> list[pathlib.Path]:
-    """Return the session's live lanes, by the lineage their manifests record, in lane order."""
-    state = layout.layout_of(session_dir).state_dir
-    return [
-        lane_dir
-        for lane in listing.lanes_of(state, session_dir.name)
-        if (lane_dir := session_dir.parent / lane.session_id).is_dir() and session_is_live(lane_dir)
-    ]
+    """Return live descendants across buckets and clone links, including dead intermediaries."""
+    return [child for child in lineage.descendants_of(session_dir) if session_is_live(child)]
 
 
 def _ended_within(

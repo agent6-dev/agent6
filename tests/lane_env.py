@@ -9,7 +9,7 @@ import http.server
 import json
 import pathlib
 import threading
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from typing import Any
 
 import pytest
@@ -23,6 +23,9 @@ FINISH: tuple[str, dict[str, Any]] = ("finish_session", {"summary": "Local lane 
 @contextlib.contextmanager
 def scripted_provider(
     replies: Sequence[tuple[str, dict[str, Any]]] = (FINISH,),
+    *,
+    cost_usd: float | None = None,
+    before_reply: Callable[[dict[str, Any]], None] | None = None,
 ) -> Generator[tuple[str, list[dict[str, Any]]]]:
     """Serve an OpenAI-shaped endpoint that answers each call with the next scripted tool call.
 
@@ -31,6 +34,8 @@ def scripted_provider(
 
     Args:
         replies: `(tool name, arguments)` per call, in order.
+        cost_usd: The reported cost per response; None exercises fallback-token accounting.
+        before_reply: An optional barrier after recording the request and before answering.
 
     Yields:
         The endpoint's `base_url` and the recorded request bodies.
@@ -47,6 +52,8 @@ def scripted_provider(
         def do_POST(self) -> None:
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             calls.append(body)
+            if before_reply is not None:
+                before_reply(body)
             name, args = replies[min(len(calls) - 1, len(replies) - 1)]
             message = {
                 "role": "assistant",
@@ -63,14 +70,17 @@ def scripted_provider(
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()
-            chunk = {
+            chunk: dict[str, Any] = {
                 "id": f"local-{len(calls)}",
                 "object": "chat.completion.chunk",
                 "model": body["model"],
                 "choices": [{"index": 0, "delta": message, "finish_reason": "tool_calls"}],
                 "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
             }
-            self.wfile.write(("data: " + json.dumps(chunk) + "\n\ndata: [DONE]\n\n").encode())
+            if cost_usd is not None:
+                chunk["usage"]["cost"] = cost_usd
+            with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+                self.wfile.write(("data: " + json.dumps(chunk) + "\n\ndata: [DONE]\n\n").encode())
 
         def log_message(self, format: str, *args: object) -> None:
             del format, args

@@ -695,7 +695,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
 
 `agent6 run --parallel` and a live run's `/parallel` steer directive (see [architecture.md, Parallel runs](architecture.md#parallel-runs)) each spawn subordinate work.
 
-- Every lane is an ordinary run on its own clone, its own jail per `sandbox.isolation`, its own `run_commands` policy, started by the fixed bootstrap `python -P -E -m agent6.ui.cli.lane_agent`
+- Every work lane is an ordinary run on its own clone, its own jail per `sandbox.isolation`, its own `run_commands` policy, started by the fixed bootstrap `python -P -E -m agent6.ui.cli.lane_agent`
     - the task, pins, caps, away mode and lineage travel in a launch file under the origin's state dir (`<state>/launch/<group>/lane-<n>.json`, `0600` in a `0700` dir, the config snapshot beside it); nothing model-written reaches the host argv
     - the bootstrap reads the file `AGENT6_LANE` names through `O_NOFOLLOW` and refuses a symlink, a foreign owner, a mode others can read or a dir others can write; `-P` keeps the clone off `sys.path` and `-E` ignores `PYTHONPATH`, so a planted `agent6/` or `sitecustomize.py` never imports (`tests/security/test_lane_launch_boundary.py`)
     - a detached lane has no terminal: a `run_commands = "ask"` prompt parks (`wait`) or is answered empty (`deny`) by the launch file's away mode, never approved
@@ -703,7 +703,14 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
 - A lane whose launch file carries a conversation contract is a `read_only` session: the same bootstrap and jail, with the tool surface cut at both boundaries, whatever the config allows
     - the tool list offers the navigation tools and `finish_session` (`no_tools`: nothing), and the dispatcher refuses every edit, command, verify, fetch, background and MCP name that slips past the list; no setup command runs and no MCP server starts
     - the provider caller counts every attempt against the contract's call ceiling, retries included, and the loop ends the session at the ceiling without executing that response's tool calls
-- Every spawned lane carries `AGENT6_SUBRUN=1`; both the `--parallel` flag and the coordinator's `lane_spawner` wiring refuse when it is set, so a lane cannot fan out or dispatch again.
+- Subordinate models and operator work entry points (`parallel`, `/parallel`, `--parallel`) cannot fan out, even with `parallel.tool = true`.
+    - a worker lane retains its configured harness-panel authority, independent of `parallel.tool`; the internal record-only dispatch seam uses the same executor, never a tool-supplied purpose or authority argument
+    - authority comes from the private launch's session id, checkout and conversation contract, checked against the execution; `AGENT6_SUBRUN` without a matching worker launch grants no panel authority, including in unrelated machine states
+    - a read-only review lane has neither work nor panel authority, so the allowed structure ends at that leaf
+    - panel costs sub-reserve the owning worker's remaining allowance; deadlines take the minimum of the panel bound and its ancestor's deadline
+- Import retains descendant session directories, dispatch records, objects, lineage and hidden target refs before worker-clone cleanup; stop follows live links across state directories and session buckets, including through a dead worker.
+    - ancestor settlement keeps the allowance held until cumulative `budget.update` rows confirm every panel child's charge through `settled_lanes`; importing descendant records does not charge that inclusive spend again
+    - child evidence binds only the child's retained review target, never the top-level checkout after a merge or later edit
 - The model's `parallel` tool is off by default (`[parallel].tool`) and gated twice: the tool list offers it only under the knob, in run mode, outside a lane and with a lane dispatcher installed, and the dispatcher refuses a call that slips past the list on the same grounds; the knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel; a lane the model dispatches is an ordinary run that may edit its clone, under 200 turns, 30 minutes and a share of the parent's remaining budget, and its commits join the parent's chain
 - A lane's config carries key references, never secret values
     - the coordinator writes each lane's config snapshot beside its launch file (the resolved `Config`: provider `base_url`, `api_key_env` names)

@@ -23,16 +23,18 @@ from agent6.config import Config, ConfigError
 from agent6.context import memory
 from agent6.harness import subrun
 from agent6.models import validate
-from agent6.sessions import ipc
+from agent6.sessions import ipc, journal, lane_dispatch, lineage
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import (
+    events,
     format,
     produced_result,
     session_is_live,
     session_log,
     summarize_session_dir,
+    tail_events,
 )
 
 
@@ -154,6 +156,7 @@ def bridge_spawner(
     gate_source: sessions_manifest.GateSource = "",
     limits: lane_records.LaneLimits | None = None,
     allowance: budget_reservations.BudgetAllowance | None = None,
+    contract: kinds.ConversationContract | None = None,
     runtime: LaneRuntime,
 ) -> lane_records.LaneResult:
     """Clone the origin and start the lane bootstrap detached in the clone.
@@ -179,6 +182,7 @@ def bridge_spawner(
         gate_source: Where the gate in the lane's config came from, "" when it has none.
         limits: The turn cap and deadline the lane runs under; None for the config's own.
         allowance: The lane's reserved share, which sets every cap; None for the config's.
+        contract: The harness-owned read-only conversation; None for work.
         runtime: The front-end's spawn primitive.
 
     Returns:
@@ -221,6 +225,7 @@ def bridge_spawner(
                 operator_task=operator_task,
                 limits=limits,
                 allowance=allowance,
+                contract=contract,
             ),
         )
     except (lane_launch.LaunchError, OSError) as exc:
@@ -237,7 +242,7 @@ def bridge_spawner(
             return []
         return [p for p in lane_bucket.iterdir() if p.is_dir()]
 
-    # AGENT6_SUBRUN keeps a lane from fanning out itself: depth 1 by construction.
+    # Subordinate models cannot dispatch work; only the harness may schedule panel leaves.
     markers = {
         "AGENT6_STREAM_TO_LOG": "1",
         "AGENT6_SUBRUN": "1",
@@ -290,6 +295,7 @@ def run_lane_to_completion(
     hard_stop: threading.Event | None = None,
     limits: lane_records.LaneLimits | None = None,
     allowance: budget_reservations.BudgetAllowance | None = None,
+    contract: kinds.ConversationContract | None = None,
     clock: Callable[[], float] = time.time,
 ) -> lane_records.LaneResult:
     """Run one subordinate lane to its end and import it into the origin.
@@ -330,6 +336,7 @@ def run_lane_to_completion(
         hard_stop: Set to skip the grace.
         limits: The turn cap and deadline the lane runs under; None for the config's own.
         allowance: The lane's reserved share; None for the config's caps.
+        contract: The harness-owned read-only conversation; None for work.
         clock: The wall clock the deadline is read against.
 
     Returns:
@@ -351,6 +358,7 @@ def run_lane_to_completion(
             gate_source=gate_source,
             limits=limits,
             allowance=allowance,
+            contract=contract,
             runtime=runtime,
         )
     res = spawner(spec, task)
@@ -519,24 +527,59 @@ def recorded_result(
     )
 
 
-def lane_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement:
+def lane_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement | None:
     """Read what a lane used from its journal, as its parent settles it.
 
     Args:
         session_dir: The lane's imported run dir.
 
     Returns:
-        The lane's spend and its last plan reading; a journal with no budget row reads as
-        nothing spent.
+        The inclusive spend and per-provider plan observations; None keeps the allowance
+        held when descendant records are incomplete or unreadable.
     """
+    try:
+        records = lane_dispatch.read_records(session_dir)
+    except lane_dispatch.DispatchRecordError:
+        return None
+    if any(
+        record.state != "complete" or any(not child.settled for child in record.children)
+        for record in records
+    ):
+        return None
+    # The journal includes settled descendants already. Never sum their journals again.
     scan = session_log.scan_session_log(session_dir / sessions_layout.LOGS_NAME)
-    provider = parallel_results.lane_provider(session_dir)
-    readings = ((provider, scan.plan_usage),) if scan.plan_usage is not None and provider else ()
+    if any(
+        child.session_id not in scan.settled_lanes
+        for record in records
+        if record.source == "panel"
+        for child in record.children
+    ):
+        return None
+    readings: list[tuple[float, str, agent6_budget.PlanUsage]] = []
+    for directory in (session_dir, *lineage.descendants_of(session_dir)):
+        for raw in tail_events(directory / sessions_layout.LOGS_NAME, follow=False):
+            if raw.get("type") != "budget.update":
+                continue
+            event = events.parse_event(raw)
+            if not isinstance(event, journal.BudgetUpdate) or event.account is None:
+                continue
+            account = event.account
+            provider = account.provider or parallel_results.lane_provider(directory)
+            if not provider or not account.windows:
+                continue
+            # Credits are already in the inclusive USD total; only replay plan windows.
+            plan = agent6_budget.PlanUsage(
+                windows=tuple(
+                    agent6_budget.PlanWindow(w.name, w.used_percent, w.window_minutes, w.resets_at)
+                    for w in account.windows
+                )
+            )
+            readings.append((events.event_epoch(raw.get("ts")) or 0.0, provider, plan))
     return agent6_budget.UsageSettlement(
         usd=scan.cost_usd or 0.0,
         usd_partial=scan.usd_partial,
-        tokens=0,
-        plan_readings=readings,
+        tokens=scan.unmetered_tokens,
+        plan_readings=tuple((p, r) for _, p, r in sorted(readings, key=lambda item: item[0])),
     )
 
 
@@ -566,14 +609,17 @@ def recover_lanes(
     Returns:
         One result per lane that has a session dir, in lane order.
     """
-    runs = sessions_layout.bucket_dir(origin_state, "runs")
     workdir_root = workdirs.subordinate_workdir_root(cfg, origin, group)
     results: list[lane_records.LaneResult] = []
     for lane, session_id in enumerate(children, start=1):
-        lane_dir = runs / session_id
-        if not lane_dir.exists() and not lane_dir.is_symlink():
+        matches = sessions_layout.session_matches(origin_state, session_id)
+        if not matches:
             continue
-        spec = lane_records.LaneSpec(lane, session_id, workdir_root / f"lane-{lane}", None)
+        lane_dir = matches[0].session_dir
+        mode = "read_only" if matches[0].subdir == "read_only" else "run"
+        spec = lane_records.LaneSpec(
+            lane, session_id, workdir_root / f"lane-{lane}", None, mode=mode
+        )
         branch = git_read.run_branch_for(session_id)
         if session_is_live(lane_dir):
             outcome = stop.stop_session(lane_dir, wait_s=lane_watch.STOP_GRACE_S)
@@ -625,7 +671,7 @@ def build_lane_recoverer(
     Returns:
         The recoverer, or None where no dispatch could have happened.
     """
-    if mode != "run" or os.environ.get("AGENT6_SUBRUN"):
+    if mode != "run":
         return None
 
     def recover(group: str, children: Sequence[str]) -> list[lane_records.LaneResult]:
@@ -702,7 +748,7 @@ def build_lane_spawner(
             )
         # The routes are validated before any clone; no model cache warns and proceeds.
         try:
-            settings = lane_settings(cfg, [lane.model for lane in lanes])
+            settings = [lane.settings or cfg.lane_settings(lane.model) for lane in lanes]
         except ConfigError as exc:
             raise ParallelError(str(exc)) from exc
         verdict = validate.validate_spec_models(
@@ -722,8 +768,9 @@ def build_lane_spawner(
                 session_id=f"{group_id}-l{i}",
                 workdir=workdir_root / f"lane-{i}",
                 settings=chosen,
+                mode="read_only" if lane.contract is not None else "run",
             )
-            for i, chosen in enumerate(settings, start=1)
+            for i, (chosen, lane) in enumerate(zip(settings, lanes, strict=True), start=1)
         ]
         paths.mkdir_for_real_user(sessions_layout.bucket_dir(origin_state, "runs"))
         import_lock = threading.Lock()
@@ -780,6 +827,7 @@ def build_lane_spawner(
                 hard_stop=hard_stop,
                 limits=lane.limits,
                 allowance=lane.allowance,
+                contract=lane.contract,
             )
 
         pairs = list(zip(specs, lanes, strict=True))
@@ -825,7 +873,7 @@ def build_coordinator_spawner(
 ) -> lane_records.GroupLaneSpawner | None:
     """Build the `/parallel` dispatcher for a run's loop, or None when dispatch is unavailable.
 
-    A non-write mode and a run inside a subordinate lane get none.
+    A subordinate worker retains the executor only for its configured harness panels.
 
     Args:
         cfg: The run's config.
@@ -843,7 +891,8 @@ def build_coordinator_spawner(
     Returns:
         The dispatcher, or None.
     """
-    if mode != "run" or os.environ.get("AGENT6_SUBRUN"):
+    authority = lane_launch.dispatch_authority(cfg, mode=mode, session_id=session_id, root=origin)
+    if not (authority.work or authority.panels):
         return None
     return build_lane_spawner(
         cfg,

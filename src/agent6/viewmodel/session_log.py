@@ -48,6 +48,8 @@ class LogScan:
             `provider_error` end; "" when none failed.
         cost_usd: The spend across every execution; None when no budget.update was seen.
         usd_partial: Some execution had unpriced spend, so `cost_usd` is a lower bound.
+        unmetered_tokens: Fallback tokens across every execution, including settled lanes.
+        settled_lanes: Child sessions whose spend is durably included in the journal.
         executions: One plus the completed resume executions.
         input_tokens: This execution's input tokens, None until a budget.update carries them.
         output_tokens: This execution's output tokens.
@@ -111,6 +113,8 @@ class LogScan:
     provider_error: str = ""
     cost_usd: float | None = None
     usd_partial: bool = False
+    unmetered_tokens: int = 0
+    settled_lanes: frozenset[str] = frozenset()
     executions: int = 1
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -517,6 +521,8 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         provider_error=life.provider_error,
         cost_usd=usage.session.usd if saw_budget else None,
         usd_partial=usage.session.usd_partial,
+        unmetered_tokens=usage.session.unmetered_tokens,
+        settled_lanes=frozenset(usage.session.settled_lanes),
         executions=life.executions,
         input_tokens=usage.execution.input_tokens,
         output_tokens=usage.execution.output_tokens,

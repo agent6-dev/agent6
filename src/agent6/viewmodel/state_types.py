@@ -168,11 +168,15 @@ class SessionUsage:
     """The session's usage across every execution, what the listings' usage cell shows.
 
     Attributes:
+        unmetered_tokens: Fallback tokens across every execution, including settled descendants.
+        settled_lanes: Child sessions whose spend is durably included in the journal.
         usd: The spend across every execution.
         usd_partial: Some execution's model had no price, so `usd` is a lower bound.
         plan_observed_points: The plan movement observed across every execution, in points.
     """
 
+    unmetered_tokens: int = 0
+    settled_lanes: tuple[str, ...] = ()
     usd: float = 0.0
     usd_partial: bool = False
     plan_observed_points: float = 0.0

@@ -16,11 +16,11 @@ from collections.abc import Collection
 
 from agent6 import budget as agent6_budget
 from agent6 import errors, terminal
-from agent6.app import merge, role_providers
+from agent6.app import merge
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
 from agent6.harness import advice, loop_snapshot
-from agent6.sessions import event_log, journal
+from agent6.sessions import budget_events, event_log, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import commit_message, git_ops, git_read
@@ -381,7 +381,7 @@ def settle_budget(budget: agent6_budget.BudgetTracker, events: event_log.EventSi
         events: The session journal.
     """
     if budget.settle():
-        events.emit(journal.BudgetUpdate(**role_providers.budget_update_fields(budget)))
+        events.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(budget)))
 
 
 def print_lane_config_notes(

@@ -12,7 +12,7 @@ import pathlib
 import shutil
 
 from agent6 import errors, kinds, lane_records, paths
-from agent6.sessions import layout
+from agent6.sessions import layout, lineage, process
 from agent6.vcs import git_ops, git_read
 
 
@@ -77,6 +77,7 @@ def import_run(
     dest_session_dir = layout.bucket_dir(origin_state, bucket) / lane_session_dir.name
     if dest_session_dir.exists():
         raise SubrunError(f"session dir already exists: {dest_session_dir}")
+    import_descendants(origin, lane_repo, lane_session_dir, origin_state)
     ref = tip = ""
     if model_control:
         try:
@@ -97,3 +98,47 @@ def import_run(
     paths.mkdir_for_real_user(dest_session_dir.parent)
     shutil.move(str(lane_session_dir), str(dest_session_dir))
     return lane_records.Imported(dest_session_dir, ref, tip)
+
+
+def import_descendants(
+    origin: pathlib.Path,
+    lane_repo: pathlib.Path,
+    lane_session_dir: pathlib.Path,
+    origin_state: pathlib.Path,
+) -> None:
+    """Retain descendant records and session-owned target refs before a worker clone goes.
+
+    Args:
+        origin: The receiving repository.
+        lane_repo: The worker clone, holding retained targets.
+        lane_session_dir: The worker's record.
+        origin_state: The receiving state directory.
+
+    Raises:
+        SubrunError: A descendant is live, its destination is occupied or a target fetch fails.
+    """
+    descendants = lineage.descendants_of(lane_session_dir)
+    if any(process.worker_is_alive(child) for child in descendants):
+        raise SubrunError("a descendant is still running; its worker clone must be retained")
+    # Hidden target refs keep evidence reachable after the clone and its object store go.
+    try:
+        for session in (lane_session_dir, *descendants):
+            for retained in git_read.session_refs(lane_repo, session.name):
+                git_ops.fetch_branch(origin, lane_repo, f"{retained}:{retained}")
+    except errors.GitError as exc:
+        raise SubrunError(
+            f"import retained session targets from {lane_repo} failed: {exc}"
+        ) from exc
+    for child in descendants:
+        dest = layout.bucket_dir(origin_state, child.parent.name) / child.name
+        source = child.resolve()
+        if dest.resolve() == source:
+            continue
+        if dest.exists() and not dest.is_symlink():
+            raise SubrunError(f"descendant session dir already exists: {dest}")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.is_symlink():
+            dest.unlink()
+        shutil.move(str(source), str(dest))
+        # Keep clone-side discovery valid until the whole import and cleanup finish.
+        source.symlink_to(dest, target_is_directory=True)

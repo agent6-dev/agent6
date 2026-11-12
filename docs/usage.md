@@ -161,11 +161,14 @@ With `parallel.tool = true` ([parallel](config.md#parallel)), a run's model is o
 The call dispatches through the `/parallel` path: a checkpoint, fresh clones of the committed tree, the lanes joined back in dispatch order, the run's remaining budget reserved and each lane's share its caps; the result returns as the tool's answer, naming each lane's join.
 Each lane is an ordinary run with the same tools as the parent: it may edit its clone, and its commits land on the parent's chain when it joins; a lane runs under 200 turns, 30 minutes and its share.
 The tool's description names every role's resolved model, effort and temperature and the configured providers, so the model can pick a selector such as `reviewer`.
-The tool is offered only in run mode, never inside a lane (dispatch is depth one) and never in a front-end without a lane dispatcher; a call that slips past the list is refused with the reason.
+The tool is offered only in run mode, never inside a subordinate run and never in a front-end without a lane dispatcher; a call that slips past the list is refused with the reason.
+A worker lane's configured harness panel retains authority to create bounded read-only leaves; neither the worker's model nor its `/parallel` steer may dispatch work.
 The knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel.
 
 A fan-out group has no model loop: steer one of its lanes instead.
-`agent6 stop ID` on a session with live lanes stops the lanes too, by the lineage their manifests record, and still does when the session itself has already ended.
+`agent6 stop ID` on a session with live lanes stops its descendants too, by the lineage their manifests record, including read-only leaves behind a worker that already ended.
+Worker import preserves descendant records and receipts in the original repository's state directory before clone cleanup.
+Their spend is included in the worker's total, not an extra charge, and their evidence certifies only the child's reviewed target, not the top-level tree.
 A run interrupted while its lanes ran finishes that dispatch first when resumed: lanes still running are stopped, finished ones are imported and joined once, their spend is settled once, and the model hears the group's outcome before its first call.
 Every session that dispatched lanes shows them: `sessions show`, the hubs and `attach --json` list a run's lanes under it whether it is a `run --parallel` fan-out or a run that used `/parallel`, and the run's receipt carries a `Lanes` section (one line per lane: its join, its spend) with the spend the lanes added to the run's total named, so the total is read as inclusive.
 The refusal names the lane session IDs.

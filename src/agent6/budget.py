@@ -338,6 +338,7 @@ class BudgetSnapshot:
         per_model: The usage totals by provider/model route.
         reserved: What unsettled lanes hold, per currency; not spend.
         available: What is left to spend or reserve, per currency, with the cap's meaning.
+        settled_lanes: Child sessions charged to this execution's cumulative totals.
     """
 
     input_total: int
@@ -354,6 +355,7 @@ class BudgetSnapshot:
     per_model: dict[kinds.ModelRoute, ModelUsage]
     reserved: budget_reservations.BudgetAmount
     available: budget_reservations.BudgetAllowance
+    settled_lanes: frozenset[str] = frozenset()
 
     @property
     def plan_latest(self) -> PlanUsage | None:
@@ -417,6 +419,7 @@ class BudgetTracker:
         default_factory=dict
     )
     _children_usd: float = 0.0
+    _charged_lanes: set[str] = dataclasses.field(default_factory=set)
 
     def record(
         self,
@@ -625,6 +628,7 @@ class BudgetTracker:
             else:
                 self._children_usd += max(usage.usd, 0.0)
                 self._unmetered_tokens += max(usage.tokens, 0)
+                self._charged_lanes.add(child)
                 provider = ""
                 for provider, plan in usage.plan_readings:
                     self._note_plan_usage(provider, plan)
@@ -854,6 +858,7 @@ class BudgetTracker:
                 per_model=per_model,
                 reserved=self._held_locked(),
                 available=self._available_locked(),
+                settled_lanes=frozenset(self._charged_lanes),
             )
 
     def estimate_usd(self) -> tuple[float, bool]:

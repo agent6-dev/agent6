@@ -65,11 +65,14 @@ depends_on = [
   "agent6.sandbox.container",
   "agent6.sandbox.detect",
   "agent6.sandbox.jail_session",
+  "agent6.sessions.budget_events",
   "agent6.sessions.event_log",
   "agent6.sessions.id",
   "agent6.sessions.ipc",
   "agent6.sessions.journal",
+  "agent6.sessions.lane_dispatch",
   "agent6.sessions.layout",
+  "agent6.sessions.lineage",
   "agent6.sessions.lock",
   "agent6.sessions.manifest",
   "agent6.sessions.process",
@@ -173,6 +176,8 @@ depends_on = [
 # reads review_panel and verify_gate notice sizes within this harness boundary.
 # The package re-exports prompt_preview; it uses dag_focus, prompt_blocks,
 # repo_context and toolset within this boundary.
+# parallel_dispatch shares one executor and budget reservation path for work and panels.
+# parallel_join owns merge/DAG projections; subrun retains descendant session records.
 path = "agent6.harness"
 depends_on = [
   "agent6.budget",  # loop harness needs BudgetExceededError
@@ -199,6 +204,7 @@ depends_on = [
   # renders the same level-aware blocks the loop does
   "agent6.sandbox",
   "agent6.sandbox.detect",
+  "agent6.sessions.budget_events",
   "agent6.sessions.completion",
   "agent6.sessions.event_log",
   # the start-family emitter stamps worker.pid before the event is readable
@@ -208,6 +214,7 @@ depends_on = [
   "agent6.sessions.journal",
   "agent6.sessions.lane_dispatch",
   "agent6.sessions.layout",
+  "agent6.sessions.lineage",
   "agent6.sessions.objects",
   "agent6.sessions.process",
   "agent6.task_text",  # the session.start headline is the operator's own words
@@ -264,6 +271,10 @@ depends_on = ["agent6.portable"]
 [[modules]]
 path = "agent6.sessions.event_log"
 depends_on = ["agent6.journal_tail", "agent6.paths", "agent6.sessions.journal"]
+
+[[modules]]
+path = "agent6.sessions.budget_events"
+depends_on = ["agent6.budget", "agent6.sessions.journal"]
 
 [[modules]]
 path = "agent6.sessions.journal"
@@ -1048,3 +1059,8 @@ depends_on = ["agent6.config.harness_config", "agent6.config.validation", "agent
 # Local control resolution is shared by policy assembly and passive reporting.
 path = "agent6.tools.target_policy"
 depends_on = ["agent6.config", "agent6.kinds"]
+
+[[modules]]
+# Shared stop/import/cleanup discovery follows live clone links and read-only leaf records.
+path = "agent6.sessions.lineage"
+depends_on = ["agent6.sessions.layout", "agent6.sessions.manifest"]

@@ -17,7 +17,7 @@ import pydantic
 
 from agent6 import budget_reservations, lane_records, portable
 
-RECORD_VERSION = 1
+RECORD_VERSION = 2
 DIR_NAME = "dispatch"
 DispatchState = Literal["prepared", "running", "settling", "joining", "complete"]
 
@@ -113,6 +113,7 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         version: The record's shape; a newer one refuses the read.
         identity: The dispatch's id, the group id `<coordinator>-p<n>`.
         source: Who asked.
+        join_policy: Ordered work merge or harness-owned record-only import.
         owner: The execution that made it.
         turn: The turn it was dispatched after.
         base: The chain tip the lanes were cut from.
@@ -127,6 +128,7 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     version: int = RECORD_VERSION
     identity: str
     source: lane_records.DispatchSource
+    join_policy: Literal["merge", "record_only"] = "merge"
     owner: str
     turn: int
     base: str

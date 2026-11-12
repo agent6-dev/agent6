@@ -100,6 +100,7 @@ def main() -> int:
         common.error(f"{exc}")
         return 2
     # The away mode is the operator's resolved policy; the run's prompts read the marker.
+    os.environ["AGENT6_SUBRUN"] = "1"
     os.environ["AGENT6_DETACHED_AWAY"] = launch.away
     os.chdir(launch.workdir)
     if not preflight.require_git_repo(launch.workdir):

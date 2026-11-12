@@ -11,6 +11,7 @@ from agent6 import budget, kinds
 from agent6.app import role_providers
 from agent6.config import model as config_model
 from agent6.providers import provider_types
+from agent6.sessions import budget_events
 
 
 def test_shared_model_id_keeps_each_routes_price(
@@ -57,7 +58,7 @@ def test_shared_model_id_keeps_each_routes_price(
             provider.call(system="s", messages=[])
     assert tracker.estimate_usd() == (11.0, False)
     assert tracker.fraction_remaining() == pytest.approx(0.45)
-    assert role_providers.budget_update_fields(tracker)["usd_total"] == 11.0
+    assert budget_events.budget_update_fields(tracker)["usd_total"] == 11.0
     assert set(tracker.snapshot().per_model) == {
         kinds.ModelRoute("expensive", "shared"),
         kinds.ModelRoute("cheap", "shared"),
@@ -88,7 +89,7 @@ def test_the_budget_row_names_the_account_it_read() -> None:
         tracker.record_plan_preflight(
             provider, budget.PlanUsage.single(used, 300, 2e9, secondary_used_percent=5.0)
         )
-    fields = role_providers.budget_update_fields(tracker)
+    fields = budget_events.budget_update_fields(tracker)
     account = fields["account"]
     assert account.provider == "b" and account.used_percent == 40.0
     assert [w.name for w in account.windows] == ["primary", "secondary"]

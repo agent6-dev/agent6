@@ -3,8 +3,8 @@
 """Dispatch a `/parallel` steer.
 
 `ParallelDispatcher` owns the policy: when to cut lanes, the DAG stamps, the events, the
-injected group spawner. The functions below expand a segment into lanes, join one lane's
-branch and reduce lane outcomes to the DAG stamp and the summary message, without a Harness.
+injected group spawner. `parallel_join` projects lane results into ordered merges, DAG
+stamps and summaries; record-only panel batches share the executor without merging.
 """
 
 from __future__ import annotations
@@ -15,15 +15,13 @@ import time
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
-import pydantic
-
 from agent6 import budget as agent6_budget
 from agent6 import directive, errors, lane_records
 from agent6.graph import curator as graph_curator
-from agent6.graph import models as graph_models
-from agent6.harness import dag_focus, run_chain, subrun
-from agent6.sessions import journal, lane_dispatch
-from agent6.vcs import git_ops, git_read
+from agent6.harness import parallel_join, run_chain, subrun
+from agent6.sessions import budget_events, journal, lane_dispatch
+from agent6.vcs import git_read
+from agent6.viewmodel import session_log
 
 if TYPE_CHECKING:
     from agent6.harness import loop_conversation, loop_state
@@ -56,239 +54,6 @@ def segment_lanes(
     return [lane_records.LaneTask(task=seg.task, model=model, pins=lane_pins) for model in models]
 
 
-def join_lane_result(
-    root: pathlib.Path,
-    res: lane_records.LaneResult,
-    *,
-    ref: str,
-    fallback_parent: str | None,
-    identity: git_read.CommitIdentity | None,
-    also_branch: str | None,
-) -> lane_records.LaneJoin:
-    """Join one returned lane's branch onto the coordinator's chain.
-
-    `chain_merge` leaves HEAD and the operator's checkout alone; the worktree gains the lane's
-    files. Never raises; the DAG stamp is the segment's (`segment_stamp`).
-
-    Args:
-        root: The repository root.
-        res: The lane's result.
-        ref: The chain ref the merge lands on.
-        fallback_parent: The parent an unborn ref merges onto, or None.
-        identity: The merge commit's identity, or None for the repo's.
-        also_branch: A checked-out branch to move with the ref, or None.
-
-    Returns:
-        `joined` with the sha, `no_changes` for a lane whose imported tip holds no commit
-        beyond its base (nothing merged), `conflict`, or `failed` for a lane that imported
-        nothing.
-    """
-    rid = res.spec.session_id
-    if not res.ok:
-        return lane_records.LaneJoin(rid, res.branch, "failed", "", res.error)
-    if not res.has_commits:
-        return lane_records.LaneJoin(rid, res.branch, "no_changes", "", "")
-    try:
-        sha = git_ops.chain_merge(
-            root,
-            res.imported_ref or res.branch,
-            f"merge {res.branch}",
-            ref=ref,
-            fallback_parent=fallback_parent,
-            identity=identity,
-            also_branch=also_branch,
-        )
-    except (errors.GitError, OSError) as exc:
-        return lane_records.LaneJoin(rid, res.branch, "failed", "", str(exc))
-    if sha is None:
-        return lane_records.LaneJoin(rid, res.branch, "conflict", "", "merge conflict")
-    return lane_records.LaneJoin(rid, res.branch, "joined", sha, "")
-
-
-def segment_stamp(lanes: list[lane_records.LaneJoin]) -> tuple[graph_models.NodeStatus, str, str]:
-    """Reduce one segment's lane joins to its DAG stamp.
-
-    A segment passes when any lane joined or ended with no changes, recording the last
-    joined sha (none for no changes); the note names every lane. A conflict counts as not
-    joined.
-
-    Args:
-        lanes: The segment's joins.
-
-    Returns:
-        The status, the note and the sha ("" when failed).
-    """
-    joined = [j for j in lanes if j.status == "joined"]
-    note = "; ".join(lane_note(j) for j in lanes)
-    if joined or any(j.status == "no_changes" for j in lanes):
-        return "passed", note, joined[-1].sha if joined else ""
-    return "failed", note, ""
-
-
-def lane_note(j: lane_records.LaneJoin) -> str:
-    """Return one lane's outcome as a DAG note line."""
-    if j.status == "joined":
-        return f"{j.session_id} joined at {j.sha[:12]}"
-    if j.status == "no_changes":
-        return f"{j.session_id} made no changes"
-    if j.status == "conflict":
-        return f"{j.session_id} conflicted; merge manually"
-    return f"{j.session_id} failed: {j.detail}"
-
-
-def summary_text(group: str, lanes: list[lane_records.LaneJoin]) -> str:
-    """Return the one user message summarizing every lane's outcome."""
-    lines = [f"[parallel] group {group} complete ({len(lanes)} lane(s)):"]
-    for j in lanes:
-        if j.status == "joined":
-            lines.append(f"  - {j.session_id} ({j.branch}): joined at {j.sha[:12]}")
-        elif j.status == "no_changes":
-            lines.append(f"  - {j.session_id} ({j.branch}): finished with no changes to join.")
-        elif j.status == "conflict":
-            # Git is agent6's in this run and `.git` is read-only in the jail: the operator merges.
-            lines.append(
-                f"  - {j.session_id} ({j.branch}): CONFLICT -- branch imported but the merge"
-                f" conflicted. It exists locally for the operator (`git merge {j.branch}`);"
-                " continue without it."
-            )
-        else:
-            lines.append(f"  - {j.session_id} ({j.branch}): FAILED -- {j.detail}; nothing joined.")
-    lines.append("Review what landed and continue.")
-    return "\n".join(lines)
-
-
-def join_of(child: lane_dispatch.ChildRecord) -> lane_records.LaneJoin:
-    """Return a recorded lane's join; a lane never joined reads as failed."""
-    join = child.join
-    if join is None:
-        return lane_records.LaneJoin(child.session_id, "", "failed", "", "not joined")
-    return lane_records.LaneJoin(child.session_id, join.branch, join.status, join.sha, join.detail)
-
-
-def spawn_lanes(
-    spawner: lane_records.GroupLaneSpawner,
-    lanes: list[lane_records.LaneTask],
-    group: str,
-    *,
-    at: str | None,
-) -> list[lane_records.LaneResult]:
-    """Run the lanes through the spawner and check the result count.
-
-    Args:
-        spawner: The ui-side group spawner.
-        lanes: The lanes to run.
-        group: The group's name.
-        at: The commit the lanes are cut from, or None for HEAD.
-
-    Returns:
-        One result per lane, in order.
-
-    Raises:
-        SubrunError: The spawner returned a result count other than the lane count.
-    """
-    results = spawner(lanes, group, at=at)
-    if len(results) != len(lanes):
-        raise subrun.SubrunError(
-            f"group spawner returned {len(results)} result(s) for {len(lanes)} lane(s)"
-        )
-    return results
-
-
-def parallel_parent_id(
-    curator: graph_curator.GraphCurator | None, root_task_id: str | None
-) -> str | None:
-    """Return the parent for a dispatched subtask: the cursor's open node, else the run root."""
-    if curator is None:
-        return root_task_id
-    return dag_focus.current_task_id(curator.nodes(), curator.cursor()) or root_task_id
-
-
-def add_parallel_node(
-    curator: graph_curator.GraphCurator | None,
-    task: str,
-    parent_id: str | None,
-    *,
-    source: lane_records.DispatchSource = "operator",
-    log: Callable[[str], None],
-) -> str | None:
-    """Add a steering-created DAG node for one dispatched task.
-
-    Args:
-        curator: The graph, or None.
-        task: The task text; its first line is the title.
-        parent_id: The parent node, or None.
-        source: Who dispatched it, named in the node's rationale.
-        log: The run's text logger.
-
-    Returns:
-        The node's id, or None when no curator is wired or the add failed; the dispatch
-        proceeds either way.
-    """
-    if curator is None:
-        return None
-    title = next((ln.strip() for ln in task.splitlines() if ln.strip()), "")[:200]
-    try:
-        node = curator.add_subtask(
-            graph_models.AddSubtaskIntent(
-                parent_id=parent_id,
-                draft=graph_models.TaskNodeDraft(
-                    title=title or "(parallel task)",
-                    rationale=f"dispatched through /parallel by the {source}",
-                    created_by="steering",
-                ),
-            )
-        )
-        return node.id
-    except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
-        log(f"PARALLEL: DAG node add failed: {exc}")
-        return None
-
-
-def stamp_parallel_node(
-    curator: graph_curator.GraphCurator | None,
-    node_id: str | None,
-    *,
-    status: graph_models.NodeStatus,
-    note: str,
-    sha: str = "",
-    log: Callable[[str], None],
-) -> None:
-    """Record a dispatched node's join sha, when given, then its final status.
-
-    A curator fault is logged, never raised.
-
-    Args:
-        curator: The graph, or None.
-        node_id: The node, or None.
-        status: The final status.
-        note: The status note.
-        sha: The join sha, or "".
-        log: The run's text logger.
-    """
-    if curator is None or node_id is None:
-        return
-    try:
-        if sha:
-            curator.record_commit(graph_models.RecordCommitIntent(id=node_id, sha=sha))
-        curator.update_status(
-            graph_models.UpdateStatusIntent(id=node_id, new_status=status, note=note)
-        )
-    except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
-        log(f"PARALLEL: DAG node stamp failed for {node_id}: {exc}")
-
-
-def stamp_segment_node(
-    curator: graph_curator.GraphCurator | None,
-    node_id: str | None,
-    lanes: list[lane_records.LaneJoin],
-    *,
-    log: Callable[[str], None],
-) -> None:
-    """Stamp one segment's DAG node from its lanes' joins (`segment_stamp`)."""
-    status, note, sha = segment_stamp(lanes)
-    stamp_parallel_node(curator, node_id, status=status, note=note, sha=sha, log=log)
-
-
 @dataclasses.dataclass(slots=True)
 class ParallelDispatcher:
     """Dispatch sibling lane groups for one run, each recorded so a resume can finish it.
@@ -307,6 +72,7 @@ class ParallelDispatcher:
         budget: The run's meter; None without one.
         session_dir: Where the dispatch records live; None for a harness without a run dir.
         lane_recoverer: Finds an interrupted dispatch's lanes on resume; None when none can.
+        authority: Work and harness-panel permissions from the application.
         clock: The wall clock.
     """
 
@@ -323,6 +89,9 @@ class ParallelDispatcher:
     budget: agent6_budget.BudgetTracker | None = None
     session_dir: pathlib.Path | None = None
     lane_recoverer: lane_records.LaneRecoverer | None = None
+    authority: lane_records.DispatchAuthority = dataclasses.field(
+        default_factory=lane_records.DispatchAuthority
+    )
     clock: Callable[[], float] = time.time
 
     def dispatch(  # noqa: PLR0911  # one return per refusal
@@ -356,6 +125,10 @@ class ParallelDispatcher:
         Returns:
             The result; `dispatched` False names a refusal before any clone.
         """
+        if source == "panel" or not self.authority.work:
+            return self.refusal(
+                "work dispatch is unavailable in a subordinate run; nothing dispatched."
+            )
         if self.lane_spawner is None:
             return self.refusal(
                 "parallel dispatch is not available in this front-end; continuing normally."
@@ -405,9 +178,11 @@ class ParallelDispatcher:
             )
             for lane, child in zip(lanes, children, strict=True)
         ]
-        parent_id = parallel_parent_id(self.curator, state.root_task_id)
+        parent_id = parallel_join.parallel_parent_id(self.curator, state.root_task_id)
         node_ids = [
-            add_parallel_node(self.curator, seg.task, parent_id, source=source, log=self.log)
+            parallel_join.add_parallel_node(
+                self.curator, seg.task, parent_id, source=source, log=self.log
+            )
             for seg in segments
         ]
         record = lane_dispatch.DispatchRecord(
@@ -449,38 +224,144 @@ class ParallelDispatcher:
             self.emit_graph_snapshot()
         # Persisted before the group blocks: a crash there would reuse this group's id on resume.
         self.save_snapshot(state, conversation.to_wire(), next_turn=turn + 1)
-        self.log(
-            f"PARALLEL: dispatching group {identity} "
-            f"({len(lanes)} lane(s) across {len(segments)} task(s))"
+        return self.execute(record, lanes, group)
+
+    def dispatch_panel(  # noqa: PLR0911  # one return per refusal
+        self,
+        lanes: list[lane_records.LaneTask],
+        *,
+        panel_id: str,
+        at: str,
+        turn: int = 0,
+    ) -> lane_records.DispatchResult:
+        """Submit a harness-owned read-only batch through the ordinary lane executor.
+
+        The retained target is supplied by the harness; no checkpoint or merge changes it.
+        The review policy owns seat selection and batching, not this execution seam.
+
+        Args:
+            lanes: Bounded conversations with resolved seat settings.
+            panel_id: The harness's stable panel/batch id.
+            at: The retained immutable target commit.
+            turn: The owning worker's completed turn.
+
+        Returns:
+            The record-only joins, or a refusal before launch.
+        """
+        if not self.authority.panels or self.lane_spawner is None:
+            return self.refusal("harness panel scheduling is unavailable in this execution.")
+        if (
+            self.session_dir is None
+            or not at
+            or not panel_id
+            or not panel_id.replace("-", "").isalnum()
+        ):
+            return self.refusal("a panel needs a session dir, retained target and safe panel id.")
+        if not lanes or len(lanes) > self.max_lanes or any(lane.contract is None for lane in lanes):
+            return self.refusal(
+                "a panel batch needs bounded read-only lanes within parallel.max_lanes."
+            )
+        group = f"r{panel_id}"
+        identity = f"{self.session_id}-{group}"
+        if lane_dispatch.record_path(self.session_dir, identity).exists():
+            return self.refusal(
+                "the panel batch already has a dispatch record; reconcile it instead."
+            )
+        children = [f"{identity}-l{i}" for i in range(1, len(lanes) + 1)]
+        grant = None
+        if self.budget is not None:
+            try:
+                grant = self.budget.reserve(identity, children, owner=self.execution_id)
+            except agent6_budget.BudgetExceededError as exc:
+                return self.refusal(f"the panel budget is exhausted ({exc}); nothing dispatched.")
+        bounded: list[lane_records.LaneTask] = []
+        for lane, child in zip(lanes, children, strict=True):
+            assert lane.contract is not None
+            deadlines = [self.clock() + MODEL_LANE_DEADLINE_S]
+            if self.authority.deadline_at is not None:
+                deadlines.append(self.authority.deadline_at)
+            if lane.limits is not None and lane.limits.deadline_at is not None:
+                deadlines.append(lane.limits.deadline_at)
+            bounded.append(
+                dataclasses.replace(
+                    lane,
+                    limits=lane_records.LaneLimits(
+                        max_turns=lane.contract.max_calls, deadline_at=min(deadlines)
+                    ),
+                    allowance=grant.share_of(child) if grant is not None else None,
+                )
+            )
+        record = lane_dispatch.DispatchRecord(
+            identity=identity,
+            source="panel",
+            join_policy="record_only",
+            owner=self.execution_id,
+            turn=turn,
+            base=at,
+            segments=(),
+            children=tuple(
+                lane_dispatch.ChildRecord(
+                    session_id=child,
+                    lane=i,
+                    task=lane.task,
+                    model=lane.model,
+                    share=lane.allowance,
+                    limits=lane.limits,
+                )
+                for i, (child, lane) in enumerate(zip(children, bounded, strict=True), start=1)
+            ),
         )
+        try:
+            self.write(record)
+        except OSError as exc:
+            if self.budget is not None:
+                self.budget.release(identity)
+            return self.refusal(
+                f"could not persist the panel dispatch ({exc}); nothing dispatched."
+            )
+        return self.execute(record, bounded, group)
+
+    def execute(
+        self, record: lane_dispatch.DispatchRecord, lanes: list[lane_records.LaneTask], group: str
+    ) -> lane_records.DispatchResult:
+        """Run a published work or panel batch, then settle and land it under its recorded policy.
+
+        Args:
+            record: The durable prepared dispatch.
+            lanes: Its bounded tasks, in child order.
+            group: The group suffix used by the shared spawner.
+
+        Returns:
+            The completed result, or a diagnosed spawner failure with unresolved holds.
+        """  # noqa: DOC501  # the spawner's SubrunError is caught below
+        assert self.lane_spawner is not None
+        identity = record.identity
+        self.log(f"PARALLEL: dispatching group {identity} ({len(lanes)} lane(s))")
         self.emit(
             journal.LoopParallelDispatched(
                 group=group,
                 lanes=len(lanes),
-                tasks=[seg.task[:200] for seg in segments],
-                source=source,
+                tasks=[lane.task[:200] for lane in lanes],
+                source=record.source,
             )
         )
         record = record.advanced("running")
         self.write(record)
         try:
-            # Blocks until the group returns; no provider call meanwhile.
-            results = spawn_lanes(self.lane_spawner, lanes, group, at=record.base or None)
+            results = self.lane_spawner(lanes, group, at=record.base or None)
+            if len(results) != len(lanes):
+                raise subrun.SubrunError(
+                    f"group spawner returned {len(results)} result(s) for {len(lanes)} lane(s)"
+                )
         except Exception as exc:
-            # The spawner is an injected ui-side callback; any fault it leaks answers the steer.
-            # Everything after this point never raises: the join and the stamp catch their own.
+            # The front-end callback may fail after launching: unknown usage stays held.
             self.log(f"PARALLEL: group {identity} dispatch failed: {exc}")
             self.fail_nodes(record, f"dispatch failed: {exc}")
             self.emit(journal.LoopParallelFailed(group=identity, error=str(exc)))
-            message = (
-                f"group {identity} dispatch failed: {exc}. Nothing was joined; continuing normally."
-            )
-            self.log(f"PARALLEL: {message}")
-            record = self.settled(record, {}).advanced("complete", message=f"[parallel] {message}")
+            message = f"[parallel] group {identity} dispatch failed: {exc}. Nothing was joined."
+            record = self.settled(record, {}).advanced("complete", message=message)
             self.write(record)
-            return lane_records.DispatchResult(
-                identity, True, (), f"[parallel] {message}", base=record.base
-            )
+            return lane_records.DispatchResult(identity, True, (), message, base=record.base)
         return self.land(record, results)
 
     def land(
@@ -501,10 +382,10 @@ class ParallelDispatcher:
         by_id = {res.spec.session_id: res for res in results}
         record = self.settled(record, by_id)
         record = self.joined(record, by_id)
-        joins = [join_of(child) for child in record.children]
+        joins = [parallel_join.join_of(child) for child in record.children]
         cursor = 0
         for seg in record.segments:
-            stamp_segment_node(
+            parallel_join.stamp_segment_node(
                 self.curator, seg.node_id, joins[cursor : cursor + seg.lanes], log=self.log
             )
             cursor += seg.lanes
@@ -527,7 +408,7 @@ class ParallelDispatcher:
         ]
         if failures:
             self.emit(journal.LoopParallelFailed(group=record.identity, lanes=failures))
-        message = summary_text(record.identity, joins)
+        message = parallel_join.summary_text(record.identity, joins)
         record = record.advanced("complete", message=message)
         self.write(record)
         return lane_records.DispatchResult(
@@ -574,8 +455,8 @@ class ParallelDispatcher:
                 )
             )
         record = record.model_copy(update={"children": tuple(children)})
-        self.write(record)
         self.emit_budget(record.turn)
+        self.write(record)
         return record
 
     def joined(
@@ -598,7 +479,17 @@ class ParallelDispatcher:
             if child.join is not None:
                 continue
             before = self.chain.tip() or ""
-            join = self.join_child(child, by_id.get(child.session_id))
+            res = by_id.get(child.session_id)
+            if record.join_policy == "record_only":
+                join = lane_records.LaneJoin(
+                    child.session_id,
+                    "",
+                    "no_changes" if res is not None and res.ok else "failed",
+                    "",
+                    res.error if res is not None else "no imported record",
+                )
+            else:
+                join = self.join_child(child, res)
             record = record.with_child(
                 child.model_copy(
                     update={
@@ -644,7 +535,7 @@ class ParallelDispatcher:
             return lane_records.LaneJoin(
                 res.spec.session_id, res.branch, "joined", sha or (self.chain.tip() or ""), ""
             )
-        return join_lane_result(
+        return parallel_join.join_lane_result(
             self.chain.root,
             res,
             ref=ref,
@@ -678,7 +569,19 @@ class ParallelDispatcher:
             return
         for found in records:
             record = found
-            if record.state == "complete":
+            accounted = session_log.scan_session_log(self.session_dir / "logs.jsonl").settled_lanes
+            if record.source == "panel":
+                record = record.model_copy(
+                    update={
+                        "children": tuple(
+                            child.model_copy(update={"settled": False})
+                            if child.settled and child.session_id not in accounted
+                            else child
+                            for child in record.children
+                        )
+                    }
+                )
+            if record.state == "complete" and all(c.settled for c in record.children):
                 if not record.delivered:
                     self.deliver(
                         conversation,
@@ -696,7 +599,11 @@ class ParallelDispatcher:
                     record.identity,
                     shares,
                     owner=record.owner,
-                    settled=frozenset(c.session_id for c in record.children if c.settled),
+                    settled=frozenset(
+                        c.session_id
+                        for c in record.children
+                        if c.session_id in accounted or (record.source != "panel" and c.settled)
+                    ),
                 )
             children = [c.session_id for c in record.children]
             results = (
@@ -704,15 +611,40 @@ class ParallelDispatcher:
                 if self.lane_recoverer is not None
                 else []
             )
-            if record.state in ("prepared", "running") and not results:
+            if (
+                record.state in ("prepared", "running")
+                and self.lane_recoverer is not None
+                and not results
+            ):
                 if self.budget is not None:
+                    for child in record.children:
+                        if child.share is not None:
+                            self.budget.settle_lane(
+                                record.identity,
+                                child.session_id,
+                                agent6_budget.UsageSettlement(usd=0, usd_partial=False, tokens=0),
+                            )
                     self.budget.release(record.identity)
                 message = (
                     f"[parallel] group {record.identity}: dispatch interrupted before launch;"
                     " nothing ran."
                 )
                 self.fail_nodes(record, "dispatch interrupted before launch")
-                record = record.advanced("complete", message=message)
+                record = record.model_copy(
+                    update={
+                        "children": tuple(
+                            child.model_copy(
+                                update={
+                                    "settled": True,
+                                    "outstanding": False,
+                                    "usage": lane_dispatch.UsageRecord(usd=0.0),
+                                }
+                            )
+                            for child in record.children
+                        ),
+                    }
+                ).advanced("complete", message=message)
+                self.emit_budget(record.turn)
                 self.write(record)
                 self.deliver(
                     conversation,
@@ -766,13 +698,20 @@ class ParallelDispatcher:
     def fail_nodes(self, record: lane_dispatch.DispatchRecord, note: str) -> None:
         """Stamp every segment's DAG node failed with the note."""
         for seg in record.segments:
-            stamp_parallel_node(self.curator, seg.node_id, status="failed", note=note, log=self.log)
+            parallel_join.stamp_parallel_node(
+                self.curator, seg.node_id, status="failed", note=note, log=self.log
+            )
         self.emit_graph_snapshot()
 
     def emit_budget(self, turn: int) -> None:
         """Journal the meter after a settlement, so the lanes' charge is on the record."""
         if self.budget is None:
             return
+        self.emit(
+            journal.BudgetUpdate(
+                **budget_events.budget_update_fields(self.budget),
+            )
+        )
         snap = self.budget.snapshot()
         cost, _ = self.budget.estimate_usd()
         self.emit(

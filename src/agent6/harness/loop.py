@@ -1933,6 +1933,7 @@ class Harness:
             curator=self.curator,
             max_lanes=self.config.parallel.max_lanes,
             lane_spawner=self.bridge.lane_spawner,
+            authority=self.bridge.lane_authority,
             save_snapshot=lambda *args, **kwargs: loop_resume.save_resume_snapshot(
                 self, *args, **kwargs
             ),

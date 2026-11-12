@@ -96,6 +96,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `settled_lanes` | `list, optional` | Child session IDs included in this execution's cumulative spend. |
 | `usd_total` | `float` | Cumulative USD spend across provider/model routes, including purchased credits. |
 | `input_total` | `int, optional` | Cumulative input tokens. |
 | `output_total` | `int, optional` | Cumulative output tokens. |
@@ -2577,6 +2578,7 @@ Source: [`agent6.sessions.lane_dispatch.DispatchRecord`](https://github.com/agen
 | `version` | `int` | The record's shape; a newer one refuses the read. |
 | `identity` | `str` | The dispatch's id, the group id `<coordinator>-p<n>`. |
 | `source` | `Literal['operator', 'model', 'panel']` | Who asked. |
+| `join_policy` | `Literal['merge', 'record_only']` | Ordered work merge or harness-owned record-only import. |
 | `owner` | `str` | The execution that made it. |
 | `turn` | `int` | The turn it was dispatched after. |
 | `base` | `str` | The chain tip the lanes were cut from. |
@@ -3858,6 +3860,8 @@ Source: [`agent6.viewmodel.state_types.SessionUsage`](https://github.com/agent6-
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `unmetered_tokens` | `int` | Fallback tokens across every execution, including settled descendants. |
+| `settled_lanes` | `tuple[str, ...]` | Child sessions whose spend is durably included in the journal. |
 | `usd` | `float` | The spend across every execution. |
 | `usd_partial` | `bool` | Some execution's model had no price, so `usd` is a lower bound. |
 | `plan_observed_points` | `float` | The plan movement observed across every execution, in points. |

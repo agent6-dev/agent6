@@ -70,8 +70,9 @@ class OperatorBridge:
             the undone text, or None with the reason printed. Injected: harness never imports app.
         review_preparer: Builds a review message for this checkout, or returns operator feedback.
             Injected by app, which owns range resolution and checkout selection.
-        lane_spawner: The ui-side group spawner `/parallel` dispatches through; None (headless,
-            or inside a lane) makes the directive answer with feedback and continue.
+        lane_authority: Work and harness-panel permissions, resolved from trusted launch data.
+        lane_spawner: The shared executor for work and harness-panel batches; None refuses
+            dispatch. `lane_authority` controls which entry point may use it.
         lane_recoverer: Finds an interrupted dispatch's lanes on resume: stops what runs,
             imports what finished; None leaves such a dispatch diagnosed from its record.
     """
@@ -92,6 +93,9 @@ class OperatorBridge:
         default=lambda _i, _sha: "continue"
     )
     undo_forker: Callable[[], tuple[str, str] | None] | None = None
+    lane_authority: lane_records.DispatchAuthority = dataclasses.field(
+        default_factory=lane_records.DispatchAuthority
+    )
     lane_spawner: lane_records.GroupLaneSpawner | None = None
     lane_recoverer: lane_records.LaneRecoverer | None = None
     review_preparer: Callable[[str], tuple[bool, str]] | None = None

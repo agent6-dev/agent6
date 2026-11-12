@@ -271,7 +271,14 @@ def test_a_backgrounded_command_stops_through_the_session(tmp_path: pathlib.Path
     session = _session(tmp_path)
     try:
         marker = tmp_path / "command.pid"
-        handle = session.start_background(("sh", "-c", f"echo $$ > {marker}; exec sleep 300"))
+        # Existence signals a complete PID, not the shell's open-before-write interval.
+        handle = session.start_background(
+            (
+                "sh",
+                "-c",
+                f"echo $$ > {marker}.tmp; mv {marker}.tmp {marker}; exec sleep 300",
+            )
+        )
         deadline = time.monotonic() + 5
         while not marker.exists() and time.monotonic() < deadline:
             time.sleep(0.02)

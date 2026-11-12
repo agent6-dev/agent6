@@ -43,7 +43,7 @@ from agent6.providers import (
     provider_types,
     request_headers,
 )
-from agent6.sessions import event_log, journal
+from agent6.sessions import budget_events, event_log, journal
 
 
 def resolve_compaction_thresholds(
@@ -602,49 +602,9 @@ class InstrumentedProvider:
         spend ledger.
         """
         if self.events is not None:
-            self.events.emit(journal.BudgetUpdate(**budget_update_fields(self.budget)))
-
-
-def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
-    """Return a `budget.update` event's fields: the tracker's cumulative spend and plan reading."""
-    snap = budget.snapshot()
-    usd_total, usd_partial = budget.estimate_usd()
-    account = None
-    latest = next(reversed(snap.plans.items()), None)  # the last reading any provider gave
-    if latest is not None:
-        provider, spend = latest
-        plan = spend.usage
-        account = journal.AccountReading(
-            provider=provider,
-            used_percent=plan.used_percent,
-            resets_at=plan.resets_at,
-            windows=[
-                journal.AccountWindow(
-                    name=w.name,
-                    used_percent=w.used_percent,
-                    window_minutes=w.window_minutes,
-                    resets_at=w.resets_at,
-                )
-                for w in plan.windows
-            ],
-            credits_has=plan.has_credits,
-            credits_unlimited=plan.credits_unlimited,
-            credits_balance=plan.credits_balance,
-        )
-    return dict(
-        input_total=snap.input_total,
-        output_total=snap.output_total,
-        cache_read_total=snap.cache_read_total,
-        cache_creation_total=snap.cache_creation_total,
-        usd_total=usd_total,
-        usd_partial=usd_partial,
-        usd_cap=snap.max_usd,
-        tokens_unmetered=snap.unmetered_tokens,
-        tokens_fallback_cap=snap.max_tokens_fallback,
-        plan_observed_points=snap.plan_observed_points,
-        plan_cap=snap.max_plan_points,
-        account=account,
-    )
+            self.events.emit(
+                journal.BudgetUpdate(**budget_events.budget_update_fields(self.budget))
+            )
 
 
 def helper_seat_provider(

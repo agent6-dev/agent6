@@ -53,6 +53,21 @@ class LaneLimits:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class DispatchAuthority:
+    """Separate work dispatch from configured harness panels and bound descendants.
+
+    Attributes:
+        work: The model and steer may dispatch work.
+        panels: The harness may submit bounded read-only panel leaves.
+        deadline_at: The owning lane's deadline, inherited by every descendant.
+    """
+
+    work: bool = True
+    panels: bool = False
+    deadline_at: float | None = None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class LaneTask:
     """Name one lane to dispatch, as the coordinator expands a `/parallel` segment.
 
@@ -63,6 +78,8 @@ class LaneTask:
         pins: The operator's pins, passed beside the task so the lane's manifest task stays clean.
         allowance: The lane's share of the parent's allowance; None for the config's caps.
         limits: The lane's turn cap and deadline; None for the config's own.
+        contract: A harness-owned bounded conversation; None for work.
+        settings: Resolved panel-seat settings; None resolves the model selector.
     """
 
     task: str
@@ -70,6 +87,8 @@ class LaneTask:
     pins: tuple[str, ...] = ()
     allowance: budget_reservations.BudgetAllowance | None = None
     limits: LaneLimits | None = None
+    contract: kinds.ConversationContract | None = None
+    settings: kinds.ModelSettings | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

@@ -16,8 +16,8 @@ from agent6.app import lane_launch
 from agent6.config import Config, lane_snapshot
 from agent6.harness import subrun
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import lineage, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.sessions import process
 from agent6.vcs import git_read
 
 
@@ -127,6 +127,24 @@ def recorded_merged(origin: pathlib.Path, clone: pathlib.Path, tip: str) -> bool
     return False
 
 
+def clone_sessions(clone: pathlib.Path) -> tuple[pathlib.Path, ...]:
+    """Find a clone's records and descendants, including links into child clones.
+
+    Args:
+        clone: The worker checkout.
+
+    Returns:
+        Session paths, each resolved record once.
+    """
+    found: dict[pathlib.Path, pathlib.Path] = {}
+    for bucket in sessions_layout.HUB_BUCKETS:
+        for record in sessions_layout.bucket_dir(paths.state_dir(clone), bucket).glob("*"):
+            if record.is_dir():
+                for child in (record, *lineage.descendants_of(record)):
+                    found[child.resolve()] = child
+    return tuple(found.values())
+
+
 def lane_keep_reason(clone: pathlib.Path) -> str:
     """Return why a live lane or an unconfirmed startup keeps the clone, else "".
 
@@ -136,13 +154,7 @@ def lane_keep_reason(clone: pathlib.Path) -> str:
     Returns:
         The keep reason; a spawn timeout can leave a live child with no session record.
     """
-    state = paths.state_dir(clone)
-    dirs = [
-        d
-        for bucket in sessions_layout.HUB_BUCKETS
-        for d in sessions_layout.bucket_dir(state, bucket).glob("*")
-        if d.is_dir()
-    ]
+    dirs = clone_sessions(clone)
     if not dirs:
         return (
             "no lane session record, so a lane may still be starting; once none is, remove it"
@@ -153,7 +165,7 @@ def lane_keep_reason(clone: pathlib.Path) -> str:
     )
 
 
-def sweep_fanout_clones(
+def sweep_fanout_clones(  # noqa: PLR0912  # one refusal per retained clone condition
     origin: pathlib.Path,
     cfg: Config,
     *,
@@ -193,6 +205,9 @@ def sweep_fanout_clones(
             continue
         why = ""
         for clone in clones:
+            if not machine_id and any(process.worker_is_alive(d) for d in clone_sessions(clone)):
+                why = "live lane or descendant; stop it before pruning"
+                break
             try:
                 tips = [git_read.chain_tip(clone, br) for br in git_read.list_run_branches(clone)]
                 # A machine-state clone's work rides its chain ref, not a branch.
@@ -298,6 +313,15 @@ def cleanup(
         cfg: The run's config.
     """
     for spec in imported:
+        records = clone_sessions(spec.workdir)
+        if any(process.worker_is_alive(record) for record in records):
+            note_keep(spec.workdir, "live descendant; stop it before cleanup")
+            continue
+        if any(
+            record.resolve().is_relative_to(paths.state_dir(spec.workdir)) for record in records
+        ):
+            note_keep(spec.workdir, "session records not imported; retain their clone")
+            continue
         try:
             tips = git_read.commit_tips(spec.workdir)
             if any(
