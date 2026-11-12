@@ -48,7 +48,7 @@ def _get(port: int, headers: dict[str, str], path: str = "/metrics") -> tuple[in
 
 
 def _configure(
-    repo: pathlib.Path, web: str = 'metrics_route = "on"', metrics: str = "prometheus"
+    repo: pathlib.Path, web: str = "metrics_route = true", metrics: str = "prometheus"
 ) -> None:
     (repo / "web.toml").write_text(
         f'[web]\n{web}\n[telemetry]\nmetrics = "{metrics}"\n'
@@ -62,9 +62,9 @@ def _configure(
     ("web", "metrics"),
     [
         ("", "prometheus"),
-        ('metrics_route = "off"', "prometheus"),
-        ('metrics_route = "on"', "none"),
-        ('metrics_route = "on"', "otlp"),
+        ("metrics_route = false", "prometheus"),
+        ("metrics_route = true", "none"),
+        ("metrics_route = true", "otlp"),
     ],
 )
 def test_metrics_is_404_unless_both_settings_enable_it(

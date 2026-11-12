@@ -384,7 +384,7 @@ def test_latest_snapshot_none_when_empty(tmp_path: pathlib.Path) -> None:
 
 
 def test_snapshot_pruning_keeps_configured_tail(tmp_path: pathlib.Path) -> None:
-    # Only latest_snapshot is read; old snapshots are pruned to [machine] snapshot_keep.
+    # Only latest_snapshot is read; old snapshots are pruned to [machine] keep_snapshots.
     j = _journal(tmp_path)
     for seq in range(20):
         j.write_snapshot(machine_journal.Snapshot(seq=seq, state="s", blackboard={"n": seq}))
@@ -395,7 +395,7 @@ def test_snapshot_pruning_keeps_configured_tail(tmp_path: pathlib.Path) -> None:
 
 
 def test_snapshot_keep_zero_disables_pruning(tmp_path: pathlib.Path) -> None:
-    j = machine_journal.MachineJournal(tmp_path / "inst", snapshot_keep=0)
+    j = machine_journal.MachineJournal(tmp_path / "inst", keep_snapshots=0)
     j.ensure_dirs()
     for seq in range(10):
         j.write_snapshot(machine_journal.Snapshot(seq=seq, state="s", blackboard={}))

@@ -281,7 +281,7 @@ Where a run state's work lands:
 - a machine with run states works its own tree everywhere: `tool` and read-only agent states also run in fresh clones at the chain tip
     - setup comes from `[workspace].setup_command`, else the AGENTS.md block at `machine.begin.base_commit` (the commit the machine started from), never the writable chain tip
     - setup runs per tool call and gets the state's `timeout_s` before the tool receives its own `timeout_s`
-    - each clone runs the [workspace setup command](usage.md#isolated-workspaces) before the state executes; setup output tails, argv, exit code and duration are recorded as `workspace.setup` events in the instance's `states/<seq>-<state>/logs.jsonl`, bounded by `machine.state_log_keep`
+    - each clone runs the [workspace setup command](usage.md#isolated-workspaces) before the state executes; setup output tails, argv, exit code and duration are recorded as `workspace.setup` events in the instance's `states/<seq>-<state>/logs.jsonl`, bounded by `machine.keep_state_logs`
     - a failed setup command takes the tool state's `nonzero` edge (`timeout` for a timed-out setup); clone or jail host failures abort the machine instead
     - an agent state's failed setup command takes its `failed` edge (reason `setup_command_failed`)
     - [setup approval policy](security.md#4-commands-and-environment) is checked at preflight
@@ -704,7 +704,7 @@ Mirrors the per-run layout under the per-repo state dir, out of the workspace:
 ```
 
 - each `agent` state execution emits a `logs.jsonl` stream under `states/<seq>-<state>/` (the same `role.*_delta` / `tool.*` events a run emits): a running machine follows live like a run
-- the heavy per-state logs prune to the most recent `state_log_keep` (default 50); the journal stays the complete transition history
+- the heavy per-state logs prune to the most recent `keep_state_logs` (default 50); the journal stays the complete transition history
 
 Journal spend is the sum of agent facts in step records, `attempt.spend` records and any unbooked slice in `machine.end`.
 The dollar and token fields on `machine.end` carry only an agent slice with no step record, such as a capture that could not be reduced; they are not machine totals.
@@ -714,7 +714,7 @@ Sizing for long-running machines:
 
 - the journal grows one line per transition; a 10-minute-interval machine makes ~150k transitions a year (3 per idle tick)
     - a `wait` or `branch` line is ~200 B; a `tool` line carries the command's full stdout and stderr; an `agent` line carries its payload
-- snapshots keep only the most recent `[machine] snapshot_keep` (default 5, `0` = all)
+- snapshots keep only the most recent `[machine] keep_snapshots` (default 5, `0` = all)
     - `machine status` reads the newest readable one, falling back through the retained tail when the newest is corrupt
     - replay and recovery fold the whole journal and never read a snapshot
 - the journal has no rotation: archive or delete an instance dir when replay no longer needs it; `[budget] max_transitions` is the primary runaway guard

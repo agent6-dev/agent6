@@ -1540,7 +1540,7 @@ def test_agent_without_runner_raises(tmp_path: pathlib.Path) -> None:
 
 
 def test_per_state_agent_log_path_and_prune(tmp_path: pathlib.Path) -> None:
-    """Each agent state gets its own logs.jsonl, pruned to the most recent state_log_keep."""
+    """Each agent state gets its own logs.jsonl, pruned to the most recent keep_state_logs."""
     journal = machine_journal.MachineJournal(tmp_path / "inst")
     states_root = tmp_path / "inst" / "states"
     captured: list[pathlib.Path | None] = []
@@ -1559,7 +1559,7 @@ def test_per_state_agent_log_path_and_prune(tmp_path: pathlib.Path) -> None:
         journal=journal,
         agent_runner=fake_runner,
         state_log_root=states_root,
-        state_log_keep=3,
+        keep_state_logs=3,
     )
     for seq in range(5):
         world.run_agent(
@@ -1574,7 +1574,7 @@ def test_per_state_agent_log_path_and_prune(tmp_path: pathlib.Path) -> None:
 
 
 def test_state_log_keep_zero_disables_pruning(tmp_path: pathlib.Path) -> None:
-    """`[machine].state_log_keep = 0` keeps every per-state log dir, like `snapshot_keep`."""
+    """`[machine].keep_state_logs = 0` keeps every per-state log dir, like `keep_snapshots`."""
     journal = machine_journal.MachineJournal(tmp_path / "inst")
     states_root = tmp_path / "inst" / "states"
 
@@ -1591,7 +1591,7 @@ def test_state_log_keep_zero_disables_pruning(tmp_path: pathlib.Path) -> None:
         journal=journal,
         agent_runner=fake_runner,
         state_log_root=states_root,
-        state_log_keep=0,
+        keep_state_logs=0,
     )
     for seq in range(5):
         world.run_agent(

@@ -551,7 +551,7 @@ def test_the_configured_cap_counts_rejected_finishes(cap: int) -> None:
             reviewers=[_seat(seat_provider)],
             block_on="any",
             when="finish",
-            max_review_rejections=cap,
+            max_rejections=cap,
         ),
         base_sha="b",
     )

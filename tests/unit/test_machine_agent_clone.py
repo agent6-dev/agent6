@@ -318,7 +318,7 @@ reason = "setup failed"
         tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
         on_tool_failure=lambda state, outcome: failures.append(outcome),
         state_log_root=tmp_path / "logs",
-        state_log_keep=3,
+        keep_state_logs=3,
     )
     result = machine.drive(machine.load_machine(spec_path), journal, world, live=True)
     assert result.status == ("failed" if fail_setup else "ok")
@@ -432,7 +432,7 @@ def test_tool_clone_host_failure_aborts_the_machine(
 def test_tool_setup_logs_share_numeric_state_log_pruning(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Tool setup logs obey state_log_keep across the four-digit sequence boundary."""
+    """Tool setup logs obey keep_state_logs across the four-digit sequence boundary."""
     from agent6 import kinds, machine
     from agent6.app.machine import run as machine_run
 
@@ -460,7 +460,7 @@ def test_tool_setup_logs_share_numeric_state_log_pruning(
         ),
         tool_policy=lambda state, argv, timeout, env: kinds.JailPolicy(cwd=origin, argv=argv),
         state_log_root=tmp_path / "states",
-        state_log_keep=3,
+        keep_state_logs=3,
     )
     for seq in (9998, 9999, 10000, 10001):
         world.run_tool(("true",), 5, state="check", step_seq=seq)

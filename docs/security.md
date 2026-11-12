@@ -526,7 +526,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - The token is an HMAC-SHA256 keyed by the secret, never the secret.
       The page keeps it in storage scoped to its origin (host and port) and sends it in a header, never a cookie: a browser sends a cookie to every port of the host, so a page a jailed command serves on a forwarded port would receive it on the first visit.
       The page shell, assets and JSON responses carry `Content-Security-Policy: frame-ancestors 'none'`, so such a page cannot frame the signed-in UI either.
-- With `telemetry.metrics = "prometheus"` and `web.metrics_route = "on"` (default: `off`), `/metrics` uses the existing listener and requires `Authorization: Bearer <web-secret>`, never a cookie or browser sign-in token.
+- With `telemetry.metrics = "prometheus"` and `web.metrics_route = true` (default: `false`), `/metrics` uses the existing listener and requires `Authorization: Bearer <web-secret>`, never a cookie or browser sign-in token.
 - The server renders folded state and drives typed contracts.
   New-work spawns fixed argv with the task behind `--`, and machine-run is allow-listed to authored files.
   Answers write only the addressed run's answer files (session id, answer id, and machine target state dir each validated to one path component).

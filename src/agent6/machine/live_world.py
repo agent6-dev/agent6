@@ -73,7 +73,7 @@ class LiveWorld:
             a tool is confined like a run command.
         state_log_root: Where each agent state writes `<seq>-<state>/logs.jsonl`; None
             disables per-state logs.
-        state_log_keep: How many per-state log dirs to keep (`[machine].state_log_keep`);
+        keep_state_logs: How many per-state log dirs to keep (`[machine].keep_state_logs`);
             0 keeps all.
         notify_hook: The operator's `[notify].on_event` argv, run on the host; None
             for no hook (the front-ends still render the journaled events).
@@ -95,7 +95,7 @@ class LiveWorld:
     poll_interval_s: float = 0.5
     tool_policy: ToolPolicyFactory | None = None
     state_log_root: pathlib.Path | None = None
-    state_log_keep: int = 50
+    keep_state_logs: int = 50
     notify_hook: Callable[[str, str, str, str], None] | None = None
     data_dir: pathlib.Path | None = None
     jail_runner: (
@@ -182,7 +182,7 @@ class LiveWorld:
         """
         if self.state_log_root is None or not state:
             return None
-        _prune_state_logs(self.state_log_root, keep=self.state_log_keep)
+        _prune_state_logs(self.state_log_root, keep=self.keep_state_logs)
         return self.state_log_root / f"{step_seq:04d}-{state}" / layout.LOGS_NAME
 
     def now(self) -> float:

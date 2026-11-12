@@ -147,7 +147,7 @@ class FinishGates:
         settled_returns_used: Settled stops returned over a red gate; `verify_retries`
             caps them apart from the model's own finishes.
         review_rejections: The ends the before-finish panel rejected in the run, persisted
-            and never decremented; past `max_review_rejections` the panel advises.
+            and never decremented; past `max_rejections` the panel advises.
         stale_gate: The replacement gate the latest finish_session to carry one
             proposed; the end reports it though a gate returned that finish.
     """

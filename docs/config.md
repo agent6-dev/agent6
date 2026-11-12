@@ -470,7 +470,7 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 | `interval_turns` | `10` | Turns between panels when `when = "periodic"`. |
 | `block_on` | `"none"` | Effect of panel blocking verdicts; quorum uses `review.min_blocking_models` distinct provider/model routes; abstentions do not block; gating applies only to finish-time review; panels at other moments are advisory.<ul><li><code>none</code>: Treat blocking verdicts as guidance</li><li><code>any</code>: One blocking seat rejects finish</li><li><code>model_quorum</code>: Require configured number of distinct blocking model routes</li><li><code>all</code>: Require every seat to block</li></ul> |
 | `min_blocking_models` | `2` | distinct provider/model routes required to block with `review.block_on = "model_quorum"`; two seats on one route counted once, even with different focus or effort |
-| `max_review_rejections` | `4` | ends rejectable by a gating panel per run (`finish_session`, silent finish, settled or plateau stop); count preserved across resumes, never reset; at the cap: panels and findings retained, every end accepted, no indefinite panel stall |
+| `max_rejections` | `4` | ends rejectable by a gating panel per run (`finish_session`, silent finish, settled or plateau stop); count preserved across resumes, never reset; at the cap: panels and findings retained, every end accepted, no indefinite panel stall |
 | `min_remaining_budget_fraction` | `0.25` | remaining-budget fraction below which the panel is skipped and the finish accepted; `review.min_remaining_budget_fraction = 0.25`: no panel in the last quarter |
 | `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `model`, `temperature` and `effort`; every omitted field inherits the resolved `[models.reviewer]`, `model` pinned or not; `model` is a provider/model route; empty roster: one `security` seat unless `review.when = "never"` |
 | `concurrency` | `1` | simultaneous panel seats, at most `parallel.max_lanes`; a longer roster runs in batches, in roster order; `review.concurrency = 1`: one after another |
@@ -575,8 +575,8 @@ Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/
 
 | Field | Default | Meaning |
 |---|---|---|
-| `snapshot_keep` | `5` | blackboard snapshots kept per machine instance; latest read by `machine status`, journal folded for recovery and `machine replay`; `machine.snapshot_keep = 0`: all snapshots |
-| `state_log_keep` | `50` | per-state log dirs kept under `<instance>/states/`, watchable logs of each state's execution; full transition history in the journal regardless; `machine.state_log_keep = 0`: all logs |
+| `keep_snapshots` | `5` | blackboard snapshots kept per machine instance; latest read by `machine status`, journal folded for recovery and `machine replay`; `machine.keep_snapshots = 0`: all snapshots |
+| `keep_state_logs` | `50` | per-state log dirs kept under `<instance>/states/`, watchable logs of each state's execution; full transition history in the journal regardless; `machine.keep_state_logs = 0`: all logs |
 | `pass_env` | `[]` | operator environment variable names allowed in a machine `tool` state's own `pass_env`; startup refused for a state naming an unlisted variable; global/repo config or a `--config FILE` layer; machine `[config]` overlay refused; provider `api_key_env` variables never allowed |
 
 ## `[notify]` (optional)
@@ -604,7 +604,7 @@ Every browser [signs in](web.md#sign-in) with the server's secret.
 | `host` | `"127.0.0.1"` | Address `agent6 web` binds; a non-loopback address also needs `allow_non_loopback = true`. |
 | `port` | `7658` | Port `agent6 web` listens on. |
 | `allow_non_loopback` | `false` | Allow `host` to be a non-loopback address, so a typo can never silently expose the write surface (approvals, steers, config writes) beyond this machine. |
-| `metrics_route` | `"off"` | Serve `/metrics` when `telemetry.metrics = "prometheus"`; requires the web secret as `Authorization: Bearer <secret>`, never a cookie or browser sign-in token.<ul><li><code>off</code>: Disable the web metrics route</li><li><code>on</code>: Permit authenticated Prometheus metrics scraping</li></ul> |
+| `metrics_route` | `false` | Serve `/metrics` when `telemetry.metrics = "prometheus"`; requires the web secret as `Authorization: Bearer <secret>`, never a cookie or browser sign-in token. |
 
 ## `[telemetry]`
 

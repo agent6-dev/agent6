@@ -41,7 +41,7 @@ def test_snapshot_comment_agrees_with_the_field_description() -> None:
     source = pathlib.Path(surface_config.__file__).read_text(encoding="utf-8")
     assert "recovery reads the latest" not in source
     assert "recovery folds the journal" in source
-    text = surface_config.MachineConfig.model_fields["snapshot_keep"].description or ""
+    text = surface_config.MachineConfig.model_fields["keep_snapshots"].description or ""
     assert "latest read by `machine status`" in text
     assert "journal folded for recovery" in text
 

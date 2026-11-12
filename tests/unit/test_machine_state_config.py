@@ -272,7 +272,7 @@ def test_a_state_that_runs_nothing_takes_no_config_table(tmp_path: pathlib.Path)
         ('[states.judge.config.providers.x]\nbackend = "openai"\n', "providers"),
         ("[states.judge.config.mcp]\nenabled = true\n", "mcp"),
         ('[states.judge.config.machine]\npass_env = ["X"]\n', "machine"),
-        ("[states.judge.config.machine]\nsnapshot_keep = 2\n", "read once for the whole machine"),
+        ("[states.judge.config.machine]\nkeep_snapshots = 2\n", "read once for the whole machine"),
         (
             '[states.judge.config.workspace]\nbase_dir = "/tmp/x"\n',
             "read once for the whole machine",

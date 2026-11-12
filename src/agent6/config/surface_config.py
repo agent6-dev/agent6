@@ -67,22 +67,22 @@ class MachineConfig(pydantic.BaseModel):
     model_config = validation.MODEL_CONFIG
 
     # `machine status` reads the latest snapshot; recovery folds the journal.
-    snapshot_keep: int = pydantic.Field(
+    keep_snapshots: int = pydantic.Field(
         ge=0,
         default=5,
         description=(
             "blackboard snapshots kept per machine instance; latest read by `machine status`, "
-            "journal folded for recovery and `machine replay`; `machine.snapshot_keep = 0`: all "
+            "journal folded for recovery and `machine replay`; `machine.keep_snapshots = 0`: all "
             "snapshots"
         ),
     )
-    state_log_keep: int = pydantic.Field(
+    keep_state_logs: int = pydantic.Field(
         ge=0,
         default=50,
         description=(
             "per-state log dirs kept under `<instance>/states/`, watchable logs of each state's "
             "execution; full transition history in the journal regardless; "
-            "`machine.state_log_keep = 0`: all logs"
+            "`machine.keep_state_logs = 0`: all logs"
         ),
     )
     pass_env: validation.StrTuple = pydantic.Field(
@@ -150,14 +150,8 @@ class WebConfig(pydantic.BaseModel):
         ),
     )
 
-    metrics_route: Literal["off", "on"] = pydantic.Field(
-        json_schema_extra={
-            "choice_meanings": {
-                "off": "Disable the web metrics route",
-                "on": "Permit authenticated Prometheus metrics scraping",
-            }
-        },
-        default="off",
+    metrics_route: bool = pydantic.Field(
+        default=False,
         description=(
             'Serve `/metrics` when `telemetry.metrics = "prometheus"`; requires the web secret '
             "as `Authorization: Bearer <secret>`, never a cookie or browser sign-in token."

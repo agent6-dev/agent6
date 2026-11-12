@@ -618,7 +618,7 @@ class ReviewConfig(pydantic.BaseModel):
             "effort"
         ),
     )
-    max_review_rejections: int = pydantic.Field(
+    max_rejections: int = pydantic.Field(
         ge=1,
         default=4,
         description=(

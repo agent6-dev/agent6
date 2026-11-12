@@ -231,7 +231,7 @@ def test_before_finish_panel_satisfied_accepts_finish() -> None:
 
 
 def test_before_finish_rejection_cap_lets_finish_through() -> None:
-    """After `max_review_rejections` rejected finishes the next one goes through.
+    """After `max_rejections` rejected finishes the next one goes through.
 
     The findings are still injected; the worker cannot bounce forever. The panel past the cap
     reports its block as `capped`, which the gate reads as the end standing.
@@ -249,7 +249,7 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
         provider=worker,
         dispatcher=dispatcher,
         review=review_gate.ReviewSettings(
-            when="finish", max_review_rejections=2, reviewers=[mock.MagicMock()]
+            when="finish", max_rejections=2, reviewers=[mock.MagicMock()]
         ),
     )
     with mock.patch.object(review_gate.Reviewer, "critique", panel):

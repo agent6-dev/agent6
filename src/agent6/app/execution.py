@@ -604,7 +604,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 reviewers=session.review_seats,
                 block_on=cfg.review.block_on,
                 min_blocking_models=cfg.review.min_blocking_models,
-                max_review_rejections=cfg.review.max_review_rejections,
+                max_rejections=cfg.review.max_rejections,
                 min_remaining_budget_fraction=cfg.review.min_remaining_budget_fraction,
                 concurrency=cfg.review.concurrency,
                 repo_max_turns=cfg.review.repo_max_turns,

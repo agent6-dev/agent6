@@ -742,6 +742,9 @@ _REPLACED_KEYS = {
         "unknown config key; use harness.settled_stop_after with the same value"
     ),
     "prompt.revise_prompt": "removed config key; delete prompt.revise_prompt",
+    "machine.snapshot_keep": "renamed config key; use machine.keep_snapshots",
+    "machine.state_log_keep": "renamed config key; use machine.keep_state_logs",
+    "review.max_review_rejections": "renamed config key; use review.max_rejections",
     "review.trigger": (
         'renamed config key; use review.when ("never", "verify_fail", "finish" or "periodic")'
     ),

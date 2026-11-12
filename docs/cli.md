@@ -251,7 +251,7 @@ agent6 telemetry export <id> --follow   # one session, as its journal grows
 agent6 config show telemetry            # every key with its origin
 ```
 
-- With `telemetry.metrics = "prometheus"` and `web.metrics_route = "on"` (default: `off`), `agent6 web` serves fresh hub-session metrics at `/metrics` only with `Authorization: Bearer <web-secret>` (Prometheus `authorization.credentials`), never a cookie or browser sign-in token.
+- With `telemetry.metrics = "prometheus"` and `web.metrics_route = true` (default: `false`), `agent6 web` serves fresh hub-session metrics at `/metrics` only with `Authorization: Bearer <web-secret>` (Prometheus `authorization.credentials`), never a cookie or browser sign-in token.
 - A session's meter keeps 64 distinct values per free label (model, provider, tool) and reads `other` past them; an export that merges sessions carries each session's values, so the merged set can exceed 64.
 - A cursor per endpoint and session keeps a re-run from re-sending delivered spans and log records; the metrics reading is always the whole cumulative snapshot, and the Prometheus file is rewritten whole.
 - The default `capture = "metadata"` exports outcomes, counts, timings and the journal's ids, never the task, arguments, outputs or diffs; `capture = "content"` adds the capped excerpts `telemetry.capture` lists ([config](config.md#telemetry)).

@@ -369,7 +369,7 @@ class MachineJournal:
     """The append-only event log plus the snapshots of one machine instance.
 
     Attributes:
-        snapshot_keep: How many recent snapshots to keep (`[machine].snapshot_keep`); 0 keeps
+        keep_snapshots: How many recent snapshots to keep (`[machine].keep_snapshots`); 0 keeps
             all.
         root: The instance directory.
         journal_path: The journal file.
@@ -379,8 +379,8 @@ class MachineJournal:
         wait_path: The pending wait record.
     """
 
-    def __init__(self, root: pathlib.Path, *, snapshot_keep: int = 5) -> None:
-        self.snapshot_keep = snapshot_keep
+    def __init__(self, root: pathlib.Path, *, keep_snapshots: int = 5) -> None:
+        self.keep_snapshots = keep_snapshots
         self.root = root
         self.journal_path = root / "journal.jsonl"
         self.snapshots_dir = root / "snapshots"
@@ -478,7 +478,7 @@ class MachineJournal:
         return event if isinstance(event, MachineEnd) else None
 
     def write_snapshot(self, snapshot: Snapshot) -> None:
-        """Write a snapshot atomically, keeping only the newest `snapshot_keep`.
+        """Write a snapshot atomically, keeping only the newest `keep_snapshots`.
 
         Recovery and replay fold the journal; the retained tail is a fallback for a corrupt
         latest.
@@ -489,14 +489,14 @@ class MachineJournal:
         paths.mkdir_for_real_user(self.snapshots_dir)
         dest = self.snapshots_dir / f"{snapshot.seq}.json"
         portable.atomic_write(dest, dump_json(snapshot, indent=2) + "\n")
-        if self.snapshot_keep <= 0:
+        if self.keep_snapshots <= 0:
             return
         with contextlib.suppress(OSError):
             for entry in self.snapshots_dir.iterdir():
                 if (
                     entry.suffix == ".json"
                     and entry.stem.isdigit()
-                    and int(entry.stem) <= snapshot.seq - self.snapshot_keep
+                    and int(entry.stem) <= snapshot.seq - self.keep_snapshots
                 ):
                     with contextlib.suppress(OSError):
                         entry.unlink()

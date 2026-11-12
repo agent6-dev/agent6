@@ -77,7 +77,7 @@ class ReviewSettings:
         reviewers: The resolved seats.
         block_on: `none` advises; `any`, `all` and `model_quorum` can reject an end.
         min_blocking_models: The distinct blocking routes a `model_quorum` rejection needs.
-        max_review_rejections: The ends the gate may reject in the run; from then on the panel
+        max_rejections: The ends the gate may reject in the run; from then on the panel
             advises and every end stands.
         min_remaining_budget_fraction: Skip panels below this remaining budget fraction.
         concurrency: The seat calls run at once.
@@ -89,7 +89,7 @@ class ReviewSettings:
     reviewers: Sequence[ReviewSeat] = ()
     block_on: review_panel.ReviewBlockOn = "none"
     min_blocking_models: int = 2
-    max_review_rejections: int = 4
+    max_rejections: int = 4
     min_remaining_budget_fraction: float = 0.25
     concurrency: int = 1
     repo_max_turns: int = 20
@@ -370,7 +370,7 @@ class Reviewer:
     ) -> bool:
         """Sit the before-finish panel over an end, once per turn.
 
-        After `max_review_rejections` rejected ends the panel advises and the end goes through
+        After `max_rejections` rejected ends the panel advises and the end goes through
         with the findings injected. A turn that declares two ends gets one verdict for both.
 
         Args:
@@ -402,7 +402,7 @@ class Reviewer:
         if critique.capped:
             self.log(
                 f"  review rejected {ending} at turn {turn.number} but the rejection cap"
-                f" ({self.settings.max_review_rejections}) is reached: the end stands"
+                f" ({self.settings.max_rejections}) is reached: the end stands"
             )
             self.emit(
                 journal.LoopReviewRejectionCapReached(
@@ -490,7 +490,7 @@ class Reviewer:
     ) -> CritiqueResult | None:
         """Run the panel over the run diff.
 
-        Past `max_review_rejections` rejected ends the panel still sits and its findings still
+        Past `max_rejections` rejected ends the panel still sits and its findings still
         reach the model, but nothing blocks: a gating panel cannot stall the run.
 
         Args:
@@ -646,7 +646,7 @@ class Reviewer:
                     ),
                 )
             )
-        disarmed = state.gates.review_rejections >= self.settings.max_review_rejections
+        disarmed = state.gates.review_rejections >= self.settings.max_rejections
         effective_blocked = result.blocked and not disarmed
         inconclusive = review_panel.panel_is_inconclusive(result)
         shown = (

@@ -359,7 +359,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     env = detect.probed_environment()
     # The machine's own file and scripts are read-only in every jail: no state rewrites them.
     protect_paths = host_preflight.machine_protect_paths(path, cwd, config_paths)
-    # Every machine resolves its configs: a pure wait/branch machine still reads snapshot_keep.
+    # Every machine resolves its configs: a pure wait/branch machine still reads keep_snapshots.
     # The three flags travel in them, to each agent state as its overlay and resolved isolation.
     try:
         configs = state_configs.resolve_configs(
@@ -458,7 +458,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                     "use --auto-approve or set sandbox.run_commands='allow' to allow setup"
                 )
                 return 2
-    snapshot_keep = cfg.machine.snapshot_keep
+    keep_snapshots = cfg.machine.keep_snapshots
     # One clone base for the agent states' per-state clones and the tool states' per-call trees.
     clone_root = workdirs.subordinate_workdir_root(cfg, cwd, f"machine-{spec.machine}")
 
@@ -561,7 +561,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         reporter.refuse(str(exc))
         return 2
     confine.warn_cleartext_credential_endpoints(cfg, reporter=reporter)
-    journal = MachineJournal(root, snapshot_keep=snapshot_keep)
+    journal = MachineJournal(root, keep_snapshots=keep_snapshots)
     data_dir = root / "data"
     try:
         with machine_lock(root):
@@ -696,7 +696,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 ),
                 data_dir=data_dir,
                 state_log_root=root / "states",
-                state_log_keep=cfg.machine.state_log_keep,
+                keep_state_logs=cfg.machine.keep_state_logs,
                 notify_hook=surface_notify,
                 on_wait=say_where_it_parked,
                 on_tool_failure=say_tool_failure,

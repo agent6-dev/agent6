@@ -64,7 +64,7 @@ def test_machine_run_reads_the_explicit_config_layer(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     explicit = tmp_path / "explicit.toml"
-    explicit.write_text("[machine]\nsnapshot_keep = 41\n", encoding="utf-8")
+    explicit.write_text("[machine]\nkeep_snapshots = 41\n", encoding="utf-8")
     mfile = tmp_path / "tiny.asm.toml"
     mfile.write_text(_MACHINE, encoding="utf-8")
 
@@ -74,7 +74,7 @@ def test_machine_run_reads_the_explicit_config_layer(
 
     def spy(repo_root: pathlib.Path, overlay: dict[str, object], **kw: object):
         eff = real(repo_root, overlay, **kw)  # pyright: ignore[reportArgumentType]
-        seen.append(eff.config.machine.snapshot_keep)
+        seen.append(eff.config.machine.keep_snapshots)
         return eff
 
     monkeypatch.setattr(layer, "load_effective_with_overlay", spy)
