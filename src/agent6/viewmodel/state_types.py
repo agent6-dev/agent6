@@ -227,6 +227,14 @@ class BudgetView:
     execution: ExecutionUsage = dataclasses.field(default_factory=ExecutionUsage)
     account: AccountReading | None = None
 
+    @property
+    def usd_so_far(self) -> float:
+        """The spend every usage cell shows: every execution's, with the lanes still running.
+
+        A lane's spend moves into `session.usd` when it settles, so the figure never steps.
+        """
+        return self.session.usd + self.execution.usd_running_lanes
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class EnvironmentView:

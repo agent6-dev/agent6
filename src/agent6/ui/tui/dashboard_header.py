@@ -85,7 +85,7 @@ class RunHeader(widgets.Static):
         tasks = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
         b = ds.budget
         cell = session_status.usage_cell(
-            b.session.usd,
+            b.usd_so_far,
             partial=b.session.usd_partial,
             plan_observed_points=b.session.plan_observed_points,
             plan_used_percent=b.account.used_percent if b.account else 0.0,

@@ -34,7 +34,7 @@ Public fields: [Formats](formats.md#cli-json).
 
 - **Written by:** ui/cli/sessions_cmds, ui/web/model
 - **Read by:** app/{btw, compare, finalize, fork, fork_worktrees, lane_watch, lanes, parallel_results, preflight, resume, review_recap, run, stop}, harness/review_session, ui/{mcp_server, spawn}, ui/acp/session, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_merge, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home, new_work}, ui/web/{actions, git_model, review_routes, sse}, viewmodel/{__init__, lanes, state_view, wire}
-- **Guarded by:** [test_cli_sessions_list.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_cli_sessions_list.py) (26 test files exercise it)
+- **Guarded by:** [test_cli_sessions_list.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_cli_sessions_list.py) (27 test files exercise it)
 
 ## CLI session status
 
@@ -310,4 +310,4 @@ Public fields: [Formats](formats.md#session-snapshots).
 
 - **Written by:** viewmodel/{machine_state, state_view}
 - **Read by:** ui/acp/updates, ui/cli/{sessions_show, steer_menu}, ui/tui/app, ui/web/{model, sse}, viewmodel/{__init__, wire}
-- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (13 test files exercise it)
+- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (14 test files exercise it)

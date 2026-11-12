@@ -147,12 +147,12 @@ def budget_dict(budget: state_types.BudgetView) -> dict[str, Any]:
     d = dataclasses.asdict(budget)
     account = budget.account
     d["usd_text"] = format.budget_usd_text(
-        budget.session.usd,
+        budget.usd_so_far,
         partial=budget.session.usd_partial,
-        execution_usd=budget.execution.usd,
+        execution_usd=budget.execution.usd + budget.execution.usd_running_lanes,
         usd_cap=budget.execution.usd_cap,
         cell=session_status.usage_cell(
-            budget.session.usd,
+            budget.usd_so_far,
             partial=budget.session.usd_partial,
             plan_observed_points=budget.session.plan_observed_points,
             plan_used_percent=account.used_percent if account else 0.0,

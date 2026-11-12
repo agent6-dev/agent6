@@ -148,7 +148,7 @@ def _print_status(session_dir: pathlib.Path) -> None:
     tasks = f"{done}/{len(s.tasks)}" if s.tasks else "—"
     call = s.last_model_call
     model = f"{call.role}/{call.model}" if call else "—"
-    cost = budget.format_usd(s.budget.session.usd, partial=s.budget.session.usd_partial)
+    cost = budget.format_usd(s.budget.usd_so_far, partial=s.budget.session.usd_partial)
     ctx = ""
     if call is not None and call.context_tokens > 0:
         fill = context_fill(s)

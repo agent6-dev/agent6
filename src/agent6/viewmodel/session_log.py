@@ -148,7 +148,7 @@ class LogScan:
         """The session's cost as `usage_cell` spells it; "" for a clean $0."""
         usage, account = self.budget.session, self.budget.account
         return session_status.usage_cell(
-            usage.usd,
+            self.budget.usd_so_far,
             partial=usage.usd_partial,
             plan_observed_points=usage.plan_observed_points,
             plan_used_percent=account.used_percent if account else 0.0,

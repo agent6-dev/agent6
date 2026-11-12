@@ -778,7 +778,7 @@ def summarize_session_dir(
         detail=reason,
         stop_reason=scan.stop_reason if scan.finished else "",
         unmerged=has_unmerged,
-        cost_usd=scan.budget.session.usd,
+        cost_usd=scan.budget.usd_so_far,
         usd_partial=scan.budget.session.usd_partial,
         last_activity=scan.last_ep if scan.last_ep is not None else session_mtime(session_dir),
         verification=scan.verification,

@@ -17,6 +17,7 @@ from agent6.app import child_watch, lane_watch
 from agent6.sessions import ipc, journal
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import interact
+from agent6.viewmodel import listing, session_log, state_view
 
 
 def _child(tmp_path: pathlib.Path, *rows: dict[str, object]) -> pathlib.Path:
@@ -255,6 +256,23 @@ def test_the_watch_journals_the_meter_as_running_children_move_it(
     logs.mkdir()
     (logs / "logs.jsonl").write_text(json.dumps({"type": last.TYPE, **last.model_dump()}) + "\n")
     assert child_watch.running_usage(logs).usd == 1.5
+
+
+def test_a_runs_usage_cell_holds_its_running_lanes(tmp_path: pathlib.Path) -> None:
+    """Every hub's usage cell counts the lanes still running, so it does not step at settlement.
+
+    The cell showed a run's own dollar while its lanes had spent five, then jumped.
+    """
+    run = _child(tmp_path, {**_spend(1.0, running=5.0), "usd_cap": 10.0})
+    summary = listing.summarize_session_dir(run)
+    assert summary.cost_usd == 6.0 and summary.usage_cell == "$6.00"
+    view = state_view.budget_dict(session_log.scan_session_log(run / "logs.jsonl").budget)
+    assert view["usd_text"] == "$6.00 / $10.00"
+    assert view["execution"]["usd"] == 1.0 and view["execution"]["usd_running_lanes"] == 5.0
+
+    settled = [{**_spend(1.0, running=5.0), "usd_cap": 10.0}, {**_spend(6.5), "usd_cap": 10.0}]
+    (run / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in settled))
+    assert listing.summarize_session_dir(run).usage_cell == "$6.50"
 
 
 def _question(*, wait: bool = True) -> dict[str, object]:

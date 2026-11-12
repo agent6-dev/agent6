@@ -181,7 +181,7 @@ def running_usage(child_dir: pathlib.Path) -> agent6_budget.UsageSettlement:
     if account is not None and account.provider and account.windows:
         readings = ((account.provider, agent6_budget.PlanUsage(windows=account.windows)),)
     return agent6_budget.UsageSettlement(
-        usd=usage.session.usd + usage.execution.usd_running_lanes,
+        usd=usage.usd_so_far,
         usd_partial=usage.session.usd_partial,
         tokens=usage.session.unmetered_tokens + usage.execution.tokens_running_lanes,
         plan_readings=readings,
