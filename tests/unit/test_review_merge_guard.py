@@ -11,7 +11,8 @@ from typing import Any
 import pytest
 
 from agent6 import review_records
-from agent6.app import finalize, merge, reporter, review_actions
+from agent6.app import finalize, merge, reporter
+from agent6.app.review import actions as review_actions
 from agent6.config import Config
 from agent6.sessions import event_log, journal, layout, lock, manifest
 from agent6.ui import spawn

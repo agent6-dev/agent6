@@ -12,7 +12,7 @@ from rich import text
 from textual import app, containers, screen, widgets
 
 from agent6 import review_records
-from agent6.app import review_actions
+from agent6.app.review import actions as review_actions
 from agent6.sessions import process
 from agent6.ui import keymap, spawn
 from agent6.ui.tui import diff_pane, forms, menubar, modals, new_work, screen_chrome

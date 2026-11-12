@@ -2749,7 +2749,7 @@ Source: [`agent6.review_records.FindingAction`](https://github.com/agent6-dev/ag
 
 **Support: public.** Return the recorded outcome, or an explicit pending delivery.
 
-Source: [`agent6.app.review_actions.ActionResult`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/review_actions.py).
+Source: [`agent6.app.review.actions.ActionResult`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/review/actions.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |

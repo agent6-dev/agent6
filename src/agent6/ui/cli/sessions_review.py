@@ -4,7 +4,7 @@
 
 Its own module, imported by the dispatcher for this verb alone, so the provider stack loads
 for no other `sessions` verb.
-The recap itself is `app/review_recap.py`; this module resolves the target and the config.
+The recap itself is `app/review/recap.py`; this module resolves the target and the config.
 """
 
 from __future__ import annotations
@@ -12,7 +12,8 @@ from __future__ import annotations
 import pathlib
 import sys
 
-from agent6.app import reporter, review_recap
+from agent6.app import reporter
+from agent6.app.review import recap as review_recap
 from agent6.config import Config, layer
 from agent6.sessions import id
 from agent6.ui.cli import common

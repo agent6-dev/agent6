@@ -12,7 +12,7 @@ from typing import Any
 import pydantic
 
 from agent6 import errors, paths, review_records
-from agent6.app import review_actions
+from agent6.app.review import actions as review_actions
 from agent6.sessions import layout
 from agent6.ui import spawn
 from agent6.ui.web import diff_highlight, git_model, highlight

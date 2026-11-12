@@ -458,7 +458,7 @@ MODELS = (
     ("viewmodel.lanes", "ChildView"),
     ("viewmodel.lanes", "DispatchView"),
     ("review_records", "FindingAction"),
-    ("app.review_actions", "ActionResult"),
+    ("app.review.actions", "ActionResult"),
     ("vcs.git_files", "BlameLine"),
     ("vcs.git_files", "TreeFile"),
 )

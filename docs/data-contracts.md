@@ -33,7 +33,7 @@ Scan session dirs into the listing rows every front-end's hub shows.
 Public fields: [Formats](formats.md#cli-json).
 
 - **Written by:** ui/cli/sessions_cmds, ui/web/model
-- **Read by:** app/{btw, compare, finalize, fork, fork_worktrees, lane_watch, lanes, parallel_results, preflight, resume, review_recap, run, stop}, harness/review/session, ui/{mcp_server, spawn}, ui/acp/session, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_merge, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home, new_work}, ui/web/{actions, git_model, review_routes, sse}, viewmodel/{__init__, lanes, state_view, wire}
+- **Read by:** app/{btw, compare, finalize, fork, fork_worktrees, lane_watch, lanes, parallel_results, preflight, resume, run, stop}, app/review/recap, harness/review/session, ui/{mcp_server, spawn}, ui/acp/session, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_merge, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home, new_work}, ui/web/{actions, git_model, review_routes, sse}, viewmodel/{__init__, lanes, state_view, wire}
 - **Guarded by:** [test_cli_sessions_list.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_cli_sessions_list.py) (27 test files exercise it)
 
 ## CLI session status
@@ -97,7 +97,7 @@ Fold review evidence and operator history for every session reader.
 Public fields: [Formats](formats.md#reviewview).
 
 - **Written by:** viewmodel/{session_log, state}
-- **Read by:** app/review_actions, ui/acp/review, ui/cli/sessions_findings, ui/tui/review, ui/web/review_routes, viewmodel/{listing, log_line, receipt, state_types, state_view, telemetry, transcript, transcript_text}
+- **Read by:** app/review/actions, ui/acp/review, ui/cli/sessions_findings, ui/tui/review, ui/web/review_routes, viewmodel/{listing, log_line, receipt, state_types, state_view, telemetry, transcript, transcript_text}
 - **Guarded by:** [test_viewmodel_review.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_review.py) (5 test files exercise it)
 
 ## Review records
@@ -128,8 +128,8 @@ Define immutable review evidence and validate review boundary payloads.
 
 Public fields: [Formats](formats.md#typed-records).
 
-- **Written by:** app/review_actions, harness/review/{gate, history, panel, seat}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
-- **Read by:** kinds, app/{execution, review_directive}, harness/{loop, loop_state, repo_context, run_chain}, sessions/completion, ui/acp/review, ui/tui/{diff_pane, review}, vcs/review_rule_reader, viewmodel/review
+- **Written by:** app/review/actions, harness/review/{gate, history, panel, seat}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
+- **Read by:** kinds, app/execution, app/review/directive, harness/{loop, loop_state, repo_context, run_chain}, sessions/completion, ui/acp/review, ui/tui/{diff_pane, review}, vcs/review_rule_reader, viewmodel/review
 - **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (21 test files exercise it)
 
 ## Conversation
@@ -155,7 +155,7 @@ The manifest.json shape and its one reader; `app.stamps` is the writer.
 Public fields: [Formats](formats.md#sessionmanifest).
 
 - **Written by:** app/stamps
-- **Read by:** app/{compare, execution, finalize, fork, fork_worktrees, lane_launch, lanes, merge, merge_message, parallel, parallel_results, preflight, resume, resume_chain, review_actions, run, stop, undo, workdirs, workspace_setup}, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/{directive_actions, mcp_server}, ui/acp/session, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/model, viewmodel/{comparison, format, lanes, listing, policy, receipt, session_status, state_view, wire}
+- **Read by:** app/{compare, execution, finalize, fork, fork_worktrees, lane_launch, lanes, merge, merge_message, parallel, parallel_results, preflight, resume, resume_chain, run, stop, undo, workdirs, workspace_setup}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/{directive_actions, mcp_server}, ui/acp/session, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/model, viewmodel/{comparison, format, lanes, listing, policy, receipt, session_status, state_view, wire}
 - **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (48 test files exercise it)
 
 ## SessionSnapshot
@@ -217,7 +217,7 @@ Typed tool-handler results.
 Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ReadMediaResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`, `FindingsResult`
 
 - **Written by:** tools/{command_tools, control_tools, dag_tools, dispatch, edit_diag, fs_tools, nav_tools, skill_tools}
-- **Read by:** app/review_actions, harness/{guards, loop, memory_touch, metric_sampler, tool_effects}, harness/verify/gate, tools/result_format
+- **Read by:** app/review/actions, harness/{guards, loop, memory_touch, metric_sampler, tool_effects}, harness/verify/gate, tools/result_format
 - **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (38 test files exercise it)
 
 ## Event union

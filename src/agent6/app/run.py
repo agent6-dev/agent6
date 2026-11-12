@@ -22,13 +22,13 @@ from agent6.app import (
     finalize,
     fork_worktrees,
     preflight,
-    review_directive,
     stamps,
     workdirs,
     workspace_setup,
 )
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
+from agent6.app.review import directive as review_directive
 from agent6.app.session import prepare as session_prepare
 from agent6.app.session import setup as session_setup
 from agent6.config import Config

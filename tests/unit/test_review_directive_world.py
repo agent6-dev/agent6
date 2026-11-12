@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from agent6.app import review_directive
+from agent6.app.review import directive as review_directive
 from agent6.vcs import git_read
 
 

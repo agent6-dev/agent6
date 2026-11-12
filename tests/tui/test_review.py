@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from textual import widgets
 
-from agent6.app import review_actions
+from agent6.app.review import actions as review_actions
 from agent6.sessions import event_log, ipc, journal, lock, process
 from agent6.ui import spawn
 from agent6.ui.tui import app as tui_app

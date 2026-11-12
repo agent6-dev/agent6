@@ -11,7 +11,8 @@ import pytest
 
 from agent6 import providers as provider_api
 from agent6 import review_records
-from agent6.app import review_actions, role_providers
+from agent6.app import role_providers
+from agent6.app.review import actions as review_actions
 from agent6.sessions import event_log, ipc, lock, process
 from agent6.ui import spawn
 from agent6.ui.cli import main

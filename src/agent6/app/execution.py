@@ -28,8 +28,6 @@ from agent6.app import (
     finalize,
     lane_launch,
     notify_hook,
-    review_actions,
-    review_directive,
     role_providers,
     stamps,
     workspace_setup,
@@ -37,6 +35,8 @@ from agent6.app import (
 from agent6.app import frontend as app_frontend
 from agent6.app import lanes as app_lanes
 from agent6.app import reporter as app_reporter
+from agent6.app.review import actions as review_actions
+from agent6.app.review import directive as review_directive
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, RoleName

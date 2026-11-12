@@ -23,12 +23,12 @@ from agent6.app import (
     environment_lease,
     frontend,
     preflight,
-    review_actions,
     role_providers,
     stamps,
     workdirs,
 )
 from agent6.app import reporter as app_reporter
+from agent6.app.review import actions as review_actions
 from agent6.app.session import setup as session_setup
 from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.graph import curator as graph_curator

@@ -540,7 +540,7 @@ Auto-merge uses the lock its lifecycle already holds; live dispositions wait in 
 An open grounded block or unreadable evidence refuses the merge with its reason.
 Missing, stale and legacy count-only reviews do not block a merge.
 
-`app/review_actions.py` owns Fix, Resolve and Reopen for every front-end.
+`app/review/actions.py` owns Fix, Resolve and Reopen for every front-end.
 Live requests cross `sessions.ipc` as typed envelopes; `app/execution.py` drains them before polling the steer bridge.
 The worker checks the expected version and journals the action in append order.
 Offline actions use the existing session writer lock and recheck that no worker is alive.
@@ -566,7 +566,7 @@ It writes nothing to the repo or the memory: the operator turns a candidate into
 ## Session review directive
 
 `directive.parse_review` parses `/review [TARGET]` without importing the engine.
-`app/review_directive.py` resolves its reviewed side through `vcs.review.comparison`, loads base rules through `harness.repo_context.review_rules`, and builds the bounded message from `prompts/review_directive.py`.
+`app/review/directive.py` resolves its reviewed side through `vcs.review.comparison`, loads base rules through `harness.repo_context.review_rules`, and builds the bounded message from `prompts/review_directive.py`.
 `app.run` prepares a detached worktree through `app.fork_worktrees` when the range needs another checkout, for both ask and run.
 `app.execution` injects the live review preparer through `OperatorBridge`; a live request for another tree returns a new-session command without changing the checkout.
 `steer.feedback` carries refusals and no-op answers to the shared transcript fold without a model call.

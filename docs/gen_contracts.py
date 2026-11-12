@@ -125,7 +125,7 @@ CONTRACTS: tuple[Contract, ...] = (
             "FindingAction",
         ),
         writers=(
-            "app/review_actions.py",
+            "app/review/actions.py",
             "harness/review/panel.py",
             "harness/review/history.py",
             "harness/review/seat.py",

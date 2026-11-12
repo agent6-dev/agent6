@@ -164,7 +164,7 @@ def test_the_panel_sits_on_the_reviewed_branch_and_records_its_findings(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """With the panel on, an ask review journals a panel over the branch; Fix stays a run's."""
-    from agent6.app import review_actions
+    from agent6.app.review import actions as review_actions
 
     config_path = repo.parent / "config" / "agent6" / "config.toml"
     config_path.write_text(

@@ -11,7 +11,7 @@ from typing import Literal
 import pydantic
 
 from agent6 import review_records
-from agent6.app import review_actions
+from agent6.app.review import actions as review_actions
 from agent6.sessions import id
 from agent6.ui import spawn
 from agent6.ui.cli import common, completers

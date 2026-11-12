@@ -12,7 +12,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6 import kinds, paths
-from agent6.app import review_actions
+from agent6.app.review import actions as review_actions
 from agent6.config import Config, ConfigError, io, layer, layer_data, layer_presets, write
 from agent6.models import choices as models_choices
 from agent6.sessions import id, layout, process

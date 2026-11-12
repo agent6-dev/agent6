@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from agent6.app import review_actions
+from agent6.app.review import actions as review_actions
 from agent6.ui.web import git_model, server
 from tests import review_helpers
 from tests.web.test_web_git import _get
