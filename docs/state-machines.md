@@ -281,7 +281,7 @@ Where a run state's work lands:
 - a machine with run states works its own tree everywhere: `tool` and read-only agent states also run in fresh clones at the chain tip
     - setup comes from `[git.worktree].setup_command`, else the AGENTS.md block at `machine.begin.base_commit` (the commit the machine started from), never the writable chain tip
     - setup runs per tool call and gets the state's `timeout_s` before the tool receives its own `timeout_s`
-    - each clone runs the [setup command](usage.md#worktrees) before the state executes; setup output tails, argv, exit code and duration are recorded as `workspace.setup` events in the instance's `states/<seq>-<state>/logs.jsonl`, bounded by `machine.keep_state_logs`
+    - each clone runs the [setup command](usage.md#worktrees) before the state executes; setup output tails, argv, exit code and duration are recorded as `worktree.setup` events in the instance's `states/<seq>-<state>/logs.jsonl`, bounded by `machine.keep_state_logs`
     - a failed setup command takes the tool state's `nonzero` edge (`timeout` for a timed-out setup); clone or jail host failures abort the machine instead
     - an agent state's failed setup command takes its `failed` edge (reason `setup_command_failed`)
     - [setup approval policy](security.md#4-commands-and-environment) is checked at preflight

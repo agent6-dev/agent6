@@ -1774,10 +1774,10 @@ class VerifyTestOnlyGreen(Event):
     paths: Sequence[Any] = pydantic.Field(description="Affected repository-relative paths.")
 
 
-class WorkspaceSetup(Event):
-    """The workspace setup command finished."""
+class WorktreeSetup(Event):
+    """The worktree's setup command finished."""
 
-    TYPE: ClassVar[str] = "workspace.setup"
+    TYPE: ClassVar[str] = "worktree.setup"
     execution_id: str | None = pydantic.Field(default=None, description="Execution identifier.")
     target_id: str | None = pydantic.Field(
         default=None,
@@ -1932,7 +1932,7 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "verify.start": VerifyStart,
     "verify.swapped": VerifySwapped,
     "verify.test_only_green": VerifyTestOnlyGreen,
-    "workspace.setup": WorkspaceSetup,
+    "worktree.setup": WorktreeSetup,
 }
 
 # A fresh run emits session.start; a resumed execution emits only session.resume.

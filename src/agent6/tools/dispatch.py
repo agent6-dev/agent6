@@ -854,10 +854,10 @@ class ToolDispatcher:
             access=self._jail_access("setup_command"),
         )
         self._emit(
-            journal.WorkspaceSetup(
+            journal.WorktreeSetup(
                 execution_id=self.execution_id,
                 target_id=self.target_id,
-                **kinds.workspace_setup_fields(res),
+                **kinds.worktree_setup_fields(res),
             )
         )
         return res

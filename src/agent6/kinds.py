@@ -670,8 +670,8 @@ class SandboxReport:
     detail: str
 
 
-def workspace_setup_fields(result: CommandResult) -> dict[str, Any]:
-    """Return the shared workspace.setup event body.
+def worktree_setup_fields(result: CommandResult) -> dict[str, Any]:
+    """Return the shared worktree.setup event body.
 
     Args:
         result: The setup command's result.

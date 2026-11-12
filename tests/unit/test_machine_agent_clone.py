@@ -335,7 +335,7 @@ reason = "setup failed"
     assert len(logs) == 1
     target, event = [json.loads(line) for line in logs[0].read_text().splitlines()]
     assert target["type"] == "execution.target"
-    assert event["type"] == "workspace.setup"
+    assert event["type"] == "worktree.setup"
     assert event["target_id"] == target["target_id"]
     assert event["execution_id"] == target["execution_id"]
     assert event["command"] == list(expected_setup)

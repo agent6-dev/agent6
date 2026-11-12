@@ -161,7 +161,7 @@ def machine_tool_runner(
         Args:
             state: The tool state's name, which selects the config the workspace setup reads.
             policy: The tool command's jail policy, built for the repository.
-            events_log: The state's log, for the `workspace.setup` event; None writes none.
+            events_log: The state's log, for the `worktree.setup` event; None writes none.
 
         Returns:
             The command's result, or the setup command's when workspace setup fails.

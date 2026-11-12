@@ -1470,9 +1470,9 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `turn` | `int` | The execution's turn number. |
 | `paths` | `list` | Affected repository-relative paths. |
 
-### workspace.setup
+### worktree.setup
 
-**Support: public.** The workspace setup command finished.
+**Support: public.** The worktree's setup command finished.
 
 | Field | Type | Meaning |
 | --- | --- | --- |

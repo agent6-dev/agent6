@@ -1080,7 +1080,7 @@ def test_a_lane_runs_the_setup_command_in_its_clone(
 def _setup_events(repo: pathlib.Path, session_id: str) -> list[dict[str, Any]]:
     log = _run_dir(repo, session_id) / "logs.jsonl"
     events = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
-    return [event for event in events if event["type"] == "workspace.setup"]
+    return [event for event in events if event["type"] == "worktree.setup"]
 
 
 def test_the_setup_is_journaled_and_a_resume_never_runs_it_again(

@@ -20,7 +20,7 @@ resumed = test_execution_evidence.resumed
     "event_type,field,value",
     [
         ("execution.target", "target", None),
-        ("workspace.setup", "duration_s", "not-a-number"),
+        ("worktree.setup", "duration_s", "not-a-number"),
         ("execution.jobs", "outcome", "not-a-state"),
         ("execution.environment", "outcome", "not-a-state"),
         ("execution.target", "home", "/conflicting-home"),

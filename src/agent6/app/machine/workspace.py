@@ -50,10 +50,10 @@ class _Runner:
         result = jail.run_in_jail(dataclasses.replace(self.policy, argv=argv))
         if events is not None:
             events.emit(
-                journal.WorkspaceSetup(
+                journal.WorktreeSetup(
                     execution_id=execution_id,
                     target_id=target_id,
-                    **kinds.workspace_setup_fields(result),
+                    **kinds.worktree_setup_fields(result),
                 )
             )
         return result
@@ -72,7 +72,7 @@ def tool_setup_failure(
     Args:
         cfg: The tool state's config, whose `[git.worktree].setup_command` runs.
         policy: The tool's jail policy, which the setup command runs under.
-        events_log: The log the `workspace.setup` event goes to; None writes none.
+        events_log: The log the `worktree.setup` event goes to; None writes none.
         reporter: Receives the setup's notes.
 
     Returns:

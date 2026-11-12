@@ -401,7 +401,7 @@ def test_target_stamps_record_environment_policy_not_values(
 def test_old_logs_do_not_borrow_a_later_environment(saved: layout.SessionLayout) -> None:
     """Historical setup and verification keep unknown target references even beside a new stamp."""
     saved.logs_path.write_text(
-        json.dumps({"type": "workspace.setup", "command": ["true"], "exit_code": 0})
+        json.dumps({"type": "worktree.setup", "command": ["true"], "exit_code": 0})
         + "\n"
         + json.dumps({"type": "verify.end", "command": ["true"], "exit_code": 0})
         + "\n"

@@ -856,7 +856,7 @@ def test_lane_setup_output_survives_import_and_a_failed_one_reaches_the_operator
     for lane in lanes:
         imported = state / "sessions" / "runs" / lane.session_id
         events = [json.loads(line) for line in (imported / "logs.jsonl").read_text().splitlines()]
-        (setup,) = [event for event in events if event["type"] == "workspace.setup"]
+        (setup,) = [event for event in events if event["type"] == "worktree.setup"]
         assert setup["stdout_tail"] == "setup-out\n" and setup["stderr_tail"] == "setup-err\n"
         if exit_code:
             (end,) = [event for event in events if event["type"] == "session.stop"]
@@ -869,7 +869,7 @@ def test_lane_setup_output_survives_import_and_a_failed_one_reaches_the_operator
         assert not lane.workdir.exists()
         imported = state / "sessions" / "runs" / lane.session_id
         events = [json.loads(line) for line in (imported / "logs.jsonl").read_text().splitlines()]
-        assert sum(event["type"] == "workspace.setup" for event in events) == 1
+        assert sum(event["type"] == "worktree.setup" for event in events) == 1
         with monkeypatch.context() as showing:
             showing.chdir(origin)
             assert cli_main(["sessions", "show", lane.session_id]) == 0

@@ -387,7 +387,7 @@ def test_show_prints_a_setup_failure_once(
         monkeypatch,
         [
             {"type": "session.start", "mode": "run"},
-            {"type": "workspace.setup", "command": ["uv", "sync", "--offline"], "exit_code": 1},
+            {"type": "worktree.setup", "command": ["uv", "sync", "--offline"], "exit_code": 1},
             {
                 "type": "session.stop",
                 "reason": "setup_command_failed",

@@ -422,7 +422,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     end_ep = None
                     end_tree = ""
                     pending_prompts.clear()
-                elif etype == "workspace.setup":
+                elif etype == "worktree.setup":
                     setup_output = format.setup_output(ev)
                 elif etype == "verify.start":
                     if ev.get("verify_id"):

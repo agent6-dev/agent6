@@ -250,7 +250,7 @@ class ExecutionObservations:
             case "execution.target":
                 if self.targets.error:
                     raise EvidenceError(self.targets.error)
-            case "workspace.setup":
+            case "worktree.setup":
                 self.setups.append(SETUP.validate_python(event))
             case "execution.jobs":
                 self.jobs.append(JOBS.validate_python(event))
