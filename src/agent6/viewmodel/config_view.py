@@ -380,21 +380,41 @@ def _truncate(text: str, width: int) -> str:
     return text[: width - 1] + "\u2026"
 
 
+def description_points(description: str) -> tuple[str, ...]:
+    """Return a description's points, one per `; ` in the field's text, markdown bold stripped.
+
+    A field description is a chain of points joined by semicolons (the docs table cell is one
+    line); every editor shows them one per line.
+
+    Args:
+        description: The field's description.
+
+    Returns:
+        The points, blanks dropped.
+    """
+    points = (point.strip() for point in description.replace("**", "").split("; "))
+    return tuple(point for point in points if point)
+
+
 def plain_description(description: str) -> str:
-    """Return a leaf's description as a terminal shows it, markdown bold stripped."""
-    return description.replace("**", "")
+    """Return a leaf's description as a terminal shows it, one point per line."""
+    return "\n".join(description_points(description))
 
 
 def _description_lines(description: str, indent: str) -> list[str]:
-    """Return the description wrapped for a terminal at the given indent."""
-    return textwrap.wrap(
-        plain_description(description),
-        width=92,
-        initial_indent=indent,
-        subsequent_indent=indent,
-        break_on_hyphens=False,
-        break_long_words=False,
-    )
+    """Return the description wrapped for a terminal at the given indent, one point per line."""
+    return [
+        line
+        for point in description_points(description)
+        for line in textwrap.wrap(
+            point,
+            width=92,
+            initial_indent=indent,
+            subsequent_indent=indent,
+            break_on_hyphens=False,
+            break_long_words=False,
+        )
+    ]
 
 
 def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
@@ -414,6 +434,7 @@ def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
         display: The rendered effective value.
         default_display: The rendered default value.
         model_role: The role whose model picker the leaf opens; "" for every other leaf.
+        description_points: The description's points, one per line in an editor.
 
     Args:
         s: The leaf.
@@ -438,6 +459,7 @@ def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
         "display": display_value(s),
         "default_display": format_value(s.default, display_safe=s.display_safe),
         "model_role": s.model_role,
+        "description_points": list(description_points(s.description)),
     }
 
 

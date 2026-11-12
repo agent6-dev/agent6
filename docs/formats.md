@@ -2044,6 +2044,7 @@ Source: [`viewmodel.config_view._leaf_json`](https://github.com/agent6-dev/agent
 | `display` | `JSON` | The rendered effective value. |
 | `default_display` | `JSON` | The rendered default value. |
 | `model_role` | `JSON` | The role whose model picker the leaf opens; "" for every other leaf. |
+| `description_points` | `JSON` | The description's points, one per line in an editor. |
 
 ### `/api/config` editing fields
 

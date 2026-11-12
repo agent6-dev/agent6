@@ -516,3 +516,27 @@ def test_the_view_orders_sections_and_leaves_by_the_shared_rule(tmp_path: pathli
     assert models == sorted(models) and models[0] == "models.default"
     payload = json.loads(config_view.render_show(eff, as_json=True))
     assert list(payload) == [s.key for s in view.settings]
+
+
+def test_a_description_renders_one_point_per_line_everywhere(tmp_path: pathlib.Path) -> None:
+    """A field's semicolon chain read as a wall of text in the TUI, the web and `--descriptions`."""
+    chain = "**first** point; second `a; b` point; third"
+    assert config_view.description_points(chain) == (
+        "first point",
+        "second `a",
+        "b` point",
+        "third",
+    )
+    assert config_view.plain_description("one; two") == "one\ntwo"
+    eff = _effort_config(tmp_path, "")
+    leaf = next(
+        s
+        for s in config_view.build_config_view(eff).settings
+        if s.key == "sandbox.extra_read_paths"
+    )
+    points = json.loads(config_view.render_show(eff, as_json=True))["sandbox.extra_read_paths"][
+        "description_points"
+    ]
+    assert points == list(config_view.description_points(leaf.description)) and len(points) >= 3
+    shown = config_view.render_show(eff, descriptions=True)
+    assert "      " + points[1] in shown

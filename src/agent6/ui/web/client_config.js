@@ -60,7 +60,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     tr.appendChild(el('td', 'src', esc(s.source)));
     // Hover text: the leaf's meaning (the docs table cell), from the same
     // per-key payload the editor overlay shows it in.
-    tr.title = s.description ? plainDescription(s.description) : 'click to edit';
+    tr.title = s.description ? (s.description_points || [s.description]).join('\n') : 'click to edit';
     tr.style.cursor = 'pointer';
     tr.setAttribute('data-key', k);
     actionable(tr, () => { tr.focus({preventScroll: true}); editConfig(k, s, registry.tables, refresh, data); }, 'edit ' + k);
@@ -86,13 +86,17 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
 // A leaf's description is the docs table cell: markdown-lite. Backtick spans
 // render as code; `**bold**` is dropped (the terminal renderers do the same).
 function plainDescription(text) { return String(text).replace(/\*\*/g, ''); }
-function descriptionNode(text) {
+// One line per point: the server splits the field's semicolon chain (`description_points`).
+function descriptionNode(points) {
   const frag = document.createDocumentFragment();
-  const parts = plainDescription(text).split('`');
-  parts.forEach((part, i) => {
-    if (!part) return;
-    frag.appendChild(i % 2 ? el('code', null, part) : document.createTextNode(part));
-  });
+  for (const point of Array.isArray(points) ? points : [points]) {
+    const line = el('div', 'cfg-point');
+    plainDescription(point).split('`').forEach((part, i) => {
+      if (!part) return;
+      line.appendChild(i % 2 ? el('code', null, part) : document.createTextNode(part));
+    });
+    frag.appendChild(line);
+  }
   return frag;
 }
 
@@ -309,7 +313,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   box.appendChild(meta);
   if (s.description) {
     const desc = el('div', 'cfg-desc');
-    desc.appendChild(descriptionNode(s.description));
+    desc.appendChild(descriptionNode(s.description_points || [s.description]));
     box.appendChild(desc);
   }
   let field, combo;
