@@ -15,17 +15,15 @@ A coding agent with sandboxed commands, resumable sessions, and editable workflo
   </tr>
 </table>
 
-- Runs the model's commands in a [Linux sandbox](#security) with the file and network access you set.
-- Saves conversations, tool activity, and Git checkpoints so you can inspect, resume, or fork a session from an earlier turn.
-- Shows the task graph, token usage and compaction as they happen.
-- Pinned instructions survive compaction; repository memory carries facts across runs.
-- The model can run a configured or inferred verification command; agent6 reports the result or marks the final tree unverified.
-- Reviews the diff with a panel of models you configure, keeps each finding open until you resolve it, and refuses to merge over an open blocking finding.
-- Runs [parallel attempts][parallel-runs] in isolated clones with `--parallel N` or a list of models, then ranks the results for you to choose which to merge.
-- Defines long-running workflows in editable [TOML state machines][state-machines], combining agent runs, tool calls, waits, and branches with offline tests, crash recovery, and replay from recorded results.
-- Supports repository `AGENTS.md` instructions, [SKILL.md packs][skills], [MCP servers][mcp], and background commands for development servers and watchers.
-- Shows the repository in the browser: the commit graph, each commit's diff, a compare of two revisions, and the files at any revision with blame.
-- Nine runtime dependencies, no telemetry unless you [configure an export][telemetry], and no automatic updates.
+- Runs commands in a [Linux sandbox](#security); you set file and network access.
+- Routes each role to a hosted, local or subscription model.
+- Resumes or forks a saved session from an earlier turn.
+- Runs your verification command and marks an unverified tree.
+- Reviews the diff with a model panel; blocking findings stop the merge.
+- Runs in a worktree, or as [parallel attempts][parallel-runs] in clones, ranked for you.
+- Defines workflows as [TOML state machines][state-machines] with recovery and replay.
+- Follows `AGENTS.md` and [SKILL.md packs][skills]; [MCP servers][mcp] are opt-in.
+- No telemetry unless you [export it][telemetry], and no automatic updates.
 
 Also available as a [streaming CLI][cli-demo] and through [ACP editor integration][acp].
 
