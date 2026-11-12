@@ -993,6 +993,48 @@ def _run_git(path: pathlib.Path, *args: str) -> str:
     ).stdout.strip()
 
 
+def test_fetch_brings_a_remotes_branches_and_a_pull_request_into_its_tracking_refs(
+    repo: tuple[pathlib.Path, dict[str, str]],
+    port: int,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """The page's fetch writes `refs/remotes/<name>/` only, and the refs list shows no token."""
+    path, _shas = repo
+    upstream = tmp_path_factory.mktemp("upstream")
+    _run_git(upstream, "init", "-q", "-b", "main")
+    (upstream / "u.txt").write_text("u\n", encoding="utf-8")
+    _run_git(upstream, "add", "-A")
+    _run_git(upstream, "commit", "-qm", "upstream")
+    tip = _run_git(upstream, "rev-parse", "HEAD")
+    _run_git(upstream, "update-ref", "refs/pull/3/head", "HEAD")
+    _run_git(path, "remote", "add", "up", str(upstream))
+    _run_git(path, "remote", "add", "web", "https://bot:s3cret@example.invalid/x.git")
+    head = _run_git(path, "rev-parse", "HEAD")
+
+    assert _ok(port, "/api/git/refs")["remotes"] == [
+        {"name": "up", "url": str(upstream)},
+        {"name": "web", "url": "https://example.invalid/x.git"},
+    ]
+    assert _post(port, "/api/git/fetch", {"remote": "up"}) == (
+        200,
+        {"ok": True, "message": "fetched up: main"},
+    )
+    assert _run_git(path, "rev-parse", "up/main") == tip
+    assert _run_git(path, "rev-parse", "HEAD") == head
+    assert _post(port, "/api/git/fetch", {"remote": "up", "pull": 3}) == (
+        200,
+        {"ok": True, "message": f"fetched up/pr/3 at {tip[:12]}"},
+    )
+    kinds = {r["name"]: r["kind"] for r in _ok(port, "/api/git/refs")["refs"]}
+    assert kinds["up/main"] == kinds["up/pr/3"] == "remote"
+    assert _post(port, "/api/git/fetch", {"remote": "nope"}) == (
+        422,
+        {"ok": False, "error": "no remote 'nope'"},
+    )
+    status, _body = _post(port, "/api/git/fetch", {"remote": "up", "pull": 0})
+    assert status == 400  # the body's own refusal: a pull request number starts at 1
+
+
 def _worktree_rows(port: int) -> dict[str, Any]:
     return {f["path"]: f for f in _ok(port, "/api/git/worktree")["files"]}
 

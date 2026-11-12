@@ -2247,6 +2247,9 @@ Source: [`ui.web.git_model.refs_payload`](https://github.com/agent6-dev/agent6/b
 | `head.sha` | `JSON` | The HEAD commit identifier. |
 | `head.branch` | `JSON` | The current branch name. |
 | `refs` | `JSON` | The selectable ref rows. |
+| `remotes` | `JSON` | The remotes a fetch can name. |
+| `remotes[].name` | `JSON` | The remote's name. |
+| `remotes[].url` | `JSON` | Its URL, an http(s) URL's user and password left out. |
 
 ### `/api/git/graph` payload
 
@@ -3046,6 +3049,17 @@ Source: [`agent6.ui.web.server.GitBranchBody`](https://github.com/agent6-dev/age
 | --- | --- | --- |
 | `name` | `str` | The branch name. |
 | `start_point` | `str` | For a new branch, the revision to cut from; "" is HEAD. |
+
+### GitFetchBody
+
+**Support: public.** A Git page fetch from one remote.
+
+Source: [`agent6.ui.web.server.GitFetchBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `remote` | `str` | The remote's name. |
+| `pull` | `int \| None` | A pull request's number: its `refs/pull/<n>/head` lands at `<remote>/pr/<n>`. None fetches the remote's branches. |
 
 ### ConfigSetBody
 

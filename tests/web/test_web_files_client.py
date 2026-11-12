@@ -84,7 +84,7 @@ const picker = (_, value, choose) => {
 };
 const pending = [];
 let getJSON = async url => {
-  if (url === '/api/git/refs') return {head: {sha: 'tip'}, refs: []};
+  if (url === '/api/git/refs') return {head: {sha: 'tip'}, refs: [], remotes: []};
   if (url.startsWith('/api/git/tree')) return {rev: url.includes('new') ? 'new' : 'old',
     files: [{path: 'a.txt', kind: 'file', size: 5}], truncated: false};
   return new Promise((resolve, reject) => pending.push({url, resolve, reject}));
@@ -182,7 +182,7 @@ const commit = {sha, short: sha.slice(0,7), subject: 'linked commit', parents: [
   author: {name:'t', email:'t@t', date:'2026-01-01'},
   committer: {name:'t', email:'t@t', date:'2026-01-01'}, files: [], base};
 getJSON = async url => {
-  if (url === '/api/git/refs') return {head: {sha}, refs: []};
+  if (url === '/api/git/refs') return {head: {sha}, refs: [], remotes: []};
   if (url === '/api/git/worktree') return {files: []};
   if (url.startsWith('/api/git/graph')) return {commits: [commit], tips:[sha], has_more:false};
   if (url === '/api/git/commit/' + sha) return commit;
@@ -222,7 +222,7 @@ const commit = {sha, short:sha.slice(0,7), subject:'root', parents:[], refs:[], 
   author:{name:'writer',email:'w@w',date:'2026'}, committer:{name:'writer',date:'2026'},
   files:[file]};
 getJSON = async url => {
-  if (url === '/api/git/refs') return {head:{sha},refs:[]};
+  if (url === '/api/git/refs') return {head:{sha},refs:[],remotes:[]};
   if (url === '/api/git/worktree') return {files:[]};
   if (url.startsWith('/api/git/graph')) return {commits:[],tips:[],has_more:false};
   if (url === '/api/git/commit/' + sha) return commit;
@@ -318,7 +318,7 @@ def test_ignored_toggle_is_worktree_only_and_remembers_the_listing_and_read_opti
 const requests = [];
 getJSON = async url => {
   requests.push(url);
-  if (url === '/api/git/refs') return {head:{sha:'tip'},refs:[]};
+  if (url === '/api/git/refs') return {head:{sha:'tip'},refs:[],remotes:[]};
   if (url.startsWith('/api/git/tree')) {
     const ignored = url.includes('ignored=1'), worktree = url.includes('rev=WORKTREE');
     return {rev:worktree ? 'WORKTREE' : 'tip',ignored,
@@ -643,8 +643,9 @@ const commit = {sha, short: sha.slice(0,7), subject: 'late commit', parents: [],
 let holdRefs = false, releaseRefs;
 getJSON = async url => {
   if (url === '/api/git/refs') {
-    if (!holdRefs) return {head: {sha}, refs: []};
-    return new Promise(resolve => { releaseRefs = () => resolve({head: {sha}, refs: []}); });
+    const refs = {head: {sha}, refs: [], remotes: []};
+    if (!holdRefs) return refs;
+    return new Promise(resolve => { releaseRefs = () => resolve(refs); });
   }
   if (url === '/api/git/worktree') return {files: []};
   if (url.startsWith('/api/git/graph')) return {commits: [commit], tips: [sha], has_more: false};

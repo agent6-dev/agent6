@@ -230,7 +230,7 @@ const reviewed = {session_id: 'run', panel: e.panel,
 const requests = [];
 getJSON = async url => {
   requests.push(url);
-  if (url === '/api/git/refs') return {refs: [], head: {sha: 'hc'}};
+  if (url === '/api/git/refs') return {refs: [], head: {sha: 'hc'}, remotes: []};
   if (url === '/api/git/worktree') return {base: 'bc', files: []};
   if (url.startsWith('/api/git/graph')) return {commits: [], tips: [], has_more: false};
   if (url === '/api/reviews/panel') return reviewed;

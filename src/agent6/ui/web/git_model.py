@@ -17,6 +17,7 @@ from typing import Any
 from agent6 import errors, paths
 from agent6.ui.web import diff_highlight, highlight, markdown
 from agent6.vcs.git import diff as git_diff
+from agent6.vcs.git import fetch as git_fetch
 from agent6.vcs.git import files as git_files
 from agent6.vcs.git import history as git_history
 from agent6.vcs.git import ops as git_ops
@@ -284,18 +285,22 @@ def refs_payload(repo: pathlib.Path) -> dict[str, Any]:
         head.sha: The HEAD commit identifier.
         head.branch: The current branch name.
         refs: The selectable ref rows.
+        remotes: The remotes a fetch can name.
+        remotes[].name: The remote's name.
+        remotes[].url: Its URL, an http(s) URL's user and password left out.
 
     Args:
         repo: The repository.
 
     Returns:
-        The current HEAD and selectable refs.
+        The current HEAD, the selectable refs and the remotes.
     """
     _repo(repo)
     sha, branch = git_history.head_commit(repo)
     return {
         "head": {"sha": sha, "branch": branch},
         "refs": [_ref_row(r) for r in git_history.list_refs(repo)],
+        "remotes": [{"name": r.name, "url": r.shown_url} for r in git_fetch.list_remotes(repo)],
     }
 
 
@@ -614,6 +619,29 @@ def switch(repo: pathlib.Path, name: str) -> str:
     if not git_read.branch_exists(repo, name):
         raise GitRequestError(f"no branch {name!r}")
     return _git_write(repo, lambda: (git_ops.switch_branch(repo, name), f"on branch {name}")[1])
+
+
+def fetch(repo: pathlib.Path, remote: str, pull: int | None = None) -> str:
+    """Fetch a remote's branches, or one pull request, into its remote-tracking refs.
+
+    No checkout, index or branch moves, so a live session does not block it.
+
+    Args:
+        repo: The repository.
+        remote: The remote's name.
+        pull: The pull request's number; None fetches the remote's branches.
+
+    Returns:
+        The one-line outcome.
+
+    Raises:
+        GitRequestError: No such remote, a refused transport, or a fetch that failed.
+    """
+    _repo(repo)
+    try:
+        return git_fetch.fetch_remote(repo, remote, pull=pull)
+    except errors.GitError as exc:
+        raise GitRequestError(str(exc)) from exc
 
 
 def _branch_name(name: str) -> None:

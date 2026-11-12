@@ -644,6 +644,40 @@ def test_model_catalog_ignores_a_closed_editors_response(
     assert not errors
 
 
+def test_the_git_toolbar_fetches_a_pull_request_and_offers_it_for_review(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    git_port: int,
+    tmp_path: pathlib.Path,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Fetch PR lands `<remote>/pr/<n>`, leaves it selected, and Review names it; Switch is off."""
+    from playwright.sync_api import expect
+
+    upstream = tmp_path_factory.mktemp("upstream")
+    _git(upstream, "init", "-q", "-b", "main")
+    (upstream / "u.txt").write_text("u\n", encoding="utf-8")
+    _git(upstream, "add", "-A")
+    _git(upstream, "commit", "-qm", "upstream")
+    _git(upstream, "update-ref", "refs/pull/3/head", "HEAD")
+    _git(tmp_path, "remote", "add", "up", str(upstream))
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    row = page.locator(".git-fetch")
+    expect(row).to_contain_text(str(upstream))  # where the fetch goes
+    row.get_by_role("button", name="Fetch", exact=True).click()
+    expect(page.locator("#toasts")).to_contain_text("fetched up: main")
+    row.get_by_placeholder("PR #").fill("#3")
+    row.get_by_role("button", name="Fetch PR", exact=True).click()
+    expect(page.locator("#toasts")).to_contain_text("fetched up/pr/3 at ")
+    branch = page.locator(".git-branch select").first
+    expect(branch).to_have_value("up/pr/3")
+    expect(page.get_by_role("button", name="Switch", exact=True)).to_be_disabled()
+    page.get_by_role("button", name="Review", exact=True).click()
+    expect(page.locator(".dock textarea")).to_have_value("/review up/pr/3")
+    assert errors == [], errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:

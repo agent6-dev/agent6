@@ -328,6 +328,19 @@ class GitBranchBody(_Body):
     start_point: str = ""
 
 
+class GitFetchBody(_Body):
+    """A Git page fetch from one remote.
+
+    Attributes:
+        remote: The remote's name.
+        pull: A pull request's number: its `refs/pull/<n>/head` lands at `<remote>/pr/<n>`.
+            None fetches the remote's branches.
+    """
+
+    remote: str
+    pull: int | None = pydantic.Field(default=None, ge=1)
+
+
 class ConfigSetBody(_Body):
     """A config write; `unset` removes the key from the target layer instead.
 
@@ -766,6 +779,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             elif sub == "switch":
                 name = GitBranchBody.model_validate(body).name
                 payload = {"message": git_model.switch(cwd, name)}
+            elif sub == "fetch":
+                wanted = GitFetchBody.model_validate(body)
+                payload = {"message": git_model.fetch(cwd, wanted.remote, wanted.pull)}
             else:
                 self._send_json({"error": f"not found: /api/git/{sub}"}, status=404)
                 return

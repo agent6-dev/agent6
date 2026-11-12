@@ -267,7 +267,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';
   const app = el('div', 'git-app'); view.appendChild(app);
-  let refs = refsData.refs, head = refsData.head, wt = wtData;
+  let refs = refsData.refs, head = refsData.head, wt = wtData, remotes = refsData.remotes;
   const selectedRefs = () => refs.filter(r => gitState.groupOn[r.kind] && !gitState.refOff.has(r.full));
 
   // -- toolbar: the ref filter, the compare toggle, the refresh, the counts -----------
@@ -282,25 +282,59 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   // -- your branch: switch to one, start one at HEAD, review one ----------------------
   // Every write goes to /api/git/<verb>, refused while a session is live in this checkout.
   const branchRow = el('span', 'row git-branch');
-  const branchSel = el('select', 'field'); branchSel.title = 'the branch to switch to or review';
+  const branchSel = el('select', 'field'); branchSel.title = 'the branch to switch to or review; a remote-tracking ref is for review';
   const switchBtn = el('button', 'mini', 'Switch');
   switchBtn.title = 'check this branch out (git switch); refused while a session is live here or local changes would be lost';
   const reviewBtn = el('button', 'mini', 'Review');
   reviewBtn.title = 'start a review session over this branch: /review <branch> in the new-work composer';
   const newName = el('input', 'field'); newName.placeholder = 'new branch…'; newName.style.width = '10em';
   const createBtn = el('button', 'mini', 'Create'); createBtn.title = 'create the branch at HEAD and check it out';
-  const paintBranches = () => {
+  // Local branches switch and review; a remote-tracking ref (a fetched pull request among
+  // them) reviews only. `keep` names the ref to leave selected after a re-read.
+  const isLocal = () => branchSel.selectedOptions[0]?.dataset.kind === 'branch';
+  const gateSwitch = () => { switchBtn.disabled = !branchSel.value || !isLocal() || branchSel.value === head.branch; };
+  const paintBranches = (keep) => {
     branchSel.textContent = '';
-    for (const r of refs.filter(r => r.kind === 'branch')) {
-      const o = el('option', null, r.name); o.value = r.name; if (r.name === head.branch) o.selected = true; branchSel.appendChild(o);
+    for (const [kind, label] of [['branch', 'branches'], ['remote', 'remote-tracking']]) {
+      const rows = refs.filter(r => r.kind === kind && !r.name.endsWith('/HEAD'));
+      if (!rows.length) continue;
+      const group = el('optgroup'); group.label = label;
+      for (const r of rows) {
+        const o = el('option', null, r.name); o.value = r.name; o.dataset.kind = kind;
+        if (keep ? r.name === keep : kind === 'branch' && r.name === head.branch) o.selected = true;
+        group.appendChild(o);
+      }
+      branchSel.appendChild(group);
     }
-    switchBtn.disabled = !branchSel.value || branchSel.value === head.branch;
+    gateSwitch();
     reviewBtn.disabled = !branchSel.value;
   };
-  branchSel.onchange = () => { switchBtn.disabled = branchSel.value === head.branch; };
+  branchSel.onchange = gateSwitch;
   reviewBtn.onclick = () => { handToNewWork({ task: '/review ' + branchSel.value }); location.hash = '#/'; };
   for (const x of [branchSel, switchBtn, reviewBtn, newName, createBtn]) branchRow.appendChild(x);
   bar.appendChild(branchRow);
+
+  // -- your remotes: fetch one's branches, or one pull request, into its remote-tracking refs.
+  // Nothing is merged and no branch of yours moves; the URL shown is where the fetch goes.
+  const fetchRow = el('span', 'row git-branch git-fetch');
+  const remoteSel = el('select', 'field'); remoteSel.title = 'the remote to fetch from'; remoteSel.style.width = '12em';
+  const remoteUrl = el('span', 'muted git-counts');
+  const fetchBtn = el('button', 'mini', 'Fetch');
+  fetchBtn.title = "fetch this remote's branches into <remote>/<branch>; nothing is merged, no branch of yours moves, tags and submodules are left alone";
+  const pullNum = el('input', 'field'); pullNum.placeholder = 'PR #'; pullNum.inputMode = 'numeric'; pullNum.style.width = '5em';
+  pullNum.title = 'a pull request number on this remote';
+  const pullBtn = el('button', 'mini', 'Fetch PR');
+  pullBtn.title = "fetch that pull request (the remote's refs/pull/<number>/head) into <remote>/pr/<number>, then Review or Compare it";
+  const paintRemotes = () => {
+    const kept = remoteSel.value;
+    remoteSel.textContent = '';
+    for (const r of remotes) { const o = el('option', null, r.name); o.value = r.name; if (r.name === kept) o.selected = true; remoteSel.appendChild(o); }
+    fetchRow.hidden = !remotes.length;
+    remoteSel.onchange();
+  };
+  remoteSel.onchange = () => { remoteUrl.textContent = (remotes.find(r => r.name === remoteSel.value) || { url: '' }).url; };
+  for (const x of [remoteSel, fetchBtn, pullNum, pullBtn, remoteUrl]) fetchRow.appendChild(x);
+  bar.appendChild(fetchRow);
 
   const body = el('div', 'git-body'); app.appendChild(body);
   const graph = el('div', 'git-graph'); body.appendChild(graph);
@@ -369,13 +403,14 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   };
   // ↻: the refs, the working tree and the graph again; an open commit panel stays, an
   // open working-tree panel is painted afresh.
-  const reload = async () => {
+  const reload = async (keep) => {
     let r, w;
     try { [r, w] = await Promise.all([getJSON('/api/git/refs'), getJSON('/api/git/worktree')]); }
     catch (e) { toast(e.message, true); return; }
     if (!app.isConnected) return;
-    refs = r.refs; head = r.head; wt = w;
-    paintBranches();
+    refs = r.refs; head = r.head; wt = w; remotes = r.remotes;
+    paintBranches(typeof keep === 'string' ? keep : '');
+    paintRemotes();
     if (selected === GIT_WORKTREE) showWorktree();
     await loadGraph(true);
   };
@@ -389,10 +424,31 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     try { const d = await postJSON(GIT_WRITES[verb], body); toast(d.message || verb); await reload(); }
     catch (e) { toast(e.message, true); }
   };
+  // A fetch can take a network's time: its two buttons wait. A fetched pull request is left
+  // selected, so Review is the next click.
+  const gitFetch = async (pull) => {
+    const remote = remoteSel.value;
+    fetchBtn.disabled = pullBtn.disabled = true;
+    try {
+      const d = await postJSON('/api/git/fetch', pull ? { remote, pull } : { remote });
+      toast(d.message || 'fetched');
+      await reload(pull ? remote + '/pr/' + pull : '');
+    } catch (e) { toast(e.message, true); }
+    fetchBtn.disabled = pullBtn.disabled = false;
+  };
+  fetchBtn.onclick = () => gitFetch(0);
+  pullBtn.onclick = () => {
+    const n = Number(pullNum.value.trim().replace(/^#/, ''));
+    if (!Number.isInteger(n) || n < 1) { toast('a pull request number is a whole number above zero', true); return; }
+    pullNum.value = '';
+    gitFetch(n);
+  };
+  pullNum.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); pullBtn.onclick(); } };
   switchBtn.onclick = () => gitWrite('switch', { name: branchSel.value });
   createBtn.onclick = () => { const name = newName.value.trim(); if (!name) return; newName.value = ''; gitWrite('branch', { name }); };
   newName.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); createBtn.onclick(); } };
   paintBranches();
+  paintRemotes();
 
   // -- the side panel: a commit, or the compare --------------------------------------
   const sideHead = (title) => {
