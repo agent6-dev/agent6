@@ -133,7 +133,7 @@ jobs:
 
       - name: Build the site (strict)
         run: >
-          uvx --with mkdocs-material==9.7.6 --with mkdocs-glightbox==0.5.2
+          uvx --with mkdocs-material==9.8.1 --with mkdocs-glightbox==0.5.2
           mkdocs build --strict -f docs/mkdocs.yml
 
       - uses: actions/upload-pages-artifact@v5

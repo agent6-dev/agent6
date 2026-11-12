@@ -100,6 +100,7 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
+      title: On this page
   - pymdownx.details
   - pymdownx.highlight:
       anchor_linenums: true

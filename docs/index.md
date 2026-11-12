@@ -53,7 +53,7 @@ Also available as a [streaming CLI](screenshots/out/hero-cli.webm) and through [
 
 Sandboxing supports **Linux on x86_64 and aarch64**; macOS runs without it, and Windows users should use WSL.
 
-Install with [uv](https://docs.astral.sh/uv/getting-started/installation/) or [pipx](https://pipx.pypa.io/stable/how-to/install-pipx.html), then connect a provider and select a model:
+Install from [PyPI](https://pypi.org/project/agent6) with [uv](https://docs.astral.sh/uv/getting-started/installation/) or [pipx](https://pipx.pypa.io/stable/how-to/install-pipx.html), then connect a provider and select a model:
 
 ```sh
 uv tool install agent6      # or pipx install agent6
