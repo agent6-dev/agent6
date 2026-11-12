@@ -83,7 +83,7 @@ Persistence also lets a poisoned cache or tool configuration reach later runs in
 `agent6 attach [<id>]` follows a run's conversation, or a machine's state, live.
 It rings the bell and sends a desktop notification (`notify-send`, when present) as the run starts waiting on an answer and as it ends; `run` does the same in the foreground.
 Ids are exact or an unambiguous prefix and default to the most recent run.
-A prefix selects the single matching session whose full id prefixes every other match, provided all matches have the same mode (for example, a parallel coordinator and its lanes).
+A prefix selects the single matching session whose full id prefixes every other match, provided the others have its mode or are its review seats (for example, a parallel coordinator and its lanes).
 Lanes remain reachable by their own ids.
 
 ```sh

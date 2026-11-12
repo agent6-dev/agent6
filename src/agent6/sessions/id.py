@@ -134,7 +134,10 @@ def unused_session_id(state_dir: pathlib.Path, bucket: str) -> str:
 def resolve_session(
     state_dir: pathlib.Path, query: str, *, buckets: Sequence[str] = layout.SESSION_BUCKETS
 ) -> layout.SessionLayout:
-    """Resolve an id or prefix, preferring a parent only within a single bucket.
+    """Resolve an id or prefix, preferring a parent over its own lanes and review seats.
+
+    A parent wins only over matches in its own bucket and over the read-only bucket, where
+    its seats' records live under ids that extend its own.
 
     Args:
         state_dir: The repo's state dir.
@@ -154,7 +157,8 @@ def resolve_session(
     if len(matches) > 1:
         shortest = min(matches, key=lambda match: len(match.session_id))
         if matches.count(shortest) == 1 and all(
-            match.subdir == shortest.subdir and match.session_id.startswith(shortest.session_id)
+            match.subdir in (shortest.subdir, "read_only")
+            and match.session_id.startswith(shortest.session_id)
             for match in matches
         ):
             return shortest

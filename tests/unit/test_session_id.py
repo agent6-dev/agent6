@@ -140,6 +140,20 @@ def test_resolve_fanout_prefix(tmp_path: pathlib.Path) -> None:
         id.resolve_session(tmp_path, "sweet-marsh")
 
 
+def test_resolve_a_reviewed_session_prefix_despite_its_seats(tmp_path: pathlib.Path) -> None:
+    """A reviewed ask's prefix read as ambiguous with its own seats' read-only records."""
+    parent = "green-canyon-NYACDZ"
+    seats = [f"{parent}-rc81e8ace-l{n}" for n in (1, 2)]
+    _bucket(tmp_path, parent, bucket="asks")
+    _bucket(tmp_path, *seats, bucket="read_only")
+    for query in ("green", "green-canyon", parent):
+        resolved = id.resolve_session(tmp_path, query)
+        assert (resolved.session_id, resolved.subdir) == (parent, "asks")
+    assert id.resolve_session(tmp_path, seats[0]).subdir == "read_only"
+    with pytest.raises(id.SessionIdError, match="ambiguous"):
+        id.resolve_session(tmp_path, f"{parent}-r")
+
+
 def test_resolve_duplicate_parent_is_ambiguous(tmp_path: pathlib.Path) -> None:
     """The same parent id in two buckets cannot win over its descendants."""
     _bucket(tmp_path, "sweet-marsh-DFQQ4G")
