@@ -44,7 +44,7 @@ def test_hub_and_session_tour(tour_page: Page, tmp_path: pathlib.Path) -> None:
     expect(tasks).to_contain_text("✓ Add percentile(xs, p) function to src/stats.py")
     expect(tasks).to_contain_text("✓ Add variance(xs) function (sample variance) to src/stats.py")
     expect(tasks).to_contain_text("✓ Add tests for percentile(xs, p) and variance(xs)")
-    expect(page.locator(".card-budget")).to_contain_text("cost: 0pt + $0.11 / $10.00")
+    expect(page.locator(".card-budget")).to_contain_text("usage: 0pt + $0.11 / $10.00")
     expect(page.locator(".card-budget")).to_contain_text("tokens: in 28839 · out 54982")
     expect(page.locator(".card-conv")).to_contain_text("Completed adding percentile(xs, p)")
     _stop(page, tmp_path, "02-session")

@@ -466,12 +466,12 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             rows = header["lanes"]
             lanes.border_title = f"fan-out: {format.lane_count(header['fanout']['lanes'])}"
             if not lanes.columns:
-                lanes.add_columns("id (Enter opens)", "model", "status", "cost")
+                lanes.add_columns("id (Enter opens)", "model", "status", "usage")
             cursor = lanes.cursor_coordinate
             lanes.clear()
             for row in rows:
                 lanes.add_row(
-                    *(rich_text.Text(row[k]) for k in ("session_id", "model", "label", "cost")),
+                    *(rich_text.Text(row[k]) for k in ("session_id", "model", "label", "usage")),
                     key=row["session_id"],
                 )
             lanes.move_cursor(row=cursor.row, column=cursor.column)

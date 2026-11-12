@@ -404,7 +404,7 @@ function paintRun(cards, s) {
       cards.lanes.previousSibling.textContent = `fan-out: ${s.fanout.lanes} lanes`;
       const table = el('table');
       const head = el('tr');
-      for (const label of ['id', 'model', 'status', 'cost']) head.appendChild(el('th', null, label));
+      for (const label of ['id', 'model', 'status', 'usage']) head.appendChild(el('th', null, label));
       table.appendChild(head);
       for (const lane of s.lanes || []) {
         const row = el('tr');
@@ -412,7 +412,7 @@ function paintRun(cards, s) {
         const link = el('a', null, lane.session_id);
         link.href = '#/session/' + encodeURIComponent(lane.session_id);
         cell.appendChild(link); row.appendChild(cell);
-        for (const key of ['model', 'label', 'cost']) row.appendChild(el('td', null, lane[key]));
+        for (const key of ['model', 'label', 'usage']) row.appendChild(el('td', null, lane[key]));
         table.appendChild(row);
       }
       cards.lanes.appendChild(table);

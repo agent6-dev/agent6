@@ -436,7 +436,7 @@ def test_a_plan_budget_stop_uses_one_label_and_prints_its_reason_once(
     )
     out = capsys.readouterr().out
     assert "failed · budget exhausted" in out
-    assert out.count("this run consumed ~1.0 percentage points") == 1
+    assert out.count("the plan moved ~1.0 percentage points") == 1
     assert "account at 49% on its 7-day window" in out
     assert "plan usage (chatgpt): 49% of the 7-day window" in out
     assert out.count("plan budget exhausted") == 1

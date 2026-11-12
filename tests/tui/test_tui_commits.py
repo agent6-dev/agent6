@@ -97,7 +97,7 @@ def test_the_top_line_counts_tasks_as_of_the_selected_commit(
             await pilot.pause()
             top = str(dash.query_one("#top", widgets.Static).render())
             assert "tasks: 0/1" in top
-            assert top.index("cost:") < top.index("as of turn 1")
+            assert top.index("usage:") < top.index("as of turn 1")
 
     asyncio.run(scenario())
 
