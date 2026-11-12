@@ -18,7 +18,7 @@ import sys
 from agent6 import errors, kinds, portable
 from agent6 import paths as agent6_paths
 from agent6.app import fork_worktrees, resume
-from agent6.sessions import id, process
+from agent6.sessions import id, lineage, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import common, steer_tty
@@ -501,8 +501,10 @@ def _remove_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
     if session_id:
         common.error("--asks clears this directory's asks; drop the run id.")
         return 2
-    bucket = sessions_layout.bucket_dir(agent6_paths.state_dir(cwd), "asks")
+    state_dir = agent6_paths.state_dir(cwd)
+    bucket = sessions_layout.bucket_dir(state_dir, "asks")
     sessions = tuple(bucket.iterdir()) if bucket.is_dir() else ()
+    seats = lineage.seat_records(state_dir, {session.name for session in sessions})
     gone = len(sessions)
     count = f"{gone} ask{'' if gone == 1 else 's'}"
     if gone and not yes and not portable.has_controlling_tty():
@@ -519,15 +521,16 @@ def _remove_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
     ):
         return 0
     try:
-        shutil.rmtree(bucket)
-    except FileNotFoundError:
-        pass
+        with contextlib.suppress(FileNotFoundError):
+            shutil.rmtree(bucket)
+        for seat in seats:
+            shutil.rmtree(seat)
     except OSError as exc:
-        common.error(f"could not remove {bucket}: {exc}")
+        common.error(f"could not remove {exc.filename or bucket}: {exc}")
         return 1
     try:
         if git_read.is_git_repo(cwd):
-            for session in sessions:
+            for session in (*sessions, *seats):
                 for ref in git_read.session_refs(cwd, session.name):
                     git_ops.delete_ref(cwd, ref)
     except errors.GitError as exc:
@@ -679,13 +682,18 @@ def _remove_session(
     Returns:
         The exit code; 1 on a partial delete.
     """
+    seats = lineage.seat_records(layout.state_dir, {layout.session_id})
     try:
         shutil.rmtree(layout.session_dir)
+        for seat in seats:
+            shutil.rmtree(seat)
     except OSError as exc:
         # A partial delete leaves a remnant: no success line, and the chain ref stays as its anchor.
         common.error(f"could not remove {layout.session_dir}: {exc}")
         return 1
     went: list[str] = []  # what went with the record
+    if seats:
+        went.append(f"{len(seats)} review seat record{'' if len(seats) == 1 else 's'}")
     stays = ""
     if worktree is not None and sharing:
         verb = "names" if len(sharing) == 1 else "name"
@@ -713,7 +721,10 @@ def _remove_session(
                 )
             )
         snapshots = git_read.session_refs(cwd, layout.session_id)
-        for ref in snapshots:
+        for ref in (
+            *snapshots,
+            *(r for seat in seats for r in git_read.session_refs(cwd, seat.name)),
+        ):
             git_ops.delete_ref(cwd, ref)
         if snapshots:
             count = len(snapshots)

@@ -138,6 +138,7 @@ depends_on = [
   "agent6.sessions.ipc",
   "agent6.sessions.journal",
   "agent6.sessions.layout",
+  "agent6.sessions.lineage",
   "agent6.sessions.lock",
   "agent6.sessions.manifest",
   "agent6.sessions.objects",

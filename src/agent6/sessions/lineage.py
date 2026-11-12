@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import pathlib
+from collections.abc import Collection
 
 from agent6.sessions import layout, manifest
 
@@ -55,4 +56,30 @@ def descendants_of(session_dir: pathlib.Path) -> tuple[pathlib.Path, ...]:
         seen.add(resolved)
         found.append(child)
         pending.extend(children_of(child))
+    return tuple(found)
+
+
+def seat_records(state_dir: pathlib.Path, parents: Collection[str]) -> tuple[pathlib.Path, ...]:
+    """Find the bounded read-only conversations the named sessions dispatched.
+
+    No listing shows a seat's record, so whatever removes its parent removes it too.
+
+    Args:
+        state_dir: The repository's state dir.
+        parents: The dispatching sessions' ids.
+
+    Returns:
+        The seat records, in name order.
+    """
+    directory = layout.bucket_dir(state_dir, "read_only")
+    if not parents or not directory.is_dir():
+        return ()
+    found: list[pathlib.Path] = []
+    for child in sorted(directory.iterdir()):
+        try:
+            saved = manifest.read_manifest(child)
+        except manifest.ManifestError:
+            continue
+        if saved.parallel is not None and saved.parallel.coordinator in parents:
+            found.append(child)
     return tuple(found)

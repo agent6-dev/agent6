@@ -358,3 +358,55 @@ def test_remove_asks_removes_their_review_refs(
     assert not asks.exists()
     assert git_read.chain_tip(tmp_path, ref) is None
     assert git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID))
+
+
+def _seat(state: pathlib.Path, seat_id: str, parent: str) -> pathlib.Path:
+    seat = state / "sessions" / "read_only" / seat_id
+    seat.mkdir(parents=True)
+    (seat / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "session_id": seat_id,
+                "mode": "read_only",
+                "user_task": "Review: security",
+                "parallel": {"group": f"{parent}-rpanel", "lane": 1, "coordinator": parent},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return seat
+
+
+def test_remove_takes_the_review_seat_records_no_listing_shows(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A removed run left its panel's seat sessions behind, where nothing lists them."""
+    monkeypatch.chdir(tmp_path)
+    _ended_unmerged_run(tmp_path)
+    state = paths.state_dir(tmp_path)
+    mine = _seat(state, f"{_ID}-rpanel-l1", _ID)
+    theirs = _seat(state, "other-rpanel-l1", "other")
+    ref = f"refs/agent6/{mine.name}/review/tree"
+    _git(tmp_path, "update-ref", ref, "HEAD")
+    assert main(["sessions", "remove", _ID]) == 0
+    assert not mine.exists() and theirs.exists()
+    assert git_read.chain_tip(tmp_path, ref) is None
+    assert "1 review seat record" in capsys.readouterr().out
+
+
+def test_remove_asks_takes_their_review_seat_records(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A /review ask's seats go with the asks; a run's seats stay with the run."""
+    monkeypatch.chdir(tmp_path)
+    _ended_unmerged_run(tmp_path)
+    state = paths.state_dir(tmp_path)
+    (state / "sessions" / "asks" / "review-ask").mkdir(parents=True)
+    asked = _seat(state, "review-ask-rpanel-l1", "review-ask")
+    kept = _seat(state, f"{_ID}-rpanel-l1", _ID)
+    assert main(["sessions", "remove", "--asks", "--yes"]) == 0
+    assert not asked.exists() and kept.exists()
