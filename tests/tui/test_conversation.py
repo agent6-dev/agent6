@@ -564,7 +564,9 @@ def test_live_pane_moves_only_while_a_model_call_is_in_flight(tmp_path: pathlib.
                 )
             await waits.wait_for(
                 pilot,
-                lambda: app.state.last_role is not None and app.state.last_role.in_flight,
+                lambda: (
+                    app.state.last_model_call is not None and app.state.last_model_call.in_flight
+                ),
                 "the next model call",
             )
             conv._poll()

@@ -645,7 +645,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
                 bar.policy = policy.session_policy(self._logs_path.parent).short()
             bar.set_mode(
                 mode=mode,
-                ctx_pct=self._host.context_pct(),
+                context_used_percent=self._host.context_used_percent(),
                 continue_as=self._host.continue_as,
                 needs_new_work=self._host.finished_green(),
             )

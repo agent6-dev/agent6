@@ -1157,7 +1157,9 @@ def test_stop_after_turn_drops_the_marker(tmp_path: pathlib.Path) -> None:
     asyncio.run(scenario())
 
 
-def test_context_pct_readout_in_top_line_and_bar(tmp_path: pathlib.Path, monkeypatch: Any) -> None:
+def test_context_used_percent_readout_in_top_line_and_bar(
+    tmp_path: pathlib.Path, monkeypatch: Any
+) -> None:
     """With the context window known, the top line and the composer subtitle show `ctx: NN%`."""
 
     def _window(_provider: str, _model: str) -> int:
@@ -1184,7 +1186,7 @@ def test_context_pct_readout_in_top_line_and_bar(tmp_path: pathlib.Path, monkeyp
             )
             app._tick()
             await pilot.pause()
-            assert app.context_pct() == 41
+            assert app.context_used_percent() == 41
             top = str(app._dash.query_one("#top", widgets.Static).render())
             assert "ctx: 41%" in top
             bar = app._dash.query_one("#dash-input", composer.SteerInput)
@@ -1894,7 +1896,9 @@ def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: pa
                 )
             await waits.wait_for(
                 pilot,
-                lambda: app.state.last_role is not None and app.state.last_role.in_flight,
+                lambda: (
+                    app.state.last_model_call is not None and app.state.last_model_call.in_flight
+                ),
                 "the first model call",
             )
             app._tick()

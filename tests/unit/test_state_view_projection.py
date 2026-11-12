@@ -9,7 +9,7 @@ def test_every_state_field_has_an_explicit_wire_classification() -> None:
     """A new state field requires an explicit public or private decision."""
     public = {
         "last_verify",
-        "last_event_ep",
+        "last_event_at",
         "budget",
         "session_id",
         "cursor_task_id",
@@ -31,7 +31,7 @@ def test_every_state_field_has_an_explicit_wire_classification() -> None:
         "log_tail",
         "undone_text",
         "finished",
-        "last_role",
+        "last_model_call",
         "pins",
         "questions",
         "stop_reason",

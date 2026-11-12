@@ -311,7 +311,7 @@ class SessionCore:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class RoleCall:
+class ModelCallView:
     """The last model call and what it streamed.
 
     Attributes:
@@ -320,7 +320,7 @@ class RoleCall:
         in_flight: The call has not returned.
         provider: The provider that dialled the model; pairs with `model` for the
             registry's context-window lookup.
-        ctx_tokens: The full prompt in tokens at the last completed call (fresh input
+        context_tokens: The full prompt in tokens at the last completed call (fresh input
             plus cache reads and writes); 0 until a result lands.
         streamed_text: The live text, reset on every call, appended per delta, kept to
             the last `state._STREAM_TAIL` characters.
@@ -331,7 +331,7 @@ class RoleCall:
     model: str
     in_flight: bool
     provider: str = ""
-    ctx_tokens: int = 0
+    context_tokens: int = 0
     streamed_text: str = ""
     streamed_thinking: str = ""
 
@@ -385,7 +385,7 @@ class ApprovalPrompt:
         standing: An "allow all" is on offer for this prompt.
         answered: An answer was folded.
         approved: The answer; None until answered.
-        asked_ep: When it was asked, for the waiting status's age.
+        asked_at: When it was asked, for the waiting status's age.
     """
 
     id: str
@@ -393,7 +393,7 @@ class ApprovalPrompt:
     standing: bool = True
     answered: bool = False
     approved: bool | None = None
-    asked_ep: float | None = None
+    asked_at: float | None = None
 
     @property
     def head(self) -> str:
@@ -431,7 +431,7 @@ class QuestionPrompt:
         from_harness: agent6 itself asked (a start gate such as the dirty-tree
             question): it was asked before the session started or after it finished,
             when no model runs.
-        asked_ep: When it was asked, for the waiting status's age.
+        asked_at: When it was asked, for the waiting status's age.
         wait: Whether the call waited for the answers, as asked.
         blocking: Whether the run is paused on it now: a waiting question in the execution that
             asked it; a queued question, or one an earlier execution asked, blocks nothing.
@@ -443,7 +443,7 @@ class QuestionPrompt:
     answered: bool = False
     answers: tuple[str, ...] = ()
     from_harness: bool = False
-    asked_ep: float | None = None
+    asked_at: float | None = None
     wait: bool = True
     blocking: bool = True
     source: str = ""
@@ -470,7 +470,7 @@ class SessionState:
         task_label: The first non-empty task and latest resume steer from the journal.
         tasks: The live task tree in DFS pre-order.
         cursor_task_id: The task the worker is on.
-        last_role: The last model call.
+        last_model_call: The last model call.
         tool_calls: The bounded tool-call history, most recent last.
         last_verify: The last verify gate run.
         review: Durable panel evidence and finding history across executions.
@@ -505,7 +505,7 @@ class SessionState:
         compact_gists_live: The live gists in the current context; a demoted gist is
             back to a bare marker, and a tier-2 restart resets both.
         pins: The operator's /pin instructions in force, most recent last.
-        last_event_ep: The last folded event's own ts, the idle anchor every
+        last_event_at: The last folded event's own ts, the idle anchor every
             "working… Ns" timer measures from, so replayed history reads as its true age.
     """
 
@@ -518,7 +518,7 @@ class SessionState:
     )
     tasks: tuple[TaskNodeView, ...] = ()
     cursor_task_id: str | None = None
-    last_role: RoleCall | None = None
+    last_model_call: ModelCallView | None = None
     tool_calls: tuple[ToolCallView, ...] = ()
     last_verify: VerifyView | None = None
     review: review.ReviewView = dataclasses.field(default_factory=review.ReviewView)
@@ -550,4 +550,4 @@ class SessionState:
     compact_elided: int = 0
     compact_gists_live: int = 0
     pins: tuple[str, ...] = ()
-    last_event_ep: float | None = None
+    last_event_at: float | None = None

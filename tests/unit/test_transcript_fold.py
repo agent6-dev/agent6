@@ -498,11 +498,11 @@ def test_streamed_deltas_are_scrubbed_even_when_a_sequence_splits() -> None:
     s = state.apply_event(s, {"type": "model.call", "role": "worker", "model": "m"})
     s = state.apply_event(s, {"type": "model.text_delta", "text": "safe \x1b]52;c;cGF5"})
     s = state.apply_event(s, {"type": "model.text_delta", "text": "bG9hZA==\x07 text"})
-    assert s.last_role is not None
+    assert s.last_model_call is not None
     # The opener died with its own delta; the continuation is inert text.
-    assert s.last_role.streamed_text == "safe bG9hZA== text"
-    assert "\x1b" not in s.last_role.streamed_text
-    assert "\x07" not in s.last_role.streamed_text
+    assert s.last_model_call.streamed_text == "safe bG9hZA== text"
+    assert "\x1b" not in s.last_model_call.streamed_text
+    assert "\x07" not in s.last_model_call.streamed_text
 
 
 def test_log_lines_carry_no_terminal_controls() -> None:

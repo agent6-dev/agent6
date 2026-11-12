@@ -3784,9 +3784,9 @@ def test_the_compare_judge_streams_into_the_coordinators_journal(
                 live = state.initial_state()
                 for event in events:
                     live = state.apply_event(live, event)
-                assert live.last_role is not None and live.last_role.in_flight
-                assert live.last_role.role == "judge"
-                assert live.last_role.streamed_text == "".join(pieces[:index])
+                assert live.last_model_call is not None and live.last_model_call.in_flight
+                assert live.last_model_call.role == "judge"
+                assert live.last_model_call.streamed_text == "".join(pieces[:index])
             return ProviderResponse(
                 text="".join(pieces),
                 tool_uses=(),

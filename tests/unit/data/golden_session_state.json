@@ -17,12 +17,12 @@
     }
   ],
   "cursor_task_id": null,
-  "last_role": {
+  "last_model_call": {
     "role": "worker",
     "model": "kimi-k2",
     "in_flight": false,
     "provider": "openrouter",
-    "ctx_tokens": 0,
+    "context_tokens": 0,
     "streamed_text": "",
     "streamed_thinking": ""
   },
@@ -121,7 +121,7 @@
       "standing": true,
       "answered": true,
       "approved": true,
-      "asked_ep": 1784023209.0,
+      "asked_at": 1784023209.0,
       "head": "Allow run_command",
       "payload": "rm -rf build"
     }
@@ -148,7 +148,7 @@
         "yes"
       ],
       "from_harness": false,
-      "asked_ep": 1784023210.0,
+      "asked_at": 1784023210.0,
       "wait": true,
       "blocking": false,
       "source": "stdin"
@@ -225,8 +225,8 @@
   "compact_elided": 0,
   "compact_gists_live": 0,
   "pins": [],
-  "last_event_ep": 1784023218.5,
-  "context_pct": null,
+  "last_event_at": 1784023218.5,
+  "context_used_percent": null,
   "needs_new_work": true,
   "open_approval": null,
   "live": null,

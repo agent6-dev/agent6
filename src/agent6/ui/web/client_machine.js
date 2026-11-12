@@ -213,13 +213,13 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // "agent working…" forever. Matches the TUI, which gates on worker liveness.
   cards._conv.setLive(agentLive ? r : { finished: true });
   cards._conv.poke();
-  const streaming = r.last_role && (r.last_role.streamed_thinking || r.last_role.streamed_text);
+  const streaming = r.last_model_call && (r.last_model_call.streamed_thinking || r.last_model_call.streamed_text);
   hbState = {
     // agentLive quiets the beat for a machine that is not working;
     // operator_blocked still quiets a running state blocked on an
     // approval/question (the run pane's rule).
-    active: agentLive && !!r.last_role && !streaming && !r.operator_blocked,
-    role: (r.last_role && r.last_role.role) || 'agent',
+    active: agentLive && !!r.last_model_call && !streaming && !r.operator_blocked,
+    role: (r.last_model_call && r.last_model_call.role) || 'agent',
     // Server-computed age, as the run pane uses: anchoring to this frame's
     // arrival would show a state wedged for forty minutes as "working… 3s".
     last: Date.now() - 1000 * (r.last_event_age_s || 0),

@@ -71,7 +71,7 @@ def _with_idle_age(payload: dict[str, Any]) -> dict[str, Any]:
         The payload with `last_event_age_s` set, or unchanged without an epoch.
     """
     reasoning = payload.get("reasoning") or {}
-    ep = reasoning.get("last_event_ep")
+    ep = reasoning.get("last_event_at")
     if not isinstance(ep, (int, float)):
         return payload
     fresh = {**reasoning, "last_event_age_s": max(0.0, time.time() - ep)}
@@ -138,9 +138,9 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
         if d == previous:
             return True
         previous = d
-        if state.last_event_ep is not None:
+        if state.last_event_at is not None:
             # The ticking age must not make an unchanged snapshot look different.
-            d = {**d, "last_event_age_s": max(0.0, time.time() - state.last_event_ep)}
+            d = {**d, "last_event_age_s": max(0.0, time.time() - state.last_event_at)}
         return chan.send(d)
 
     def drain(ev: dict[str, Any] | None) -> tuple[str, bool]:

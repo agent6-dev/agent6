@@ -1025,7 +1025,7 @@ def test_sse_run_emits_the_last_delta_of_a_burst(
         snap = _read_until(
             resp,
             lambda s: (
-                cast(dict[str, object], s.get("last_role", {})).get("streamed_text") == "done"
+                cast(dict[str, object], s.get("last_model_call", {})).get("streamed_text") == "done"
             ),
             deadline_s=4.0,
         )

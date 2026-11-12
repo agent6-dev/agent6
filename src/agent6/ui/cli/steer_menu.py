@@ -146,14 +146,14 @@ def _print_status(session_dir: pathlib.Path) -> None:
     label = format.status_label(*status_for_session_dir(session_dir, status_facts(s)))
     done = sum(1 for t in s.tasks if t.status in order.DONE_STATUSES)
     tasks = f"{done}/{len(s.tasks)}" if s.tasks else "—"
-    role = s.last_role
-    model = f"{role.role}/{role.model}" if role else "—"
+    call = s.last_model_call
+    model = f"{call.role}/{call.model}" if call else "—"
     cost = budget.format_usd(s.budget.session.usd, partial=s.budget.session.usd_partial)
     ctx = ""
-    if role is not None and role.ctx_tokens > 0:
+    if call is not None and call.context_tokens > 0:
         fill = context_fill(s)
         pct = f" ({fill}%)" if fill is not None else ""
-        ctx = f" · ctx {role.ctx_tokens:,} tok{pct}"
+        ctx = f" · ctx {call.context_tokens:,} tok{pct}"
     if s.compact_elided:
         ctx += f" · elided {s.compact_elided} ({s.compact_gists_live} gists)"
     if s.pins:

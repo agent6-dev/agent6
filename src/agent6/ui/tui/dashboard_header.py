@@ -73,12 +73,12 @@ class RunHeader(widgets.Static):
                 since the last event; a live worker between calls is not a working model.
         """
         tui = self._tui
-        role = s.last_role
+        call = s.last_model_call
         beat = ""
-        if active and role is not None:
+        if active and call is not None:
             spinner = format.spinner_frame(tui.spin)
             beat = f" {spinner} {tui.seconds_since_event()}s"
-        role_line = f"{role.role} / {role.model}{beat}" if role else self._start_role()
+        role_line = f"{call.role} / {call.model}{beat}" if call else self._start_role()
         finished = self._end_label()
         # Tasks and cost are as of the selected commit; ctx is live.
         done_n = sum(1 for t in ds.tasks if t.status in order.DONE_STATUSES)
@@ -117,7 +117,7 @@ class RunHeader(widgets.Static):
             segments.append(plan)
         if as_of:
             segments.append(as_of.strip())
-        pct = tui.context_pct()
+        pct = tui.context_used_percent()
         if pct is not None:
             segments.append(f"ctx: {pct}%")
         lead = f"role: {role_line} · task: "

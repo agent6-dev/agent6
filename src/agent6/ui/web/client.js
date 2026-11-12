@@ -811,7 +811,7 @@ function makeConv(url, box, body) {
   conv.setLive = (s) => {
     conv.finished = notLive(s); // steers emptyNote()'s tense (may run before paintItems)
     conv.deadState = s.dead_state || ''; // parked / created / stale, worded by the read model
-    const r = s.last_role;
+    const r = s.last_model_call;
     const follow = following();
     liveHost.innerHTML = '';
     const note = itemsHost.querySelector('.conv-empty');

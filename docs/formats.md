@@ -1696,7 +1696,7 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `execution_id` | `str` | The current execution's id, "" until its start is read. |
 | `tasks` | `tuple[TaskNodeView, ...]` | The live task tree in DFS pre-order. |
 | `cursor_task_id` | `str \| None` | The task the worker is on. |
-| `last_role` | `RoleCall \| None` | The last model call. |
+| `last_model_call` | `ModelCallView \| None` | The last model call. |
 | `tool_calls` | `tuple[ToolCallView, ...]` | The bounded tool-call history, most recent last. |
 | `last_verify` | `VerifyView \| None` | The last verify gate run. |
 | `review` | `JSON` | The shared review evidence with computed merge facts. |
@@ -1725,8 +1725,8 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `compact_elided` | `int` | The elision markers in the current context. |
 | `compact_gists_live` | `int` | The live gists in the current context; a demoted gist is back to a bare marker, and a tier-2 restart resets both. |
 | `pins` | `tuple[str, ...]` | The operator's /pin instructions in force, most recent last. |
-| `last_event_ep` | `float \| None` | The last folded event's own ts, the idle anchor every "working… Ns" timer measures from, so replayed history reads as its true age. |
-| `context_pct` | `JSON` | The last model call's context fill percentage, or null when unknown. |
+| `last_event_at` | `float \| None` | The last folded event's own ts, the idle anchor every "working… Ns" timer measures from, so replayed history reads as its true age. |
+| `context_used_percent` | `JSON` | The last model call's context fill percentage, or null when unknown. |
 | `needs_new_work` | `JSON` | Whether a resume requires a new task rather than continuing work. |
 | `budget.usd_text` | `JSON` | The rendered session spend, then this execution's against its cap. |
 | `budget.plan_text` | `JSON` | The account's reading: the binding window's percent, its reset and when it was read; "" without a reading. |
@@ -2097,7 +2097,6 @@ Source: [`ui.web.model.machine_reasoning_snapshot`](https://github.com/agent6-de
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `state_dir` | `JSON` | The agent-state execution directory to echo when answering a prompt. |
-| `last_event_ep` | `JSON` | The last event time in epoch seconds, when known. |
 
 ### `/api/session/<id>/diff` payload
 
@@ -3336,11 +3335,11 @@ Source: [`agent6.viewmodel.state_types.TaskNodeView`](https://github.com/agent6-
 | `short_id` | `str` | The id as the operator reads and types it. |
 | `glyph` | `str` | The status as every surface draws it; the cursor's task draws as in progress. |
 
-### RoleCall
+### ModelCallView
 
 **Support: public.** The last model call and what it streamed.
 
-Source: [`agent6.viewmodel.state_types.RoleCall`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.state_types.ModelCallView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3348,7 +3347,7 @@ Source: [`agent6.viewmodel.state_types.RoleCall`](https://github.com/agent6-dev/
 | `model` | `str` | The model called. |
 | `in_flight` | `bool` | The call has not returned. |
 | `provider` | `str` | The provider that dialled the model; pairs with `model` for the registry's context-window lookup. |
-| `ctx_tokens` | `int` | The full prompt in tokens at the last completed call (fresh input plus cache reads and writes); 0 until a result lands. |
+| `context_tokens` | `int` | The full prompt in tokens at the last completed call (fresh input plus cache reads and writes); 0 until a result lands. |
 | `streamed_text` | `str` | The live text, reset on every call, appended per delta, kept to the last `state._STREAM_TAIL` characters. |
 | `streamed_thinking` | `str` | The live reasoning, with the same lifecycle. |
 
@@ -3457,7 +3456,7 @@ Source: [`agent6.viewmodel.state_types.ApprovalPrompt`](https://github.com/agent
 | `standing` | `bool` | An "allow all" is on offer for this prompt. |
 | `answered` | `bool` | An answer was folded. |
 | `approved` | `bool \| None` | The answer; None until answered. |
-| `asked_ep` | `float \| None` | When it was asked, for the waiting status's age. |
+| `asked_at` | `float \| None` | When it was asked, for the waiting status's age. |
 
 ### QuestionPrompt
 
@@ -3472,7 +3471,7 @@ Source: [`agent6.viewmodel.state_types.QuestionPrompt`](https://github.com/agent
 | `answered` | `bool` | An answer was folded. |
 | `answers` | `tuple[str, ...]` | One answer per question, aligned to `questions`. |
 | `from_harness` | `bool` | agent6 itself asked (a start gate such as the dirty-tree question): it was asked before the session started or after it finished, when no model runs. |
-| `asked_ep` | `float \| None` | When it was asked, for the waiting status's age. |
+| `asked_at` | `float \| None` | When it was asked, for the waiting status's age. |
 | `wait` | `bool` | Whether the call waited for the answers, as asked. |
 | `blocking` | `bool` | Whether the run is paused on it now: a waiting question in the execution that asked it; a queued question, or one an earlier execution asked, blocks nothing. |
 | `source` | `str` | Who answered; `late` for a queued question's answers taken at a boundary. |

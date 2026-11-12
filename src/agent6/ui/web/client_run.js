@@ -369,8 +369,8 @@ function paintDetails(cards, s, asOf) {
     cards.budget.appendChild(barRow('plan', planFrac, planText));
   }
   // The context-window fill at the last model call (the TUI's `ctx: N%`, the
-  // pause menu's readout): the fold's one rule, served as context_pct.
-  const ctxPct = typeof s.context_pct === 'number' ? ` · context ${s.context_pct}%` : '';
+  // pause menu's readout): the fold's one rule, served as context_used_percent.
+  const ctxPct = typeof s.context_used_percent === 'number' ? ` · context ${s.context_used_percent}%` : '';
   // The cached side of the input is the bulk of a long run's tokens (the run
   // summary's cache_r/cache_w columns); absent from journals written before it
   // was recorded, so it shows only when nonzero.
@@ -529,10 +529,10 @@ function paintRun(cards, s) {
     parts.forEach((part, i) => pol.appendChild(el('span', 'setting', part + (i < parts.length - 1 ? ' · ' : ''))));
     cards.head.appendChild(pol);
   }
-  if (s.last_role) {
+  if (s.last_model_call) {
     // The in-flight mark means a call is in flight. A killed worker leaves a
     // model.call with no model.result, so it would stay on beside "stale".
-    const r = s.last_role;
+    const r = s.last_model_call;
     const inFlight = r.in_flight && s.live;
     cards.head.appendChild(el('div', 'sub muted', `${esc(r.role)} / ${esc(r.model)}${inFlight ? ' …' : ''}`));
   }
@@ -543,14 +543,14 @@ function paintRun(cards, s) {
   // conversation: the live in-progress turn paints from this frame at once (a
   // heartbeat ticks via hbTick() on a live-but-silent run so it reads as alive,
   // not hung); completed turns re-fold on a debounce.
-  const streaming = s.last_role && (s.last_role.streamed_thinking || s.last_role.streamed_text);
+  const streaming = s.last_model_call && (s.last_model_call.streamed_thinking || s.last_model_call.streamed_text);
   cards._conv.setLive(s);
   cards._conv.poke();
   hbState = {
     // a "waiting" run is live but blocked on the operator, not working: the
     // conversation shows its own waiting line, so the heartbeat must go quiet.
-    active: !notLive(s) && !!s.last_role && !streaming && s.status !== 'waiting',
-    role: (s.last_role && s.last_role.role) || 'worker',
+    active: !notLive(s) && !!s.last_model_call && !streaming && s.status !== 'waiting',
+    role: (s.last_model_call && s.last_model_call.role) || 'worker',
     // Server-computed age: replayed history must not read as fresh activity
     // (an arrival anchor would show a 40-minute-wedged run as "working… 3s").
     last: Date.now() - 1000 * (s.last_event_age_s || 0),

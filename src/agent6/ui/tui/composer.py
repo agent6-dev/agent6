@@ -423,7 +423,7 @@ class SteerInput(widgets.TextArea):
         self,
         *,
         mode: ComposerMode,
-        ctx_pct: int | None = None,
+        context_used_percent: int | None = None,
         continue_as: str = "",
         needs_new_work: bool = False,
     ) -> None:
@@ -431,13 +431,13 @@ class SteerInput(widgets.TextArea):
 
         Args:
             mode: What Enter does.
-            ctx_pct: The context-window fill, when known.
+            context_used_percent: The context-window fill, when known.
             continue_as: The fork an undone run resumes as.
             needs_new_work: The run finished green, so a bare resume has nothing to do.
         """
         self.mode = mode
         title, keys = composer_labels(mode, continue_as=continue_as, needs_new_work=needs_new_work)
-        ctx = f"ctx {ctx_pct}% · " if ctx_pct is not None else ""
+        ctx = f"ctx {context_used_percent}% · " if context_used_percent is not None else ""
         policy = f"{self.policy} · " if self.policy else ""
         # Border titles are markup: a bracket in a label or a model id would vanish unescaped.
         title = markup.escape(title)

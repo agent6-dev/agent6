@@ -451,19 +451,18 @@ def machine_reasoning_snapshot(
     """Return the session state of the machine's newest agent-state execution.
 
     The snapshot carries `state_dir` so a client echoes it when answering a prompt
-    (prompt ids reset per state), and `last_event_ep` rather than an age so the
+    (prompt ids reset per state). Its `last_event_at` is a time, not an age, so the
     payload changes only when something happened.
 
     Attributes:
         state_dir: The agent-state execution directory to echo when answering a prompt.
-        last_event_ep: The last event time in epoch seconds, when known.
 
     Args:
         machine_dir: The machine instance's directory.
         fold: A fold to refresh, or None to fold the newest log afresh.
 
     Returns:
-        The wire form plus the two keys, or empty before any agent state has a log.
+        The wire form plus `state_dir`, or empty before any agent state has a log.
     """
     if fold is not None:
         log, state = fold.refresh(machine_dir), fold.state
@@ -474,8 +473,6 @@ def machine_reasoning_snapshot(
         return {}
     snap = session_state_as_dict(state)
     snap["state_dir"] = log.parent.name
-    if state.last_event_ep is not None:
-        snap["last_event_ep"] = state.last_event_ep
     return snap
 
 

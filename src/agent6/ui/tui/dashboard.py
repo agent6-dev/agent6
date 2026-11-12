@@ -490,7 +490,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         mode: composer.ComposerMode = "steer" if tui.session_controllable() else "resume"
         self.query_one("#dash-input", composer.SteerInput).set_mode(
             mode=mode,
-            ctx_pct=tui.context_pct(),
+            context_used_percent=tui.context_used_percent(),
             continue_as=tui.continue_as,
             needs_new_work=tui.finished_green(),
         )
@@ -529,13 +529,13 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             dead state; else "(no model call in flight)".
         """
         tui = self._tui
-        role = s.last_role
+        call = s.last_model_call
         st = rich_text.Text()
         streaming = (
             active
-            and role is not None
-            and role.in_flight
-            and (role.streamed_thinking or role.streamed_text)
+            and call is not None
+            and call.in_flight
+            and (call.streamed_thinking or call.streamed_text)
         )
         if s.finished:
             # How it ended, the closing summary, and a plan's deliverable.
@@ -552,18 +552,18 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         ):
             st.append(tui.verification_item.body)
         elif streaming:
-            assert role is not None
-            if role.streamed_thinking:
+            assert call is not None
+            if call.streamed_thinking:
                 st.append("💭 ", style="bold")
-                st.append(role.streamed_thinking[-1200:] + "\n", style="dim")
-            if role.streamed_text:
-                st.append(role.streamed_text[-1200:])
+                st.append(call.streamed_thinking[-1200:] + "\n", style="dim")
+            if call.streamed_text:
+                st.append(call.streamed_text[-1200:])
         elif tui.dir_status[0] == "waiting":
             st.append(tui.status_label, style="bold yellow")
-        elif active and role is not None:
+        elif active and call is not None:
             spinner = format.spinner_frame(tui.spin)
             secs = tui.seconds_since_event()
-            st.append(f"{spinner} {role.role} working… {secs}s", style="dim italic")
+            st.append(f"{spinner} {call.role} working… {secs}s", style="dim italic")
         elif tui.dir_status[0] == "starting":
             st.append("starting", style=f"bold {theme.status_style('starting')}")
         elif (dead := format.dead_run_note(*tui.dir_status))[0]:

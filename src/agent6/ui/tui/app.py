@@ -165,7 +165,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             self.fallback_continued = manifest.continued_task
             self.mode = manifest.mode or "run"
         # A run is silent for a whole reasoning turn; the ~1/s repaint tells thinking from hung.
-        self.last_event_at = time.monotonic()
+        self.last_event_arrival = time.monotonic()
         self._heartbeat_at = 0.0
         self.spin = 0
         # The preset and model a composer resume continues under ("" is no flag).
@@ -301,15 +301,15 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         Returns:
             The seconds; from the last event's arrival when the log has no timestamps.
         """
-        if self.state.last_event_ep is None:
-            return int(time.monotonic() - self.last_event_at)
-        return max(0, int(time.time() - self.state.last_event_ep))
+        if self.state.last_event_at is None:
+            return int(time.monotonic() - self.last_event_arrival)
+        return max(0, int(time.time() - self.state.last_event_at))
 
     def _handle_event(self, event: dict[str, object]) -> None:
         """Fold one event and mark what the next tick repaints."""
         self.state = state.apply_event(self.state, event)
         self._track_verification(event)
-        self.last_event_at = time.monotonic()
+        self.last_event_arrival = time.monotonic()
         if event.get("type") == "session.undone" and self.state.undone_to:
             # The fork is the continuation. The operator can resend the message taken back.
             self._fill_composers(self.state.undone_text)
@@ -822,7 +822,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             self.push_screen, modals.TextModal(f"review of {self.session_dir.name}", text)
         )
 
-    def context_pct(self) -> int | None:
+    def context_used_percent(self) -> int | None:
         """Return the context-window fill in percent at the last completed model call."""
         return context_fill(self.state)
 
@@ -853,12 +853,12 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
 
     def model_call_in_flight(self) -> bool:
         """Return whether the live run has a model call awaiting its result."""
-        role = self.state.last_role
+        call = self.state.last_model_call
         return (
             self.session_controllable()
             and self.dir_status[0] != "waiting"
-            and role is not None
-            and role.in_flight
+            and call is not None
+            and call.in_flight
         )
 
     def action_toggle_dashboard(self) -> None:

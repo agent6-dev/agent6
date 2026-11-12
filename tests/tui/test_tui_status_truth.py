@@ -580,7 +580,10 @@ def test_dead_worker_stream_pane_drops_stale_partial_text(tmp_path: pathlib.Path
             await waits.wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
             await waits.wait_for(
                 pilot,
-                lambda: app.state.last_role is not None and bool(app.state.last_role.streamed_text),
+                lambda: (
+                    app.state.last_model_call is not None
+                    and bool(app.state.last_model_call.streamed_text)
+                ),
                 "the partial response",
             )
             app._dash.render_heartbeat()  # pyright: ignore[reportPrivateUsage]
@@ -1095,7 +1098,9 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
             )
             await waits.wait_for(
                 pilot,
-                lambda: app.state.last_role is not None and app.state.last_role.in_flight,
+                lambda: (
+                    app.state.last_model_call is not None and app.state.last_model_call.in_flight
+                ),
                 "the model call",
             )
             dash_spin = app.spin
@@ -1109,7 +1114,10 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
             append({"type": "model.result", "role": "worker", "ok": True, "text": "done"})
             await waits.wait_for(
                 pilot,
-                lambda: app.state.last_role is not None and not app.state.last_role.in_flight,
+                lambda: (
+                    app.state.last_model_call is not None
+                    and not app.state.last_model_call.in_flight
+                ),
                 "the model result",
             )
             assert conv_bar.mode == "steer"

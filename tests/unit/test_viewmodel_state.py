@@ -129,7 +129,7 @@ def test_a_jail_degraded_row_carries_its_reason() -> None:
 
 
 def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The `ctx N%` readout every surface shows comes from one rule, carried as `context_pct`.
+    """One rule gives the `ctx N%` readout on every surface, carried as `context_used_percent`.
 
     The last completed call's prompt tokens over the model's window; None until both are known.
     """
@@ -156,7 +156,7 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
     ):
         s = viewmodel_state.apply_event(s, ev)
     assert context_fill(s) == 41
-    assert session_state_as_dict(s)["context_pct"] == 41
+    assert session_state_as_dict(s)["context_used_percent"] == 41
     monkeypatch.setattr("agent6.viewmodel.state_view.cached_context_window", _unknown)
     assert context_fill(s) is None  # an unknown window is not a percent
 
@@ -363,13 +363,13 @@ def test_role_call_then_result_clears_in_flight() -> None:
         viewmodel_state.initial_state(),
         {"type": "model.call", "role": "worker", "model": "gpt-5", "provider": "openai"},
     )
-    assert s.last_role is not None
-    assert s.last_role.in_flight is True
+    assert s.last_model_call is not None
+    assert s.last_model_call.in_flight is True
     s = viewmodel_state.apply_event(
         s, {"type": "model.result", "role": "worker", "input_tokens": 10, "output_tokens": 20}
     )
-    assert s.last_role is not None
-    assert s.last_role.in_flight is False
+    assert s.last_model_call is not None
+    assert s.last_model_call.in_flight is False
 
 
 def test_budget_update_populates_view() -> None:
@@ -575,7 +575,7 @@ def test_fold_run_reduces_events_to_a_snapshot() -> None:
     )
     assert state.task_label.task == "do it"
     assert state.finished and state.verification
-    assert state.last_role is not None and state.last_role.streamed_text == "hi"
+    assert state.last_model_call is not None and state.last_model_call.streamed_text == "hi"
 
 
 def test_run_state_as_dict_is_json_serializable() -> None:
@@ -702,7 +702,7 @@ def test_resume_start_unfinishes_the_run() -> None:
 
 
 def test_role_result_tracks_context_tokens_and_provider() -> None:
-    """model.result folds the call's full prompt into ctx_tokens, which outlives the next call.
+    """model.result folds the call's full prompt into context_tokens, which outlives the next call.
 
     Fresh, cache read and cache write together; an error result without usage keeps the last known.
     """
@@ -710,8 +710,8 @@ def test_role_result_tracks_context_tokens_and_provider() -> None:
     s = viewmodel_state.apply_event(
         s, {"type": "model.call", "role": "worker", "model": "m", "provider": "p"}
     )
-    assert s.last_role is not None and s.last_role.provider == "p"
-    assert s.last_role.ctx_tokens == 0  # nothing measured yet
+    assert s.last_model_call is not None and s.last_model_call.provider == "p"
+    assert s.last_model_call.context_tokens == 0  # nothing measured yet
     s = viewmodel_state.apply_event(
         s,
         {
@@ -723,15 +723,19 @@ def test_role_result_tracks_context_tokens_and_provider() -> None:
             "cache_write_tokens": 2_000,
         },
     )
-    assert s.last_role is not None and s.last_role.ctx_tokens == 43_000
+    assert s.last_model_call is not None and s.last_model_call.context_tokens == 43_000
     s = viewmodel_state.apply_event(
         s, {"type": "model.call", "role": "worker", "model": "m", "provider": "p"}
     )
-    assert s.last_role is not None and s.last_role.ctx_tokens == 43_000  # carried over
+    assert (
+        s.last_model_call is not None and s.last_model_call.context_tokens == 43_000
+    )  # carried over
     s = viewmodel_state.apply_event(
         s, {"type": "model.result", "role": "worker", "ok": False, "error": "boom"}
     )
-    assert s.last_role is not None and s.last_role.ctx_tokens == 43_000  # kept on error
+    assert (
+        s.last_model_call is not None and s.last_model_call.context_tokens == 43_000
+    )  # kept on error
 
 
 def test_run_start_after_run_end_unfinishes_without_banking() -> None:

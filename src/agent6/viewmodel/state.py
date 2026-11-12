@@ -102,7 +102,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
         state = dataclasses.replace(state, session_id=str(event["session_id"]))
     # The event's own ts, so replayed history measures idle time from when the run last spoke.
     if (ep := events.event_epoch(event.get("ts"))) is not None:
-        state = dataclasses.replace(state, last_event_ep=ep)
+        state = dataclasses.replace(state, last_event_at=ep)
     if etype not in STREAM_DELTA_EVENTS and etype not in LOG_NOISE_EVENTS:
         # cursor_task_id is the focus task: graph.update lands before a turn's calls.
         entry = state_types.LogLine(log_line.format_log_line(event), state.cursor_task_id)
@@ -119,7 +119,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             # An execution begins: the view's own per-execution records start over.
             return dataclasses.replace(
                 state,
-                last_role=None,
+                last_model_call=None,
                 last_verify=None,
                 approvals=_answered_only(state.approvals),
                 questions=_carried(state.questions),
@@ -148,16 +148,16 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             )
 
         case journal.ModelCall(role=role, model=model, provider=provider):
-            prior = state.last_role
+            prior = state.last_model_call
             return dataclasses.replace(
                 state,
-                last_role=state_types.RoleCall(
+                last_model_call=state_types.ModelCallView(
                     role=role,
                     model=model,
                     in_flight=True,
                     provider=provider,
                     # The last known context size stays until this call's result lands.
-                    ctx_tokens=prior.ctx_tokens if prior is not None else 0,
+                    context_tokens=prior.context_tokens if prior is not None else 0,
                     streamed_text="",
                     streamed_thinking="",
                 ),
@@ -165,34 +165,34 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
 
         case journal.ModelTextDelta(text=piece):
             # Scrub the concatenation: an escape sequence can arrive split across deltas.
-            last = state.last_role
+            last = state.last_model_call
             if last is None or not last.in_flight or not piece:
                 return state
             joined = terminal.scrub_terminal_controls(last.streamed_text + piece)
             return dataclasses.replace(
                 state,
-                last_role=dataclasses.replace(last, streamed_text=joined[-_STREAM_TAIL:]),
+                last_model_call=dataclasses.replace(last, streamed_text=joined[-_STREAM_TAIL:]),
             )
 
         case journal.ModelThinkingDelta(text=piece):
-            last = state.last_role
+            last = state.last_model_call
             if last is None or not last.in_flight or not piece:
                 return state
             joined = terminal.scrub_terminal_controls(last.streamed_thinking + piece)
             return dataclasses.replace(
                 state,
-                last_role=dataclasses.replace(last, streamed_thinking=joined[-_STREAM_TAIL:]),
+                last_model_call=dataclasses.replace(last, streamed_thinking=joined[-_STREAM_TAIL:]),
             )
 
         case journal.ModelResult(input_tokens=tin, cache_read_tokens=cr, cache_write_tokens=cc):
-            last = state.last_role
+            last = state.last_model_call
             if last is None:
                 return state
             ctx = (tin or 0) + (cr or 0) + (cc or 0)
             return dataclasses.replace(
                 state,
-                last_role=dataclasses.replace(
-                    last, in_flight=False, ctx_tokens=ctx if ctx > 0 else last.ctx_tokens
+                last_model_call=dataclasses.replace(
+                    last, in_flight=False, context_tokens=ctx if ctx > 0 else last.context_tokens
                 ),
             )
 
@@ -273,7 +273,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 id=aid,
                 prompt=prompt,
                 standing=standing,
-                asked_ep=events.event_epoch(event.get("ts")),
+                asked_at=events.event_epoch(event.get("ts")),
             )
             return dataclasses.replace(state, approvals=(*state.approvals, ap))
 
@@ -293,7 +293,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 id=qid,
                 questions=questions,
                 from_harness=not state.started or state.finished,
-                asked_ep=events.event_epoch(event.get("ts")),
+                asked_at=events.event_epoch(event.get("ts")),
                 wait=wait,
                 blocking=wait,
             )

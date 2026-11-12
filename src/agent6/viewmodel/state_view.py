@@ -28,7 +28,7 @@ PUBLIC_STATE_FIELDS = (
     "execution_id",
     "tasks",
     "cursor_task_id",
-    "last_role",
+    "last_model_call",
     "tool_calls",
     "last_verify",
     "review",
@@ -57,7 +57,7 @@ PUBLIC_STATE_FIELDS = (
     "compact_elided",
     "compact_gists_live",
     "pins",
-    "last_event_ep",
+    "last_event_at",
 )
 
 
@@ -82,8 +82,8 @@ def status_facts(state: state_types.SessionState) -> session_status.StatusFacts:
         The facts `status_for_session_dir` reads.
     """
     pending: list[tuple[str, float | None]] = [
-        ("approval", a.asked_ep) for a in state.approvals if not a.answered
-    ] + [("question", q.asked_ep) for q in state.questions if not q.answered and q.blocking]
+        ("approval", a.asked_at) for a in state.approvals if not a.answered
+    ] + [("question", q.asked_at) for q in state.questions if not q.answered and q.blocking]
     oldest = min(pending, key=lambda p: p[1] if p[1] is not None else float("inf"), default=None)
     life = state.core.lifecycle
     return session_status.StatusFacts(
@@ -121,13 +121,13 @@ def context_fill(state: state_types.SessionState) -> int | None:
         The call's full prompt tokens over the model's window, capped at 100; None
         until both sides are known.
     """
-    role = state.last_role
-    if role is None or role.ctx_tokens <= 0 or not role.model:
+    call = state.last_model_call
+    if call is None or call.context_tokens <= 0 or not call.model:
         return None
-    window = cached_context_window(role.provider, role.model)
+    window = cached_context_window(call.provider, call.model)
     if not window:
         return None
-    return min(100, round(100 * role.ctx_tokens / window))
+    return min(100, round(100 * call.context_tokens / window))
 
 
 def session_state_as_dict(
@@ -140,7 +140,7 @@ def session_state_as_dict(
 
     Attributes:
         review: The shared review evidence with computed merge facts.
-        context_pct: The last model call's context fill percentage, or null when unknown.
+        context_used_percent: The last model call's context fill percentage, or null when unknown.
         needs_new_work: Whether a resume requires a new task rather than continuing work.
         budget.usd_text: The rendered session spend, then this execution's against its cap.
         budget.plan_text: The account's reading: the binding window's percent, its reset and
@@ -176,7 +176,7 @@ def session_state_as_dict(
             right only for a dir-less stream (the machine reasoning snapshot).
 
     Returns:
-        The state's fields with tuples as lists, plus the computed `context_pct`,
+        The state's fields with tuples as lists, plus the computed `context_used_percent`,
         `needs_new_work`, `open_approval`, `status`, `status_label`, the full `task`, `task_line`,
         `dead_state`, `operator_blocked`, the rendered budget text, approval parts and
         commit labels, and `log_tail` as plain strings.
@@ -184,7 +184,7 @@ def session_state_as_dict(
     """
     d = {name: _wire_value(getattr(state, name)) for name in PUBLIC_STATE_FIELDS}
     d["review"] = review.as_dict(state.review)
-    d["context_pct"] = context_fill(state)
+    d["context_used_percent"] = context_fill(state)
     d["needs_new_work"] = listing.needs_new_work(
         finished=state.finished,
         stop_reason=state.stop_reason,
