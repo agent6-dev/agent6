@@ -8,11 +8,9 @@ import contextlib
 import os
 import pathlib
 import subprocess
-import uuid
-from typing import Any
 
 from agent6 import paths, portable
-from agent6.sessions import event_log
+from agent6.sessions import event_log, journal
 
 FRONTENDS_DIR = "frontends"
 WORKER_PID_FILE = "worker.pid"
@@ -225,21 +223,21 @@ def write_worker_pid(session_dir: pathlib.Path, pid: int) -> None:
 
 
 def emit_session_start(
-    events: event_log.EventSink, session_dir: pathlib.Path, event_type: str, /, **fields: Any
+    events: event_log.EventSink,
+    session_dir: pathlib.Path,
+    event: journal.SessionStart | journal.SessionResume,
 ) -> None:
-    """Emit a start-family event with the worker pid already on disk.
+    """Emit a start-family record with the worker pid already on disk.
 
     The status fold reads a started session with no pid file as one whose worker exited.
 
     Args:
         events: The event sink.
         session_dir: The session directory.
-        event_type: `session.start` or `session.resume`.
-        **fields: The event's fields.
+        event: The start record, its execution id set.
     """
     write_worker_pid(session_dir, os.getpid())
-    fields.setdefault("execution_id", uuid.uuid4().hex)
-    events.emit(event_type, **fields)
+    events.emit(event)
 
 
 def clear_worker_pid(session_dir: pathlib.Path) -> None:

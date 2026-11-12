@@ -23,6 +23,7 @@ from agent6.config import Config
 from agent6.graph import curator, models
 from agent6.harness import loop, operator_bridge, provider_call, run_chain, subrun
 from agent6.providers import ProviderResponse
+from agent6.sessions import journal
 from agent6.tools import results as tools_results
 from agent6.ui.cli import parallel as cli_parallel
 from agent6.vcs import git_ops
@@ -147,8 +148,8 @@ class _FakeEvents:
         self.path = path
         self.emitted: list[tuple[str, dict[str, Any]]] = []
 
-    def emit(self, event_type: str, **fields: Any) -> None:
-        self.emitted.append((event_type, fields))
+    def emit(self, event: journal.Event) -> None:
+        self.emitted.append((event.TYPE, event.model_dump(mode="json", exclude_unset=True)))
 
     def of(self, event_type: str) -> list[dict[str, Any]]:
         return [f for t, f in self.emitted if t == event_type]
@@ -245,7 +246,11 @@ def _build_wf(
     max_turns: int = 2,
 ) -> loop.Harness:
     steer = _OneShotSteer(steer_text)
-    disp = dispatcher if dispatcher is not None else mock.MagicMock()
+    disp = (
+        dispatcher
+        if dispatcher is not None
+        else mock.MagicMock(execution_id="execution", last_verification=None)
+    )
     if dispatcher is None:
         disp.dispatch.return_value = tools_results.RawResult({"content": "hi\n"})
     return loop.Harness(
@@ -702,7 +707,9 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: pathlib.Path) ->
     spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt")
 
     # The first turn's tool "edits" the tree (an uncommitted run_command write).
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
 
     def dispatch(_name: str, _input: dict[str, Any]) -> tools_results.RawResult:
         (repo / "wip.txt").write_text("uncommitted work\n", encoding="utf-8")
@@ -757,7 +764,9 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "run-nd", tmp_path / "wt")
 
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
 
     def dispatch(_name: str, _input: dict[str, Any]) -> tools_results.RawResult:
         (repo / "wip.txt").write_text("uncommitted\n", encoding="utf-8")

@@ -24,7 +24,7 @@ import pytest
 
 from agent6 import portable
 from agent6.sessions import ipc as sessions_ipc
-from agent6.sessions import process
+from agent6.sessions import journal, process
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import interact, steer_tty
 
@@ -164,7 +164,7 @@ def test_an_unanswered_question_is_named_where_the_run_reports(tmp_path: pathlib
 
 
 class _Events:
-    def emit(self, event_type: str, **fields: Any) -> None:
+    def emit(self, event: journal.Event) -> None:
         pass
 
 
@@ -337,9 +337,9 @@ def test_a_filed_answer_ends_the_terminal_prompt(tmp_path: pathlib.Path) -> None
     def child() -> int:
         emitted: list[dict[str, Any]] = []
 
-        def _emit(event_type: str, **fields: Any) -> None:
-            if event_type.endswith(".answer"):
-                emitted.append(fields)
+        def _emit(event: journal.Event, /) -> None:
+            if event.TYPE.endswith(".answer"):
+                emitted.append(event.model_dump(mode="json", exclude_unset=True))
 
         prompts = operator_prompts.OperatorPrompts(
             approver=interact.build_approver(session_dir),

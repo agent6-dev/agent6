@@ -8,7 +8,7 @@ import subprocess
 import pydantic
 
 from agent6 import paths, review_records
-from agent6.sessions import event_log, layout
+from agent6.sessions import event_log, journal, layout
 from agent6.vcs import review
 
 
@@ -65,7 +65,7 @@ def reviewed_session(cwd: pathlib.Path) -> layout.SessionLayout:
         completion="complete",
     )
     sink = event_log.EventSink(saved.logs_path)
-    sink.emit("loop.review.panel", **panel.model_dump(mode="json"))
+    sink.emit(journal.LoopReviewPanel(**panel.model_dump(mode="json")))
     return saved
 
 
@@ -135,50 +135,58 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
     )
     sink = event_log.EventSink(saved.logs_path)
     sink.emit(
-        "session.start",
-        session_id=saved.session_id,
-        mode="run",
-        user_task="Review parser",
-        execution_id="execution",
+        journal.SessionStart(
+            session_id=saved.session_id,
+            mode="run",
+            user_task="Review parser",
+            execution_id="execution",
+        )
     )
     sink.emit(
-        "loop.review.start",
-        panel_id="panel",
-        execution_id="execution",
-        turn=1,
-        trigger="before_finish",
-        target=dataclasses.asdict(target),
-        seats=[],
-        rules_complete=True,
-        rules_reason=None,
-        rule_sources=[
-            dict(path="AGENTS.md", blob_id=git("rev-parse", base + ":AGENTS.md"), supplied_bytes=35)
-        ],
+        journal.LoopReviewStart(
+            panel_id="panel",
+            execution_id="execution",
+            turn=1,
+            trigger="before_finish",
+            target=dataclasses.asdict(target),
+            seats=[],
+            rules_complete=True,
+            rules_reason=None,
+            rule_sources=[
+                dict(
+                    path="AGENTS.md",
+                    blob_id=git("rev-parse", base + ":AGENTS.md"),
+                    supplied_bytes=35,
+                )
+            ],
+        )
     )
     sink.emit(
-        "loop.review.panel",
-        panel_id="panel",
-        execution_id="execution",
-        turn=1,
-        trigger="before_finish",
-        target=dataclasses.asdict(target),
-        findings=pydantic.TypeAdapter(tuple[review_records.FindingObservation, ...]).dump_python(
-            findings, mode="json"
-        ),
-        injected_finding_ids=[f.finding_id for f in findings],
-        block_on="none",
-        raw_blocked=False,
-        blocked=False,
-        disarmed=False,
-        n_block=1,
-        n_abstain=0,
-        completion="complete",
+        journal.LoopReviewPanel(
+            panel_id="panel",
+            execution_id="execution",
+            turn=1,
+            trigger="before_finish",
+            target=dataclasses.asdict(target),
+            findings=pydantic.TypeAdapter(
+                tuple[review_records.FindingObservation, ...]
+            ).dump_python(findings, mode="json"),
+            injected_finding_ids=[f.finding_id for f in findings],
+            block_on="none",
+            raw_blocked=False,
+            blocked=False,
+            disarmed=False,
+            n_block=1,
+            n_abstain=0,
+            completion="complete",
+        )
     )
     sink.emit(
-        "session.stop",
-        execution_id="execution",
-        reason="finish_session",
-        turns=1,
-        verification="passed",
+        journal.SessionStop(
+            execution_id="execution",
+            reason="finish_session",
+            turns=1,
+            verification="passed",
+        )
     )
     return saved

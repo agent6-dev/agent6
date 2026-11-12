@@ -27,6 +27,7 @@ from agent6.harness import (
     run_chain,
     tool_effects,
 )
+from agent6.sessions import journal
 from agent6.tools import background, command_tools, results
 from agent6.viewmodel import session_status
 from tests.unit.turn_context import turn_context
@@ -59,7 +60,9 @@ def test_idle_turns_draw_one_nudge_then_a_soft_declared_stop() -> None:
         "[harness settled] The last three turns changed nothing; finish_session ends the run,"
         " and at 12 unchanged turns the run ends on its own."
     ]
-    assert nudge_answers[0].fields == {"turn": nudges.VERIFY_SETTLED_NUDGE_AFTER + 1, "idle": 3}
+    assert nudge_answers[0].event == journal.LoopVerifySettledNudge(
+        turn=nudges.VERIFY_SETTLED_NUDGE_AFTER + 1, idle=3
+    )
     assert len(stops) == 1 and answers[-1] is stops[0]
     stop = stops[0]
     assert stop.soft == "verify_settled" and stop.declared == "settled"
@@ -144,7 +147,9 @@ def _configured_context(
         chain=run_chain.RunChain(tmp_path),
         config=config.Config.model_validate({"harness": {"settled_stop_after": stop_after}}),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=lambda _line: None,
         mode="run",
     )
@@ -179,7 +184,7 @@ def test_zero_disables_the_settled_stop_but_keeps_the_nudge(
     nudge_answers = [a for a in answers if isinstance(a, advice.Nudge)]
     assert not any(isinstance(a, advice.Stop) for a in answers)
     assert len(nudge_answers) == 1 and answers[3] is nudge_answers[0]
-    assert nudge_answers[0].fields == {"turn": 4, "idle": 3}
+    assert nudge_answers[0].event == journal.LoopVerifySettledNudge(turn=4, idle=3)
     assert nudge_answers[0].text == (
         "[harness settled] The last three turns changed nothing; finish_session ends the run."
     )
@@ -211,7 +216,9 @@ def test_only_the_returned_command_handle_holds_the_settled_streak(
         chain=run_chain.RunChain(tmp_path),
         config=config.Config.model_validate({"harness": {"settled_stop_after": 3}}),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=lambda _line: None,
     )
     state = _green_state()
@@ -264,7 +271,9 @@ def test_a_background_read_counts_only_the_selected_jobs_returned_state(
         chain=run_chain.RunChain(tmp_path),
         config=config.Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=lambda _line: None,
     )
     state = _green_state()
@@ -289,7 +298,9 @@ def test_waits_accumulate_within_a_turn_but_progress_restarts_the_streak(
         chain=run_chain.RunChain(tmp_path),
         config=config.Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=lambda _line: None,
     )
     state = _green_state()
@@ -340,7 +351,9 @@ def test_a_memory_store_write_restarts_the_idle_streak() -> None:
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=config.Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=lambda _line: None,
         state_dir=pathlib.Path("/tmp/state"),
     )
@@ -438,7 +451,9 @@ def _steered(tmp_path: pathlib.Path, text: str | None) -> loop_state.LoopState:
         chain=run_chain.RunChain(tmp_path),
         config=config.Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=lambda _line: None,
         mode="run",
         bridge=operator_bridge.OperatorBridge(

@@ -13,7 +13,7 @@ import pytest
 from agent6 import review_records
 from agent6.app import finalize, merge, reporter, review_actions
 from agent6.config import Config
-from agent6.sessions import event_log, layout, lock, manifest
+from agent6.sessions import event_log, journal, layout, lock, manifest
 from agent6.ui import spawn
 from agent6.ui.cli import main
 from agent6.ui.tui import home
@@ -208,12 +208,13 @@ def test_merge_rechecks_dispositions_after_taking_the_writer_lock(
 
     def reopen_then_acquire(session_dir: pathlib.Path) -> int | None:
         event_log.EventSink(run.logs_path).emit(
-            "loop.review.finding.reopened",
-            finding_id="f1",
-            request_id="reopen",
-            reason="Still reproducible",
-            source="cli",
-            version=4,
+            journal.LoopReviewFindingReopened(
+                finding_id="f1",
+                request_id="reopen",
+                reason="Still reproducible",
+                source="cli",
+                version=4,
+            )
         )
         return acquire(session_dir)
 

@@ -10,8 +10,8 @@ import pytest
 from agent6 import evidence, paths
 from agent6.app import merge
 from agent6.config import Config
+from agent6.sessions import journal, manifest
 from agent6.sessions import layout as sessions_layout
-from agent6.sessions import manifest
 from agent6.vcs import git_read
 from tests.unit import test_cli_sessions_merge as merge_tests
 
@@ -274,22 +274,24 @@ def test_receipt_compares_recorded_panel_with_end_tree(tmp_path: pathlib.Path) -
     saved = review_helpers.reviewed_session(tmp_path)
     sink = event_log.EventSink(saved.logs_path)
     sink.emit(
-        "session.stop",
-        execution_id="execution",
-        tree="ht",
-        reason="finish_session",
-        turns=1,
-        verification="passed",
+        journal.SessionStop(
+            execution_id="execution",
+            tree="ht",
+            reason="finish_session",
+            turns=1,
+            verification="passed",
+        )
     )
     view = receipt.read_receipt(saved.session_dir, tmp_path)
     assert view.review.freshness == "current"
     sink.emit(
-        "session.stop",
-        execution_id="execution",
-        tree="other",
-        reason="finish_session",
-        turns=1,
-        verification="passed",
+        journal.SessionStop(
+            execution_id="execution",
+            tree="other",
+            reason="finish_session",
+            turns=1,
+            verification="passed",
+        )
     )
     assert receipt.read_receipt(saved.session_dir, tmp_path).review.freshness == "stale"
 
@@ -435,30 +437,32 @@ def test_torn_live_journal_keeps_evidence_but_cannot_certify(tmp_path: pathlib.P
 
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     sink.emit(
-        "verify.end",
-        verify_id="v",
-        cmd=["true"],
-        exit_code=0,
-        tree_before="tree",
-        tree_after="tree",
-        stdout_tail="the retained output",
-        stderr_tail="",
-        scoped=False,
-        selected_paths=[],
-        outcome="passed",
-        duration_s=1.0,
-        timeout_s=10.0,
-        baseline=False,
-        reason="",
+        journal.VerifyEnd(
+            verify_id="v",
+            cmd=["true"],
+            exit_code=0,
+            tree_before="tree",
+            tree_after="tree",
+            stdout_tail="the retained output",
+            stderr_tail="",
+            scoped=False,
+            selected_paths=[],
+            outcome="passed",
+            duration_s=1.0,
+            timeout_s=10.0,
+            baseline=False,
+            reason="",
+        )
     )
     sink.emit(
-        "session.stop",
-        execution_id="execution",
-        reason="finish_session",
-        turns=1,
-        verification="passed",
-        final_verify_id="v",
-        tree="tree",
+        journal.SessionStop(
+            execution_id="execution",
+            reason="finish_session",
+            turns=1,
+            verification="passed",
+            final_verify_id="v",
+            tree="tree",
+        )
     )
     with sink.path.open("ab") as stream:
         stream.write(b'{"type":"session.resume","user_task":"\xe2\x82')

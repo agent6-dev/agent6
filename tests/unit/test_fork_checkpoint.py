@@ -100,7 +100,11 @@ def _wf(
             ),
         ),
         "provider": mock.MagicMock(),
-        "dispatcher": mock.MagicMock(last_verification=None, verify_withheld=False),
+        "dispatcher": mock.MagicMock(
+            last_verification=None,
+            execution_id="execution",
+            verify_withheld=False,
+        ),
         "logger": _silent,
     }
     defaults.update(kw)

@@ -17,6 +17,7 @@ from agent6.config import Config
 from agent6.harness import finish_gates, loop, loop_conversation, loop_state, run_chain
 from agent6.machine import AgentRequest
 from agent6.machine import schema as machine_schema
+from agent6.sessions import journal
 from tests.unit.turn_context import turn_context
 
 _SCHEMAS = {
@@ -55,7 +56,9 @@ def _wf(validator: Any) -> loop.Harness:
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate({}),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=lambda _m: None,
         mode="run",
         finish_validator=validator,
@@ -77,8 +80,9 @@ def test_a_nonconforming_finish_is_refused_with_the_problems() -> None:
     turn = _finishing_turn(None)
     ctx = wf._turn_context(state, turn=3, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     refusal = finish_gates.finish_contract(turn, state, ctx)
-    assert refusal is not None and refusal.event == "loop.finish_contract.refused"
-    assert refusal.fields["turn"] == 3 and refusal.fields["problems"]
+    assert refusal is not None
+    assert isinstance(refusal.event, journal.LoopFinishContractRefused)
+    assert refusal.event.turn == 3 and refusal.event.problems
     wf._turn_finish_gates(state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
     assert turn.finish is None
     notices = [r.text for r in turn.tool_results if isinstance(r, loop_conversation.Notice)]

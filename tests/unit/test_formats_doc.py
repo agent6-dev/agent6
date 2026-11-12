@@ -97,21 +97,21 @@ def test_type_text_spells_a_private_module_by_its_public_name() -> None:
     assert _generator()._type_text("pathlib._local.Path | None") == "pathlib.Path \\| None"
 
 
-def test_event_meanings_come_from_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_event_meanings_come_from_the_records(monkeypatch: pytest.MonkeyPatch) -> None:
     """Event field meanings and optionality survive generation."""
-    from agent6.sessions import event_schema
+    from typing import ClassVar
 
-    monkeypatch.setattr(
-        event_schema,
-        "EVENTS",
-        (
-            event_schema.EventSpec(
-                "example.event",
-                "An example event.",
-                (event_schema.FieldSpec("count", "int", False, "An optional count."),),
-            ),
-        ),
-    )
+    import pydantic
+
+    from agent6.sessions import journal
+
+    class ExampleEvent(journal.Event):
+        """An example event."""
+
+        TYPE: ClassVar[str] = "example.event"
+        count: int | None = pydantic.Field(default=None, description="An optional count.")
+
+    monkeypatch.setattr(journal, "EVENT_TYPES", {"example.event": ExampleEvent})
     page = _generator().build_markdown()
     assert "### example.event\n\n" in page
     assert "An optional count." in page

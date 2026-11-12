@@ -17,7 +17,7 @@ from collections.abc import Callable
 
 from agent6.app import btw
 from agent6.sandbox import jail
-from agent6.sessions import event_log, layout
+from agent6.sessions import event_log, journal, layout
 from agent6.ui import spawn
 
 # A poll costs one status fold off the session dir.
@@ -86,7 +86,7 @@ def make_btw_runner(
         )
         if session is None:
             return False, f"[agent6] {err}"
-        events.emit("btw.opened", btw_id=session.id, question=session.question)
+        events.emit(journal.BtwOpened(btw_id=session.id, question=session.question))
         threading.Thread(target=_watch, args=(session, events), daemon=True).start()
         return True, f"[agent6] btw {session.id} opened; its answer prints here when it lands"
 
@@ -107,14 +107,16 @@ def _watch(session: btw.BtwSession, events: event_log.EventSink) -> None:
     while time.monotonic() < deadline:
         answer = btw.btw_answer(session)
         if answer is not None:
-            events.emit("btw.answered", btw_id=session.id, block=btw.render_btw(session, answer))
+            events.emit(
+                journal.BtwAnswered(btw_id=session.id, block=btw.render_btw(session, answer))
+            )
             return
         time.sleep(_POLL_S)
     late = (
         f"(no answer after {_GIVE_UP_S / 60:g} minutes; `agent6 sessions show {session.id}`"
         " reads it once it ends)"
     )
-    events.emit("btw.answered", btw_id=session.id, block=btw.render_btw(session, late))
+    events.emit(journal.BtwAnswered(btw_id=session.id, block=btw.render_btw(session, late)))
 
 
 def asks_dir(session_dir: pathlib.Path) -> pathlib.Path:

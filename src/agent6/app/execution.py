@@ -47,7 +47,7 @@ from agent6.harness import (
 )
 from agent6.providers import TranscriptSink
 from agent6.sandbox import jail
-from agent6.sessions import event_log, ipc, process
+from agent6.sessions import event_log, ipc, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import command_tools, dispatch, operator_prompts, target_policy
@@ -221,15 +221,16 @@ def _journal_escape(
         The reason journaled.
     """
     reason = _escape_reason(exc)
-    left = {"tree": tree} if tree else {}
+    left: dict[str, Any] = {"tree": tree} if tree else {}
     with contextlib.suppress(event_log.EventWriteError):
         events.emit(
-            "session.stop",
-            execution_id=execution_id,
-            reason=reason,
-            turns=turns,
-            verification=None,
-            **left,
+            journal.SessionStop(
+                execution_id=execution_id,
+                reason=reason,
+                turns=turns,
+                verification=None,
+                **left,
+            )
         )
     return reason
 
@@ -593,12 +594,13 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                         # any turn, as an unexecutable gate's is.
                         loop_log(f"[agent6] LOOP: aborting -- {unready.splitlines()[0]}")
                         events.emit(
-                            "session.stop",
-                            execution_id=dispatcher.execution_id,
-                            reason="setup_command_failed",
-                            summary=unready,
-                            turns=0,
-                            verification=None,
+                            journal.SessionStop(
+                                execution_id=dispatcher.execution_id,
+                                reason="setup_command_failed",
+                                summary=unready,
+                                turns=0,
+                                verification=None,
+                            )
                         )
                         result = loop_snapshot.SessionResult(
                             completed=False,
@@ -663,7 +665,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 with contextlib.suppress(
                     event_log.EventWriteError
                 ):  # a dead journal must not skip cleanup
-                    events.emit("jail.degraded", detail=jail.survivors_message(survivors))
+                    events.emit(journal.JailDegraded(detail=jail.survivors_message(survivors)))
 
         # ExitStack runs every close even when one raises, and re-raises after: no merge lands
         # on an execution whose teardown failed.
@@ -735,7 +737,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
     stranded = finalize.stranded_edits(result, layout, cwd, hidden=hidden)
     if stranded:
         # Journaled before the end block, whose headline and every listing read the journal.
-        events.emit("session.stranded")
+        events.emit(journal.SessionStranded())
     finalize.print_session_end(
         result,
         layout=layout,

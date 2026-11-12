@@ -11,7 +11,7 @@ import pytest
 
 from agent6 import paths
 from agent6.app import review_actions
-from agent6.sessions import event_log, layout, lock, process
+from agent6.sessions import event_log, journal, layout, lock, process
 from agent6.ui import spawn
 from agent6.ui.web import server
 from tests import review_helpers
@@ -115,14 +115,15 @@ def test_confirmed_resume_returns_shared_receipt(
         process.write_worker_pid(saved.session_dir, os.getpid())
         steers.append(steer)
         events.emit(
-            "session.resume",
-            session_id=session_id,
-            user_task="Repair parser",
-            steer=steer,
-            mode="run",
-            turn=2,
-            messages=4,
-            execution_id="resumed",
+            journal.SessionResume(
+                session_id=session_id,
+                user_task="Repair parser",
+                steer=steer,
+                mode="run",
+                turn=2,
+                messages=4,
+                execution_id="resumed",
+            )
         )
         if acknowledge_before_return:
             review_actions.drain(events, execution_id="resumed", resume_steer=steer)
@@ -149,11 +150,12 @@ def test_confirmed_resume_returns_shared_receipt(
         assert view.findings[0].actions[0].source == "web"
         review_actions.drain(events, execution_id="resumed", resume_steer=steers[0])
         events.emit(
-            "session.stop",
-            execution_id="resumed",
-            reason="finish_session",
-            turns=2,
-            verification="not_applicable",
+            journal.SessionStop(
+                execution_id="resumed",
+                reason="finish_session",
+                turns=2,
+                verification="not_applicable",
+            )
         )
     finally:
         process.clear_worker_pid(saved.session_dir)

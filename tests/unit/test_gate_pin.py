@@ -14,7 +14,7 @@ import pytest
 from agent6.app import reporter as app_reporter
 from agent6.app import stamps
 from agent6.config import Config
-from agent6.sessions import event_log
+from agent6.sessions import event_log, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 
@@ -53,7 +53,9 @@ def test_a_gate_adopted_mid_execution_re_pins(tmp_path: pathlib.Path) -> None:
     )
     assert sessions_manifest.read_manifest(layout.session_dir).harness.gate.command == ()
 
-    events.emit("loop.verify_inferred", command=["pytest", "-q"], source="agents_md", adopted_at=3)
+    events.emit(
+        journal.LoopVerifyInferred(command=["pytest", "-q"], source="agents_md", adopted_at=3)
+    )
 
     pinned = sessions_manifest.read_manifest(layout.session_dir).harness
     assert pinned.gate.command == ("pytest", "-q")
@@ -68,8 +70,10 @@ def test_an_un_adopted_gate_re_pins_gateless(tmp_path: pathlib.Path) -> None:
     stamps.pin_gate(
         layout.session_dir, sessions_manifest.GateStamp(), events=events, reporter=reporter
     )
-    events.emit("loop.verify_inferred", command=["pytest", "-q"], source="agents_md", adopted_at=3)
-    events.emit("loop.verify_inferred", command=[], source="unadopted", adopted_at=5)
+    events.emit(
+        journal.LoopVerifyInferred(command=["pytest", "-q"], source="agents_md", adopted_at=3)
+    )
+    events.emit(journal.LoopVerifyInferred(command=[], source="unadopted", adopted_at=5))
     pinned = sessions_manifest.read_manifest(layout.session_dir).harness
     assert pinned.gate.command == () and pinned.gate.source == ""
 
@@ -85,7 +89,7 @@ def test_a_preflight_inference_is_not_an_adoption(tmp_path: pathlib.Path) -> Non
         events=events,
         reporter=reporter,
     )
-    events.emit("loop.verify_inferred", command=["pytest"], source="repo_signals")
+    events.emit(journal.LoopVerifyInferred(command=["pytest"], source="repo_signals"))
     pinned = sessions_manifest.read_manifest(layout.session_dir).harness
     assert pinned.gate.command == ("make", "check")
     assert pinned.gate.source == "configured"
@@ -100,7 +104,7 @@ def test_a_pin_that_cannot_be_written_is_reported(tmp_path: pathlib.Path) -> Non
         layout.session_dir, sessions_manifest.GateStamp(), events=events, reporter=reporter
     )
     layout.manifest_path.unlink()
-    events.emit("loop.verify_inferred", command=["pytest"], source="agents_md", adopted_at=1)
+    events.emit(journal.LoopVerifyInferred(command=["pytest"], source="agents_md", adopted_at=1))
     assert any("could not record this run's verify gate" in line for line in said)
 
 

@@ -23,8 +23,8 @@ from agent6.config import Config
 from agent6.context import memory
 from agent6.harness import review_session
 from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
+from agent6.sessions import journal, process
 from agent6.sessions import layout as sessions_layout
-from agent6.sessions import process
 from agent6.ui.cli import main
 from agent6.viewmodel import session_log
 
@@ -148,19 +148,20 @@ def test_digest_lists_questions_nobody_answered(repo: pathlib.Path) -> None:
 
     layout = _write_session(repo, events=[])
     sink = event_log.EventSink(layout.logs_path)
-    sink.emit("session.start", mode="run", user_task="fix the parser", execution_id="first")
+    sink.emit(journal.SessionStart(mode="run", user_task="fix the parser", execution_id="first"))
     prompts = operator_prompts.OperatorPrompts(journal=sink.emit, session_dir=layout.session_dir)
     answer = prompts.ask((schema.UserQuestion(question="keep the public API?"),))
     assert answer.status == "unanswered"
     sink.emit(
-        "session.resume",
-        session_id=layout.session_id,
-        mode="run",
-        user_task="fix the parser",
-        steer="",
-        turn=2,
-        messages=1,
-        execution_id="second",
+        journal.SessionResume(
+            session_id=layout.session_id,
+            mode="run",
+            user_task="fix the parser",
+            steer="",
+            turn=2,
+            messages=1,
+            execution_id="second",
+        )
     )
     prompts = operator_prompts.OperatorPrompts(journal=sink.emit, session_dir=layout.session_dir)
     later = prompts.ask((schema.UserQuestion(question="allow the migration?"),))

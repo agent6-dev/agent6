@@ -11,6 +11,7 @@ from __future__ import annotations
 from unittest import mock
 
 from agent6.harness import advice, guards, loop_conversation, loop_state, nudges
+from agent6.sessions import journal
 from tests.unit.turn_context import turn_context
 
 
@@ -38,9 +39,12 @@ def test_the_ladder_nudges_escalates_then_stops_softly() -> None:
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     nudge, escalation, stop = _climb(state, nudges.NO_PROGRESS_STOP_AFTER)
     assert isinstance(nudge, advice.Nudge) and nudge.text == nudges.NO_PROGRESS_NUDGE
-    assert nudge.fields == {"turn": nudges.NO_PROGRESS_NUDGE_AFTER, "streak": 4, "level": 1}
+    assert nudge.event == journal.LoopNoProgressNudge(
+        turn=nudges.NO_PROGRESS_NUDGE_AFTER, streak=4, level=1
+    )
     assert isinstance(escalation, advice.Nudge) and escalation.text == nudges.NO_PROGRESS_ESCALATION
-    assert escalation.fields["streak"] == nudges.NO_PROGRESS_ESCALATE_AFTER
+    assert isinstance(escalation.event, journal.LoopNoProgressNudge)
+    assert escalation.event.streak == nudges.NO_PROGRESS_ESCALATE_AFTER
     assert isinstance(stop, advice.Stop) and stop.end().reason == "no_progress"
     assert stop.soft == "no_progress" and stop.declared == ""
     assert f"through {nudges.NO_PROGRESS_STOP_AFTER} consecutive runs" in stop.end().summary

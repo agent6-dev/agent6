@@ -23,6 +23,7 @@ from agent6.harness import (
     provider_call,
 )
 from agent6.providers import ProviderResponse
+from agent6.sessions import journal
 
 if TYPE_CHECKING:
     from agent6.harness import loop
@@ -71,8 +72,9 @@ def silent_no_work(state: loop_state.LoopState, ctx: advice.TurnContext) -> advi
     quiet.silent_no_work_nudges_used += 1
     return advice.Nudge(
         nudges.SILENT_NO_WORK_NUDGE,
-        event="loop.silent_no_work.nudge",
-        fields={"turn": ctx.turn, "nudges_used": quiet.silent_no_work_nudges_used},
+        event=journal.LoopSilentNoWorkNudge(
+            turn=ctx.turn, nudges_used=quiet.silent_no_work_nudges_used
+        ),
         log=(
             f"  silent finish rejected: no work yet (nudge"
             f" #{quiet.silent_no_work_nudges_used}) at turn {ctx.turn}"
@@ -100,8 +102,7 @@ def question_in_prose(
     state.quiet.question_nudged = True
     return advice.Nudge(
         nudges.QUESTION_NUDGE,
-        event="loop.question_nudge",
-        fields={"turn": ctx.turn},
+        event=journal.LoopQuestionNudge(turn=ctx.turn),
         log=f"  silent_finish nudged: ended on a question at turn {ctx.turn}",
     )
 
@@ -129,13 +130,12 @@ def went_quiet(
     starved = provider_call.reasoning_starvation(resp) > 0
     return advice.Nudge(
         nudges.reasoning_starved_nudge(resp.output_tokens) if starved else nudges.WENT_QUIET_NUDGE,
-        event="loop.went_quiet.nudge",
-        fields={
-            "turn": ctx.turn,
-            "nudges_used": quiet.went_quiet_nudges_used,
-            "nudges_max": cap,
-            "output_tokens": resp.output_tokens,
-        },
+        event=journal.LoopWentQuietNudge(
+            turn=ctx.turn,
+            nudges_used=quiet.went_quiet_nudges_used,
+            nudges_max=cap,
+            output_tokens=resp.output_tokens,
+        ),
     )
 
 
@@ -268,11 +268,12 @@ def handle_went_quiet(
             f" providers/openai.py if it isn't already."
         )
         wf.emit(
-            "loop.reasoning_starvation",
-            turn=turn,
-            reasoning_chars=reasoning_chars,
-            output_tokens=resp.output_tokens,
-            stop_reason=resp.stop_reason,
+            journal.LoopReasoningStarvation(
+                turn=turn,
+                reasoning_chars=reasoning_chars,
+                output_tokens=resp.output_tokens,
+                stop_reason=resp.stop_reason,
+            )
         )
     # A subscription plan is metered in points, so it says "spent", not "billed".
     plan_metered = wf.budget is not None and wf.budget.snapshot().plan_latest is not None

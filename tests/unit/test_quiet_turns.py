@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from agent6.harness import loop_state, nudges, quiet_turns
 from agent6.providers import ProviderResponse
+from agent6.sessions import journal
 from tests.unit.turn_context import turn_context
 
 
@@ -39,8 +40,7 @@ def test_an_early_prose_stall_is_steered_back_a_bounded_number_of_times() -> Non
     assert [a is not None for a in answers] == [True, True, False]
     first = answers[0]
     assert first is not None and first.text == nudges.SILENT_NO_WORK_NUDGE
-    assert first.event == "loop.silent_no_work.nudge"
-    assert first.fields == {"turn": 2, "nudges_used": 1}
+    assert first.event == journal.LoopSilentNoWorkNudge(turn=2, nudges_used=1)
     assert first.log == "  silent finish rejected: no work yet (nudge #1) at turn 2"
     late = turn_context(turn=quiet_turns.SILENT_NO_WORK_UNTIL + 1)
     assert quiet_turns.silent_no_work(_state(), late) is None
@@ -54,7 +54,7 @@ def test_a_question_in_prose_draws_one_nudge_per_run() -> None:
     state = _state()
     nudge = quiet_turns.question_in_prose(state, turn_context(turn=5), "Should I keep squash?")
     assert nudge is not None and nudge.text == nudges.QUESTION_NUDGE
-    assert nudge.event == "loop.question_nudge" and nudge.fields == {"turn": 5}
+    assert nudge.event == journal.LoopQuestionNudge(turn=5)
     assert quiet_turns.question_in_prose(state, turn_context(), "And this one?") is None
     assert quiet_turns.question_in_prose(_state(), turn_context(), "Done.") is None
     assert quiet_turns.question_in_prose(_state(), turn_context(mode="plan"), "Which?") is None
@@ -65,8 +65,9 @@ def test_an_empty_turn_is_nudged_up_to_the_cap_with_the_starved_wording() -> Non
     ctx = turn_context(turn=3, went_quiet_max_nudges=2)
     first = quiet_turns.went_quiet(state, ctx, _empty())
     assert first is not None and first.text == nudges.WENT_QUIET_NUDGE
-    assert first.event == "loop.went_quiet.nudge"
-    assert first.fields == {"turn": 3, "nudges_used": 1, "nudges_max": 2, "output_tokens": 0}
+    assert first.event == journal.LoopWentQuietNudge(
+        turn=3, nudges_used=1, nudges_max=2, output_tokens=0
+    )
     second = quiet_turns.went_quiet(state, ctx, _empty(900, starved=True))
     assert second is not None and "900 tokens" in second.text
     assert quiet_turns.went_quiet(state, ctx, _empty()) is None
@@ -79,4 +80,5 @@ def test_the_config_knob_sets_the_cap() -> None:
     """
     assert quiet_turns.went_quiet(_state(), turn_context(went_quiet_max_nudges=0), _empty()) is None
     default = quiet_turns.went_quiet(_state(), turn_context(), _empty())
-    assert default is not None and default.fields["nudges_max"] == 4
+    assert default is not None and isinstance(default.event, journal.LoopWentQuietNudge)
+    assert default.event.nudges_max == 4

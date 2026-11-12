@@ -222,7 +222,8 @@ def test_resume_records_inheritance_and_each_review_seat(
         in line
     )
     assert "review seat 2 (bugs) chatgpt/gpt-6-astra effort off (repo)" in line
-    assert "review seat 3 (bugs) chatgpt/other effort provider default" in line
+    # A pinned seat inherits the reviewer role's effort like an unpinned one.
+    assert "review seat 3 (bugs) chatgpt/other effort xhigh (models.reviewer.effort, repo)" in line
     other_role = "worker" if role == "planner" else "planner"
     assert f"{other_role} chatgpt/" not in line
 

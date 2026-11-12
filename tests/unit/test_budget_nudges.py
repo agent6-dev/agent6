@@ -9,6 +9,7 @@ wrap-up directive on a low budget, each once per run and only in its mode.
 from __future__ import annotations
 
 from agent6.harness import guards, loop_state, nudges
+from agent6.sessions import journal
 from tests.unit.turn_context import turn_context
 
 
@@ -21,7 +22,9 @@ def test_the_planner_is_told_once_on_a_low_budget_or_too_many_turns() -> None:
     state = _state()
     nudge = guards.plan_budget_nudge(state, low)
     assert nudge is not None and nudge.text == nudges.PLAN_BUDGET_NUDGE
-    assert nudge.fields == {"turn": 1, "budget_remaining": nudges.PLAN_BUDGET_NUDGE_BELOW}
+    assert nudge.event == journal.LoopPlanFinishNudge(
+        turn=1, budget_remaining=nudges.PLAN_BUDGET_NUDGE_BELOW
+    )
     assert nudge.log == "LOOP: plan finish-nudge at turn 1 (turns=False, low_budget=True)"
     assert guards.plan_budget_nudge(state, low) is None
 
@@ -38,7 +41,9 @@ def test_a_plain_run_is_told_once_on_a_low_budget_naming_its_gate() -> None:
     state = _state()
     nudge = guards.run_budget_nudge(state, low)
     assert nudge is not None and nudge.text == nudges.RUN_BUDGET_NUDGE_GATELESS
-    assert nudge.fields == {"turn": 9, "budget_remaining": nudges.RUN_BUDGET_NUDGE_BELOW}
+    assert nudge.event == journal.LoopRunBudgetNudge(
+        turn=9, budget_remaining=nudges.RUN_BUDGET_NUDGE_BELOW
+    )
     assert nudge.log == "LOOP: run budget-nudge at turn 9"
     assert guards.run_budget_nudge(state, low) is None
 

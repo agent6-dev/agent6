@@ -149,7 +149,7 @@ class End:
     roots: bool | None = None
     scoped: bool = False
     finish_payload: dict[str, Any] | None = None
-    fields: Mapping[str, object] = dataclasses.field(default_factory=dict)
+    fields: Mapping[str, Any] = dataclasses.field(default_factory=dict)
 
 
 class ResumeError(Exception):

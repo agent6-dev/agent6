@@ -17,6 +17,7 @@ from agent6 import kinds
 from agent6.config import Config
 from agent6.context import memory as agent6_memory
 from agent6.harness import prompt_blocks, tool_effects
+from agent6.sessions import journal
 from agent6.tools import dispatch, tool_errors
 
 
@@ -201,7 +202,7 @@ def test_mixed_patch_records_memory_and_workspace_effects(
         " run's commits leave it out."
     )
     events.emit.assert_called_once_with(
-        "loop.edit.left_out", turn=1, ignored=[], untracked=["notes.txt"]
+        journal.LoopEditLeftOut(turn=1, ignored=[], untracked=["notes.txt"])
     )
 
 

@@ -28,22 +28,22 @@ Formats are not stable until 1.0.
 `logs.jsonl` contains one JSON object per line.
 A torn last line is dropped the next time the journal opens for appending.
 The envelope below surrounds each event's payload.
-The event registry describes current writers; historical reads tolerate unknown events.
+The journal records describe current writers; historical reads tolerate unknown events.
 Optional event fields may be absent or null.
-Integer values also satisfy the registry's `float` kind, but booleans do not.
+Integer values also satisfy a record's `float` field, but booleans do not.
 
 
 
 ### `logs.jsonl` event envelope
 
-**Support: public.** Append one event under its envelope (`ENVELOPE_KEYS`), then notify the listeners.
+**Support: public.** Append one record under its envelope (`ENVELOPE_KEYS`), then notify the listeners.
 
 Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/event_log.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `ts` | `JSON` | The write time in UTC ISO 8601 with microseconds. |
-| `type` | `JSON` | The event name in the registry. |
+| `type` | `JSON` | The record's `TYPE`. |
 | `event_id` | `JSON` | A UUID hex identifier on durable events; absent on streaming deltas. |
 
 ### approval.answer

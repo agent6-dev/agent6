@@ -24,7 +24,7 @@ from agent6.app import reporter as app_reporter
 from agent6.config import ConfigError, layer
 from agent6.graph import storage
 from agent6.harness import loop_snapshot
-from agent6.sessions import event_log, lock, process
+from agent6.sessions import event_log, journal, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_ops, git_read
@@ -473,14 +473,15 @@ def _journal_undone(undone: sessions_layout.SessionLayout, child: str, undone_te
     scan = session_log.scan_session_log(undone.logs_path)
     events = event_log.EventSink(undone.logs_path)
     with contextlib.suppress(event_log.EventWriteError):
-        events.emit("session.undone", new_session_id=child, undone_text=undone_text)
+        events.emit(journal.SessionUndone(new_session_id=child, undone_text=undone_text))
         events.emit(
-            "session.stop",
-            execution_id=scan.execution_id or "",
-            reason="undone",
-            summary=f"operator undid the last message; forked to {child}",
-            turns=scan.turn or 0,
-            verification=None,
+            journal.SessionStop(
+                execution_id=scan.execution_id or "",
+                reason="undone",
+                summary=f"operator undid the last message; forked to {child}",
+                turns=scan.turn or 0,
+                verification=None,
+            )
         )
 
 

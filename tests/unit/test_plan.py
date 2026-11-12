@@ -615,7 +615,11 @@ def _wf(
             ),
         ),
         "provider": mock.MagicMock(),
-        "dispatcher": mock.MagicMock(last_verification=None, verify_withheld=False),
+        "dispatcher": mock.MagicMock(
+            last_verification=None,
+            execution_id="execution",
+            verify_withheld=False,
+        ),
         "logger": _silent,
         "call": provider_call.CallSettings(retry_delay_s=0.01),
     }
@@ -682,6 +686,7 @@ def _plan_wf(
         ),
         provider=provider,
         dispatcher=mock.MagicMock(
+            execution_id="execution",
             last_verification=None,
             dispatch=mock.MagicMock(return_value=results.RawResult({"acknowledged": True})),
         ),
@@ -777,7 +782,9 @@ def test_an_unreadable_plan_parks_the_execution(tmp_path: pathlib.Path) -> None:
             chain=run_chain.RunChain(tmp_path),
             config=mock.MagicMock(),
             provider=mock.MagicMock(),
-            dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+            dispatcher=mock.MagicMock(
+                last_verification=None, execution_id="execution", verify_withheld=False
+            ),
             mode="plan",
             plan_output_path=plan,
             logger=lambda _m: None,

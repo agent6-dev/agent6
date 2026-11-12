@@ -15,7 +15,7 @@ from agent6.app import workspace_setup
 from agent6.config import Config
 from agent6.machine import EngineError
 from agent6.sandbox import jail
-from agent6.sessions import event_log
+from agent6.sessions import event_log, journal
 from agent6.tools import target_policy
 
 
@@ -46,14 +46,15 @@ class _Runner:
                 controls=target_policy.effective_controls(self.config, self.policy.isolation),
             )
             stamp = evidence.target_record(target_id, execution_id, target)
-            events.emit("execution.target", **evidence.TARGET.dump_python(stamp, mode="json"))
+            events.emit(journal.ExecutionTarget(**evidence.TARGET.dump_python(stamp, mode="json")))
         result = jail.run_in_jail(dataclasses.replace(self.policy, argv=argv))
         if events is not None:
             events.emit(
-                "workspace.setup",
-                execution_id=execution_id,
-                target_id=target_id,
-                **kinds.workspace_setup_fields(result),
+                journal.WorkspaceSetup(
+                    execution_id=execution_id,
+                    target_id=target_id,
+                    **kinds.workspace_setup_fields(result),
+                )
             )
         return result
 

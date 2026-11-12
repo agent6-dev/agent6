@@ -27,6 +27,7 @@ from agent6.providers import (
     provider_types,
     request_headers,
 )
+from agent6.sessions import journal
 
 # A timeout (408), a conflict (409), too early (425), a rate limit (429) and every 5xx retry.
 NON_RETRYABLE_HTTP_STATUSES = frozenset(set(range(300, 500)) - {408, 409, 425, 429})
@@ -172,12 +173,13 @@ class MediaRecovery:
                     self.unsupported.add(modality)
                 if emit is not None:
                     emit(
-                        "loop.media.refused",
-                        provider_tool_call_id=item.tool_use_id,
-                        route=self.capabilities.route.spec,
-                        reason=reason,
-                        text=refusal,
-                        attachment=attachment.metadata(),
+                        journal.LoopMediaRefused(
+                            provider_tool_call_id=item.tool_use_id,
+                            route=self.capabilities.route.spec,
+                            reason=reason,
+                            text=refusal,
+                            attachment=attachment.metadata(),
+                        )
                     )
         return changed
 
@@ -209,7 +211,7 @@ def call_with_media_recovery(
     limited = conversation.limit_attachments()
     for call_id, reason in limited:
         if emit is not None:
-            emit("loop.media.refused", provider_tool_call_id=call_id, reason=reason)
+            emit(journal.LoopMediaRefused(provider_tool_call_id=call_id, reason=reason))
     if (recovery.replace(conversation, None, emit) or limited) and changed is not None:
         changed()
     try:
@@ -329,7 +331,7 @@ class ProviderCaller:
                         " not retrying"
                     )
                     self.emit(
-                        "loop.provider.fatal", status_code=exc.status_code, error=str(exc)[:200]
+                        journal.LoopProviderFatal(status_code=exc.status_code, error=str(exc)[:200])
                     )
                     raise
                 if attempt == attempts:
@@ -340,7 +342,7 @@ class ProviderCaller:
                     f"LOOP: provider error attempt {attempt}/{attempts}: {exc}"
                     f" - retrying in {delay:.2f}s"
                 )
-                self.emit("loop.provider.retry", attempt=attempt, error=str(exc)[:200])
+                self.emit(journal.LoopProviderRetry(attempt=attempt, error=str(exc)[:200]))
             else:
                 if attempt == attempts or not is_empty_tool_call_response(resp):
                     return resp
@@ -352,9 +354,10 @@ class ProviderCaller:
                     f" retrying in {delay:.2f}s"
                 )
                 self.emit(
-                    "loop.provider.empty_tool_call_retry",
-                    attempt=attempt,
-                    stop_reason=str(resp.stop_reason),
+                    journal.LoopProviderEmptyToolCallRetry(
+                        attempt=attempt,
+                        stop_reason=str(resp.stop_reason),
+                    )
                 )
             time.sleep(delay)
             attempt += 1

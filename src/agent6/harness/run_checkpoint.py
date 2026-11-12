@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from agent6 import errors
 from agent6.harness import run_chain
 from agent6.providers import Provider, ProviderError, call_for_text
+from agent6.sessions import journal
 from agent6.vcs import commit_message, git_read
 
 if TYPE_CHECKING:
@@ -103,12 +104,15 @@ class Checkpoints:
         if not sha:
             return ""
         self.log(f"  {label}: {sha[:12]}")
-        self.emit("loop.auto_commit", turn=turn, sha=sha, subject=subject, task_id=task_id or "")
+        self.emit(
+            journal.LoopAutoCommit(turn=turn, sha=sha, subject=subject, task_id=task_id or "")
+        )
         # Every fold tallies commits and the latest diff from diff.updated alone.
         self.emit(
-            "diff.updated",
-            sha=sha,
-            patch=git_read.commit_diff(self.chain.root, sha, max_bytes=8000),
+            journal.DiffUpdated(
+                sha=sha,
+                patch=git_read.commit_diff(self.chain.root, sha, max_bytes=8000),
+            )
         )
         return sha
 
@@ -141,11 +145,12 @@ class Checkpoints:
         except (errors.GitError, OSError):
             pass  # the status itself failed: the event goes without the snapshot
         self.emit(
-            "loop.auto_commit.failed",
-            turn=turn,
-            error=str(exc)[:2000],
-            worktree_status=worktree_status,
-            commit_subject=subject[:200],
+            journal.LoopAutoCommitFailed(
+                turn=turn,
+                error=str(exc)[:2000],
+                worktree_status=worktree_status,
+                commit_subject=subject[:200],
+            )
         )
 
     def final(self, *, turn: int, task_id: str | None = None) -> None:

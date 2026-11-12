@@ -11,6 +11,7 @@ from __future__ import annotations
 from unittest import mock
 
 from agent6.harness import advice, loop_conversation, loop_state, metric_rules
+from agent6.sessions import journal
 from tests.unit.turn_context import turn_context
 
 
@@ -28,7 +29,9 @@ def test_a_tie_with_runway_is_a_notice_that_costs_no_patience() -> None:
     for i in range(1, 6):
         answer = metric_rules.metric_plateau(_tie(i), state, ctx)
         assert isinstance(answer, advice.Nudge) and "80% of the budget remains" in answer.text
-        assert answer.fields == {"turn": i, "nudges_used": 0, "budget_remaining": 0.8}
+        assert answer.event == journal.LoopMetricPlateauNudge(
+            turn=i, nudges_used=0, budget_remaining=0.8
+        )
     assert state.metric.plateau_nudges_used == 0
 
 
@@ -41,8 +44,12 @@ def test_final_slice_ties_spend_the_patience_then_stop() -> None:
     ]
     notices, stop = answers[:-1], answers[-1]
     assert all(isinstance(a, advice.Nudge) and "unknown" in a.text for a in notices)
-    assert [a.fields["nudges_used"] for a in notices if isinstance(a, advice.Nudge)] == [1, 2, 3]
-    assert isinstance(stop, advice.Stop) and stop.event == ""
+    assert [
+        a.event.nudges_used
+        for a in notices
+        if isinstance(a, advice.Nudge) and isinstance(a.event, journal.LoopMetricPlateauNudge)
+    ] == [1, 2, 3]
+    assert isinstance(stop, advice.Stop) and stop.event is None
     assert stop.soft == "metric_plateau" and stop.declared == "metric_plateau"
     assert stop.log == f"LOOP: metric_plateau at turn {metric_rules.METRIC_PLATEAU_PATIENCE + 1}"
     end = stop.end()
@@ -59,7 +66,7 @@ def test_a_ceiling_stops_at_once_with_its_event() -> None:
         _tie(4), state, turn_context(metric=True, budget_remaining=lambda: 0.9)
     )
     assert isinstance(stop, advice.Stop)
-    assert stop.event == "loop.metric_ceiling.stop" and stop.fields == {"turn": 4}
+    assert stop.event == journal.LoopMetricCeilingStop(turn=4)
     assert stop.end().reason == "metric_plateau"
 
 
@@ -84,7 +91,9 @@ def test_the_auto_metric_says_it_runs_after_each_committed_edit() -> None:
     from agent6.tools import tool_errors
 
     lines: list[str] = []
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.side_effect = tool_errors.ToolError("no score")
     sampler = metric_sampler.MetricSampler(
         settings=MetricConfig(command=("true",), pattern="(\\d+)", goal="minimize"),

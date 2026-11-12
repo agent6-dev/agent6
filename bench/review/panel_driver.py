@@ -16,7 +16,7 @@ from agent6.app import role_providers
 from agent6.config import layer
 from agent6.harness import review_gate, review_history, review_panel
 from agent6.providers import provider_types
-from agent6.sessions import event_log, layout, manifest
+from agent6.sessions import event_log, journal, layout, manifest
 from agent6.vcs import git_read, review
 from agent6.viewmodel import receipt
 
@@ -37,11 +37,12 @@ def run(
     )
     events = event_log.EventSink(saved.logs_path)
     events.emit(
-        "session.start",
-        session_id=saved.session_id,
-        execution_id=execution_id,
-        mode="run",
-        user_task=task,
+        journal.SessionStart(
+            session_id=saved.session_id,
+            execution_id=execution_id,
+            mode="run",
+            user_task=task,
+        )
     )
     verify_id = uuid.uuid4().hex
     command = (sys.executable, "-B", str(checks))
@@ -65,7 +66,7 @@ def run(
         stdout_truncated=False,
         stderr_truncated=False,
     )
-    events.emit("verify.end", **dataclasses.asdict(verified))
+    events.emit(journal.VerifyEnd(**dataclasses.asdict(verified)))
     tracker = budget.BudgetTracker(
         max_usd=cfg.budget.max_usd,
         max_tokens_fallback=cfg.budget.max_tokens_fallback,
@@ -78,22 +79,23 @@ def run(
     )
     identity = dict(panel_id=panel_id, execution_id=execution_id, turn=0, trigger="benchmark")
     events.emit(
-        "loop.review.start",
-        **identity,
-        target=dataclasses.asdict(target),
-        rule_sources=[],
-        rules_complete=True,
-        rules_reason=None,
-        seats=[
-            dict(
-                seat_index=i,
-                focus=s.focus,
-                model_route=s.model,
-                scope=s.scope,
-                temperature=s.temperature,
-            )
-            for i, s in enumerate(seats)
-        ],
+        journal.LoopReviewStart(
+            **identity,
+            target=dataclasses.asdict(target),
+            rule_sources=[],
+            rules_complete=True,
+            rules_reason=None,
+            seats=[
+                dict(
+                    seat_index=i,
+                    focus=s.focus,
+                    model_route=s.model,
+                    scope=s.scope,
+                    temperature=s.temperature,
+                )
+                for i, s in enumerate(seats)
+            ],
+        )
     )
     result = review_gate.run_panel(
         seats,
@@ -109,9 +111,12 @@ def run(
     )
     for verdict in result.per_seat:
         events.emit(
-            "loop.review.seat",
-            **identity,
-            **pydantic.TypeAdapter(review_records.ReviewVerdict).dump_python(verdict, mode="json"),
+            journal.LoopReviewSeat(
+                **identity,
+                **pydantic.TypeAdapter(review_records.ReviewVerdict).dump_python(
+                    verdict, mode="json"
+                ),
+            )
         )
     observations = review_history.observations(
         panel_id, result.per_seat, {}, root=root, target=target, hide=()
@@ -132,18 +137,19 @@ def run(
         n_abstain=result.n_abstain,
         completion="inconclusive" if review_panel.panel_is_inconclusive(result) else "complete",
     )
-    events.emit("loop.review.panel", **record.model_dump(mode="json"))
+    events.emit(journal.LoopReviewPanel(**record.model_dump(mode="json")))
     tracker.settle()
-    events.emit("budget.update", **role_providers.budget_update_fields(tracker))
+    events.emit(journal.BudgetUpdate(**role_providers.budget_update_fields(tracker)))
     events.emit(
-        "session.stop",
-        execution_id=execution_id,
-        reason="benchmark_complete",
-        turns=0,
-        verification="passed",
-        final_verify_id=verify_id,
-        tree=target.head_tree,
-        summary="Bench-local panel completed; no worker ran.",
+        journal.SessionStop(
+            execution_id=execution_id,
+            reason="benchmark_complete",
+            turns=0,
+            verification="passed",
+            final_verify_id=verify_id,
+            tree=target.head_tree,
+            summary="Bench-local panel completed; no worker ran.",
+        )
     )
     report = saved.session_dir / "receipt.json"
     report.write_text(

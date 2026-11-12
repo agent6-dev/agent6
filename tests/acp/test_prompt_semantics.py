@@ -11,6 +11,7 @@ import pytest
 from agent6 import paths
 from agent6.app import resume, session_setup
 from agent6.harness import loop_conversation, loop_state, operator_bridge
+from agent6.sessions import journal
 from agent6.ui.acp import runner, server, session
 from tests.acp import test_runner, test_session_lifecycle
 
@@ -51,8 +52,8 @@ def test_followup_verbs_reach_the_model_as_task_text(
     conversation = loop_conversation.Conversation()
     events: list[str] = []
 
-    def emit(event: str, **_kwargs: object) -> None:
-        events.append(event)
+    def emit(event: journal.Event) -> None:
+        events.append(event.TYPE)
 
     def record(*_args: object) -> None:
         pass

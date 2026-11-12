@@ -15,7 +15,7 @@ from collections.abc import Callable
 import pytest
 
 from agent6.app import frontend
-from agent6.sessions import event_log, ipc
+from agent6.sessions import event_log, ipc, journal
 from agent6.tools import operator_prompts, schema
 from agent6.ui.acp import frontend as acp_frontend
 
@@ -298,8 +298,8 @@ def test_a_request_names_the_call_the_prompt_carries(tmp_path: pathlib.Path) -> 
     )
     prompts = _prompts(front, tmp_path)
     events = event_log.EventSink(tmp_path / "logs.jsonl")
-    events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
-    events.emit("tool.call", name="read_file", args={"path": "x"}, call_id=2)
+    events.emit(journal.ToolCall(name="run_command", args={"argv": ["ls"]}, call_id=1))
+    events.emit(journal.ToolCall(name="read_file", args={"path": "x"}, call_id=2))
     assert prompts.approve("Allow run_command: ls", scope="command", call_id=1) is True
     assert prompts.ask(
         (schema.UserQuestion(question="Theme?", options=("dark", "light")),), call_id=1

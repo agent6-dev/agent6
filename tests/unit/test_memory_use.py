@@ -34,7 +34,9 @@ def _wf(state_dir: pathlib.Path | None, **kw: Any) -> loop.Harness:
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate({}),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=lambda _m: None,
         state_dir=state_dir,
         events=events,
@@ -319,7 +321,9 @@ def test_a_record_that_cannot_be_written_logs_and_lets_the_end_stand(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate({}),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=logs.append,
         state_dir=tmp_path,
         events=events,

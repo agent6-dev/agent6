@@ -47,7 +47,11 @@ def _wrap(inner: mock.MagicMock) -> role_providers.InstrumentedProvider:
 
 
 def _emitted(events: mock.MagicMock, kind: str) -> list[dict[str, Any]]:
-    return [dict(c.kwargs) for c in events.emit.call_args_list if c.args == (kind,)]
+    return [
+        c.args[0].model_dump(exclude_unset=True)
+        for c in events.emit.call_args_list
+        if kind == c.args[0].TYPE
+    ]
 
 
 def test_a_call_and_its_result_share_one_id_and_identity() -> None:

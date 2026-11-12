@@ -9,7 +9,7 @@ import pytest
 
 from agent6 import review_records
 from agent6.app import review_actions
-from agent6.sessions import event_log, ipc, lock, process
+from agent6.sessions import event_log, ipc, journal, lock, process
 from agent6.ui.cli import main
 from agent6.viewmodel import session_log
 from tests import review_helpers
@@ -543,12 +543,13 @@ def test_successful_launcher_preserves_recorded_failure(tmp_path: pathlib.Path) 
         assert fd is not None
         try:
             event_log.EventSink(saved.logs_path).emit(
-                "loop.review.fix.failed",
-                finding_id="f1",
-                request_id="resume",
-                source="cli",
-                version=3,
-                error="worker refused instruction",
+                journal.LoopReviewFixFailed(
+                    finding_id="f1",
+                    request_id="resume",
+                    source="cli",
+                    version=3,
+                    error="worker refused instruction",
+                )
             )
         finally:
             lock.release_single_writer(fd)

@@ -16,7 +16,7 @@ from agent6 import directive as agent6_directive
 from agent6 import kinds
 from agent6.context import skills
 from agent6.harness import loop_conversation, nudges, subrun
-from agent6.sessions import ipc
+from agent6.sessions import ipc, journal
 
 if TYPE_CHECKING:
     from agent6.harness import loop_state, parallel_dispatch
@@ -27,11 +27,15 @@ if TYPE_CHECKING:
 PINS_MAX_CHARS = 4_000
 
 # The steer texts that end or hand over the run: the verb, its event, its log line.
-STEER_VERBS: dict[str, tuple[str, str, str]] = {
-    "abort": ("abort", "loop.steer.aborted", "abort - halting the run"),
-    "exit": ("exit", "loop.steer.exited", "exit - halting the run and leaving the terminal"),
-    "/undo": ("undo", "loop.steer.undo", "/undo - forking back before the last message"),
-    "detach": ("detach", "loop.steer.detached", "detach - stopping to resume in the background"),
+STEER_VERBS: dict[str, tuple[str, type[journal.Event], str]] = {
+    "abort": ("abort", journal.LoopSteerAborted, "abort - halting the run"),
+    "exit": ("exit", journal.LoopSteerExited, "exit - halting the run and leaving the terminal"),
+    "/undo": ("undo", journal.LoopSteerUndo, "/undo - forking back before the last message"),
+    "detach": (
+        "detach",
+        journal.LoopSteerDetached,
+        "detach - stopping to resume in the background",
+    ),
 }
 
 
@@ -183,7 +187,7 @@ class Steering:
         """
         if not self.bridge.steer_requested():
             return None
-        self.emit("loop.steer.requested", turn=turn)
+        self.emit(journal.LoopSteerRequested(turn=turn))
         self.log(f"STEER: operator steering at turn {turn}")
         try:
             text = self.bridge.steer_prompt()
@@ -194,19 +198,19 @@ class Steering:
             return None
         steer_text = text.strip()
         if verb := STEER_VERBS.get(steer_text.lower()):
-            name, event, line = verb
-            self.emit(event)
+            name, record, line = verb
+            self.emit(record())
             self.log(f"  {line}")
             return name
         if (prepared := review_message(self.bridge, steer_text)) is not None:
             inject, message = prepared
             if inject:
                 state.settled.restart()
-                self.emit("loop.steer.injected", chars=len(text), text=text)
+                self.emit(journal.LoopSteerInjected(chars=len(text), text=text))
                 conversation.notice(f"{heading}\n{message}", origin="operator")
             else:
                 self.log(message)
-                self.emit("loop.steer.feedback", text=message)
+                self.emit(journal.LoopSteerFeedback(text=message))
             return None
         # The steer is new work: the idle turns before it say nothing about the turns after.
         state.settled.restart()
@@ -217,7 +221,7 @@ class Steering:
         ):
             return None
         self.log(f"  injecting steering instruction ({len(steer_text)} chars)")
-        self.emit("loop.steer.injected", chars=len(text), text=text)
+        self.emit(journal.LoopSteerInjected(chars=len(text), text=text))
         asked = loop_conversation.last_assistant_prose(conversation)
         if question := nudges.ending_question(asked):
             self.record_decision(state, question, steer_text)
@@ -241,7 +245,7 @@ class Steering:
             return False
         skill, args = found
         self.log(f"  skill steer: {skill.name}")
-        self.emit("loop.steer.skill", name=skill.name, args=args)
+        self.emit(journal.LoopSteerSkill(name=skill.name, args=args))
         conversation.notice(
             "OPERATOR STEERING (a mid-run instruction from the operator):\n"
             + skills.skill_steer_payload(skill.name, skill.text, args),
@@ -280,7 +284,7 @@ class Steering:
         if not try_pin(state.pins, instruction):
             # parse_pin rejects an empty directive, so a refusal here is always the cap.
             self.log(f"  /pin over cap (> {PINS_MAX_CHARS}); delivered as an ordinary steer")
-            self.emit("loop.pin.refused", chars=len(instruction), limit=PINS_MAX_CHARS)
+            self.emit(journal.LoopPinRefused(chars=len(instruction), limit=PINS_MAX_CHARS))
             conversation.notice(
                 f"OPERATOR STEERING (not pinned: the {PINS_MAX_CHARS}-char pin cap is"
                 " full, so this instruction does not survive context compaction):\n"
@@ -289,7 +293,9 @@ class Steering:
             )
             return True
         self.log(f"  pinned instruction ({len(instruction)} chars, {len(state.pins)} pins)")
-        self.emit("loop.pin.added", text=instruction, chars=len(instruction), count=len(state.pins))
+        self.emit(
+            journal.LoopPinAdded(text=instruction, chars=len(instruction), count=len(state.pins))
+        )
         conversation.notice(
             "OPERATOR STEERING (pinned: this instruction survives context compaction"
             " and binds for the rest of the run):\n"

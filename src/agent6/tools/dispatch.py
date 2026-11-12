@@ -28,7 +28,7 @@ from agent6.config import Config
 from agent6.context import memory, skills
 from agent6.graph import curator as graph_curator
 from agent6.sandbox import tool_paths
-from agent6.sessions import event_log, ipc, shells
+from agent6.sessions import event_log, ipc, journal, shells
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import (
     arguments,
@@ -185,7 +185,7 @@ class ToolDispatcher:
             and command_access.session.startup_stderr
             and not _in_container(command_access.session.target)
         ):
-            self._emit("jail.degraded", detail=command_access.session.startup_stderr)
+            self._emit(journal.JailDegraded(detail=command_access.session.startup_stderr))
         self._handlers: dict[str, Callable[[dict[str, Any]], results.ToolResult]] = {
             schema.Agent6DocsInput.TOOL_NAME: fs_tools.agent6_docs,
             schema.ReadFileInput.TOOL_NAME: lambda raw: fs_tools.read_file(self._ws, raw),
@@ -253,7 +253,7 @@ class ToolDispatcher:
         if target is not None:
             self.target_id = uuid.uuid4().hex
             stamp = evidence.target_record(self.target_id, self.execution_id, target)
-            self._emit("execution.target", **evidence.TARGET.dump_python(stamp, mode="json"))
+            self._emit(journal.ExecutionTarget(**evidence.TARGET.dump_python(stamp, mode="json")))
 
     @property
     def session_id(self) -> str:
@@ -363,37 +363,38 @@ class ToolDispatcher:
         preview = result_format.truncate_args(raw_input, max_value_chars=max_chars)
         # Concurrent review seats interleave events, and name-based pairing cross-stamps calls.
         cid = next(self._call_seq)
-        self._emit("tool.call", name=name, args=preview, call_id=cid)
+        self._emit(journal.ToolCall(name=name, args=preview, call_id=cid))
         outer = self._gating_call_id()
         self._gating.call_id = cid
         try:
             result = self._dispatch_inner(name, raw_input)
         except tool_errors.ToolError as exc:
-            self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
+            self._emit(journal.ToolResult(name=name, ok=False, summary=str(exc), call_id=cid))
             raise
         except path_safety.ContainmentError as exc:
             # The boundary's refusal reaches the model as the tool's.
-            self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
+            self._emit(journal.ToolResult(name=name, ok=False, summary=str(exc), call_id=cid))
             raise tool_errors.ToolError(str(exc)) from exc
         except tool_errors.OperatorCommandUnexecutableError as exc:
-            self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
+            self._emit(journal.ToolResult(name=name, ok=False, summary=str(exc), call_id=cid))
             raise
         except pydantic.ValidationError as exc:
             message = arguments.invalid_arguments(exc)
-            self._emit("tool.result", name=name, ok=False, summary=message, call_id=cid)
+            self._emit(journal.ToolResult(name=name, ok=False, summary=message, call_id=cid))
             raise tool_errors.ToolError(message) from exc
         except Exception as exc:
-            self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
+            self._emit(journal.ToolResult(name=name, ok=False, summary=str(exc), call_id=cid))
             raise tool_errors.ToolError(f"failed: {exc}") from exc
         finally:
             self._gating.call_id = outer
         self._emit(
-            "tool.result",
-            name=name,
-            ok=True,
-            summary=result.summary(),
-            call_id=cid,
-            **result_format.output_tails(name, result),
+            journal.ToolResult(
+                name=name,
+                ok=True,
+                summary=result.summary(),
+                call_id=cid,
+                **result_format.output_tails(name, result),
+            )
         )
         return result
 
@@ -477,10 +478,10 @@ class ToolDispatcher:
                 # The coercion guessed wrong; the original error is the honest one.
                 raise exc from None
 
-    def _emit(self, event_type: str, /, **fields: Any) -> None:
-        """Write one event to the sink, when there is one."""
+    def _emit(self, event: journal.Event) -> None:
+        """Write one record to the sink, when there is one."""
         if self._events is not None:
-            self._events.emit(event_type, **fields)
+            self._events.emit(event)
 
     def _gating_call_id(self) -> int | None:
         """Return the call this thread is dispatching, or None outside a dispatch."""
@@ -524,15 +525,16 @@ class ToolDispatcher:
             raise
         finally:
             if error:
-                self._emit("jail.degraded", detail=error)
+                self._emit(journal.JailDegraded(detail=error))
             if self.target_id is not None:
                 reason = error
                 self._emit(
-                    "execution.jobs",
-                    execution_id=self.execution_id,
-                    target_id=self.target_id,
-                    outcome="unknown" if reason else "settled",
-                    reason=reason,
+                    journal.ExecutionJobs(
+                        execution_id=self.execution_id,
+                        target_id=self.target_id,
+                        outcome="unknown" if reason else "settled",
+                        reason=reason,
+                    )
                 )
                 environment = (
                     self._command_access.settle_environment()
@@ -542,11 +544,12 @@ class ToolDispatcher:
                     )
                 )
                 self._emit(
-                    "execution.environment",
-                    execution_id=self.execution_id,
-                    target_id=self.target_id,
-                    outcome=environment.outcome,
-                    reason=environment.reason,
+                    journal.ExecutionEnvironment(
+                        execution_id=self.execution_id,
+                        target_id=self.target_id,
+                        outcome=environment.outcome,
+                        reason=environment.reason,
+                    )
                 )
 
     def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:
@@ -682,17 +685,18 @@ class ToolDispatcher:
             stderr_truncated=False,
         )
         self._emit(
-            "verify.start",
-            approval_required=self.command_policy() == "ask",
-            call_id=self._gating_call_id(),
-            verify_id=record.verify_id,
-            execution_id=record.execution_id,
-            target_id=record.target_id,
-            tree_before=record.tree_before,
-            cmd=list(argv),
-            scoped=record.scoped,
-            selected_paths=list(extra_argv),
-            timeout_s=timeout_s,
+            journal.VerifyStart(
+                approval_required=self.command_policy() == "ask",
+                call_id=self._gating_call_id(),
+                verify_id=record.verify_id,
+                execution_id=record.execution_id,
+                target_id=record.target_id,
+                tree_before=record.tree_before,
+                cmd=list(argv),
+                scoped=record.scoped,
+                selected_paths=list(extra_argv),
+                timeout_s=timeout_s,
+            )
         )
         started = time.monotonic()
         try:
@@ -724,7 +728,7 @@ class ToolDispatcher:
                 stderr_truncated=False if outcome == "denied" else None,
             )
             self.last_verification = record
-            self._emit("verify.end", **dataclasses.asdict(record))
+            self._emit(journal.VerifyEnd(**dataclasses.asdict(record)))
             raise
         outcome = "passed" if res.returncode == 0 else "failed"
         if res.exec_failed:
@@ -749,7 +753,7 @@ class ToolDispatcher:
         )
         self.last_verification = record
         res = dataclasses.replace(res, command=argv, verification=record)
-        self._emit("verify.end", **dataclasses.asdict(record))
+        self._emit(journal.VerifyEnd(**dataclasses.asdict(record)))
         if res.exec_failed:
             raise tool_errors.OperatorCommandUnexecutableError(
                 f"verify_command {list(argv)} could not be executed in the sandbox: "
@@ -799,10 +803,11 @@ class ToolDispatcher:
             access=self._jail_access("setup_command"),
         )
         self._emit(
-            "workspace.setup",
-            execution_id=self.execution_id,
-            target_id=self.target_id,
-            **kinds.workspace_setup_fields(res),
+            journal.WorkspaceSetup(
+                execution_id=self.execution_id,
+                target_id=self.target_id,
+                **kinds.workspace_setup_fields(res),
+            )
         )
         return res
 
@@ -1067,7 +1072,7 @@ class ToolDispatcher:
             raise tool_errors.ToolError("no [harness.metric] configured")
         argv = metric_cfg.command
         self._approve_command("run_metric_command", argv)
-        self._emit("metric.start", cmd=list(argv))
+        self._emit(journal.MetricStart(cmd=list(argv)))
         outcome, timeout_s = command_tools.run_argv_raw(
             argv,
             label="metric_command",
@@ -1088,13 +1093,14 @@ class ToolDispatcher:
         )
         res = result_format.exec_result(outcome, timeout_s=timeout_s)
         self._emit(
-            "metric.end",
-            cmd=list(argv),
-            exit_code=res.returncode,
-            duration_s=res.duration_s,
-            stdout_tail=res.stdout[-2000:],
-            stderr_tail=res.stderr[-2000:],
-            score=score,
+            journal.MetricEnd(
+                cmd=list(argv),
+                exit_code=res.returncode,
+                duration_s=res.duration_s,
+                stdout_tail=res.stdout[-2000:],
+                stderr_tail=res.stderr[-2000:],
+                score=score,
+            )
         )
         return results.MetricResult.from_exec(res, score)
 

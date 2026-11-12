@@ -20,6 +20,7 @@ from agent6 import directive, errors
 from agent6.graph import curator as graph_curator
 from agent6.graph import models as graph_models
 from agent6.harness import dag_focus, run_chain, subrun
+from agent6.sessions import journal
 from agent6.vcs import git_ops, git_read
 
 if TYPE_CHECKING:
@@ -360,10 +361,11 @@ class ParallelDispatcher:
         )
         # Lane ids exist only once the spawner names them; joined and failed carry the real ids.
         self.emit(
-            "loop.parallel.dispatched",
-            group=group,
-            lanes=len(lanes),
-            tasks=[seg.task[:200] for seg in segments],
+            journal.LoopParallelDispatched(
+                group=group,
+                lanes=len(lanes),
+                tasks=[seg.task[:200] for seg in segments],
+            )
         )
         parent_id = parallel_parent_id(self.curator, state.root_task_id)
         node_ids = [
@@ -388,7 +390,7 @@ class ParallelDispatcher:
                     log=self.log,
                 )
             self.emit_graph_snapshot()
-            self.emit("loop.parallel.failed", group=group, error=str(exc))
+            self.emit(journal.LoopParallelFailed(group=group, error=str(exc)))
             self.feedback(
                 conversation,
                 f"group {group} dispatch failed: {exc}. Nothing was joined; continuing normally.",
@@ -428,10 +430,10 @@ class ParallelDispatcher:
             }
             for j in lanes
         ]
-        self.emit("loop.parallel.joined", group=group, lanes=payload)
+        self.emit(journal.LoopParallelJoined(group=group, lanes=payload))
         failures = [p for p, j in zip(payload, lanes, strict=True) if j.status != "joined"]
         if failures:
-            self.emit("loop.parallel.failed", group=group, lanes=failures)
+            self.emit(journal.LoopParallelFailed(group=group, lanes=failures))
         conversation.notice(summary_text(group, lanes))
 
     def ensure_clean(self, turn: int) -> bool:
@@ -454,11 +456,12 @@ class ParallelDispatcher:
             sha = self.chain.commit(subject)
             if sha:
                 self.log(f"  pre-dispatch checkpoint: {sha[:12]}")
-                self.emit("loop.auto_commit", turn=turn, sha=sha, subject=subject)
+                self.emit(journal.LoopAutoCommit(turn=turn, sha=sha, subject=subject))
                 self.emit(
-                    "diff.updated",
-                    sha=sha,
-                    patch=git_read.commit_diff(self.chain.root, sha, max_bytes=8000),
+                    journal.DiffUpdated(
+                        sha=sha,
+                        patch=git_read.commit_diff(self.chain.root, sha, max_bytes=8000),
+                    )
                 )
         except (errors.GitError, OSError) as exc:
             self.log(f"PARALLEL: pre-dispatch checkpoint failed: {exc}")

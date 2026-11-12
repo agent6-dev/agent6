@@ -39,7 +39,7 @@ from agent6.config import (
 from agent6.models import cache
 from agent6.providers import claude_code, oauth, provider_types
 from agent6.sandbox import detect, jail
-from agent6.sessions import event_log, manifest
+from agent6.sessions import event_log, journal, manifest
 from agent6.tools import mcp_client, mcp_http, policy
 from agent6.vcs import git_policy
 
@@ -570,7 +570,7 @@ def start_mcp_manager_if_enabled(
     manager = mcp_client.MCPManager.start(configs, logger=reporter.err, session_net=session_net)
     if events is not None:
         for failure in manager.failures:
-            events.emit("mcp.server_unavailable", server=failure.name, error=failure.error)
+            events.emit(journal.McpServerUnavailable(server=failure.name, error=failure.error))
     return manager
 
 

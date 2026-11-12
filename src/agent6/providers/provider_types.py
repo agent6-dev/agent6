@@ -39,9 +39,9 @@ class CallContext:
     panel_id: str | None = None
     seat_index: int | None = None
 
-    def event_fields(self) -> dict[str, str | int]:
+    def event_fields(self) -> dict[str, Any]:
         """Return the call identity, omitting absent seat fields."""
-        fields: dict[str, str | int] = {"model_call_id": self.model_call_id}
+        fields: dict[str, Any] = {"model_call_id": self.model_call_id}
         if self.panel_id is not None:
             fields["panel_id"] = self.panel_id
         if self.seat_index is not None:

@@ -30,7 +30,7 @@ from agent6.app import resume as resume_mod
 from agent6.config import layer, layer_data
 from agent6.harness import loop_snapshot
 from agent6.sandbox import detect
-from agent6.sessions import event_log, process
+from agent6.sessions import event_log, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import resume as cli_resume  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli import run as cli_run
@@ -657,11 +657,12 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
             *_a: object, events: event_log.EventSink, **_k: object
         ) -> execution.ExecutionEnd:
             events.emit(
-                "session.start",
-                session_id="parked-DETACH",
-                mode="run",
-                user_task="t",
-                execution_id="execution",
+                journal.SessionStart(
+                    session_id="parked-DETACH",
+                    mode="run",
+                    user_task="t",
+                    execution_id="execution",
+                )
             )
             return execution.ExecutionEnd(0, detach_requested=True)
 

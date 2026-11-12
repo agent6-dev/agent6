@@ -15,6 +15,7 @@ from unittest import mock
 import pytest
 
 from agent6.harness import finish_gates, loop, loop_state, nudges, run_chain
+from agent6.sessions import journal
 from agent6.tools import results
 from agent6.viewmodel import session_status
 from tests.unit.turn_context import turn_context
@@ -108,7 +109,9 @@ def _start_wf(
     wf = _wf()
     wf.mode = "run"
     wf.config.harness.verify_when = when  # pyright: ignore[reportAttributeAccessIssue]
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.command_policy.return_value = policy
     dispatcher.run_verify.return_value = _verify(rc)
     wf.dispatcher = dispatcher
@@ -122,8 +125,8 @@ def test_the_gate_runs_before_the_first_turn_and_records_the_baseline(
     """A run that edits before it verifies still learns what the gate said at the base."""
     events: list[tuple[str, dict[str, object]]] = []
 
-    def _record(kind: str, **fields: object) -> None:
-        events.append((kind, fields))
+    def _record(event: journal.Event) -> None:
+        events.append((event.TYPE, event.model_dump(exclude_unset=True)))
 
     state, (wf, _) = _state(), _start_wf(rc)
     object.__setattr__(wf, "emit", _record)
@@ -169,7 +172,9 @@ def test_a_red_start_gate_past_the_base_reaches_the_model_and_records_no_baselin
     wf = _wf(clean=False)
     wf.mode = "run"
     wf.config.harness.verify_when = "finish"  # pyright: ignore[reportAttributeAccessIssue]
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = _verify(1)
     wf.dispatcher = dispatcher
@@ -244,7 +249,9 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
     """
     wf = _wf()
     wf.mode = "run"
-    wf.dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    wf.dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     wf.dispatcher.command_policy.return_value = "ask"
     wf.config.harness.verify_when = "finish"
     wf.config.harness.verify_retries = 2

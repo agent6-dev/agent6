@@ -301,7 +301,11 @@ def test_snapshot_and_end_carry_evidence_id(tmp_path: pathlib.Path) -> None:
         result = harness.finish(
             state, loop_snapshot.End("finish_session", "done", checkpoint=False), turn=1
         )
-    end = next(c.kwargs for c in emit.call_args_list if c.args == ("session.stop",))
+    end = next(
+        c.args[0].model_dump(exclude_unset=True)
+        for c in emit.call_args_list
+        if c.args[0].TYPE == "session.stop"
+    )
     assert end["final_verify_id"] == "verify-1"
     assert dataclasses.asdict(result)["final_verify_id"] == "verify-1"
 
@@ -403,7 +407,11 @@ def test_non_run_end_omits_empty_tree(mode: Literal["ask", "plan", "read_only"])
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     with mock.patch.object(loop.Harness, "emit") as emit:
         harness.finish(state, loop_snapshot.End("finish_session", "done", checkpoint=False), turn=1)
-    end = next(c.kwargs for c in emit.call_args_list if c.args == ("session.stop",))
+    end = next(
+        c.args[0].model_dump(exclude_unset=True)
+        for c in emit.call_args_list
+        if c.args[0].TYPE == "session.stop"
+    )
     assert "tree" not in end
 
 

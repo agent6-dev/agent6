@@ -24,13 +24,12 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from agent6 import journal_tail, paths
+from agent6.sessions import journal
 
 # Flushed but never fsynced: a reasoning model emits tens of thousands per run.
 _EPHEMERAL_EVENTS = frozenset({"role.text_delta", "role.thinking_delta"})
 # The fields `emit` adds around a payload; a reader validating a payload strips them.
 ENVELOPE_KEYS = frozenset({"ts", "type", "event_id"})
-# Tests install the registry checker; production writes stay unchecked.
-CHECK: Callable[[str, Mapping[str, object]], None] | None = None
 
 
 def payload(event: Mapping[str, Any]) -> dict[str, Any]:
@@ -69,30 +68,31 @@ class EventSink:
         """Hand each emitted event to an in-process consumer too, after it lands."""
         self._listeners.append(listener)
 
-    def emit(self, event_type: str, /, **fields: Any) -> None:
-        """Append one event under its envelope (`ENVELOPE_KEYS`), then notify the listeners.
+    def emit(self, event: journal.Event) -> None:
+        """Append one record under its envelope (`ENVELOPE_KEYS`), then notify the listeners.
+
+        A field the writer left unset is left out of the row.
 
         Attributes:
             ts: The write time in UTC ISO 8601 with microseconds.
-            type: The event name in the registry.
+            type: The record's `TYPE`.
             event_id: A UUID hex identifier on durable events; absent on streaming deltas.
 
         Args:
-            event_type: The event's `type`.
-            **fields: Its other fields.
+            event: The record.
 
         Raises:
             EventWriteError: A durable event could not be serialized or written; the
                 live view never shows an event the record lost.
         """
-        if CHECK is not None:
-            CHECK(event_type, fields)
+        event_type = event.TYPE
         ephemeral = event_type in _EPHEMERAL_EVENTS
         payload: dict[str, Any] = {
             "ts": datetime.datetime.now(datetime.UTC).isoformat(timespec="microseconds"),
             "type": event_type,
         }
-        payload.update(fields)
+        # Python mode: a path, a datetime or a stray object meets `_json_default` below.
+        payload.update(event.model_dump(exclude_unset=True))
         if not ephemeral:
             payload["event_id"] = uuid.uuid4().hex
         try:

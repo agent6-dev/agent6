@@ -11,8 +11,7 @@ import pathlib
 import shutil
 import tempfile
 import termios
-import threading
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
@@ -23,7 +22,7 @@ from agent6 import kinds
 from agent6.app import session_runtime
 from agent6.config import Config
 from agent6.sandbox import tool_paths
-from agent6.sessions import event_log, event_schema, lock
+from agent6.sessions import lock
 from agent6.tools import dispatch
 from tests.browser_env import require_browser
 from tests.collector_env import require_collector
@@ -115,58 +114,6 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         tree_sitter_language_pack.configure(tree_sitter_language_pack.PackConfig(cache_dir=cache))
         if language not in tree_sitter_language_pack.downloaded_languages():
             pytest.skip(f"tree-sitter grammar {language!r} is not cached at {cache}")
-
-
-def _check_event(event_type: str, fields: Mapping[str, object]) -> None:
-    """Fail the emitting test when a write disagrees with the journal registry."""
-    spec = event_schema.spec_for(event_type)
-    if spec is None:
-        pytest.fail(f"unregistered event type: {event_type}")
-    declared = {field.name for field in spec.fields}
-    if unknown := fields.keys() - declared:
-        pytest.fail(f"{event_type}: unknown fields: {sorted(unknown)}")
-    kinds: dict[str, tuple[type, ...]] = {
-        "str": (str,),
-        "int": (int,),
-        "float": (int, float),
-        "bool": (bool,),
-        "list": (list, tuple),
-        "object": (dict,),
-    }
-    for field in spec.fields:
-        if field.name not in fields:
-            if field.required:
-                pytest.fail(f"{event_type}: missing required field: {field.name}")
-            continue
-        value = fields[field.name]
-        if value is None and not field.required:
-            continue
-        if type(value) not in kinds[field.kind]:
-            pytest.fail(
-                f"{event_type}.{field.name}: expected {field.kind}, got {type(value).__name__}"
-            )
-
-
-@pytest.fixture(autouse=True)
-def _check_journal_writes(  # pyright: ignore[reportUnusedFunction]
-    monkeypatch: pytest.MonkeyPatch,
-) -> Iterator[None]:
-    """Check writes and fail at teardown for violations in background threads."""
-    owner = threading.get_ident()
-    failures: list[str] = []
-
-    def check(event_type: str, fields: Mapping[str, object]) -> None:
-        try:
-            _check_event(event_type, fields)
-        except pytest.fail.Exception as exc:
-            if threading.get_ident() != owner:
-                failures.append(str(exc))
-            raise
-
-    monkeypatch.setattr(event_log, "CHECK", check)
-    yield
-    if failures:
-        pytest.fail("background journal writes:\n" + "\n".join(failures))
 
 
 @pytest.fixture(autouse=True)

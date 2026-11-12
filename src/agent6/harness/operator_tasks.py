@@ -17,7 +17,7 @@ import pydantic
 from agent6 import task_text
 from agent6.graph import curator as graph_curator
 from agent6.graph import models, order
-from agent6.sessions import ipc
+from agent6.sessions import ipc, journal
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -64,10 +64,11 @@ class OperatorTasks:
             except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
                 self.log(f"LOOP: {request.kind} request refused: {exc}")
                 self.emit(
-                    "loop.request.refused",
-                    kind=request.kind,
-                    text=request.text[:200],
-                    error=str(exc),
+                    journal.LoopRequestRefused(
+                        kind=request.kind,
+                        text=request.text[:200],
+                        error=str(exc),
+                    )
                 )
                 continue
             landed = True
@@ -142,7 +143,7 @@ class OperatorTasks:
             )
         )
         self.log(f"LOOP: operator queued task {node.id}: {title}")
-        self.emit("loop.task.queued", id=node.id, title=title)
+        self.emit(journal.LoopTaskQueued(id=node.id, title=title))
 
     def retire(self, task_id: str) -> None:
         """Retire a task the operator no longer wants: obsolete, not skipped.
@@ -159,7 +160,7 @@ class OperatorTasks:
             )
         )
         self.log(f"LOOP: operator retired task {node.id}")
-        self.emit("loop.task.retired", id=node.id, title=node.title)
+        self.emit(journal.LoopTaskRetired(id=node.id, title=node.title))
 
     def set_standing(self, root_id: str, goal: str) -> None:
         """Set the standing goal, retiring the one it replaces.
@@ -187,7 +188,7 @@ class OperatorTasks:
             )
         )
         self.log(f"LOOP: standing goal set: {node.id}")
-        self.emit("loop.standing.set", id=node.id, title=goal)
+        self.emit(journal.LoopStandingSet(id=node.id, title=goal))
 
     @property
     def _graph(self) -> graph_curator.GraphCurator:

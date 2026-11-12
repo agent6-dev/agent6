@@ -24,7 +24,7 @@ from agent6.config import Config, plan_metered
 from agent6.models import pricing, validate
 from agent6.providers import TranscriptSink
 from agent6.sandbox import tool_paths
-from agent6.sessions import event_log, ipc, manifest
+from agent6.sessions import event_log, ipc, journal, manifest
 from agent6.tools import schema, verify_infer
 from agent6.vcs import git_read
 from agent6.viewmodel import format, listing
@@ -646,7 +646,7 @@ def infer_verify_if_unset(
         return cfg
     if not cfg.harness.verify_infer:
         # Pinned gateless: mid-run adoption reads the same knob and stays off too.
-        events.emit("loop.verify_inferred", command=[], source="disabled")
+        events.emit(journal.LoopVerifyInferred(command=[], source="disabled"))
         if mode == "run":
             reporter.note(
                 "verify_infer = false: running gateless"
@@ -686,7 +686,7 @@ def infer_verify_if_unset(
     inferred = verify_infer.infer_verify_command(
         cwd, agents_md, available=available, llm_call=_llm_call, hide=hide
     )
-    events.emit("loop.verify_inferred", command=list(inferred.argv), source=inferred.source)
+    events.emit(journal.LoopVerifyInferred(command=list(inferred.argv), source=inferred.source))
     passed = verify_infer.passed_over_text(inferred)
     passed_line = f"\n         passed over: {passed}" if passed else ""
     if not inferred.argv:

@@ -19,9 +19,9 @@ import pytest
 from agent6 import paths
 from agent6.context import memory
 from agent6.graph import storage
-from agent6.machine import journal
+from agent6.machine import journal as machine_journal
 from agent6.providers import provider_types
-from agent6.sessions import event_log, ipc, layout, process
+from agent6.sessions import event_log, ipc, journal, layout, process
 from agent6.tools import background
 from agent6.ui.cli import init_wizard
 
@@ -31,7 +31,7 @@ def _session(state: pathlib.Path) -> pathlib.Path:
 
 
 def _machine_lock(root: pathlib.Path) -> None:
-    with journal.machine_lock(root):
+    with machine_journal.machine_lock(root):
         pass
 
 
@@ -49,7 +49,7 @@ WRITERS: dict[str, Callable[[pathlib.Path, pathlib.Path], object]] = {
     "frontend claim": lambda repo, state: process.register_frontend(_session(state), os.getpid()),
     "event sink": lambda repo, state: event_log.EventSink(
         layout.SessionLayout(state, "s1").logs_path
-    ).emit("session.stranded"),
+    ).emit(journal.SessionStranded()),
     "transcripts": lambda repo, state: provider_types.TranscriptSink(
         layout.SessionLayout(state, "s1").transcripts_dir,
         objects_dir=layout.SessionLayout(state, "s1").objects_dir,
@@ -58,14 +58,14 @@ WRITERS: dict[str, Callable[[pathlib.Path, pathlib.Path], object]] = {
     "graph append": lambda repo, state: storage.append_jsonl(
         layout.SessionLayout(state, "s1").graph_dir / "g.jsonl", {"k": 1}
     ),
-    "machine journal": lambda repo, state: journal.MachineJournal(
+    "machine journal": lambda repo, state: machine_journal.MachineJournal(
         layout.machines_root(state) / "m"
     ).ensure_dirs(),
     "machine lock": lambda repo, state: _machine_lock(layout.machines_root(state) / "m"),
-    "machine source": lambda repo, state: journal.write_source(
+    "machine source": lambda repo, state: machine_journal.write_source(
         layout.machines_root(state) / "m", "x = 1\n"
     ),
-    "machine stop": lambda repo, state: journal.write_stop_request(
+    "machine stop": lambda repo, state: machine_journal.write_stop_request(
         layout.machines_root(state) / "m"
     ),
 }

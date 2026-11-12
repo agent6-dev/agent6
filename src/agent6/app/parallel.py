@@ -38,7 +38,7 @@ from agent6.config import Config
 from agent6.context import memory
 from agent6.harness import subrun
 from agent6.providers import TranscriptSink
-from agent6.sessions import event_log, ipc, process
+from agent6.sessions import event_log, ipc, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
@@ -157,14 +157,15 @@ def run_parallel(
     process.emit_session_start(
         events,
         layout.session_dir,
-        "session.start",
-        execution_id=execution_id,
-        session_id=fanout_id,
-        user_task=operator_task,
-        mode="run",
+        journal.SessionStart(
+            execution_id=execution_id,
+            session_id=fanout_id,
+            user_task=operator_task,
+            mode="run",
+        ),
     )
     events.emit(
-        "loop.parallel.dispatched", group=fanout_id, lanes=len(lanes), tasks=[operator_task]
+        journal.LoopParallelDispatched(group=fanout_id, lanes=len(lanes), tasks=[operator_task])
     )
     configured_gate = bool(cfg.harness.verify_command)
     if spawner is None:
@@ -223,21 +224,23 @@ def run_parallel(
         # An interrupt past the await is journaled, so the record reads stopped, never stale.
         with contextlib.suppress(event_log.EventWriteError):
             events.emit(
-                "session.stop",
-                execution_id=execution_id,
-                reason="interrupted",
-                turns=0,
-                verification=None,
+                journal.SessionStop(
+                    execution_id=execution_id,
+                    reason="interrupted",
+                    turns=0,
+                    verification=None,
+                )
             )
         raise
     except Exception:
         with contextlib.suppress(event_log.EventWriteError):
             events.emit(
-                "session.stop",
-                execution_id=execution_id,
-                reason="crashed",
-                turns=0,
-                verification=None,
+                journal.SessionStop(
+                    execution_id=execution_id,
+                    reason="crashed",
+                    turns=0,
+                    verification=None,
+                )
             )
         raise
     finally:
@@ -332,13 +335,14 @@ def _drive_fanout(
     )
     if batch.failed:
         events.emit(
-            "loop.parallel.failed",
-            group=fanout_id,
-            fanout=True,
-            lanes=[
-                {"session_id": res.spec.session_id, "detail": detail}
-                for res, detail in batch.failed
-            ],
+            journal.LoopParallelFailed(
+                group=fanout_id,
+                fanout=True,
+                lanes=[
+                    {"session_id": res.spec.session_id, "detail": detail}
+                    for res, detail in batch.failed
+                ],
+            )
         )
     workdirs.cleanup(
         batch.imported,
@@ -394,29 +398,31 @@ def _drive_fanout(
         reporter.out(line)
     by_id = {c.session_id: c for c in batch.candidates}
     events.emit(
-        "loop.parallel.compared",
-        group=fanout_id,
-        ranked_by=outcome.ranked_by,
-        rationale=outcome.rationale,
-        ranking=[
-            {
-                "session_id": rid,
-                "verify": app_compare.verify_word(by_id[rid].verification),
-                "cost_usd": by_id[rid].cost_usd,
-                # The listings' cell: plan points for a lane on a subscription plan.
-                "cost": batch.rows[rid].cost_cell if rid in batch.rows else "",
-            }
-            for rid in outcome.ranking
-        ],
-        judge_cost_usd=outcome.judge_cost_usd,
-        judge_cost_partial=outcome.judge_cost_partial,
+        journal.LoopParallelCompared(
+            group=fanout_id,
+            ranked_by=outcome.ranked_by,
+            rationale=outcome.rationale,
+            ranking=[
+                {
+                    "session_id": rid,
+                    "verify": app_compare.verify_word(by_id[rid].verification),
+                    "cost_usd": by_id[rid].cost_usd,
+                    # The listings' cell: plan points for a lane on a subscription plan.
+                    "cost": batch.rows[rid].cost_cell if rid in batch.rows else "",
+                }
+                for rid in outcome.ranking
+            ],
+            judge_cost_usd=outcome.judge_cost_usd,
+            judge_cost_partial=outcome.judge_cost_partial,
+        )
     )
     if outcome.judge_cost_usd > 0 or outcome.judge_cost_partial:
         # The judge is the fan-out's own spend; each lane's rides its own row.
         events.emit(
-            "budget.update",
-            usd_total=outcome.judge_cost_usd,
-            usd_partial=outcome.judge_cost_partial,
+            journal.BudgetUpdate(
+                usd_total=outcome.judge_cost_usd,
+                usd_partial=outcome.judge_cost_partial,
+            )
         )
     rc = (
         130
@@ -427,6 +433,8 @@ def _drive_fanout(
     )
     reason, verification = parallel_results.fanout_end(rc, batch.candidates)
     events.emit(
-        "session.stop", execution_id=execution_id, reason=reason, turns=0, verification=verification
+        journal.SessionStop(
+            execution_id=execution_id, reason=reason, turns=0, verification=verification
+        )
     )
     return rc

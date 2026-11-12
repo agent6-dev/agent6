@@ -371,6 +371,7 @@ def test_a_handed_back_command_is_scrubbed(
         duration_s=900.0,
     )
     session = mock.Mock(spec=jail_session.JailSession)
+    session.close.return_value = ""  # a clean close emits no degradation
     session.run.return_value = handoff
 
     def read_capture(handle: str, *, offset: int, limit: int) -> jail_session.BackgroundRead:

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.graph import models, order
 from agent6.harness import loop_snapshot
+from agent6.sessions import journal
 
 if TYPE_CHECKING:
     from agent6.harness import loop_state
@@ -28,14 +29,12 @@ class Nudge:
 
     Attributes:
         text: The notice the model reads.
-        event: The event recorded with it; "" records none.
-        fields: The event's fields.
+        event: The record written with it; None records none.
         log: The log line; "" writes none.
     """
 
     text: str
-    event: str = ""
-    fields: Mapping[str, object] = dataclasses.field(default_factory=dict)
+    event: journal.Event | None = None
     log: str = ""
 
 
@@ -53,16 +52,14 @@ class Stop:
             stop; "" is a hard stop nothing converts.
         declared: The ending the end gates judge as soon as the stop is decided; "" is
             a fault no gate judges.
-        event: The event recorded when the stop is decided; "" records none.
-        fields: The event's fields.
+        event: The record written when the stop is decided; None records none.
         log: The log line written at the stop; "" writes none.
     """
 
     end: Callable[[], loop_snapshot.End]
     soft: str = ""
     declared: str = ""
-    event: str = ""
-    fields: Mapping[str, object] = dataclasses.field(default_factory=dict)
+    event: journal.Event | None = None
     log: str = ""
 
 

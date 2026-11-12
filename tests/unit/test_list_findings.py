@@ -13,7 +13,7 @@ from agent6 import paths, review_records
 from agent6.app import review_actions, session_runtime
 from agent6.config import Config, RoleModel
 from agent6.harness import toolset
-from agent6.sessions import event_log
+from agent6.sessions import event_log, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import dispatch, operator_prompts, results, schema, tool_errors
 from tests import review_helpers
@@ -91,7 +91,7 @@ def test_a_session_before_its_first_review_says_so(tmp_path: pathlib.Path) -> No
     with pytest.raises(tool_errors.ToolError, match="no session journal"):
         review_actions.findings_result(saved.session_dir)
     sink = event_log.EventSink(saved.logs_path)
-    sink.emit("session.start", user_task="t", mode="run", execution_id="execution")
+    sink.emit(journal.SessionStart(user_task="t", mode="run", execution_id="execution"))
     listed = review_actions.findings_result(saved.session_dir)
     assert listed.to_wire() == {"findings": [], "note": "No review panel has run."}
     assert listed.summary() == "0 open"

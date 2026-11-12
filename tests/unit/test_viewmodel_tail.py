@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from agent6.sessions import event_log
+from agent6.sessions import event_log, journal
 from agent6.viewmodel import tail as viewmodel_tail
 
 
@@ -214,20 +214,21 @@ def test_logtail_rereads_a_healed_fragment_without_replaying_complete_lines(
 ) -> None:
     """A heal can shrink or regrow past the pending bytes without losing the next event."""
     path = tmp_path / "logs.jsonl"
-    event_log.EventSink(path).emit("loop.note", text="old")
+    event_log.EventSink(path).emit(journal.LoopNote(text="old"))
     with path.open("ab") as fh:
         fh.write(b"x" * fragment_size)
     reader = viewmodel_tail.LogTail(path)
     assert [event["text"] for event in reader.read()] == ["old"]
 
     resumed = event_log.EventSink(path)
-    resumed.emit("loop.note", text="new")
+    resumed.emit(journal.LoopNote(text="new"))
     resumed.emit(
-        "session.stop",
-        execution_id="execution",
-        reason="finish_session",
-        turns=1,
-        verification="passed",
+        journal.SessionStop(
+            execution_id="execution",
+            reason="finish_session",
+            turns=1,
+            verification="passed",
+        )
     )
 
     events = reader.read()
@@ -243,7 +244,7 @@ def test_follow_rereads_a_healed_fragment_from_the_last_complete_line(
 ) -> None:
     """The follow reader drops stale partial bytes and reports repaired event offsets."""
     path = tmp_path / "logs.jsonl"
-    event_log.EventSink(path).emit("loop.note", text="old")
+    event_log.EventSink(path).emit(journal.LoopNote(text="old"))
     first_end = path.stat().st_size
     with path.open("ab") as fh:
         fh.write(b"x" * fragment_size)
@@ -255,14 +256,15 @@ def test_follow_rereads_a_healed_fragment_from_the_last_complete_line(
     assert next(reader)["text"] == "old"
 
     resumed = event_log.EventSink(path)
-    resumed.emit("loop.note", text="new")
+    resumed.emit(journal.LoopNote(text="new"))
     second_end = path.stat().st_size
     resumed.emit(
-        "session.stop",
-        execution_id="execution",
-        reason="finish_session",
-        turns=1,
-        verification="passed",
+        journal.SessionStop(
+            execution_id="execution",
+            reason="finish_session",
+            turns=1,
+            verification="passed",
+        )
     )
     stop.set()
 

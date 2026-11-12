@@ -32,6 +32,7 @@ from agent6.harness import (
     provider_call,
     run_chain,
 )
+from agent6.sessions import journal
 from agent6.tools import dispatch, results, tool_errors
 
 # The `[git]` surface the loop reads, empty as a real Config carries it unset.
@@ -89,7 +90,11 @@ def _wf(
             ),
         ),
         "provider": mock.MagicMock(),
-        "dispatcher": mock.MagicMock(last_verification=None, verify_withheld=False),
+        "dispatcher": mock.MagicMock(
+            last_verification=None,
+            execution_id="execution",
+            verify_withheld=False,
+        ),
         "logger": _silent,
     }
     defaults.update(kw)
@@ -406,7 +411,9 @@ def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatc
             ]
         },
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run")
 
@@ -450,8 +457,10 @@ class _EventCapture:
         self.events: list[dict[str, Any]] = []
         self.path = path  # EventSink.path: the log file the emits land in
 
-    def emit(self, event_type: str, /, **fields: Any) -> None:
-        self.events.append({"type": event_type, **fields})
+    def emit(self, event: journal.Event) -> None:
+        self.events.append(
+            {"type": event.TYPE, **event.model_dump(mode="json", exclude_unset=True)}
+        )
 
 
 def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
@@ -497,7 +506,9 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
             ]
         },
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture()
     wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run", events=ev)
@@ -581,7 +592,9 @@ def test_resume_start_carries_the_execution_identity(tmp_path: pathlib.Path) -> 
             ]
         },
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture(path=session_dir / "logs.jsonl")
     wf = _wf(
@@ -642,7 +655,9 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
             ]
         },
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture()
     wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run", events=ev)
@@ -739,7 +754,9 @@ def test_snapshot_written_after_tool_dispatch_advances_turn(tmp_path: pathlib.Pa
             },
         ),
     ]
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.ExecResult(
         returncode=0, stdout="hi", stderr="", duration_s=0.0, exec_failed=False
     )
@@ -853,8 +870,8 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: pathlib.
     emitted: list[tuple[str, dict[str, Any]]] = []
 
     class _Sink:
-        def emit(self, event_type: str, **fields: Any) -> None:
-            emitted.append((event_type, fields))
+        def emit(self, event: journal.Event) -> None:
+            emitted.append((event.TYPE, event.model_dump(mode="json", exclude_unset=True)))
 
     wf = _wf(root=repo, config=config, mode="run", events=_Sink())
     # Worker edited a file via run_command; never re-verified, never committed.
@@ -977,7 +994,9 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
         output_tokens=1,
         raw={"content": [{"type": "tool_use", "id": "t1", "name": "finish_session", "input": {}}]},
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture()
     wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run", events=ev)
@@ -1079,7 +1098,9 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
             ]
         },
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     config = mock.MagicMock(
         prompt=mock.MagicMock(system_prompt_file=""),
@@ -1150,7 +1171,9 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
             ]
         },
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     config = mock.MagicMock(
         prompt=mock.MagicMock(system_prompt_file=""),
@@ -1254,7 +1277,9 @@ def test_a_gate_swapped_between_executions_is_announced_to_the_worker(
             ]
         },
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture(path=session_dir / "logs.jsonl")
     wf = _wf(
@@ -1329,7 +1354,9 @@ def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: pathlib.Path)
             ]
         },
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     dispatcher.adopt_verify_command.return_value = True
     ev = _EventCapture(path=session_dir / "logs.jsonl")
@@ -1567,7 +1594,9 @@ def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(
             ]
         },
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     dispatcher.command_policy.return_value = "deny"
     ev = _EventCapture(path=session_dir / "logs.jsonl")
@@ -1647,7 +1676,9 @@ def test_resume_restates_execution_local_gate_availability(
             ]
         },
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.command_policy.return_value = policy
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     dispatcher.run_verify.return_value = results.ExecResult(
@@ -1677,7 +1708,9 @@ def test_resume_restates_execution_local_gate_availability(
 def test_baseline_denial_is_saved_as_execution_local_withholding(tmp_path: pathlib.Path) -> None:
     """The baseline denial reaches the snapshot, but not the resumed execution's verdict."""
     path = tmp_path / "loop_state.json"
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.command_policy.return_value = "ask"
     dispatcher.run_verify.side_effect = tool_errors.ToolDeniedError(
         "run_verify_command not run: the run was asked to stop while awaiting approval."

@@ -10,6 +10,7 @@ from __future__ import annotations
 from unittest import mock
 
 from agent6.harness import advice, guards, loop_conversation, loop_state, nudges
+from agent6.sessions import journal
 from tests.unit.turn_context import turn_context
 
 
@@ -36,10 +37,13 @@ def test_the_ladder_nudges_escalates_then_stops() -> None:
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     nudge, escalation, stop = _climb(state, nudges.TOOL_ERROR_STOP_AFTER)
     assert isinstance(nudge, advice.Nudge) and nudge.text == nudges.TOOL_ERROR_NUDGE
-    assert nudge.fields == {"turn": 3, "streak": nudges.TOOL_ERROR_NUDGE_AFTER, "level": 1}
+    assert nudge.event == journal.LoopToolErrorNudge(
+        turn=3, streak=nudges.TOOL_ERROR_NUDGE_AFTER, level=1
+    )
     assert isinstance(escalation, advice.Nudge) and escalation.text == nudges.TOOL_ERROR_ESCALATION
-    assert escalation.fields["streak"] == nudges.TOOL_ERROR_ESCALATE_AFTER
-    assert escalation.fields["level"] == 2
+    assert isinstance(escalation.event, journal.LoopToolErrorNudge)
+    assert escalation.event.streak == nudges.TOOL_ERROR_ESCALATE_AFTER
+    assert escalation.event.level == 2
     assert isinstance(stop, advice.Stop) and stop.end().reason == "tool_error_stuck"
     assert stop.soft == "" and stop.declared == ""
     assert f"failed {nudges.TOOL_ERROR_STOP_AFTER} times" in stop.end().summary

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Literal
 
 from agent6.config import MetricConfig
 from agent6.harness import metric_rules
+from agent6.sessions import journal
 from agent6.tools import dispatch, results, tool_errors
 
 if TYPE_CHECKING:
@@ -92,12 +93,13 @@ class MetricSampler:
         )
         history.append(sample)
         self.emit(
-            "loop.metric.sample",
-            turn=turn,
-            label=label,
-            score=score,
-            returncode=result.returncode,
-            sha=sha[:12],
+            journal.LoopMetricSample(
+                turn=turn,
+                label=label,
+                score=score,
+                returncode=result.returncode,
+                sha=sha[:12],
+            )
         )
         return metric_rules.format_metric_feedback(history, goal=goal)
 
@@ -121,7 +123,7 @@ class MetricSampler:
             return None
         history = state.metric.history
         self.log(f"LOOP: auto metric after the committed edit at turn {turn}")
-        self.emit("loop.metric.auto_call", turn=turn, sha=sha[:12])
+        self.emit(journal.LoopMetricAutoCall(turn=turn, sha=sha[:12]))
         try:
             result = self.dispatcher.dispatch("run_metric_command", {})
         except tool_errors.ToolError as exc:
@@ -138,7 +140,7 @@ class MetricSampler:
                     error=error,
                 )
             )
-            self.emit("loop.metric.auto_failed", turn=turn, error=error[:200])
+            self.emit(journal.LoopMetricAutoFailed(turn=turn, error=error[:200]))
             return metric_rules.format_metric_feedback(history, goal=goal)
         assert isinstance(result, results.MetricResult)  # run_metric_command's result type
         return self.record(history, result, turn=turn, label=f"auto turn {turn}", sha=sha)

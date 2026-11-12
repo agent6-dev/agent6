@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from agent6 import review_records
-from agent6.sessions import event_log
+from agent6.sessions import event_log, journal
 from agent6.viewmodel import review, session_log, state, state_view
 from tests import review_helpers
 
@@ -218,15 +218,16 @@ def test_submitted_fixes_survive_completed_resume(tmp_path: pathlib.Path) -> Non
 
     sink.subscribe(consume)
     sink.emit(
-        "session.start",
-        session_id=saved.session_id,
-        user_task="Repair parser",
-        mode="run",
-        execution_id="execution",
+        journal.SessionStart(
+            session_id=saved.session_id,
+            user_task="Repair parser",
+            mode="run",
+            execution_id="execution",
+        )
     )
-    sink.emit(panel["type"], **event_log.payload(panel))
+    sink.emit(journal.EVENT_TYPES[panel["type"]](**event_log.payload(panel)))
     original_panels = live.review.panels
-    sink.emit("session.stop", execution_id="execution", reason="finish_session", turns=1)
+    sink.emit(journal.SessionStop(execution_id="execution", reason="finish_session", turns=1))
     delivery: list[dict[str, Any]] = [
         _action(
             "fix.requested",
@@ -262,10 +263,10 @@ def test_submitted_fixes_survive_completed_resume(tmp_path: pathlib.Path) -> Non
         ),
     ]
     for row in delivery:
-        sink.emit(row["type"], **event_log.payload(row))
+        sink.emit(journal.EVENT_TYPES[row["type"]](**event_log.payload(row)))
     submitted = live.review
     assert submitted.version == 5 and submitted.read_failure is None
-    verify = dict(
+    verify: dict[str, Any] = dict(
         verify_id="verify-fix",
         execution_id="resumed",
         cmd=["pytest", "-q"],
@@ -274,28 +275,30 @@ def test_submitted_fixes_survive_completed_resume(tmp_path: pathlib.Path) -> Non
         selected_paths=[],
         timeout_s=60.0,
     )
-    sink.emit("verify.start", **verify)
+    sink.emit(journal.VerifyStart(**verify))
     sink.emit(
-        "verify.end",
-        **verify,
-        tree_after="fixed-tree",
-        outcome="passed",
-        exit_code=0,
-        duration_s=1.0,
-        stdout_tail="2 passed",
-        stderr_tail="",
-        baseline=False,
-        reason="",
+        journal.VerifyEnd(
+            **verify,
+            tree_after="fixed-tree",
+            outcome="passed",
+            exit_code=0,
+            duration_s=1.0,
+            stdout_tail="2 passed",
+            stderr_tail="",
+            baseline=False,
+            reason="",
+        )
     )
-    sink.emit("loop.auto_commit", turn=2, sha="a" * 40, subject="fix: handle empty input")
+    sink.emit(journal.LoopAutoCommit(turn=2, sha="a" * 40, subject="fix: handle empty input"))
     sink.emit(
-        "session.stop",
-        execution_id="resumed",
-        reason="finish_session",
-        turns=2,
-        verification="passed",
-        final_verify_id="verify-fix",
-        tree="fixed-tree",
+        journal.SessionStop(
+            execution_id="resumed",
+            reason="finish_session",
+            turns=2,
+            verification="passed",
+            final_verify_id="verify-fix",
+            tree="fixed-tree",
+        )
     )
 
     persisted = session_log.scan_session_log(saved.logs_path)
@@ -327,7 +330,7 @@ def test_submitted_fixes_survive_completed_resume(tmp_path: pathlib.Path) -> Non
     invalid = {**resolved, "resolution": dict(disposition="fixed", reason=" ")}
     refused = state.apply_event(live, invalid).review
     assert refused.read_failure and refused.findings == submitted.findings
-    sink.emit(resolved["type"], **event_log.payload(resolved))
+    sink.emit(journal.EVENT_TYPES[resolved["type"]](**event_log.payload(resolved)))
     assert live.review == session_log.scan_session_log(saved.logs_path).review
     first, second = live.review.findings
     assert first.status == "resolved" and first.fix_state == "submitted"

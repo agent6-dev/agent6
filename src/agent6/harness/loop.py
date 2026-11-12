@@ -70,7 +70,7 @@ from agent6.providers import (
     ProviderResponse,
     ToolDefinition,
 )
-from agent6.sessions import process
+from agent6.sessions import journal, process
 from agent6.tools import dispatch, operator_prompts, schema, tool_errors
 
 # Bytes a repeated tool result must exceed before the dedupe stub replaces it.
@@ -196,10 +196,12 @@ class Harness:
         if operator_task is None:
             operator_task = user_task
         self._emit_start(
-            "session.start",
-            session_id=self.session_id,
-            user_task=operator_task,
-            mode=self.mode,
+            journal.SessionStart(
+                session_id=self.session_id,
+                user_task=operator_task,
+                mode=self.mode,
+                execution_id=self.execution_id,
+            )
         )
         self.log("LOOP: LOAD_CONTEXT")
         self._prepare_rulings_file()
@@ -309,14 +311,16 @@ class Harness:
 
         # The execution's log opens with this event, so it identifies itself like session.start.
         self._emit_start(
-            "session.resume",
-            session_id=self.session_id,
-            user_task=snapshot.operator_task
-            or task_text.operator_task_text(snapshot.original_task),
-            steer=steer,
-            mode=self.mode,
-            turn=snapshot.next_turn,
-            messages=len(snapshot.messages),
+            journal.SessionResume(
+                session_id=self.session_id,
+                user_task=snapshot.operator_task
+                or task_text.operator_task_text(snapshot.original_task),
+                steer=steer,
+                mode=self.mode,
+                turn=snapshot.next_turn,
+                messages=len(snapshot.messages),
+                execution_id=self.execution_id,
+            )
         )
         self.log(
             f"LOOP: RESUME from {self.resume_state_path} "
@@ -329,9 +333,10 @@ class Harness:
                 f" not re-run: {', '.join(interrupted)}"
             )
             self.emit(
-                "loop.resume.interrupted",
-                turn=snapshot.next_turn - 1,
-                tools=list(interrupted),
+                journal.LoopResumeInterrupted(
+                    turn=snapshot.next_turn - 1,
+                    tools=list(interrupted),
+                )
             )
 
         if snapshot.root_task_id is not None:
@@ -354,7 +359,7 @@ class Harness:
                 f" it is now `{now}`. The instructions above still name the old one."
             )
             self.log(f"LOOP: verify gate swapped on resume: {was} -> {now}")
-            self.emit("loop.verify_swapped", was=list(snapshot.verify_command), now=list(gate))
+            self.emit(journal.LoopVerifySwapped(was=list(snapshot.verify_command), now=list(gate)))
 
         if snapshot.verify_withheld and gate and self.dispatcher.command_policy() != "deny":
             # Denial resets per execution; its notice can survive even in a compacted summary.
@@ -562,7 +567,7 @@ class Harness:
             return parked
         self._turn_before_call(conversation, state, ctx)
         for call_id, reason in conversation.limit_attachments():
-            self.emit("loop.media.refused", provider_tool_call_id=call_id, reason=reason)
+            self.emit(journal.LoopMediaRefused(provider_tool_call_id=call_id, reason=reason))
         conversation.roll_cache_marks()
         wire = conversation.to_wire()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
@@ -601,7 +606,7 @@ class Harness:
             session_id = self.session_id or "<session-id>"
             remedy = f"plan.md unreadable: {exc}; fix it and `agent6 resume {session_id}`"
             self.log(f"LOOP: {remedy}")
-            self.emit("loop.plan_read.failed", path=str(self.plan_output_path), error=str(exc))
+            self.emit(journal.LoopPlanReadFailed(path=str(self.plan_output_path), error=str(exc)))
             return self.finish(
                 state,
                 loop_snapshot.End("plan_unreadable", remedy, checkpoint=False),
@@ -613,9 +618,10 @@ class Harness:
         conversation.notice(f"{nudges.PLAN_ON_DISK_HEADER}\n\n{text}")
         self.log(f"  plan re-read from disk: {len(text)} chars")
         self.emit(
-            "loop.plan_reread",
-            path=str(self.plan_output_path),
-            bytes=len(text.encode("utf-8")),
+            journal.LoopPlanReread(
+                path=str(self.plan_output_path),
+                bytes=len(text.encode("utf-8")),
+            )
         )
 
     def _turn_before_call(
@@ -687,7 +693,7 @@ class Harness:
         conversation.notice(banner)
         state.focus.surfaced_task_id = current_id
         self.log(f"LOOP: surfaced current task {current_id}")
-        self.emit("loop.task.surfaced", task_id=current_id)
+        self.emit(journal.LoopTaskSurfaced(task_id=current_id))
         # The cursor and status writes above bypass dispatch, which emits graph.update.
         self._emit_graph_snapshot()
 
@@ -842,7 +848,7 @@ class Harness:
             except (TypeError, ValueError):
                 sig = f"{name}:<unhashable>"
             state.spiral.note_call(sig, polling=name == schema.ReadBackgroundInput.TOOL_NAME)
-            self.emit("loop.tool.call", name=name, turn=turn.number)
+            self.emit(journal.LoopToolCall(name=name, turn=turn.number))
             served = None
             attachment = None
             try:
@@ -855,7 +861,7 @@ class Harness:
                 attachment = result.attachment
                 if attachment is not None and (reason := media_budget.refusal(attachment)):
                     attachment = None
-                    self.emit("loop.media.refused", provider_tool_call_id=tu.id, reason=reason)
+                    self.emit(journal.LoopMediaRefused(provider_tool_call_id=tu.id, reason=reason))
                     raise tool_errors.ToolError(reason)
                 wire_result = result.to_wire()
                 if note := tool_effects.left_out_note(self, turn, name, result, tool_input):
@@ -1211,8 +1217,8 @@ class Harness:
             turn.tool_results.append(loop_conversation.Notice(outcome.text))
             self._record(outcome)
             return None
-        if outcome.event:
-            self.emit(outcome.event, **outcome.fields)
+        if outcome.event is not None:
+            self.emit(outcome.event)
         if outcome.declared and turn.finish is None:
             aborted = self.end_gates(
                 state, turn, ctx, ending=outcome.declared, gates=finish_gates.END_GATES
@@ -1244,8 +1250,8 @@ class Harness:
         Args:
             answer: The advisor's or gate's answer.
         """
-        if answer.event:
-            self.emit(answer.event, **answer.fields)
+        if answer.event is not None:
+            self.emit(answer.event)
         if answer.log:
             self.log(answer.log)
 
@@ -1343,18 +1349,21 @@ class Harness:
             verification = "unverified"
         # The tree a run leaves: at its next start, what differs from it changed outside the run.
         tree = self.chain.tree_sha() if end.event and self.mode == "run" else ""
-        left = {"final_verify_id": state.verify.final_verify_id, **({"tree": tree} if tree else {})}
+        left: dict[str, Any] = {"final_verify_id": state.verify.final_verify_id}
+        if tree:
+            left["tree"] = tree
         if end.event:
             self.emit(
-                "session.stop",
-                execution_id=self.execution_id,
-                reason=end.reason,
-                summary=end.summary,
-                turns=turn,
-                verification=verification,
-                scoped=state.verify.scoped if end.verdict == "grounded" else end.scoped,
-                **left,
-                **end.fields,
+                journal.SessionStop(
+                    execution_id=self.execution_id,
+                    reason=end.reason,
+                    summary=end.summary,
+                    turns=turn,
+                    verification=verification,
+                    scoped=state.verify.scoped if end.verdict == "grounded" else end.scoped,
+                    **left,
+                    **end.fields,
+                )
             )
         self._record_memory_use(state)
         return loop_snapshot.SessionResult(
@@ -1484,7 +1493,7 @@ class Harness:
             }
             for nid, n in self.curator.nodes().items()
         }
-        self.emit("graph.update", nodes=nodes, cursor=cursor)
+        self.emit(journal.GraphUpdate(nodes=nodes, cursor=cursor))
 
     def open_subtasks(self) -> list[tuple[str, str]]:
         """List the worker's open subtasks as (id, title) pairs, in run mode.
@@ -1537,11 +1546,11 @@ class Harness:
             )
         except OSError as exc:
             self.log(f"LOOP: decision not recorded: {exc}")
-            self.emit("loop.decision.unrecorded", error=str(exc))
+            self.emit(journal.LoopDecisionUnrecorded(error=str(exc)))
             return
         state.decisions_recorded.append(entry)
         self.log(f"LOOP: decision recorded ({len(answer)} chars)")
-        self.emit("loop.decision.recorded", question=question[:200], answer=answer[:200])
+        self.emit(journal.LoopDecisionRecorded(question=question[:200], answer=answer[:200]))
 
     def _check_decisions_recorded(self, state: loop_state.LoopState) -> None:
         """Report a recorded ruling missing from decisions.md at the finish; never a block.
@@ -1558,7 +1567,7 @@ class Harness:
         missing = [e for e in state.decisions_recorded if e.strip() not in text]
         if missing:
             self.log(f"LOOP: {len(missing)} recorded decision(s) missing from decisions.md")
-            self.emit("loop.decision.unrecorded", missing=len(missing))
+            self.emit(journal.LoopDecisionUnrecorded(missing=len(missing)))
 
     def _load_skills(self) -> skills.ResolvedSkills | None:
         """Return the installed skills for the system prompt, in run mode.
@@ -1574,7 +1583,7 @@ class Harness:
         resolved = self.dispatcher.resolved_skills()
         for w in resolved.warnings:
             self.log(f"LOOP: skills: WARNING: {w}")
-            self.emit("loop.skills.warning", warning=str(w))
+            self.emit(journal.LoopSkillsWarning(warning=str(w)))
         if resolved.enabled or resolved.always:
             self.log(
                 f"LOOP: skills: {len(resolved.enabled)} indexed, {len(resolved.always)} always-on"
@@ -1739,25 +1748,21 @@ class Harness:
         """Write one line to the run log."""
         self.logger(f"[agent6] {msg}")
 
-    def emit(self, event_type: str, **fields: Any) -> None:
-        """Emit one event when a log is wired."""
+    def emit(self, event: journal.Event) -> None:
+        """Emit one record when a log is wired."""
         if self.events is not None:
-            self.events.emit(event_type, **fields)
+            self.events.emit(event)
 
-    def _emit_start(self, event_type: str, **fields: Any) -> None:
-        """Emit a start-family event through the emitter that stamps the worker pid."""
+    def _emit_start(self, event: journal.SessionStart | journal.SessionResume) -> None:
+        """Emit a start-family record through the emitter that stamps the worker pid."""
         if self._execution_started:
             self.dispatcher.execution_id = uuid.uuid4().hex
         self._execution_started = True
         self.dispatcher.verify_tree = self.chain.tree_sha
         if self.events is not None:
-            process.emit_session_start(
-                self.events,
-                self.events.path.parent,
-                event_type,
-                execution_id=self.execution_id,
-                **fields,
-            )
+            # The id is read after the rotation above, so a second start names its own execution.
+            event = event.model_copy(update={"execution_id": self.execution_id})
+            process.emit_session_start(self.events, self.events.path.parent, event)
 
     def _emit_budget(self, turn: int) -> None:
         """Emit the per-turn usage heartbeat that tells a long model call from a stall.
@@ -1770,10 +1775,11 @@ class Harness:
         snap = self.budget.snapshot()
         cost, _ = self.budget.estimate_usd()
         self.emit(
-            "loop.budget",
-            turn=turn,
-            input_tokens=snap.input_total,
-            output_tokens=snap.output_total,
-            cache_read_tokens=snap.cache_read_total,
-            cost_usd=round(cost, 6),
+            journal.LoopBudget(
+                turn=turn,
+                input_tokens=snap.input_total,
+                output_tokens=snap.output_total,
+                cache_read_tokens=snap.cache_read_total,
+                cost_usd=round(cost, 6),
+            )
         )

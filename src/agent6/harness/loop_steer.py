@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from agent6.harness import loop_conversation, loop_snapshot, loop_state
+from agent6.sessions import journal
 from agent6.tools import operator_prompts
 
 if TYPE_CHECKING:
@@ -120,7 +121,7 @@ def operator_state(
     presence = prompts.presence()
     if presence and presence != state.operator_presence:
         state.operator_presence = presence
-        harness.emit("loop.operator.presence", presence=presence)
+        harness.emit(journal.LoopOperatorPresence(presence=presence))
     if boundary and presence and presence != state.operator_presence_notified:
         state.operator_presence_notified = presence
         conversation.notice(f"OPERATOR PRESENCE: {presence}.")
@@ -132,7 +133,7 @@ def operator_state(
             harness.steering.record_decision(state, question.question, answer)
         state.delivered_questions.append(item.id)
     conversation.notice(answers_notice(late), origin="operator")
-    harness.emit("loop.question.delivered", ids=[item.id for item in late])
+    harness.emit(journal.LoopQuestionDelivered(ids=[item.id for item in late]))
     return True
 
 
@@ -259,7 +260,7 @@ def park_for_steer(
         f"LOOP: parked at turn {turn} ({reason}) - waiting for your steer"
         " (any composer or the pause menu; abort ends the run)"
     )
-    harness.emit("loop.parked", turn=turn, reason=reason)
+    harness.emit(journal.LoopParked(turn=turn, reason=reason))
     while True:
         if harness.bridge.stop_requested():
             harness.bridge.stop_clear()
@@ -279,15 +280,15 @@ def park_for_steer(
             if verb is not None:
                 return steer_outcome(harness, verb, turn, state)
             # Injected (or a bare poke): the run continues where it parked.
-            harness.emit("loop.parked.resumed", turn=turn)
+            harness.emit(journal.LoopParkedResumed(turn=turn))
             return None
         if harness.operator_tasks.take(state.root_task_id):
             # A queued task, goal or retirement is work; the next focus banner names it.
-            harness.emit("loop.parked.resumed", turn=turn)
+            harness.emit(journal.LoopParkedResumed(turn=turn))
             return None
         if operator_state(harness, conversation, state, boundary=False):
             # A queued question's answer is work too; the model reads it on its next turn.
-            harness.emit("loop.parked.resumed", turn=turn)
+            harness.emit(journal.LoopParkedResumed(turn=turn))
             return None
         time.sleep(0.5)
 
@@ -328,7 +329,7 @@ def steer_outcome(
             harness.log("  /undo: nothing to undo; continuing")
             return None
         new_id, undone_text = forked
-        harness.emit("session.undone", new_session_id=new_id, undone_text=undone_text)
+        harness.emit(journal.SessionUndone(new_session_id=new_id, undone_text=undone_text))
         # An undo is the operator's own end; without a session.stop the run reads stale.
         return harness.finish(
             state,

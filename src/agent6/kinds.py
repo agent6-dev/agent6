@@ -11,7 +11,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import pathlib
-from typing import Literal
+from typing import Any, Literal
 
 # The gate's word at the end: `failed` is an observed red, `unverified` a tree no verdict covers.
 Verification = Literal["passed", "failed", "unverified", "not_applicable"]
@@ -542,7 +542,7 @@ class SandboxReport:
     detail: str
 
 
-def workspace_setup_fields(result: CommandResult) -> dict[str, object]:
+def workspace_setup_fields(result: CommandResult) -> dict[str, Any]:
     """Return the shared workspace.setup event body.
 
     Args:

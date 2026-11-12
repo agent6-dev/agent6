@@ -377,11 +377,15 @@ def test_the_instrumented_provider_fills_the_context_and_reports_each_attempt() 
     assert first.conversation_id == second.conversation_id == third.conversation_id
     events = wrapped.events
     assert isinstance(events, mock.MagicMock)
-    requests = [c for c in events.emit.call_args_list if c.args[0] == "provider.request"]
+    requests = [
+        c.args[0].model_dump(exclude_unset=True)
+        for c in events.emit.call_args_list
+        if c.args[0].TYPE == "provider.request"
+    ]
     assert len(requests) == 3
-    assert requests[0].kwargs["provider"] == "work" and requests[0].kwargs["target"] == "inference"
-    assert len(requests[0].kwargs["request_id"]) == 32
-    assert "x-" not in str(requests[0].kwargs)  # no header value rides the event
+    assert requests[0]["provider"] == "work" and requests[0]["target"] == "inference"
+    assert len(requests[0]["request_id"]) == 32
+    assert "x-" not in str(requests[0])  # no header value rides the event
 
 
 def test_a_call_outside_a_conversation_keeps_its_model_and_body_facts() -> None:

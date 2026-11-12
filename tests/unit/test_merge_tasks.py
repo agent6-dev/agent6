@@ -15,6 +15,7 @@ from agent6 import paths
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
 from agent6.harness import run_chain, run_checkpoint
+from agent6.sessions import journal
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import main
@@ -117,8 +118,8 @@ def test_a_checkpoint_names_its_task_in_a_trailer_and_its_event(tmp_path: pathli
     chain = run_chain.RunChain(tmp_path, ref="refs/agent6/x/head", fallback_parent=base)
     events: list[dict[str, object]] = []
 
-    def emit(kind: str, /, **fields: object) -> None:
-        events.append({"type": kind, **fields})
+    def emit(event: journal.Event, /) -> None:
+        events.append({"type": event.TYPE, **event.model_dump(exclude_unset=True)})
 
     points = run_checkpoint.Checkpoints(
         chain=chain,

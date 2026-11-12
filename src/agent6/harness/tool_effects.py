@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from agent6 import paths, task_text
 from agent6.harness import dag_focus, finish_gates, loop_state, memory_touch, nudges
+from agent6.sessions import journal
 from agent6.tools import mcp_client, results, tool_errors
 
 if TYPE_CHECKING:
@@ -56,10 +57,11 @@ def left_out_note(
     if not (ignored or untracked):
         return ""
     wf.emit(
-        "loop.edit.left_out",
-        turn=turn.number,
-        ignored=list(ignored),
-        untracked=list(untracked),
+        journal.LoopEditLeftOut(
+            turn=turn.number,
+            ignored=list(ignored),
+            untracked=list(untracked),
+        )
     )
     tail = ": the edit is on disk, and this run's commits leave it out."
     return " ".join(
@@ -266,13 +268,14 @@ def capture_finish(
         wf.plan_output_path.write_text(plan_md, encoding="utf-8")
         wf.log(f"  plan written: {wf.plan_output_path} ({len(plan_md)} chars)")
         wf.emit(
-            "loop.plan_written",
-            path=str(wf.plan_output_path),
-            bytes=len(plan_md.encode("utf-8")),
+            journal.LoopPlanWritten(
+                path=str(wf.plan_output_path),
+                bytes=len(plan_md.encode("utf-8")),
+            )
         )
     except OSError as exc:
         wf.log(f"  plan write failed: {exc}")
-        wf.emit("loop.plan_write.failed", path=str(wf.plan_output_path), error=str(exc))
+        wf.emit(journal.LoopPlanWriteFailed(path=str(wf.plan_output_path), error=str(exc)))
 
 
 def note_tool_error(

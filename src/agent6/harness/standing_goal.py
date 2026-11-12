@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from agent6.graph import curator as graph_curator
 from agent6.graph import order
 from agent6.harness import nudges
+from agent6.sessions import journal
 
 if TYPE_CHECKING:
     from agent6.harness import loop_conversation, loop_state
@@ -86,7 +87,7 @@ class Standing:
             nudge = nudges.standing_resume_nudge(reason, nid, title)
         state.standing.tools_mark = state.ok_tool_calls
         self.log(f"  standing re-entry ({reason}) -> {nid} at turn {turn}")
-        self.emit("loop.standing.resumed", reason=reason, task_id=nid, turn=turn)
+        self.emit(journal.LoopStandingResumed(reason=reason, task_id=nid, turn=turn))
         return nudge
 
     def absorb_soft_stop(

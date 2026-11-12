@@ -43,7 +43,7 @@ from agent6.providers import (
     provider_types,
     request_headers,
 )
-from agent6.sessions import event_log
+from agent6.sessions import event_log, journal
 
 
 def resolve_compaction_thresholds(
@@ -236,7 +236,7 @@ def _provider_from_entry(
     def observe_auth(event: provider_types.AuthEvent) -> None:
         if events is not None:
             events.emit(
-                "provider.auth", provider=provider_name, kind=event.kind, outcome=event.outcome
+                journal.ProviderAuth(provider=provider_name, kind=event.kind, outcome=event.outcome)
             )
 
     auth_observer = observe_auth if events is not None else None
@@ -352,7 +352,7 @@ def role_temperature(cfg: Config, role: RoleName) -> float | None:
     return rm.temperature if rm is not None else None
 
 
-def _usage_fields(usage: provider_types.ProviderUsage | None) -> dict[str, int | float]:
+def _usage_fields(usage: provider_types.ProviderUsage | None) -> dict[str, Any]:
     """Return a result's reported usage fields; an unobserved usage stays absent."""
     if usage is None:
         return {}
@@ -451,20 +451,20 @@ class InstrumentedProvider:
             )
         context = dataclasses.replace(context, call_context=call_context, observe=observe)
         if self.events is not None:
-            self.events.emit("role.call", **self._identity(call_context))
+            self.events.emit(journal.RoleCall(**self._identity(call_context)))
         # Every live view subscribes to the delta events; a caller callback chains through.
         role_for_event = self.role
         events = self.events
 
         def _on_text(piece: str) -> None:
             if events is not None:
-                events.emit("role.text_delta", role=role_for_event, text=piece)
+                events.emit(journal.RoleTextDelta(role=role_for_event, text=piece))
             if text_delta_callback is not None:
                 text_delta_callback(piece)
 
         def _on_thinking(piece: str) -> None:
             if events is not None:
-                events.emit("role.thinking_delta", role=role_for_event, text=piece)
+                events.emit(journal.RoleThinkingDelta(role=role_for_event, text=piece))
             if thinking_delta_callback is not None:
                 thinking_delta_callback(piece)
 
@@ -494,24 +494,26 @@ class InstrumentedProvider:
                 exc.provider = self.provider_name  # the hint names the config key
             if self.events is not None:
                 self.events.emit(
-                    "role.result",
-                    **self._identity(call_context),
-                    ok=False,
-                    error=str(exc)[:200],
-                    **_usage_fields(exc.usage if isinstance(exc, ProviderError) else None),
+                    journal.RoleResult(
+                        **self._identity(call_context),
+                        ok=False,
+                        error=str(exc)[:200],
+                        **_usage_fields(exc.usage if isinstance(exc, ProviderError) else None),
+                    )
                 )
             self._emit_budget()
             raise
         self.conversations.completed(self.role, self.provider_name, call_context=call_context)
         if self.events is not None:
             self.events.emit(
-                "role.result",
-                **self._identity(call_context),
-                ok=True,
-                # The settled prose: a headless run streams no deltas, so this is its only text.
-                text=resp.text,
-                **_usage_fields(resp.usage),
-                stop_reason=resp.stop_reason,
+                journal.RoleResult(
+                    **self._identity(call_context),
+                    ok=True,
+                    # The settled prose: a headless run streams no deltas, so this is its only text.
+                    text=resp.text,
+                    **_usage_fields(resp.usage),
+                    stop_reason=resp.stop_reason,
+                )
             )
         self._emit_budget()
         return resp
@@ -530,13 +532,14 @@ class InstrumentedProvider:
         if self.events is not None:
             assert facts.context is not None and facts.context.call_context is not None
             self.events.emit(
-                "provider.request",
-                **facts.context.call_context.event_fields(),
-                role=self.role,
-                provider=self.provider_name,
-                model=facts.model,
-                request_id=facts.request_id,
-                target=facts.target,
+                journal.ProviderRequest(
+                    **facts.context.call_context.event_fields(),
+                    role=self.role,
+                    provider=self.provider_name,
+                    model=facts.model,
+                    request_id=facts.request_id,
+                    target=facts.target,
+                )
             )
 
     def close(self) -> None:
@@ -551,7 +554,7 @@ class InstrumentedProvider:
         spend ledger.
         """
         if self.events is not None:
-            self.events.emit("budget.update", **budget_update_fields(self.budget))
+            self.events.emit(journal.BudgetUpdate(**budget_update_fields(self.budget)))
 
 
 def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:

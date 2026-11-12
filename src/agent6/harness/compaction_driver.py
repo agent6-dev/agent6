@@ -31,6 +31,7 @@ from agent6.harness import (
 )
 from agent6.prompts import compaction
 from agent6.providers import Provider, ProviderError
+from agent6.sessions import journal
 
 if TYPE_CHECKING:
     from agent6.harness import loop_state
@@ -101,7 +102,7 @@ class Compactor:
             self.compact_clear()
             focus_note = f" (focus: {forced[:80]})" if forced else ""
             self.log(f"LOOP: operator requested a manual compaction{focus_note}")
-            self.emit("loop.compact.requested", focus=forced)
+            self.emit(journal.LoopCompactRequested(focus=forced))
         stats = compaction_rules.compact_old_tool_results(
             conversation,
             max_total_bytes=self.settings.drop_at_chars,
@@ -127,23 +128,24 @@ class Compactor:
                     f"LOOP: compaction dropped thinking from {n_messages} old messages"
                     f" ({n_chars} chars)"
                 )
-                self.emit("loop.compact.thinking_dropped", messages=n_messages, chars=n_chars)
+                self.emit(journal.LoopCompactThinkingDropped(messages=n_messages, chars=n_chars))
         if n_deduped:
             self.log(f"LOOP: compaction deduplicated {n_deduped} identical tool results")
-            self.emit("loop.compact.deduped", n=n_deduped, calls=list(stats.deduped_calls))
+            self.emit(journal.LoopCompactDeduped(n=n_deduped, calls=list(stats.deduped_calls)))
         if n_elided:
             detail = f", {n_gisted} kept as distilled gists" if n_gisted else ""
             self.log(f"LOOP: compaction elided {n_elided} old tool_result blocks{detail}")
-            self.emit("loop.compact.dropped", n=n_elided, calls=list(stats.elided_calls))
+            self.emit(journal.LoopCompactDropped(n=n_elided, calls=list(stats.elided_calls)))
         if n_demoted:
             self.log(f"LOOP: compaction demoted {n_demoted} gists to bare placeholders")
         if n_gisted or n_demoted:
             self.emit(
-                "loop.compact.gists",
-                gisted=n_gisted,
-                demoted=n_demoted,
-                paths=list(stats.gist_paths),
-                demoted_paths=list(stats.demoted_paths),
+                journal.LoopCompactGists(
+                    gisted=n_gisted,
+                    demoted=n_demoted,
+                    paths=list(stats.gist_paths),
+                    demoted_paths=list(stats.demoted_paths),
+                )
             )
         # The whole request: tier 1 bounded the results alone, and the window bounds the
         # prefix too.
@@ -158,7 +160,7 @@ class Compactor:
         if forced is not None:
             # The request was consumed above, so the refusal is said, not silent.
             self.log("LOOP: manual compaction skipped: too little history to summarise")
-            self.emit("loop.compact.refused", reason="too little history to summarise")
+            self.emit(journal.LoopCompactRefused(reason="too little history to summarise"))
         return False
 
     def distill_gists(self, requests: tuple[compaction_elision.GistRequest, ...]) -> dict[str, str]:
@@ -175,7 +177,7 @@ class Compactor:
         """
         provider = self.settings.summariser or self.provider
         files = "\n\n".join(f"=== FILE {r.path} ===\n{r.content}" for r in requests)
-        self.emit("loop.compact.gist.call", files=len(requests))
+        self.emit(journal.LoopCompactGistCall(files=len(requests)))
         try:
             resp = provider.call(
                 system=compaction.GIST_DISTILL_SYSTEM_PROMPT,
@@ -186,7 +188,7 @@ class Compactor:
             )
         except (ProviderError, budget.BudgetExceededError) as exc:
             self.log(f"  gist distillation failed: {exc}; eliding without gists")
-            self.emit("loop.compact.gist.failed", error=str(exc)[:200])
+            self.emit(journal.LoopCompactGistFailed(error=str(exc)[:200]))
             return {}
         return compaction_elision.parse_gist_lines(
             resp.text or "", paths=[r.path for r in requests]
@@ -275,7 +277,7 @@ class Compactor:
             f"\n\nTRANSCRIPT (oldest first):\n{transcript}"
         )
         self.log(f"LOOP: tier-2 compaction summarise-and-restart ({len(conversation)} msgs)")
-        self.emit("loop.compact.summarise.call", messages=len(conversation))
+        self.emit(journal.LoopCompactSummariseCall(messages=len(conversation)))
         try:
             resp = provider.call(
                 system=compaction.CONTEXT_SUMMARY_SYSTEM_PROMPT,
@@ -287,12 +289,12 @@ class Compactor:
         except (ProviderError, budget.BudgetExceededError) as exc:
             # A real budget exhaustion is re-detected by the next provider call.
             self.log(f"  tier-2 summarise failed: {exc}; keeping current context")
-            self.emit("loop.compact.summarise.failed", error=str(exc)[:200])
+            self.emit(journal.LoopCompactSummariseFailed(error=str(exc)[:200]))
             return False
         raw = (resp.text or "").strip()
         summary = compaction_window.strip_checkoff(raw) if open_tasks else raw
         if not summary:
-            self.emit("loop.compact.summarise.failed", error="empty summary")
+            self.emit(journal.LoopCompactSummariseFailed(error="empty summary"))
             return False
         # Only after the narrative passed: bookkeeping alone never mutates the DAG.
         if open_tasks:
@@ -315,10 +317,11 @@ class Compactor:
             (compaction_window.context_chars(conversation) + prefix_chars) * 1.25
         )
         self.emit(
-            "loop.compact.summarise.done",
-            summary_chars=len(summary),
-            summary=summary,
-            kept_messages=len(messages) - tail_start,
+            journal.LoopCompactSummariseDone(
+                summary_chars=len(summary),
+                summary=summary,
+                kept_messages=len(messages) - tail_start,
+            )
         )
         return True
 

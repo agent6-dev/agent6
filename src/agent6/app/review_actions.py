@@ -12,7 +12,7 @@ from typing import Literal, Self
 import pydantic
 
 from agent6 import review_records
-from agent6.sessions import event_log, ipc, layout, lock, process
+from agent6.sessions import event_log, ipc, journal, layout, lock, process
 from agent6.tools import results, tool_errors
 from agent6.viewmodel import review, session_log
 
@@ -336,6 +336,16 @@ def _validate(
     return findings
 
 
+# The finding-action records by the kind a request names.
+_ACTION_RECORDS: dict[str, Callable[..., journal.Event]] = {
+    "finding.resolved": journal.LoopReviewFindingResolved,
+    "finding.reopened": journal.LoopReviewFindingReopened,
+    "fix.requested": journal.LoopReviewFixRequested,
+    "fix.submitted": journal.LoopReviewFixSubmitted,
+    "fix.failed": journal.LoopReviewFixFailed,
+}
+
+
 def _emit(
     events: event_log.EventSink,
     request: ActionRequest,
@@ -345,12 +355,13 @@ def _emit(
     **fields: object,
 ) -> None:
     events.emit(
-        "loop.review." + kind,
-        finding_id=finding_id,
-        request_id=request.action.request_id,
-        source=request.source,
-        version=read_review(events.path.parent).version + 1,
-        **fields,
+        _ACTION_RECORDS[kind](
+            finding_id=finding_id,
+            request_id=request.action.request_id,
+            source=request.source,
+            version=read_review(events.path.parent).version + 1,
+            **fields,
+        )
     )
 
 

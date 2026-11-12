@@ -16,6 +16,7 @@ from agent6 import budget
 from agent6.app import finalize, reporter
 from agent6.context import memory
 from agent6.harness import loop_conversation, loop_snapshot, loop_state, run_chain
+from agent6.sessions import journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import results
 from agent6.vcs import git_read
@@ -48,8 +49,10 @@ class _Events:
     def __init__(self) -> None:
         self.events: list[dict[str, Any]] = []
 
-    def emit(self, event_type: str, **fields: Any) -> None:
-        self.events.append({"type": event_type, **fields})
+    def emit(self, event: journal.Event) -> None:
+        self.events.append(
+            {"type": event.TYPE, **event.model_dump(mode="json", exclude_unset=True)}
+        )
 
 
 def test_run_chain_left_out_names_ignored_and_start_untracked_paths(
@@ -85,7 +88,9 @@ def _dispatch_edit(
         tool_path: The path the model gave the edit tool.
         state_dir: The run's state directory, whose memory store a write may address.
     """
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = result
     events = _Events()
     wf = test_harness._wf(  # pyright: ignore[reportPrivateUsage]

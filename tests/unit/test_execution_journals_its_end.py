@@ -25,7 +25,7 @@ from agent6.app import frontend as app_frontend
 from agent6.config import Config
 from agent6.harness import loop as harness_loop
 from agent6.harness import loop_snapshot
-from agent6.sessions import event_log, process
+from agent6.sessions import event_log, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui import steer
@@ -298,11 +298,12 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
             self, _task: str, *, operator_task: str | None = None
         ) -> loop_snapshot.SessionResult:
             events.emit(
-                "session.stop",
-                execution_id="execution",
-                reason="finish_session",
-                turns=1,
-                verification="passed",
+                journal.SessionStop(
+                    execution_id="execution",
+                    reason="finish_session",
+                    turns=1,
+                    verification="passed",
+                )
             )
             return loop_snapshot.SessionResult(
                 completed=True,
@@ -708,11 +709,12 @@ def test_auto_merge_leaves_harness_ends_on_the_run_branch_and_says_why(
             self, _task: str, *, operator_task: str | None = None
         ) -> loop_snapshot.SessionResult:
             events.emit(
-                "session.stop",
-                execution_id="execution",
-                reason=reason,
-                turns=1,
-                verification=verification,
+                journal.SessionStop(
+                    execution_id="execution",
+                    reason=reason,
+                    turns=1,
+                    verification=verification,
+                )
             )
             return loop_snapshot.SessionResult(
                 completed=True,
@@ -831,11 +833,12 @@ def test_a_finish_with_no_commit_is_journaled_and_reads_not_committed(
             self, _task: str, *, operator_task: str | None = None
         ) -> loop_snapshot.SessionResult:
             events.emit(
-                "session.stop",
-                execution_id="execution",
-                reason="finish_session",
-                turns=1,
-                verification="passed",
+                journal.SessionStop(
+                    execution_id="execution",
+                    reason="finish_session",
+                    turns=1,
+                    verification="passed",
+                )
             )
             return loop_snapshot.SessionResult(
                 completed=True,
@@ -879,8 +882,8 @@ def test_a_finish_with_no_commit_is_journaled_and_reads_not_committed(
     )
 
     assert end.rc == finalize.EXIT_NO_COMMIT_LANDED
-    journal = [json.loads(line) for line in layout.logs_path.read_text().splitlines()]
-    assert [e["type"] for e in journal][-2:] == ["session.stop", "session.stranded"]
+    rows = [json.loads(line) for line in layout.logs_path.read_text().splitlines()]
+    assert [e["type"] for e in rows][-2:] == ["session.stop", "session.stranded"]
     row = listing.summarize_session_dir(layout.session_dir)
     assert (row.status, row.detail) == ("passed", "not committed")
     assert any("no commit on" in line for line in said), "\n".join(said)
@@ -918,11 +921,12 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
             self, _task: str, *, operator_task: str | None = None
         ) -> loop_snapshot.SessionResult:
             events.emit(
-                "session.stop",
-                execution_id="execution",
-                reason="finish_session",
-                turns=3,
-                verification="passed",
+                journal.SessionStop(
+                    execution_id="execution",
+                    reason="finish_session",
+                    turns=3,
+                    verification="passed",
+                )
             )
             return loop_snapshot.SessionResult(
                 completed=True,
@@ -999,11 +1003,12 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
             self, _task: str, *, operator_task: str | None = None
         ) -> loop_snapshot.SessionResult:
             events.emit(
-                "session.stop",
-                execution_id="execution",
-                reason="finish_session",
-                turns=3,
-                verification="passed",
+                journal.SessionStop(
+                    execution_id="execution",
+                    reason="finish_session",
+                    turns=3,
+                    verification="passed",
+                )
             )
             return loop_snapshot.SessionResult(
                 completed=True,
@@ -1323,7 +1328,9 @@ def test_a_plan_under_auto_merge_prints_no_skipped_note(
         def run(
             self, _task: str, *, operator_task: str | None = None
         ) -> loop_snapshot.SessionResult:
-            events.emit("session.stop", execution_id="execution", reason="finish_planning", turns=1)
+            events.emit(
+                journal.SessionStop(execution_id="execution", reason="finish_planning", turns=1)
+            )
             return loop_snapshot.SessionResult(
                 completed=True,
                 reason="finish_planning",

@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.harness import advice, loop_snapshot, metric_rules, nudges, verify_gate, verify_verdict
+from agent6.sessions import journal
 from agent6.tools import schema
 
 if TYPE_CHECKING:
@@ -289,8 +290,7 @@ def finish_contract(
         return None
     return advice.Refusal(
         contract_refusal(problems),
-        event="loop.finish_contract.refused",
-        fields={"turn": turn.number, "problems": problems},
+        event=journal.LoopFinishContractRefused(turn=turn.number, problems=problems),
         log=f"  finish_session returned: result violates the contract at turn {turn.number}",
     )
 
@@ -333,12 +333,9 @@ def open_tasks_finish(
     ending = turn.ending or "finish_session"
     return advice.Refusal(
         nudge,
-        event="loop.task_finish.gated",
-        fields={
-            "turn": turn.number,
-            "nudges_used": state.gates.task_nudges_used,
-            "trigger": ending,
-        },
+        event=journal.LoopTaskFinishGated(
+            turn=turn.number, nudges_used=state.gates.task_nudges_used, trigger=ending
+        ),
         log=(
             f"  {ending} gated: open subtasks remain (nudge"
             f" #{state.gates.task_nudges_used}) at turn {turn.number}"
@@ -389,8 +386,7 @@ def verify_finish(
     ending = turn.ending or "finish_session"
     return advice.Refusal(
         notice,
-        event="loop.verify_finish.gated",
-        fields={"turn": turn.number, "nudges_used": used, "trigger": ending},
+        event=journal.LoopVerifyFinishGated(turn=turn.number, nudges_used=used, trigger=ending),
         log=(
             f"  {'settled stop' if settled else 'finish_session'} returned: verify not green"
             f" (return #{used} of {ctx.verify_retries}) at turn {turn.number}"

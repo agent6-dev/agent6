@@ -11,7 +11,7 @@ import pytest
 from textual import widgets
 
 from agent6.app import review_actions
-from agent6.sessions import event_log, ipc, lock, process
+from agent6.sessions import event_log, ipc, journal, lock, process
 from agent6.ui import spawn
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import home, modals
@@ -159,22 +159,24 @@ def test_selected_finding_shows_its_own_panels_rules(
     saved.logs_path.write_text("".join(json.dumps(row) + "\n" for row in rows))
     sink = event_log.EventSink(saved.logs_path)
     sink.emit(
-        "loop.review.start",
-        panel_id="later",
-        execution_id="execution",
-        turn=2,
-        trigger="before_finish",
-        target=start["target"],
-        seats=[],
-        rule_sources=[],
-        rules_complete=False,
-        rules_reason="Later rule set is hidden",
+        journal.LoopReviewStart(
+            panel_id="later",
+            execution_id="execution",
+            turn=2,
+            trigger="before_finish",
+            target=start["target"],
+            seats=[],
+            rule_sources=[],
+            rules_complete=False,
+            rules_reason="Later rule set is hidden",
+        )
     )
     sink.emit(
-        "loop.review.skipped",
-        panel_id="later",
-        execution_id="execution",
-        reason="Later rule set is hidden",
+        journal.LoopReviewSkipped(
+            panel_id="later",
+            execution_id="execution",
+            reason="Later rule set is hidden",
+        )
     )
 
     async def scenario() -> None:

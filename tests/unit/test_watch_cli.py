@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.sessions import process
+from agent6.sessions import journal, process
 from agent6.ui.cli import main
 
 # A branch -> terminal machine: no model/jail, reaches a journaled end at once.
@@ -108,26 +108,28 @@ def test_headless_approve_exposes_a_blocking_question_without_answering_it(
     process.write_worker_pid(session_dir, os.getpid())
     events = event_log.EventSink(session_dir / "logs.jsonl")
     events.emit(
-        "session.start", session_id=session_id, user_task="t", mode="run", execution_id="e1"
+        journal.SessionStart(session_id=session_id, user_task="t", mode="run", execution_id="e1")
     )
     if resumed:
         # Replay a worker that died with its waiting question unanswered.
         events.emit(
-            "question.prompt",
-            id="question-1",
-            questions=[{"question": "old?", "options": []}],
-            call_id=1,
-            wait=True,
+            journal.QuestionPrompt(
+                id="question-1",
+                questions=[{"question": "old?", "options": []}],
+                call_id=1,
+                wait=True,
+            )
         )
         events.emit(
-            "session.resume",
-            session_id=session_id,
-            user_task="t",
-            steer="continue",
-            mode="run",
-            turn=1,
-            messages=2,
-            execution_id="e2",
+            journal.SessionResume(
+                session_id=session_id,
+                user_task="t",
+                steer="continue",
+                mode="run",
+                turn=1,
+                messages=2,
+                execution_id="e2",
+            )
         )
     first_question = 2 if resumed else 1
     blocking_id = f"question-{first_question + 1}"

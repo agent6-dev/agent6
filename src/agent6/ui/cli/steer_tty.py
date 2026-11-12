@@ -16,7 +16,7 @@ from typing import Any
 
 from agent6 import budget, portable, terminal
 from agent6.app import frontend
-from agent6.sessions import event_log, ipc, process
+from agent6.sessions import event_log, ipc, journal, process
 from agent6.ui import keymap, steer
 from agent6.ui.cli import console_render, menu_input, steer_menu
 from agent6.viewmodel import policy
@@ -239,7 +239,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
         # A stale answer file would answer this prompt; one with a pending request is a live steer.
         if not ipc.steer_request_pending(session_dir):
             ipc.clear_steer_answer(session_dir)
-        events.emit("session.steer_requested", source="sigint")
+        events.emit(journal.SessionSteerRequested(source="sigint"))
         # A live front-end prompts in its own modal; its terminal is not scribbled on.
         if not process.frontend_is_live(session_dir):
             tty_message(

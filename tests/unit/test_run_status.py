@@ -16,7 +16,7 @@ import pytest
 
 from agent6 import portable
 from agent6.sessions import ipc as sessions_ipc
-from agent6.sessions import process
+from agent6.sessions import journal, process
 from agent6.ui.cli import common, sessions_show
 from agent6.vcs import git_read
 
@@ -1061,17 +1061,15 @@ def test_a_start_event_is_never_readable_before_the_pid_file(
     pid_present_at_emit: list[bool] = []
     real_emit = event_log.EventSink.emit
 
-    def spy(self: event_log.EventSink, event_type: str, /, **fields: Any) -> None:
+    def spy(self: event_log.EventSink, event: journal.Event, /) -> None:
         pid_present_at_emit.append((sdir / "worker.pid").exists())
-        real_emit(self, event_type, **fields)
+        real_emit(self, event)
 
     monkeypatch.setattr(event_log.EventSink, "emit", spy)
     process.emit_session_start(
         event_log.EventSink(sdir / "logs.jsonl"),
         sdir,
-        "session.start",
-        mode="run",
-        user_task="task",
+        journal.SessionStart(mode="run", user_task="task", execution_id="execution"),
     )
     assert pid_present_at_emit == [True]
 

@@ -27,7 +27,7 @@ from agent6.harness import (
     run_chain,
 )
 from agent6.providers import ProviderResponse
-from agent6.sessions import event_log
+from agent6.sessions import event_log, journal
 from agent6.tools import results
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
@@ -78,7 +78,11 @@ def _wf(
             ),
         ),
         "provider": mock.MagicMock(),
-        "dispatcher": mock.MagicMock(last_verification=None, verify_withheld=False),
+        "dispatcher": mock.MagicMock(
+            last_verification=None,
+            execution_id="execution",
+            verify_withheld=False,
+        ),
         "logger": _silent,
         "call": provider_call.CallSettings(retry_delay_s=0.01),
         "review": review_gate.ReviewSettings(reviewers=[mock.MagicMock()]),
@@ -156,7 +160,9 @@ def test_before_finish_panel_revokes_finish_and_injects_findings() -> None:
         _resp("ok, looks good"),
         _resp("ok, looks good"),
     ]
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     panel = _PanelScript(
         [
@@ -194,7 +200,9 @@ def test_before_finish_panel_satisfied_accepts_finish() -> None:
     worker.call.return_value = _resp_with_tool_use(
         "wrapping up", _finish_tool_use("tu1", "all done")
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     panel = _PanelScript([review_gate.CritiqueResult(text="* clean", satisfied=True)])
     wf = _wf(
@@ -225,7 +233,9 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
     """
     worker = mock.MagicMock()
     worker.call.return_value = _resp_with_tool_use("finishing", _finish_tool_use("tu1", "done"))
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     rejected = review_gate.CritiqueResult(text="* nope", satisfied=False)
     capped = review_gate.CritiqueResult(text="* nope", satisfied=True, capped=True)
@@ -254,7 +264,9 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
 def test_trigger_off_never_runs_a_panel() -> None:
     worker = mock.MagicMock()
     worker.call.return_value = _resp_with_tool_use("done", _finish_tool_use("tu1", "d"))
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     panel = _PanelScript([])
     wf = _wf(
@@ -294,7 +306,9 @@ def test_silent_finish_panel_revokes_and_continues() -> None:
         _resp("i think we are done"),
         _resp("still done"),
     ]
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     panel = _PanelScript(
         [
@@ -352,7 +366,9 @@ def test_periodic_panel_fires_every_n_turns() -> None:
         _resp_with_tool_use("t4", _verify_pass_tool_use("v4")),
         _resp_with_tool_use("done", _finish_tool_use("f", "summary")),
     ]
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = _exec(0)
     panel = _PanelScript([review_gate.CritiqueResult(text="* fine", satisfied=True)] * 2)
     wf = _wf(
@@ -388,7 +404,9 @@ def test_periodic_panel_injects_text_into_next_user_msg() -> None:
         _resp_with_tool_use("t1", _verify_pass_tool_use("v1")),
         _resp_with_tool_use("done", _finish_tool_use("f", "ok")),
     ]
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = _exec(0)
     panel = _PanelScript([review_gate.CritiqueResult(text="* CONSIDER X", satisfied=True)])
     wf = _wf(
@@ -426,7 +444,9 @@ def test_on_verify_fail_panel_fires_only_on_nonzero_exit() -> None:
         _resp_with_tool_use("t3", _verify_pass_tool_use("v3")),  # passes
         _resp_with_tool_use("done", _finish_tool_use("f", "ok")),
     ]
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.side_effect = [
         _exec(0),
         _exec(1, stderr="test x failed"),
@@ -468,7 +488,9 @@ def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
         _resp_with_tool_use("editing", edit_tool),
         _resp_with_tool_use("done", _finish_tool_use("f", "ok")),
     ]
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = results.RawResult({"entries": []})
     panel = _PanelScript([])
     wf = _wf(
@@ -614,7 +636,9 @@ def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
     cfg = Config.model_validate(
         {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = results.ExecResult(
         returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
@@ -649,8 +673,10 @@ class _Events:
     def __init__(self) -> None:
         self.events: list[dict[str, Any]] = []
 
-    def emit(self, event_type: str, /, **fields: Any) -> None:
-        self.events.append({"type": event_type, **fields})
+    def emit(self, event: journal.Event) -> None:
+        self.events.append(
+            {"type": event.TYPE, **event.model_dump(mode="json", exclude_unset=True)}
+        )
 
 
 def test_a_red_settled_stop_names_itself_and_spends_no_finish_return() -> None:
@@ -664,7 +690,9 @@ def test_a_red_settled_stop_names_itself_and_spends_no_finish_return() -> None:
     cfg = Config.model_validate(
         {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 2}}
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = results.ExecResult(
         returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
@@ -699,7 +727,9 @@ def test_a_red_settled_stop_names_itself_and_spends_no_finish_return() -> None:
     finishing.ending = "finish_session"
     refusal = finish_gates.verify_finish(finishing, state, ctx)
     assert refusal is not None and "finish_session not honoured" in refusal.text
-    assert "(return 1 of 2)" in refusal.text and refusal.fields["trigger"] == "finish_session"
+    assert "(return 1 of 2)" in refusal.text
+    assert isinstance(refusal.event, journal.LoopVerifyFinishGated)
+    assert refusal.event.trigger == "finish_session"
 
 
 def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
@@ -715,7 +745,9 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     cfg = Config.model_validate(
         {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = results.ExecResult(
         returncode=1, stdout="2 failed", stderr="", duration_s=1.0, exec_failed=False

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from agent6 import paths
-from agent6.sessions import event_log, layout
+from agent6.sessions import event_log, journal, layout
 from tests.web import test_client_review, test_review_evidence, test_web_browser, test_web_git
 
 if TYPE_CHECKING:
@@ -37,20 +37,21 @@ def test_receipt_route_and_card_state_the_output_cap_once(
     sink = event_log.EventSink(saved.logs_path)
     for cut in (False, True):
         sink.emit(
-            "verify.end",
-            cmd=["pytest"],
-            exit_code=0,
-            stdout_tail="out",
-            stderr_tail="",
-            stdout_truncated=cut,
-            stderr_truncated=False,
-            scoped=False,
-            selected_paths=[],
-            outcome="passed",
-            duration_s=0.2,
-            timeout_s=60.0,
-            baseline=False,
-            reason="",
+            journal.VerifyEnd(
+                cmd=["pytest"],
+                exit_code=0,
+                stdout_tail="out",
+                stderr_tail="",
+                stdout_truncated=cut,
+                stderr_truncated=False,
+                scoped=False,
+                selected_paths=[],
+                outcome="passed",
+                duration_s=0.2,
+                timeout_s=60.0,
+                baseline=False,
+                reason="",
+            )
         )
     port, _ = evidence
     code, payload = test_web_git._get(port, "/api/session/review-run/receipt")
@@ -80,18 +81,20 @@ def test_receipt_renders_job_settlement_separately_from_environment_lifecycle(
     saved = layout.SessionLayout(paths.state_dir(tmp_path), "review-run")
     events = event_log.EventSink(saved.logs_path)
     events.emit(
-        "execution.jobs",
-        execution_id="execution",
-        target_id="attached",
-        outcome="settled",
-        reason="",
+        journal.ExecutionJobs(
+            execution_id="execution",
+            target_id="attached",
+            outcome="settled",
+            reason="",
+        )
     )
     events.emit(
-        "execution.environment",
-        execution_id="execution",
-        target_id="attached",
-        outcome="left_running",
-        reason="ownership unproved; stop by hand",
+        journal.ExecutionEnvironment(
+            execution_id="execution",
+            target_id="attached",
+            outcome="left_running",
+            reason="ownership unproved; stop by hand",
+        )
     )
     port, _ = evidence
     page, errors = open_page(port)

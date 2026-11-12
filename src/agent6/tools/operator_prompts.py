@@ -14,10 +14,10 @@ import dataclasses
 import itertools
 import pathlib
 import sys
-from typing import Any, Literal, Protocol
+from typing import Literal, Protocol
 
 from agent6 import portable
-from agent6.sessions import ipc, process
+from agent6.sessions import ipc, journal, process
 from agent6.tools import schema
 
 # Who answered, as the answer events journal it: the CLI's terminal ("stdin"), a live TUI, web
@@ -134,14 +134,14 @@ class Questioner(Protocol):
 
 
 class Journal(Protocol):
-    """Where the gate's events go: a run's `EventSink.emit`."""
+    """Where the gate's records go: a run's `EventSink.emit`."""
 
-    def __call__(self, event_type: str, /, **fields: Any) -> None:
-        """Write one event."""
+    def __call__(self, event: journal.Event, /) -> None:
+        """Write one record."""
         ...
 
 
-def unjournaled(event_type: str, /, **fields: Any) -> None:
+def unjournaled(event: journal.Event, /) -> None:
     """Write nothing: the journal of a gate built with no sink."""
 
 
@@ -257,20 +257,21 @@ class OperatorPrompts:
             and self._session_dir is not None
             and ipc.session_allow_set(self._session_dir, scope)
         ):
-            self._journal("approval.answer", id=request.id, approved=True, source="session")
+            self._journal(journal.ApprovalAnswer(id=request.id, approved=True, source="session"))
             return True
         if self._session_dir is not None:
             ipc.clear_answer(self._session_dir, request.id)
         self._journal(
-            "approval.prompt",
-            id=request.id,
-            prompt=prompt,
-            standing=bool(scope),
-            call_id=call_id,
+            journal.ApprovalPrompt(
+                id=request.id,
+                prompt=prompt,
+                standing=bool(scope),
+                call_id=call_id,
+            )
         )
         answer = self._approver(request)
         self._journal(
-            "approval.answer", id=request.id, approved=answer.approved, source=answer.source
+            journal.ApprovalAnswer(id=request.id, approved=answer.approved, source=answer.source)
         )
         return answer.approved
 
@@ -304,11 +305,12 @@ class OperatorPrompts:
         if self._session_dir is not None:
             ipc.clear_question_answers(self._session_dir, request.id)
         self._journal(
-            "question.prompt",
-            id=request.id,
-            questions=[{"question": q.question, "options": list(q.options)} for q in questions],
-            call_id=call_id,
-            wait=wait,
+            journal.QuestionPrompt(
+                id=request.id,
+                questions=[{"question": q.question, "options": list(q.options)} for q in questions],
+                call_id=call_id,
+                wait=wait,
+            )
         )
         if not wait:
             self._pending[request.id] = request
@@ -333,11 +335,12 @@ class OperatorPrompts:
             )
         answers = answer.answers + ("",) * (len(questions) - len(answer.answers))
         self._journal(
-            "question.answer",
-            id=request.id,
-            answers=list(answers),
-            source=answer.source,
-            unseen=answer.status == "unanswered",
+            journal.QuestionAnswer(
+                id=request.id,
+                answers=list(answers),
+                source=answer.source,
+                unseen=answer.status == "unanswered",
+            )
         )
         return dataclasses.replace(answer, answers=answers, id=request.id)
 
@@ -365,11 +368,12 @@ class OperatorPrompts:
             aligned = (answers + ("",) * len(request.questions))[: len(request.questions)]
             # The journal row first: a crash after it leaves a file the next sweep drops.
             self._journal(
-                "question.answer",
-                id=request.id,
-                answers=list(aligned),
-                source="late",
-                unseen=False,
+                journal.QuestionAnswer(
+                    id=request.id,
+                    answers=list(aligned),
+                    source="late",
+                    unseen=False,
+                )
             )
             ipc.clear_question_answers(self._session_dir, request.id)
             del self._pending[request.id]

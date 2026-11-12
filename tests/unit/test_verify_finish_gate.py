@@ -26,6 +26,7 @@ from agent6.harness import (
     verify_verdict,
 )
 from agent6.prompts import loop as prompts_loop
+from agent6.sessions import journal
 from agent6.viewmodel import session_status
 
 
@@ -40,7 +41,9 @@ def _wf(
         chain=run_chain.RunChain(root),
         config=Config.model_validate(data),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=lambda _m: None,
         mode=mode,
     )
@@ -138,7 +141,11 @@ def test_settled_base_only_green_is_unverified(tmp_path: pathlib.Path) -> None:
     result = wf.finish(state, end, turn=3)
     assert result.reason == "settled"
     assert result.verification == "unverified"
-    event = next(c.kwargs for c in emitted.emit.call_args_list if c.args == ("session.stop",))
+    event = next(
+        c.args[0].model_dump(exclude_unset=True)
+        for c in emitted.emit.call_args_list
+        if c.args[0].TYPE == "session.stop"
+    )
     assert event["verification"] == "unverified"
     assert event["verification"] == "unverified"
     assert finalize.session_exit_code(result, harness_gate=True) == 4
@@ -152,8 +159,8 @@ def test_a_gateless_end_and_its_verdict_agree() -> None:
     """A stop event carries the same verification word as the loop result."""
     emitted: list[dict[str, Any]] = []
 
-    def _capture(_type: str, **fields: Any) -> None:
-        emitted.append(fields)
+    def _capture(event: journal.Event) -> None:
+        emitted.append(event.model_dump(exclude_unset=True))
 
     cases: tuple[tuple[bool, verify_verdict.VerifyVerdict, str], ...] = (
         (False, verify_verdict.VerifyVerdict(last_ok=None), "not_applicable"),
@@ -190,8 +197,8 @@ def test_the_end_event_carries_whether_the_certifying_gate_ran_scoped() -> None:
     """
     emitted: list[dict[str, Any]] = []
 
-    def _capture(_type: str, **fields: Any) -> None:
-        emitted.append(fields)
+    def _capture(event: journal.Event) -> None:
+        emitted.append(event.model_dump(exclude_unset=True))
 
     wf = _wf(verify=True)
     wf.events = mock.MagicMock(emit=_capture)
@@ -420,7 +427,9 @@ def _harness_wf(
     data: dict[str, Any] = {
         "harness": {"verify_command": ["true"], "verify_when": when, "verify_retries": retries}
     }
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.command_policy.return_value = policy
     wf = loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
@@ -701,7 +710,9 @@ def _scoped_wf(
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text("")
     data: dict[str, Any] = {"harness": {"verify_command": command, "verify_when": when}}
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.command_policy.return_value = "allow"
     wf = loop.Harness(
         chain=run_chain.RunChain(root),
@@ -730,8 +741,8 @@ def test_a_timed_out_gate_reruns_scoped_to_the_nearest_tests(
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     emitted: list[tuple[str, dict[str, Any]]] = []
 
-    def _capture(event_type: str, **fields: Any) -> None:
-        emitted.append((event_type, fields))
+    def _capture(event: journal.Event) -> None:
+        emitted.append((event.TYPE, event.model_dump(exclude_unset=True)))
 
     wf.events = mock.MagicMock(emit=_capture)
     dispatcher.run_verify.side_effect = [_exec(124, timed_out=True), _exec(0)]
@@ -925,7 +936,9 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     """
     from agent6.tools import results
 
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = results.ExecResult(
         returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
@@ -966,7 +979,9 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
 
     A withheld or denied gate is not the model's to fix, and bouncing the end told it to.
     """
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.command_policy.return_value = policy
     wf = loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),

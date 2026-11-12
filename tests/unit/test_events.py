@@ -11,7 +11,7 @@ import pathlib
 import pytest
 
 from agent6 import paths as agent6_paths
-from agent6.sessions import event_log
+from agent6.sessions import event_log, journal
 from agent6.viewmodel import tail
 
 
@@ -21,8 +21,8 @@ def _read_lines(path: pathlib.Path) -> list[dict[str, object]]:
 
 def test_emit_appends_json_lines(tmp_path: pathlib.Path) -> None:
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
-    sink.emit("loop.note", text="do a thing")
-    sink.emit("loop.tool.call", turn=1, name="read_file")
+    sink.emit(journal.LoopNote(text="do a thing"))
+    sink.emit(journal.LoopToolCall(turn=1, name="read_file"))
     lines = _read_lines(tmp_path / "logs.jsonl")
     assert len(lines) == 2
     assert lines[0]["type"] == "loop.note"
@@ -38,7 +38,7 @@ def test_reopen_drops_torn_tail_before_resumed_events(
     """A torn delta cannot swallow the next execution's resume start."""
     path = tmp_path / "logs.jsonl"
     first = event_log.EventSink(path)
-    first.emit("session.start", user_task="task", mode="execute", execution_id="first")
+    first.emit(journal.SessionStart(user_task="task", mode="execute", execution_id="first"))
     committed = path.read_bytes()
     fragment = b'{"type":"role.text_delta","text":"caf\xc3'
     with path.open("ab") as fh:
@@ -46,22 +46,24 @@ def test_reopen_drops_torn_tail_before_resumed_events(
 
     resumed = event_log.EventSink(path)
     resumed.emit(
-        "session.resume",
-        session_id="session",
-        user_task="task",
-        steer="continue",
-        mode="execute",
-        turn=1,
-        messages=2,
-        execution_id="resumed",
+        journal.SessionResume(
+            session_id="session",
+            user_task="task",
+            steer="continue",
+            mode="execute",
+            turn=1,
+            messages=2,
+            execution_id="resumed",
+        )
     )
-    resumed.emit("role.text_delta", role="worker", text="done")
+    resumed.emit(journal.RoleTextDelta(role="worker", text="done"))
     resumed.emit(
-        "session.stop",
-        execution_id="execution",
-        reason="finish_session",
-        turns=1,
-        verification="passed",
+        journal.SessionStop(
+            execution_id="execution",
+            reason="finish_session",
+            turns=1,
+            verification="passed",
+        )
     )
 
     expected = ["session.start", "session.resume", "role.text_delta", "session.stop"]
@@ -76,15 +78,15 @@ def test_reopen_drops_torn_tail_before_resumed_events(
 def test_emit_creates_parent_dir(tmp_path: pathlib.Path) -> None:
     target = tmp_path / "nested" / "deeper" / "logs.jsonl"
     sink = event_log.EventSink(target)
-    sink.emit("session.stranded")
+    sink.emit(journal.SessionStranded())
     assert target.is_file()
 
 
 def test_durable_events_have_unique_ids(tmp_path: pathlib.Path) -> None:
     """Give identical durable payloads distinct identities without timestamp ordering."""
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
-    sink.emit("loop.note", text="same")
-    sink.emit("loop.note", text="same")
+    sink.emit(journal.LoopNote(text="same"))
+    sink.emit(journal.LoopNote(text="same"))
     rows = _read_lines(sink.path)
     assert all(row.get("event_id") for row in rows)
     assert rows[0]["event_id"] != rows[1]["event_id"]
@@ -100,7 +102,9 @@ def test_emit_reprs_non_serializable_fields(tmp_path: pathlib.Path) -> None:
     bad = Bad()
     bad.self_ref = bad  # type: ignore[attr-defined]
     sink.emit(
-        "tool.call", name="example", args={"x": 1, "p": tmp_path / "a", "weird": bad}, call_id=1
+        journal.ToolCall(
+            name="example", args={"x": 1, "p": tmp_path / "a", "weird": bad}, call_id=1
+        )
     )
     lines = _read_lines(tmp_path / "logs.jsonl")
     assert len(lines) == 1
@@ -129,14 +133,15 @@ def test_durable_emit_raises_on_unwritable_journal(tmp_path: pathlib.Path) -> No
     sink.subscribe(seen.append)
     with pytest.raises(event_log.EventWriteError, match="unwritable"):
         sink.emit(
-            "session.stop",
-            execution_id="execution",
-            reason="finish_session",
-            turns=1,
-            verification="passed",
+            journal.SessionStop(
+                execution_id="execution",
+                reason="finish_session",
+                turns=1,
+                verification="passed",
+            )
         )
     assert seen == []
-    sink.emit("role.text_delta", role="worker", text="still live")  # ephemeral: must not raise
+    sink.emit(journal.RoleTextDelta(role="worker", text="still live"))  # ephemeral: must not raise
     assert [e["type"] for e in seen] == ["role.text_delta"]
 
 
@@ -156,11 +161,11 @@ def test_delta_events_flush_but_do_not_fsync(
     monkeypatch.setattr(os, "fsync", _fake_fsync)
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
 
-    sink.emit("role.thinking_delta", role="worker", text="reasoning")
-    sink.emit("role.text_delta", role="worker", text="answer")
+    sink.emit(journal.RoleThinkingDelta(role="worker", text="reasoning"))
+    sink.emit(journal.RoleTextDelta(role="worker", text="answer"))
     assert synced == []  # no fsync for the deltas
 
-    sink.emit("tool.call", name="read_file", args={}, call_id=1)
+    sink.emit(journal.ToolCall(name="read_file", args={}, call_id=1))
     assert len(synced) == 1  # a durable event fsyncs
 
     # all three are on disk regardless (flush, not fsync, makes them readable)
@@ -179,8 +184,8 @@ def test_emit_survives_lone_surrogate(tmp_path: pathlib.Path) -> None:
     import json
 
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
-    sink.emit("loop.note", text="caf\udce9")
-    sink.emit("tool.call", name="finish_session", args={"summary": "done \ud83d"}, call_id=1)
+    sink.emit(journal.LoopNote(text="caf\udce9"))
+    sink.emit(journal.ToolCall(name="finish_session", args={"summary": "done \ud83d"}, call_id=1))
     lines = [
         json.loads(line)
         for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines()
@@ -222,7 +227,7 @@ def test_the_log_dir_is_created_once_not_per_event(
 
     monkeypatch.setattr(agent6_paths, "mkdir_for_real_user", counting)
     sink = event_log.EventSink(tmp_path / "run" / "logs.jsonl")
-    sink.emit("loop.note", text="ready")
-    sink.emit("loop.tool.call", name="read_file", turn=1)
+    sink.emit(journal.LoopNote(text="ready"))
+    sink.emit(journal.LoopToolCall(name="read_file", turn=1))
     assert calls == [tmp_path / "run"]
     assert (tmp_path / "run" / "logs.jsonl").read_text(encoding="utf-8").count("\n") == 2

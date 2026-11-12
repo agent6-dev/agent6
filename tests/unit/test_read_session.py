@@ -11,6 +11,7 @@ from collections.abc import Callable
 
 import pytest
 
+from agent6.sessions import journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import schema, sessions
 
@@ -257,7 +258,9 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
     )
     events = event_log.EventSink(d / "logs.jsonl")
     events.emit(
-        "session.start", user_task="how do I convert h264", mode="ask", execution_id="execution"
+        journal.SessionStart(
+            user_task="how do I convert h264", mode="ask", execution_id="execution"
+        )
     )
     inner = mock.MagicMock()
     inner.call.return_value = types.SimpleNamespace(

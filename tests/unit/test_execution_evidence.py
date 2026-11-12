@@ -13,7 +13,7 @@ from agent6.app import session_runtime, stamps
 from agent6.config import Config, RoleModel
 from agent6.harness import loop, run_chain
 from agent6.sandbox import jail, jail_session
-from agent6.sessions import event_log, layout, manifest
+from agent6.sessions import event_log, journal, layout, manifest
 from agent6.tools import operator_prompts
 from agent6.ui.cli import run as cli_run
 from agent6.ui.cli import sessions_show
@@ -434,9 +434,11 @@ def test_lifecycle_replay_preserves_optional_identities(
 ) -> None:
     """Omitted lifecycle identities stay unknown without discarding valid observations."""
     events = event_log.EventSink(recorded.logs_path)
-    events.emit("execution.jobs", outcome="settled", reason="", **identities)
+    events.emit(journal.ExecutionJobs(outcome="settled", reason="", **identities))
     events.emit(
-        "execution.environment", outcome="left_running", reason="ownership unproved", **identities
+        journal.ExecutionEnvironment(
+            outcome="left_running", reason="ownership unproved", **identities
+        )
     )
     view = receipt.read_receipt(recorded.session_dir, pathlib.Path.cwd())
     assert not view.evidence_notes
@@ -457,7 +459,7 @@ def test_target_replay_preserves_omitted_execution_identity(recorded: layout.Ses
         if (row := json.loads(line))["type"] == "execution.target"
     )
     event_log.EventSink(recorded.logs_path).emit(
-        "execution.target", target_id="unbound", target=target
+        journal.ExecutionTarget(target_id="unbound", target=target)
     )
     view = receipt.read_receipt(recorded.session_dir, pathlib.Path.cwd())
     assert not view.evidence_notes
@@ -490,13 +492,16 @@ def test_receipt_replays_without_environment_probes(
 def test_separate_job_and_environment_observations_replay(saved: layout.SessionLayout) -> None:
     """Settled jobs do not imply that an attached environment stopped."""
     events = event_log.EventSink(saved.logs_path)
-    events.emit("execution.jobs", execution_id="e", target_id="t", outcome="settled", reason="")
     events.emit(
-        "execution.environment",
-        execution_id="e",
-        target_id="t",
-        outcome="left_running",
-        reason="ownership unproved; run stop by hand",
+        journal.ExecutionJobs(execution_id="e", target_id="t", outcome="settled", reason="")
+    )
+    events.emit(
+        journal.ExecutionEnvironment(
+            execution_id="e",
+            target_id="t",
+            outcome="left_running",
+            reason="ownership unproved; run stop by hand",
+        )
     )
     text = receipt.render(receipt.read_receipt(saved.session_dir, pathlib.Path.cwd()))
     assert "Run jobs settled" in text

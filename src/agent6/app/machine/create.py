@@ -25,7 +25,7 @@ from agent6.machine import (
     build_authoring_prompt,
     dry_run,
 )
-from agent6.sessions import event_log, id, layout, lock, process
+from agent6.sessions import event_log, id, journal, layout, lock, process
 from agent6.vcs import git_ops, git_read
 
 _CREATE_TIMEOUT_S = 900.0
@@ -205,7 +205,9 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     events = event_log.EventSink(events_log)
     # A terminal draft has its own session.stop, which the status reads first: no clearing.
     process.emit_session_start(
-        events, scratch, "session.start", execution_id=execution_id, user_task=task, mode="machine"
+        events,
+        scratch,
+        journal.SessionStart(execution_id=execution_id, user_task=task, mode="machine"),
     )
     reporter.err(
         f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})"
@@ -218,11 +220,12 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     except (OSError, errors.GitError) as exc:
         reporter.error(f"could not prepare the drafting workspace {workspace}: {exc}")
         events.emit(
-            "session.stop",
-            execution_id=execution_id,
-            reason="workspace_failed",
-            turns=0,
-            verification="unverified",
+            journal.SessionStop(
+                execution_id=execution_id,
+                reason="workspace_failed",
+                turns=0,
+                verification="unverified",
+            )
         )
         return 1
     # The complete effective config as the overlay: omitting values equal to built-in defaults
@@ -244,11 +247,12 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     except errors.GitError as exc:
         reporter.error(str(exc))
         events.emit(
-            "session.stop",
-            execution_id=execution_id,
-            reason="no_git_identity",
-            turns=0,
-            verification="unverified",
+            journal.SessionStop(
+                execution_id=execution_id,
+                reason="no_git_identity",
+                turns=0,
+                verification="unverified",
+            )
         )
         return 2
     runner = agent.build_machine_agent_runner(
@@ -290,7 +294,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         attempt = next_attempt
         prompt = build_authoring_prompt(task, attempt=attempt, diagnostics=diagnostics)
         reporter.err(f"machine create: attempt {attempt}/{max_attempts}...")
-        events.emit("loop.note", text=f"attempt {attempt}/{max_attempts}")
+        events.emit(journal.LoopNote(text=f"attempt {attempt}/{max_attempts}"))
         # effort="off": authoring transcribes a described design. Measured on kimi-k2.6: "low"
         # timed out on 3 of 3 attempts in 30-minute thinks; "off" drafted in 2.5 minutes for $0.02.
         remaining = None if create_cap is None else max(create_cap - total_usd, 0.0)
@@ -340,7 +344,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
                 reporter.err(f"[agent6] WARNING: {warning}")
             # Lint, type-check, offline-test and dry-run; a failure is the next attempt's input.
             reporter.err("machine create: linting + offline-testing scripts...")
-            events.emit("loop.note", text="linting + offline-testing the draft")
+            events.emit(journal.LoopNote(text="linting + offline-testing the draft"))
             problems = scriptcheck.lint_and_typecheck(
                 workspace / "scripts",
                 fix=True,
@@ -379,20 +383,22 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     )
     # Each attempt's subprocess logs its own budget.update; the fold's last one must be the total.
     events.emit(
-        "budget.update",
-        usd_total=total_usd,
-        input_total=total_in,
-        output_total=total_out,
-        plan_consumed=total_plan,
+        journal.BudgetUpdate(
+            usd_total=total_usd,
+            input_total=total_in,
+            output_total=total_out,
+            plan_consumed=total_plan,
+        )
     )
     # session.stop reasons are tokens: the listing prints one beside "failed". turns = attempts.
     if spec is None or valid_path is None:
         events.emit(
-            "session.stop",
-            execution_id=execution_id,
-            reason="no_valid_machine",
-            turns=attempt,
-            verification="unverified",
+            journal.SessionStop(
+                execution_id=execution_id,
+                reason="no_valid_machine",
+                turns=attempt,
+                verification="unverified",
+            )
         )
         reporter.err(f"FAILED: no valid machine after {attempt} attempt(s).")
         if diagnostics:
@@ -413,11 +419,12 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     # The default path clobbers nothing, scripts included; `-o` replaces existing targets.
     if output is None and existing:
         events.emit(
-            "session.stop",
-            execution_id=execution_id,
-            reason="output_collision",
-            turns=attempt,
-            verification="unverified",
+            journal.SessionStop(
+                execution_id=execution_id,
+                reason="output_collision",
+                turns=attempt,
+                verification="unverified",
+            )
         )
         reporter.err("REFUSING to overwrite existing file(s):")
         for clash in existing:
@@ -432,11 +439,12 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         portable.atomic_write(target, payload)
     except OSError as exc:
         events.emit(
-            "session.stop",
-            execution_id=execution_id,
-            reason="write_failed",
-            turns=attempt,
-            verification="unverified",
+            journal.SessionStop(
+                execution_id=execution_id,
+                reason="write_failed",
+                turns=attempt,
+                verification="unverified",
+            )
         )
         reporter.err(f"FAILED: could not write the bundle to {target.parent}: {exc}")
         reporter.err(f"The validated bundle is in {workspace}; it is also on stdout.")
@@ -446,22 +454,24 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     out_problems = bundle.validate_bundle(spec, target)
     if out_problems:
         events.emit(
-            "session.stop",
-            execution_id=execution_id,
-            reason="bundle_invalid",
-            turns=attempt,
-            verification="unverified",
+            journal.SessionStop(
+                execution_id=execution_id,
+                reason="bundle_invalid",
+                turns=attempt,
+                verification="unverified",
+            )
         )
         reporter.err(f"FAILED: the bundle written to {target.parent} does not validate:")
         for problem in out_problems:
             reporter.err(f"  - {problem}")
         return 1
     events.emit(
-        "session.stop",
-        execution_id=execution_id,
-        reason="machine_created",
-        turns=attempt,
-        verification="passed",
+        journal.SessionStop(
+            execution_id=execution_id,
+            reason="machine_created",
+            turns=attempt,
+            verification="passed",
+        )
     )
     scripts_note = f" + {len(valid_scripts)} script(s)" if valid_scripts else ""
     replaced_note = (

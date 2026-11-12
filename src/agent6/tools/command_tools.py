@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from agent6 import kinds
 from agent6.sandbox import jail, jail_session
+from agent6.sessions import journal
 from agent6.tools import background, policy, result_format, results, schema, tool_errors
 
 
@@ -174,7 +175,11 @@ def run_model_command(
         if view.detail:
             raise tool_errors.ToolError(f"operator's stop could not end the command: {view.detail}")
     else:
-        emit("command.backgrounded", id=view.id, handle=outcome.handle, seconds=outcome.duration_s)
+        emit(
+            journal.CommandBackgrounded(
+                id=view.id, handle=outcome.handle, seconds=outcome.duration_s
+            )
+        )
     return results.ExecResult(
         returncode=view.returncode if stopped_by_operator else None,
         stdout=result_format.clip_tail(outcome.stdout),

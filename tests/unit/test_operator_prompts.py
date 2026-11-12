@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 
 from agent6.config import Config
-from agent6.sessions import event_log, ipc
+from agent6.sessions import event_log, ipc, journal
 from agent6.tools import dispatch, operator_prompts, schema, tool_errors
 
 _SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "agent6"
@@ -237,11 +237,11 @@ def test_every_prompt_event_has_exactly_one_emitter() -> None:
     The prompt and answer pairs are journaled in one place; a front-end that journals its own copy
     drifts (its own counter, its own idea of the gated call).
     """
-    emits = re.compile(r'(?:emit|journal)\(\s*"(approval|question)\.(prompt|answer)"')
+    emits = re.compile(r"journal\.(Approval|Question)(Prompt|Answer)\(")
     sites: dict[str, set[str]] = {}
     for path in _SRC.rglob("*.py"):
         for match in emits.finditer(path.read_text(encoding="utf-8")):
-            event = f"{match.group(1)}.{match.group(2)}"
+            event = f"{match.group(1).lower()}.{match.group(2).lower()}"
             sites.setdefault(event, set()).add(str(path.relative_to(_SRC)))
     assert sites == {
         "approval.prompt": {"tools/operator_prompts.py"},
@@ -383,9 +383,9 @@ def test_a_late_answer_is_journaled_before_its_file_goes(tmp_path: pathlib.Path)
     session_dir.mkdir()
     calls: list[str] = []
 
-    def failing(event_type: str, /, **fields: Any) -> None:
-        calls.append(event_type)
-        if event_type == "question.answer":
+    def failing(event: journal.Event, /) -> None:
+        calls.append(event.TYPE)
+        if event.TYPE == "question.answer":
             raise OSError("disk full")
 
     prompts = operator_prompts.OperatorPrompts(journal=failing, session_dir=session_dir)

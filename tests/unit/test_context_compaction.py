@@ -775,7 +775,9 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
         chain=run_chain.RunChain(tmp_path),
         config=cfg,
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=lambda _m: None,
         compaction=compaction_window.CompactionSettings(
             drop_at_chars=1500,
@@ -920,7 +922,9 @@ def test_a_refused_checkoff_id_does_not_drop_the_rest(tmp_path: pathlib.Path) ->
         chain=run_chain.RunChain(tmp_path),
         config=Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=lambda _m: None,
         mode="run",
         curator=curator,

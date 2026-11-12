@@ -13,8 +13,8 @@ import pytest
 
 from agent6 import paths
 from agent6.app import merge, role_providers
+from agent6.sessions import journal, process
 from agent6.sessions import layout as sessions_layout
-from agent6.sessions import process
 from agent6.ui.cli import main
 from agent6.vcs import git_ops, git_read
 
@@ -1356,8 +1356,8 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
         def __init__(self) -> None:
             self.types: list[str] = []
 
-        def emit(self, event_type: str, **_f: Any) -> None:
-            self.types.append(event_type)
+        def emit(self, event: journal.Event) -> None:
+            self.types.append(event.TYPE)
 
     def _no_files(*_a: Any) -> list[tuple[str, str]]:
         return []

@@ -23,6 +23,7 @@ from agent6.harness import (
     verify_scope,
     verify_verdict,
 )
+from agent6.sessions import journal
 from agent6.tools import dispatch, results, tool_errors, verify_infer
 from agent6.vcs import git_read
 
@@ -265,7 +266,7 @@ class VerifyGate:
                     )
                     shown = " ".join(map(terminal.printable_name, paths))
                     self.log(f"  verify flipped green over test-only edits: {shown}")
-                    self.emit("loop.test_only_green.notice", turn=turn.number, paths=list(paths))
+                    self.emit(journal.LoopTestOnlyGreenNotice(turn=turn.number, paths=list(paths)))
             turn.edit_since_verify_pass = False
         else:
             turn.verify_just_failed = True
@@ -283,10 +284,11 @@ class VerifyGate:
                 self.dispatcher.drop_verify_command()
                 self.log(f"LOOP: verify un-adopted ({why}): {cmd}")
                 self.emit(
-                    "loop.verify_inferred",
-                    command=[],
-                    source="unadopted",
-                    adopted_at=turn.number,
+                    journal.LoopVerifyInferred(
+                        command=[],
+                        source="unadopted",
+                        adopted_at=turn.number,
+                    )
                 )
                 turn.tool_results.append(
                     loop_conversation.Notice(
@@ -300,12 +302,14 @@ class VerifyGate:
             ):
                 verdict.broken_warned = True
                 turn.tool_results.append(loop_conversation.Notice(nudges.VERIFY_BROKEN_NUDGE))
-                self.emit("loop.verify_broken.nudge", turn=turn.number)
+                self.emit(journal.LoopVerifyBrokenNudge(turn=turn.number))
         judged_base = self.judged_the_base_commit(verdict, result)
         if judged_base and verdict.baseline_ok is None:
             verdict.baseline_ok = rc == 0
             self.emit(
-                "loop.baseline", ok=rc == 0, turn=turn.number, verify_id=verdict.final_verify_id
+                journal.LoopBaseline(
+                    ok=rc == 0, turn=turn.number, verify_id=verdict.final_verify_id
+                )
             )
             if rc != 0:
                 turn.tool_results.append(loop_conversation.Notice(nudges.BASELINE_RED_NOTICE))
@@ -374,10 +378,11 @@ class VerifyGate:
         cmd = " ".join(inferred.argv)
         self.log(f"LOOP: verify adopted from {inferred.label}: {cmd}")
         self.emit(
-            "loop.verify_inferred",
-            command=list(inferred.argv),
-            source=inferred.source,
-            adopted_at=turn.number,
+            journal.LoopVerifyInferred(
+                command=list(inferred.argv),
+                source=inferred.source,
+                adopted_at=turn.number,
+            )
         )
         turn.tool_results.append(
             loop_conversation.Notice(
@@ -432,7 +437,7 @@ class VerifyGate:
         if not (runs and self.present(verdict)):
             return []
         self.log("LOOP: harness verify (start)")
-        self.emit("loop.verify_harness", why="start", turn=0)
+        self.emit(journal.LoopVerifyHarness(why="start", turn=0))
         try:
             result = self.dispatcher.run_verify()
         except tool_errors.ToolDeniedError as exc:
@@ -454,7 +459,7 @@ class VerifyGate:
         judged = self.judged_the_base_commit(verdict, result)
         if judged:
             verdict.note_baseline(ok=ok)
-            self.emit("loop.baseline", ok=ok, turn=0, verify_id=verdict.final_verify_id)
+            self.emit(journal.LoopBaseline(ok=ok, turn=0, verify_id=verdict.final_verify_id))
             self.log(f"LOOP: gate {word} before the run")
             verdict.last_tail = f"{result.stdout}\n{result.stderr}".strip()[-2000:]
             if not ok:
@@ -493,7 +498,7 @@ class VerifyGate:
         if why is None:
             return
         self.log(f"LOOP: harness verify ({why}) at turn {turn.number}")
-        self.emit("loop.verify_harness", why=why, turn=turn.number)
+        self.emit(journal.LoopVerifyHarness(why=why, turn=turn.number))
         try:
             scope = self.scope_paths(state.verify) if state.verify.scoped else ()
             result = self.dispatcher.run_verify(extra_argv=scope)
@@ -560,7 +565,7 @@ class VerifyGate:
             return None
         state.verify.scoped = True
         self.log(f"LOOP: verify overran; gate scoped to {len(scope)} test files")
-        self.emit("loop.verify_scoped", paths=list(scope), turn=turn.number)
+        self.emit(journal.LoopVerifyScoped(paths=list(scope), turn=turn.number))
         try:
             result = self.dispatcher.run_verify(extra_argv=scope)
             state.stagnation.harness_gate_s += result.duration_s

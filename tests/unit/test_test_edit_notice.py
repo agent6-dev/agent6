@@ -16,6 +16,7 @@ from unittest import mock
 
 from agent6.config import Config
 from agent6.harness import loop, loop_conversation, loop_state, nudges, run_chain, tool_effects
+from agent6.sessions import journal
 from agent6.tools import results
 
 NOTICE_HEAD = "[harness verify] The gate was red at the last verify and green at this one;"
@@ -63,14 +64,16 @@ def _wf(root: pathlib.Path) -> tuple[loop.Harness, Emitted]:
         chain=run_chain.RunChain(root),
         config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=lambda _m: None,
         mode="run",
     )
     emitted: Emitted = []
 
-    def _capture(event_type: str, **fields: Any) -> None:
-        emitted.append((event_type, fields))
+    def _capture(event: journal.Event) -> None:
+        emitted.append((event.TYPE, event.model_dump(exclude_unset=True)))
 
     wf.events = mock.MagicMock(emit=_capture)
     return wf, emitted

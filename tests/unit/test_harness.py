@@ -44,7 +44,7 @@ from agent6.harness import (
 )
 from agent6.providers import ProviderError, ProviderResponse
 from agent6.sandbox import tool_paths
-from agent6.sessions import event_log, ipc, process
+from agent6.sessions import event_log, ipc, journal, process
 from agent6.tools import mcp_client, operator_prompts
 from agent6.tools import results as tools_results
 from agent6.tools import schema as tools_schema
@@ -173,7 +173,11 @@ def _wf(
             ),
         ),
         "provider": mock.MagicMock(),
-        "dispatcher": mock.MagicMock(last_verification=None, verify_withheld=False),
+        "dispatcher": mock.MagicMock(
+            last_verification=None,
+            execution_id="execution",
+            verify_withheld=False,
+        ),
         "logger": _silent,
         "call": provider_call.CallSettings(retry_delay_s=0.01),  # keep tests fast
     }
@@ -263,8 +267,10 @@ class _EventCapture:
         self.events: list[dict[str, Any]] = []
         self.path = path
 
-    def emit(self, event_type: str, /, **fields: Any) -> None:
-        self.events.append({"type": event_type, **fields})
+    def emit(self, event: journal.Event) -> None:
+        self.events.append(
+            {"type": event.TYPE, **event.model_dump(mode="json", exclude_unset=True)}
+        )
 
 
 def _cfg_with_verify() -> Any:
@@ -1217,7 +1223,9 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: pathlib.Pa
         root=tmp_path,
         config=config,
         provider=ProviderStub(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=logs.append,
         max_turns=3,
     )
@@ -1275,7 +1283,9 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: pathlib.Path)
         root=tmp_path,
         config=config,
         provider=provider,
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         max_turns=3,
         call=provider_call.CallSettings(retry_count=3, retry_delay_s=0.01),
     )
@@ -1305,7 +1315,9 @@ def test_exhausted_provider_retries_keep_the_attempt_count_and_reason(
     wf = _wf(
         root=tmp_path,
         provider=provider,
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=logs.append,
         call=provider_call.CallSettings(retry_count=2, retry_delay_s=0),
     )
@@ -1338,7 +1350,9 @@ def test_the_first_model_call_carries_the_red_start_gate(
     )
     provider = mock.MagicMock()
     provider.call.side_effect = ProviderError("down")
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = tools_results.ExecResult(
         returncode=1, stdout="FAILED test_x", stderr="", duration_s=5.0, exec_failed=False
@@ -1379,7 +1393,9 @@ def test_a_call_the_providers_front_end_refused_is_an_error_result_not_a_dispatc
         refused={"t1": "InputValidationError: bad input"},
     )
     provider.call.side_effect = [refused, _resp("done")]
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     logs: list[str] = []
     wf = _wf(
         root=tmp_path,
@@ -1561,7 +1577,9 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: pathlib.Path) -> 
         root=tmp_path,
         config=config,
         provider=ProviderStub(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         max_turns=5,
     )
     snapshot = _resume_snapshot(
@@ -2593,8 +2611,8 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
     class _Events:
         path = tmp_path / "logs.jsonl"
 
-        def emit(self, event_type: str, /, **fields: Any) -> None:
-            events.append({"type": event_type, **fields})
+        def emit(self, event: journal.Event) -> None:
+            events.append({"type": event.TYPE, **event.model_dump(mode="json", exclude_unset=True)})
 
     wf = _wf(
         root=tmp_path,
@@ -4049,8 +4067,8 @@ def test_graph_update_snapshot_payload_is_wire_stable(tmp_path: pathlib.Path) ->
     captured: list[tuple[str, dict[str, Any]]] = []
 
     class _Events:
-        def emit(self, event_type: str, /, **fields: Any) -> None:
-            captured.append((event_type, fields))
+        def emit(self, event: journal.Event) -> None:
+            captured.append((event.TYPE, event.model_dump(mode="json", exclude_unset=True)))
 
     wf = _wf(curator=cur, events=_Events())
     wf._emit_graph_snapshot()  # pyright: ignore[reportPrivateUsage]
@@ -4997,7 +5015,9 @@ def test_resume_migrates_the_legacy_rulings_file_as_a_run_start_does(
     )
     provider = mock.MagicMock()
     provider.call.return_value = _resp("all done")
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.set_run_root_node_id = mock.MagicMock()
     wf = _wf(
         provider=provider, dispatcher=dispatcher, resume_state_path=snap_path, state_dir=state_dir
@@ -5027,7 +5047,9 @@ def test_a_commands_disabled_resume_keeps_the_withheld_gate_correction_pending(
     )
     provider = mock.MagicMock()
     provider.call.return_value = _resp("all done")
-    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", operator_wait_s=0.0
+    )
     dispatcher.set_run_root_node_id = mock.MagicMock()
     dispatcher.command_policy.return_value = "deny"
     wf = _wf(provider=provider, dispatcher=dispatcher, resume_state_path=snap_path)
@@ -5058,7 +5080,9 @@ def test_resume_drives_loop_from_snapshot(tmp_path: pathlib.Path, steer: str) ->
     provider = mock.MagicMock()
     provider.call.return_value = _resp("all done")  # no tool_uses -> silent_finish
 
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.set_run_root_node_id = mock.MagicMock()
 
     wf = _wf(
@@ -5094,7 +5118,9 @@ def test_resume_restores_root_task_id_on_dispatcher(tmp_path: pathlib.Path) -> N
     )
     provider = mock.MagicMock()
     provider.call.return_value = _resp("done")
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     wf = _wf(provider=provider, dispatcher=dispatcher, resume_state_path=snap_path)
     wf.resume()
     dispatcher.set_run_root_node_id.assert_called_once_with("task-xyz")
@@ -5126,7 +5152,9 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: pathlib.Pat
     # First "process": crash on the first LLM call.
     crashing_provider = mock.MagicMock()
     crashing_provider.call.side_effect = ProviderError("simulated network drop / SIGKILL window")
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.set_run_root_node_id = mock.MagicMock()
     wf1 = _wf(
         root=repo,
@@ -5968,7 +5996,9 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: pathlib.
         config=config,
         mode="run",
         provider=provider,
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         max_turns=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
@@ -6468,7 +6498,9 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: pathlib.Path) -> None:
         root=tmp_path,
         config=mock.MagicMock(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
     )
     st = _state()
     turn = _turn(number=1)
@@ -6514,7 +6546,9 @@ def test_note_verify_result_does_not_flag_real_failure(tmp_path: pathlib.Path) -
         root=tmp_path,
         config=mock.MagicMock(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
     )
     st = _state()
     turn = _turn(number=1)
@@ -6554,7 +6588,9 @@ def test_a_test_module_import_error_is_not_a_dead_verify(
         root=tmp_path,
         config=mock.MagicMock(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
     )
     st = _state()
     turn = _turn(number=1)
@@ -6690,8 +6726,8 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
     class _Events:
         path = tmp_path / "logs.jsonl"
 
-        def emit(self, event_type: str, /, **fields: Any) -> None:
-            events.append({"type": event_type, **fields})
+        def emit(self, event: journal.Event) -> None:
+            events.append({"type": event.TYPE, **event.model_dump(mode="json", exclude_unset=True)})
 
     wf = _wf(
         root=tmp_path,
@@ -6761,8 +6797,8 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -
     class _Events:
         path = tmp_path / "logs.jsonl"
 
-        def emit(self, event_type: str, /, **fields: Any) -> None:
-            events.append({"type": event_type, **fields})
+        def emit(self, event: journal.Event) -> None:
+            events.append({"type": event.TYPE, **event.model_dump(mode="json", exclude_unset=True)})
 
     def _stop_hook(_i: int, _sha: str) -> Literal["continue", "stop"]:
         return "stop"
@@ -6835,8 +6871,8 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> 
     class _Events:
         path = tmp_path / "logs.jsonl"
 
-        def emit(self, event_type: str, /, **fields: Any) -> None:
-            events.append({"type": event_type, **fields})
+        def emit(self, event: journal.Event) -> None:
+            events.append({"type": event.TYPE, **event.model_dump(mode="json", exclude_unset=True)})
 
     def _exit_hook(_i: int, _sha: str) -> Literal["continue", "exit"]:
         return "exit"
@@ -6909,8 +6945,8 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
     class _Events:
         path = tmp_path / "logs.jsonl"
 
-        def emit(self, event_type: str, /, **fields: Any) -> None:
-            events.append({"type": event_type, **fields})
+        def emit(self, event: journal.Event) -> None:
+            events.append({"type": event.TYPE, **event.model_dump(mode="json", exclude_unset=True)})
 
     def _undo_hook(_i: int, _sha: str) -> Literal["continue", "stop", "undo"]:
         return "undo"
@@ -7135,8 +7171,8 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: pathlib
     class _Events:
         path = tmp_path / "logs.jsonl"
 
-        def emit(self, event_type: str, /, **fields: Any) -> None:
-            events.append({"type": event_type, **fields})
+        def emit(self, event: journal.Event) -> None:
+            events.append({"type": event.TYPE, **event.model_dump(mode="json", exclude_unset=True)})
 
     config = types.SimpleNamespace(
         sandbox=types.SimpleNamespace(hide_paths=()),
@@ -7200,8 +7236,8 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: pathlib.P
     class _Events:
         path = tmp_path / "logs.jsonl"
 
-        def emit(self, event_type: str, /, **fields: Any) -> None:
-            events.append({"type": event_type, **fields})
+        def emit(self, event: journal.Event) -> None:
+            events.append({"type": event.TYPE, **event.model_dump(mode="json", exclude_unset=True)})
 
     config = types.SimpleNamespace(
         sandbox=types.SimpleNamespace(hide_paths=()),
@@ -7257,7 +7293,9 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
     """A finish tool the dispatcher refused is not captured as a finish signal."""
     from agent6.tools import tool_errors
 
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.side_effect = tool_errors.ToolError(
         "finish_planning is not available in run mode"
     )
@@ -7283,7 +7321,9 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
 
 def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
     """A dispatched finish_session does not advance ok_tool_calls, so standing_patience engages."""
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = tools_results.FinishSessionResult(
         summary_text="done", result=None
     )
@@ -7359,7 +7399,9 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None
         root=tmp_path,
         config=config,
         provider=ProviderStub(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         max_turns=5,
         bridge=operator_bridge.OperatorBridge(
             stop_requested=lambda: True,
@@ -7474,7 +7516,9 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
     state.verify.last_ok = False  # red tree: verification must stay False
     state.verify.edited_since = True
     events: list[dict[str, Any]] = []
-    wf.emit = lambda event_type, **fields: events.append({"type": event_type, **fields})
+    wf.emit = lambda event: events.append(  # pyright: ignore[reportAttributeAccessIssue]
+        {"type": event.TYPE, **event.model_dump(mode="json", exclude_unset=True)}
+    )
 
     wf.finish(
         state,
@@ -7669,6 +7713,7 @@ def test_standing_default_never_self_quits_and_escalates() -> None:
     """
     curator = mock.MagicMock()
     curator.nodes.return_value = _standing_nodes()
+    curator.cursor.return_value = None
     wf = _wf(mode="run", curator=curator, budget=None)
     conv = loop_conversation.Conversation()
     state = _state(ever_edited=True, verify=verify_verdict.VerifyVerdict(ever_passed=True))
@@ -7704,6 +7749,7 @@ def test_standing_patience_bounds_fruitless_reentries() -> None:
     """standing_patience = N absorbs N fruitless rounds then honours the end; 0 gives up first."""
     curator = mock.MagicMock()
     curator.nodes.return_value = _standing_nodes()
+    curator.cursor.return_value = None
     wf = _wf(mode="run", curator=curator, budget=None)
     wf.config.harness.standing_patience = 1
     conv = loop_conversation.Conversation()
@@ -7735,6 +7781,7 @@ def test_standing_patience_bounds_fruitless_reentries() -> None:
 def test_standing_task_gates_finish_session_and_soft_stops() -> None:
     curator = mock.MagicMock()
     curator.nodes.return_value = _standing_nodes()
+    curator.cursor.return_value = None
     wf = _wf(mode="run", curator=curator, budget=None)
     state = _state()
     turn = _turn(number=2)
@@ -7765,6 +7812,7 @@ def test_standing_absorb_refuses_without_a_ready_standing_task() -> None:
 def test_standing_goal_seeds_a_standing_child_under_the_root() -> None:
     """`run --standing` reaches the graph as one standing child under the root, as steering."""
     curator = mock.MagicMock()
+    curator.cursor.return_value = None
     root = _tn("a")
     curator.add_subtask.side_effect = [root, _tn("b", parent_id="a", standing=True)]
     curator.nodes.return_value = _typed({"a": {}})
@@ -7795,8 +7843,8 @@ def test_session_start_carries_the_operators_words_under_a_seed() -> None:
     class _Events:
         path = pathlib.Path("/tmp/x/logs.jsonl")
 
-        def emit(self, event_type: str, /, **fields: Any) -> None:
-            events.append({"type": event_type, **fields})
+        def emit(self, event: journal.Event) -> None:
+            events.append({"type": event.TYPE, **event.model_dump(mode="json", exclude_unset=True)})
 
     provider = mock.MagicMock()
     provider.call.return_value = _resp("done")
@@ -7867,6 +7915,7 @@ def test_non_interactive_quiet_turn_still_ends_and_standing_outranks_the_park() 
     # A standing goal outranks the park: the absorb nudge continues the run.
     curator = mock.MagicMock()
     curator.nodes.return_value = _standing_nodes()
+    curator.cursor.return_value = None
     wf2 = _wf(mode="run", interactive=True, curator=curator, budget=None)
     conv = loop_conversation.Conversation()
     out = quiet_turns.handle_silent_finish(
@@ -7923,8 +7972,8 @@ def test_auto_commit_with_nothing_changed_emits_no_event(tmp_path: pathlib.Path)
     events: list[dict[str, Any]] = []
     wf = _wf(root=tmp_path, mode="run", per_turn=True)
 
-    def _capture(_type: str, **f: Any) -> None:
-        events.append({"type": _type, **f})
+    def _capture(event: journal.Event) -> None:
+        events.append({"type": event.TYPE, **event.model_dump(exclude_unset=True)})
 
     wf.events = mock.MagicMock()
     wf.events.emit = _capture  # type: ignore[method-assign]
@@ -7942,8 +7991,8 @@ def test_auto_commit_failure_surface_tells_the_truth(tmp_path: pathlib.Path) -> 
     events: list[dict[str, Any]] = []
     wf = _wf(root=tmp_path, mode="run", per_turn=True)
 
-    def _capture(_type: str, **f: Any) -> None:
-        events.append({"type": _type, **f})
+    def _capture(event: journal.Event) -> None:
+        events.append({"type": event.TYPE, **event.model_dump(exclude_unset=True)})
 
     wf.events = mock.MagicMock()
     wf.events.emit = _capture  # type: ignore[method-assign]
@@ -8358,10 +8407,12 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: pathlib.Path) -
     argv = ("python3", "-m", "pytest", "-q")
     events: list[dict[str, Any]] = []
 
-    def emit(kind: str, **kw: Any) -> None:
-        events.append({"type": kind, **kw})
+    def emit(event: journal.Event) -> None:
+        events.append({"type": event.TYPE, **event.model_dump(exclude_unset=True)})
 
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     wf = _wf(
         root=tmp_path,
         config=Config(),  # gateless: the argv below is the adopted one, not a configured gate
@@ -8401,7 +8452,9 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: pathlib.Path) -
         root=tmp_path,
         config=Config().with_verify_command(argv),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
     )
     st2 = _state()
     turn2 = _turn(number=2)
@@ -8435,7 +8488,9 @@ def test_operator_answers_become_recorded_rulings(tmp_path: pathlib.Path) -> Non
         root=tmp_path,
         state_dir=state_dir,
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         events=events,
         bridge=operator_bridge.OperatorBridge(
             steer_requested=lambda: True,
@@ -8489,7 +8544,9 @@ def test_a_skill_command_steer_expands_in_the_loop(tmp_path: pathlib.Path) -> No
         name="caveman", description="Use when grunting.", dir=tmp_path, text="GRUNT"
     )
     prompts = iter(["/caveman lite", "/nosuch thing"])
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.resolved_skills.return_value = skills.ResolvedSkills(
         enabled=(skill,), always=(), warnings=("one skill dir is unreadable",)
     )
@@ -8595,7 +8652,9 @@ def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: path
     repo = tmp_path / "repo"
     base = _metric_repo(repo)
     dispatched: list[str] = []
-    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", operator_wait_s=0.0
+    )
 
     def dispatch(name: str, _args: dict[str, Any]) -> tools_results.MetricResult:
         dispatched.append(name)
@@ -8629,7 +8688,9 @@ def test_three_real_improvements_do_not_read_as_a_plateau(tmp_path: pathlib.Path
     repo = tmp_path / "repo"
     base = _metric_repo(repo)
     score = {"v": 41.0}
-    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", operator_wait_s=0.0
+    )
 
     def dispatch(_name: str, _args: dict[str, Any]) -> tools_results.MetricResult:
         return _metric_result(score["v"])
@@ -8696,7 +8757,9 @@ def test_the_settled_stop_still_fires_without_per_turn_commits(
                 {"harness": {"verify_command": ["true"] if gated else []}}
             ),
             provider=mock.MagicMock(),
-            dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+            dispatcher=mock.MagicMock(
+                last_verification=None, execution_id="execution", verify_withheld=False
+            ),
             logger=_silent,
             mode="run",
         )
@@ -8725,7 +8788,9 @@ def _ruling_wf(tmp_path: pathlib.Path) -> loop.Harness:
         chain=run_chain.RunChain(tmp_path),
         config=Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=_silent,
         mode="run",
         state_dir=tmp_path / "state",
@@ -8913,7 +8978,9 @@ def test_the_root_passes_with_an_open_child(
         chain=run_chain.RunChain(tmp_path),
         config=Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=_silent,
         mode="run",
         curator=curator,
@@ -8952,7 +9019,9 @@ def test_the_focus_surface_fits_a_standing_task(tmp_path: pathlib.Path) -> None:
         chain=run_chain.RunChain(tmp_path),
         config=Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         logger=_silent,
         mode="run",
         curator=curator,
@@ -9553,7 +9622,9 @@ def test_the_snapshot_carries_the_delivered_question_ids(tmp_path: pathlib.Path)
 def test_image_results_bypass_cap_and_repeat_stubbing() -> None:
     """Each explicit image read retains its attachment and its full metadata."""
     image = kinds.MediaAttachment(b"x" * 90000, "image/png", "x" * 70000 + ".png")
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     dispatcher.dispatch.return_value = tools_results.ReadMediaResult(image)
     wf = _wf(mode="run", dispatcher=dispatcher)
     state = _state()
@@ -9602,7 +9673,9 @@ def test_media_recovery_updates_canonical_history_snapshot_and_execution_fact(
         _resp("again"),
     ]
     events = _EventCapture()
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     wf = _wf(
         root=tmp_path,
         provider=provider,
@@ -9674,8 +9747,8 @@ def test_a_subject_that_cannot_read_git_reports_the_failed_commit(tmp_path: path
     events: list[dict[str, Any]] = []
     wf = _wf(root=tmp_path, mode="run", per_turn=True)
 
-    def _capture(_type: str, **f: Any) -> None:
-        events.append({"type": _type, **f})
+    def _capture(event: journal.Event) -> None:
+        events.append({"type": event.TYPE, **event.model_dump(exclude_unset=True)})
 
     wf.events = mock.MagicMock()
     wf.events.emit = _capture  # type: ignore[method-assign]

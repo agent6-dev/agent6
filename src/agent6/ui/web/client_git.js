@@ -381,8 +381,12 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   };
   reloadBtn.onclick = reload;
   // One write, then the page re-reads what git now holds.
+  const GIT_WRITES = {
+    stage: '/api/git/stage', unstage: '/api/git/unstage', discard: '/api/git/discard',
+    commit: '/api/git/commit', branch: '/api/git/branch', switch: '/api/git/switch',
+  };
   const gitWrite = async (verb, body) => {
-    try { const d = await postJSON('/api/git/' + verb, body); toast(d.message || verb); await reload(); }
+    try { const d = await postJSON(GIT_WRITES[verb], body); toast(d.message || verb); await reload(); }
     catch (e) { toast(e.message, true); }
   };
   switchBtn.onclick = () => gitWrite('switch', { name: branchSel.value });

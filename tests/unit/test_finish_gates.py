@@ -11,6 +11,7 @@ from __future__ import annotations
 from unittest import mock
 
 from agent6.harness import finish_gates, loop_conversation, loop_state, metric_rules
+from agent6.sessions import journal
 from tests.unit.turn_context import turn_context
 
 
@@ -59,7 +60,7 @@ def test_the_panels_rejection_revokes_the_finish_without_a_text() -> None:
     refusal = finish_gates.review_finish(
         _finishing(), _state(), turn_context(end_rejected=rejecting)
     )
-    assert refusal is not None and refusal.text == "" and refusal.event == ""
+    assert refusal is not None and refusal.text == "" and refusal.event is None
     assert seen == ["finish_session"]
     assert finish_gates.review_finish(_finishing(), _state(), turn_context()) is None
 
@@ -71,15 +72,18 @@ def test_an_early_finish_on_a_metric_run_is_refused_while_runway_remains() -> No
     assert [r is not None for r in refusals] == [True, True, True, False]
     first = refusals[0]
     assert first is not None and first.text == metric_rules.METRIC_FINISH_NUDGE
-    assert first.event == "loop.metric_early_finish.rejected"
-    assert first.fields == {"turn": 1, "nudges_used": 1, "budget_remaining": 0.9}
+    assert first.event == journal.LoopMetricEarlyFinishRejected(
+        turn=1, nudges_used=1, budget_remaining=0.9
+    )
     assert first.log == "  metric early-finish rejected #1 at turn 1 (budget 90% left)"
     assert state.metric.finish_nudges_used == metric_rules.METRIC_EARLY_FINISH_PATIENCE
 
     quiet = _finishing(2)
     quiet.finish, quiet.ending = None, "silent_finish"
     silent = metric_rules.metric_early_finish(quiet, _state(), runway)
-    assert silent is not None and silent.fields["trigger"] == "silent_finish"
+    assert silent is not None
+    assert isinstance(silent.event, journal.LoopMetricEarlyFinishRejected)
+    assert silent.event.trigger == "silent_finish"
     assert "(silent)" in silent.log
 
 

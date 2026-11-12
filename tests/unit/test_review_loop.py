@@ -25,7 +25,7 @@ from agent6.harness import (
     review_panel,
     run_chain,
 )
-from agent6.sessions import event_log
+from agent6.sessions import event_log, journal
 from agent6.tools import results
 from agent6.vcs import git_read
 from tests import review_helpers
@@ -115,7 +115,9 @@ def _begin() -> list[dict[str, Any]]:
 
 
 def _drive(wf: loop.Harness, messages: list[dict[str, Any]]) -> Any:
-    wf._emit_start("session.start", user_task="t", mode="run")  # pyright: ignore[reportPrivateUsage]
+    wf._emit_start(  # pyright: ignore[reportPrivateUsage]
+        journal.SessionStart(user_task="t", mode="run", execution_id=wf.execution_id)
+    )
     conversation = loop_conversation.Conversation.from_wire(messages)
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",

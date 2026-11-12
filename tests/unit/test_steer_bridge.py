@@ -266,7 +266,9 @@ def test_workflow_run_resets_the_steer_stage_at_execution_entry() -> None:
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=mock.MagicMock(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
         mode="ask",
         bridge=operator_bridge.OperatorBridge(steer_reset=spy),
     )
@@ -298,7 +300,9 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: pathlib.Path) -
         cache_creation_tokens=0,
         raw={"content": [{"type": "text", "text": "done"}]},
     )
-    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
+    dispatcher = mock.MagicMock(
+        last_verification=None, execution_id="execution", verify_withheld=False
+    )
     wf = loop.Harness(
         chain=run_chain.RunChain(repo),
         config=mock.MagicMock(
