@@ -776,3 +776,12 @@ def test_run_server_lets_a_config_fault_reach_the_cli_sorting(
     monkeypatch.setattr(layer, "load_effective", boom)
     with pytest.raises(RuntimeError):
         mcp_server.run_server(())
+
+
+def test_the_server_runs_commands_through_a_prepared_session(tmp_path: pathlib.Path) -> None:
+    """One jail session for the serving session, under the configured isolation (D38 g)."""
+    server = _server(tmp_path, run_commands="allow")
+    try:
+        assert server._dispatcher.execution_target is not None  # pyright: ignore[reportPrivateUsage]
+    finally:
+        server._dispatcher.close()  # pyright: ignore[reportPrivateUsage]

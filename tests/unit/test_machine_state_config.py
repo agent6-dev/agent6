@@ -8,6 +8,7 @@ import dataclasses
 import os
 import pathlib
 import subprocess
+import types
 from typing import Any
 from unittest import mock
 
@@ -860,7 +861,7 @@ def test_the_flags_reach_the_agent_subprocess_config_and_not_the_supervisors_env
 
     def _disp(**kw: object) -> object:
         captured.update(kw)
-        return object()
+        return types.SimpleNamespace(close=lambda: None)  # the state closes its dispatcher
 
     def _prov(*_a: object, **_k: object) -> object:
         return object()
@@ -881,6 +882,10 @@ def test_the_flags_reach_the_agent_subprocess_config_and_not_the_supervisors_env
     assert captured["config"].sandbox.run_commands == "deny"
     assert captured["config"].sandbox.isolation == "none"
     assert captured["isolation"] == "none"
+    # The state runs its commands through a prepared session, as a run does (D38 g).
+    access = captured["command_access"]
+    assert access is not None and access.session is not None
+    access.close()
     assert not any(key in os.environ for key in keys)
 
 

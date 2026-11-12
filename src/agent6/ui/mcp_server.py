@@ -23,8 +23,10 @@ from collections.abc import Callable
 from typing import IO, Any
 
 from agent6 import __version__, paths
+from agent6.app import session_runtime
 from agent6.config import Config, layer
 from agent6.graph import storage
+from agent6.sandbox import detect, jail
 from agent6.sessions import id, manifest
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import dispatch, tool_errors
@@ -177,7 +179,20 @@ class MCPServer:
         self._agent6_dir = paths.state_dir(self._root)
         self._stdin = stdin
         self._stdout = stdout
-        self._dispatcher = dispatch.ToolDispatcher(root=self._root, config=_no_one_to_ask(config))
+        # The same prepared command session a run has: one jail for the whole serving session,
+        # under the configured isolation.
+        isolation = detect.resolve_isolation(config.sandbox.isolation, detect.probed_environment())
+        access = session_runtime.prepare_local_execution(config, self._root, isolation, name="mcp")
+        try:
+            self._dispatcher = dispatch.ToolDispatcher(
+                root=self._root,
+                config=_no_one_to_ask(config),
+                isolation=isolation,
+                command_access=access,
+            )
+        except BaseException:
+            access.close()
+            raise
         # Absent from tools/list either way; `_call_tool` names the reason to a client anyway.
         self._commands_withdrawn = config.sandbox.run_commands in ("ask", "deny")
         self._gate_missing = not config.harness.verify_command
@@ -498,11 +513,15 @@ def run_server(config_paths: tuple[pathlib.Path, ...]) -> int:
     """
     root = pathlib.Path.cwd()
     cfg = layer.load_effective(root, config_paths).config
-    server = MCPServer(
-        root=root,
-        config=cfg,
-        stdin=sys.stdin.buffer,
-        stdout=sys.stdout.buffer,
-    )
+    try:
+        server = MCPServer(
+            root=root,
+            config=cfg,
+            stdin=sys.stdin.buffer,
+            stdout=sys.stdout.buffer,
+        )
+    except (detect.IsolationUnavailableError, jail.JailUnavailableError) as exc:
+        print(f"REFUSING: {exc}", file=sys.stderr)
+        return 2
     server.serve()
     return 0

@@ -428,25 +428,90 @@ def run_one(
         agent_state = req.events_log.parent
         instance_dir = req.transcript_dir.parent
         bridges = _build_machine_bridges(instance_dir, agent_state, events_sink)
-    # A state's clone is fresh; a state in the checkout has the operator's environment.
-    in_clone = req.root != req.cwd
     # One gate to the operator: the dispatcher asks through it, the loop drains its answers.
     prompts = bridges.prompts if bridges is not None else operator_prompts.OperatorPrompts()
-    dispatcher = dispatch.ToolDispatcher(
-        root=req.root,
-        config=cfg,
-        isolation=isolation,
-        prompts=prompts,
-        events=events_sink,
-        curator=None,
-        run_root_node_id=None,
-        mcp_manager=None,
+    # The same prepared command session a run has, so a long command hands back at the
+    # check-in and the background roster lives beside the state's log.
+    access = session_runtime.prepare_local_execution(
+        cfg,
+        req.root,
+        isolation,
+        name=f"machine-{req.transcript_dir.parent.name}",
         extra_protect_paths=protect,
         shared_writes=req.shared_writes,
-        mode="machine" if read_only else "run",
-        # The repo's state dir, keyed on the checkout: a clone has no memory of its own.
-        state_dir=paths.state_dir(req.cwd),
     )
+    try:
+        dispatcher = dispatch.ToolDispatcher(
+            root=req.root,
+            config=cfg,
+            isolation=isolation,
+            prompts=prompts,
+            events=events_sink,
+            curator=None,
+            run_root_node_id=None,
+            mcp_manager=None,
+            extra_protect_paths=protect,
+            shared_writes=req.shared_writes,
+            mode="machine" if read_only else "run",
+            # The repo's state dir, keyed on the checkout: a clone has no memory of its own.
+            state_dir=paths.state_dir(req.cwd),
+            session_dir=req.events_log.parent if req.events_log is not None else None,
+            command_access=access,
+        )
+    except BaseException:
+        access.close()
+        raise
+    try:
+        return _drive_state(
+            req,
+            r,
+            cfg,
+            dispatcher,
+            prompts=prompts,
+            bridges=bridges,
+            provider=provider,
+            summariser_provider=summariser_provider,
+            budget=budget,
+            reporter=reporter,
+        )
+    finally:
+        dispatcher.close()
+
+
+def _drive_state(
+    req: MachineAgentRequest,
+    r: AgentRequest,
+    cfg: Config,
+    dispatcher: dispatch.ToolDispatcher,
+    *,
+    prompts: operator_prompts.OperatorPrompts,
+    bridges: _MachineBridges | None,
+    provider: Provider,
+    summariser_provider: Provider | None,
+    budget: agent6_budget.BudgetTracker,
+    reporter: app_reporter.Reporter,
+) -> AgentExecResult:
+    """Run the setup command, build the harness and drive the state to its end.
+
+    Args:
+        req: The state's request envelope.
+        r: The state's agent request.
+        cfg: The state's config.
+        dispatcher: The state's dispatcher, its command session prepared.
+        prompts: The operator prompt gate.
+        bridges: The front-end bridges, when the state has a log.
+        provider: The worker.
+        summariser_provider: The compaction summariser.
+        budget: The tracker both providers bill.
+        reporter: Where status and refusals go.
+
+    Returns:
+        The state's result.
+    """
+    mode = r.mode
+    read_only = mode in ("machine", "read_only")
+    # A state's clone is fresh; a state in the checkout has the operator's environment.
+    in_clone = req.root != req.cwd
     setup_left: frozenset[str] = frozenset()
     if in_clone:
         prepared = workspace_setup.prepare(cfg, req.root, runner=dispatcher, reporter=reporter)

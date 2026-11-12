@@ -12,6 +12,7 @@ import os
 import pathlib
 import threading
 import time
+import types
 
 import pytest
 
@@ -187,7 +188,7 @@ def test_machine_agent_wires_the_summariser_seat(
     monkeypatch.setattr(role_providers, "helper_seat_provider", _fake_summariser)
 
     def _fake_dispatcher(**_k: Any) -> object:
-        return object()
+        return types.SimpleNamespace(close=lambda: None)  # the state closes its dispatcher
 
     monkeypatch.setattr(dispatch, "ToolDispatcher", _fake_dispatcher)
 
