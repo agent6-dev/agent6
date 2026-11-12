@@ -636,7 +636,7 @@ Headless surfaces without a dispatcher answer "not available".
 
 | Field | Default | Meaning |
 |---|---|---|
-| `tool` | `false` | offer a run's model the `parallel` tool, which dispatches a task to isolated lanes (fresh clones of the committed tree, each an ordinary run that may edit) and joins their commits back in order; each lane runs under 200 turns, 30 minutes and a share of the run's remaining budget; `parallel.tool = false`: no run is offered it; neither value changes `run --parallel`, the `/parallel` steer or the review panel |
+| `tool` | `false` | offer a run's model the `parallel` tool, which dispatches a task to isolated lanes (fresh clones of the committed tree, each an ordinary run that may edit) and joins their commits back in order; each lane runs under 200 turns, 30 minutes and the run's remaining budget, which the lanes share; `parallel.tool = false`: no run is offered it; neither value changes `run --parallel`, the `/parallel` steer or the review panel |
 | `max_lanes` | `4` | The most lanes one `--parallel` fan-out may run, `1` to `1024`; a spec asking for more is refused before anything is cloned; a review roster longer than this runs in batches of this width, with no seat dropped. |
 
 ## `[workspace]`

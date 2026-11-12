@@ -163,7 +163,8 @@ def test_the_description_names_every_role_the_providers_and_the_ceilings(
     assert "reviewer: q/critic, effort max, temperature 0.7 (temperature from default)" in text
     assert "Configured providers: p, q" in text
     assert "200 turns" in text and "30 minutes" in text
-    assert "edit" in text and "share of this run's budget" in text
+    assert "edit" in text and "this run's remaining budget, which the lanes share" in text
+    assert "gives the summary it finished with" in text
     assert "secret" not in text and "localhost" not in text
 
 
@@ -295,7 +296,7 @@ def test_the_model_dispatches_lanes_and_reads_the_result_as_the_tools_answer(
     )
     assert all(lane.limits is not None and lane.limits.deadline_at is not None for lane in seen)
     assert all(
-        lane.allowance is not None and lane.allowance.usd == pytest.approx(5.0) for lane in seen
+        lane.allowance is not None and lane.allowance.usd == pytest.approx(10.0) for lane in seen
     )
     (record,) = lane_dispatch.read_records(session_dir)
     assert record.source == "model" and record.state == "complete" and record.delivered

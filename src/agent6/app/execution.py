@@ -23,11 +23,11 @@ from typing import Any
 from agent6 import budget as agent6_budget
 from agent6 import errors, kinds, paths, review_records
 from agent6.app import (
+    child_watch,
     conversation_state,
     finalize,
     lane_launch,
     notify_hook,
-    prompt_relay,
     review_actions,
     review_directive,
     role_providers,
@@ -586,7 +586,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     inputs.sandbox_overrides.auto_approve
                     if inputs.sandbox_overrides is not None
                     else False,
-                    prompt_relay.PromptRelay(inputs.prompts, layout.session_dir),
+                    child_watch.ChildWatch(inputs.prompts, layout.session_dir, budget, events.emit),
                 ),
                 lane_recoverer=app_lanes.build_lane_recoverer(
                     cfg, cwd, state_dir, mode=mode, reporter=reporter

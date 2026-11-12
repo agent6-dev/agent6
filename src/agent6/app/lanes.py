@@ -15,7 +15,7 @@ from collections.abc import Callable, Sequence
 from typing import Protocol
 
 from agent6 import budget as agent6_budget
-from agent6 import budget_reservations, directive, errors, kinds, lane_records, paths
+from agent6 import directive, errors, kinds, lane_records, paths
 from agent6.app import compare as app_compare
 from agent6.app import lane_launch, lane_watch, parallel_results, stop, workdirs
 from agent6.app import reporter as app_reporter
@@ -156,7 +156,7 @@ def bridge_spawner(
     coordinator: str,
     gate_source: sessions_manifest.GateSource = "",
     limits: lane_records.LaneLimits | None = None,
-    allowance: budget_reservations.BudgetAllowance | None = None,
+    allowance: agent6_budget.BudgetAllowance | None = None,
     contract: kinds.ConversationContract | None = None,
     runtime: LaneRuntime,
 ) -> lane_records.LaneResult:
@@ -182,7 +182,8 @@ def bridge_spawner(
         coordinator: The session every listing nests the lane under.
         gate_source: Where the gate in the lane's config came from, "" when it has none.
         limits: The turn cap and deadline the lane runs under; None for the config's own.
-        allowance: The lane's reserved share, which sets every cap; None for the config's.
+        allowance: What the coordinator had left when the lane started, which sets every
+            cap; None for the config's.
         contract: The harness-owned read-only conversation; None for work.
         runtime: The front-end's spawn primitive.
 
@@ -295,10 +296,10 @@ def run_lane_to_completion(
     stop_is_now: Callable[[], bool] | None = None,
     hard_stop: threading.Event | None = None,
     limits: lane_records.LaneLimits | None = None,
-    allowance: budget_reservations.BudgetAllowance | None = None,
+    allowance: agent6_budget.BudgetAllowance | None = None,
     contract: kinds.ConversationContract | None = None,
     clock: Callable[[], float] = time.time,
-    relay: Callable[[pathlib.Path, str], None] | None = None,
+    watch: Callable[[pathlib.Path, str, str], bool] | None = None,
 ) -> lane_records.LaneResult:
     """Run one subordinate lane to its end and import it into the origin.
 
@@ -337,11 +338,14 @@ def run_lane_to_completion(
             `now` when one arrives; `now` hands its command back and waits a bounded grace.
         hard_stop: Set to skip the grace.
         limits: The turn cap and deadline the lane runs under; None for the config's own.
-        allowance: The lane's reserved share; None for the config's caps.
+        allowance: What the coordinator had left when the lane started, as the lane's caps;
+            None for the config's caps.
         contract: The harness-owned read-only conversation; None for work.
         clock: The wall clock the deadline is read against.
-        relay: Puts the lane's prompt to the coordinator's operator while it waits; None
-            leaves it to whoever attaches to the lane.
+        watch: The coordinator's side of the wait, called on each poll with the lane's dir,
+            its label and its status: it counts the lane's spend and answers its prompt,
+            and returns whether the coordinator's budget is spent. None leaves the lane's
+            prompt to whoever attaches to it.
 
     Returns:
         The lane's result, its `session_dir` the imported dir on success.
@@ -375,22 +379,24 @@ def run_lane_to_completion(
     # The live symlink lets a hub answer the lane's prompts while it runs.
     lane_watch.symlink_lane(origin_state, res)
     deadline_at = limits.deadline_at if limits is not None else None
-    overdue = False
-    kind = "seat" if contract is not None else "lane"
+    overdue = over_budget = False
+    label = f"{'seat' if contract is not None else 'lane'} {spec.lane} {spec.session_id}"
+
+    def on_poll(status: str) -> bool:
+        nonlocal over_budget
+        over_budget = watch is not None and watch(res.session_dir, label, status)
+        return over_budget
+
     if not lane_watch.await_lane(
         res,
         poll_interval_s=poll_interval_s,
         should_stop=should_stop,
         deadline_at=deadline_at,
         clock=clock,
-        on_waiting=(
-            (lambda: relay(res.session_dir, f"{kind} {spec.lane} {spec.session_id}"))
-            if relay is not None
-            else None
-        ),
+        on_poll=on_poll,
     ):
         overdue = deadline_at is not None and clock() >= deadline_at
-        immediate = overdue or stop_is_now is None or stop_is_now()
+        immediate = overdue or over_budget or stop_is_now is None or stop_is_now()
         asked = ipc.request_stop(res.session_dir, now=immediate)
         if not immediate:
 
@@ -414,7 +420,7 @@ def run_lane_to_completion(
                 session_dir=res.session_dir,
                 branch=res.branch,
                 ok=False,
-                error=("ended at its deadline" if overdue else "interrupted")
+                error=(_stopped_by(overdue=overdue, over_budget=over_budget) or "interrupted")
                 + "; lane "
                 + ("was asked to stop and" if asked else "could not be asked to stop and")
                 + f" did not end within the grace; its process {how}; not imported"
@@ -435,8 +441,15 @@ def run_lane_to_completion(
         origin_state=origin_state,
         group=group,
         reporter=reporter,
-        overdue=overdue,
+        stopped_by=_stopped_by(overdue=overdue, over_budget=over_budget),
     )
+
+
+def _stopped_by(*, overdue: bool, over_budget: bool) -> str:
+    """Return what ended a lane the coordinator stopped, "" for a stop the operator asked."""
+    if overdue:
+        return "ended at its deadline"
+    return "stopped at the run's budget" if over_budget else ""
 
 
 def land_lane(
@@ -448,7 +461,7 @@ def land_lane(
     origin_state: pathlib.Path,
     group: str,
     reporter: app_reporter.Reporter,
-    overdue: bool = False,
+    stopped_by: str = "",
 ) -> lane_records.LaneResult:
     """Finish an imported lane: carry its memory back, clean its clone, read its outcome.
 
@@ -460,7 +473,7 @@ def land_lane(
         origin_state: The origin's state dir.
         group: The group the lane belongs to.
         reporter: Receives the notes.
-        overdue: Whether the lane was ended by its deadline.
+        stopped_by: What ended the lane when the coordinator stopped it, "" otherwise.
 
     Returns:
         The lane's result over the imported dir, its usage read from its record.
@@ -483,7 +496,9 @@ def land_lane(
         launch_dir=lane_launch.launch_dir(origin_state, group),
         cfg=cfg,
     )
-    return recorded_result(res.spec, res.branch, dest, imported, origin=origin, overdue=overdue)
+    return recorded_result(
+        res.spec, res.branch, dest, imported, origin=origin, stopped_by=stopped_by
+    )
 
 
 def recorded_result(
@@ -493,7 +508,7 @@ def recorded_result(
     imported: lane_records.Imported,
     *,
     origin: pathlib.Path,
-    overdue: bool = False,
+    stopped_by: str = "",
 ) -> lane_records.LaneResult:
     """Return a lane's result from its imported record: its outcome, its work, its usage.
 
@@ -503,7 +518,7 @@ def recorded_result(
         dest: Its imported run dir.
         imported: What the import landed.
         origin: The repository.
-        overdue: Whether the lane was ended by its deadline.
+        stopped_by: What ended the lane when the coordinator stopped it, "" otherwise.
 
     Returns:
         `ok` only for a deliberate end; the usage is read either way.
@@ -517,7 +532,7 @@ def recorded_result(
             session_dir=dest,
             branch=branch,
             ok=False,
-            error=("ended at its deadline: " if overdue else "")
+            error=(f"{stopped_by}: " if stopped_by else "")
             + f"no result ({format.status_label(summary.status, summary.detail)});"
             f" {parallel_results.imported_branch_note(origin, branch)}",
             imported_ref=imported.ref,
@@ -547,8 +562,8 @@ def lane_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement | Non
         session_dir: The lane's imported run dir.
 
     Returns:
-        The inclusive spend and per-provider plan observations; None keeps the allowance
-        held when descendant records are incomplete or unreadable.
+        The inclusive spend and per-provider plan observations; None when descendant
+        records are incomplete or unreadable, which leaves the lane unsettled.
     """
     try:
         records = lane_dispatch.read_records(session_dir)
@@ -728,7 +743,7 @@ def build_lane_spawner(
     auto_approve: bool = False,
     lane_away: ipc.AwayMode = "wait",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-    relay: Callable[[pathlib.Path, str], None] | None = None,
+    watch: Callable[[pathlib.Path, str, str], bool] | None = None,
 ) -> lane_records.GroupLaneSpawner:
     """Build the group dispatcher the loop calls at a `/parallel` boundary.
 
@@ -746,15 +761,15 @@ def build_lane_spawner(
         runtime: The front-end's primitives.
         max_usd: Each lane's spend cap.
         auto_approve: The coordinator's own `--auto-approve`, forwarded to every lane.
-        lane_away: Every lane's away-mode, without a relay.
+        lane_away: Every lane's away-mode, without a watch.
         reporter: Receives the notes.
-        relay: Puts a waiting lane's prompt to the coordinator's operator; with it every
-            lane waits for that answer.
+        watch: The coordinator's side of each lane's wait (`run_lane_to_completion`); with it
+            every lane waits for the coordinator's operator to answer its prompts.
 
     Returns:
         The dispatcher.
     """
-    if relay is not None:
+    if watch is not None:
         lane_away = "wait"
 
     def dispatch(
@@ -851,7 +866,7 @@ def build_lane_spawner(
                 limits=lane.limits,
                 allowance=lane.allowance,
                 contract=lane.contract,
-                relay=relay,
+                watch=watch,
             )
 
         pairs = list(zip(specs, lanes, strict=True))
@@ -894,7 +909,7 @@ def build_coordinator_spawner(
     auto_approve: bool = False,
     lane_away: ipc.AwayMode = "wait",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-    relay: Callable[[pathlib.Path, str], None] | None = None,
+    watch: Callable[[pathlib.Path, str, str], bool] | None = None,
 ) -> lane_records.GroupLaneSpawner | None:
     """Build the `/parallel` dispatcher for a run's loop, or None when dispatch is unavailable.
 
@@ -910,9 +925,9 @@ def build_coordinator_spawner(
         runtime: The front-end's primitives.
         max_usd: Each lane's spend cap.
         auto_approve: The run's own `--auto-approve`, forwarded to every lane.
-        lane_away: Every lane's away-mode, without a relay.
+        lane_away: Every lane's away-mode, without a watch.
         reporter: Receives the notes.
-        relay: Puts a waiting lane's prompt to the run's operator.
+        watch: The run's side of each lane's wait: its prompts and its spend.
 
     Returns:
         The dispatcher, or None.
@@ -932,5 +947,5 @@ def build_coordinator_spawner(
         auto_approve=auto_approve,
         lane_away=lane_away,
         reporter=reporter,
-        relay=relay,
+        watch=watch,
     )

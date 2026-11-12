@@ -37,8 +37,7 @@ class ChildView:
         error: The join's detail, "" when none.
         spend_usd: What its parent settled for it; the lane's own cost when no record says.
         usd_partial: Whether unpriced calls make the spend a lower bound.
-        settled: Whether the parent charged its usage.
-        outstanding: Whether its usage is unknown and its share stays held.
+        settled: Whether the parent charged its usage; False while it is unknown.
         launched: Whether a session dir of its own exists.
     """
 
@@ -57,7 +56,6 @@ class ChildView:
     spend_usd: float
     usd_partial: bool
     settled: bool
-    outstanding: bool
     launched: bool
 
 
@@ -181,7 +179,6 @@ def _recorded_child(
         spend_usd=usage.usd if usage is not None else 0.0,
         usd_partial=usage.usd_partial if usage is not None else False,
         settled=child.settled,
-        outstanding=child.outstanding,
         launched=launched,
     )
 
@@ -212,6 +209,5 @@ def _lineage_child(summary: listing.SessionSummary, lane_dir: pathlib.Path) -> C
         spend_usd=summary.cost_usd,
         usd_partial=summary.usd_partial,
         settled=False,
-        outstanding=False,
         launched=True,
     )

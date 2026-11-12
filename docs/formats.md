@@ -117,7 +117,9 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `cache_write_total` | `int, optional` | Cumulative cache-write tokens. |
 | `usd_partial` | `bool, optional` | Whether unpriced usage makes spend a lower bound. |
 | `usd_cap` | `float, optional` | Spend cap in USD; -1 means unlimited. |
+| `usd_running_lanes` | `float, optional` | USD the lanes still running have spent so far; outside `usd_total` until each settles, inside the cap. |
 | `tokens_unmetered` | `int, optional` | Tokens with no known price. |
+| `tokens_running_lanes` | `int, optional` | Unpriced tokens of the lanes still running; outside `tokens_unmetered`. |
 | `tokens_fallback_cap` | `int, optional` | Token cap used for unpriced usage. |
 | `plan_observed_points` | `float, optional` | The largest observed plan movement in points across providers and windows; account-wide, so includes other consumers. |
 | `plan_cap` | `float, optional` | Subscription points cap. |
@@ -2534,7 +2536,7 @@ Source: [`agent6.app.lane_launch.LaneLaunch`](https://github.com/agent6-dev/agen
 | `task` | `str` | The task text, exactly as the lane's manifest records it. |
 | `pins` | `tuple[str, ...]` | The coordinator's pins, out of band of the task. |
 | `max_usd` | `float \| None` | The coordinator's forwarded `--max-usd`; None keeps the config's. |
-| `allowance` | `BudgetAllowance \| None` | The lane's reserved share of the parent's allowance, which sets every cap; None when nothing was reserved. |
+| `allowance` | `BudgetAllowance \| None` | What the parent had left when the lane started, which sets every cap; None for the config's caps. |
 | `auto_approve` | `bool` | Whether the coordinator ran with `--auto-approve`. |
 | `away` | `Literal['wait', 'deny', 'approve']` | The lane's away mode: `wait` parks a question for `agent6 attach`, `deny` answers it empty. |
 | `config` | `pathlib.Path` | The lane's config snapshot, beside this file; the lane's sole `--config`. |
@@ -2709,8 +2711,7 @@ Source: [`agent6.viewmodel.lanes.ChildView`](https://github.com/agent6-dev/agent
 | `error` | `str` | The join's detail, "" when none. |
 | `spend_usd` | `float` | What its parent settled for it; the lane's own cost when no record says. |
 | `usd_partial` | `bool` | Whether unpriced calls make the spend a lower bound. |
-| `settled` | `bool` | Whether the parent charged its usage. |
-| `outstanding` | `bool` | Whether its usage is unknown and its share stays held. |
+| `settled` | `bool` | Whether the parent charged its usage; False while it is unknown. |
 | `launched` | `bool` | Whether a session dir of its own exists. |
 
 ### DispatchView
@@ -3053,7 +3054,7 @@ Source: [`agent6.ui.web.server.ConfigSetBody`](https://github.com/agent6-dev/age
 
 **Support: public.** One allowance in the three currencies, each with the cap's meaning.
 
-Source: [`agent6.budget_reservations.BudgetAllowance`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/budget_reservations.py).
+Source: [`agent6.budget.BudgetAllowance`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/budget.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3126,13 +3127,11 @@ Source: [`agent6.sessions.lane_dispatch.ChildRecord`](https://github.com/agent6-
 | `lane` | `int` | Its number in the group. |
 | `task` | `str` | Its task text. |
 | `model` | `str \| None` | Its selector, None for the worker's own settings. |
-| `share` | `BudgetAllowance \| None` | Its share of the parent's allowance, None when nothing was reserved. |
 | `limits` | `LaneLimits \| None` | Its turn cap and deadline, None for the config's own. |
 | `join` | `JoinRecord \| None` | How it joined, None until it did. |
 | `report` | `str` | What it said at its end, its finish summary; "" until it joined or when it gave none. |
 | `usage` | `UsageRecord \| None` | What it used, None until settled with known usage. |
-| `settled` | `bool` | Whether its usage was charged and its share released. |
-| `outstanding` | `bool` | Whether its usage is unknown and its share stays held. |
+| `settled` | `bool` | Whether its usage was charged; False while it is unknown. |
 
 ### ModelsBrief
 
@@ -3866,6 +3865,8 @@ Source: [`agent6.viewmodel.state_types.ExecutionUsage`](https://github.com/agent
 | `usd` | `float` | The metered spend. |
 | `usd_partial` | `bool` | Some model had no price, so `usd` is a lower bound. |
 | `unmetered_tokens` | `int` | Input and output tokens of calls the meter could not price. |
+| `usd_running_lanes` | `float` | What the lanes still running have spent so far: inside the cap, outside `usd` until each settles. |
+| `tokens_running_lanes` | `int` | Their unpriced tokens so far, outside `unmetered_tokens`. |
 | `plan_observed_points` | `float` | The plan movement observed, in points. |
 | `usd_cap` | `float \| None` | `[budget].max_usd`. |
 | `tokens_fallback_cap` | `int \| None` | `[budget].max_tokens_fallback`. |

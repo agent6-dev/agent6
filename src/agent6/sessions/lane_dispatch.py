@@ -15,9 +15,9 @@ from typing import Literal
 
 import pydantic
 
-from agent6 import budget_reservations, lane_records, portable
+from agent6 import lane_records, portable
 
-RECORD_VERSION = 3
+RECORD_VERSION = 4
 DIR_NAME = "dispatch"
 DispatchState = Literal["prepared", "running", "settling", "joining", "complete"]
 
@@ -84,27 +84,23 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         lane: Its number in the group.
         task: Its task text.
         model: Its selector, None for the worker's own settings.
-        share: Its share of the parent's allowance, None when nothing was reserved.
         limits: Its turn cap and deadline, None for the config's own.
         join: How it joined, None until it did.
         report: What it said at its end, its finish summary; "" until it joined or when it
             gave none.
         usage: What it used, None until settled with known usage.
-        settled: Whether its usage was charged and its share released.
-        outstanding: Whether its usage is unknown and its share stays held.
+        settled: Whether its usage was charged; False while it is unknown.
     """
 
     session_id: str
     lane: int
     task: str
     model: str | None = None
-    share: budget_reservations.BudgetAllowance | None = None
     limits: lane_records.LaneLimits | None = None
     join: JoinRecord | None = None
     report: str = ""
     usage: UsageRecord | None = None
     settled: bool = False
-    outstanding: bool = False
 
 
 class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):

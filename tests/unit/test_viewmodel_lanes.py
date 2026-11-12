@@ -7,7 +7,6 @@ from __future__ import annotations
 import json
 import pathlib
 
-from agent6 import budget_reservations
 from agent6.sessions import lane_dispatch
 from agent6.viewmodel import lanes as vm_lanes
 from agent6.viewmodel import listing, receipt, wire
@@ -72,11 +71,9 @@ def _record(
                 lane=i,
                 task="audit",
                 model="reviewer" if i == 1 else None,
-                share=budget_reservations.BudgetAllowance(usd=2.0, tokens=-1, plan_points=-1.0),
                 join=join,
                 usage=lane_dispatch.UsageRecord(usd=usd) if usd is not None else None,
                 settled=usd is not None,
-                outstanding=usd is None,
             )
             for i, (sid, join, usd) in enumerate(children, start=1)
         ),
@@ -126,7 +123,7 @@ def test_children_come_from_the_records_in_dispatch_then_lane_order(tmp_path: pa
     assert first.imported_ref == "agent6/x" and first.spend_usd == 0.5 and first.settled
     assert first.route == "p/m"
     assert not missing.launched and missing.status == "" and missing.outcome == "failed"
-    assert missing.error == "never started" and missing.outstanding and missing.spend_usd == 0.0
+    assert missing.error == "never started" and not missing.settled and missing.spend_usd == 0.0
     assert quiet.outcome == "no_changes" and quiet.join_sha == "" and quiet.spend_usd == 0.25
     dispatches = vm_lanes.dispatches_of(parent)
     assert [d.identity for d in dispatches] == ["run-abc-p1", "run-abc-p2"]

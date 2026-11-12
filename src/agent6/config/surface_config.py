@@ -371,7 +371,8 @@ class ParallelConfig(pydantic.BaseModel):
             "offer a run's model the `parallel` tool, which dispatches a task to isolated "
             "lanes (fresh clones of the committed tree, each an ordinary run that may edit) "
             "and joins their commits back in order; each lane runs under 200 turns, 30 minutes "
-            "and a share of the run's remaining budget; `parallel.tool = false`: no run is "
+            "and the run's remaining budget, which the lanes share; `parallel.tool = false`: no "
+            "run is "
             "offered it; neither value changes `run --parallel`, the `/parallel` steer or the "
             "review panel"
         ),

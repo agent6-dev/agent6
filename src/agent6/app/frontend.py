@@ -156,7 +156,8 @@ class SessionFrontend:
         run_ask_repl: Runs the ask REPL.
         save_ask_transcript: Saves an ask's transcript.
         build_coordinator_spawner: Builds the `/parallel` dispatch spawner, or None; its last
-            argument relays a lane's prompt to this session's operator.
+            argument is this session's side of a lane's wait: it answers the lane's prompts
+            and counts its spend.
         agent6_exe: The agent6 executable to spawn.
         spawn_detached_resume: (cwd, session_id, flags) -> spawns the detached execution under
             this invocation's overrides as CLI options (see `session_setup.override_flags`).
@@ -196,7 +197,7 @@ class SessionFrontend:
             str,
             float | None,
             bool,
-            Callable[[pathlib.Path, str], None],
+            Callable[[pathlib.Path, str, str], bool],
         ],
         lane_records.GroupLaneSpawner | None,
     ]

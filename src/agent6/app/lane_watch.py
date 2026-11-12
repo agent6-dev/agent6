@@ -58,9 +58,9 @@ def await_lane(
     should_stop: Callable[[], bool] | None = None,
     deadline_at: float | None = None,
     clock: Callable[[], float] = time.time,
-    on_waiting: Callable[[], None] | None = None,
+    on_poll: Callable[[str], bool] | None = None,
 ) -> bool:
-    """Block until the lane is terminal, or until the stop check or the deadline ends the wait.
+    """Block until the lane is terminal, or until a stop or the deadline ends the wait.
 
     Args:
         res: The started lane, awaited on its real run dir.
@@ -68,11 +68,12 @@ def await_lane(
         should_stop: The coordinator's abort channel, read between polls.
         deadline_at: The wall-clock second the wait ends at; None for no deadline.
         clock: The wall clock.
-        on_waiting: Called on each poll that finds the lane waiting on its operator; the
-            parent answers there. None leaves the prompt to whoever attaches to the lane.
+        on_poll: Called on each poll that finds the lane running, with its status word: the
+            parent counts the lane's spend and answers its prompt there. True ends the wait
+            as a stop does.
 
     Returns:
-        True when the lane ended, False when the stop check or the deadline ended the wait.
+        True when the lane ended, False when a stop or the deadline ended the wait.
     """
     while True:
         summary = summarize_session_dir(res.session_dir)
@@ -82,8 +83,8 @@ def await_lane(
             return False
         if deadline_at is not None and clock() >= deadline_at:
             return False
-        if on_waiting is not None and summary.status == "waiting":
-            on_waiting()
+        if on_poll is not None and on_poll(summary.status):
+            return False
         time.sleep(poll_interval_s)
 
 

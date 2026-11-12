@@ -210,6 +210,47 @@ def test_a_lane_past_its_deadline_is_stopped_and_reported_failed(
     assert not process.pid_alive(deaf.pid) and _reaped(deaf.pid)
 
 
+def test_a_lane_is_stopped_once_the_runs_budget_is_spent(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The coordinator ends a lane when its watch says the run's budget is spent, and says so.
+
+    A lane ran on to its own share's end whatever its siblings had spent.
+    """
+    monkeypatch.setattr(lane_watch, "STOP_GRACE_S", 0.2)
+    d = _live_forever(tmp_path, "spent-l1")
+    deaf = _child(_DEAF, tmp_path)
+    spec = _spec(tmp_path, "spent-l1")
+    polled: list[tuple[pathlib.Path, str]] = []
+
+    def spawner(spec: lane_records.LaneSpec, task: str) -> lane_records.LaneResult:
+        return lane_records.LaneResult(spec, d, "agent6/x", True, "", pid=deaf.pid)
+
+    def watch(child_dir: pathlib.Path, label: str, _status: str) -> bool:
+        polled.append((child_dir, label))
+        return True
+
+    res = app_lanes.run_lane_to_completion(
+        spec,
+        "t",
+        explicit_leaves=frozenset(),
+        cfg=Config(),
+        origin=tmp_path,
+        origin_state=tmp_path / "origin-state",
+        group="fan",
+        coordinator="co",
+        runtime=parallel.lane_runtime(),
+        spawner=spawner,
+        poll_interval_s=0.01,
+        watch=watch,
+    )
+    assert polled == [(d, "lane 1 spent-l1")]
+    assert not res.ok
+    assert res.error.startswith("stopped at the run's budget; lane") and "killed" in res.error
+    assert ipc.stop_request_is_now(d)
+    assert not process.pid_alive(deaf.pid) and _reaped(deaf.pid)
+
+
 def test_a_lane_that_never_reported_is_killed_not_left_running(
     tmp_path: pathlib.Path,
 ) -> None:

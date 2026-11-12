@@ -226,6 +226,8 @@ def _usage(
         usd=row.usd_total,
         usd_partial=bool(row.usd_partial),
         unmetered_tokens=row.tokens_unmetered or 0,
+        usd_running_lanes=row.usd_running_lanes,
+        tokens_running_lanes=row.tokens_running_lanes,
         plan_observed_points=row.plan_observed_points or 0.0,
         usd_cap=row.usd_cap,
         tokens_fallback_cap=row.tokens_fallback_cap,

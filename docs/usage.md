@@ -159,8 +159,9 @@ Under a lane's line the notice gives the summary the lane finished with (`summar
 ### The parallel tool
 
 With `parallel.tool = true` ([parallel](config.md#parallel)), a run's model is offered the `parallel` tool: `task` (required) and `spec` (the same grammar as `--parallel`, empty for one default lane).
-The call dispatches through the `/parallel` path: a checkpoint, fresh clones of the committed tree, the lanes joined back in dispatch order, the run's remaining budget reserved and each lane's share its caps; the result returns as the tool's answer, naming each lane's join.
-Each lane is an ordinary run with the same tools as the parent: it may edit its clone, and its commits land on the parent's chain when it joins; a lane runs under 200 turns, 30 minutes and its share.
+The call dispatches through the `/parallel` path: a checkpoint, fresh clones of the committed tree, the lanes joined back in dispatch order, each lane starting under the run's remaining budget, which the lanes share; the result returns as the tool's answer, naming each lane's join.
+Each lane is an ordinary run with the same tools as the parent: it may edit its clone, and its commits land on the parent's chain when it joins; a lane runs under 200 turns, 30 minutes and the run's remaining budget.
+The run counts its lanes' spend while they run and ends them once the sum reaches a cap, so the total can pass the cap by what was in flight.
 The tool's description names every role's resolved model, effort and temperature and the configured providers, so the model can pick a selector such as `reviewer`.
 The tool is offered only in run mode, never inside a subordinate run and never in a front-end without a lane dispatcher; a call that slips past the list is refused with the reason.
 A worker lane's configured harness panel retains authority to create bounded read-only leaves; neither the worker's model nor its `/parallel` steer may dispatch work.
@@ -264,7 +265,7 @@ agent6 ask "how does the task-graph curator work?"
 - `ask` runs in any directory; `run` and `plan` need a git repository
 
 In-loop panels run each seat as a read-only lane with its own session, and record their findings and reviewed tree IDs in the session journal.
-The full roster's allowance is reserved before launch; batches use at most `review.concurrency` and `parallel.max_lanes` seats, without truncating the roster.
+Each batch's seats start under what the run has left; batches use at most `review.concurrency` and `parallel.max_lanes` seats, without truncating the roster.
 Results keep roster order even when seats finish in another order.
 Diff seats make one call without tools, capped at 1,500 output tokens; repo seats read the retained snapshot with a 2,000-token per-call cap and `review.repo_max_turns` calls.
 Each seat has a session of its own, named on the receipt and the findings card; no listing counts it among the run's lanes.

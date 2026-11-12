@@ -47,7 +47,6 @@ def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
         )
         lane_watch.symlink_lane(paths.state_dir(repo), result)
         ancestor = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
-        ancestor.reserve("parent-p1", [worker.name], owner="parent")
         leaf: pathlib.Path | None = None
         log = short_repo / "worker.log"
         with (
@@ -90,19 +89,17 @@ def test_stop_ancestor_interrupts_a_panel_in_the_shared_executor(
                 persisted = lane_dispatch.read_records(imported.session_dir)[0]
                 assert persisted.identity == record.identity
                 usage = lanes.lane_usage(imported.session_dir)
-                grant = ancestor.settle_lane("parent-p1", worker.name, usage)
+                ancestor.settle_lane(worker.name, usage)
                 if usage is None:
-                    assert worker.name in grant.outstanding
-                    held = ancestor.snapshot().reserved
-                    assert (held.usd, held.tokens, held.plan_points) == (5, 1000, 20)
+                    assert not ancestor.snapshot().settled_lanes
+                    assert ancestor.available() == budget.BudgetAllowance(5, 1000, 20)
                 else:
                     assert persisted.state == "complete" and all(
                         c.settled for c in persisted.children
                     )
                     assert ancestor.snapshot().unmetered_tokens == usage.tokens
                     assert ancestor.estimate_usd()[0] == usage.usd
-                    held = ancestor.snapshot().reserved
-                    assert (held.usd, held.tokens, held.plan_points) == (0, 0, 0)
+                    assert ancestor.snapshot().settled_lanes == frozenset({worker.name})
                 retained = layout.bucket_dir(paths.state_dir(repo), "read_only") / leaf.name
                 assert receipt.read_receipt(retained, repo).session_id == leaf.name
             finally:

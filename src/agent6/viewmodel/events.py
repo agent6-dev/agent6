@@ -447,7 +447,9 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 usd_partial=bool(raw.get("usd_partial", False)),
                 # A row without a cap leaves it unknown; a recorded 0 (refuse) or -1 stays.
                 usd_cap=_cap(raw.get("usd_cap")),
+                usd_running_lanes=_amount(raw.get("usd_running_lanes", 0.0)),
                 tokens_unmetered=int(raw.get("tokens_unmetered", 0)),
+                tokens_running_lanes=int(raw.get("tokens_running_lanes", 0)),
                 tokens_fallback_cap=(
                     None
                     if raw.get("tokens_fallback_cap") is None

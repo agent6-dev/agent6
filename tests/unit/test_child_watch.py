@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A parent answers its child's prompts: the relay, and the wait loop that calls it."""
+"""A parent watches a running child: it answers its prompts and counts its spend."""
 
 from __future__ import annotations
 
@@ -11,8 +11,9 @@ import time
 
 import pytest
 
+from agent6 import budget as agent6_budget
 from agent6 import lane_records
-from agent6.app import lane_watch, prompt_relay
+from agent6.app import child_watch, lane_watch
 from agent6.sessions import ipc, journal
 from agent6.tools import operator_prompts, schema
 from agent6.ui.cli import interact
@@ -78,8 +79,8 @@ class _Parent:
         approved = ipc.record_answer(self.dir, self._answer, request.scope)
         return operator_prompts.ApprovalAnswer(approved=approved, source="frontend")
 
-    def relay(self) -> prompt_relay.PromptRelay:
-        return prompt_relay.PromptRelay(self.prompts, self.dir)
+    def watch(self) -> child_watch.ChildWatch:
+        return child_watch.ChildWatch(self.prompts, self.dir)
 
 
 def _answer(child: pathlib.Path) -> str | None:
@@ -94,7 +95,7 @@ def test_a_parent_puts_its_childs_approval_to_its_own_operator(tmp_path: pathlib
     """
     child = _child(tmp_path, _prompt())
     parent = _Parent(tmp_path, "yes")
-    parent.relay()(child, "lane 2 child")
+    parent.watch()(child, "lane 2 child", "waiting")
     (asked,) = parent.asked
     assert asked.prompt == "[lane 2 child] Allow run_command: pytest -q"
     assert asked.scope == "command"
@@ -106,7 +107,7 @@ def test_a_parent_puts_its_childs_approval_to_its_own_operator(tmp_path: pathlib
 def test_a_denial_goes_down_as_a_denial(tmp_path: pathlib.Path) -> None:
     child = _child(tmp_path, _prompt())
     parent = _Parent(tmp_path, "no")
-    parent.relay()(child, "lane 1 child")
+    parent.watch()(child, "lane 1 child", "waiting")
     assert _answer(child) == "no"
 
 
@@ -114,13 +115,13 @@ def test_a_standing_answer_at_the_parent_is_handed_down(tmp_path: pathlib.Path) 
     """An "allow all" given on the parent stops the child asking; a "deny all" asks nobody."""
     child = _child(tmp_path, _prompt())
     parent = _Parent(tmp_path, "session")
-    parent.relay()(child, "lane 1 child")
+    parent.watch()(child, "lane 1 child", "waiting")
     assert _answer(child) == "session"
 
     other = tmp_path / "second"
     other.mkdir()
     again = _child(other, _prompt())
-    parent.relay()(again, "lane 2 child")
+    parent.watch()(again, "lane 2 child", "waiting")
     assert len(parent.asked) == 1, "the parent's standing allow answered without asking"
     assert _answer(again) == "session"
 
@@ -128,11 +129,11 @@ def test_a_standing_answer_at_the_parent_is_handed_down(tmp_path: pathlib.Path) 
     third = tmp_path / "third"
     third.mkdir()
     denied = _child(third, _prompt())
-    refusing.relay()(denied, "lane 1 child")
+    refusing.watch()(denied, "lane 1 child", "waiting")
     assert _answer(denied) == "session-deny"
     fourth = tmp_path / "fourth"
     fourth.mkdir()
-    refusing.relay()(_child(fourth, _prompt()), "lane 2 child")
+    refusing.watch()(_child(fourth, _prompt()), "lane 2 child", "waiting")
     assert len(refusing.asked) == 1, "a standing deny answers without asking"
 
 
@@ -140,7 +141,7 @@ def test_a_prompt_with_no_scope_is_asked_every_time(tmp_path: pathlib.Path) -> N
     """`fetch` offers no standing answer; an "allow all" on it grants that call only."""
     child = _child(tmp_path, _prompt(scope=None))
     parent = _Parent(tmp_path, "session")
-    parent.relay()(child, "lane 1 child")
+    parent.watch()(child, "lane 1 child", "waiting")
     assert parent.asked[0].scope is None
     assert _answer(child) == "yes"
 
@@ -153,17 +154,17 @@ def test_nothing_open_asks_nothing(tmp_path: pathlib.Path) -> None:
         {"type": "approval.answer", "id": "approval-1", "approved": True, "source": "frontend"},
     )
     parent = _Parent(tmp_path, "yes")
-    parent.relay()(answered, "lane 1 child")
+    parent.watch()(answered, "lane 1 child", "waiting")
     other = tmp_path / "second"
     other.mkdir()
     taken = _child(other, _prompt())
     assert ipc.write_answer(taken, "approval-1", "no")
-    parent.relay()(taken, "lane 2 child")
+    parent.watch()(taken, "lane 2 child", "waiting")
     assert parent.asked == [] and _answer(taken) == "no"
 
 
-def test_the_wait_calls_the_relay_while_the_lane_waits(tmp_path: pathlib.Path) -> None:
-    """The loop that waits on a lane is where its parent answers it."""
+def test_the_wait_calls_the_watch_on_every_poll(tmp_path: pathlib.Path) -> None:
+    """The loop that waits on a lane is where its parent watches it; a True ends the wait."""
     child = _child(tmp_path, _prompt())
     res = lane_records.LaneResult(
         spec=lane_records.LaneSpec(lane=1, session_id="child", workdir=tmp_path, settings=None),
@@ -172,15 +173,88 @@ def test_the_wait_calls_the_relay_while_the_lane_waits(tmp_path: pathlib.Path) -
         ok=True,
         error="",
     )
-    calls: list[int] = []
+    seen: list[str] = []
 
-    def on_waiting() -> None:
-        calls.append(1)
+    def on_poll(status: str) -> bool:
+        seen.append(status)
+        return len(seen) >= 2
 
-    ended = lane_watch.await_lane(
-        res, poll_interval_s=0.0, should_stop=lambda: len(calls) >= 2, on_waiting=on_waiting
+    assert not lane_watch.await_lane(res, poll_interval_s=0.0, on_poll=on_poll)
+    assert seen == ["waiting", "waiting"]
+
+
+def _spend(usd: float, *, running: float = 0.0) -> dict[str, object]:
+    return {"type": "budget.update", "usd_total": usd, "usd_running_lanes": running}
+
+
+def test_a_parent_counts_a_running_childs_spend_and_ends_it_at_the_cap(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A running child's spend so far counts against its parent's cap on each poll.
+
+    Each lane held an even share of what its parent had left, so one lane's unused share
+    was closed to its siblings and to the parent until the lane settled.
+    """
+    parent = _Parent(tmp_path)
+    budget = agent6_budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=-1, max_plan_points=-1)
+    watch = child_watch.ChildWatch(parent.prompts, parent.dir, budget)
+    child = _child(tmp_path, _spend(0.25))
+    assert watch(child, "lane 1 child", "running") is False
+    assert budget.available().usd == pytest.approx(0.75)
+    assert budget.estimate_usd() == (0.0, False), "a running lane's spend is not yet the run's"
+
+    # The reading replaces the one before; the child's own running lanes count with it.
+    (child / "logs.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in (_spend(0.25), _spend(0.5, running=0.25)))
     )
-    assert not ended and len(calls) == 2
+    assert watch(child, "lane 1 child", "running") is False
+    assert budget.available().usd == pytest.approx(0.25)
+
+    second = tmp_path / "second"
+    second.mkdir()
+    sibling = _child(second, _spend(0.5)).rename(second / "sibling")  # a session id of its own
+    assert watch(sibling, "lane 2 child", "running") is True, "together they reached the cap"
+    assert "0.75 of it in running lanes" not in budget.snapshot().exhausted_reason
+    assert "running lanes" in budget.snapshot().exhausted_reason
+    assert parent.asked == [], "a spent budget ends the child before its prompt is relayed"
+
+
+def test_the_watch_journals_the_meter_as_running_children_move_it(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A parent's journal carries its running children's spend, so its own parent reads it.
+
+    A lane waiting on its review seats journaled nothing until they settled.
+    """
+    parent = _Parent(tmp_path)
+    budget = agent6_budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=-1, max_plan_points=-1)
+    rows: list[journal.Event] = []
+    watch = child_watch.ChildWatch(parent.prompts, parent.dir, budget, rows.append)
+    child = _child(tmp_path, _spend(0.25))
+    watch(child, "seat 1 child", "running")
+    watch(child, "seat 1 child", "running")
+    (row,) = rows
+    assert isinstance(row, journal.BudgetUpdate)
+    assert (row.usd_total, row.usd_running_lanes) == (0.0, 0.25)
+
+    # A move inside the interval waits for it; the cap does not.
+    (child / "logs.jsonl").write_text(json.dumps(_spend(0.5)) + "\n")
+    watch(child, "seat 1 child", "running")
+    assert len(rows) == 1
+    monkeypatch.setattr(child_watch, "ROW_INTERVAL_S", 0.0)
+    watch(child, "seat 1 child", "running")
+    assert [r.usd_running_lanes for r in rows if isinstance(r, journal.BudgetUpdate)] == [0.25, 0.5]
+    monkeypatch.setattr(child_watch, "ROW_INTERVAL_S", 3600.0)
+    (child / "logs.jsonl").write_text(json.dumps(_spend(1.5)) + "\n")
+    assert watch(child, "seat 1 child", "running") is True
+    last = rows[-1]
+    assert isinstance(last, journal.BudgetUpdate) and last.usd_running_lanes == 1.5
+
+    # The parent's own parent reads the subtree from that journal.
+    logs = tmp_path / "grandparent-view"
+    logs.mkdir()
+    (logs / "logs.jsonl").write_text(json.dumps({"type": last.TYPE, **last.model_dump()}) + "\n")
+    assert child_watch.running_usage(logs).usd == 1.5
 
 
 def _question(*, wait: bool = True) -> dict[str, object]:
@@ -208,7 +282,7 @@ def test_a_parent_puts_its_childs_question_to_its_own_operator(tmp_path: pathlib
     parent = _Parent(
         tmp_path, answers=operator_prompts.QuestionAnswer(("8080", "localhost"), "frontend")
     )
-    parent.relay()(child, "lane 2 child")
+    parent.watch()(child, "lane 2 child", "waiting")
     (asked,) = parent.questions
     assert asked.questions == (
         schema.UserQuestion(question="[lane 2 child] Which port?", options=("80", "8080")),
@@ -234,7 +308,7 @@ def test_no_answer_at_the_parent_goes_down_as_no_answer(
             ("", ""), "away-deny", status="unanswered", note=note
         ),
     )
-    parent.relay()(child, "lane 1 child")
+    parent.watch()(child, "lane 1 child", "waiting")
     assert ipc.peek_question_answers(child, "question-1") == ()
 
     # The child's own questioner, parked with nobody attached, reads the outcome.
@@ -257,7 +331,7 @@ def test_a_queued_question_is_not_relayed(tmp_path: pathlib.Path) -> None:
     """A question the child did not wait on pauses nothing and stays on the child's row."""
     child = _child(tmp_path, _question(wait=False))
     parent = _Parent(tmp_path)
-    parent.relay()(child, "lane 1 child")
+    parent.watch()(child, "lane 1 child", "waiting")
     assert parent.questions == [] and _reply(child) is None
 
 
@@ -265,7 +339,7 @@ def test_a_question_answered_on_the_child_is_left_alone(tmp_path: pathlib.Path) 
     child = _child(tmp_path, _question())
     assert ipc.write_question_answers(child, "question-1", ("80", "here"))
     parent = _Parent(tmp_path)
-    parent.relay()(child, "lane 1 child")
+    parent.watch()(child, "lane 1 child", "waiting")
     assert parent.questions == [] and _reply(child) == ipc.QuestionReply(("80", "here"))
 
 
@@ -283,7 +357,7 @@ def test_a_relayed_question_keeps_within_the_length_a_question_may_have(
         },
     )
     parent = _Parent(tmp_path, answers=operator_prompts.QuestionAnswer(("ok",), "frontend"))
-    parent.relay()(child, "lane 1 child")
+    parent.watch()(child, "lane 1 child", "waiting")
     (asked,) = parent.questions
     text = asked.questions[0].question
     assert len(text) == schema.QUESTION_MAX_CHARS
@@ -298,10 +372,10 @@ def test_a_relayed_prompts_wait_counts_as_the_parents_operator_wait(tmp_path: pa
     """
     parent = _Parent(tmp_path)
     parent.think_s = 0.05
-    parent.relay()(_child(tmp_path, _prompt()), "lane 1 child")
+    parent.watch()(_child(tmp_path, _prompt()), "lane 1 child", "waiting")
     after_approval = parent.prompts.waited_s
     assert after_approval >= 0.05
     other = tmp_path / "second"
     other.mkdir()
-    parent.relay()(_child(other, _question()), "lane 2 child")
+    parent.watch()(_child(other, _question()), "lane 2 child", "waiting")
     assert parent.prompts.waited_s >= after_approval + 0.05

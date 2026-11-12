@@ -144,6 +144,9 @@ class ExecutionUsage:
         usd: The metered spend.
         usd_partial: Some model had no price, so `usd` is a lower bound.
         unmetered_tokens: Input and output tokens of calls the meter could not price.
+        usd_running_lanes: What the lanes still running have spent so far: inside the cap,
+            outside `usd` until each settles.
+        tokens_running_lanes: Their unpriced tokens so far, outside `unmetered_tokens`.
         plan_observed_points: The plan movement observed, in points.
         usd_cap: `[budget].max_usd`.
         tokens_fallback_cap: `[budget].max_tokens_fallback`.
@@ -157,6 +160,8 @@ class ExecutionUsage:
     usd: float = 0.0
     usd_partial: bool = False
     unmetered_tokens: int = 0
+    usd_running_lanes: float = 0.0
+    tokens_running_lanes: int = 0
     plan_observed_points: float = 0.0
     usd_cap: float | None = None
     tokens_fallback_cap: int | None = None

@@ -269,7 +269,7 @@ def _no_coordinator(
     _session_id: str,
     _max_usd: float | None,
     _auto_approve: bool,
-    _relay: Callable[[pathlib.Path, str], None],
+    _watch: Callable[[pathlib.Path, str, str], bool],
 ) -> None:
     """Refuse `/parallel`: an ACP client renders one session, so lanes would run unseen."""
     return None

@@ -57,9 +57,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         _path, launch = subordinate_env.launch_worker(repo, clone, cfg, monkeypatch)
         worker_dir = subordinate_env.create_record(clone, launch.session_id, parent="parent")
         parent = budget.BudgetTracker(max_usd=8, max_tokens_fallback=1000, max_plan_points=20)
-        share = parent.reserve("parent-p1", [launch.session_id], owner="parent-execution").share_of(
-            launch.session_id
-        )
+        share = parent.available()  # the worker starts under all its parent has left
         worker = budget.BudgetTracker(
             max_usd=share.usd, max_tokens_fallback=share.tokens, max_plan_points=share.plan_points
         )
@@ -75,7 +73,6 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         event_log.EventSink(worker_dir / "logs.jsonl").emit(
             journal.BudgetUpdate(**budget_events.budget_update_fields(worker))
         )
-        remaining = worker.available()
         executor = subordinate_env.dispatcher(clone, worker_dir, cfg, worker)
         refused = executor.dispatch(
             loop_conversation.Conversation(),
@@ -104,11 +101,11 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         assert result.lanes[0].status == "no_changes"
         record = lane_dispatch.read_records(worker_dir)[0]
         assert record.source == "panel" and record.join_policy == "record_only"
-        assert record.version == 3
+        assert record.version == 4
         child = record.children[0]
         assert child.limits is not None and launch.limits is not None
         assert child.limits.deadline_at == launch.limits.deadline_at
-        assert child.share == remaining and child.settled
+        assert child.settled
         panel_tokens = 2 if panel_cost is None else 0
         assert child.usage is not None and child.usage.tokens == panel_tokens
         assert worker.available().tokens == share.tokens - 5 - panel_tokens
@@ -121,7 +118,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         charged = next(row for row in emitted if row.get("type") == "budget.turn")
         assert charged["cost_usd"] == 1.0 + (panel_cost or 0.0)
         # The worker can die here, before finalization publishes another budget update.
-        parent.settle_lane("parent-p1", launch.session_id, lanes.lane_usage(worker_dir))
+        parent.settle_lane(launch.session_id, lanes.lane_usage(worker_dir))
         assert parent.estimate_usd()[0] == 1.0 + (panel_cost or 0.0)
         assert parent.available().usd == 7.0 - (panel_cost or 0.0)
         assert parent.snapshot().unmetered_tokens == 5 + panel_tokens
@@ -233,10 +230,9 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
             original_emit(journal.BudgetUpdate(**budget_events.budget_update_fields(meter)))
         before = len(calls)
         ancestor = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
-        ancestor.reserve("parent-p1", [worker_dir.name], owner="parent")
-        ancestor.settle_lane("parent-p1", worker_dir.name, lanes.lane_usage(worker_dir))
+        ancestor.settle_lane(worker_dir.name, lanes.lane_usage(worker_dir))
         if boundary != "complete":
-            assert ancestor.snapshot().reserved.tokens == 1000
+            assert not ancestor.snapshot().settled_lanes, "an unfinished worker is not charged"
         event_log.EventSink(worker_dir / "logs.jsonl").emit(
             journal.SessionResume(
                 session_id=worker_dir.name,
@@ -260,13 +256,13 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
         recovered.reconcile(state, conversation)
         recovered.reconcile(state, conversation)
         assert len(calls) == before
-        assert recovered_budget.snapshot().reserved.usd == 0
+        assert recovered_budget.snapshot().usd_running_lanes == 0
         usage = lanes.lane_usage(worker_dir)
         assert usage is not None and usage.tokens == 2 * len(calls)
-        ancestor.settle_lane("parent-p1", worker_dir.name, usage)
-        ancestor.settle_lane("parent-p1", worker_dir.name, usage)
+        ancestor.settle_lane(worker_dir.name, usage)
+        ancestor.settle_lane(worker_dir.name, usage)
         assert ancestor.snapshot().unmetered_tokens == 2 * len(calls)
-        assert ancestor.snapshot().reserved.tokens == 0
+        assert ancestor.snapshot().settled_lanes == frozenset({worker_dir.name})
         record = lane_dispatch.read_records(worker_dir)[0]
         assert record.state == "complete" and record.join_policy == "record_only"
         assert record.delivered and all(child.settled for child in record.children)
@@ -514,10 +510,7 @@ def test_a_settled_panel_keeps_the_ancestor_hold_until_the_journal_names_it(
     sink = event_log.EventSink(worker / "logs.jsonl")
     sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(tracker)))
     assert lanes.lane_usage(worker) is None
-    tracker.reserve(record.identity, [leaf], owner="w")
-    tracker.settle_lane(
-        record.identity, leaf, budget.UsageSettlement(usd=2.0, usd_partial=False, tokens=0)
-    )
+    tracker.settle_lane(leaf, budget.UsageSettlement(usd=2.0, usd_partial=False, tokens=0))
     sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(tracker)))
     usage = lanes.lane_usage(worker)
     assert usage is not None
@@ -525,7 +518,7 @@ def test_a_settled_panel_keeps_the_ancestor_hold_until_the_journal_names_it(
 
 
 @pytest.mark.parametrize("worker_dead", [False, True])
-def test_stop_follows_clone_state_and_readonly_bucket_and_keeps_unresolved_hold(
+def test_stop_follows_clone_state_and_readonly_bucket_and_leaves_the_worker_unsettled(
     short_repo: pathlib.Path,
     worker_dead: bool,
 ) -> None:
@@ -543,8 +536,7 @@ def test_stop_follows_clone_state_and_readonly_bucket_and_keeps_unresolved_hold(
         lane_records.LaneSpec(1, worker.name, clone, None), worker, "", True, ""
     )
     lane_watch.symlink_lane(paths.state_dir(repo), res)
-    grant = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
-    share = grant.reserve("parent-p1", [worker.name], owner="e").share_of(worker.name)
+    ancestor = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
     lane_dispatch.write_record(
         worker,
         lane_dispatch.DispatchRecord(
@@ -554,9 +546,7 @@ def test_stop_follows_clone_state_and_readonly_bucket_and_keeps_unresolved_hold(
             turn=1,
             base="",
             segments=(),
-            children=(
-                lane_dispatch.ChildRecord(session_id=leaf.name, lane=1, task="review", share=share),
-            ),
+            children=(lane_dispatch.ChildRecord(session_id=leaf.name, lane=1, task="review"),),
             state="running",
         ),
         now=time.time(),
@@ -573,9 +563,9 @@ def test_stop_follows_clone_state_and_readonly_bucket_and_keeps_unresolved_hold(
         assert stopped.ok
         assert all(not process.pid_alive(child.pid) for child in children)
         usage = lanes.lane_usage(worker)
-        assert usage is None, "unfinished descendants cannot release the owning worker's share"
-        settled = grant.settle_lane("parent-p1", worker.name, usage)
-        assert worker.name in settled.outstanding and grant.available().usd == 0
+        assert usage is None, "a worker with an unfinished descendant has no final usage"
+        ancestor.settle_lane(worker.name, usage)
+        assert not ancestor.snapshot().settled_lanes and ancestor.available().usd == 5
     finally:
         for child in children:
             child.kill()

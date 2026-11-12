@@ -42,14 +42,12 @@ def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
     for tracker in (parent, owner):
         tracker.record_plan_preflight("a", a0)
         tracker.record_plan_preflight("b", b0)
-    parent.reserve("p1", [worker.name], owner="ancestor")
-    owner.reserve("panel", [leaf.name], owner="worker")
     panel.record_plan_preflight("b", b1)
     leaf_sink = event_log.EventSink(leaf / "logs.jsonl")
     leaf_sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(panel)))
     leaf_usage = lanes.lane_usage(leaf)
     assert leaf_usage is not None
-    owner.settle_lane("panel", leaf.name, leaf_usage)
+    owner.settle_lane(leaf.name, leaf_usage)
     owner.record_plan_preflight("a", a1)
     sink = event_log.EventSink(worker / "logs.jsonl")
     sink.emit(
@@ -82,8 +80,8 @@ def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
     )
     usage = lanes.lane_usage(worker)
     assert usage is not None
-    parent.settle_lane("p1", worker.name, usage)
-    parent.settle_lane("p1", worker.name, usage)
+    parent.settle_lane(worker.name, usage)
+    parent.settle_lane(worker.name, usage)
     assert parent.snapshot().plan_observed_points == pytest.approx(4)
     assert parent.snapshot().plans["a"].usage == a1
     assert parent.snapshot().plans["b"].usage == b1

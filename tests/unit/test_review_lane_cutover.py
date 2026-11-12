@@ -36,9 +36,13 @@ def test_old_panel_execution_is_deleted() -> None:
             assert not hasattr(module, name), f"obsolete panel executor: {module.__name__}.{name}"
 
 
-def test_roster_reserves_before_width_and_concurrency_batches(
+def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
     short_repo: pathlib.Path,
 ) -> None:
+    """Each batch's seats start under the run's remaining allowance, the earlier spend out.
+
+    The roster's seats each held an even fifth from the start, whatever the others used.
+    """
     repo = short_repo / "origin"
     subordinate_env.init_repo(repo)
     directory = subordinate_env.create_record(repo, "parent")
@@ -46,15 +50,20 @@ def test_roster_reserves_before_width_and_concurrency_batches(
     executor = subordinate_env.dispatcher(repo, directory, subordinate_env.config(), meter)
     executor.max_lanes = 2
     executor.clock = lambda: 1000.0
-    observed: list[tuple[int, int, float]] = []
+    observed: list[tuple[int, float]] = []
     deadlines: list[float | None] = []
 
     def spawn(
         lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
     ) -> list[lane_records.LaneResult]:
         assert lanes[0].allowance is not None
-        observed.append((len(lanes), meter.snapshot().reserved.tokens, lanes[0].allowance.usd))
+        assert all(lane.allowance == lanes[0].allowance for lane in lanes)
+        observed.append((len(lanes), lanes[0].allowance.usd))
         deadlines.extend(lane.limits.deadline_at if lane.limits else None for lane in lanes)
+        spent = budget.UsageSettlement(usd=1, usd_partial=False, tokens=0)
+        for i in range(1, len(lanes) + 1):
+            # The wait's watch counts a seat's spend while it runs.
+            meter.note_running(f"parent-{group}-l{i}", spent)
         return [
             lane_records.LaneResult(
                 lane_records.LaneSpec(i, f"parent-{group}-l{i}", repo, lane.settings),
@@ -62,7 +71,7 @@ def test_roster_reserves_before_width_and_concurrency_batches(
                 "",
                 False,
                 "scripted failure",
-                usage=budget.UsageSettlement(usd=0, usd_partial=False, tokens=0),
+                usage=spent,
             )
             for i, lane in enumerate(lanes, 1)
         ]
@@ -77,9 +86,8 @@ def test_roster_reserves_before_width_and_concurrency_batches(
         concurrency=3,
     )
     assert result.dispatched and len(result.lanes) == 5
-    assert [x[0] for x in observed] == [2, 2, 1]
-    assert observed[0][1] == 1000
-    assert [x[2] for x in observed] == [2, 2, 2]
+    assert observed == [(2, 10), (2, 8), (1, 6)]
+    assert meter.estimate_usd()[0] == 5 and meter.snapshot().usd_running_lanes == 0
     assert [j.detail for j in result.lanes] == ["scripted failure"] * 5
     # A later batch waits for the earlier ones: its window starts where theirs ends.
     window = parallel_dispatch.MODEL_LANE_DEADLINE_S

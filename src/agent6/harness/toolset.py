@@ -130,6 +130,7 @@ def parallel_description(cfg: Config) -> str:
         + "; ".join(roles)
         + f". Configured providers: {providers}. Each lane is an ordinary run that may edit,"
         " under"
-        " 200 turns, 30 minutes and a share of this run's budget; the result names each"
-        " lane's join, and `read_session` reads a lane's answer."
+        " 200 turns, 30 minutes and this run's remaining budget, which the lanes share; the"
+        " result names each lane's join and gives the summary it finished with, and"
+        " `read_session` reads a lane's transcript."
     )

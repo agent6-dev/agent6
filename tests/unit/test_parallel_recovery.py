@@ -254,7 +254,7 @@ def test_a_failed_record_write_launches_nothing(
     )
     wf.run("start")
     assert calls == []
-    assert budget.snapshot().reserved.usd == 0.0
+    assert budget.available().usd == 10.0
     texts = [t for call in provider.call.call_args_list for t in _texts(call)]
     assert any("could not persist the dispatch record" in t and "disk full" in t for t in texts)
 
@@ -294,8 +294,7 @@ def test_a_crash_before_launch_resumes_to_nothing_ran(tmp_path: pathlib.Path) ->
     (record,) = _records(session_dir)
     assert record.state == "running"  # written before the launch was attempted
     assert [c.session_id for c in record.children] == ["run-abc-p1-l1", "run-abc-p1-l2"]
-    assert [c.share and c.share.usd for c in record.children] == [5.0, 5.0]
-    assert budget.snapshot().reserved.usd == 10.0
+    assert budget.available().usd == 10.0  # no lane holds a share of it
 
     seen: list[tuple[str, Sequence[str]]] = []
 
@@ -311,7 +310,7 @@ def test_a_crash_before_launch_resumes_to_nothing_ran(tmp_path: pathlib.Path) ->
     (record,) = _records(session_dir)
     assert record.state == "complete" and record.delivered
     assert "nothing ran" in record.message
-    assert budget2.snapshot().reserved.usd == 0.0
+    assert budget2.available().usd == 10.0
     assert any("nothing ran" in t for t in _first_call_texts(provider2))
     # A third execution has nothing left to reconcile and delivers nothing again.
     provider3 = _provider()
@@ -358,9 +357,9 @@ def test_a_crash_after_one_child_started_recovers_it_once(tmp_path: pathlib.Path
     assert record.state == "complete"
     l1, l2 = record.children
     assert l1.join is not None and l1.join.status == "joined" and l1.settled
-    assert l2.join is not None and l2.join.status == "failed" and l2.outstanding
+    assert l2.join is not None and l2.join.status == "failed" and not l2.settled
     assert budget2.estimate_usd()[0] == pytest.approx(1.5)
-    assert budget2.snapshot().reserved.usd == pytest.approx(5.0)  # the unknown lane's share
+    assert budget2.available().usd == pytest.approx(8.5)  # the unknown lane holds nothing
     texts = _first_call_texts(provider2)
     assert any("joined at" in t and "never started" in t for t in texts)
 
@@ -427,9 +426,9 @@ def test_a_merge_landed_before_the_record_is_not_merged_twice(
     assert all(
         c.join is not None and c.join.status == "joined" and c.settled for c in record.children
     )
-    # The first execution settled both lanes; settled usage stays with it, nothing is held.
+    # The first execution settled both lanes; settled usage stays with it.
     assert budget2.estimate_usd()[0] == pytest.approx(0.0)
-    assert budget2.snapshot().reserved.usd == 0.0
+    assert budget2.available().usd == 10.0
 
 
 def test_a_result_completed_but_undelivered_is_delivered_once(
@@ -514,8 +513,11 @@ def test_a_fresh_dispatch_records_every_boundary(tmp_path: pathlib.Path) -> None
     session_dir = tmp_path / "run-abc"
     base = _head(repo)
 
+    ceilings: list[float] = []
+
     def spawner(lanes: Any, group: str, *, at: str | None = None) -> list[Any]:
         out = []
+        ceilings.extend(lane.allowance.usd for lane in lanes)
         for i in range(1, len(lanes) + 1):
             sid = f"run-abc-{group}-l{i}"
             tip = _make_branch(repo, f"agent6/{sid}", base, f"lane{i}.txt", tmp_path / f"wt{i}")
@@ -537,13 +539,13 @@ def test_a_fresh_dispatch_records_every_boundary(tmp_path: pathlib.Path) -> None
     (record,) = _records(session_dir)
     assert record.state == "complete" and record.delivered
     assert record.owner and record.source == "operator" and record.base == _head(repo)
-    assert [c.share and c.share.usd for c in record.children] == [5.0, 5.0]
+    assert ceilings == [10.0, 10.0]  # each lane starts under all the run has left
     for child in record.children:
         assert child.join is not None and child.join.status == "joined"
         assert child.join.target_before and child.join.target_after == child.join.sha
         assert child.usage == lane_dispatch.UsageRecord(usd=0.5) and child.settled
     assert budget.estimate_usd()[0] == pytest.approx(1.0)
-    assert budget.snapshot().reserved.usd == 0.0
+    assert budget.available().usd == pytest.approx(9.0)
     stored = json.loads(lane_dispatch.record_path(session_dir, "run-abc-p1").read_text())
-    assert stored["version"] == 3
+    assert stored["version"] == 4
     assert stored["join_policy"] == "merge"

@@ -9,7 +9,7 @@ import pathlib
 
 import pytest
 
-from agent6 import budget_reservations, lane_records
+from agent6 import lane_records
 from agent6.sessions import lane_dispatch
 
 
@@ -26,7 +26,6 @@ def _record(identity: str = "run-p1") -> lane_dispatch.DispatchRecord:
                 session_id=f"{identity}-l1",
                 lane=1,
                 task="audit",
-                share=budget_reservations.BudgetAllowance(usd=2.5, tokens=-1, plan_points=0.0),
                 limits=lane_records.LaneLimits(max_turns=200, deadline_at=1.0e9),
             ),
             lane_dispatch.ChildRecord(session_id=f"{identity}-l2", lane=2, task="audit"),
@@ -39,7 +38,6 @@ def test_a_record_round_trips_with_every_nested_shape(tmp_path: pathlib.Path) ->
     lane_dispatch.write_record(tmp_path, record, now=123.5)
     (read,) = lane_dispatch.read_records(tmp_path)
     assert read == record.model_copy(update={"written_at": 123.5})
-    assert read.child("run-p1-l1").share == budget_reservations.BudgetAllowance(2.5, -1, 0.0)
     assert read.child("run-p1-l1").limits == lane_records.LaneLimits(200, 1.0e9)
     assert lane_dispatch.record_path(tmp_path, "run-p1").is_file()
     assert not list(lane_dispatch.records_dir(tmp_path).glob("*.tmp*"))

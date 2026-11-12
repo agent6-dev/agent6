@@ -192,7 +192,7 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
             layout, question=question, answer=answer
         ),
         build_coordinator_spawner=(
-            lambda cfg, leaves, cwd, state_dir, mode, session_id, max_usd, auto_approve, relay: (
+            lambda cfg, leaves, cwd, state_dir, mode, session_id, max_usd, auto_approve, watch: (
                 app_lanes.build_coordinator_spawner(
                     cfg,
                     cwd,
@@ -204,7 +204,7 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
                     max_usd=max_usd,
                     auto_approve=auto_approve,
                     lane_away=interact.lane_away_mode(),
-                    relay=relay,
+                    watch=watch,
                 )
             )
         ),

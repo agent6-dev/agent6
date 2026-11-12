@@ -163,21 +163,11 @@ class ParallelDispatcher:
         group = f"p{state.parallel_groups_dispatched}"
         identity = f"{self.session_id}-{group}"
         children = [f"{identity}-l{i}" for i in range(1, len(lanes) + 1)]
-        grant = None
-        if self.budget is not None:
-            try:
-                grant = self.budget.reserve(identity, children, owner=self.execution_id)
-            except agent6_budget.BudgetExceededError as exc:
-                state.parallel_groups_dispatched -= 1
-                return self.refusal(f"the budget is exhausted ({exc}); nothing dispatched.")
-        lanes = [
-            dataclasses.replace(
-                lane,
-                allowance=grant.share_of(child) if grant is not None else None,
-                limits=limits,
-            )
-            for lane, child in zip(lanes, children, strict=True)
-        ]
+        if self.budget is not None and self.budget.is_exhausted():
+            state.parallel_groups_dispatched -= 1
+            reason = self.budget.snapshot().exhausted_reason
+            return self.refusal(f"the budget is exhausted ({reason}); nothing dispatched.")
+        lanes = [dataclasses.replace(lane, limits=limits) for lane in lanes]
         parent_id = parallel_join.parallel_parent_id(self.curator, state.root_task_id)
         node_ids = [
             parallel_join.add_parallel_node(
@@ -203,7 +193,6 @@ class ParallelDispatcher:
                     lane=i,
                     task=lane.task,
                     model=lane.model,
-                    share=lane.allowance,
                     limits=lane.limits,
                 )
                 for i, (child, lane) in enumerate(zip(children, lanes, strict=True), start=1)
@@ -213,8 +202,6 @@ class ParallelDispatcher:
             # The record is the launch's precondition: nothing runs that a resume cannot find.
             self.write(record)
         except OSError as exc:
-            if self.budget is not None:
-                self.budget.release(identity)
             state.parallel_groups_dispatched -= 1
             self.fail_nodes(record, "dispatch record could not be written")
             return self.refusal(
@@ -274,15 +261,12 @@ class ParallelDispatcher:
             else f"{identity}-b{i // width + 1}-l{i % width + 1}"
             for i in range(len(lanes))
         ]
-        grant = None
-        if self.budget is not None:
-            try:
-                grant = self.budget.reserve(identity, children, owner=self.execution_id)
-            except agent6_budget.BudgetExceededError as exc:
-                return self.refusal(f"the panel budget is exhausted ({exc}); nothing dispatched.")
+        if self.budget is not None and self.budget.is_exhausted():
+            reason = self.budget.snapshot().exhausted_reason
+            return self.refusal(f"the panel budget is exhausted ({reason}); nothing dispatched.")
         bounded: list[lane_records.LaneTask] = []
         start = self.clock()
-        for i, (lane, child) in enumerate(zip(lanes, children, strict=True)):
+        for i, lane in enumerate(lanes):
             assert lane.contract is not None
             # Batches run one after another: each gets its own window, fixed before launch.
             deadlines = [start + MODEL_LANE_DEADLINE_S * (i // width + 1)]
@@ -296,7 +280,6 @@ class ParallelDispatcher:
                     limits=lane_records.LaneLimits(
                         max_turns=lane.contract.max_calls, deadline_at=min(deadlines)
                     ),
-                    allowance=grant.share_of(child) if grant is not None else None,
                 )
             )
         record = lane_dispatch.DispatchRecord(
@@ -313,7 +296,6 @@ class ParallelDispatcher:
                     lane=i,
                     task=lane.task,
                     model=lane.model,
-                    share=lane.allowance,
                     limits=lane.limits,
                 )
                 for i, (child, lane) in enumerate(zip(children, bounded, strict=True), start=1)
@@ -322,8 +304,6 @@ class ParallelDispatcher:
         try:
             self.write(record)
         except OSError as exc:
-            if self.budget is not None:
-                self.budget.release(identity)
             return self.refusal(
                 f"could not persist the panel dispatch ({exc}); nothing dispatched."
             )
@@ -366,7 +346,12 @@ class ParallelDispatcher:
             width = batch_width or len(lanes)
             results: list[lane_records.LaneResult] = []
             for offset in range(0, len(lanes), width):
-                batch = lanes[offset : offset + width]
+                # Each batch starts under what the run has left then; its lanes share it.
+                ceiling = self.budget.available() if self.budget is not None else None
+                batch = [
+                    dataclasses.replace(lane, allowance=ceiling)
+                    for lane in lanes[offset : offset + width]
+                ]
                 batch_group = group if len(lanes) <= width else f"{group}-b{offset // width + 1}"
                 results.extend(self.lane_spawner(batch, batch_group, at=record.base or None))
             if len(results) != len(lanes):
@@ -374,7 +359,7 @@ class ParallelDispatcher:
                     f"group spawner returned {len(results)} result(s) for {len(lanes)} lane(s)"
                 )
         except Exception as exc:
-            # The front-end callback may fail after launching: unknown usage stays held.
+            # The front-end callback may fail after launching: the lanes' usage is unknown.
             self.log(f"PARALLEL: group {identity} dispatch failed: {exc}")
             self.fail_nodes(record, f"dispatch failed: {exc}")
             self.emit(journal.ParallelFailed(group=identity, error=str(exc)))
@@ -442,14 +427,14 @@ class ParallelDispatcher:
         record: lane_dispatch.DispatchRecord,
         by_id: dict[str, lane_records.LaneResult],
     ) -> lane_dispatch.DispatchRecord:
-        """Charge each lane's usage once and release its share; unknown usage stays held.
+        """Charge each lane's usage once; a lane whose usage is unknown stays unsettled.
 
         Args:
             record: The dispatch's record.
             by_id: The lanes' results by session id.
 
         Returns:
-            The record in the `settling` state, each lane settled or outstanding.
+            The record in the `settling` state.
         """
         record = record.advanced("settling")
         children: list[lane_dispatch.ChildRecord] = []
@@ -459,8 +444,8 @@ class ParallelDispatcher:
                 continue
             res = by_id.get(child.session_id)
             usage = res.usage if res is not None else None
-            if self.budget is not None and child.share is not None:
-                self.budget.settle_lane(record.identity, child.session_id, usage)
+            if self.budget is not None:
+                self.budget.settle_lane(child.session_id, usage)
             children.append(
                 child.model_copy(
                     update={
@@ -472,7 +457,6 @@ class ParallelDispatcher:
                             else None
                         ),
                         "settled": usage is not None,
-                        "outstanding": usage is None,
                     }
                 )
             )
@@ -574,9 +558,9 @@ class ParallelDispatcher:
 
         Runs before a resumed execution's first provider call. A complete record whose
         result never reached the conversation is delivered; an interrupted one has its
-        lanes found by the recoverer (live ones stopped, finished ones imported), its grant
-        restored as recorded, its usage settled and its joins landed exactly once, and its
-        result delivered for the original call.
+        lanes found by the recoverer (live ones stopped, finished ones imported), its usage
+        settled and its joins landed exactly once, and its result delivered for the
+        original call.
 
         Args:
             state: The loop state.
@@ -617,19 +601,10 @@ class ParallelDispatcher:
             self.log(
                 f"PARALLEL: reconciling the interrupted dispatch {record.identity} ({record.state})"
             )
-            shares = [(c.session_id, c.share) for c in record.children if c.share is not None]
-            if self.budget is not None and shares:
-                self.budget.restore(
-                    record.identity,
-                    shares,
-                    owner=record.owner,
-                    settled=frozenset(
-                        c.session_id
-                        for c in record.children
-                        if c.session_id in accounted or (record.source != "panel" and c.settled)
-                    ),
-                )
             children = [c.session_id for c in record.children]
+            if self.budget is not None:
+                # The journal already holds these lanes' usage: charged once, by that execution.
+                self.budget.mark_settled(c for c in children if c in accounted)
             results = (
                 self.lane_recoverer(record.identity, children)
                 if self.lane_recoverer is not None
@@ -641,14 +616,10 @@ class ParallelDispatcher:
                 and not results
             ):
                 if self.budget is not None:
-                    for child in record.children:
-                        if child.share is not None:
-                            self.budget.settle_lane(
-                                record.identity,
-                                child.session_id,
-                                agent6_budget.UsageSettlement(usd=0, usd_partial=False, tokens=0),
-                            )
-                    self.budget.release(record.identity)
+                    # Nothing ran, so nothing was used; the journal names each lane accounted.
+                    nothing = agent6_budget.UsageSettlement(usd=0, usd_partial=False, tokens=0)
+                    for child in children:
+                        self.budget.settle_lane(child, nothing)
                 message = (
                     f"[parallel] group {record.identity}: dispatch interrupted before launch;"
                     " nothing ran."
@@ -660,7 +631,6 @@ class ParallelDispatcher:
                             child.model_copy(
                                 update={
                                     "settled": True,
-                                    "outstanding": False,
                                     "usage": lane_dispatch.UsageRecord(usd=0.0),
                                 }
                             )

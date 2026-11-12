@@ -14,7 +14,7 @@ import pathlib
 from collections.abc import Sequence
 from typing import Literal, Protocol
 
-from agent6 import budget, budget_reservations, kinds
+from agent6 import budget, kinds
 
 # Who asked for a dispatch: the operator's steer, the model's tool call, or a review panel.
 DispatchSource = Literal["operator", "model", "panel"]
@@ -85,7 +85,7 @@ class LaneTask:
     task: str
     model: str | None
     pins: tuple[str, ...] = ()
-    allowance: budget_reservations.BudgetAllowance | None = None
+    allowance: budget.BudgetAllowance | None = None
     limits: LaneLimits | None = None
     contract: kinds.ConversationContract | None = None
     settings: kinds.ModelSettings | None = None

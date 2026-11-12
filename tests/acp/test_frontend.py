@@ -239,7 +239,7 @@ def test_parallel_lanes_are_not_spawned_into_a_single_pane() -> None:
         "r",
         None,
         False,
-        lambda _child, _label: None,
+        lambda _child, _label, _status: False,
     )
     assert spawner is None
 

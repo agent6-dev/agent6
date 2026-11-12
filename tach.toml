@@ -29,7 +29,6 @@ path = "agent6.app"
 depends_on = [
   "agent6",
   "agent6.budget",
-  "agent6.budget_reservations",
   "agent6.child_env",
   "agent6.config",
   "agent6.config.io",
@@ -529,11 +528,7 @@ depends_on = ["agent6.path_safety", "agent6.vcs.git_read"]
 
 [[modules]]
 path = "agent6.budget"
-depends_on = ["agent6.budget_reservations", "agent6.kinds", "agent6.models.pricing"]
-
-[[modules]]
-path = "agent6.budget_reservations"
-depends_on = []
+depends_on = ["agent6.kinds", "agent6.models.pricing"]
 
 [[modules]]
 path = "agent6.models.pricing"
@@ -801,7 +796,7 @@ depends_on = ["agent6.review_records"]
 
 [[modules]]
 path = "agent6.lane_records"
-depends_on = ["agent6.budget", "agent6.budget_reservations", "agent6.kinds"]
+depends_on = ["agent6.budget", "agent6.kinds"]
 
 [[modules]]
 path = "agent6.task_text"
@@ -903,7 +898,7 @@ depends_on = [
 
 [[modules]]
 path = "agent6.sessions.lane_dispatch"
-depends_on = ["agent6.budget_reservations", "agent6.lane_records", "agent6.portable"]
+depends_on = ["agent6.lane_records", "agent6.portable"]
 
 [[modules]]
 path = "agent6.sessions.layout"

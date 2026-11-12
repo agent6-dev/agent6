@@ -105,6 +105,8 @@
       "usd": 0.0,
       "usd_partial": false,
       "unmetered_tokens": 0,
+      "usd_running_lanes": 0.0,
+      "tokens_running_lanes": 0,
       "plan_observed_points": 0.0,
       "usd_cap": null,
       "tokens_fallback_cap": null,

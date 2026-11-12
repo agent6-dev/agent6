@@ -142,9 +142,20 @@ class BudgetUpdate(Event):
         default=None,
         description="Spend cap in USD; -1 means unlimited.",
     )
+    usd_running_lanes: float = pydantic.Field(
+        default=0.0,
+        description=(
+            "USD the lanes still running have spent so far; outside `usd_total` until each "
+            "settles, inside the cap."
+        ),
+    )
     tokens_unmetered: int | None = pydantic.Field(
         default=None,
         description="Tokens with no known price.",
+    )
+    tokens_running_lanes: int = pydantic.Field(
+        default=0,
+        description="Unpriced tokens of the lanes still running; outside `tokens_unmetered`.",
     )
     tokens_fallback_cap: int | None = pydantic.Field(
         default=None,
