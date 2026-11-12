@@ -11,11 +11,8 @@ from agent6.ui.cli import common, completers
 
 # `run -i` and `resume -i` share one hook (`app/execution.py`), so they share one help.
 _INTERACTIVE_HELP = (
-    "Pause for input after each automatic commit. The prompt accepts /continue"
-    " (default), /diff, /cost, /undo, /watch, /mcp, /init, /help, /quit, and /exit."
-    " /undo puts the files back to before the last message and ends the run undone; the"
-    " fork it prints continues with `agent6 resume <fork> --steer`."
-    " /quit and /exit stop without another prompt. Requires a foreground terminal."
+    "Pause for input after each automatic commit; /help lists the prompt's commands."
+    " Requires a foreground terminal."
 )
 
 
@@ -27,9 +24,7 @@ def _add_model_flag(parser: argparse.ArgumentParser) -> None:
         metavar="[PROVIDER/]MODEL",
         help=(
             "Use MODEL for this session, over every config file. A bare MODEL keeps the"
-            " role's configured provider; PROVIDER/MODEL names another. `agent6 model <role>"
-            " <provider>` lists a provider's ids. run and ask set the worker; plan sets the"
-            " planner. The session records the choice; `resume --model` can change it."
+            " configured provider; PROVIDER/MODEL names another."
         ),
     )
     arg.completer = completers._complete_model_routes  # type: ignore[attr-defined]
@@ -56,10 +51,8 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default="",
         metavar="SESSION_ID",
         help=(
-            "Start a new run with context from another run, plan, or ask. Context includes its"
-            " task, outcome, diff, key events, and plan text when present. Accepts a session id"
-            " or unambiguous prefix. With no TASK, a plan source becomes the task. The source"
-            " does not change. Use `agent6 fork` to copy an earlier saved turn instead."
+            "Start with context from another run, plan, or ask: its task, outcome, diff and"
+            " plan. With no TASK, a plan source becomes the task."
         ),
     )
     run_from.completer = completers._complete_session_ids  # type: ignore[attr-defined]
@@ -70,9 +63,8 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default=[],
         metavar="TEXT",
         help=(
-            "Add an instruction that stays in every model call, even after older context is"
-            " shortened. Repeat for more instructions; this is the same as /pin. A /parallel"
-            " lane inherits them."
+            "Keep TEXT in every model call, even after older context is shortened."
+            " Repeatable; the same as /pin."
         ),
     )
     run_skill = run_p.add_argument(
@@ -80,7 +72,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         action="append",
         default=[],
         metavar="NAME",
-        help="Add an installed skill's instructions before the task. Repeat for more skills.",
+        help="Add an installed skill's instructions before the task. Repeatable.",
     )
     run_skill.completer = completers._complete_skills  # type: ignore[attr-defined]
     run_p.add_argument(
@@ -88,9 +80,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         action="store_true",
         help=(
             "Make the agent split the task into ordered subtasks before editing, then work on"
-            " one at a time. It does not ask you to approve the plan. This sets"
-            " harness.prompt.decompose to `on` for this run. It can help smaller models with"
-            " multi-part tasks but adds work for models that already plan well."
+            " one at a time. Sets harness.prompt.decompose to `on` for this run."
         ),
     )
     run_p.add_argument(
@@ -98,10 +88,8 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default="",
         metavar="GOAL",
         help=(
-            "Keep returning to GOAL whenever all other tasks are done or the agent tries to"
-            " stop. New tasks take priority. The session can still end when you stop it or it"
-            " reaches its budget or turn limit. harness.standing_patience can also end"
-            " it after repeated unproductive returns; by default, it never does."
+            "Return to GOAL whenever all other tasks are done or the agent tries to stop."
+            " The session ends when you stop it or it reaches its budget or turn limit."
         ),
     )
     run_parallel_flag = run_p.add_argument(
@@ -109,14 +97,9 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default="",
         metavar="N|SELECTOR,...",
         help=(
-            "Fan out isolated lanes: an integer N runs N lanes on the worker model,"
-            " a comma-separated list runs one lane per selector: a role name (default,"
-            " worker, planner, reviewer, helper) brings that role's model, effort and"
-            " temperature; provider/model, or a model id on the worker's provider, runs"
-            " with the worker's effort and temperature. Each lane clones the repo, runs"
-            " independently, and lands its own branch; results are auto-compared"
-            " and ranked (nothing is merged). Capped by [harness.parallel].max_lanes;"
-            " combine with --max-usd for a per-lane budget."
+            "Run the task in isolated lanes, then join the lane [harness.parallel].judges"
+            " rank first onto this run's branch. N runs N lanes on the worker model; a list"
+            " runs one lane per SELECTOR (a role name, or [provider/]model)."
         ),
     )
     run_parallel_flag.completer = completers._complete_parallel_models  # type: ignore[attr-defined]
@@ -124,15 +107,9 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--worktree",
         action="store_true",
         help=(
-            "From the repository's top level, work in a new git worktree of it, at HEAD's"
-            " commit, under [git.worktree].base_dir. This checkout is not touched: its"
-            " uncommitted changes stay here and are not carried into the run, so you can keep"
-            " working here or start more runs. The worktree holds tracked files only:"
-            " [git.worktree].setup_command, or a `## Setup command` block in that commit's"
-            " AGENTS.md, builds what git does not track (.venv, node_modules) before the first"
-            " turn. Land the work with"
-            " `agent6 sessions merge ID`;"
-            " `agent6 sessions prune` then removes the worktree. Cannot be used with --parallel."
+            "Work in a new git worktree at HEAD's commit, under [git.worktree].base_dir;"
+            " uncommitted changes stay in this checkout. [git.worktree].setup_command builds"
+            " what git does not track. Land the work with `agent6 sessions merge ID`."
         ),
     )
     run_profile = run_p.add_argument(
@@ -141,10 +118,8 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         type=model.preset_name,
         help=(
             f"Apply a built-in strategy preset ({'/'.join(layer_presets.BUILTIN_PRESETS)})"
-            " or a custom"
-            " presets.NAME. This overrides any agent6.preset selected in a config file and values"
-            " from the global and per-repository configs. Values from --config FILE and other"
-            " command flags still win. Use none to select no preset."
+            " or a custom presets.NAME, in place of the configured agent6.preset."
+            " Use none to select no preset."
         ),
     )
     run_profile.completer = completers._complete_presets  # type: ignore[attr-defined]
@@ -160,10 +135,8 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--tui",
         action="store_true",
         help=(
-            "Show the run in the full-screen terminal interface instead of command-line"
-            " output. Ctrl+D switches between the conversation and dashboard."
+            "Show the run in the full-screen terminal interface."
             " Without a terminal the run continues in CLI mode; cannot be used with -i."
-            " You can also start the run from `agent6 tui`."
         ),
     )
     common._add_budget_flags(run_p)
@@ -180,10 +153,7 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "--steer",
         default="",
         metavar="TEXT",
-        help=(
-            "Give TEXT to the resumed agent before it next starts work. The TUI follow-up field"
-            " uses this option."
-        ),
+        help=("Give TEXT to the resumed agent before it next starts work."),
     )
     resume_p.add_argument(
         "--merge",
@@ -192,8 +162,7 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         dest="merge_from",
         help=(
             "Merge BRANCH into the run's work before its first turn; a conflict's markers stay"
-            " in the files for the run to resolve. `sessions merge` names this command when a"
-            " landing conflicts."
+            " in the files for the run to resolve."
         ),
     )
     resume_p.add_argument(
@@ -202,19 +171,14 @@ def _add_resume_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         help=(
             "Resume even when the saved commit and the session's current commit have diverged,"
             " or when its agent6/ID branch holds a commit the session did not make (the branch"
-            " is then left where it is). Later commits made by the same session do not require"
-            " this."
+            " is then left where it is)."
         ),
     )
     resume_preset = resume_p.add_argument(
         "--preset",
         default=argparse.SUPPRESS,
         type=model.preset_name,
-        help=(
-            "Use another strategy preset for this continuation. A preset can change any"
-            " setting, so it takes effect only when resuming. The session records it and uses"
-            " it on later resumes. Use none to select no preset."
-        ),
+        help=("Use another strategy preset from this resume on. Use none to select no preset."),
     )
     resume_preset.completer = completers._complete_presets  # type: ignore[attr-defined]
     _add_model_flag(resume_p)

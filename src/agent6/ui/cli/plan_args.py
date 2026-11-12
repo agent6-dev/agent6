@@ -54,10 +54,8 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         "--tui",
         action="store_true",
         help=(
-            "Show the planning session in the full-screen terminal interface instead of"
-            " command-line output. Ctrl+D switches between the conversation and dashboard."
+            "Show the planning session in the full-screen terminal interface."
             " Without a terminal the plan continues in CLI mode."
-            " You can also start the plan from `agent6 tui`."
         ),
     )
     common._add_budget_flags(plan_run)
@@ -117,9 +115,8 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default="",
         metavar="SESSION_ID",
         help=(
-            "Include context from another run, plan, or ask: its task, outcome, diff, key"
-            " events, and its plan or ask transcript when present. Accepts a session id or"
-            " unambiguous prefix."
+            "Include context from another run, plan, or ask: its task, outcome, diff, and"
+            " its plan or ask transcript."
         ),
     )
     ask_session.completer = completers._complete_session_ids  # type: ignore[attr-defined]

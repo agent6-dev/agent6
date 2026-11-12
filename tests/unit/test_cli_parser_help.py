@@ -312,9 +312,9 @@ def test_run_family_help_explains_actions_in_user_terms() -> None:
     assert (_option(run, "--decompose").help or "").startswith(
         "Make the agent split the task into ordered subtasks before editing"
     )
-    assert (_option(run, "--parallel").help or "").startswith("Fan out isolated lanes")
+    assert (_option(run, "--parallel").help or "").startswith("Run the task in isolated lanes")
     assert (_option(run, "--max-plan-points").help or "").startswith(
-        "The plan percentage points this run may use"
+        "Limit the plan percentage points this command uses"
     )
     assert (_option(run, "--disable-sandbox").help or "").startswith(
         "Run the agent's commands directly on the host"

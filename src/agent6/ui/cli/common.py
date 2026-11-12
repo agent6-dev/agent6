@@ -91,17 +91,18 @@ def _add_config_flag(parser: argparse.ArgumentParser) -> None:
 
 def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
     """Add the per-run `[budget]` override flags."""
-    group = parser.add_argument_group("budget")
+    group = parser.add_argument_group(
+        "budget",
+        "-1 removes a limit. A resume or a fork keeps the values the run's flags last set.",
+    )
     group.add_argument(
         "--max-usd",
         type=float,
         default=None,
         metavar="USD",
         help=(
-            "Set this command's metered spending limit in US dollars. -1 allows unlimited"
-            " spending; 0 refuses metered calls. Does not bound included-plan calls; use"
-            " --max-plan-points for those. Default: [budget].max_usd; on a resume or a fork, the"
-            " value the run's flags last set."
+            "Limit this command's metered spending, in US dollars; 0 refuses metered calls."
+            " Default: [budget].max_usd."
         ),
     )
     group.add_argument(
@@ -110,11 +111,8 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
         default=None,
         metavar="POINTS",
         help=(
-            "The plan percentage points this run may use on a subscription provider. The"
-            " account reports whole percents and a tick counts as a full point, so the cap"
-            " ends the run early, never late. -1: unlimited; 0: refuse plan-metered calls."
-            " Default: [budget].max_plan_points; on a resume or a fork, the value the run's flags"
-            " last set."
+            "Limit the plan percentage points this command uses on a subscription provider;"
+            " 0 refuses plan-metered calls. Default: [budget].max_plan_points."
         ),
     )
     group.add_argument(
@@ -123,11 +121,8 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
         default=None,
         metavar="N",
         help=(
-            "Set the combined input and output token limit for calls with no price data."
-            " -1 allows unlimited tokens; 0 refuses calls that cannot be priced. Does not"
-            " bound plan-metered calls; use --max-plan-points for those. Default:"
-            " [budget].max_tokens_fallback; on a resume or a fork, the value the run's flags"
-            " last set."
+            "Limit the input plus output tokens of calls with no price data; 0 refuses those"
+            " calls. Default: [budget].max_tokens_fallback."
         ),
     )
 
@@ -147,8 +142,7 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser, *, approvals: bool = Tru
         "--disable-sandbox",
         action="store_true",
         help=(
-            "Run the agent's commands directly on the host with no sandbox. This disables"
-            " file limits, system-call filtering, and namespace isolation. Use only on a"
+            "Run the agent's commands directly on the host with no sandbox. Use only on a"
             " disposable or already-isolated machine; the host becomes the only boundary."
         ),
     )
@@ -159,9 +153,8 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser, *, approvals: bool = Tru
         "--auto-approve",
         action="store_true",
         help=(
-            "Approve every sandboxed command for this session without prompting. Changes"
-            " sandbox.run_commands from `ask` to `allow`, but never overrides `deny` or changes"
-            " sandbox.isolation. Sets every configured MCP server's `approve` to `allow`."
+            "Approve every sandboxed command and MCP tool call for this session without"
+            " prompting; sandbox.run_commands = `deny` still refuses commands."
             " With --disable-sandbox, this gives the agent unprompted host access."
         ),
     )
@@ -170,8 +163,7 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser, *, approvals: bool = Tru
         action="store_true",
         help=(
             "Do not let this session run commands: no run_command, verify gate, or background"
-            " commands. Sets sandbox.run_commands to `deny`. This is also how /btw runs its side"
-            " question."
+            " commands. Sets sandbox.run_commands to `deny`."
         ),
     )
 
