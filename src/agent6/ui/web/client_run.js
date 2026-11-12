@@ -620,6 +620,13 @@ function paintRun(cards, s) {
     cards.diff.appendChild(nav);
     const body = el('div');
     cards.diff.appendChild(body);
+    // A line number quotes its line into this session's composer; the picked commit names it.
+    quoteDiffLines(body, side => {
+      const pick = cards._diffPick || { sha: '', cumulative: false };
+      const sha = (pick.sha || commits[0].sha).slice(0, 12);
+      if (side === 'head') return 'commit ' + sha;
+      return pick.cumulative ? "the run's base" : 'the parent of commit ' + sha;
+    }, note => { if (cards._composer) cards._composer.quote(note); });
     const show = async () => {
       cards._diffPick = { sha: sel.value, cumulative: cum.checked };
       body.innerHTML = '';
@@ -651,5 +658,5 @@ function paintRun(cards, s) {
 }
 
 function renderDiff(diff) {
-  return renderUnified(parseUnifiedDiff(diff.patch), false, diff.old_spans, diff.new_spans);
+  return renderUnified(parseUnifiedDiff(diff.patch), true, diff.old_spans, diff.new_spans);
 }

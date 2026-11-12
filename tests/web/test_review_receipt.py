@@ -118,7 +118,7 @@ assert.ok(host.textContent.includes('<script>raw risk</script>'));
 assert.ok(host.textContent.includes('<b>out</b>'));
 assert.ok(host.textContent.includes('Testing') && host.textContent.includes('How to revert'));
 host.querySelector('button').onclick();
-assert.equal(window.receiptTask, r.revert_request);
+assert.equal(window.pendingNewWork, r.revert_request);
 assert.equal(location.hash, '#/');
 assert.equal(posts.length, 0);
 """)

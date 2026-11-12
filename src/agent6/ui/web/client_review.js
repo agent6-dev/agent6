@@ -262,7 +262,7 @@ function drawReceipt(host, receipt) {
   }
   const ask = el('button', 'mini', 'Ask a run to revert'); host.appendChild(ask);
   ask.onclick = () => {
-    window.receiptTask = receipt.revert_request;
+    window.pendingNewWork = receipt.revert_request;
     location.hash = '#/';
   };
 }

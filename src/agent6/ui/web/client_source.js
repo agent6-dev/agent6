@@ -123,10 +123,11 @@ function renderUnified(files, numbered, oldSpans = {}, newSpans = {}) {
   let max = 0;
   for (const f of files) for (const h of f.hunks) for (const l of h.lines) max = Math.max(max, l.old || 0, l.new || 0);
   box.style.setProperty('--gw', gutterWidth(max));
-  const line = (cls, text, old, nw, marker = '', spans) => {
+  const line = (cls, text, old, nw, marker = '', spans, f = null) => {
     const s = el('span', 'dl' + (cls ? ' ' + cls : ''));
     if (old != null) s.dataset.old = old;
     if (nw != null) s.dataset.new = nw;
+    if (f) { if (f.oldPath) s.dataset.oldPath = f.oldPath; if (f.newPath) s.dataset.newPath = f.newPath; }
     if (numbered) { s.appendChild(gutter(old)); s.appendChild(gutter(nw)); }
     const code = el('span', 'source-code');
     if (marker) code.appendChild(el('span', 'diff-marker', marker));
@@ -143,7 +144,7 @@ function renderUnified(files, numbered, oldSpans = {}, newSpans = {}) {
       box.appendChild(line('hunk', h.header, null, null));
       for (const l of h.lines) {
         const spans = l.kind === 'meta' ? null : l.kind === 'del' ? old[l.old - 1] : news[l.new - 1] || old[l.old - 1];
-        box.appendChild(line(l.kind === 'ctx' ? null : l.kind, l.text, l.old, l.new, mark[l.kind], spans));
+        box.appendChild(line(l.kind === 'ctx' ? null : l.kind, l.text, l.old, l.new, mark[l.kind], spans, f));
       }
     }
   }
@@ -156,6 +157,8 @@ function renderUnified(files, numbered, oldSpans = {}, newSpans = {}) {
 function renderSplit(file, oldSpans = {}, newSpans = {}) {
   const old = oldSpans[file.oldPath] || [], news = newSpans[file.newPath] || [];
   const box = el('div', 'dsplit numbered');
+  if (file.oldPath) box.dataset.oldPath = file.oldPath;
+  if (file.newPath) box.dataset.newPath = file.newPath;
   let max = 0;
   for (const h of file.hunks) for (const l of h.lines) max = Math.max(max, l.old || 0, l.new || 0);
   box.style.setProperty('--gw', gutterWidth(max));
@@ -193,6 +196,29 @@ function renderSplit(file, oldSpans = {}, newSpans = {}) {
     flush();
   }
   return box;
+}
+
+// A click on a line number quotes that line for a composer: the path, the side, the number
+// and the text, with the operator's words to follow beneath. `where(side)` names a side's
+// revision; `deliver(note)` hands the text to a composer. The rows carry their paths
+// (`data-old-path`, `data-new-path`), or the host does; a one-sided view names its side.
+function quoteDiffLines(host, where, deliver) {
+  host.classList.add('quotable');
+  host.addEventListener('click', (e) => {
+    const g = e.target.closest('.g');
+    if (!g || !g.dataset.n || !host.contains(g)) return;
+    const row = g.closest('.dl, .ds-cell, .sl');
+    if (!row) return;
+    let side = host.dataset.side || 'head';
+    if (row.classList.contains('dl')) side = g === row.querySelector('.g') ? 'base' : 'head';
+    else if (row.classList.contains('ds-cell')) side = row === row.parentElement.children[0] ? 'base' : 'head';
+    const code = row.querySelector('.source-code');
+    let text = code ? code.textContent : '';
+    if (code && code.querySelector('.diff-marker')) text = text.slice(1);
+    const scope = row.closest('[data-old-path], [data-new-path]') || host;
+    const path = (side === 'base' ? scope.dataset.oldPath : scope.dataset.newPath) || scope.dataset.newPath || scope.dataset.oldPath || '';
+    deliver(path + ':' + g.dataset.n + ' (' + side + ' side, ' + where(side) + '):\n> ' + text + '\n');
+  });
 }
 
 // --- a file's lines ----------------------------------------------------------------

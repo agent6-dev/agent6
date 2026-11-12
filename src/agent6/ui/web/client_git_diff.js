@@ -129,6 +129,18 @@ function gitDiffViewer(body) {
     else if (mode === 'split') patch.appendChild(renderSplit(file, d.old_spans, d.new_spans));
     else sideText = await showSide(patch, ctx, f, file, mode, current, whole, () => showDiff(ctx, i, true, fullContext));
     if (!current()) return;
+    // A line number quotes its line for the new-work composer; several lines queue up there.
+    patch.dataset.oldPath = f.old_path || f.path; patch.dataset.newPath = f.path;
+    if (mode === 'old' || mode === 'new') patch.dataset.side = mode === 'old' ? 'base' : 'head';
+    quoteDiffLines(patch, side => {
+      const rev = side === 'base' ? ctx.base : ctx.head;
+      if (rev === GIT_WORKTREE) { const digest = d[side + '_digest']; return 'working tree' + (digest ? ', sha256 ' + digest.slice(0, 12) : ''); }
+      return /^[0-9a-f]{40}$/.test(rev) ? 'commit ' + rev.slice(0, 12) : rev;
+    }, note => {
+      window.pendingNewWork = (window.pendingNewWork || '') + note + '\n';
+      const n = (window.pendingNewWork.match(/^> /gm) || []).length;
+      toast(n + (n === 1 ? ' line quoted' : ' lines quoted') + ' for the new-work composer on Sessions');
+    });
     await blameDiff(head, box, patch, ctx, f, d, mode, current, sideText);
     if (ctx.query?.get('path') === f.path && /^\d+$/.test(ctx.query.get('line') || '')) {
       const line = ctx.query.get('line');

@@ -64,12 +64,14 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
 - **Machines page**: instances, `machine create` drafts, and buttons that run an authored machine file; the composer creates a new one
 - **Session view** (live over SSE): the conversation, the same folded transcript the CLI and TUI render, with the turn in flight streaming underneath; a detail toggle cycles collapsed, expanded, hidden
     - the composer steers a live run or resumes an ended one under the preset and model picked above it, and takes the [steer directives](usage.md#follow-and-steer-a-run); Ctrl+Enter sends a live steer as `/now`, Ctrl-R searches past messages
+    - a click on a line number in the diff card quotes that line into the composer, with its path, side and commit; write your words beneath the quote and send it
 - **Machine view**: the state overview, the path taken and the current agent state's conversation; the entry submits as **Steer** (into the current state) or **Message** (a `poke` a waiting machine's next tool reads); **Stop** parks the instance at its next transition and `machine run` resumes it
 - **Config page**: every setting with value and source, filterable; click a row to set it, with the choices an enum or a provider's model listing offers; secrets never shown
 
 - **Git page**: the repository's commit graph, a commit's files and diffs, and a compare of any two revisions; it reads the repository `agent6 web` was started in and writes nothing
     - **blame** uses each line's own side: removed lines use the base, added and inline context lines use the head, split cells use their column, and old/new views use their selected side
     - recorded review comparisons preserve their tree identities and Files links; full context and commit blame are unavailable there
+    - a click on a line number in a diff quotes that line, with its path, side and revision, for the new-work composer on the Sessions page; several lines queue up before you write and start the run
 - **Files page**: the files at one revision; it reads the repository `agent6 web` was started in and writes nothing
     - a markdown file opens rendered; **source** shows the text; **show ignored** lists the files every exclude rule hides, badged `I`
 

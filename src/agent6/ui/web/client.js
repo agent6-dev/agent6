@@ -380,7 +380,7 @@ function newWorkDock(presets, presetDefault) {
   const root = el('div', 'composer dock dock-fixed');
   const row = el('div', 'row');
   const task = el('textarea', 'field'); task.placeholder = 'task / question…';
-  task.value = window.receiptTask || ''; delete window.receiptTask;
+  task.value = window.pendingNewWork || ''; delete window.pendingNewWork;
   const mode = el('select', 'field');
   for (const m of ['run', 'plan', 'ask']) { const o = el('option', null, m); o.value = m; mode.appendChild(o); }
   const preset = el('select', 'field');
@@ -1191,6 +1191,12 @@ function makeComposer(id) {
     }
   };
   root.appendChild(growGrip(ta)); root.appendChild(presetRow); root.appendChild(ta); root.appendChild(hint);
+  // A quoted diff line lands beneath what is typed, for the words that follow it.
+  root.quote = (note) => {
+    const typed = ta.value.replace(/\s+$/, '');
+    ta.value = (typed ? typed + '\n\n' : '') + note;
+    ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  };
   // `live` is the dir-aware truth (a parked or stale run is not live even
   // though the fold says unfinished); fall back to the fold when a payload
   // carries no boolean `live`.
