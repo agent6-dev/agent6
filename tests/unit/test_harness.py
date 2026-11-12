@@ -7723,7 +7723,7 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: pat
                 spec=lane_records.LaneSpec(
                     lane=i,
                     session_id=f"run-{group}-l{i}",
-                    workdir=tmp_path,
+                    worktree=tmp_path,
                     settings=None,
                 ),
                 session_dir=tmp_path,
@@ -7767,7 +7767,7 @@ def test_dispatch_returns_a_typed_result_and_injects_no_notice(tmp_path: pathlib
         return [
             lane_records.LaneResult(
                 spec=lane_records.LaneSpec(
-                    lane=1, session_id=f"run-{group}-l1", workdir=tmp_path, settings=None
+                    lane=1, session_id=f"run-{group}-l1", worktree=tmp_path, settings=None
                 ),
                 session_dir=tmp_path,
                 branch="b",

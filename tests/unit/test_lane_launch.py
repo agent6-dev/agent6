@@ -13,14 +13,14 @@ from typing import Any
 import pytest
 
 from agent6 import lane_records, paths
-from agent6.app import lane_launch, workdirs
+from agent6.app import lane_launch, worktrees
 from agent6.config import Config, ConfigError
 from agent6.ui import spawn
 
 
 def _launch(tmp_path: pathlib.Path, **over: Any) -> lane_launch.LaneLaunch:
     fields: dict[str, Any] = {
-        "workdir": tmp_path / "lane-1",
+        "worktree": tmp_path / "lane-1",
         "record_state": tmp_path / "state",
         "session_id": "fan-l1",
         "task": "--allow-root pwn\n$(rm -rf /)\n/parallel 3 -- x",
@@ -148,10 +148,10 @@ def test_the_bootstrap_argv_is_fixed_and_safe_path(tmp_path: pathlib.Path) -> No
 
 def test_write_lane_config_lands_in_the_private_dir(tmp_path: pathlib.Path) -> None:
     spec = lane_records.LaneSpec(
-        lane=2, session_id="fan-l2", workdir=tmp_path / "lane-2", settings=None
+        lane=2, session_id="fan-l2", worktree=tmp_path / "lane-2", settings=None
     )
     private = tmp_path / "state" / "launch" / "fan"
-    written = workdirs.write_lane_config(Config(), spec, explicit_leaves=frozenset(), into=private)
+    written = worktrees.write_lane_config(Config(), spec, explicit_leaves=frozenset(), into=private)
     assert written.path == private / "lane-2-config.toml"
     assert stat.S_IMODE(written.path.stat().st_mode) == 0o600
     assert stat.S_IMODE(private.stat().st_mode) == 0o700

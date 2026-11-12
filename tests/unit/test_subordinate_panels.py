@@ -20,7 +20,7 @@ from agent6.app import (
     lanes,
     parallel_results,
     stop,
-    workdirs,
+    worktrees,
 )
 from agent6.harness import loop_conversation, loop_state, parallel_dispatch, run_chain, subrun
 from agent6.sessions import (
@@ -129,11 +129,11 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
             repo,
             None,
         )
-        workdirs.cleanup(
+        worktrees.cleanup(
             [spec],
             origin=repo,
             record_state=paths.state_dir(repo),
-            workdir_root=short_repo,
+            worktree_root=short_repo,
             base=short_repo,
             launch_dir=lane_launch.launch_dir(paths.state_dir(repo), "parent-p1"),
             cfg=cfg,
@@ -442,11 +442,11 @@ def test_cleanup_keeps_a_live_descendant_even_when_all_commits_are_reachable(
     )
     process.write_worker_pid(leaf, os.getpid())
     kept: list[str] = []
-    workdirs.cleanup(
+    worktrees.cleanup(
         [lane_records.LaneSpec(1, worker.name, clone, None)],
         origin=repo,
         record_state=paths.state_dir(repo),
-        workdir_root=short_repo,
+        worktree_root=short_repo,
         base=short_repo,
         launch_dir=lane_launch.launch_dir(paths.state_dir(repo), "parent-p1"),
         cfg=subordinate_env.config(),

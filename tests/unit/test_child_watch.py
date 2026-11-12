@@ -170,7 +170,7 @@ def test_the_wait_calls_the_watch_on_every_poll(tmp_path: pathlib.Path) -> None:
     """The loop that waits on a lane is where its parent watches it; a True ends the wait."""
     child = _child(tmp_path, _prompt())
     res = lane_records.LaneResult(
-        spec=lane_records.LaneSpec(lane=1, session_id="child", workdir=tmp_path, settings=None),
+        spec=lane_records.LaneSpec(lane=1, session_id="child", worktree=tmp_path, settings=None),
         session_dir=child,
         branch="",
         ok=True,

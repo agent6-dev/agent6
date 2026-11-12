@@ -2053,7 +2053,7 @@ def test_bare_diff_returns_the_latest_commit(
     cumulative: bool,
 ) -> None:
     """Bare run and draft diff routes select their last journaled commit, including cumulative."""
-    from agent6.app import workdirs
+    from agent6.app import worktrees
     from agent6.config import layer
 
     _srv, port = server
@@ -2061,7 +2061,7 @@ def test_bare_diff_returns_the_latest_commit(
     sid = "latest-run"
     if draft:
         cfg = layer.load_effective(tmp_path, ()).config
-        workspace = workdirs.subordinate_workdir_root(cfg, tmp_path, sid)
+        workspace = worktrees.subordinate_worktree_root(cfg, tmp_path, sid)
         workspace.mkdir(parents=True)
         base, c1, c2 = _git_chain(workspace)
     bucket = "machines" if draft else "runs"

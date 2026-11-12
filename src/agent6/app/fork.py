@@ -24,7 +24,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6 import errors, kinds, paths, portable
-from agent6.app import fork_worktrees, resume, stamps, workdirs, workspace_setup
+from agent6.app import fork_worktrees, resume, stamps, workspace_setup, worktrees
 from agent6.app import reporter as app_reporter
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, ConfigError, layer
@@ -448,7 +448,7 @@ def create_fork(
         return "", 2
     if added:
         try:
-            path = workdirs.place(plan.cfg, cwd, plan.dst.session_id)
+            path = worktrees.place(plan.cfg, cwd, plan.dst.session_id)
             checkout = fork_worktrees.add_session_worktree(
                 cwd, path, plan.forked_from_sha, plan.cfg.git.worktree.kind
             )

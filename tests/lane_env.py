@@ -130,7 +130,7 @@ def mark_lane(
     path = lane_launch.write(
         where,
         lane_launch.LaneLaunch(
-            workdir=where / f"lane-{lane}",
+            worktree=where / f"lane-{lane}",
             record_state=record_state or paths.state_dir(where / f"lane-{lane}"),
             session_id=f"{group}-l{lane}",
             task="task",

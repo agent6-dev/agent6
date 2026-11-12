@@ -25,7 +25,7 @@ from agent6.app import (
     preflight,
     role_providers,
     stamps,
-    workdirs,
+    worktrees,
 )
 from agent6.app import reporter as app_reporter
 from agent6.app.review import actions as review_actions
@@ -426,7 +426,7 @@ def mounted_root(
     """
     if worktree_git_dir is not None and worktree_git_dir.name == ".git":
         cwd = worktree_git_dir.parent
-    return workdirs.mounted_workspace(cfg, cwd)
+    return worktrees.mounted_workspace(cfg, cwd)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

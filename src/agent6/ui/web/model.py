@@ -15,7 +15,7 @@ import re
 from typing import Any
 
 from agent6 import paths
-from agent6.app import confine, merge_plan, workdirs
+from agent6.app import confine, merge_plan, worktrees
 from agent6.config import ConfigError, io, layer, layer_data, layer_presets, write
 from agent6.models import choices
 from agent6.sessions import layout, manifest, process
@@ -114,7 +114,7 @@ def draft_workspace(
         cfg = layer.load_effective(cwd, config_paths).config
     except ConfigError:
         return None
-    workspace = workdirs.subordinate_workdir_root(cfg, cwd, name)
+    workspace = worktrees.subordinate_worktree_root(cfg, cwd, name)
     return workspace if (workspace / ".git").exists() else None
 
 

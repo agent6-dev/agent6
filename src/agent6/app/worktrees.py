@@ -22,7 +22,7 @@ from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 
 
-def subordinate_workdir_root(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
+def subordinate_worktree_root(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
     """Return the base dir for a group of subordinate working trees.
 
     Fan-out ids, `machine-<id>` and fork ids are all groups, so one prune sweep
@@ -35,12 +35,12 @@ def subordinate_workdir_root(cfg: Config, origin: pathlib.Path, group: str) -> p
         group: The group's name.
 
     Returns:
-        `<workdir base>/<repo id>/<group>`.
+        `<worktree base>/<repo id>/<group>`.
     """
-    return workdir_base(cfg, origin) / group
+    return worktree_base(cfg, origin) / group
 
 
-def workdir_base(cfg: Config, origin: pathlib.Path) -> pathlib.Path:
+def worktree_base(cfg: Config, origin: pathlib.Path) -> pathlib.Path:
     """Return the per-repo dir every subordinate working tree of the origin sits in.
 
     Args:
@@ -99,7 +99,7 @@ def place(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
                     f" --no-index {probe}` names the rule; remove it, or set {key} to a"
                     " directory git ignores."
                 )
-    return subordinate_workdir_root(cfg, origin, group)
+    return subordinate_worktree_root(cfg, origin, group)
 
 
 def holds(cfg: Config, tree: pathlib.Path) -> bool:
@@ -171,7 +171,7 @@ def adopt_orphan_lane(
     ):
         return None
     lineage = manifest.parallel
-    clone = subordinate_workdir_root(cfg, origin, lineage.group) / f"lane-{lineage.lane}"
+    clone = subordinate_worktree_root(cfg, origin, lineage.group) / f"lane-{lineage.lane}"
     if not (clone / ".git").exists() or not git_read.branch_exists(clone, manifest.run_branch):
         return None
     subrun.import_run(origin, clone, manifest.run_branch, layout.session_dir)
@@ -280,7 +280,7 @@ def sweep_fanout_clones(  # noqa: PLR0912  # one refusal per retained clone cond
     Returns:
         `(swept, kept)` group counts.
     """
-    base = workdir_base(cfg, origin)
+    base = worktree_base(cfg, origin)
     if not base.is_dir():
         return 0, 0
     swept = kept = 0
@@ -390,7 +390,7 @@ def cleanup(
     *,
     origin: pathlib.Path,
     record_state: pathlib.Path,
-    workdir_root: pathlib.Path,
+    worktree_root: pathlib.Path,
     base: pathlib.Path,
     launch_dir: pathlib.Path,
     cfg: Config,
@@ -406,7 +406,7 @@ def cleanup(
         origin: The repository that must reach every clone tip.
         record_state: The state dir the lanes' records live under, which stay.
         note_keep: Receives the kept clone and reason.
-        workdir_root: The group dir.
+        worktree_root: The group dir.
         base: The per-repo base dir.
         launch_dir: The group's private launch dir.
         cfg: The run's config.
@@ -414,32 +414,33 @@ def cleanup(
     for spec in imported:
         records = lane_sessions(record_state, spec.session_id)
         if any(process.worker_is_alive(record) for record in records):
-            note_keep(spec.workdir, "live descendant; stop it before cleanup")
+            note_keep(spec.worktree, "live descendant; stop it before cleanup")
             continue
         try:
-            tips = git_read.commit_tips(spec.workdir)
+            tips = git_read.commit_tips(spec.worktree)
             if any(
                 tip
                 and not git_read.commit_is_reachable(origin, tip)
-                and not recorded_merged(origin, spec.workdir, tip)
+                and not recorded_merged(origin, spec.worktree, tip)
                 for tip in tips
             ):
                 note_keep(
-                    spec.workdir, "commits this repo cannot reach; merge or archive the clone first"
+                    spec.worktree,
+                    "commits this repo cannot reach; merge or archive the clone first",
                 )
                 continue
         except errors.GitError as exc:
-            note_keep(spec.workdir, f"git could not check its commits: {exc}")
+            note_keep(spec.worktree, f"git could not check its commits: {exc}")
             continue
-        shutil.rmtree(paths.state_dir(spec.workdir), ignore_errors=True)
-        shutil.rmtree(paths.jail_cache_home(spec.workdir), ignore_errors=True)
-        shutil.rmtree(spec.workdir, ignore_errors=True)
+        shutil.rmtree(paths.state_dir(spec.worktree), ignore_errors=True)
+        shutil.rmtree(paths.jail_cache_home(spec.worktree), ignore_errors=True)
+        shutil.rmtree(spec.worktree, ignore_errors=True)
         (launch_dir / f"lane-{spec.lane}-config.toml").unlink(missing_ok=True)
         (launch_dir / f"lane-{spec.lane}.json").unlink(missing_ok=True)
     for level in (launch_dir, launch_dir.parent):
         with contextlib.suppress(OSError):
             level.rmdir()  # succeeds only once every group's files are gone
-    level = workdir_root
+    level = worktree_root
     while level.is_relative_to(base):
         with contextlib.suppress(OSError):
             level.rmdir()  # succeeds only when nothing was kept

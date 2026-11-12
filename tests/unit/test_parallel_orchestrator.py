@@ -35,7 +35,7 @@ from agent6.app import (
     reporter,
     role_providers,
     stamps,
-    workdirs,
+    worktrees,
 )
 from agent6.app import lanes as app_lanes
 from agent6.config import Config
@@ -214,18 +214,18 @@ class _FakeSpawner:
             self.prior_link_was_symlink[spec.lane] = prior.is_symlink()
         if spec.lane in self.fail:
             return lane_records.LaneResult(
-                spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error="boom"
+                spec=spec, session_dir=spec.worktree, branch=branch, ok=False, error="boom"
             )
-        subrun.clone_workspace(self.origin, spec.workdir)
+        subrun.clone_workspace(self.origin, spec.worktree)
         if spec.lane in self.branch_at_base:
-            git_ops.create_branch(spec.workdir, branch)
+            git_ops.create_branch(spec.worktree, branch)
         elif spec.lane not in self.no_commit:
-            git_ops.create_branch(spec.workdir, branch)
-            (spec.workdir / f"lane{spec.lane}.txt").write_text(
+            git_ops.create_branch(spec.worktree, branch)
+            (spec.worktree / f"lane{spec.lane}.txt").write_text(
                 f"lane {spec.lane}\n", encoding="utf-8"
             )
-            _git(spec.workdir, "add", "-A")
-            _git(spec.workdir, "commit", "-q", "-m", f"lane {spec.lane} work")
+            _git(spec.worktree, "add", "-A")
+            _git(spec.worktree, "commit", "-q", "-m", f"lane {spec.lane} work")
         # A lane's record is in the origin's state from its first event.
         session_dir = self.origin_state / "sessions" / "runs" / spec.session_id
         _write_fake_run(
@@ -277,7 +277,7 @@ def _specs(
         lane_records.LaneSpec(
             lane=i,
             session_id=f"{group}-l{i}",
-            workdir=tmp_path / "work" / group / f"lane-{i}",
+            worktree=tmp_path / "work" / group / f"lane-{i}",
             settings=chosen,
         )
         for i, chosen in enumerate(settings, start=1)
@@ -459,7 +459,7 @@ def test_coordinator_dispatch_wait_honors_a_stop_request(
         assert isinstance(stopped, bool)
         observed.append(stopped)
         return lane_records.LaneResult(
-            spec, spec.workdir, f"agent6/{spec.session_id}", False, "stopped"
+            spec, spec.worktree, f"agent6/{spec.session_id}", False, "stopped"
         )
 
     monkeypatch.setattr(app_lanes, "run_lane_to_completion", fake_lane)
@@ -559,14 +559,14 @@ def test_bridge_spawner_keeps_the_task_out_of_the_argv(
             "--allow-root pwn",
             2.0,
         )
-        assert launch.workdir == workdir and launch.session_id == "fan-l1"
+        assert launch.worktree == workdir and launch.session_id == "fan-l1"
         return workdir, 1, ""
 
     cfg = Config()
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="fan-l1",
-        workdir=tmp_path / "work" / "lane-1",
+        worktree=tmp_path / "work" / "lane-1",
         settings=None,
     )
     app_lanes.bridge_spawner(
@@ -611,7 +611,7 @@ def test_a_lane_is_seeded_with_the_repos_memory(
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="fan-l1",
-        workdir=tmp_path / "work" / "lane-1",
+        worktree=tmp_path / "work" / "lane-1",
         settings=None,
     )
     app_lanes.bridge_spawner(
@@ -622,7 +622,7 @@ def test_a_lane_is_seeded_with_the_repos_memory(
         coordinator="co",
     )  # fmt: skip
 
-    lane_state = paths.state_dir(spec.workdir)
+    lane_state = paths.state_dir(spec.worktree)
     assert "house-style" in memory.index_text(lane_state)
     assert "Docstrings end in a period." in memory.show(lane_state, "house-style")
     assert "Ship the rename?" in memory.decisions_text(lane_state)
@@ -649,7 +649,7 @@ def test_bridge_spawner_launch_carries_auto_approve_when_set(
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="fan-l1",
-        workdir=tmp_path / "work" / "lane-1",
+        worktree=tmp_path / "work" / "lane-1",
         settings=None,
     )
     app_lanes.bridge_spawner(
@@ -681,7 +681,7 @@ def test_bridge_spawner_launch_omits_auto_approve_by_default(
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="fan-l1",
-        workdir=tmp_path / "work" / "lane-1",
+        worktree=tmp_path / "work" / "lane-1",
         settings=None,
     )
     app_lanes.bridge_spawner(
@@ -713,7 +713,7 @@ def test_run_lane_to_completion_forwards_auto_approve_and_pins_to_the_default_sp
     ) -> lane_records.LaneResult:
         captured.append(kw)
         return lane_records.LaneResult(
-            spec=spec, session_dir=spec.workdir, branch="agent6/x", ok=False, error="stub"
+            spec=spec, session_dir=spec.worktree, branch="agent6/x", ok=False, error="stub"
         )
 
     monkeypatch.setattr(app_lanes, "bridge_spawner", fake_bridge)
@@ -721,7 +721,7 @@ def test_run_lane_to_completion_forwards_auto_approve_and_pins_to_the_default_sp
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="co-p1-l1",
-        workdir=tmp_path / "work" / "co-p1-l1",
+        worktree=tmp_path / "work" / "co-p1-l1",
         settings=None,
     )
 
@@ -875,7 +875,7 @@ def test_lane_setup_output_survives_import_and_a_failed_one_reaches_the_operator
     assert (command in shown) is (exit_code != 0)
     assert shown.count("setup-out\n") == shown.count("setup-err\n") == (2 if exit_code else 0)
     for lane in lanes:
-        assert not lane.workdir.exists()
+        assert not lane.worktree.exists()
         imported = state / "sessions" / "runs" / lane.session_id
         events = [json.loads(line) for line in (imported / "logs.jsonl").read_text().splitlines()]
         assert sum(event["type"] == "worktree.setup" for event in events) == 1
@@ -905,7 +905,7 @@ def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
     cfg = Config()
     memory.add(origin_state, "repo-fact", "The build needs BUILD_ID set.")
     lanes = _specs(tmp_path, cfg, "fan", "1")
-    lane_state = paths.state_dir(lanes[0].workdir)
+    lane_state = paths.state_dir(lanes[0].worktree)
     memory.add(lane_state, "lane-fact", "The flaky test is test_clock.")
     memory.add(lane_state, "repo-fact", "The build needs BUILD_ID set, and BUILD_NO.")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
@@ -991,7 +991,7 @@ def test_compare_stamp_records_judge_rationale_truncated(
     }
 
 
-def test_landed_lanes_remove_their_emptied_workdir_levels(
+def test_landed_lanes_remove_their_emptied_worktree_levels(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """A group's clones sit at `<base>/<repo>/<group>/lane-N`.
@@ -1000,9 +1000,9 @@ def test_landed_lanes_remove_their_emptied_workdir_levels(
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()
-    per_repo = workdirs.workdir_base(cfg, origin)
+    per_repo = worktrees.worktree_base(cfg, origin)
     lanes = [
-        dataclasses.replace(spec, workdir=per_repo / "fan" / f"lane-{spec.lane}")
+        dataclasses.replace(spec, worktree=per_repo / "fan" / f"lane-{spec.lane}")
         for spec in _specs(tmp_path, cfg, "fan", "2")
     ]
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
@@ -1208,7 +1208,7 @@ def test_cleanup_preserves_unimported_lane(
     _git(origin, "checkout", "main")
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
     # Each clone's persistent jail home, as the first command of a lane under `partial` leaves it.
-    homes = [paths.jail_cache_home(lane.workdir) for lane in lanes]
+    homes = [paths.jail_cache_home(lane.worktree) for lane in lanes]
     for home in homes:
         home.mkdir(parents=True)
 
@@ -1218,16 +1218,16 @@ def test_cleanup_preserves_unimported_lane(
 
     assert [res.ok for res in results] == [False, True]  # lane 2 still imported
     # Lane 1 kept: its clone with its branch, and its record.
-    assert lanes[0].workdir.is_dir()
-    assert git_read.branch_exists(lanes[0].workdir, "agent6/fan-l1")
+    assert lanes[0].worktree.is_dir()
+    assert git_read.branch_exists(lanes[0].worktree, "agent6/fan-l1")
     assert (origin_state / "sessions" / "runs" / "fan-l1").is_dir()
     # Lane 2 imported and cleaned: its record stays, its clone is gone.
     assert (origin_state / "sessions" / "runs" / "fan-l2").is_dir()
-    assert not lanes[1].workdir.exists()
+    assert not lanes[1].worktree.exists()
     # A clone's jail home goes with the clone and stays with a kept one.
     assert homes[0].is_dir() and not homes[1].exists()
     # The refusal names the kept clone so the operator can act on it.
-    assert str(lanes[0].workdir) in results[0].error
+    assert str(lanes[0].worktree) in results[0].error
 
 
 # ---------------------------------------------------------------------------
@@ -1253,10 +1253,10 @@ def test_run_lane_to_completion_imports_and_stamps(
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="co-p1-l1",
-        workdir=tmp_path / "work" / "co-p1-l1",
+        worktree=tmp_path / "work" / "co-p1-l1",
         settings=None,
     )
-    memory.add(paths.state_dir(spec.workdir), "lane-fact", "The flaky test is test_clock.")
+    memory.add(paths.state_dir(spec.worktree), "lane-fact", "The flaky test is test_clock.")
 
     # The await polls summarize_session_dir; the lane's record is in the origin's state then.
     record = origin_state / "sessions" / "runs" / "co-p1-l1"
@@ -1316,7 +1316,7 @@ def test_run_lane_to_completion_records_what_the_import_landed(
         branch_at_base={1} if shape == "branch_at_base" else set(),
     )
     spec = lane_records.LaneSpec(
-        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", settings=None
+        lane=1, session_id="co-p1-l1", worktree=tmp_path / "work" / "co-p1-l1", settings=None
     )
     res = app_lanes.run_lane_to_completion(
         spec,
@@ -1354,7 +1354,7 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="co-p1-l1",
-        workdir=tmp_path / "work" / "co-p1-l1",
+        worktree=tmp_path / "work" / "co-p1-l1",
         settings=None,
     )
 
@@ -1392,7 +1392,7 @@ def test_a_failed_lane_never_joins_the_coordinator(
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="co-pf-l1",
-        workdir=tmp_path / "work" / "co-pf-l1",
+        worktree=tmp_path / "work" / "co-pf-l1",
         settings=None,
     )
 
@@ -1432,7 +1432,7 @@ def test_a_crashed_lane_never_joins_the_coordinator(
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="co-ps-l1",
-        workdir=tmp_path / "work" / "co-ps-l1",
+        worktree=tmp_path / "work" / "co-ps-l1",
         settings=None,
     )
 
@@ -1469,7 +1469,7 @@ def test_build_lane_spawner_over_cap_refused(
     def fake_rltc(spec: lane_records.LaneSpec, task: str, **kw: object) -> lane_records.LaneResult:
         called.append(spec.session_id)
         return lane_records.LaneResult(
-            spec=spec, session_dir=spec.workdir, branch="b", ok=True, error=""
+            spec=spec, session_dir=spec.worktree, branch="b", ok=True, error=""
         )
 
     monkeypatch.setattr(app_lanes, "run_lane_to_completion", fake_rltc)
@@ -1518,7 +1518,7 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="co-p1-l1",
-        workdir=tmp_path / "work" / "co-p1-l1",
+        worktree=tmp_path / "work" / "co-p1-l1",
         settings=None,
     )
     res = app_lanes.run_lane_to_completion(
@@ -1552,11 +1552,11 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     origin_state = paths.state_dir(origin)
     cfg = Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
-    per_repo = workdirs.workdir_base(cfg, origin)
+    per_repo = worktrees.worktree_base(cfg, origin)
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="co-p9-l1",
-        workdir=per_repo / "co" / "grp" / "lane-1",
+        worktree=per_repo / "co" / "grp" / "lane-1",
         settings=None,
     )
     res = app_lanes.run_lane_to_completion(
@@ -1573,7 +1573,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
         poll_interval_s=0.01,
     )
     assert res.ok
-    assert not spec.workdir.exists()  # the clone is gone
+    assert not spec.worktree.exists()  # the clone is gone
     assert not (per_repo / "co" / "grp").exists()  # the emptied group dir is rmdir'd
     assert not (per_repo / "co").exists()  # the coordinator's dir above it
     assert not per_repo.exists()  # and the per-repo dir
@@ -1586,7 +1586,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     spec2 = lane_records.LaneSpec(
         lane=1,
         session_id="co-p8-l1",
-        workdir=tmp_path / "work" / "grp8" / "lane-1",
+        worktree=tmp_path / "work" / "grp8" / "lane-1",
         settings=None,
     )
     res2 = app_lanes.run_lane_to_completion(
@@ -1603,7 +1603,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
         poll_interval_s=0.01,
     )
     assert not res2.ok
-    assert spec2.workdir.exists()  # unimported lane retains its workspace
+    assert spec2.worktree.exists()  # unimported lane retains its workspace
     assert (origin_state / "sessions" / "runs" / "co-p8-l1").is_dir()  # and its record
 
 
@@ -1622,10 +1622,10 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
     seen: list[tuple[int, str, str, str, str]] = []
 
     def fake_rltc(spec: lane_records.LaneSpec, task: str, **kw: object) -> lane_records.LaneResult:
-        seen.append((spec.lane, spec.session_id, task, str(kw["group"]), str(spec.workdir)))
+        seen.append((spec.lane, spec.session_id, task, str(kw["group"]), str(spec.worktree)))
         return lane_records.LaneResult(
             spec=spec,
-            session_dir=spec.workdir,
+            session_dir=spec.worktree,
             branch=f"agent6/{spec.session_id}",
             ok=True,
             error="",
@@ -1658,7 +1658,7 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
     # orphaned lane was never adopted.
     assert all(group == "co-p2" for (_l, _r, _t, group, _w) in seen)
     assert all(
-        str(workdirs.subordinate_workdir_root(cfg, origin, group) / f"lane-{lane}") == workdir
+        str(worktrees.subordinate_worktree_root(cfg, origin, group) / f"lane-{lane}") == workdir
         for (lane, _r, _t, group, workdir) in seen
     )
 
@@ -1681,7 +1681,7 @@ def test_build_lane_spawner_keeps_lane_order_when_lanes_finish_out_of_order(
             lane_two_done.set()
         return lane_records.LaneResult(
             spec=spec,
-            session_dir=spec.workdir,
+            session_dir=spec.worktree,
             branch=f"agent6/{spec.session_id}",
             ok=True,
             error="",
@@ -1714,7 +1714,7 @@ def test_build_lane_spawner_forwards_auto_approve(
     def fake_rltc(spec: lane_records.LaneSpec, task: str, **kw: object) -> lane_records.LaneResult:
         seen.append(kw["auto_approve"])
         return lane_records.LaneResult(
-            spec=spec, session_dir=spec.workdir, branch="agent6/x", ok=True, error=""
+            spec=spec, session_dir=spec.worktree, branch="agent6/x", ok=True, error=""
         )
 
     monkeypatch.setattr(app_lanes, "run_lane_to_completion", fake_rltc)
@@ -1802,7 +1802,7 @@ def test_await_lane_returns_when_should_stop_fires(
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="co-p1-l1",
-        workdir=tmp_path / "w",
+        worktree=tmp_path / "w",
         settings=None,
     )
     res = lane_records.LaneResult(
@@ -1835,7 +1835,7 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="co-p1-l1",
-        workdir=tmp_path / "w",
+        worktree=tmp_path / "w",
         settings=None,
     )
 
@@ -1880,14 +1880,14 @@ def test_lane_config_forces_a_run_branch(tmp_path: pathlib.Path) -> None:
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="fan-l1",
-        workdir=tmp_path / "clone",
+        worktree=tmp_path / "clone",
         settings=None,
     )
-    path = workdirs.write_lane_config(
+    path = worktrees.write_lane_config(
         cfg,
         spec,
         explicit_leaves=frozenset({"git.branch_per_run"}),
-        into=spec.workdir.parent / "launch",
+        into=spec.worktree.parent / "launch",
     ).path
     written = tomllib.loads(path.read_text(encoding="utf-8"))
     assert written["git"]["branch_per_run"] is True
@@ -1909,12 +1909,12 @@ def test_lane_config_carries_the_lane_route(tmp_path: pathlib.Path) -> None:
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="fan-l1",
-        workdir=tmp_path / "clone",
+        worktree=tmp_path / "clone",
         settings=kinds.ModelSettings(kinds.ModelRoute("p", "other")),
     )
     written = tomllib.loads(
-        workdirs.write_lane_config(
-            cfg, spec, explicit_leaves=frozenset(), into=spec.workdir.parent / "launch"
+        worktrees.write_lane_config(
+            cfg, spec, explicit_leaves=frozenset(), into=spec.worktree.parent / "launch"
         ).path.read_text(encoding="utf-8")
     )
     assert "provider" not in written["models"]["worker"]
@@ -1996,7 +1996,7 @@ def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
         spec = lane_records.LaneSpec(
             lane=lane,
             session_id=f"fan-l{lane}",
-            workdir=tmp_path / "work" / f"lane-{lane}",
+            worktree=tmp_path / "work" / f"lane-{lane}",
             settings=None,
         )
         result = app_lanes.bridge_spawner(
@@ -2038,7 +2038,7 @@ def test_lane_is_self_describing_from_birth(
     spec = lane_records.LaneSpec(
         lane=2,
         session_id="fan-l2",
-        workdir=tmp_path / "work" / "lane-2",
+        worktree=tmp_path / "work" / "lane-2",
         settings=None,
     )
     app_lanes.bridge_spawner(
@@ -2115,7 +2115,7 @@ def test_lane_sampling_notes_survive_import_and_reach_both_reports(
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="notes-l1",
-        workdir=tmp_path / "clone",
+        worktree=tmp_path / "clone",
         settings=None,
     )
 
@@ -2189,7 +2189,7 @@ def test_lane_sampling_notes_survive_import_and_reach_both_reports(
     imported = paths.state_dir(origin) / "sessions" / "runs" / spec.session_id
     record = sessions_manifest.read_manifest(imported)
     assert record.model_dump()["parallel"]["config_notes"] == (note,)
-    assert not (spec.workdir.parent / "lane-1-config.toml").exists()
+    assert not (spec.worktree.parent / "lane-1-config.toml").exists()
 
 
 def test_sweep_keeps_a_clone_holding_unmerged_commits(
@@ -2227,7 +2227,7 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
     for clone in (unmerged, merged):
         paths.jail_cache_home(clone).mkdir(parents=True)
 
-    swept, kept = workdirs.sweep_fanout_clones(origin, cfg)
+    swept, kept = worktrees.sweep_fanout_clones(origin, cfg)
     assert (swept, kept) == (1, 1)  # the foreign repo's dir is not counted
     assert (scoped / "fan-a").is_dir()  # unique commits: kept whole
     assert not (scoped / "fan-b").exists()
@@ -2250,7 +2250,7 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
         lane_records.LaneSpec(
             lane=1,
             session_id="failed11-l1",
-            workdir=workdirs.place(cfg, origin, "failed11") / "lane-1",
+            worktree=worktrees.place(cfg, origin, "failed11") / "lane-1",
             settings=None,
         )
     ]
@@ -2263,11 +2263,11 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
         list_dirs: Callable[[], list[pathlib.Path]],
         env: dict[str, str],
     ) -> tuple[pathlib.Path | None, int, str]:
-        assert cwd == lanes[0].workdir
+        assert cwd == lanes[0].worktree
         assert not before and not list_dirs()
         envelope = _launch_of(env)
         assert (envelope.coordinator, envelope.group, envelope.lane) == ("failed11", "failed11", 1)
-        assert workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
+        assert worktrees.sweep_fanout_clones(origin, cfg) == (0, 1)
         return None, 1, "lane refused before creating a session"
 
     failed_runtime = dataclasses.replace(runtime, spawn=fail_spawn)
@@ -2297,7 +2297,7 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
     )
     assert not result.ok and "lane refused before creating a session" in result.error
     capsys.readouterr()
-    lane = lanes[0].workdir
+    lane = lanes[0].worktree
     assert lane.is_dir()
     assert not listing.session_dirs(paths.state_dir(lane))
     for _ in range(2):
@@ -2328,25 +2328,25 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
     subrun.clone_workspace(origin, lane)
     # No session dir yet: a lane between its clone and its first write looks
     # like one that never started, and a prune in that window must not win.
-    assert workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
+    assert worktrees.sweep_fanout_clones(origin, cfg) == (0, 1)
     # The lane's record is in the origin's state, named for its group and number.
     session = paths.state_dir(origin) / "sessions" / "runs" / "fan-starting-l1"
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text("", encoding="utf-8")  # a record, not a husk
     process.write_worker_pid(session, os.getpid())
 
-    assert workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
+    assert worktrees.sweep_fanout_clones(origin, cfg) == (0, 1)
     assert lane.is_dir()
 
     (session / "worker.pid").unlink()
-    assert workdirs.sweep_fanout_clones(origin, cfg) == (1, 0)
+    assert worktrees.sweep_fanout_clones(origin, cfg) == (1, 0)
     assert not lane.parent.exists()
 
     # A lane that died in preflight leaves a husk (a session dir with no
     # record and no worker): ended, so its clone goes too.
     subrun.clone_workspace(origin, lane)
     (session / "logs.jsonl").unlink()
-    assert workdirs.sweep_fanout_clones(origin, cfg) == (1, 0)
+    assert worktrees.sweep_fanout_clones(origin, cfg) == (1, 0)
 
 
 def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
@@ -2378,7 +2378,7 @@ def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
         ["git", "-C", str(origin), "fetch", str(lane), tip], check=True, capture_output=True
     )
 
-    swept, kept = workdirs.sweep_fanout_clones(origin, cfg)
+    swept, kept = worktrees.sweep_fanout_clones(origin, cfg)
 
     assert (swept, kept) == (0, 1)
     assert lane.is_dir(), "the last ref reaching the lane's work was deleted"
@@ -2403,7 +2403,7 @@ def test_sweep_leaves_a_dir_that_is_not_a_fan_out_group_alone(
     notes.mkdir()
     (notes / "todo.md").write_text("mine\n", encoding="utf-8")
 
-    swept, kept = workdirs.sweep_fanout_clones(origin, cfg)
+    swept, kept = worktrees.sweep_fanout_clones(origin, cfg)
     assert (swept, kept) == (0, 0)
     assert (theirs / "draft.txt").read_text(encoding="utf-8") == "uncommitted\n"
     assert (notes / "todo.md").read_text(encoding="utf-8") == "mine\n"
@@ -2447,7 +2447,7 @@ def test_a_plain_stop_escalates_to_now_when_the_operator_stops_again(
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="co-p1-l1",
-        workdir=tmp_path / "w",
+        worktree=tmp_path / "w",
         settings=None,
     )
     asked: list[bool] = []
@@ -2479,14 +2479,14 @@ def test_a_plain_stop_escalates_to_now_when_the_operator_stops_again(
     assert ipc.stop_request_is_now(lane_dir)
 
 
-def test_a_relative_workdir_resolves_to_an_absolute_path(
+def test_a_relative_worktree_base_resolves_to_an_absolute_path(
     origin: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A relative `git.worktree.base_dir` reached a fork's manifest as a relative worktree path."""
     monkeypatch.chdir(tmp_path)
     cfg = Config.model_validate({"git": {"worktree": {"base_dir": "wt"}}})
 
-    assert workdirs.workdir_base(cfg, origin) == tmp_path.resolve() / "wt" / paths.repo_id(origin)
+    assert worktrees.worktree_base(cfg, origin) == tmp_path.resolve() / "wt" / paths.repo_id(origin)
 
 
 @pytest.mark.parametrize("head_kind", ["branch", "taken", "detached"])
@@ -2631,26 +2631,26 @@ def test_cleanup_keeps_unreachable_model_head(
     """An imported record alone is not proof that a lane's commits are safe."""
     cfg = Config()
     (spec,) = _specs(tmp_path, cfg, "unsafe", "1")
-    _git(origin, "clone", "--quiet", str(origin), str(spec.workdir))
-    _git(spec.workdir, "config", "user.name", "test")
-    _git(spec.workdir, "config", "user.email", "test@example.org")
-    _git(spec.workdir, "checkout", "-b", "model-work")
-    (spec.workdir / "work.txt").write_text("keep me")
-    _git(spec.workdir, "add", "work.txt")
-    _git(spec.workdir, "commit", "-qm", "work")
-    _git(origin, "fetch", str(spec.workdir), "HEAD")
+    _git(origin, "clone", "--quiet", str(origin), str(spec.worktree))
+    _git(spec.worktree, "config", "user.name", "test")
+    _git(spec.worktree, "config", "user.email", "test@example.org")
+    _git(spec.worktree, "checkout", "-b", "model-work")
+    (spec.worktree / "work.txt").write_text("keep me")
+    _git(spec.worktree, "add", "work.txt")
+    _git(spec.worktree, "commit", "-qm", "work")
+    _git(origin, "fetch", str(spec.worktree), "HEAD")
     if checkout_base:
-        _git(spec.workdir, "checkout", "main")
+        _git(spec.worktree, "checkout", "main")
     notes: list[str] = []
-    workdirs.cleanup(
+    worktrees.cleanup(
         [spec],
         origin=origin,
         record_state=paths.state_dir(origin),
-        workdir_root=spec.workdir.parent,
-        base=spec.workdir.parent,
-        launch_dir=spec.workdir.parent / "launch",
+        worktree_root=spec.worktree.parent,
+        base=spec.worktree.parent,
+        launch_dir=spec.worktree.parent / "launch",
         cfg=cfg,
         note_keep=lambda _p, why: notes.append(why),
     )
-    assert spec.workdir.is_dir()
+    assert spec.worktree.is_dir()
     assert notes and "cannot reach" in notes[0]

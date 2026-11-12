@@ -103,8 +103,8 @@ def main() -> int:
     # The away mode is the operator's resolved policy; the run's prompts read the marker.
     os.environ["AGENT6_SUBRUN"] = "1"
     os.environ["AGENT6_DETACHED_AWAY"] = launch.away
-    os.chdir(launch.workdir)
-    if not preflight.require_git_repo(launch.workdir):
+    os.chdir(launch.worktree)
+    if not preflight.require_git_repo(launch.worktree):
         return 2
     budget = (
         session_setup.BudgetOverrides(
@@ -120,7 +120,7 @@ def main() -> int:
     mode: kinds.LoopMode = "read_only" if launch.contract is not None else "run"
     try:
         effective = session_setup.load_session_config(
-            launch.workdir,
+            launch.worktree,
             (launch.config,),
             mode=mode,
             budget_overrides=budget,
@@ -137,7 +137,7 @@ def main() -> int:
         cfg,
         launch.task,
         frontend=run.session_frontend((launch.config,)),
-        cwd=launch.workdir,
+        cwd=launch.worktree,
         started_at=time.time(),
         operator_task=launch.operator_task if launch.operator_task is not None else launch.task,
         session_id=launch.session_id,

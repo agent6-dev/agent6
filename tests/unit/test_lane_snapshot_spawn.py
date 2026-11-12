@@ -64,7 +64,7 @@ def test_detached_lane_loads_snapshot_and_records_notes(
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="detached-l1",
-        workdir=tmp_path / "lane-1",
+        worktree=tmp_path / "lane-1",
         settings=kinds.ModelSettings(kinds.ModelRoute("p", "local-reasoning")),
     )
     # The lane's record is in the dispatching repository's state from its first event.

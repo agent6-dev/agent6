@@ -14,7 +14,7 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds, lane_records, paths
-from agent6.app import lane_launch, lane_watch, workdirs
+from agent6.app import lane_launch, lane_watch, worktrees
 from agent6.config import Config
 from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.providers import ProviderResponse
@@ -264,7 +264,7 @@ def test_a_real_read_only_lane_cannot_write_run_or_start_anything(
         )
         into = lane_launch.launch_dir(paths.state_dir(short_repo), "leaf")
         spec = lane_records.LaneSpec(1, "leaf-l1", clone, None, mode="read_only")
-        config = workdirs.write_lane_config(
+        config = worktrees.write_lane_config(
             cfg,
             spec,
             explicit_leaves=frozenset(
@@ -287,7 +287,7 @@ def test_a_real_read_only_lane_cannot_write_run_or_start_anything(
         path = lane_launch.write(
             into,
             lane_launch.LaneLaunch(
-                workdir=clone,
+                worktree=clone,
                 record_state=paths.state_dir(clone),
                 session_id="leaf-l1",
                 task="review",

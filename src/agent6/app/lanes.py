@@ -18,7 +18,7 @@ from typing import Protocol
 from agent6 import budget as agent6_budget
 from agent6 import errors, kinds, lane_records, paths
 from agent6.app import compare as app_compare
-from agent6.app import lane_launch, lane_watch, parallel_results, stop, workdirs
+from agent6.app import lane_launch, lane_watch, parallel_results, stop, worktrees
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError
 from agent6.context import memory
@@ -162,25 +162,25 @@ def bridge_spawner(
     """
     branch = git_read.run_branch_for(spec.session_id)
     try:
-        subrun.clone_workspace(origin, spec.workdir)
+        subrun.clone_workspace(origin, spec.worktree)
         if at is not None:
             # A local clone hardlinks the whole odb, so the chain's commits are present.
-            git_ops.checkout_detached(spec.workdir, at)
+            git_ops.checkout_detached(spec.worktree, at)
     except (subrun.SubrunError, errors.GitError) as exc:
         return lane_records.LaneResult(
-            spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
+            spec=spec, session_dir=spec.worktree, branch=branch, ok=False, error=str(exc)
         )
     # The lane's own manifest records its lineage, so a coordinator death orphans nothing; the
     # gate's origin was resolved in the origin, where the repo signals are.
     private = lane_launch.launch_dir(paths.state_dir(origin), fanout_id)
     try:
-        config = workdirs.write_lane_config(
+        config = worktrees.write_lane_config(
             cfg, spec, explicit_leaves=explicit_leaves, into=private
         )
         launch_path = lane_launch.write(
             private,
             lane_launch.LaneLaunch(
-                workdir=spec.workdir,
+                worktree=spec.worktree,
                 record_state=record_state,
                 session_id=spec.session_id,
                 task=task,
@@ -202,10 +202,10 @@ def bridge_spawner(
         )
     except (lane_launch.LaunchError, OSError) as exc:
         return lane_records.LaneResult(
-            spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
+            spec=spec, session_dir=spec.worktree, branch=branch, ok=False, error=str(exc)
         )
     # The clone's state dir is empty; the origin's memory and rulings are seeded into it.
-    memory.seed_store(paths.state_dir(origin), paths.state_dir(spec.workdir))
+    memory.seed_store(paths.state_dir(origin), paths.state_dir(spec.worktree))
     # The lane's record lives in the origin's state from its first event.
     lane_dir = lane_watch.lane_dir(record_state, spec.session_id, mode=spec.mode)
 
@@ -220,7 +220,7 @@ def bridge_spawner(
     }
     session_dir, pid, err = runtime.spawn(
         lane_launch.bootstrap_argv(),
-        spec.workdir,
+        spec.worktree,
         before=set(),
         list_dirs=list_dirs,
         env={**os.environ, **markers},
@@ -403,7 +403,7 @@ def run_lane_to_completion(
             session_dir=res.session_dir,
             branch=res.branch,
             ok=False,
-            error=f"{exc}; its work is kept in {res.spec.workdir}",
+            error=f"{exc}; its work is kept in {res.spec.worktree}",
         )
     return land_lane(
         res,
@@ -451,20 +451,20 @@ def land_lane(
     # The dispatcher's own state takes the memory back and holds the launch files.
     own_state = paths.state_dir(origin)
     parallel_results.carry_back(
-        paths.state_dir(res.spec.workdir),
+        paths.state_dir(res.spec.worktree),
         own_state,
         dest,
         lane=res.spec.lane,
         reporter=reporter,
     )
     # Each lane removes its own dirs only; the group dir goes with whichever empties it last.
-    workdirs.cleanup(
+    worktrees.cleanup(
         [res.spec],
         origin=origin,
         note_keep=lambda path, why: reporter.note(f"kept {path}: {why}"),
         record_state=sessions_layout.layout_of(dest).state_dir,
-        workdir_root=res.spec.workdir.parent,
-        base=workdirs.workdir_base(cfg, origin),
+        worktree_root=res.spec.worktree.parent,
+        base=worktrees.worktree_base(cfg, origin),
         launch_dir=lane_launch.launch_dir(own_state, group),
         cfg=cfg,
     )
@@ -623,7 +623,7 @@ def recover_lanes(
     Returns:
         One result per lane that has a session dir, in lane order.
     """
-    workdir_root = workdirs.subordinate_workdir_root(cfg, origin, group)
+    worktree_root = worktrees.subordinate_worktree_root(cfg, origin, group)
     results: list[lane_records.LaneResult] = []
     for lane, session_id in enumerate(children, start=1):
         matches = sessions_layout.session_matches(record_state, session_id)
@@ -632,13 +632,13 @@ def recover_lanes(
         lane_dir = matches[0].session_dir
         mode = "read_only" if matches[0].subdir == "read_only" else "run"
         spec = lane_records.LaneSpec(
-            lane, session_id, workdir_root / f"lane-{lane}", None, mode=mode
+            lane, session_id, worktree_root / f"lane-{lane}", None, mode=mode
         )
         branch = git_read.run_branch_for(session_id)
         if session_is_live(lane_dir):
             outcome = stop.stop_session(lane_dir, wait_s=lane_watch.STOP_GRACE_S)
             reporter.note(f"lane {lane} [{session_id}]: {outcome.message}")
-        if (spec.workdir / ".git").exists():
+        if (spec.worktree / ".git").exists():
             res = lane_records.LaneResult(spec, lane_dir, branch, True, "")
             try:
                 imported = parallel_results.import_lane(res, origin, None)
@@ -894,18 +894,18 @@ def build_lane_spawner(
             raise ParallelError(validate.refusal_message(verdict, directive=True))
         if verdict.warned:
             reporter.warn(validate.warning_message(verdict))
-        # One name for the workdir, the lane ids and the stamped lineage: the sweeps derive
+        # One name for the worktree dir, the lane ids and the stamped lineage: the sweeps derive
         # the clone path from it.
         group_id = f"{coordinator_session_id}-{group}"
         try:
-            workdir_root = workdirs.place(cfg, origin, group_id)
+            worktree_root = worktrees.place(cfg, origin, group_id)
         except (errors.OperatorError, errors.GitError, OSError) as exc:
             raise ParallelError(str(exc)) from exc
         specs = [
             lane_records.LaneSpec(
                 lane=i,
                 session_id=f"{group_id}-l{i}",
-                workdir=workdir_root / f"lane-{i}",
+                worktree=worktree_root / f"lane-{i}",
                 settings=chosen,
                 mode="read_only" if lane.contract is not None else "run",
             )

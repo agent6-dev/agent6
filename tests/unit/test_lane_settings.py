@@ -9,7 +9,7 @@ import pathlib
 import pytest
 
 from agent6 import kinds, lane_records
-from agent6.app import workdirs
+from agent6.app import worktrees
 from agent6.config import Config, ConfigError, layer
 from agent6.ui.cli import completers
 
@@ -68,12 +68,12 @@ def test_the_lane_config_reads_back_the_selected_settings(tmp_path: pathlib.Path
     cfg = _cfg()
     chosen = cfg.lane_settings("reviewer")
     spec = lane_records.LaneSpec(
-        lane=1, session_id="fan-l1", workdir=tmp_path / "lanes" / "lane-1", settings=chosen
+        lane=1, session_id="fan-l1", worktree=tmp_path / "lanes" / "lane-1", settings=chosen
     )
-    written = workdirs.write_lane_config(
-        cfg, spec, explicit_leaves=frozenset(), into=spec.workdir.parent / "launch"
+    written = worktrees.write_lane_config(
+        cfg, spec, explicit_leaves=frozenset(), into=spec.worktree.parent / "launch"
     ).path
-    lane = layer.load_effective(spec.workdir, explicit_paths=(written,))
+    lane = layer.load_effective(spec.worktree, explicit_paths=(written,))
     assert lane.config.role_settings("worker") == chosen
     assert lane.config.models.worker is not None
     assert (

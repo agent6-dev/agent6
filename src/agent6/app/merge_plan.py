@@ -13,7 +13,7 @@ import dataclasses
 import pathlib
 
 from agent6 import errors, kinds, terminal
-from agent6.app import merge, resume, workdirs
+from agent6.app import merge, resume, worktrees
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
 from agent6.harness import subrun
@@ -209,7 +209,7 @@ def plan_merge(  # noqa: PLR0911
         return 2
     # An orphaned lane (its coordinator died before importing it) is adopted: fetched, then merged.
     try:
-        adopted = workdirs.adopt_orphan_lane(cwd, cfg, layout, manifest)
+        adopted = worktrees.adopt_orphan_lane(cwd, cfg, layout, manifest)
     except subrun.SubrunError as exc:
         reporter.error(f"{exc}")
         return 2

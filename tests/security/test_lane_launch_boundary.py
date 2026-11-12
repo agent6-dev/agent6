@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 
 from agent6 import lane_records, paths
-from agent6.app import lane_launch, workdirs
+from agent6.app import lane_launch, worktrees
 from agent6.config import Config
 from agent6.sessions import manifest
 from tests import lane_env
@@ -68,9 +68,9 @@ def _launch_files(
     origin: pathlib.Path, cfg: Config, *, into: pathlib.Path
 ) -> tuple[lane_launch.LaneLaunch, pathlib.Path]:
     spec = lane_records.LaneSpec(
-        lane=1, session_id="hostile-l1", workdir=origin / "clone", settings=None
+        lane=1, session_id="hostile-l1", worktree=origin / "clone", settings=None
     )
-    config = workdirs.write_lane_config(
+    config = worktrees.write_lane_config(
         cfg,
         spec,
         explicit_leaves=frozenset(
@@ -79,8 +79,8 @@ def _launch_files(
         into=into,
     )
     launch = lane_launch.LaneLaunch(
-        workdir=spec.workdir,
-        record_state=paths.state_dir(spec.workdir),
+        worktree=spec.worktree,
+        record_state=paths.state_dir(spec.worktree),
         session_id=spec.session_id,
         task=TASK,
         pins=PINS,

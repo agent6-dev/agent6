@@ -2541,7 +2541,7 @@ Source: [`agent6.app.lane_launch.LaneLaunch`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `workdir` | `pathlib.Path` | The lane's clone, the run's cwd. |
+| `worktree` | `pathlib.Path` | The lane's clone, the run's cwd. |
 | `record_state` | `pathlib.Path` | The state dir of the repository that dispatched the lane, where the lane's record lives from its first event. |
 | `session_id` | `str` | The lane's session id. |
 | `task` | `str` | The task text, exactly as the lane's manifest records it. |

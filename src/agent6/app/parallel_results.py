@@ -198,10 +198,10 @@ def import_lane(
     with lock if lock is not None else contextlib.nullcontext():
         manifest = sessions_manifest.read_manifest(res.session_dir)
         model_control = manifest.git_control == "model"
-        branch = git_read.status(res.spec.workdir).branch if model_control else ""
+        branch = git_read.status(res.spec.worktree).branch if model_control else ""
         free_branch = branch and branch != "HEAD" and not git_read.branch_exists(origin, branch)
         imported = subrun.import_run(
-            origin, res.spec.workdir, res.branch, res.session_dir, model_control=model_control
+            origin, res.spec.worktree, res.branch, res.session_dir, model_control=model_control
         )
         if free_branch:
             stamps.write_manifest(

@@ -11,7 +11,7 @@ import pydantic
 import pytest
 
 from agent6 import errors, path_safety, paths
-from agent6.app import workdirs
+from agent6.app import worktrees
 from agent6.config import Config, ContainerConfig
 from agent6.tools import index
 
@@ -30,7 +30,7 @@ def test_local_levels_keep_the_cache_base_and_write_nothing_to_the_repository(
     repo: pathlib.Path,
 ) -> None:
     """Only a base inside the repository is excluded; the default sits in the cache."""
-    placed = workdirs.place(Config(), repo, "run-1")
+    placed = worktrees.place(Config(), repo, "run-1")
     assert placed == paths.cache_dir() / "worktrees" / paths.repo_id(repo) / "run-1"
     assert "worktrees" not in (repo / ".git/info/exclude").read_text(encoding="utf-8")
 
@@ -39,8 +39,8 @@ def test_under_a_container_the_base_is_inside_the_checkout_and_excluded_once(
     repo: pathlib.Path,
 ) -> None:
     """A tree in the cache has no path inside the container that mounts the workspace."""
-    first = workdirs.place(_CONTAINER, repo, "run-1")
-    workdirs.place(_CONTAINER, repo, "run-2")
+    first = worktrees.place(_CONTAINER, repo, "run-1")
+    worktrees.place(_CONTAINER, repo, "run-2")
     assert first == repo.resolve() / ".agent6/worktrees" / paths.repo_id(repo) / "run-1"
     exclude = (repo / ".git/info/exclude").read_text(encoding="utf-8").splitlines()
     assert exclude.count("/.agent6/worktrees/") == 1
@@ -51,7 +51,7 @@ def test_a_rule_that_un_ignores_the_base_refuses_naming_its_key(repo: pathlib.Pa
     """Left visible, the run's own commits would take every worktree in."""
     (repo / ".gitignore").write_text("!/.agent6/\n!/.agent6/**\n", encoding="utf-8")
     with pytest.raises(errors.OperatorError, match=r"\[container\]\.worktree_base_dir"):
-        workdirs.place(_CONTAINER, repo, "run-1")
+        worktrees.place(_CONTAINER, repo, "run-1")
 
 
 def test_the_mounted_workspace_is_the_checkout_above_every_base(tmp_path: pathlib.Path) -> None:
@@ -60,17 +60,17 @@ def test_the_mounted_workspace_is_the_checkout_above_every_base(tmp_path: pathli
     lane = root / ".agent6/worktrees/repo-1/run-p1/lane-1"
     seat = lane / ".agent6/worktrees/lane-2/panel/lane-3"
     for tree in (lane, seat):
-        assert workdirs.mounted_workspace(_CONTAINER, tree) == root
-        assert workdirs.holds(_CONTAINER, tree)
-    assert workdirs.mounted_workspace(_CONTAINER, root) == root
-    assert not workdirs.holds(_CONTAINER, root)
-    assert not workdirs.holds(_CONTAINER, root / ".agent6")
+        assert worktrees.mounted_workspace(_CONTAINER, tree) == root
+        assert worktrees.holds(_CONTAINER, tree)
+    assert worktrees.mounted_workspace(_CONTAINER, root) == root
+    assert not worktrees.holds(_CONTAINER, root)
+    assert not worktrees.holds(_CONTAINER, root / ".agent6")
 
 
 def test_a_local_run_holds_only_trees_under_its_configured_base(tmp_path: pathlib.Path) -> None:
     cfg = Config.model_validate({"git": {"worktree": {"base_dir": str(tmp_path / "wt")}}})
-    assert workdirs.holds(cfg, tmp_path / "wt/repo-1/run-p1/lane-1")
-    assert not workdirs.holds(cfg, tmp_path / "repo/.agent6/worktrees/repo-1/run-p1/lane-1")
+    assert worktrees.holds(cfg, tmp_path / "wt/repo-1/run-p1/lane-1")
+    assert not worktrees.holds(cfg, tmp_path / "repo/.agent6/worktrees/repo-1/run-p1/lane-1")
 
 
 @pytest.mark.parametrize("value", ["", "/abs/trees", "../trees", ".agent6/../../trees"])

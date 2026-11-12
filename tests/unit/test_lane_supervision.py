@@ -84,7 +84,7 @@ def test_apply_limits_clamps_the_config_and_leaves_the_rest(tmp_path: pathlib.Pa
 
 def test_a_launch_round_trips_its_limits(tmp_path: pathlib.Path) -> None:
     launch = lane_launch.LaneLaunch(
-        workdir=tmp_path / "lane-1",
+        worktree=tmp_path / "lane-1",
         record_state=tmp_path / "state",
         session_id="fan-l1",
         task="t",
@@ -175,7 +175,7 @@ def test_spawn_lane_ties_the_child_to_its_parent(tmp_path: pathlib.Path) -> None
 
 
 def _spec(tmp_path: pathlib.Path, name: str) -> lane_records.LaneSpec:
-    return lane_records.LaneSpec(lane=1, session_id=name, workdir=tmp_path / "w", settings=None)
+    return lane_records.LaneSpec(lane=1, session_id=name, worktree=tmp_path / "w", settings=None)
 
 
 def test_a_lane_past_its_deadline_is_stopped_and_reported_failed(
@@ -301,7 +301,7 @@ def test_arm_deadline_writes_the_stop_at_the_deadline(tmp_path: pathlib.Path) ->
 
 def test_a_real_lane_ends_by_its_deadline(short_repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
     """A lane whose model keeps running commands ends at its deadline, not as a success."""
-    from agent6.app import workdirs
+    from agent6.app import worktrees
     from agent6.viewmodel.session import log as session_log
     from tests import lane_env
 
@@ -330,8 +330,10 @@ def test_a_real_lane_ends_by_its_deadline(short_repo: pathlib.Path, tmp_path: pa
             }
         )
         into = lane_launch.launch_dir(paths.state_dir(short_repo), "deadline")
-        spec = lane_records.LaneSpec(lane=1, session_id="deadline-l1", workdir=clone, settings=None)
-        config = workdirs.write_lane_config(
+        spec = lane_records.LaneSpec(
+            lane=1, session_id="deadline-l1", worktree=clone, settings=None
+        )
+        config = worktrees.write_lane_config(
             cfg,
             spec,
             explicit_leaves=frozenset(
@@ -342,7 +344,7 @@ def test_a_real_lane_ends_by_its_deadline(short_repo: pathlib.Path, tmp_path: pa
         path = lane_launch.write(
             into,
             lane_launch.LaneLaunch(
-                workdir=clone,
+                worktree=clone,
                 record_state=paths.state_dir(clone),
                 session_id="deadline-l1",
                 task="keep running",

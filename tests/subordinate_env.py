@@ -18,7 +18,7 @@ from agent6 import budget, kinds, lane_records, paths
 from agent6.app import (
     lane_launch,
     lanes,
-    workdirs,
+    worktrees,
 )
 from agent6.config import Config
 from agent6.harness import parallel_dispatch, run_chain, subrun
@@ -84,9 +84,9 @@ def launch_worker(
     sid = "parent-p1-l1"
     spec = lane_records.LaneSpec(1, sid, clone, None)
     into = lane_launch.launch_dir(paths.state_dir(repo), "parent-p1")
-    config = workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset(), into=into)
+    config = worktrees.write_lane_config(cfg, spec, explicit_leaves=frozenset(), into=into)
     launch = lane_launch.LaneLaunch(
-        workdir=clone,
+        worktree=clone,
         record_state=paths.state_dir(repo),
         session_id=sid,
         task="worker",
@@ -147,7 +147,7 @@ def run_panel_worker(url: str) -> None:
     directory = layout.bucket_dir(launch.record_state, "runs") / launch.session_id
     process.write_worker_pid(directory, os.getpid())
     meter = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
-    executor = dispatcher(launch.workdir, directory, config(url), meter)
+    executor = dispatcher(launch.worktree, directory, config(url), meter)
     executor.dispatch_panel(
         [
             lane_records.LaneTask(
@@ -163,7 +163,7 @@ def run_panel_worker(url: str) -> None:
             )
         ],
         panel_id="blocking",
-        at=git(launch.workdir, "rev-parse", "HEAD"),
+        at=git(launch.worktree, "rev-parse", "HEAD"),
     )
 
 

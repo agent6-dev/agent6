@@ -23,8 +23,8 @@ from agent6.app import (
     fork_worktrees,
     preflight,
     stamps,
-    workdirs,
     workspace_setup,
+    worktrees,
 )
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
@@ -298,7 +298,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
 
     if worktree:
         try:
-            path = workdirs.place(cfg, repo, effective_session_id)
+            path = worktrees.place(cfg, repo, effective_session_id)
             checkout = fork_worktrees.add_session_worktree(
                 repo, path, base_sha, cfg.git.worktree.kind
             )

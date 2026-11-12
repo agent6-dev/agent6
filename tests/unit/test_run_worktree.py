@@ -28,8 +28,8 @@ from agent6.app import (
     fork_worktrees,
     preflight,
     role_providers,
-    workdirs,
     workspace_setup,
+    worktrees,
 )
 from agent6.app import lanes as app_lanes
 from agent6.app import reporter as app_reporter
@@ -145,13 +145,13 @@ def _lane_snapshot(
     """Make this process lane 1 of a fan-out over `repo`, started on a real config snapshot."""
     effective = layer.load_effective(repo)
     spec = lane_records.LaneSpec(
-        lane=1, session_id="fan-l1", workdir=tmp_path / "lanes" / "lane-1", settings=None
+        lane=1, session_id="fan-l1", worktree=tmp_path / "lanes" / "lane-1", settings=None
     )
-    snapshot = workdirs.write_lane_config(
+    snapshot = worktrees.write_lane_config(
         effective.config,
         spec,
         explicit_leaves=effective.explicit_leaves,
-        into=spec.workdir.parent / "launch",
+        into=spec.worktree.parent / "launch",
     ).path
     lane_env.mark_lane(
         monkeypatch,
@@ -528,20 +528,20 @@ def test_a_budget_stopped_lane_continues_with_the_fork_command_its_record_names(
     cfg = layer.load_effective(repo).config
     state = paths.state_dir(repo)
     lane = lane_records.LaneSpec(
-        lane=1, session_id="capped-fan-l1", workdir=tmp_path / "lanes" / "lane-1", settings=None
+        lane=1, session_id="capped-fan-l1", worktree=tmp_path / "lanes" / "lane-1", settings=None
     )
 
     def spawn(spec: lane_records.LaneSpec, task: str) -> lane_records.LaneResult:
-        subrun.clone_workspace(repo, spec.workdir)
+        subrun.clone_workspace(repo, spec.worktree)
         output, errors = io.StringIO(), io.StringIO()
         with (
             monkeypatch.context() as child,
             contextlib.redirect_stdout(output),
             contextlib.redirect_stderr(errors),
         ):
-            child.chdir(spec.workdir)
-            snapshot = workdirs.write_lane_config(
-                cfg, spec, explicit_leaves=frozenset(), into=spec.workdir.parent / "launch"
+            child.chdir(spec.worktree)
+            snapshot = worktrees.write_lane_config(
+                cfg, spec, explicit_leaves=frozenset(), into=spec.worktree.parent / "launch"
             ).path
             lane_env.mark_lane(
                 child,
@@ -573,7 +573,7 @@ def test_a_budget_stopped_lane_continues_with_the_fork_command_its_record_names(
         poll_interval_s=0.01,
     )
     assert not result.ok and "budget exhausted" in result.error
-    assert not lane.workdir.exists()
+    assert not lane.worktree.exists()
     capsys.readouterr()
     assert cli_main(["sessions", "show", "capped-fan-l1"]) == 0
     assert "`agent6 fork capped-fan-l1" in capsys.readouterr().out

@@ -212,14 +212,14 @@ class _FakeGroupSpawner:
             spec = lane_records.LaneSpec(
                 lane=i,
                 session_id=session_id,
-                workdir=self.wt_root / session_id,
+                worktree=self.wt_root / session_id,
                 settings=None,
             )
             if i in self.fail:
                 results.append(
                     lane_records.LaneResult(
                         spec=spec,
-                        session_dir=spec.workdir,
+                        session_dir=spec.worktree,
                         branch=branch,
                         ok=False,
                         error="lane boom",
@@ -232,7 +232,7 @@ class _FakeGroupSpawner:
                 results.append(
                     lane_records.LaneResult(
                         spec=spec,
-                        session_dir=spec.workdir,
+                        session_dir=spec.worktree,
                         branch=branch,
                         ok=True,
                         error="",
@@ -251,7 +251,7 @@ class _FakeGroupSpawner:
             results.append(
                 lane_records.LaneResult(
                     spec=spec,
-                    session_dir=spec.workdir,
+                    session_dir=spec.worktree,
                     branch=branch,
                     ok=True,
                     error="",

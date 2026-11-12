@@ -40,7 +40,7 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     **Support: internal.** Written by the coordinator for one spawn, read by that lane.
 
     Attributes:
-        workdir: The lane's clone, the run's cwd.
+        worktree: The lane's clone, the run's cwd.
         record_state: The state dir of the repository that dispatched the lane, where the
             lane's record lives from its first event.
         session_id: The lane's session id.
@@ -63,7 +63,7 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
         contract: The bounded conversation a `read_only` lane drives; None for a run lane.
     """
 
-    workdir: pathlib.Path
+    worktree: pathlib.Path
     record_state: pathlib.Path
     session_id: str = pydantic.Field(min_length=1)
     task: str = pydantic.Field(min_length=1)
@@ -111,7 +111,7 @@ def dispatch_authority(
             and launch is not None
             and launch.contract is None
             and launch.session_id == session_id
-            and launch.workdir.resolve() == root.resolve()
+            and launch.worktree.resolve() == root.resolve()
         )
     deadline = launch.limits.deadline_at if launch is not None and launch.limits else None
     return lane_records.DispatchAuthority(

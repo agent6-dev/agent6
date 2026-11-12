@@ -10,7 +10,7 @@ import tomllib
 import pytest
 
 from agent6 import kinds, lane_records, paths
-from agent6.app import confine, workdirs
+from agent6.app import confine, worktrees
 from agent6.config import Config, ParallelConfig, layer
 
 
@@ -64,17 +64,17 @@ def test_lane_config_carries_the_protect_git_word(repo: pathlib.Path, word: str)
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="fan-l1",
-        workdir=repo.parent / "lanes" / "lane-1",
+        worktree=repo.parent / "lanes" / "lane-1",
         settings=None,
     )
 
-    config_path = workdirs.write_lane_config(
+    config_path = worktrees.write_lane_config(
         origin.config,
         spec,
         explicit_leaves=origin.explicit_leaves,
-        into=spec.workdir.parent / "launch",
+        into=spec.worktree.parent / "launch",
     ).path
-    lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
+    lane = layer.load_effective(spec.worktree, explicit_paths=(config_path,))
 
     assert lane.config.sandbox.isolation == "partial"
     assert lane.config.sandbox.protect_git == word
@@ -97,18 +97,18 @@ def test_lane_config_keeps_an_explicit_reset_to_default(repo: pathlib.Path) -> N
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="fan-l1",
-        workdir=repo.parent / "lanes" / "lane-1",
+        worktree=repo.parent / "lanes" / "lane-1",
         settings=None,
     )
 
-    config_path = workdirs.write_lane_config(
+    config_path = worktrees.write_lane_config(
         origin.config,
         spec,
         explicit_leaves=origin.explicit_leaves,
-        into=spec.workdir.parent / "launch",
+        into=spec.worktree.parent / "launch",
     ).path
     written = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
+    lane = layer.load_effective(spec.worktree, explicit_paths=(config_path,))
 
     assert written["sandbox"]["protect_git"] == "on"
     assert lane.config.sandbox.protect_git == "on"
@@ -127,15 +127,15 @@ def test_lane_config_keeps_worker_route_and_budget_override(repo: pathlib.Path) 
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="fan-l1",
-        workdir=repo.parent / "lanes" / "lane-1",
+        worktree=repo.parent / "lanes" / "lane-1",
         settings=kinds.ModelSettings(kinds.ModelRoute("p", "lane-model")),
     )
 
-    config_path = workdirs.write_lane_config(
-        cfg, spec, explicit_leaves=origin.explicit_leaves, into=spec.workdir.parent / "launch"
+    config_path = worktrees.write_lane_config(
+        cfg, spec, explicit_leaves=origin.explicit_leaves, into=spec.worktree.parent / "launch"
     ).path
     written = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
+    lane = layer.load_effective(spec.worktree, explicit_paths=(config_path,))
 
     assert written["models"]["worker"]["model"] == "p/lane-model"
     assert written["budget"]["max_usd"] == 3.5

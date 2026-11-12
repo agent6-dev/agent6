@@ -61,7 +61,7 @@ class _FakeChild:
     """Stand in for the machine-agent subprocess: commit one file in cwd, write result.json."""
 
     captured_env: ClassVar[dict[str, str]] = {}
-    workdirs: ClassVar[list[pathlib.Path]] = []
+    worktrees: ClassVar[list[pathlib.Path]] = []
     seen_cwds: ClassVar[list[pathlib.Path]] = []
     seen_files: ClassVar[list[set[str]]] = []
 
@@ -70,7 +70,7 @@ class _FakeChild:
         req = json.loads(pathlib.Path(argv[-2]).read_text(encoding="utf-8"))
         # `root` is the execution root (a clone); `cwd` stays the checkout for the config reload.
         cwd = pathlib.Path(req["root"])
-        _FakeChild.workdirs.append(cwd)
+        _FakeChild.worktrees.append(cwd)
         _FakeChild.seen_cwds.append(pathlib.Path(req["cwd"]))
         _FakeChild.seen_files.append({e.name for e in cwd.iterdir()})
         seq = req["request"]["step_seq"]
@@ -141,14 +141,14 @@ def test_run_state_request_keeps_the_true_checkout_as_cwd_for_config(
     """A run state's request keeps the operator's repo as `cwd`; `root` is the clone it works in."""
     origin = _origin(tmp_path)
     monkeypatch.setattr(agent.subprocess, "Popen", _fake_popen)
-    _FakeChild.workdirs = []
+    _FakeChild.worktrees = []
     _FakeChild.seen_cwds = []
     runner = _runner(origin, tmp_path)
 
     assert runner(_req(0), None).reason == "finish_session"
 
     assert _FakeChild.seen_cwds[-1] == origin
-    assert _FakeChild.workdirs[-1] != origin
+    assert _FakeChild.worktrees[-1] != origin
 
 
 def test_read_only_states_see_the_machine_tree_and_land_nothing(
@@ -160,13 +160,13 @@ def test_read_only_states_see_the_machine_tree_and_land_nothing(
     """
     origin = _origin(tmp_path)
     monkeypatch.setattr(agent.subprocess, "Popen", _fake_popen)
-    _FakeChild.workdirs = []
+    _FakeChild.worktrees = []
     _FakeChild.seen_files = []
     runner = _runner(origin, tmp_path)
     assert runner(_req(0), None).reason == "finish_session"
     tip_after_run = git_read.chain_tip(origin, BRANCH)
     assert runner(_req(1, mode="read_only"), None).reason == "finish_session"
-    judge_dir = _FakeChild.workdirs[-1]
+    judge_dir = _FakeChild.worktrees[-1]
     assert judge_dir != origin
     assert "work0.txt" in _FakeChild.seen_files[-1]  # the run state's committed work
     assert git_read.chain_tip(origin, BRANCH) == tip_after_run  # nothing landed
@@ -179,12 +179,12 @@ def test_without_a_machine_tree_read_only_states_run_in_place(
     """With no machine_id or clone_root a read-only request runs in cwd."""
     origin = _origin(tmp_path)
     monkeypatch.setattr(agent.subprocess, "Popen", _fake_popen)
-    _FakeChild.workdirs = []
+    _FakeChild.worktrees = []
     runner = agent.build_machine_agent_runner(
         _OVERLAYS, origin, tmp_path / "m1" / "agent_transcripts", (), None
     )
     assert runner(_req(0, mode="read_only"), None).reason == "finish_session"
-    assert _FakeChild.workdirs == [origin]
+    assert _FakeChild.worktrees == [origin]
     assert not (tmp_path / "clones").exists()
 
 
@@ -618,14 +618,14 @@ def test_prune_handles_a_machine_clone_after_failed_import(
     import os
 
     from agent6 import paths
-    from agent6.app import workdirs
+    from agent6.app import worktrees
     from agent6.sessions import layout, process
     from agent6.ui.cli import main
 
     origin = _origin(tmp_path)
     monkeypatch.chdir(origin)
     monkeypatch.setattr(agent.subprocess, "Popen", _fake_popen)
-    group = workdirs.subordinate_workdir_root(Config(), origin, "machine-m1")
+    group = worktrees.subordinate_worktree_root(Config(), origin, "machine-m1")
     instance = layout.machines_root(paths.state_dir(origin)) / "m1"
     runner = agent.build_machine_agent_runner(
         _OVERLAYS,

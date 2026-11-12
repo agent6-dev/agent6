@@ -23,7 +23,7 @@ def _res(
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="lane-1",
-        workdir=pathlib.Path("/nowhere"),
+        worktree=pathlib.Path("/nowhere"),
         settings=None,
     )
     return lane_records.LaneResult(
@@ -297,7 +297,7 @@ def _ended_lane(dest: pathlib.Path, *, reason: str, verification: str) -> None:
 
 def test_a_lanes_result_carries_its_finish_summary(tmp_path: pathlib.Path) -> None:
     """A lane that finished hands its parent the summary it finished with; another end, none."""
-    spec = lane_records.LaneSpec(lane=1, session_id="done", workdir=tmp_path, settings=None)
+    spec = lane_records.LaneSpec(lane=1, session_id="done", worktree=tmp_path, settings=None)
     done = tmp_path / "done"
     _ended_lane(done, reason="finish_session", verification="not_applicable")
     res = lanes.recorded_result(spec, "", done, lane_records.Imported(done), origin=tmp_path)

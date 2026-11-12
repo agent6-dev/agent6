@@ -20,7 +20,7 @@ from collections.abc import Callable, Mapping
 import pydantic
 
 from agent6 import budget, errors, kinds, paths
-from agent6.app import confine, preflight, workdirs, workspace_setup
+from agent6.app import confine, preflight, workspace_setup, worktrees
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import agent, bundle, crash_spend, host_preflight, state_configs, workspace
@@ -463,7 +463,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 return 2
     keep_snapshots = cfg.machine.keep_snapshots
     # One clone base for the agent states' per-state clones and the tool states' per-call trees.
-    clone_root = workdirs.subordinate_workdir_root(cfg, cwd, f"machine-{spec.machine}")
+    clone_root = worktrees.subordinate_worktree_root(cfg, cwd, f"machine-{spec.machine}")
 
     def agent_config(name: str, state: AgentState) -> Config:
         """Return an agent state's config with its spend cap applied.
