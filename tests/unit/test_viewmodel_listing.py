@@ -1937,3 +1937,28 @@ def test_a_review_seats_record_offers_no_action(
     actions = wire.manifest_header(tmp_path, repo=None)["session_actions"]
 
     assert actions == dict.fromkeys(("compact", "fork", "merge", "resume", "review"), offered)
+
+
+@pytest.mark.parametrize("merged", [False, True])
+def test_a_merged_sessions_pruned_worktree_is_not_a_resume_problem(
+    tmp_path: pathlib.Path, merged: bool
+) -> None:
+    """`sessions list` said "worktree not found; resume needs it" beside a merged session."""
+    gone = tmp_path / "worktrees" / "wt-run"
+    record: dict[str, object] = {"mode": "run", "session_id": "wt-run", "worktree": str(gone)}
+    if merged:
+        record["merged"] = {"into": "main", "sha": "a" * 40, "tip": "b" * 40}
+    session = tmp_path / "sessions" / "runs" / "wt-run"
+    session.mkdir(parents=True)
+    (session / "manifest.json").write_text(json.dumps(record), encoding="utf-8")
+    (session / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
+        + "\n"
+        + json.dumps({"type": "session.stop", "reason": "finish_session"})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    cell = summarize_session_dir(session).id_cell(winner=False)
+
+    assert cell == ("wt-run" if merged else f"wt-run (worktree {gone} not found; resume needs it)")

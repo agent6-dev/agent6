@@ -727,6 +727,9 @@ def summarize_session_dir(
         if branch_tips is not None and manifest is not None
         else False
     )
+    missing = sessions_manifest.worktree_blocker(manifest.worktree) if manifest else ""
+    # Prune removes a merged session's worktree: nothing is missing then.
+    pruned = bool(missing) and manifest is not None and manifest.merged is not None
     return SessionSummary(
         session_id=session_dir.name,
         mode=mode,
@@ -746,8 +749,10 @@ def summarize_session_dir(
         plan_used_percent=scan.budget.account.used_percent if scan.budget.account else 0.0,
         model=format.format_model_route(manifest.models.driver) if manifest is not None else "",
         model_from_flag=manifest.models.driver_from_flag if manifest is not None else False,
-        worktree=str(manifest.worktree) if manifest is not None and manifest.worktree else "",
-        worktree_missing=sessions_manifest.worktree_blocker(manifest.worktree) if manifest else "",
+        worktree=""
+        if pruned or manifest is None or not manifest.worktree
+        else str(manifest.worktree),
+        worktree_missing="" if pruned else missing,
         branch=existing_branch(manifest, branch_tips),
         base_sha=manifest.base_sha if manifest is not None else "",
         source_tip=scan.source_tip or "",
