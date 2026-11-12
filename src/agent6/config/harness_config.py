@@ -223,7 +223,7 @@ class ParallelConfig(pydantic.BaseModel):
         description=(
             "The most lanes one `--parallel` group may run, `1` to `1024`; a spec asking for "
             "more is refused before anything is cloned; a review roster longer than this "
-            "runs in batches of this width, with no seat dropped."
+            "runs in batches of this width, with no reviewer dropped."
         ),
     )
 
@@ -632,8 +632,8 @@ class ReviewConfig(pydantic.BaseModel):
         description=(
             "In-loop panel over the diff so far, with findings sent to the model; only "
             "finish-time review can gate finish; periodic review uses "
-            "`review.interval_turns`; without `review.reviewers`, one seat uses "
-            "`[models.reviewer]`; each seat runs as a read-only lane with its own session."
+            "`review.interval_turns`; without `review.reviewers`, one reviewer uses "
+            "`[models.reviewer]`; each reviewer runs as a read-only lane with its own session."
         ),
     )
     interval_turns: int = pydantic.Field(
@@ -645,9 +645,9 @@ class ReviewConfig(pydantic.BaseModel):
         json_schema_extra={
             "choice_meanings": {
                 "none": "Treat blocking verdicts as guidance",
-                "any": "One blocking seat rejects finish",
+                "any": "One blocking reviewer rejects finish",
                 "model_quorum": "Require configured number of distinct blocking model routes",
-                "all": "Require every seat to block",
+                "all": "Require every reviewer to block",
             }
         },
         default="none",
@@ -662,8 +662,8 @@ class ReviewConfig(pydantic.BaseModel):
         default=2,
         description=(
             "distinct provider/model routes required to block with `review.block_on = "
-            '"model_quorum"`; two seats on one route counted once, even with different focus or '
-            "effort"
+            '"model_quorum"`; two reviewers on one route counted once, even with different focus '
+            "or effort"
         ),
     )
     max_rejections: int = pydantic.Field(
@@ -693,14 +693,14 @@ class ReviewConfig(pydantic.BaseModel):
             "ordered panel roster of tables with `focus` and optional `model`, "
             "`temperature` and `effort`; every omitted field inherits the resolved "
             "`[models.reviewer]`, `model` pinned or not; `model` is a provider/model route; "
-            'empty roster: one `security` seat unless `review.when = "never"`'
+            'empty roster: one `security` reviewer unless `review.when = "never"`'
         ),
     )
     concurrency: int = pydantic.Field(
         ge=1,
         default=1,
         description=(
-            "simultaneous panel seats, at most `harness.parallel.max_lanes`; a longer roster "
+            "simultaneous reviewers, at most `harness.parallel.max_lanes`; a longer roster "
             "runs in batches, in roster order; `review.concurrency = 1`: one after another"
         ),
     )
@@ -708,7 +708,7 @@ class ReviewConfig(pydantic.BaseModel):
         ge=1,
         default=20,
         description=(
-            "turns a review seat may take, turns that ask for tools included; no verdict "
+            "turns a reviewer may take, turns that ask for tools included; no verdict "
             "within the limit: abstention, reported by the panel"
         ),
     )

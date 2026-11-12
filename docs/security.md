@@ -376,9 +376,9 @@ Capture preserves the target's exclusions and hidden paths; it does not add excl
 A snapshot does not widen read permissions: historical hidden files already in git remain subject to the configured hidden-path boundary.
 Preparation refuses an unreadable target or failed retention rather than reviewing an older committed tree.
 Only the parent binds the panel ID, target, rules, prior findings and verification evidence; reviewer text cannot replace that binding.
-Panel seats run as read-only lanes, each its own process and session, not as calls through the parent's editing dispatcher.
-A seat's tools are the ones its parent hands down, never an edit, checked at both tool advertisement and dispatch; [Parallel lanes](#10-parallel-lanes) lists them.
-The parent validates the completion artifact's session, panel, seat and exact target before parsing or grounding a verdict.
+Panel reviewers run as read-only lanes, each its own process and session, not as calls through the parent's editing dispatcher.
+A reviewer's tools are the ones its parent hands down, never an edit, checked at both tool advertisement and dispatch; [Parallel lanes](#10-parallel-lanes) lists them.
+The parent validates the completion artifact's session, panel, reviewer and exact target before parsing or grounding a verdict.
 Failed, timed-out, missing, mismatched and unparseable evidence abstains with its diagnostic; a verdict in the last allowed turn still counts.
 Neither child prose nor a successful process exit certifies the parent's tree.
 See [Usage](usage.md#plan-review-and-ask) for cleanup ownership.
@@ -563,7 +563,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - `sandbox.isolation = "none"` with auto-approved `run_command` adds a one-time gate: `Continue? [y/N]` interactively, a warning in CI and `machine run`.
 - A prompt with no operator to answer it: a headless run refuses to start under `ask` unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park it for a front-end) or `approve` (grant every scope).
   An unattended machine auto-denies.
-- A lane or review seat a run dispatched puts its approval, or the question it waits on, to that run's operator: the prompt shows on the run, named for the lane, and the answer goes back over the session's file bridge, which no jail can reach.
+- A lane or reviewer a run dispatched puts its approval, or the question it waits on, to that run's operator: the prompt shows on the run, named for the lane, and the answer goes back over the session's file bridge, which no jail can reach.
   An "allow all" or "deny all" given on the run covers its lanes for that scope.
 - `agent6 mcp serve` has no operator at all, so the tools that would prompt are not published.
   Under `run_commands = "ask"` or `"deny"` its command tools are absent from `tools/list`, and a client that names one is told which setting withheld it ([the tools](acp.md#as-an-mcp-server)).
@@ -715,16 +715,16 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - the bootstrap reads the file `AGENT6_LANE` names through `O_NOFOLLOW` and refuses a symlink, a foreign owner, a mode others can read or a dir others can write; `-P` keeps the clone off `sys.path` and `-E` ignores `PYTHONPATH`, so a planted `agent6/` or `sitecustomize.py` never imports (`tests/security/test_lane_launch_boundary.py`)
     - a detached lane has no terminal: its `run_commands = "ask"` prompt is asked on its parent, whose operator answers it; with no parent watching, the launch file's away mode parks it (`wait`) or answers it empty (`deny`), never approves it
     - a lane is tied to its parent with PDEATHSIG (SIGTERM), so a parent that dies cannot leave a model child running; a lane that does not stop when asked is TERMed, KILLed after the grace and reaped by its recorded pid; a dispatch's deadline is enforced by the parent's await and by the lane's own backstop
-- A lane whose launch file carries a conversation contract is a `reviewer` session, a review seat: the same bootstrap and jail over its own clone of the reviewed snapshot, with the tool surface cut at both boundaries
+- A lane whose launch file carries a conversation contract is a `reviewer` session: the same bootstrap and jail over its own clone of the reviewed snapshot, with the tool surface cut at both boundaries
     - the contract lists the tools the parent hands down: the ones the parent's model is offered, within the reading tools, `run_command` with `read_background` and `stop_background`, `run_verify_command`, `fetch`, `read_session` and `use_skill`; the tool list offers exactly those, and the dispatcher refuses every other name that slips past the list (an edit, the task list, `parallel`, an MCP tool); no MCP server starts
-    - a seat's command runs under the lane's own `run_commands` policy, jail and `sandbox.network`, as a work lane's does: `"deny"` on the parent withholds the command tools from the seat's list and from its dispatcher, and an `"ask"` prompt is asked on the parent; `git.worktree.setup_command` runs first only where the seat may run commands
-    - a command can change the seat's clone, which is removed with the lane; a seat's join is record-only, so nothing from the clone merges into the parent's chain
+    - a reviewer's command runs under the lane's own `run_commands` policy, jail and `sandbox.network`, as a work lane's does: `"deny"` on the parent withholds the command tools from the reviewer's list and from its dispatcher, and an `"ask"` prompt is asked on the parent; `git.worktree.setup_command` runs first only where the reviewer may run commands
+    - a command can change the reviewer's clone, which is removed with the lane; a reviewer's join is record-only, so nothing from the clone merges into the parent's chain
     - the loop ends the session at the contract's turn limit without executing that response's tool calls; a background command dies with the session
 - A child's model and its operator work entry points (`parallel`, `/parallel`, `--parallel`) cannot dispatch work, even with `harness.parallel.tool = true`.
     - a worker lane retains its configured harness-panel authority, independent of `harness.parallel.tool`; the internal record-only dispatch seam uses the same executor, never a tool-supplied purpose or authority argument
     - authority comes from the private launch's session id, checkout and conversation contract, checked against the execution; `AGENT6_CHILD` without a matching worker launch grants no panel authority, including in unrelated machine states
     - a read-only review lane has neither work nor panel authority, so the allowed structure ends at that leaf
-    - panel costs sub-reserve the owning worker's remaining allowance; a seat's deadline is the earlier of its batch's 30 minutes and its ancestor's deadline
+    - panel costs sub-reserve the owning worker's remaining allowance; a reviewer's deadline is the earlier of its batch's 30 minutes and its ancestor's deadline
 - Import retains descendant session directories, dispatch records, objects, lineage and hidden target refs before worker-clone cleanup; stop follows live links across state directories and session buckets, including through a dead worker.
     - ancestor settlement keeps the allowance held until cumulative `budget.update` rows confirm every panel child's charge through `settled_lanes`; importing descendant records does not charge that inclusive spend again
     - child evidence binds only the child's retained review target, never the top-level checkout after a merge or later edit

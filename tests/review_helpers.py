@@ -150,7 +150,7 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
             turn=1,
             trigger="finish",
             target=dataclasses.asdict(target),
-            seats=[],
+            reviewers=[],
             rules_complete=True,
             rules_reason=None,
             rule_sources=[
@@ -232,7 +232,7 @@ def panel_rows(
             "panel_id": "p",
             "execution_id": "e",
             "target": dataclasses.asdict(target),
-            "seats": [],
+            "reviewers": [],
         },
         {
             "type": "review.panel",

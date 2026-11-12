@@ -347,7 +347,7 @@ def run_lane_to_completion(
         return res
     deadline_at = limits.deadline_at if limits is not None else None
     overdue = over_budget = False
-    label = f"{'seat' if contract is not None else 'lane'} {spec.lane} {spec.session_id}"
+    label = f"{'reviewer' if contract is not None else 'lane'} {spec.lane} {spec.session_id}"
 
     def on_poll(status: str) -> bool:
         nonlocal over_budget

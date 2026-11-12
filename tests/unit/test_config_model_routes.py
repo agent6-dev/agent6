@@ -46,7 +46,7 @@ def test_scalar_route_round_trip_and_reviewer_inheritance() -> None:
     )
     worker = cfg.models.resolve("worker")
     assert worker is not None and (worker.provider, worker.model) == ("p", "vendor/id")
-    pinned, inherited = (seat.resolve(worker) for seat in cfg.review.reviewers)
+    pinned, inherited = (reviewer.resolve(worker) for reviewer in cfg.review.reviewers)
     assert pinned is not None and (pinned.provider, pinned.model) == ("p", "other")
     assert inherited == worker
     dumped = cfg.model_dump()
@@ -116,8 +116,8 @@ def test_pinned_reviewer_membership_is_checked_after_merge(tmp_path: pathlib.Pat
     second.write_text('[providers.b]\nbackend = "openai"\n')
     with pytest.raises(validation.ConfigError, match=r"review.reviewers.*providers.b"):
         layer.load_effective(tmp_path, (first,))
-    seat = layer.load_effective(tmp_path, (first, second)).config.review.reviewers[0]
-    route = seat.resolve(None)
+    reviewer = layer.load_effective(tmp_path, (first, second)).config.review.reviewers[0]
+    route = reviewer.resolve(None)
     assert route is not None and (route.provider, route.model) == ("b", "vendor/id")
 
 

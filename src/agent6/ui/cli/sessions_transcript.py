@@ -116,9 +116,9 @@ def cmd_transcript(
     # Fold the full set (the per-seq walk needs every call), then window the messages.
     messages = transcript_render.fold_conversation(transcripts)
     if not messages and not any(transcript_render.drives_conversation(t) for t in transcripts):
-        # A review-only dir: every round-trip is a side-call seat, so the fold prints nothing.
+        # A review-only dir: every round-trip is a side-call reviewer, so the fold prints nothing.
         print(
-            f"session {layout.session_id} has only side-call transcripts (review seats /"
+            f"session {layout.session_id} has only side-call transcripts (reviewers /"
             " compaction); --json dumps their materialized records.",
             file=sys.stderr,
         )

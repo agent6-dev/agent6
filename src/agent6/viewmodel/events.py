@@ -161,9 +161,9 @@ def _strings(value: Any) -> tuple[str, ...]:
     return tuple(str(x) for x in value) if isinstance(value, (list, tuple)) else ()
 
 
-def _seat_index(raw: dict[str, Any]) -> int | None:
-    """Return the panel seat index a role event carries, None outside a panel."""
-    value = raw.get("seat_index")
+def _reviewer_index(raw: dict[str, Any]) -> int | None:
+    """Return the reviewer index a role event carries, None outside a panel."""
+    value = raw.get("reviewer_index")
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
@@ -197,8 +197,8 @@ _IDENTITY_KEYS = ("execution_id", "model_call_id", "panel_id", "provider_tool_ca
 def _call_identity(raw: dict[str, Any]) -> dict[str, Any]:
     """Return a row's model-call identity fields, each when present."""
     fields: dict[str, Any] = {key: raw[key] for key in _IDENTITY_KEYS if key in raw}
-    if "seat_index" in raw:
-        fields["seat_index"] = _seat_index(raw)
+    if "reviewer_index" in raw:
+        fields["reviewer_index"] = _reviewer_index(raw)
     return fields
 
 
@@ -353,7 +353,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 model=_text(raw, "model"),
                 provider=_text(raw, "provider"),
                 model_call_id=_text(raw, "model_call_id"),
-                seat_index=_seat_index(raw),
+                reviewer_index=_reviewer_index(raw),
                 execution_id=raw.get("execution_id"),
             )
         case "model.attempt":
@@ -362,7 +362,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 model=_text(raw, "model"),
                 provider=_text(raw, "provider"),
                 model_call_id=_text(raw, "model_call_id"),
-                seat_index=_seat_index(raw),
+                reviewer_index=_reviewer_index(raw),
                 execution_id=raw.get("execution_id"),
                 attempt=as_int(raw.get("attempt")) or 1,
                 request_id=raw.get("request_id"),
@@ -378,7 +378,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 model=_text(raw, "model"),
                 provider=_text(raw, "provider"),
                 model_call_id=_text(raw, "model_call_id"),
-                seat_index=_seat_index(raw),
+                reviewer_index=_reviewer_index(raw),
                 execution_id=raw.get("execution_id"),
                 ok=raw.get("ok") is not False,
                 input_tokens=as_int(raw.get("input_tokens")),

@@ -369,7 +369,7 @@ def test_the_apps_ranker_judges_the_imported_work_and_records_the_outcome(
     ]
     judge = _Judge()
 
-    def seat(*_a: object) -> Provider:
+    def reviewer(*_a: object) -> Provider:
         return cast(Provider, judge)
 
     said: list[str] = []
@@ -385,7 +385,7 @@ def test_the_apps_ranker_judges_the_imported_work_and_records_the_outcome(
         origin_state,
         parent_dir=root,
         base_sha=_git(repo, "rev-parse", "main"),
-        build_provider=seat,
+        build_provider=reviewer,
         judging_status=contextlib.nullcontext,
         budget=budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20),
         events=event_log.EventSink(root / "logs.jsonl"),

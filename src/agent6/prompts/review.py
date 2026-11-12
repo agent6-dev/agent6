@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The run review's prompt and the review panel seats' prompts.
+"""The run review's prompt and the reviewers' prompts.
 
-The run review (`sessions review`) reads a finished session's record; each adversarial seat
+The run review (`sessions review`) reads a finished session's record; each adversarial reviewer
 sees the panel prompt with a `{focus}` placeholder.
-`harness.review.session` and `harness.review.seat` own the calls.
+`harness.review.session` and `harness.review.verdict` own the calls.
 """
 
 from __future__ import annotations
@@ -90,7 +90,7 @@ Output STRICT JSON and nothing else (no prose, no markdown fence):
 )
 
 
-# What every seat adds to the verdict contract: it investigates before it judges.
+# What every reviewer adds to the verdict contract: it investigates before it judges.
 INVESTIGATE_PROMPT = """
 
 You ALSO have tools to INVESTIGATE the broader repo before judging. Your checkout is
@@ -107,7 +107,7 @@ at the `path:line` IN THE DIFF that caused the break (the changed signature),
 with the broken caller (file:line) in the `detail`; only diff lines gate, so a
 finding cited at the other file's line is ignored."""
 
-# Added when the seat's parent may run commands, so the seat may too.
+# Added when the reviewer's parent may run commands, so the reviewer may too.
 COMMANDS_PROMPT = """
 
 You may run commands to check a suspicion: a test, the verify command, git history.
@@ -121,12 +121,12 @@ tool calls."""
 
 
 def panel_prompt(focus: str, *, max_turns: int, commands: bool) -> str:
-    """Render a seat's prompt.
+    """Render a reviewer's prompt.
 
     Args:
-        focus: The seat's assigned focus.
-        max_turns: The seat's reply cap.
-        commands: Whether the seat is handed `run_command`.
+        focus: The reviewer's assigned focus.
+        max_turns: The reviewer's reply cap.
+        commands: Whether the reviewer is handed `run_command`.
 
     Returns:
         The system prompt.

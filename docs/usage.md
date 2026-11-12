@@ -51,7 +51,7 @@ For example, `models.planner.effort = "max"` changes only the planner's effort.
 | `default` | `[models.default]` | required baseline and the only fallback for every role |
 | `worker` | `[models.worker]` | `agent6 run`, `agent6 ask`, their resumes, machine agent states, and model-written squash messages |
 | `planner` | `[models.planner]` | `agent6 plan` and plan resumes |
-| `reviewer` | `[models.reviewer]` | in-loop review panel seats without a route, the default judge of `sessions compare` and `--parallel` ([`harness.parallel.judges`](config.md#harnessparallel)), and `sessions review` |
+| `reviewer` | `[models.reviewer]` | in-loop reviewers without a route, the default judge of `sessions compare` and `--parallel` ([`harness.parallel.judges`](config.md#harnessparallel)), and `sessions review` |
 | `helper` | `[models.helper]` | context summarising, gisting (`compaction.elision_gists`), and verify-command inference |
 
 ```sh
@@ -84,7 +84,7 @@ Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#g
 - `agent6 resume <id> --steer "<what to do next>"` continues a run that ended by `finish_session`
     - an answer saved for one of its questions (`agent6 answer`) is new work, so a bare resume delivers it
 
-The start block names each role's provider/model route and effective effort, including the helper and each review seat.
+The start block names each role's provider/model route and effective effort, including the helper and each reviewer.
 It names the effort's config layer and any inheritance; `effort provider default` means no effort value is sent.
 For example: `worker chatgpt/gpt-6-astra effort provider default · reviewer chatgpt/gpt-6-astra effort xhigh (repo)`.
 `sessions show`, the TUI dashboard header and the web run page read these recorded model facts, not the live config; a resume records its execution's values.
@@ -271,25 +271,25 @@ agent6 ask "how does the task-graph curator work?"
 - every `sessions review` is saved under `<state-dir>/reviews/`; the path prints on stderr
 - `ask` runs in any directory; `run` and `plan` need a git repository
 
-In-loop panels run each seat as a read-only lane with its own session, and record their findings and reviewed tree IDs in the session journal.
-Each batch's seats start under what the run has left; batches use at most `review.concurrency` and `harness.parallel.max_lanes` seats, without truncating the roster.
-Results keep roster order even when seats finish in another order.
-A seat opens on the task, the rules, the verification and the diff, and investigates a clone of the retained snapshot with the tools its run has: the reading tools, and `run_command` with its background commands, `run_verify_command`, `fetch`, `read_session` and `use_skill` where the run's model is offered them.
-A seat edits nothing and dispatches nothing; `sandbox.run_commands = "deny"` withholds `run_command` and `run_verify_command` from a seat as it does from the run.
-A seat takes at most `review.max_turns` turns.
-Each seat has a session of its own, named on the receipt and the findings card; no listing counts it among the run's lanes.
-A seat still running 30 minutes after its batch started is stopped and abstains; batches run one after another, each with its own 30 minutes.
-Failed or unparseable seats remain abstentions with their diagnostics; an all-abstain panel is inconclusive, not a clean review.
+In-loop panels run each reviewer as a read-only lane with its own session, and record their findings and reviewed tree IDs in the session journal.
+Each batch's reviewers start under what the run has left; batches use at most `review.concurrency` and `harness.parallel.max_lanes` reviewers, without truncating the roster.
+Results keep roster order even when reviewers finish in another order.
+A reviewer opens on the task, the rules, the verification and the diff, and investigates a clone of the retained snapshot with the tools its run has: the reading tools, and `run_command` with its background commands, `run_verify_command`, `fetch`, `read_session` and `use_skill` where the run's model is offered them.
+A reviewer edits nothing and dispatches nothing; `sandbox.run_commands = "deny"` withholds `run_command` and `run_verify_command` from a reviewer as it does from the run.
+A reviewer takes at most `review.max_turns` turns.
+Each reviewer has a session of its own, named on the receipt and the findings card; no listing counts it among the run's lanes.
+A reviewer still running 30 minutes after its batch started is stopped and abstains; batches run one after another, each with its own 30 minutes.
+Failed or unparseable reviewers remain abstentions with their diagnostics; an all-abstain panel is inconclusive, not a clean review.
 Child review does not certify a later or different parent tree.
 Session-owned panels retain a cloneable snapshot of the exact comparison, including uncommitted work after failed verification and with `git.commit_per_turn = false`.
 Snapshotting does not checkpoint the run or move HEAD, the index or visible branches.
-`sessions remove <id>` deletes the session's review snapshot refs, its lanes' records and its review seats' records with its record; `sessions remove --asks --yes` does the same for the removed asks, while `sessions prune` leaves review snapshots alone.
+`sessions remove <id>` deletes the session's review snapshot refs, its lanes' records and its reviewers' records with its record; `sessions remove --asks --yes` does the same for the removed asks, while `sessions prune` leaves review snapshots alone.
 The snapshot certifies only its recorded trees and path coverage, not later parent edits.
 Under `git.control = "model"` a panel compares the base recorded at the start with the checkout's HEAD and its uncommitted edits, since the model's commits are the record.
 An exact repeat on the same cited blob keeps its finding ID across rounds and resumes.
 The worker receives each finding once unless the feedback notice cut it.
 A later pass, a skipped panel, or the rejection cap does not erase recorded findings.
-A panel asked to review trees a complete panel already reviewed with the same paths and seats is not sat again: the journal records `review.reused` naming that panel, whose findings stand, and the worker hears that nothing new was raised.
+A panel asked to review trees a complete panel already reviewed with the same paths and reviewers is not sat again: the journal records `review.reused` naming that panel, whose findings stand, and the worker hears that nothing new was raised.
 `agent6 attach --json` includes structured review evidence, open counts, action history and completion state.
 
 ### Code-review rules
@@ -383,7 +383,7 @@ It makes no provider call and reruns no checks.
 - **Missing checks:** denial, inability to execute and interruption are not passes.
   Baseline failures stay marked separately; a run without a gate says “No verification recorded”.
   Other commands are not verification evidence.
-- **Review:** the receipt shows recorded panel state and names each seat's session.
+- **Review:** the receipt shows recorded panel state and names each reviewer's session.
 - **How to revert:** recorded merge bounds determine the explanation.
   A squash names its landed commit; a merge verifies its target parent; a fast-forward lists landed commits in reverse order.
   Fast-forwards containing merges need an explicit plan.
@@ -415,7 +415,7 @@ The verify command is the success gate.
 
 `run --worktree`, a run-mode fork, each `--parallel` lane and a run-mode machine state work in a worktree of their own.
 
-- `[git.worktree].kind` chooses the worktree of a fork and a `--worktree` run: `clone` (the default), a clone of the repository whose commits agent6 copies into the repository as the run makes them, or `linked`, a linked git worktree; a lane, a review seat and a machine state work in a clone.
+- `[git.worktree].kind` chooses the worktree of a fork and a `--worktree` run: `clone` (the default), a clone of the repository whose commits agent6 copies into the repository as the run makes them, or `linked`, a linked git worktree; a lane, a reviewer and a machine state work in a clone.
 - It starts with the repository's tracked files at the commit it was cut from: no uncommitted change, and nothing git does not track (`.venv`, `node_modules`, a build directory).
 - `[git.worktree].setup_command` builds what is missing; it runs once in each new worktree, before the first turn:
 

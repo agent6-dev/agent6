@@ -38,7 +38,7 @@ def unquote_git_path(p: str) -> str:
         char = body[i]
         i += 1
         if char != "\\" or i >= len(body):
-            # surrogatepass: a lone surrogate in a seat's reply becomes a name that grounds nothing.
+            # surrogatepass: a lone surrogate in a reviewer's reply is a name that grounds nothing.
             out += char.encode("utf-8", "surrogatepass")
             continue
         char = body[i]

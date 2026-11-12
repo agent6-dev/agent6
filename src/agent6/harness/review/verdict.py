@@ -17,7 +17,7 @@ from agent6.vcs.git import files as git_files
 
 
 def build_user_message(ctx: review_panel.ReviewContext) -> str:
-    """Return the task, verify result, prior findings and diff for one seat."""
+    """Return the task, verify result, prior findings and diff for one reviewer."""
     parts: list[str] = [f"TASK:\n{ctx.task.strip()[:4000]}"]
     parts.append(review_panel.rules_message(ctx.rules))
     if ctx.verification is None:
@@ -49,7 +49,7 @@ def coerce_findings(raw: object) -> tuple[review_records.Finding, ...]:
             severity = "warn"
         location = item.get("location")
         if isinstance(location, dict) and isinstance(location.get("path"), str):
-            # A seat may cite the path as the diff prints it, in git's quoting; a name that
+            # A reviewer may cite the path as the diff prints it, in git's quoting; a name that
             # merely starts and ends with a quote holds no escape and stays as cited.
             cited = location["path"]
             if "\\" in cited:
@@ -67,10 +67,10 @@ def coerce_findings(raw: object) -> tuple[review_records.Finding, ...]:
 
 
 def no_verdict_error(resp: completion.CompletionRecord) -> str:
-    """Return why a seat produced no verdict JSON: the output cap, no content, or junk.
+    """Return why a reviewer produced no verdict JSON: the output cap, no content, or junk.
 
     Args:
-        resp: The seat's response.
+        resp: The reviewer's response.
 
     Returns:
         The error text for the abstaining verdict.
@@ -99,34 +99,34 @@ def no_verdict_error(resp: completion.CompletionRecord) -> str:
 
 
 def verdict_from_obj(
-    obj: dict[str, Any], seat_index: int, focus: str, model_route: str
+    obj: dict[str, Any], reviewer_index: int, focus: str, model_route: str
 ) -> review_records.ReviewVerdict:
     """Return the parsed verdict, or an abstention for an invalid reply."""
     raw_verdict = obj.get("verdict")
     if not isinstance(raw_verdict, str) or raw_verdict.lower() not in ("pass", "block"):
         return review_records.ReviewVerdict(
-            seat_index=seat_index,
+            reviewer_index=reviewer_index,
             focus=focus,
             model_route=model_route,
             verdict="abstain",
             error="invalid reviewer verdict",
         )
     try:
-        reply = review_records.SeatReply(
+        reply = review_records.ReviewerReply(
             verdict="block" if raw_verdict.lower() == "block" else "pass",
             findings=coerce_findings(obj.get("findings")),
             summary=str(obj.get("summary", "")).strip()[:300],
         )
     except pydantic.ValidationError as exc:
         return review_records.ReviewVerdict(
-            seat_index=seat_index,
+            reviewer_index=reviewer_index,
             focus=focus,
             model_route=model_route,
             verdict="abstain",
             error=f"invalid reviewer findings: {exc}",
         )
     return review_records.ReviewVerdict(
-        seat_index=seat_index,
+        reviewer_index=reviewer_index,
         focus=focus,
         model_route=model_route,
         verdict=reply.verdict,
@@ -149,9 +149,9 @@ def verdict_from_completion(
 
     Args:
         record: The imported bounded-conversation artifact, never a worker answer.
-        binding: The parent's panel, seat and target binding.
+        binding: The parent's panel, reviewer and target binding.
         session_id: The child assigned by the parent dispatcher.
-        focus: The parent's seat focus.
+        focus: The parent's reviewer focus.
         model_route: The parent's resolved route.
         max_turns: The request's turn limit.
         error: A dispatch, timeout or artifact-read failure.
@@ -163,12 +163,19 @@ def verdict_from_completion(
         if record is None:
             error = "missing completion artifact"
         elif record.review_binding != binding or record.session_id != session_id:
-            error = "completion binding does not match the parent panel, seat, target or session"
+            error = (
+                "completion binding does not match the parent panel, reviewer, target or session"
+            )
         elif record.stop_reason not in ("answered", "max_turns"):
             error = "; ".join(record.diagnostics) or record.text or record.stop_reason
     if error is not None:
         return review_records.ReviewVerdict(
-            binding.seat_index, focus, model_route, "abstain", error=error, session_id=session_id
+            binding.reviewer_index,
+            focus,
+            model_route,
+            "abstain",
+            error=error,
+            session_id=session_id,
         )
     assert record is not None
     obj = llm_json.extract_json(record.text, prefer=("verdict", "findings"))
@@ -179,8 +186,13 @@ def verdict_from_completion(
             else no_verdict_error(record)
         )
         return review_records.ReviewVerdict(
-            binding.seat_index, focus, model_route, "abstain", error=error, session_id=session_id
+            binding.reviewer_index,
+            focus,
+            model_route,
+            "abstain",
+            error=error,
+            session_id=session_id,
         )
     return dataclasses.replace(
-        verdict_from_obj(obj, binding.seat_index, focus, model_route), session_id=session_id
+        verdict_from_obj(obj, binding.reviewer_index, focus, model_route), session_id=session_id
     )

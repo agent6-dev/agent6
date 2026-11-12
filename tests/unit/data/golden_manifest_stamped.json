@@ -20,7 +20,7 @@
     },
     "reviewer": null,
     "helper": null,
-    "review_seats": {},
+    "reviewers": {},
     "driver_from_flag": false
   },
   "harness": {

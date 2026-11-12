@@ -69,16 +69,16 @@ class ReviewTarget:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewBinding:
-    """Bind a completion to the parent-assigned panel, seat and immutable target.
+    """Bind a completion to the parent-assigned panel, reviewer and immutable target.
 
     Attributes:
         panel_id: The parent-assigned panel identity.
-        seat_index: The zero-based roster position.
+        reviewer_index: The zero-based roster position.
         target: The exact retained comparison.
     """
 
     panel_id: str
-    seat_index: int
+    reviewer_index: int
     target: ReviewTarget
 
 
@@ -155,8 +155,8 @@ class Finding(pydantic.BaseModel):
     location: ReviewLocation
 
 
-class SeatReply(pydantic.BaseModel):
-    """Validate the verdict and findings returned by a review seat."""
+class ReviewerReply(pydantic.BaseModel):
+    """Validate the verdict and findings returned by a reviewer."""
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
@@ -167,20 +167,20 @@ class SeatReply(pydantic.BaseModel):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewVerdict:
-    """Hold one indexed seat's verdict, including an explicit abstention on failure.
+    """Hold one indexed reviewer's verdict, including an explicit abstention on failure.
 
     Attributes:
-        seat_index: The seat's zero-based position in the roster.
-        focus: The seat's assigned review focus.
+        reviewer_index: The reviewer's zero-based position in the roster.
+        focus: The reviewer's assigned review focus.
         model_route: The provider/model route that reviewed.
-        verdict: The seat's pass, block or abstention decision.
-        findings: The grounded findings from this seat.
-        summary: The seat's closing summary.
+        verdict: The reviewer's pass, block or abstention decision.
+        findings: The grounded findings from this reviewer.
+        summary: The reviewer's closing summary.
         error: The failure diagnostic for an abstention, or null.
-        session_id: The read-only seat session, empty in legacy verdicts.
+        session_id: The read-only reviewer session, empty in legacy verdicts.
     """
 
-    seat_index: int
+    reviewer_index: int
     focus: str
     model_route: str
     verdict: Literal["pass", "block", "abstain"]
@@ -224,35 +224,35 @@ class LineOrigin(pydantic.BaseModel):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class FindingObservation:
-    """Associate a finding with its panel and the seats that reported it.
+    """Associate a finding with its panel and the reviewers that reported it.
 
     Attributes:
         finding_id: The finding identifier shared across observations.
         panel_id: The panel that recorded this observation.
         finding: The grounded finding text and location.
-        seat_indexes: The zero-based seats that reported the finding.
+        reviewer_indexes: The zero-based reviewers that reported the finding.
         line_origin: The line-attribution evidence for this observation.
     """
 
     finding_id: str
     panel_id: str
     finding: Finding
-    seat_indexes: tuple[int, ...]
+    reviewer_indexes: tuple[int, ...]
     line_origin: LineOrigin = dataclasses.field(default_factory=LineOrigin)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class SeatAssignment:
-    """Identify the resolved route and settings of one panel seat.
+class ReviewerAssignment:
+    """Identify the resolved route and settings of one reviewer.
 
     Attributes:
-        seat_index: The seat's zero-based position in the roster.
+        reviewer_index: The reviewer's zero-based position in the roster.
         model_route: The resolved provider/model route.
-        focus: The seat's assigned review focus.
+        focus: The reviewer's assigned review focus.
         temperature: The configured sampling temperature, or null for the provider default.
     """
 
-    seat_index: int
+    reviewer_index: int
     model_route: str
     focus: str
     temperature: float | None = None
@@ -269,7 +269,7 @@ class ReviewPanel(pydantic.BaseModel):
         turn: The turn that triggered the panel.
         trigger: The review trigger.
         target: The immutable reviewed comparison.
-        roster: The seats that sat; empty on a record written before rosters were kept.
+        roster: The reviewers that sat; empty on a record written before rosters were kept.
         findings: The panel's grounded finding observations.
         injected_finding_ids: Findings supplied to the worker as feedback.
         block_on: The configured worker-finish blocking rule.
@@ -277,7 +277,7 @@ class ReviewPanel(pydantic.BaseModel):
         blocked: Whether the panel blocks worker completion.
         disarmed: Whether the harness disarmed the review block.
         n_block: The number of distinct blocking provider/model routes.
-        n_abstain: The number of abstaining seats.
+        n_abstain: The number of abstaining reviewers.
         completion: Whether the panel completed conclusively.
     """
 
@@ -288,7 +288,7 @@ class ReviewPanel(pydantic.BaseModel):
     turn: int
     trigger: str
     target: ReviewTarget
-    roster: tuple[SeatAssignment, ...] = ()
+    roster: tuple[ReviewerAssignment, ...] = ()
     findings: tuple[FindingObservation, ...]
     injected_finding_ids: tuple[str, ...]
     block_on: Literal["none", "any", "all", "model_quorum"]

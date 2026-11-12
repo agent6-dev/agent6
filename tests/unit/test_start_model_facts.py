@@ -177,10 +177,10 @@ def test_headless_launch_prints_effort_without_a_console_view(
 
 
 @pytest.mark.parametrize("mode, role", [("run", "worker"), ("plan", "planner")])
-def test_resume_records_inheritance_and_each_review_seat(
+def test_resume_records_inheritance_and_each_review_verdict(
     recorded_run: pathlib.Path, mode: str, role: str
 ) -> None:
-    """A seat with its own route does not inherit the reviewer's effort."""
+    """A reviewer with its own route does not inherit the reviewer's effort."""
     cfg = Config.model_validate(
         {
             "providers": {"chatgpt": {"backend": "chatgpt"}},
@@ -218,12 +218,12 @@ def test_resume_records_inheritance_and_each_review_seat(
     assert f"{role} chatgpt/gpt-6-astra effort max (models.default.effort, global)" in line
     assert "helper chatgpt/gpt-6-astra effort max (models.default.effort, global)" in line
     assert (
-        "review seat 1 (security) chatgpt/gpt-6-astra effort xhigh (models.reviewer.effort, repo)"
+        "reviewer 1 (security) chatgpt/gpt-6-astra effort xhigh (models.reviewer.effort, repo)"
         in line
     )
-    assert "review seat 2 (bugs) chatgpt/gpt-6-astra effort off (repo)" in line
-    # A pinned seat inherits the reviewer role's effort like an unpinned one.
-    assert "review seat 3 (bugs) chatgpt/other effort xhigh (models.reviewer.effort, repo)" in line
+    assert "reviewer 2 (bugs) chatgpt/gpt-6-astra effort off (repo)" in line
+    # A pinned reviewer inherits the reviewer role's effort like an unpinned one.
+    assert "reviewer 3 (bugs) chatgpt/other effort xhigh (models.reviewer.effort, repo)" in line
     other_role = "worker" if role == "planner" else "planner"
     assert f"{other_role} chatgpt/" not in line
 
@@ -256,7 +256,7 @@ def test_start_uses_the_provider_effort_rule(
     stamps.stamp_execution(recorded_run, cfg, "run", "full")
     line = policy.session_policy(recorded_run).line()
     assert f"worker p/{model} effort {expected}" in line
-    assert "review seat" not in line
+    assert "reviewer 1" not in line
 
 
 def test_old_model_facts_do_not_claim_provider_default(recorded_run: pathlib.Path) -> None:

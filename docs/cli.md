@@ -36,7 +36,7 @@ agent6 finds the running Docker or Podman dev container of this workspace by its
 `container.exec` names another container, `container.workspace` another path inside it, and `container.runtime` the runtime CLI (`["sudo", "-n", "docker"]` where docker needs sudo).
 File tools, credentials and session records stay on the host; the start block shows the container, both roots, the user, HOME, who owns the container and every control the container does not enforce.
 The receipt names the environment each check ran in and whether the container was left running; `container.stop` runs only for a container the run started, after every attached run ended.
-Lanes, review seats, forks and `--worktree` runs get their worktrees under `container.worktree_base_dir` (`.agent6/worktrees` in the project), which the container mounts; agent6 keeps that directory out of git through `.git/info/exclude`.
+Lanes, reviewers, forks and `--worktree` runs get their worktrees under `container.worktree_base_dir` (`.agent6/worktrees` in the project), which the container mounts; agent6 keeps that directory out of git through `.git/info/exclude`.
 With `git.worktree.kind = "linked"`, a fork or a `--worktree` run refuses when the container mounts the workspace at another path than the host's, because a linked worktree names its repository by the host path; a clone, the default, runs at any path.
 `agent6 exec` refuses under container isolation (use the runtime's own exec).
 
@@ -85,7 +85,7 @@ Persistence also lets a poisoned cache or tool configuration reach later runs in
 `agent6 attach [<id>]` follows a run's conversation, or a machine's state, live.
 It rings the bell and sends a desktop notification (`notify-send`, when present) as the run starts waiting on an answer and as it ends; `run` does the same in the foreground.
 Ids are exact or an unambiguous prefix and default to the most recent run.
-A prefix selects the single matching session whose full id prefixes every other match, provided the others have its mode or are its review seats (for example, a parallel parent and its lanes).
+A prefix selects the single matching session whose full id prefixes every other match, provided the others have its mode or are its reviewers (for example, a parallel parent and its lanes).
 Lanes remain reachable by their own ids.
 
 ```sh

@@ -1926,10 +1926,10 @@ def test_a_journal_written_before_the_turn_rename_keeps_its_end_turn(
 
 
 @pytest.mark.parametrize(("mode", "offered"), [("reviewer", False), ("ask", True)])
-def test_a_review_seats_record_offers_no_action(
+def test_a_review_reviewers_record_offers_no_action(
     tmp_path: pathlib.Path, mode: str, offered: bool
 ) -> None:
-    """The findings card links a seat's page, where Fork and the composer could only refuse."""
+    """The findings card links a reviewer's page, where Fork and the composer could only refuse."""
     (tmp_path / "manifest.json").write_text(json.dumps({"mode": mode}), encoding="utf-8")
 
     from agent6.viewmodel import wire

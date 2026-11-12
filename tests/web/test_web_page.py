@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "32fd8c9349aadf2c1999d502b0d7a535ebb2ca0aecd5705c3742c7348b39e618"
+PAGE_SHA256 = "acf340f439c3659ad61aeff6d16ec1ff27a0d770800dadba9cb0efbe8b703962"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -226,7 +226,7 @@ def test_the_pickers_sit_in_a_row_above_each_composer() -> None:
 def test_the_policy_line_breaks_only_between_its_settings() -> None:
     """The run card wrapped `run_commands` on one line and `ask` on the next at 300 px.
 
-    Later a seat's model line, wider than the card, was clipped: a setting is one inline block
+    Later a reviewer's model line, wider than the card, was clipped: a setting is one inline block
     with its separator, so it wraps inside itself when it alone exceeds the card.
     """
     run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")

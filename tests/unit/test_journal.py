@@ -84,12 +84,12 @@ def test_the_sink_writes_the_envelope_and_leaves_unset_fields_out(tmp_path: path
     }
 
 
-def test_provider_request_documents_call_and_seat_identity() -> None:
-    """The request record includes its parent call and optional panel seat identity."""
+def test_provider_request_documents_call_and_reviewer_identity() -> None:
+    """The request record includes its parent call and optional reviewer identity."""
     fields = journal.ProviderRequest.model_fields
-    assert {"model_call_id", "panel_id", "seat_index"} <= fields.keys()
+    assert {"model_call_id", "panel_id", "reviewer_index"} <= fields.keys()
     assert fields["model_call_id"].is_required()
-    assert not fields["panel_id"].is_required() and not fields["seat_index"].is_required()
+    assert not fields["panel_id"].is_required() and not fields["reviewer_index"].is_required()
 
 
 def test_session_lifecycle_names_keep_creation_resume_and_end_distinct() -> None:

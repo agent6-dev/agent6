@@ -54,14 +54,14 @@ def test_empty_id_picks_the_newest_across_buckets(tmp_path: pathlib.Path) -> Non
     assert layout.session_dir == state / "sessions" / "asks" / "new-ask"
 
 
-def test_empty_id_never_picks_a_review_seat(tmp_path: pathlib.Path) -> None:
-    """During a panel a seat's record is the newest: a bare attach must mean the run."""
+def test_empty_id_never_picks_a_review_verdict(tmp_path: pathlib.Path) -> None:
+    """During a panel a reviewer's record is the newest: a bare attach must mean the run."""
     repo = tmp_path / "repo"
     repo.mkdir()
     state = paths.state_dir(repo)
     _session_dir(state, "runs", "the-run", log_mtime=1000.0)
-    seat = _session_dir(state, "reviewers", "the-run-rpanel-l1", log_mtime=2000.0)
-    (seat / "transcripts").mkdir()
+    reviewer = _session_dir(state, "reviewers", "the-run-rpanel-l1", log_mtime=2000.0)
+    (reviewer / "transcripts").mkdir()
     (state / "sessions" / "runs" / "the-run" / "transcripts").mkdir()
 
     layout = common.resolve_or_newest_layout(repo, "")

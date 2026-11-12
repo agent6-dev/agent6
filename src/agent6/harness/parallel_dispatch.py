@@ -234,10 +234,10 @@ class ParallelDispatcher:
         """Reserve a harness-owned roster and submit bounded batches through the lane executor.
 
         The retained target is supplied by the harness; no checkpoint or merge changes it.
-        The review policy selects seats and concurrency; this executor bounds each batch.
+        The review policy selects reviewers and concurrency; this executor bounds each batch.
 
         Args:
-            lanes: The complete roster of bounded conversations with resolved seat settings.
+            lanes: The complete roster of bounded conversations with resolved reviewer settings.
             panel_id: The harness's stable panel/batch id.
             at: The retained immutable target commit.
             turn: The owning worker's completed turn.
@@ -339,7 +339,7 @@ class ParallelDispatcher:
         """  # noqa: DOC501  # the spawner's ChildRepoError is caught below
         assert self.lane_spawner is not None
         identity = record.identity
-        what = "review seat(s)" if record.source == "panel" else "lane(s)"
+        what = "reviewer(s)" if record.source == "panel" else "lane(s)"
         self.log(f"PARALLEL: dispatching group {identity} ({len(lanes)} {what})")
         self.emit(
             journal.ParallelDispatched(

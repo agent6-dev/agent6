@@ -96,8 +96,8 @@ class PanelView:
         panel_id: The panel identifier.
         execution_id: The execution that requested the panel.
         target: The recorded comparison target, or null.
-        roster: The resolved seat assignments.
-        seats: The recorded verdicts from individual seats.
+        roster: The resolved reviewer assignments.
+        reviewers: The recorded verdicts from individual reviewers.
         result: The completed panel result, or null while unavailable.
         completion: The panel's completion state.
         reason: The explanation for a skipped or incomplete panel, or null.
@@ -109,8 +109,8 @@ class PanelView:
     panel_id: str
     execution_id: str
     target: review_records.ReviewTarget | None = None
-    roster: tuple[review_records.SeatAssignment, ...] = ()
-    seats: tuple[review_records.ReviewVerdict, ...] = ()
+    roster: tuple[review_records.ReviewerAssignment, ...] = ()
+    reviewers: tuple[review_records.ReviewVerdict, ...] = ()
     result: review_records.ReviewPanel | None = None
     completion: Completion = "running"
     reason: str | None = None
@@ -268,7 +268,7 @@ class _Start(pydantic.BaseModel):
     panel_id: review_records.Identifier
     execution_id: review_records.Identifier
     target: review_records.ReviewTarget
-    seats: tuple[review_records.SeatAssignment, ...]
+    reviewers: tuple[review_records.ReviewerAssignment, ...]
     rule_sources: tuple[review_records.RuleSource, ...] = ()
     rules_complete: bool | None = None
     rules_reason: str | None = None
@@ -294,7 +294,7 @@ class _Skipped(pydantic.BaseModel):
 _PANEL_EVENTS = frozenset(
     {
         "review.start",
-        "review.seat",
+        "review.verdict",
         "review.panel",
         "review.skipped",
         "review.reused",
@@ -358,7 +358,7 @@ def _panel_event(view: ReviewView, event: Mapping[str, Any]) -> ReviewView:
             start.panel_id,
             start.execution_id,
             start.target,
-            start.seats,
+            start.reviewers,
             rule_sources=start.rule_sources,
             rules_complete=start.rules_complete,
             rules_reason=start.rules_reason,
@@ -379,18 +379,18 @@ def _panel_event(view: ReviewView, event: Mapping[str, Any]) -> ReviewView:
             prior,
             panel_id=reused.panel_id,
             execution_id=reused.execution_id,
-            seats=(),
+            reviewers=(),
             result=None,
             completion="reused",
             reason=f"panel {prior.panel_id[:12]} reviewed the same trees",
         )
-    elif kind == "review.seat":
+    elif kind == "review.verdict":
         if old is None:
-            raise ReviewReadError("seat has no panel start")
+            raise ReviewReadError("reviewer has no panel start")
         verdict = pydantic.TypeAdapter(review_records.ReviewVerdict).validate_python(event)
-        if any(v.seat_index == verdict.seat_index for v in old.seats):
-            raise ReviewReadError("panel repeats a seat index")
-        panel = dataclasses.replace(old, seats=(*old.seats, verdict))
+        if any(v.reviewer_index == verdict.reviewer_index for v in old.reviewers):
+            raise ReviewReadError("panel repeats a reviewer index")
+        panel = dataclasses.replace(old, reviewers=(*old.reviewers, verdict))
     else:
         record = review_records.ReviewPanel.model_validate(event_log.payload(event))
         if old is not None and old.result is not None:
@@ -524,8 +524,8 @@ def panel_text(panel: review_records.ReviewPanel) -> str:
     """
     rule = {
         "none": "nothing",
-        "any": "any blocking seat",
-        "all": "every seat blocking",
+        "any": "any blocking reviewer",
+        "all": "every reviewer blocking",
         "model_quorum": "a quorum of distinct models",
     }[panel.block_on]
     return (

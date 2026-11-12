@@ -168,8 +168,8 @@ depends_on = [
 ]
 
 [[modules]]
-# review_gate uses parallel_dispatch and review_seat policy; toolset has no seat coupling.
-# review_seat parses bound completion artifacts with review_panel and llm_json.
+# review_gate uses parallel_dispatch and reviewer policy; toolset has no reviewer coupling.
+# reviewer parses bound completion artifacts with review_panel and llm_json.
 # review_gate and loop use review_history to restore durable panel evidence.
 # compaction_driver and compaction_rules use compaction_elision and compaction_window.
 # compaction_window uses loop_conversation and compaction_elision; the result cap

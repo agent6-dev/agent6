@@ -15,7 +15,7 @@ from agent6 import budget, errors, kinds, lane_records, review_records, terminal
 from agent6.harness import parallel_dispatch, repo_context, run_chain
 from agent6.harness.review import history as review_history
 from agent6.harness.review import panel as review_panel
-from agent6.harness.review import seat as review_seat
+from agent6.harness.review import verdict as review_verdict
 from agent6.prompts import review
 from agent6.sessions import completion, journal, layout
 from agent6.tools import schema as tools_schema
@@ -42,7 +42,7 @@ class CritiqueResult:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class ReviewSeat:
+class Reviewer:
     """Resolve one roster entry without holding a live provider."""
 
     focus: str
@@ -69,19 +69,19 @@ class ReviewSettings:
     Attributes:
         when: When the panel sits: after a verify failure, at a finish, or periodically.
         interval_turns: The turns between periodic panels.
-        reviewers: The resolved seats.
+        reviewers: The resolved reviewers.
         block_on: `none` advises; `any`, `all` and `model_quorum` can reject an end.
         min_blocking_models: The distinct blocking routes a `model_quorum` rejection needs.
         max_rejections: The ends the gate may reject in the run; from then on the panel
             advises and every end stands.
         min_remaining_budget_fraction: Skip panels below this remaining budget fraction.
-        concurrency: The seat calls run at once.
-        max_turns: The model calls each seat may make, calls that ask for tools included.
+        concurrency: The reviewer calls run at once.
+        max_turns: The model calls each reviewer may make, calls that ask for tools included.
     """
 
     when: Literal["never", "verify_fail", "finish", "periodic"] = "never"
     interval_turns: int = 10
-    reviewers: Sequence[ReviewSeat] = ()
+    reviewers: Sequence[Reviewer] = ()
     block_on: review_panel.ReviewBlockOn = "none"
     min_blocking_models: int = 2
     max_rejections: int = 4
@@ -91,7 +91,7 @@ class ReviewSettings:
 
 
 def run_panel(
-    seats: Sequence[ReviewSeat],
+    reviewers: Sequence[Reviewer],
     ctx: review_panel.ReviewContext,
     *,
     target: review_records.ReviewTarget,
@@ -106,21 +106,21 @@ def run_panel(
 ) -> review_panel.PanelResult:
     """Submit the roster as bounded lanes and aggregate only their bound artifacts.
 
-    Every seat is the same child: it opens on the task, the rules, the verification and the
+    Every reviewer is the same child: it opens on the task, the rules, the verification and the
     diff, investigates with the tools its parent hands down, and passes a judgement up.
 
     Args:
-        seats: The resolved roster in seat order.
+        reviewers: The resolved roster in reviewer order.
         ctx: The shared task, rules, verification and diff.
         target: The retained immutable comparison.
         executor: The common lane dispatcher.
         block_on: The blocking rule.
         min_blocking_models: The distinct blocking routes needed for quorum.
         panel_id: The parent-assigned panel identity.
-        max_turns: Each seat's call ceiling.
-        tools: The tools the parent's own model is offered now; a seat gets the ones a
+        max_turns: Each reviewer's call ceiling.
+        tools: The tools the parent's own model is offered now; a reviewer gets the ones a
             contract may carry.
-        concurrency: The maximum simultaneous seats, also bounded by harness.parallel.max_lanes.
+        concurrency: The maximum simultaneous reviewers, also bounded by harness.parallel.max_lanes.
         turn: The owning worker's turn.
 
     Returns:
@@ -134,20 +134,22 @@ def run_panel(
     carried = tools_schema.mode_tools("reviewer").names
     handed = tuple(name for name in tools if name in carried)
     commands = tools_schema.RunCommandInput.TOOL_NAME in handed
-    for i, seat in enumerate(seats):
+    for i, reviewer in enumerate(reviewers):
         contract = kinds.ConversationContract(
-            system=review.panel_prompt(seat.focus, max_turns=max_turns, commands=commands),
-            opening=review_seat.build_user_message(dataclasses.replace(ctx, focus=seat.focus)),
+            system=review.panel_prompt(reviewer.focus, max_turns=max_turns, commands=commands),
+            opening=review_verdict.build_user_message(
+                dataclasses.replace(ctx, focus=reviewer.focus)
+            ),
             max_turns=max_turns,
-            temperature=seat.temperature,
+            temperature=reviewer.temperature,
             review_binding=review_records.ReviewBinding(panel_id, i, target),
             allowed_tools=handed,
         )
         requests.append(
             lane_records.LaneTask(
-                task=f"Review: {seat.focus}",
-                model=seat.model,
-                settings=seat.settings,
+                task=f"Review: {reviewer.focus}",
+                model=reviewer.model,
+                settings=reviewer.settings,
                 contract=contract,
             )
         )
@@ -155,7 +157,7 @@ def run_panel(
         requests, panel_id=panel_id, at=target.snapshot_commit, turn=turn, concurrency=concurrency
     )
     verdicts: list[review_records.ReviewVerdict] = []
-    for i, (seat, request) in enumerate(zip(seats, requests, strict=True)):
+    for i, (reviewer, request) in enumerate(zip(reviewers, requests, strict=True)):
         assert request.contract is not None and request.contract.review_binding is not None
         joined = dispatched.lanes[i] if i < len(dispatched.lanes) else None
         sid = joined.session_id if joined is not None else ""
@@ -178,16 +180,16 @@ def run_panel(
                     if artifact is not None and artifact.stop_reason == "provider_error"
                     else ""
                 )
-                error = error or diagnostic or joined.detail or "seat execution failed"
+                error = error or diagnostic or joined.detail or "reviewer execution failed"
         if artifact is None:
             error = error or "missing completion artifact"
         verdicts.append(
-            review_seat.verdict_from_completion(
+            review_verdict.verdict_from_completion(
                 artifact,
                 binding=request.contract.review_binding,
                 session_id=sid,
-                focus=seat.focus,
-                model_route=seat.model,
+                focus=reviewer.focus,
+                model_route=reviewer.model,
                 max_turns=request.contract.max_turns,
                 error=error,
             )
@@ -206,9 +208,9 @@ _NOTICE_ROOM = 256
 def reusable_panel(
     panels: tuple[review_records.ReviewPanel, ...],
     target: review_records.ReviewTarget,
-    roster: tuple[review_records.SeatAssignment, ...],
+    roster: tuple[review_records.ReviewerAssignment, ...],
 ) -> review_records.ReviewPanel | None:
-    """Return the latest complete panel that reviewed this target with these seats.
+    """Return the latest complete panel that reviewed this target with these reviewers.
 
     The rules follow the base tree and the hidden paths, so the same trees carry the same
     rules; a record written without a roster is never reused.
@@ -216,10 +218,10 @@ def reusable_panel(
     Args:
         panels: The run's durable panel records, prior executions included.
         target: The trees and path coverage about to be reviewed.
-        roster: The seats that would sit.
+        roster: The reviewers that would sit.
 
     Returns:
-        The panel to reuse, or None when every record differs in trees, paths or seats.
+        The panel to reuse, or None when every record differs in trees, paths or reviewers.
     """
     for panel in reversed(panels):
         same_target = (
@@ -257,7 +259,7 @@ REVIEW_REJECTED = {
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewInput:
-    """Bind parent-owned panel identity, immutable target and complete seat context."""
+    """Bind parent-owned panel identity, immutable target and complete reviewer context."""
 
     panel_id: str
     target: review_records.ReviewTarget
@@ -267,7 +269,7 @@ class ReviewInput:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class Reviewer:
+class ReviewGate:
     """Sit the in-loop review panel for one run.
 
     Attributes:
@@ -275,7 +277,7 @@ class Reviewer:
         chain: The run's chain: the diff the panel grounds on and the AGENTS.md it reads.
         hide: `[sandbox].hide_paths`, which no AGENTS.md is read from.
         executor: The common lane dispatcher, resolved lazily.
-        tools: The tools the run's own model is offered now, which a seat inherits.
+        tools: The tools the run's own model is offered now, which a reviewer inherits.
         budget_remaining: The fraction of the budget left, or None without a tracker.
         log: The run's text logger.
         emit: The run's event emitter.
@@ -308,7 +310,7 @@ class Reviewer:
             panel_id: The parent-assigned panel identity.
 
         Returns:
-            Immutable input shared by every seat; embedders without a session retain no ref.
+            Immutable input shared by every reviewer; embedders without a session retain no ref.
 
         Raises:
             GitError: A session-owned comparison cannot be retained.
@@ -413,7 +415,7 @@ class Reviewer:
         return False
 
     def available(self) -> bool:
-        """Return whether the panel has seats; every in-loop trigger gates on it."""
+        """Return whether the panel has reviewers; every in-loop trigger gates on it."""
         return bool(self.settings.reviewers)
 
     def _reviewable(
@@ -441,9 +443,9 @@ class Reviewer:
         return target, diff
 
     def _reuse(self, prior: review_records.ReviewPanel, identity: dict[str, Any]) -> CritiqueResult:
-        """Record the prior panel over the unchanged target instead of sitting seats.
+        """Record the prior panel over the unchanged target instead of sitting reviewers.
 
-        A fresh panel would raise nothing new: its seats are told the recorded findings and
+        A fresh panel would raise nothing new: its reviewers are told the recorded findings and
         a repeat neither rejects nor reaches the worker again. The reuse says the same.
 
         Args:
@@ -549,7 +551,7 @@ class Reviewer:
         turn: int,
         trigger: str,
     ) -> CritiqueResult | None:
-        """Run the seats over one target and record the panel.
+        """Run the reviewers over one target and record the panel.
 
         Args:
             state: The execution's state.
@@ -565,7 +567,7 @@ class Reviewer:
         """
         panel_id = str(identity["panel_id"])
         roster = tuple(
-            review_records.SeatAssignment(i, s.model, s.focus, s.temperature)
+            review_records.ReviewerAssignment(i, s.model, s.focus, s.temperature)
             for i, s in enumerate(self.settings.reviewers)
         )
         prior = reusable_panel(state.review_panels, target, roster)
@@ -602,7 +604,7 @@ class Reviewer:
                 rule_sources=[dataclasses.asdict(s) for s in ctx.rules.sources],
                 rules_complete=ctx.rules.complete,
                 rules_reason=ctx.rules.reason,
-                seats=[dataclasses.asdict(seat) for seat in roster],
+                reviewers=[dataclasses.asdict(reviewer) for reviewer in roster],
             )
         )
         if not ctx.rules.complete:
@@ -630,9 +632,9 @@ class Reviewer:
         except budget.BudgetExceededError:
             self.emit(journal.ReviewSkipped(**identity, reason="budget"))
             return None
-        for verdict in result.per_seat:
+        for verdict in result.per_reviewer:
             self.emit(
-                journal.ReviewSeat(
+                journal.ReviewVerdict(
                     **identity,
                     **pydantic.TypeAdapter(review_records.ReviewVerdict).dump_python(
                         verdict, mode="json"
@@ -651,7 +653,7 @@ class Reviewer:
         )
         observations = review_history.observations(
             prepared.panel_id,
-            result.per_seat,
+            result.per_reviewer,
             dict(prepared.known_findings),
             root=self.chain.root,
             target=target,

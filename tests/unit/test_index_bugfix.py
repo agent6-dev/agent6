@@ -3,7 +3,7 @@
 """SymbolIndex heals out-of-band changes by stat and serializes its readers and mutators.
 
 A file changed or deleted outside apply_edit (a formatter, `rm`, `git mv`) is noticed without a mark
-call, and the index is shared across the explore-review seats.
+call, and the index is shared across the explore-reviewers.
 """
 
 from __future__ import annotations

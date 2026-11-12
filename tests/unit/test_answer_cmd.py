@@ -38,7 +38,7 @@ def _run_with_question(
     )
     # this process = a live worker
     process.write_worker_pid(layout.session_dir, os.getpid())
-    # A detached run left on "wait" is the seat this verb exists for.
+    # A detached run left on "wait" is the reviewer this verb exists for.
     ipc.set_away_mode(layout.session_dir, "wait")
     return layout
 

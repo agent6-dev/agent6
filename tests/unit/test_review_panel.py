@@ -38,14 +38,19 @@ def _ctx(**kw: Any) -> review_panel.ReviewContext:
     return review_panel.ReviewContext(diff=SAMPLE_DIFF, **kw)
 
 
-def _seat(
-    model: str, *findings: review_records.Finding, seat: str = "s", error: str | None = None
+def _reviewer(
+    model: str, *findings: review_records.Finding, reviewer: str = "s", error: str | None = None
 ) -> review_records.ReviewVerdict:
     verdict = (
         "abstain" if error else "block" if any(f.severity == "block" for f in findings) else "pass"
     )
     return review_records.ReviewVerdict(
-        seat_index=0, focus=seat, model_route=model, verdict=verdict, findings=findings, error=error
+        reviewer_index=0,
+        focus=reviewer,
+        model_route=model,
+        verdict=verdict,
+        findings=findings,
+        error=error,
     )
 
 
@@ -66,14 +71,14 @@ def _block(category: str, location: review_records.ReviewLocation) -> review_rec
 
 
 def _agg(
-    seats: list[review_records.ReviewVerdict],
+    reviewers: list[review_records.ReviewVerdict],
     *,
     block_on: review_panel.ReviewBlockOn = "any",
     min_blocking_models: int = 2,
     ctx: review_panel.ReviewContext | None = None,
 ) -> review_panel.PanelResult:
     return review_panel.aggregate_verdicts(
-        seats,
+        reviewers,
         ctx or _ctx(),
         block_on=block_on,
         min_blocking_models=min_blocking_models,
@@ -111,21 +116,21 @@ def test_a_colon_in_the_path_is_not_a_line_separator() -> None:
 
 
 def test_grounded_security_block_gates_under_veto() -> None:
-    res = _agg([_seat("m1", _block("security", _location("foo.py", 11)))], block_on="any")
+    res = _agg([_reviewer("m1", _block("security", _location("foo.py", 11)))], block_on="any")
     assert res.blocked is True and res.n_block == 1
     assert res.merged_findings[0].severity == "block"
 
 
 def test_ungrounded_block_is_not_reported_and_does_not_gate() -> None:
     # A finding at a line absent from the reviewed tree is not reportable.
-    res = _agg([_seat("m1", _block("security", _location("foo.py", 99)))], block_on="any")
+    res = _agg([_reviewer("m1", _block("security", _location("foo.py", 99)))], block_on="any")
     assert res.blocked is False and res.n_block == 0
     assert res.merged_findings == ()
 
 
 def test_non_gating_category_block_is_downgraded() -> None:
     # a "test-gap" can never block even if grounded in the diff.
-    res = _agg([_seat("m1", _block("test-gap", _location("foo.py", 11)))], block_on="any")
+    res = _agg([_reviewer("m1", _block("test-gap", _location("foo.py", 11)))], block_on="any")
     assert res.blocked is False
     assert res.merged_findings[0].severity == "warn"
 
@@ -133,47 +138,48 @@ def test_non_gating_category_block_is_downgraded() -> None:
 def test_verify_uncovered_requires_verify_passed() -> None:
     f = _block("verify-uncovered-correctness", _location("foo.py", 11))
     # verify failed (or unknown) -> the claim is incoherent -> downgraded.
-    assert _agg([_seat("m1", f)], ctx=_ctx(verification="unverified")).blocked is False
-    assert _agg([_seat("m1", f)], ctx=_ctx(verification=None)).blocked is False
+    assert _agg([_reviewer("m1", f)], ctx=_ctx(verification="unverified")).blocked is False
+    assert _agg([_reviewer("m1", f)], ctx=_ctx(verification=None)).blocked is False
     # verify passed -> a grounded uncovered-correctness block may gate.
-    assert _agg([_seat("m1", f)], ctx=_ctx(verification="passed")).blocked is True
+    assert _agg([_reviewer("m1", f)], ctx=_ctx(verification="passed")).blocked is True
 
 
 # --- block_on policies --------------------------------------------------------
 
 
 def test_advisory_never_blocks_even_with_grounded_security_block() -> None:
-    res = _agg([_seat("m1", _block("security", _location("foo.py", 11)))], block_on="none")
+    res = _agg([_reviewer("m1", _block("security", _location("foo.py", 11)))], block_on="none")
     assert res.blocked is False
     assert res.merged_findings[0].severity == "block"  # still reported, just not gating
 
 
-def test_quorum_counts_distinct_models_not_seats() -> None:
+def test_quorum_counts_distinct_models_not_reviewers() -> None:
     g = lambda: _block("security", _location("foo.py", 11))  # noqa: E731
-    # two blocking seats but the SAME model -> counts as one -> min_blocking_models(2) unmet.
-    same = [_seat("m1", g(), seat="a"), _seat("m1", g(), seat="b")]
+    # two blocking reviewers but the SAME model -> counts as one -> min_blocking_models(2) unmet.
+    same = [_reviewer("m1", g(), reviewer="a"), _reviewer("m1", g(), reviewer="b")]
     assert _agg(same, block_on="model_quorum", min_blocking_models=2).blocked is False
     assert _agg(same, block_on="model_quorum", min_blocking_models=2).n_block == 1
     # distinct models -> min_blocking_models met.
-    diff_models = [_seat("m1", g(), seat="a"), _seat("m2", g(), seat="b")]
+    diff_models = [_reviewer("m1", g(), reviewer="a"), _reviewer("m2", g(), reviewer="b")]
     assert _agg(diff_models, block_on="model_quorum", min_blocking_models=2).blocked is True
 
 
-def test_all_requires_every_non_abstaining_seat_to_block() -> None:
-    blk = _seat("m1", _block("security", _location("foo.py", 11)), seat="a")
-    passing = _seat("m2", seat="b")  # no findings -> pass
+def test_all_requires_every_non_abstaining_reviewer_to_block() -> None:
+    blk = _reviewer("m1", _block("security", _location("foo.py", 11)), reviewer="a")
+    passing = _reviewer("m2", reviewer="b")  # no findings -> pass
     assert _agg([blk, passing], block_on="all").blocked is False
     assert _agg(
-        [blk, _seat("m2", _block("security", _location("bar.py", 1)), seat="b")], block_on="all"
+        [blk, _reviewer("m2", _block("security", _location("bar.py", 1)), reviewer="b")],
+        block_on="all",
     ).blocked
 
 
 def test_all_lone_blocker_with_mostly_errored_panel_does_not_gate() -> None:
     """Abstentions filtered out before the `all` check let one lone block gate an errored panel."""
-    # "all" means the seats that reviewed agreed unanimously, and one vote is not a
+    # "all" means the reviewers that reviewed agreed unanimously, and one vote is not a
     # min_blocking_models of five.
-    blk = _seat("m1", _block("security", _location("foo.py", 11)), seat="a")
-    errs = [_seat(f"m{i}", seat=f"s{i}", error="provider timeout") for i in range(2, 6)]
+    blk = _reviewer("m1", _block("security", _location("foo.py", 11)), reviewer="a")
+    errs = [_reviewer(f"m{i}", reviewer=f"s{i}", error="provider timeout") for i in range(2, 6)]
     res = _agg([blk, *errs], block_on="all")
     assert res.n_abstain == 4 and res.n_block == 1
     assert res.blocked is False  # no majority min_blocking_models responded
@@ -182,9 +188,9 @@ def test_all_lone_blocker_with_mostly_errored_panel_does_not_gate() -> None:
 
 
 def test_abstain_does_not_count_as_pass_or_block() -> None:
-    blk = _seat("m1", _block("security", _location("foo.py", 11)), seat="a")
-    err = _seat("m2", seat="b", error="provider timeout")
-    err2 = _seat("m3", seat="c", error="unparseable")
+    blk = _reviewer("m1", _block("security", _location("foo.py", 11)), reviewer="a")
+    err = _reviewer("m2", reviewer="b", error="provider timeout")
+    err2 = _reviewer("m3", reviewer="c", error="unparseable")
     # "all" must NOT gate when only a minority responded: a lone blocker with
     # everyone else abstaining is not unanimous agreement of the panel.
     res = _agg([blk, err], block_on="all")  # 1 of 2 responded -> no majority min_blocking_models
@@ -193,8 +199,8 @@ def test_abstain_does_not_count_as_pass_or_block() -> None:
     # even more lopsided: one block, two abstentions -> still no gate.
     res3 = _agg([blk, err, err2], block_on="all")
     assert res3.n_abstain == 2 and res3.blocked is False
-    # "all" means every configured seat, so an abstention prevents a gate.
-    blk2 = _seat("m2", _block("security", _location("bar.py", 1)), seat="b")
+    # "all" means every configured reviewer, so an abstention prevents a gate.
+    blk2 = _reviewer("m2", _block("security", _location("bar.py", 1)), reviewer="b")
     res4 = _agg([blk, blk2, err2], block_on="all")
     assert res4.n_abstain == 1 and res4.blocked is False
     # under veto, a single grounded block still gates regardless of abstentions.
@@ -207,13 +213,15 @@ def test_abstain_does_not_count_as_pass_or_block() -> None:
 # --- dedup / rendering --------------------------------------------------------
 
 
-def test_dedup_across_seats_and_against_prior_findings() -> None:
+def test_dedup_across_reviewers_and_against_prior_findings() -> None:
     f = _block("security", _location("foo.py", 11))
-    res = _agg([_seat("m1", f, seat="a"), _seat("m2", f, seat="b")], block_on="none")
+    res = _agg(
+        [_reviewer("m1", f, reviewer="a"), _reviewer("m2", f, reviewer="b")], block_on="none"
+    )
     assert len(res.merged_findings) == 1  # same (path, category) merged
     prior = (f,)
     res2 = review_panel.aggregate_verdicts(
-        [_seat("m1", f)],
+        [_reviewer("m1", f)],
         _ctx(prior_findings=prior),
         block_on="none",
         min_blocking_models=2,
@@ -223,14 +231,14 @@ def test_dedup_across_seats_and_against_prior_findings() -> None:
 
 
 def test_prior_deduped_block_does_not_count_toward_the_gate() -> None:
-    # A seat whose only surviving block dedups away against prior_findings must
+    # A reviewer whose only surviving block dedups away against prior_findings must
     # not gate: otherwise blocked=True ships with merged_findings=() and the
     # worker is rejected while being told "No blocking findings.".
     f = _block("security", _location("foo.py", 11))
     prior = (f,)
     for block_on in ("any", "model_quorum", "all"):
         res = review_panel.aggregate_verdicts(
-            [_seat("m1", f)],
+            [_reviewer("m1", f)],
             _ctx(prior_findings=prior),
             block_on=block_on,
             min_blocking_models=1,
@@ -241,7 +249,7 @@ def test_prior_deduped_block_does_not_count_toward_the_gate() -> None:
     # A NEW grounded block alongside the deduped one still gates.
     new = _block("data-loss", _location("bar.py", 1))
     res2 = review_panel.aggregate_verdicts(
-        [_seat("m1", f, new)],
+        [_reviewer("m1", f, new)],
         _ctx(prior_findings=prior),
         block_on="any",
         min_blocking_models=2,
@@ -255,7 +263,7 @@ def test_two_defects_at_the_same_location_remain_distinct() -> None:
     """Keep different finding content at the same line, category and severity."""
     first = _block("security", _location("foo.py", 11))
     second = first.model_copy(update={"title": "a different defect"})
-    result = _agg([_seat("m1", first, second)])
+    result = _agg([_reviewer("m1", first, second)])
     assert result.merged_findings == (first, second)
 
 
@@ -263,7 +271,7 @@ def test_normalized_exact_repeat_is_not_reinjected() -> None:
     """Ignore surrounding whitespace without combining different finding text."""
     first = _block("security", _location("foo.py", 11))
     repeat = first.model_copy(update={"title": " x \n"})
-    result = _agg([_seat("m1", repeat)], ctx=_ctx(prior_findings=(first,)))
+    result = _agg([_reviewer("m1", repeat)], ctx=_ctx(prior_findings=(first,)))
     assert result.merged_findings == ()
     assert not result.blocked
 
@@ -298,7 +306,7 @@ def test_render_findings_distinguishes_base_and_head_locations() -> None:
 def test_a_pass_verdict_cannot_contribute_a_blocking_vote() -> None:
     finding = _block("security", _location("foo.py", 11))
     contradictory = review_records.ReviewVerdict(
-        seat_index=0, focus="s", model_route="m1", verdict="pass", findings=(finding,)
+        reviewer_index=0, focus="s", model_route="m1", verdict="pass", findings=(finding,)
     )
     res = _agg([contradictory], block_on="any")
     assert res.blocked is False and res.n_block == 0
@@ -309,7 +317,7 @@ def test_a_pass_verdict_cannot_contribute_a_blocking_vote() -> None:
 
 def test_quoted_paths_ground_by_their_name() -> None:
     """Git quotes a non-ASCII name in octal; the quoted form never matched a citation."""
-    from agent6.harness.review import seat as review_seat
+    from agent6.harness.review import verdict as review_verdict
 
     diff = (
         'diff --git "a/caf\\303\\251.py" "b/caf\\303\\251.py"\n'
@@ -325,7 +333,7 @@ def test_quoted_paths_ground_by_their_name() -> None:
         ('we"ird.py', "base"),
         ('we"ird.py', "head"),
     }
-    cited = review_seat.coerce_findings(
+    cited = review_verdict.coerce_findings(
         [
             {
                 "category": "other",
@@ -345,10 +353,10 @@ def test_quoted_paths_ground_by_their_name() -> None:
 
 
 def test_a_lone_surrogate_in_a_quoted_citation_grounds_nothing() -> None:
-    """A seat's quoted path holding a lone surrogate raised out of the decoder; the panel died."""
-    from agent6.harness.review import seat as review_seat
+    """A quoted path holding a lone surrogate raised out of the decoder; the panel died."""
+    from agent6.harness.review import verdict as review_verdict
 
-    cited = review_seat.coerce_findings(
+    cited = review_verdict.coerce_findings(
         [
             {
                 "category": "other",
@@ -368,7 +376,7 @@ def test_a_lone_surrogate_in_a_quoted_citation_grounds_nothing() -> None:
 
 def test_quoted_hunkless_entries_and_literal_quote_names_ground() -> None:
     """A quoted header without hunks registered no path; a name holding quotes was unquoted away."""
-    from agent6.harness.review import seat as review_seat
+    from agent6.harness.review import verdict as review_verdict
 
     diff = (
         'diff --git "a/caf\\303\\251.py" "b/caf\\303\\251.py"\n'
@@ -379,7 +387,7 @@ def test_quoted_hunkless_entries_and_literal_quote_names_ground() -> None:
     )
     hunks = review.diff_hunks(diff)
     assert hunks[("café.py", "head")] == [] and ('"note.py"', "head") in hunks
-    cited = review_seat.coerce_findings(
+    cited = review_verdict.coerce_findings(
         [
             {
                 "category": "other",
@@ -439,7 +447,7 @@ def test_in_place_modification_grounds_old_side_lines() -> None:
     ]  # old side of the in-place hunk
     assert review_panel.is_grounded(_location("mod.py", 103, side="base"), ranges)
     res = _agg(
-        [_seat("m1", _block("data-loss", _location("mod.py", 103, side="base")))],
+        [_reviewer("m1", _block("data-loss", _location("mod.py", 103, side="base")))],
         block_on="any",
         ctx=review_panel.ReviewContext(diff=diff),
     )
@@ -499,7 +507,7 @@ def test_a_citation_under_a_real_top_level_a_or_b_dir_grounds() -> None:
     )
     assert not review_panel.is_grounded(_location("foo.py", 2), ranges)  # a different file
     res = _agg(
-        [_seat("m1", _block("security", _location("a/foo.py", 2)))],
+        [_reviewer("m1", _block("security", _location("a/foo.py", 2)))],
         ctx=review_panel.ReviewContext(diff=diff),
     )
     assert res.blocked is True and res.merged_findings[0].severity == "block"
@@ -510,7 +518,7 @@ def test_a_citation_under_a_real_top_level_a_or_b_dir_grounds() -> None:
 def test_range_block_with_unchanged_start_still_gates() -> None:
     # End-to-end: a grounded block citing a real range whose start line is
     # unchanged must keep blocking (not be silently downgraded to warn).
-    res = _agg([_seat("m1", _block("security", _location("foo.py", 8, 12)))], block_on="any")
+    res = _agg([_reviewer("m1", _block("security", _location("foo.py", 8, 12)))], block_on="any")
     assert res.blocked is True and res.n_block == 1
     assert res.merged_findings[0].severity == "block"
 
@@ -538,17 +546,17 @@ def test_output_cap_truncated_case_folds_both_spellings() -> None:
 
 def test_panel_is_inconclusive_owner() -> None:
     abstain = review_records.ReviewVerdict(
-        seat_index=0, focus="s", model_route="m", verdict="abstain", error="starved"
+        reviewer_index=0, focus="s", model_route="m", verdict="abstain", error="starved"
     )
     passing = review_records.ReviewVerdict(
-        seat_index=0, focus="s2", model_route="m2", verdict="pass"
+        reviewer_index=0, focus="s2", model_route="m2", verdict="pass"
     )
     all_abstain = review_panel.PanelResult(
         panel_id="p",
         block_on="none",
         blocked=False,
         merged_findings=(),
-        per_seat=(abstain, abstain),
+        per_reviewer=(abstain, abstain),
         n_block=0,
         n_abstain=2,
     )
@@ -558,7 +566,7 @@ def test_panel_is_inconclusive_owner() -> None:
         block_on="none",
         blocked=False,
         merged_findings=(),
-        per_seat=(abstain, passing),
+        per_reviewer=(abstain, passing),
         n_block=0,
         n_abstain=1,
     )
@@ -568,7 +576,7 @@ def test_panel_is_inconclusive_owner() -> None:
         block_on="none",
         blocked=False,
         merged_findings=(),
-        per_seat=(),
+        per_reviewer=(),
         n_block=0,
         n_abstain=0,
     )
@@ -607,34 +615,34 @@ def test_diff_touched_ranges_records_a_file_touched_without_hunks() -> None:
     assert not review_panel.is_grounded(_location("img.png", 3), ranges)
 
 
-def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
-    """The seat prompt says verify was not run when there is no result.
+def test_the_reviewer_prompt_says_verify_was_not_run_without_a_result() -> None:
+    """The reviewer prompt says verify was not run when there is no result.
 
     A configured gate may not have run yet.
     """
-    from agent6.harness.review import seat as review_seat  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness.review import verdict as review_verdict  # pyright: ignore[reportPrivateUsage]
 
-    prompt = review_seat.build_user_message(review_panel.ReviewContext(task="t"))
+    prompt = review_verdict.build_user_message(review_panel.ReviewContext(task="t"))
     assert "VERIFY: not run." in prompt and "none configured" not in prompt
 
 
 def test_prior_findings_notice_distinguishes_base_and_head_locations() -> None:
     """Keep the prior findings' sides visible at the same path and line."""
-    from agent6.harness.review import seat as review_seat  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness.review import verdict as review_verdict  # pyright: ignore[reportPrivateUsage]
 
     prior = (
         _block("security", _location("foo.py", 11, side="base")),
         _block("security", _location("foo.py", 11)),
     )
-    prompt = review_seat.build_user_message(_ctx(prior_findings=prior))
+    prompt = review_verdict.build_user_message(_ctx(prior_findings=prior))
     assert "ALREADY RAISED (do not repeat): foo.py:11 (base) security; foo.py:11 security" in prompt
 
 
-def test_the_seat_prompt_carries_the_whole_large_diff() -> None:
-    from agent6.harness.review import seat as review_seat  # pyright: ignore[reportPrivateUsage]
+def test_the_reviewer_prompt_carries_the_whole_large_diff() -> None:
+    from agent6.harness.review import verdict as review_verdict  # pyright: ignore[reportPrivateUsage]
 
     diff = "start\n" + "x" * 200_000 + "\nend"
-    prompt = review_seat.build_user_message(review_panel.ReviewContext(task="t", diff=diff))
+    prompt = review_verdict.build_user_message(review_panel.ReviewContext(task="t", diff=diff))
     assert prompt.endswith(f"DIFF:\n{diff}")
 
 
@@ -653,12 +661,12 @@ def test_two_findings_in_different_hunks_of_one_file_both_survive() -> None:
     the report never said it existed. The key carries the hunk.
     """
     ctx = review_panel.ReviewContext(diff=TWO_HUNKS_DIFF)
-    seat = _seat(
+    reviewer = _reviewer(
         "m1",
         _block("security", _location("foo.py", 11)),
         _block("security", _location("foo.py", 43)),
     )
-    res = _agg([seat], ctx=ctx)
+    res = _agg([reviewer], ctx=ctx)
     assert [str(f.location) for f in res.merged_findings] == ["foo.py:11", "foo.py:43"]
 
 
@@ -666,11 +674,11 @@ def test_distinct_locations_in_one_hunk_remain_distinct() -> None:
     """Keep uncertain matches separate, including nearby lines in the same hunk."""
     a = _block("security", _location("foo.py", 11))
     b = _block("security", _location("foo.py", 13))
-    res = _agg([_seat("m1", a), _seat("m2", b, seat="t")])
+    res = _agg([_reviewer("m1", a), _reviewer("m2", b, reviewer="t")])
     assert len(res.merged_findings) == 2
-    res = _agg([_seat("m1", b)], ctx=_ctx(prior_findings=(a,)))
+    res = _agg([_reviewer("m1", b)], ctx=_ctx(prior_findings=(a,)))
     assert res.merged_findings == (b,) and res.blocked
-    res = _agg([_seat("m1", a, _block("security", _location("foo.py")))])
+    res = _agg([_reviewer("m1", a, _block("security", _location("foo.py")))])
     assert len(res.merged_findings) == 2
 
 
@@ -688,14 +696,14 @@ def test_side_and_location_distinguish_findings_in_overlapping_hunks() -> None:
         _block("security", _location("foo.py", 40, side="base")),
         _block("security", _location("foo.py", 42)),
     )
-    res = _agg([_seat("m1", post)], ctx=dataclasses.replace(ctx, prior_findings=(pre,)))
+    res = _agg([_reviewer("m1", post)], ctx=dataclasses.replace(ctx, prior_findings=(pre,)))
     assert res.merged_findings == (post,) and res.blocked
-    seat = _seat(
+    reviewer = _reviewer(
         "m1",
         _block("security", _location("bar.py", 23)),
         _block("security", _location("bar.py", 55, side="base")),
     )
-    res = _agg([seat], ctx=ctx)
+    res = _agg([reviewer], ctx=ctx)
     assert [str(f.location) for f in res.merged_findings] == ["bar.py:23", "bar.py:55 (base)"]
 
 
@@ -774,7 +782,7 @@ def test_type_changed_path_keeps_both_sides_hunks() -> None:
     assert review_panel.is_grounded(_location("config", 2), hunks)
     assert not review_panel.is_grounded(_location("config", 2, side="base"), hunks)
     finding = _block("data-loss", _location("config", 1, side="base"))
-    result = _agg([_seat("m1", finding)], ctx=review_panel.ReviewContext(diff=diff))
+    result = _agg([_reviewer("m1", finding)], ctx=review_panel.ReviewContext(diff=diff))
     assert result.merged_findings == (finding,)
     assert result.blocked and result.n_block == 1
 

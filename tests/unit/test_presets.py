@@ -36,7 +36,7 @@ def test_preset_via_preset_field_expands_review_knobs(repo: pathlib.Path) -> Non
     assert cfg.review.when == "finish"
     assert [entry.focus for entry in cfg.review.reviewers] == ["security", "correctness", "tests"]
     assert cfg.review.block_on == "any"
-    assert cfg.review.concurrency == 3  # seats run in parallel, not in series
+    assert cfg.review.concurrency == 3  # reviewers run in parallel, not in series
 
 
 def test_preset_via_flag_overrides_field(repo: pathlib.Path) -> None:
@@ -44,7 +44,7 @@ def test_preset_via_flag_overrides_field(repo: pathlib.Path) -> None:
     cfg = layer.load_effective(repo, preset="deep_review").config  # flag wins over the field
     assert len(cfg.review.reviewers) == 5
     assert cfg.review.block_on == "any"
-    assert cfg.review.concurrency == 5  # seats run in parallel, not in series
+    assert cfg.review.concurrency == 5  # reviewers run in parallel, not in series
 
 
 def test_repo_selected_preset_beats_same_layer_setting(repo: pathlib.Path) -> None:

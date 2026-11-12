@@ -122,9 +122,9 @@ def parallel_dispatched_body(event: dict[str, Any]) -> str:
     tasks = [str(t).strip() for t in tasks_raw] if isinstance(tasks_raw, list) else []
     n = len(tasks)
     if event.get("source") == "panel":
-        # A panel's seats are read-only sessions of their own, on no lane listing.
+        # A panel's reviewers are read-only sessions of their own, on no lane listing.
         head = (
-            f"dispatched {n} review seat{'' if n == 1 else 's'} ({parallel_group_label(event)});"
+            f"dispatched {n} reviewer{'' if n == 1 else 's'} ({parallel_group_label(event)});"
             " each runs as a read-only session"
         )
         return "\n".join([head, *(f"• {clip(t, 80)}" for t in tasks if t)])
@@ -180,7 +180,7 @@ def parallel_joined_body(event: dict[str, Any]) -> str:
     lanes = [ln for ln in lanes_raw if isinstance(ln, dict)] if isinstance(lanes_raw, list) else []
     panel = event.get("source") == "panel"
     head = (
-        f"review seats returned ({parallel_group_label(event)}): {len(lanes)}"
+        f"reviewers returned ({parallel_group_label(event)}): {len(lanes)}"
         if panel
         else f"joined {parallel_group_label(event)}: {len(lanes)} lane(s)"
     )
@@ -188,7 +188,7 @@ def parallel_joined_body(event: dict[str, Any]) -> str:
     for ln in lanes:
         status = str(ln.get("status", "?"))
         if panel and status == "no_changes":
-            status = "returned"  # a seat has no work to join; its verdict follows in the panel
+            status = "returned"  # a reviewer has no work to join; its verdict follows in the panel
         parts = [str(ln.get("session_id", "?"))]
         branch = str(ln.get("branch", "")).strip()
         if branch:

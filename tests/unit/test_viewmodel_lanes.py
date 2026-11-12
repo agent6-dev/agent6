@@ -210,32 +210,32 @@ def test_the_receipt_lists_its_lanes_and_labels_the_inclusive_spend(tmp_path: pa
     assert alone.children == () and "Lanes" not in receipt.render(alone)
 
 
-def test_a_panel_seat_is_evidence_of_its_panel_and_no_lane(tmp_path: pathlib.Path) -> None:
-    """A reviewed run read `(2 lanes)` and listed its passing seats as lanes with no changes."""
+def test_a_panel_reviewer_is_evidence_of_its_panel_and_no_lane(tmp_path: pathlib.Path) -> None:
+    """A reviewed run read `(2 lanes)` and listed its passing reviewers as lanes with no changes."""
     state = tmp_path / "state"
     parent = _session(state, "run-abc", usd=1.0)
-    seat_id = "run-abc-rpanel-l1"
-    runs_dir = _session(state, seat_id, parent="run-abc", lane=1, group="run-abc-rpanel")
-    seat_dir = state / "sessions" / "reviewers" / seat_id
-    seat_dir.parent.mkdir()
-    runs_dir.rename(seat_dir)
+    reviewer_id = "run-abc-rpanel-l1"
+    runs_dir = _session(state, reviewer_id, parent="run-abc", lane=1, group="run-abc-rpanel")
+    reviewer_dir = state / "sessions" / "reviewers" / reviewer_id
+    reviewer_dir.parent.mkdir()
+    runs_dir.rename(reviewer_dir)
     for name in ("manifest.json", "logs.jsonl"):
-        text = (seat_dir / name).read_text(encoding="utf-8")
-        (seat_dir / name).write_text(
+        text = (reviewer_dir / name).read_text(encoding="utf-8")
+        (reviewer_dir / name).write_text(
             text.replace('"mode": "run"', '"mode": "reviewer"'), encoding="utf-8"
         )
-    record = _record("run-abc-rpanel", [(seat_id, None, 0.25)])
+    record = _record("run-abc-rpanel", [(reviewer_id, None, 0.25)])
     lane_dispatch.write_record(
         parent,
         record.model_copy(update={"source": "panel", "join_policy": "record_only"}),
         now=1.0,
     )
-    summaries = [listing.summarize_session_dir(d) for d in (parent, seat_dir)]
+    summaries = [listing.summarize_session_dir(d) for d in (parent, reviewer_dir)]
     (row,) = listing.nested_rows(summaries)
     assert row.summary.session_id == "run-abc" and row.lanes == ()
     assert listing.lanes_of(state, "run-abc") == []
     assert "lanes" not in wire.manifest_header(parent)
-    # The record still names the seat, found in its own bucket, for the panel's surfaces.
+    # The record still names the reviewer, found in its own bucket, for the panel's surfaces.
     (child,) = vm_lanes.children_of(parent)
     assert child.source == "panel" and child.launched and child.settled
     text = receipt.render(receipt.read_receipt(parent, tmp_path))

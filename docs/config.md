@@ -60,7 +60,7 @@ It can be empty or absent when the global config supplies a provider and model.
 | Field | Default | Meaning |
 |---|---|---|
 | `config_version` | `1` | Config schema version; only `1` is accepted. |
-| `preset` | `"none"` | selected preset; `agent6.preset = "none"`: no preset, stop preset lookup; `"no_review"`: panel off; `"review"`: three seats able to block the finish; `"deep_review"`: five seats able to block the finish; custom preset: `[presets.<name>]`; overrides at the selecting layer; `--preset`: per run; `resume --preset`: from that resume on, recorded for later resumes; empty string refused |
+| `preset` | `"none"` | selected preset; `agent6.preset = "none"`: no preset, stop preset lookup; `"no_review"`: panel off; `"review"`: three reviewers able to block the finish; `"deep_review"`: five reviewers able to block the finish; custom preset: `[presets.<name>]`; overrides at the selecting layer; `--preset`: per run; `resume --preset`: from that resume on, recorded for later resumes; empty string refused |
 
 ### Presets
 
@@ -80,8 +80,8 @@ The TUI and web config pages edit the selected preset in place: with `agent6.pre
 | Preset | For | Sets |
 |---|---|---|
 | `no_review` | turns off the review panel | `review.when = "never"` |
-| `review` | three review seats that can block the finish | `review.when = "finish"`, `review.block_on = "any"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }]`, `review.concurrency = 3` |
-| `deep_review` | five review seats that can block the finish | `review.when = "finish"`, `review.block_on = "any"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }, { focus = "edge-cases" }, { focus = "over-engineering" }]`, `review.concurrency = 5` |
+| `review` | three reviewers that can block the finish | `review.when = "finish"`, `review.block_on = "any"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }]`, `review.concurrency = 3` |
+| `deep_review` | five reviewers that can block the finish | `review.when = "finish"`, `review.block_on = "any"`, `review.reviewers = [{ focus = "security" }, { focus = "correctness" }, { focus = "tests" }, { focus = "edge-cases" }, { focus = "over-engineering" }]`, `review.concurrency = 5` |
 
 Define your own with a `[presets.<name>]` table (a partial config); a built-in's name replaces that built-in wholesale:
 
@@ -133,7 +133,7 @@ A literal string (`"x-title" = "agent6"`) rides every API request: model calls, 
 A template table renders from request facts for the request classes it names.
 Only a template whose `targets` name `oauth` or `exchange` reaches a configured issuer's credential endpoint.
 
-The facts: `request_id` (fresh per HTTP attempt) and `agent6_version` on every request; `model`, `conversation_id` (an opaque id per role and provider or per review panel and seat, kept across a resume), `initiator` (`user` or `agent`), `is_first_turn`, `is_subagent`, `has_tool_results` and `has_images` on a model call.
+The facts: `request_id` (fresh per HTTP attempt) and `agent6_version` on every request; `model`, `conversation_id` (an opaque id per role and provider or per review panel and reviewer, kept across a resume), `initiator` (`user` or `agent`), `is_first_turn`, `is_subagent`, `has_tool_results` and `has_images` on a model call.
 `{{` and `}}` are literal braces; a placeholder holds a fact name and nothing else.
 
 The transport owns `authorization`, `proxy-authorization`, `x-api-key`, `api-key`, `cookie`, `host`, `connection`, `content-length`, `transfer-encoding`, `content-type` and `accept`; naming one refuses at config load, as does a control character, two spellings of one header, or a template its target cannot render.
@@ -339,7 +339,7 @@ Role routing:
 | `default` | none | required route for every model call; set with `agent6 model default PROVIDER/MODEL`; the only fallback for each role's unset model, effort and temperature |
 | `helper` | none | model for the context summariser, gisting (`compaction.elision_gists`), and verify-command inference; unset fields take `models.default` |
 | `worker` | none | model for `agent6 run`, `agent6 ask`, their resumes, machine agent states and the model-written squash message; unset fields take `models.default` |
-| `reviewer` | none | model for in-loop review panel seats without a route, the `sessions compare` and `--parallel` judge, and `sessions review`; unset fields take `models.default` |
+| `reviewer` | none | model for in-loop reviewers without a route, the `sessions compare` and `--parallel` judge, and `sessions review`; unset fields take `models.default` |
 | `planner` | none | model for `agent6 plan` and plan resumes; unset fields take `models.default` |
 
 Every model call requires a `models.default.model` route.
@@ -430,7 +430,7 @@ Placement and setup of the worktrees agent6 makes: lane and machine-state clones
 | Field | Default | Meaning |
 |---|---|---|
 | `base_dir` | `""` | base directory for the worktrees agent6 makes, grouped by repository: lane and machine-state clones, fork and `run --worktree` worktrees; empty: `<cache_dir>/worktrees`; lane clone removed after work import; fork and `run --worktree` worktrees removed by `sessions prune` once merged or holding no work |
-| `kind` | `"clone"` | Worktree a fork or a `run --worktree` run works in; a clone runs at any path, in any container, and agent6 copies its commits into the repository as the run makes them; a linked worktree is smaller for a large repository whose base is on another filesystem, commits straight into the repository, and under a container needs the workspace mounted at its host path; lanes and review seats are clones.<ul><li><code>clone</code>: Clone of the repository with its own git data</li><li><code>linked</code>: Linked git worktree sharing the repository&#x27;s git data</li></ul> |
+| `kind` | `"clone"` | Worktree a fork or a `run --worktree` run works in; a clone runs at any path, in any container, and agent6 copies its commits into the repository as the run makes them; a linked worktree is smaller for a large repository whose base is on another filesystem, commits straight into the repository, and under a container needs the workspace mounted at its host path; lanes and reviewers are clones.<ul><li><code>clone</code>: Clone of the repository with its own git data</li><li><code>linked</code>: Linked git worktree sharing the repository&#x27;s git data</li></ul> |
 | `setup_command` | `[]` | environment-setup command for a new worktree as argv, no shell (pipeline form: `["sh", "-c", "a && b"]`); `run --worktree` and fork worktrees, lane and machine-state clones: tracked files only, no untracked `.venv` or `node_modules`; command run once in each worktree before the first turn, under the run's command sandbox (same isolation, network and grants); nonzero exit or 600-second timeout: session ended before any turn; unset: AGENTS.md `## Setup command` fenced block, parsed like `## Verify command`, command printed; no configured or inferred command: nothing run |
 
 ## `[harness]`
@@ -473,7 +473,7 @@ Headless surfaces without a dispatcher answer "not available".
 | Field | Default | Meaning |
 |---|---|---|
 | `tool` | `false` | offer a run's model the `parallel` tool, which dispatches a task to isolated lanes (fresh clones of the committed tree, each an ordinary run that may edit) and joins their commits back in order; each lane runs under 200 turns, 30 minutes and the run's remaining budget, which the lanes share; `harness.parallel.tool = false`: no run is offered it; neither value changes `run --parallel`, the `/parallel` steer or the review panel |
-| `max_lanes` | `4` | The most lanes one `--parallel` group may run, `1` to `1024`; a spec asking for more is refused before anything is cloned; a review roster longer than this runs in batches of this width, with no seat dropped. |
+| `max_lanes` | `4` | The most lanes one `--parallel` group may run, `1` to `1024`; a spec asking for more is refused before anything is cloned; a review roster longer than this runs in batches of this width, with no reviewer dropped. |
 | `judges` | `["reviewer"]` | who ranks the candidates of a `run --parallel` group and of `sessions compare`: selectors as `--parallel` takes them, a role name or `[provider/]model`; each judges once and the lowest sum of ranks wins, a tie going to the mechanical order (a passed gate first, then the lower cost); a role with no model route judges nothing; `[]`: the mechanical order alone |
 
 ### `[harness.prompt]`
@@ -498,15 +498,15 @@ Headless surfaces without a dispatcher answer "not available".
 
 | Field | Default | Meaning |
 |---|---|---|
-| `when` | `"never"` | In-loop panel over the diff so far, with findings sent to the model; only finish-time review can gate finish; periodic review uses `review.interval_turns`; without `review.reviewers`, one seat uses `[models.reviewer]`; each seat runs as a read-only lane with its own session.<ul><li><code>never</code>: Do not run in-loop review</li><li><code>verify_fail</code>: Review after each failed verification</li><li><code>finish</code>: Review when model requests finish</li><li><code>periodic</code>: Review every configured interval of turns</li></ul> |
+| `when` | `"never"` | In-loop panel over the diff so far, with findings sent to the model; only finish-time review can gate finish; periodic review uses `review.interval_turns`; without `review.reviewers`, one reviewer uses `[models.reviewer]`; each reviewer runs as a read-only lane with its own session.<ul><li><code>never</code>: Do not run in-loop review</li><li><code>verify_fail</code>: Review after each failed verification</li><li><code>finish</code>: Review when model requests finish</li><li><code>periodic</code>: Review every configured interval of turns</li></ul> |
 | `interval_turns` | `10` | Turns between panels when `when = "periodic"`. |
-| `block_on` | `"none"` | Effect of panel blocking verdicts; quorum uses `review.min_blocking_models` distinct provider/model routes; abstentions do not block; gating applies only to finish-time review; panels at other moments are advisory.<ul><li><code>none</code>: Treat blocking verdicts as guidance</li><li><code>any</code>: One blocking seat rejects finish</li><li><code>model_quorum</code>: Require configured number of distinct blocking model routes</li><li><code>all</code>: Require every seat to block</li></ul> |
-| `min_blocking_models` | `2` | distinct provider/model routes required to block with `review.block_on = "model_quorum"`; two seats on one route counted once, even with different focus or effort |
+| `block_on` | `"none"` | Effect of panel blocking verdicts; quorum uses `review.min_blocking_models` distinct provider/model routes; abstentions do not block; gating applies only to finish-time review; panels at other moments are advisory.<ul><li><code>none</code>: Treat blocking verdicts as guidance</li><li><code>any</code>: One blocking reviewer rejects finish</li><li><code>model_quorum</code>: Require configured number of distinct blocking model routes</li><li><code>all</code>: Require every reviewer to block</li></ul> |
+| `min_blocking_models` | `2` | distinct provider/model routes required to block with `review.block_on = "model_quorum"`; two reviewers on one route counted once, even with different focus or effort |
 | `max_rejections` | `4` | ends rejectable by a gating panel per run (`finish_session`, silent finish, settled or plateau stop); count preserved across resumes, never reset; at the cap: panels and findings retained, every end accepted, no indefinite panel stall |
 | `min_remaining_budget_fraction` | `0.25` | remaining-budget fraction below which the panel is skipped and the finish accepted; `review.min_remaining_budget_fraction = 0.25`: no panel in the last quarter |
-| `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `model`, `temperature` and `effort`; every omitted field inherits the resolved `[models.reviewer]`, `model` pinned or not; `model` is a provider/model route; empty roster: one `security` seat unless `review.when = "never"` |
-| `concurrency` | `1` | simultaneous panel seats, at most `harness.parallel.max_lanes`; a longer roster runs in batches, in roster order; `review.concurrency = 1`: one after another |
-| `max_turns` | `20` | turns a review seat may take, turns that ask for tools included; no verdict within the limit: abstention, reported by the panel |
+| `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `model`, `temperature` and `effort`; every omitted field inherits the resolved `[models.reviewer]`, `model` pinned or not; `model` is a provider/model route; empty roster: one `security` reviewer unless `review.when = "never"` |
+| `concurrency` | `1` | simultaneous reviewers, at most `harness.parallel.max_lanes`; a longer roster runs in batches, in roster order; `review.concurrency = 1`: one after another |
+| `max_turns` | `20` | turns a reviewer may take, turns that ask for tools included; no verdict within the limit: abstention, reported by the panel |
 
 The [TUI](terminal.md#configuration) and [web](web.md#pages) config pages edit the ordered roster with **Add reviewer…** and positional removal.
 Each edit writes the whole list to the global or repo config, including `[]` after the last removal.
@@ -541,7 +541,7 @@ reviewers = [
 ```
 
 A finding grounds on the path, side and lines it cites against the diff; an ungrounded finding is dropped.
-A `block` holds only when its seat's verdict is `block` and its category is one of `security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`, `verify-uncovered-correctness` (the last only when verify passed); otherwise it reads as `warn`, which cannot stall the run.
+A `block` holds only when its reviewer's verdict is `block` and its category is one of `security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`, `verify-uncovered-correctness` (the last only when verify passed); otherwise it reads as `warn`, which cannot stall the run.
 Findings injected in an earlier round or execution neither repeat nor count toward a later panel's gate while the blob they cite is unchanged.
 
 ## `[compaction]`

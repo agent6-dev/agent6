@@ -200,14 +200,14 @@ class SessionProviders:
         rm_role: The driving role's resolved model.
         provider: The driving role's instrumented provider.
         summariser_provider: The summariser seat, when one is configured.
-        review_seats: The in-loop review panel.
+        reviewers: The in-loop review panel.
     """
 
     budget: agent6_budget.BudgetTracker
     rm_role: RoleModel
     provider: Provider
     summariser_provider: Provider | None
-    review_seats: list[review_gate.ReviewSeat]
+    reviewers: list[review_gate.Reviewer]
 
     def close(self) -> None:
         """Release every provider's held process (a `claude_code` session)."""
@@ -226,7 +226,7 @@ def build_session_providers(
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
     conversations: conversation_state.Conversations | None = None,
 ) -> SessionProviders:
-    """Build the driving role's provider and the summariser and review seats.
+    """Build the driving role's provider and the summariser and reviewers.
 
     Args:
         cfg: The resolved config.
@@ -266,14 +266,14 @@ def build_session_providers(
         events=events,
         conversations=conversations,
     )
-    # The panel is the in-loop review: a trigger with no seats builds one seat on the reviewer.
-    review_seats = role_providers.resolve_review_seats(cfg) if cfg.review.when != "never" else []
+    # The panel is the in-loop review: a trigger with no reviewers builds one on the reviewer role.
+    reviewers = role_providers.resolve_reviewers(cfg) if cfg.review.when != "never" else []
     return SessionProviders(
         budget=budget,
         rm_role=rm_role,
         provider=provider,
         summariser_provider=summariser_provider,
-        review_seats=review_seats,
+        reviewers=reviewers,
     )
 
 

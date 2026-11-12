@@ -140,16 +140,16 @@ def test_resolve_group_prefix(tmp_path: pathlib.Path) -> None:
         id.resolve_session(tmp_path, "sweet-marsh")
 
 
-def test_resolve_a_reviewed_session_prefix_despite_its_seats(tmp_path: pathlib.Path) -> None:
-    """A reviewed ask's prefix read as ambiguous with its own seats' read-only records."""
+def test_resolve_a_reviewed_session_prefix_despite_its_reviewers(tmp_path: pathlib.Path) -> None:
+    """A reviewed ask's prefix read as ambiguous with its own reviewers' read-only records."""
     parent = "green-canyon-NYACDZ"
-    seats = [f"{parent}-rc81e8ace-l{n}" for n in (1, 2)]
+    reviewers = [f"{parent}-rc81e8ace-l{n}" for n in (1, 2)]
     _bucket(tmp_path, parent, bucket="asks")
-    _bucket(tmp_path, *seats, bucket="reviewers")
+    _bucket(tmp_path, *reviewers, bucket="reviewers")
     for query in ("green", "green-canyon", parent):
         resolved = id.resolve_session(tmp_path, query)
         assert (resolved.session_id, resolved.subdir) == (parent, "asks")
-    assert id.resolve_session(tmp_path, seats[0]).subdir == "reviewers"
+    assert id.resolve_session(tmp_path, reviewers[0]).subdir == "reviewers"
     with pytest.raises(id.SessionIdError, match="ambiguous"):
         id.resolve_session(tmp_path, f"{parent}-r")
 

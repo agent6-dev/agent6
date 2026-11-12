@@ -831,7 +831,7 @@ def test_plan_points_cumulative_across_resume_executions() -> None:
 def test_concurrent_same_name_results_pair_by_call_id() -> None:
     """Concurrent calls pair their results on the stamped call_id.
 
-    Last-entry name pairing cross-stamped two review seats' read_file summaries.
+    Last-entry name pairing cross-stamped two reviewers' read_file summaries.
     """
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(

@@ -912,7 +912,7 @@ def add_reviewer(
 def remove_reviewer(
     repo_root: pathlib.Path, index: int, *, to_repo: bool = False, preset: str = ""
 ) -> str | None:
-    """Remove a zero-based position, writing an explicit empty list after the last seat.
+    """Remove a zero-based position, writing an explicit empty list after the last reviewer.
 
     Args:
         repo_root: The repo.

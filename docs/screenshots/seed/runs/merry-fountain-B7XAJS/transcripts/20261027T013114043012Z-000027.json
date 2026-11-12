@@ -1200,7 +1200,7 @@
     },
     "status": 200
   },
-  "seat": "worker",
+  "reviewer": "worker",
   "seq": 27,
   "ts": "20261027T013114043012Z"
 }

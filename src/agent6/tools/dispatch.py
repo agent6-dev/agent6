@@ -92,7 +92,7 @@ def _in_container(target: kinds.ExecutionTarget | None) -> bool:
 
 
 class ToolDispatcher:
-    """The tool dispatcher of one execution, or of a bare caller such as a review seat.
+    """The tool dispatcher of one execution, or of a bare caller such as a reviewer.
 
     Args:
         root: The workspace root.
@@ -166,7 +166,7 @@ class ToolDispatcher:
         self._prompts = prompts or operator_prompts.OperatorPrompts(
             journal=self._emit, session_dir=session_dir
         )
-        # The call being dispatched, per thread: concurrent review seats share one dispatcher.
+        # The call being dispatched, per thread: concurrent reviewers share one dispatcher.
         self._gating = threading.local()
         self._curator = curator
         # Read by the tool list: the DAG tools answer "no curator" for a run built without one.
@@ -236,7 +236,7 @@ class ToolDispatcher:
             ),
         }
         self._index: index.SymbolIndex | None = None
-        # Concurrent review seats must not double-build the index.
+        # Concurrent reviewers must not double-build the index.
         self._index_lock = threading.Lock()
         # Resolved once on first use, a disk scan of the configured skill dirs.
         self._skills_cache: skills.ResolvedSkills | None = None
@@ -394,7 +394,7 @@ class ToolDispatcher:
         # The finish tools' `summary` is the human end-of-run statement: kept whole.
         max_chars = 2000 if name in ("finish_session", "finish_planning") else 200
         preview = result_format.truncate_args(raw_input, max_value_chars=max_chars)
-        # Concurrent review seats interleave events, and name-based pairing cross-stamps calls.
+        # Concurrent reviewers interleave events, and name-based pairing cross-stamps calls.
         cid = next(self._call_seq)
         identity: dict[str, Any] = {
             **(origin.event_fields() if origin is not None else {}),
@@ -645,7 +645,7 @@ class ToolDispatcher:
         args = json.dumps(raw_input, ensure_ascii=False, sort_keys=True)
         if len(args) > _APPROVAL_PROMPT_MAX_CHARS and self._session_dir is not None:
             # A wall of text is as unread as a clip: the complete payload goes to a file a jailed
-            # command cannot reach, one per prompt since review seats share a dispatcher.
+            # command cannot reach, one per prompt since reviewers share a dispatcher.
             full = self._session_dir / f"approval_payload-{next(_PAYLOAD_IDS)}.json"
             full.write_text(args, encoding="utf-8")
             args = (

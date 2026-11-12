@@ -132,8 +132,8 @@ def assert_no_review_store(repo: pathlib.Path, directory: pathlib.Path) -> None:
     assert not any(event["type"].startswith("review.") for event in events)
 
 
-class SeatProvider:
-    """One review seat that blocks on the reviewed line."""
+class ReviewerProvider:
+    """One reviewer that blocks on the reviewed line."""
 
     def call(self, **_kwargs: Any) -> providers.ProviderResponse:
         reply = {
@@ -172,10 +172,12 @@ def test_the_panel_sits_on_the_reviewed_branch_and_records_its_findings(
         encoding="utf-8",
     )
 
-    def seats(*_args: Any, **_kwargs: Any) -> list[review_gate.ReviewSeat]:
-        return [review_lane_env.seat(focus="correctness", model="p/m", provider=SeatProvider())]
+    def reviewers(*_args: Any, **_kwargs: Any) -> list[review_gate.Reviewer]:
+        return [
+            review_lane_env.reviewer(focus="correctness", model="p/m", provider=ReviewerProvider())
+        ]
 
-    monkeypatch.setattr(role_providers, "resolve_review_seats", seats)
+    monkeypatch.setattr(role_providers, "resolve_reviewers", reviewers)
     world_tests.git(repo, "switch", "-q", "main")
     provider = ScriptedReview()
     install(monkeypatch, provider)

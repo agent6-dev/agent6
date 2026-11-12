@@ -477,7 +477,7 @@ function paintRun(cards, s) {
   }
   if (cards._composer) {
     cards._composer.setState(s);
-    // A review seat's record takes no steer and no resume.
+    // A reviewer's record takes no steer and no resume.
     cards._composer.style.display = s.session_actions?.resume === false ? 'none' : '';
   }
   // header

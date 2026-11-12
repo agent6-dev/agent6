@@ -22,7 +22,7 @@ def start_event(**changes: Any) -> dict[str, Any]:
         "target": dataclasses.asdict(
             review_records.ReviewTarget("b", "bt", "h", "ht", "h", (), "revisions")
         ),
-        "seats": [],
+        "reviewers": [],
         "rule_sources": [{"path": "AGENTS.md", "blob_id": "abc123", "supplied_bytes": 9}],
         "rules_complete": True,
         "rules_reason": None,

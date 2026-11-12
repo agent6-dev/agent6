@@ -9270,7 +9270,7 @@ def test_the_focus_surface_fits_a_standing_task(tmp_path: pathlib.Path) -> None:
     assert not any(t.startswith("[harness] You have spent") for t in texts)
 
 
-def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) -> None:
+def test_a_turn_declaring_two_ends_reviewers_the_panel_once(tmp_path: pathlib.Path) -> None:
     """One turn's end is reviewed once: a surviving finish skips the plateau's end gates."""
 
     def _tool_use(name: str, call_id: str, args: dict[str, Any]) -> ProviderResponse:
@@ -9379,7 +9379,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
     panels: list[str] = []
 
     def fake_panel(
-        self: review_gate.Reviewer, state: Any, *, trigger: str, turn: int
+        self: review_gate.ReviewGate, state: Any, *, trigger: str, turn: int
     ) -> review_gate.CritiqueResult:
         del self, state, turn
         panels.append(trigger)
@@ -9390,7 +9390,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
         mock.patch(
             "agent6.vcs.git.ops.chain_commit", side_effect=[f"sha{i}" for i in range(1, 20)]
         ),
-        mock.patch.object(review_gate.Reviewer, "critique", fake_panel),
+        mock.patch.object(review_gate.ReviewGate, "critique", fake_panel),
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="system",

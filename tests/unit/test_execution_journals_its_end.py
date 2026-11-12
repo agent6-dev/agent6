@@ -133,7 +133,7 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
         rm_role=types.SimpleNamespace(model="m", provider="p"),
         provider=mock.MagicMock(),
         summariser_provider=None,
-        review_seats=[],
+        reviewers=[],
         close=lambda: closed.append("session"),
     )
 
@@ -191,7 +191,7 @@ def test_mcp_setup_failure_journals_session_end(
         rm_role=types.SimpleNamespace(model="m", provider="p"),
         provider=mock.MagicMock(),
         summariser_provider=None,
-        review_seats=[],
+        reviewers=[],
         close=lambda: None,
     )
 
@@ -273,7 +273,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         rm_role=types.SimpleNamespace(model="m", provider="p"),
         provider=mock.MagicMock(),
         summariser_provider=None,
-        review_seats=[],
+        reviewers=[],
         close=_session_close,
     )
     dispatcher = types.SimpleNamespace(
@@ -444,7 +444,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
         rm_role=types.SimpleNamespace(model="m", provider="p"),
         provider=mock.MagicMock(),
         summariser_provider=None,
-        review_seats=[],
+        reviewers=[],
         close=lambda: None,
     )
     tools = types.SimpleNamespace(
@@ -516,7 +516,7 @@ def _wired_frontend(
         rm_role=types.SimpleNamespace(model="m", provider="p"),
         provider=mock.MagicMock(),
         summariser_provider=None,
-        review_seats=[],
+        reviewers=[],
         close=lambda: order.append("session"),
     )
     dispatcher = types.SimpleNamespace(

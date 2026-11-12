@@ -405,7 +405,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         task_line: The task clipped to 200 characters, then a newline and `continued: <steer>`,
             clipped the same way, when a resume steer exists.
         model: The resolved provider/model route, or ? when unknown.
-        models: The recorded driver, reviewer, helper and review seats, with effort and origin.
+        models: The recorded driver, reviewer, helper and reviewers, with effort and origin.
         model_from_flag: Whether a model flag selected the route.
         preset: The launch preset, or null when absent.
         status: The lifecycle status word shared with listings.

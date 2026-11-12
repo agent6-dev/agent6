@@ -18,7 +18,7 @@ from tests.unit import test_review_gate
 
 
 def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Path) -> None:
-    """Review the chain commit even when the workspace changes during a seat call."""
+    """Review the chain commit even when the workspace changes during a reviewer call."""
     git = review_helpers.git
     git(tmp_path, "init", "-q")
     (tmp_path / "foo.py").write_text("x = 1\n")
@@ -41,13 +41,15 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
     sink.subscribe(rows.append)
     provider = mock.MagicMock()
 
-    def seat(**_kwargs: object) -> object:
+    def reviewer(**_kwargs: object) -> object:
         (tmp_path / "foo.py").write_text("x = 3\n")
         return test_review_gate._resp('{"verdict":"pass","summary":"ok","findings":[]}')
 
-    provider.call.side_effect = seat
-    reviewer = review_gate.Reviewer(
-        settings=review_gate.ReviewSettings(reviewers=[review_lane_env.seat("s", "m", provider)]),
+    provider.call.side_effect = reviewer
+    gate = review_gate.ReviewGate(
+        settings=review_gate.ReviewSettings(
+            reviewers=[review_lane_env.reviewer("s", "m", provider)]
+        ),
         chain=chain,
         hide=(),
         executor=mock.MagicMock,
@@ -57,7 +59,7 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
         emit=sink.emit,
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
-    reviewer.critique(state, trigger="periodic", turn=1)
+    gate.critique(state, trigger="periodic", turn=1)
     panel = next(row for row in rows if row["type"] == "review.panel")
     target = panel.get("target")
     assert isinstance(target, dict)
@@ -70,16 +72,16 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
     assert git(tmp_path, "rev-parse", "HEAD").strip() == base
     assert (tmp_path / ".git" / "index").read_bytes() == index
     start = next(row for row in rows if row["type"] == "review.start")
-    seat_row = next(row for row in rows if row["type"] == "review.seat")
-    assert start["panel_id"] == panel["panel_id"] == seat_row["panel_id"]
-    assert seat_row["summary"] == "ok"
-    assert seat_row["findings"] == []
-    assert seat_row["seat_index"] == 0
+    reviewer_row = next(row for row in rows if row["type"] == "review.verdict")
+    assert start["panel_id"] == panel["panel_id"] == reviewer_row["panel_id"]
+    assert reviewer_row["summary"] == "ok"
+    assert reviewer_row["findings"] == []
+    assert reviewer_row["reviewer_index"] == 0
     assert panel["completion"] == "complete"
 
 
 def test_a_panel_over_unchanged_trees_is_reused_not_sat_again(tmp_path: pathlib.Path) -> None:
-    """The same trees, paths and seats reuse the complete panel; a changed tree sits a new one."""
+    """The same trees, paths and reviewers reuse the complete panel; a changed tree sits anew."""
     git = review_helpers.git
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -102,9 +104,9 @@ def test_a_panel_over_unchanged_trees_is_reused_not_sat_again(tmp_path: pathlib.
         '"severity":"block","title":"leak","detail":"a secret","location":{"path":"foo.py",'
         '"side":"head","start_line":1,"end_line":1}}]}'
     )
-    reviewer = review_gate.Reviewer(
+    gate = review_gate.ReviewGate(
         settings=review_gate.ReviewSettings(
-            reviewers=[review_lane_env.seat("s", "m", provider)], block_on="any"
+            reviewers=[review_lane_env.reviewer("s", "m", provider)], block_on="any"
         ),
         chain=chain,
         hide=(),
@@ -115,11 +117,11 @@ def test_a_panel_over_unchanged_trees_is_reused_not_sat_again(tmp_path: pathlib.
         emit=sink.emit,
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
-    first = reviewer.critique(state, trigger="periodic", turn=1)
+    first = gate.critique(state, trigger="periodic", turn=1)
     assert first is not None and provider.call.call_count == 1
     (panel,) = [row for row in rows if row["type"] == "review.panel"]
-    assert panel["roster"] == [dict(seat_index=0, model_route="m", focus="s", temperature=0.0)]
-    again = reviewer.critique(state, trigger="periodic", turn=2)
+    assert panel["roster"] == [dict(reviewer_index=0, model_route="m", focus="s", temperature=0.0)]
+    again = gate.critique(state, trigger="periodic", turn=2)
     assert again is not None and provider.call.call_count == 1
     (reused,) = [row for row in rows if row["type"] == "review.reused"]
     assert reused["reused_panel_id"] == panel["panel_id"] != reused["panel_id"]
@@ -132,19 +134,19 @@ def test_a_panel_over_unchanged_trees_is_reused_not_sat_again(tmp_path: pathlib.
     assert "leak" not in again.text  # a finding reaches the worker once
     assert len([row for row in rows if row["type"] == "review.start"]) == 1
     # An end on the same trees: a fresh panel's repeat would neither reject nor inject.
-    ended = reviewer.critique(state, trigger="finish", turn=3)
+    ended = gate.critique(state, trigger="finish", turn=3)
     assert ended is not None and ended.satisfied and provider.call.call_count == 1
     assert len([row for row in rows if row["type"] == "review.reused"]) == 2
     # A changed tree sits a new panel.
     (repo / "foo.py").write_text("x = 3\n")
     chain.commit("edit again")
-    assert reviewer.critique(state, trigger="periodic", turn=4) is not None
+    assert gate.critique(state, trigger="periodic", turn=4) is not None
     assert provider.call.call_count == 2
     # A record written before rosters were kept is never reused.
     legacy = state.review_panels[0].model_copy(update={"roster": ()})
     target = chain.review_target()
     assert target is not None
-    roster = (review_records.SeatAssignment(0, "m", "s", 0.0),)
+    roster = (review_records.ReviewerAssignment(0, "m", "s", 0.0),)
     assert review_gate.reusable_panel((legacy,), target, roster) is None
 
 
@@ -161,8 +163,8 @@ def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Pat
     rows: list[dict[str, object]] = []
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     sink.subscribe(rows.append)
-    reviewer = review_gate.Reviewer(
-        review_gate.ReviewSettings(reviewers=[review_lane_env.seat("s", "m", provider)]),
+    gate = review_gate.ReviewGate(
+        review_gate.ReviewSettings(reviewers=[review_lane_env.reviewer("s", "m", provider)]),
         chain,
         (),
         mock.MagicMock,
@@ -171,9 +173,7 @@ def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Pat
         lambda _s: None,
         sink.emit,
     )
-    reviewer.critique(
-        loop_state.LoopState(original_task="t", tool_calls=0), trigger="periodic", turn=1
-    )
+    gate.critique(loop_state.LoopState(original_task="t", tool_calls=0), trigger="periodic", turn=1)
     starts = [row for row in rows if row["type"] == "review.start"]
     assert len(starts) == 1
     target = starts[0]["target"]
@@ -235,22 +235,22 @@ def test_session_panel_retains_cloneable_bytes_without_checkpointing(
     sink = event_log.EventSink(saved.logs_path)
     provider = mock.Mock()
 
-    def seat(**_kwargs: object) -> object:
+    def reviewer(**_kwargs: object) -> object:
         (repo / "foo.py").write_text("later parent\n")
         return test_review_gate._resp('{"verdict":"pass","summary":"ok","findings":[]}')
 
-    provider.call.side_effect = seat
+    provider.call.side_effect = reviewer
     harness = test_review_gate._wf(
         repo,
         chain=chain,
         events=sink,
-        review=review_gate.ReviewSettings(reviewers=[review_lane_env.seat("s", "m", provider)]),
+        review=review_gate.ReviewSettings(reviewers=[review_lane_env.reviewer("s", "m", provider)]),
     )
-    reviewer = dataclasses.replace(harness.reviewer, hide=(str(repo / "hidden"),))
+    gate = dataclasses.replace(harness.review_gate, hide=(str(repo / "hidden"),))
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.last_ok = False
     state.verify.last_tail = "test failed on reviewed bytes"
-    assert reviewer.critique(state, trigger="verify_fail", turn=1) is not None
+    assert gate.critique(state, trigger="verify_fail", turn=1) is not None
     panel = state.review_panels[0]
     target = panel.target
     assert target.snapshot_commit
@@ -290,7 +290,7 @@ def test_session_panel_retains_cloneable_bytes_without_checkpointing(
     assert (clone / "hidden/deleted").read_text() == "historical deleted\n"
     assert git_read.read_file_at(clone, target.base_tree, "AGENTS.md") == "base rule\n"
     (repo / "foo.py").write_text("reviewed\n")
-    assert reviewer.critique(state, trigger="periodic", turn=2) is not None
+    assert gate.critique(state, trigger="periodic", turn=2) is not None
     assert len(state.review_panels) == 1
     assert git_read.session_refs(repo, "snapshot") == (
         ((chain.ref,) if checkpoint != "none" else ()) + (target.snapshot_ref,)
@@ -341,18 +341,18 @@ def test_review_session_retains_its_supplied_target_not_the_checkout(
     harness = test_review_gate._wf(
         repo,
         events=sink,
-        review=review_gate.ReviewSettings(reviewers=[review_lane_env.seat("s", "m", provider)]),
+        review=review_gate.ReviewSettings(reviewers=[review_lane_env.reviewer("s", "m", provider)]),
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     if reuse:
-        harness.reviewer.prepare(state, compared.target, compared.diff, panel_id="retained")
+        harness.review_gate.prepare(state, compared.target, compared.diff, panel_id="retained")
     if unavailable:
         side, kind = unavailable.split("-")
         tree = compared.target.base_tree if side == "base" else compared.target.head_tree
         suffix = {"tree": "", "blob": ":foo.py", "subtree": ":nested"}[kind]
         oid = git(repo, "rev-parse", tree + suffix).strip()
         (repo / ".git/objects" / oid[:2] / oid[2:]).unlink()
-    result = harness.reviewer.review_target(state, compared.target, compared.diff)
+    result = harness.review_gate.review_target(state, compared.target, compared.diff)
     if unavailable:
         assert result is None and not state.review_panels
         assert any(r.get("reason") == "target_unreadable" for r in rows)

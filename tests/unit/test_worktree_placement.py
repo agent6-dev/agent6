@@ -58,8 +58,8 @@ def test_the_mounted_workspace_is_the_checkout_above_every_base(tmp_path: pathli
     """A lane of a lane sits two bases deep; the container mounts the outermost checkout."""
     root = tmp_path / "repo"
     lane = root / ".agent6/worktrees/repo-1/run-p1/lane-1"
-    seat = lane / ".agent6/worktrees/lane-2/panel/lane-3"
-    for tree in (lane, seat):
+    reviewer = lane / ".agent6/worktrees/lane-2/panel/lane-3"
+    for tree in (lane, reviewer):
         assert worktrees.mounted_workspace(_CONTAINER, tree) == root
         assert worktrees.holds(_CONTAINER, tree)
     assert worktrees.mounted_workspace(_CONTAINER, root) == root

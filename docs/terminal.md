@@ -71,7 +71,7 @@ Editing a role's model opens one `provider/model` field with live suggestions; u
 
 In a named-entry form, a blank field keeps an existing value or uses the schema default.
 
-**Remove entry** (`x`) confirms the selected entry's name and config layer before removing the whole entry, including its subtables; on the reviewer roster it picks a seat by position.
+**Remove entry** (`x`) confirms the selected entry's name and config layer before removing the whole entry, including its subtables; on the reviewer roster it picks a reviewer by position.
 It removes from the highest layer holding the entry, and accepts only global or repo config.
 Values from lower layers may become visible.
 The edit popup of an entry's row offers the same Add and Remove for its table.

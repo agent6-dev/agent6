@@ -43,7 +43,7 @@ class ModelsConfig(pydantic.BaseModel):
     reviewer: harness_config.RoleModel | None = pydantic.Field(
         default=None,
         description=(
-            "model for in-loop review panel seats without a route, the `sessions compare` and "
+            "model for in-loop reviewers without a route, the `sessions compare` and "
             "`--parallel` judge, and `sessions review`; unset fields take `models.default`"
         ),
     )

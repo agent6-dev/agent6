@@ -298,7 +298,7 @@ def test_mode_backstop_is_the_mode_tool_surface(tmp_path: pathlib.Path) -> None:
     """The backstop derives from the per-mode surface tool_definitions exposes.
 
     finish_planning in run and run_metric outside run were the gaps a hand-list missed.
-    agent6_docs is the one exemption: exposed only in ask, but the review seat's read-only doc
+    agent6_docs is the one exemption: exposed only in ask, but the reviewer's read-only doc
     fetch dispatches it in every mode.
     """
     cfg = _config(tmp_path)
@@ -3102,7 +3102,9 @@ def test_tool_rows_carry_the_execution_and_the_call_they_answer(
     logs = tmp_path / "logs.jsonl"
     d = build_dispatcher(root=tmp_path, config=_config(tmp_path), events=event_log.EventSink(logs))
     (tmp_path / "f.txt").write_text("hi", encoding="utf-8")
-    call = kinds.CallContext(model_call_id="c1", panel_id="p", seat_index=2, execution_id="other")
+    call = kinds.CallContext(
+        model_call_id="c1", panel_id="p", reviewer_index=2, execution_id="other"
+    )
     d.dispatch("read_file", {"path": "f.txt"}, origin=kinds.ToolCallOrigin(call, "toolu_1"))
     d.dispatch("read_file", {"path": "f.txt"})
     rows = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
@@ -3111,7 +3113,9 @@ def test_tool_rows_carry_the_execution_and_the_call_they_answer(
     ]
     for row in (first_call, first_result):
         assert row["execution_id"] == d.execution_id  # the dispatcher's, not the context's
-        assert row["model_call_id"] == "c1" and row["panel_id"] == "p" and row["seat_index"] == 2
+        assert (
+            row["model_call_id"] == "c1" and row["panel_id"] == "p" and row["reviewer_index"] == 2
+        )
         assert row["provider_tool_call_id"] == "toolu_1"
     for row in (second_call, second_result):  # a harness-run tool names only its execution
         assert row["execution_id"] == d.execution_id

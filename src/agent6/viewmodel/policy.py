@@ -26,7 +26,7 @@ def model_lines(m: manifest.SessionManifest) -> tuple[str, ...]:
         driver_role: m.models.driver,
         "reviewer": m.models.reviewer,
         "helper": m.models.helper,
-        **m.models.review_seats,
+        **m.models.reviewers,
     }
     lines: list[str] = []
     for role, brief in roles.items():

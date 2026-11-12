@@ -16,8 +16,8 @@ from agent6.config import model as config_model
 # The generated config table prints each note.
 BUILTIN_PRESET_NOTES: dict[str, str] = {
     "no_review": "turns off the review panel",
-    "review": "three review seats that can block the finish",
-    "deep_review": "five review seats that can block the finish",
+    "review": "three reviewers that can block the finish",
+    "deep_review": "five reviewers that can block the finish",
 }
 
 
@@ -28,7 +28,7 @@ BUILTIN_PRESETS: dict[str, dict[str, Any]] = {
     "review": {
         "review": {
             "when": "finish",
-            # The seats share one model, so a model quorum above one is unreachable.
+            # The reviewers share one model, so a model quorum above one is unreachable.
             "block_on": "any",
             "reviewers": [{"focus": "security"}, {"focus": "correctness"}, {"focus": "tests"}],
             "concurrency": 3,

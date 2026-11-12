@@ -96,7 +96,7 @@ def test_config_write_notices_name_a_shadowing_layer(
                 modal.query_one("#entry-base_url", widgets.Input).value = "https://new.test/v1"
                 modal.action_add()
             elif operation == "remove_entry":
-                screen.action_remove_entry()  # on the roster row it picks a seat first
+                screen.action_remove_entry()  # on the roster row it picks a reviewer first
                 await pilot.pause()
                 if key == "review.reviewers":
                     modal = app.screen

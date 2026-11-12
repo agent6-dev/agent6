@@ -69,7 +69,7 @@ def _model_brief(cfg: Config, rm: RoleModel | None, source: str) -> manifest.Mod
 def _models_brief(
     cfg: Config, mode: str, driver_from_flag: bool, sources: Mapping[str, str]
 ) -> manifest.ModelsBrief:
-    """Return the execution's roles and seats with each effort's config origin."""
+    """Return the execution's roles and reviewers with each effort's config origin."""
 
     def role_source(role: kinds.RoleName) -> str:
         source_role = cfg.models.source_role(role, "effort")
@@ -78,7 +78,7 @@ def _models_brief(
         return f"{key}, {origin}" if source_role != role else origin
 
     reviewer = cfg.models.resolve("reviewer")
-    seats: dict[str, manifest.ModelBrief] = {}
+    reviewers: dict[str, manifest.ModelBrief] = {}
     if cfg.review.when != "never":
         roster = cfg.review.reviewers or (ReviewerConfig(focus="security"),)
         for index, entry in enumerate(roster, 1):
@@ -89,13 +89,13 @@ def _models_brief(
             )
             brief = _model_brief(cfg, entry.resolve(reviewer), source)
             if brief is not None:
-                seats[f"review seat {index} ({entry.focus})"] = brief
+                reviewers[f"reviewer {index} ({entry.focus})"] = brief
     role = kinds.session_kind(mode).role
     return manifest.ModelsBrief(
         driver=_model_brief(cfg, cfg.models.resolve(role), role_source(role)),
         reviewer=_model_brief(cfg, reviewer, role_source("reviewer")),
         helper=_model_brief(cfg, cfg.models.resolve("helper"), role_source("helper")),
-        review_seats=seats,
+        reviewers=reviewers,
         driver_from_flag=driver_from_flag,
     )
 

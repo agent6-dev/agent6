@@ -198,11 +198,11 @@ function paintFindings(cards, state) {
     host.appendChild(el('div', 'muted', 'Panel ' + panel.panel_id + ': ' + panel.completion
       + (panel.reason ? ' (' + panel.reason + ')' : '')
       + (result ? ' · worker finish ' + (result.blocked ? 'rejected' : 'not rejected') + ' (review.block_on=' + result.block_on + (result.disarmed ? ', rejection cap reached' : '') + ')' : '')));
-    // One line per seat: its session holds the seat's own conversation.
-    for (const seat of panel.seats || []) if (seat.session_id) {
-      const line = el('div', 'sub', `Seat ${seat.seat_index + 1} (${seat.focus}): `);
-      const link = el('a', null, seat.session_id);
-      link.href = '#/session/' + encodeURIComponent(seat.session_id);
+    // One line per reviewer: its session holds the reviewer's own conversation.
+    for (const reviewer of panel.reviewers || []) if (reviewer.session_id) {
+      const line = el('div', 'sub', `Reviewer ${reviewer.reviewer_index + 1} (${reviewer.focus}): `);
+      const link = el('a', null, reviewer.session_id);
+      link.href = '#/session/' + encodeURIComponent(reviewer.session_id);
       line.appendChild(link);
       host.appendChild(line);
     }
@@ -283,9 +283,9 @@ function drawReceipt(host, receipt) {
     const line = el('div', 'sub');
     const link = el('a', null, child.session_id);
     link.href = '#/session/' + encodeURIComponent(child.session_id);
-    const seat = (receipt.review?.panels || []).flatMap(p => p.seats || [])
+    const reviewer = (receipt.review?.panels || []).flatMap(p => p.reviewers || [])
       .find(s => s.session_id === child.session_id);
-    line.appendChild(el('span', null, seat ? `seat ${seat.seat_index + 1} (${seat.focus}) ` : `lane ${child.lane} `));
+    line.appendChild(el('span', null, reviewer ? `reviewer ${reviewer.reviewer_index + 1} (${reviewer.focus}) ` : `lane ${child.lane} `));
     line.appendChild(link);
     host.appendChild(line);
   }

@@ -9,27 +9,27 @@ from agent6 import budget, kinds, lane_records, review_records
 from agent6.app import role_providers
 from agent6.harness import parallel_dispatch, toolset
 from agent6.harness.review import gate as review_gate
-from agent6.harness.review import seat as review_seat
+from agent6.harness.review import verdict as review_verdict
 from agent6.sessions import completion
 from tests import child_env, review_lane_env, review_traces
 
 
-def test_seat_resolution_constructs_no_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_reviewer_resolution_constructs_no_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     def forbidden(*args: object, **kwargs: object) -> None:
         pytest.fail("roster resolution constructed a live provider")
 
     monkeypatch.setattr(role_providers, "_provider_from_entry", forbidden)
-    resolve = getattr(role_providers, "resolve_review_seats", None)
-    assert resolve is not None, "review seats need pure settings resolution"
-    seats = resolve(child_env.config())
-    assert len(seats) == 1 and seats[0].focus == "security"
-    assert seats[0].settings == kinds.ModelSettings(kinds.ModelRoute("p", "base"), None, 0.0)
-    assert "provider" not in {f.name for f in dataclasses.fields(seats[0])}
+    resolve = getattr(role_providers, "resolve_reviewers", None)
+    assert resolve is not None, "reviewers need pure settings resolution"
+    reviewers = resolve(child_env.config())
+    assert len(reviewers) == 1 and reviewers[0].focus == "security"
+    assert reviewers[0].settings == kinds.ModelSettings(kinds.ModelRoute("p", "base"), None, 0.0)
+    assert "provider" not in {f.name for f in dataclasses.fields(reviewers[0])}
 
 
 def test_old_panel_execution_is_deleted() -> None:
     for module, names in (
-        (review_seat, ("structured_review", "repo_review", "ReviewDispatch")),
+        (review_verdict, ("structured_review", "repo_review", "ReviewDispatch")),
         (review_gate, ("_run_seats_concurrently",)),
         (toolset, ("READONLY_REVIEW_TOOLS", "build_readonly_review_tools")),
         (role_providers, ("build_review_seats",)),
@@ -41,9 +41,9 @@ def test_old_panel_execution_is_deleted() -> None:
 def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
     short_repo: pathlib.Path,
 ) -> None:
-    """Each batch's seats start under the run's remaining allowance, the earlier spend out.
+    """Each batch's reviewers start under the run's remaining allowance, the earlier spend out.
 
-    The roster's seats each held an even fifth from the start, whatever the others used.
+    The roster's reviewers each held an even fifth from the start, whatever the others used.
     """
     repo = short_repo / "origin"
     child_env.init_repo(repo)
@@ -64,7 +64,7 @@ def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
         deadlines.extend(lane.limits.deadline_at if lane.limits else None for lane in lanes)
         spent = budget.UsageSettlement(usd=1, usd_partial=False, tokens=0)
         for i in range(1, len(lanes) + 1):
-            # The wait's watch counts a seat's spend while it runs.
+            # The wait's watch counts a reviewer's spend while it runs.
             meter.note_running(f"parent-{group}-l{i}", spent)
         return [
             lane_records.LaneResult(
@@ -112,7 +112,7 @@ def test_real_panel_runs_bound_reviewer_sessions(short_repo: pathlib.Path) -> No
         assert target is not None
         target = executor.chain.retain_review_target(target, "parent")
         result = review_gate.run_panel(
-            role_providers.resolve_review_seats(cfg),
+            role_providers.resolve_reviewers(cfg),
             review_panel.ReviewContext(task="Review changes", diff=child_env.git(repo, "diff")),
             target=target,
             executor=executor,
@@ -122,7 +122,7 @@ def test_real_panel_runs_bound_reviewer_sessions(short_repo: pathlib.Path) -> No
             max_turns=3,
             tools=("apply_edit", "finish_session", "parallel", "read_file", "run_command"),
         )
-    assert result.n_abstain == 0 and result.per_seat[0].verdict == "pass"
+    assert result.n_abstain == 0 and result.per_reviewer[0].verdict == "pass"
     assert len(calls) == 3
     # A reviewer's reply has the output limit every session's has.
     assert {c["max_tokens"] for c in calls} == {16384}
@@ -134,7 +134,7 @@ def test_real_panel_runs_bound_reviewer_sessions(short_repo: pathlib.Path) -> No
     record = completion.read_completion(directory.parent.parent / "reviewers" / child.session_id)
     assert record is not None and record.review_binding is not None
     assert record.review_binding.panel_id == "test"
-    assert result.per_seat[0].session_id == child.session_id
+    assert result.per_reviewer[0].session_id == child.session_id
     assert (repo / "README.md").read_text() == "base\nchanged\n"
 
 
@@ -162,14 +162,14 @@ def test_failed_artifacts_keep_the_actual_diagnostic(
         lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
     ) -> list[lane_records.LaneResult]:
         sid = f"parent-{group}-l1"
-        seat_dir = child_env.create_record(repo, sid, parent="parent", mode="reviewer")
+        reviewer_dir = child_env.create_record(repo, sid, parent="parent", mode="reviewer")
         contract = lanes[0].contract
         assert contract is not None
         if failure == "malformed":
-            (seat_dir / completion.COMPLETION_NAME).write_text("not json")
+            (reviewer_dir / completion.COMPLETION_NAME).write_text("not json")
         elif failure != "missing":
             completion.write_completion(
-                seat_dir,
+                reviewer_dir,
                 completion.CompletionRecord(
                     text=review_traces.PASS,
                     session_id=sid,
@@ -183,7 +183,7 @@ def test_failed_artifacts_keep_the_actual_diagnostic(
         return [
             lane_records.LaneResult(
                 lane_records.LaneSpec(1, sid, repo, lanes[0].settings),
-                seat_dir,
+                reviewer_dir,
                 "",
                 False,
                 "lane deadline exceeded"
@@ -197,7 +197,7 @@ def test_failed_artifacts_keep_the_actual_diagnostic(
 
     executor.lane_spawner = spawn
     result = review_gate.run_panel(
-        role_providers.resolve_review_seats(child_env.config()),
+        role_providers.resolve_reviewers(child_env.config()),
         review_panel.ReviewContext(task="Review changes", diff=child_env.git(repo, "diff")),
         target=target,
         executor=executor,
@@ -215,10 +215,10 @@ def test_failed_artifacts_keep_the_actual_diagnostic(
         "deadline": "deadline exceeded",
         "exit": "child exited 1",
     }[failure]
-    assert expected in (result.per_seat[0].error or "")
+    assert expected in (result.per_reviewer[0].error or "")
 
 
-@pytest.mark.parametrize("wrong", ["panel", "seat", "target", "session", "unbound"])
+@pytest.mark.parametrize("wrong", ["panel", "reviewer", "target", "session", "unbound"])
 def test_artifact_provenance_is_checked_before_parsing(wrong: str) -> None:
     target = review_records.ReviewTarget("b", "bt", "h", "ht", "h", (), "revisions")
     binding_type = getattr(review_records, "ReviewBinding", None)
@@ -226,7 +226,7 @@ def test_artifact_provenance_is_checked_before_parsing(wrong: str) -> None:
     binding = binding_type("panel", 0, target)
     changed = {
         "panel": dataclasses.replace(binding, panel_id="other"),
-        "seat": dataclasses.replace(binding, seat_index=1),
+        "reviewer": dataclasses.replace(binding, reviewer_index=1),
         "target": dataclasses.replace(
             binding, target=dataclasses.replace(target, head_tree="other")
         ),
@@ -238,13 +238,13 @@ def test_artifact_provenance_is_checked_before_parsing(wrong: str) -> None:
         stop_reason="answered",
         calls=1,
         output_tokens=20,
-        session_id="other" if wrong == "session" else "seat-session",
+        session_id="other" if wrong == "session" else "reviewer-session",
         review_binding=changed,
     )
-    verdict = review_seat.verdict_from_completion(
+    verdict = review_verdict.verdict_from_completion(
         record,
         binding=binding,
-        session_id="seat-session",
+        session_id="reviewer-session",
         focus="security",
         model_route="p/base",
         max_turns=1,
@@ -286,14 +286,16 @@ def test_worker_child_schedules_its_panel_without_certifying_parent(
     leaf = receipt.read_receipt(worker, repo).children[0]
     leaf_dir = directory.parent.parent / "reviewers" / leaf.session_id
     rendered = receipt.render(receipt.read_receipt(worker, repo))
-    assert f"Seat 1 (security): {leaf.session_id}" in rendered
+    assert f"Reviewer 1 (security): {leaf.session_id}" in rendered
     assert completion.read_completion(leaf_dir) is not None
     assert lane_dispatch.read_records(leaf_dir) == ()
     assert receipt.read_receipt(directory, repo).review.panels == ()
     assert len(calls) == 3
 
 
-def test_a_seat_reads_the_retained_target_not_head_or_live_tree(short_repo: pathlib.Path) -> None:
+def test_a_reviewer_reads_the_retained_target_not_head_or_live_tree(
+    short_repo: pathlib.Path,
+) -> None:
     from agent6.harness.review import panel as review_panel
 
     repo = short_repo / "origin"
@@ -315,7 +317,7 @@ def test_a_seat_reads_the_retained_target_not_head_or_live_tree(short_repo: path
         (repo / "README.md").write_text("later live bytes\n")
         assert child_env.git(repo, "show", "HEAD:README.md") == "base"
         result = review_gate.run_panel(
-            role_providers.resolve_review_seats(cfg),
+            role_providers.resolve_reviewers(cfg),
             review_panel.ReviewContext(task="Review changes", diff=diff),
             target=target,
             executor=executor,
@@ -341,7 +343,7 @@ def test_configured_top_level_ask_retains_panel_authority(short_repo: pathlib.Pa
     assert authority.panels and not authority.work
 
 
-def test_ask_review_uses_real_seat_sessions(
+def test_ask_review_uses_real_reviewer_sessions(
     short_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from agent6 import paths
@@ -377,5 +379,5 @@ verify.when = "never"
     (parent,) = (paths.state_dir(repo) / "sessions" / "asks").iterdir()
     view = receipt.read_receipt(parent, repo)
     assert len(view.children) == 1 and len(view.review.panels) == 1
-    assert view.review.panels[0].seats[0].session_id == view.children[0].session_id
+    assert view.review.panels[0].reviewers[0].session_id == view.children[0].session_id
     assert len(calls) == 2

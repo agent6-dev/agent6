@@ -134,8 +134,8 @@ def test_role_builders_stamp_seats_and_review_resolution_stays_pure() -> None:
     )
     assert sink.for_seat.call_args == mock.call("summariser")
 
-    seats = role_providers.resolve_review_seats(cfg)
-    assert [(seat.focus, seat.model) for seat in seats] == [("security", "o/m")]
+    reviewers = role_providers.resolve_reviewers(cfg)
+    assert [(r.focus, r.model) for r in reviewers] == [("security", "o/m")]
 
     # The role builders keep stamping the role itself.
     sink = mock.MagicMock()

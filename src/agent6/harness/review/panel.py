@@ -33,7 +33,7 @@ def rules_message(rules: review_records.ReviewRules) -> str:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewContext:
-    """What every seat is shown, and what the aggregator grounds findings against.
+    """What every reviewer is shown, and what the aggregator grounds findings against.
 
     Attributes:
         task: The run's task.
@@ -41,7 +41,7 @@ class ReviewContext:
         diff: The immutable delta from the run base to the chain commit.
         verification: The gate's result; None when none ran.
         verify_output: The gate's output.
-        focus: The seat's focus text.
+        focus: The reviewer's focus text.
         prior_findings: Findings already injected, for dedup; they never re-count.
     """
 
@@ -64,10 +64,10 @@ class PanelResult:
         panel_id: The panel's id.
         block_on: The gating rule applied.
         blocked: Whether the panel rejects the work.
-        merged_findings: The grounded findings across seats, deduplicated, blocks first.
-        per_seat: Each seat's grounded verdict.
+        merged_findings: The grounded findings across reviewers, deduplicated, blocks first.
+        per_reviewer: Each reviewer's grounded verdict.
         n_block: Distinct blocking provider/model routes counted toward the gate.
-        n_abstain: Seats that failed.
+        n_abstain: Reviewers that failed.
         skipped_reason: Why the panel did not run, or None.
     """
 
@@ -75,14 +75,14 @@ class PanelResult:
     block_on: ReviewBlockOn
     blocked: bool
     merged_findings: tuple[review_records.Finding, ...]
-    per_seat: tuple[review_records.ReviewVerdict, ...]
+    per_reviewer: tuple[review_records.ReviewVerdict, ...]
     n_block: int
     n_abstain: int
     skipped_reason: str | None = None
 
 
 def panel_is_inconclusive(result: PanelResult) -> bool:
-    """Return whether every seat abstained, so nothing was reviewed.
+    """Return whether every reviewer abstained, so nothing was reviewed.
 
     The one owner the CLI verdict and the in-loop critique both ask, so neither reads an
     all-abstain panel as a pass.
@@ -91,14 +91,14 @@ def panel_is_inconclusive(result: PanelResult) -> bool:
         result: The panel result.
 
     Returns:
-        Whether every seat abstained.
+        Whether every reviewer abstained.
     """
-    return bool(result.per_seat) and result.n_abstain == len(result.per_seat)
+    return bool(result.per_reviewer) and result.n_abstain == len(result.per_reviewer)
 
 
 def inconclusive_note(result: PanelResult) -> str:
     """Return the human line for an all-abstain panel."""
-    return f"review inconclusive: all {result.n_abstain} seats abstained; nothing was reviewed"
+    return f"review inconclusive: all {result.n_abstain} reviewers abstained; nothing was reviewed"
 
 
 # A critique rides into the worker's next turn beside the tool results, findings first.
@@ -167,16 +167,16 @@ def _ground_severity(f: review_records.Finding, ctx: ReviewContext) -> review_re
     return "warn"
 
 
-def _ground_seat(
+def _ground_reviewer(
     v: review_records.ReviewVerdict, ctx: ReviewContext, hunks: review.Hunks
 ) -> review_records.ReviewVerdict:
-    """Ground one seat's findings.
+    """Ground one reviewer's findings.
 
-    An uncited finding is dropped; a block the category cannot carry, or one on a seat whose
+    An uncited finding is dropped; a block the category cannot carry, or one on a reviewer whose
     verdict is pass, becomes a warn.
 
     Args:
-        v: The seat's verdict.
+        v: The reviewer's verdict.
         ctx: The review context.
         hunks: The diff's hunks by repo path.
 
@@ -195,13 +195,13 @@ def _ground_seat(
 
 
 def _has_new_block(v: review_records.ReviewVerdict, prior_keys: set[str]) -> bool:
-    """Return whether the seat carries a surviving block that is not a prior finding.
+    """Return whether the reviewer carries a surviving block that is not a prior finding.
 
     A block whose key dedups away is dropped from `merged_findings`, so letting it gate would
     reject the work while reporting no blocking findings.
 
     Args:
-        v: The seat's grounded verdict.
+        v: The reviewer's grounded verdict.
         prior_keys: The keys of the already-injected findings.
 
     Returns:
@@ -218,7 +218,7 @@ def _decide(
     n_block: int,
     min_blocking_models: int,
     *,
-    n_seats_blocking: int,
+    n_reviewers_blocking: int,
     n_total: int,
 ) -> bool:
     """Apply the gating rule.
@@ -227,8 +227,8 @@ def _decide(
         block_on: The rule.
         n_block: Distinct blocking provider/model routes.
         min_blocking_models: The distinct blocking routes `model_quorum` needs.
-        n_seats_blocking: Seats with a surviving non-prior block.
-        n_total: Seats that reviewed.
+        n_reviewers_blocking: Reviewers with a surviving non-prior block.
+        n_total: Reviewers that reviewed.
 
     Returns:
         Whether the panel blocks.
@@ -240,29 +240,29 @@ def _decide(
     if block_on == "model_quorum":
         return n_block >= max(1, min_blocking_models)
     if block_on == "all":
-        return n_seats_blocking == n_total
+        return n_reviewers_blocking == n_total
     return False  # pragma: no cover - exhaustive
 
 
 def aggregate_verdicts(
-    per_seat: list[review_records.ReviewVerdict],
+    per_reviewer: list[review_records.ReviewVerdict],
     ctx: ReviewContext,
     *,
     block_on: ReviewBlockOn,
     min_blocking_models: int,
     panel_id: str,
 ) -> PanelResult:
-    """Fold per-seat verdicts into one panel result with executable grounding.
+    """Fold per-reviewer verdicts into one panel result with executable grounding.
 
     Every finding whose citation is not in the diff is dropped, and a block outside a gating
     category becomes a warn. Exact normalized content and location identify a repeat.
     An already-injected block neither re-surfaces nor counts toward the gate.
     `none` never blocks; `any` blocks on any surviving block. `model_quorum` needs
-    `min_blocking_models` distinct provider/model routes to block. `all` needs every seat
+    `min_blocking_models` distinct provider/model routes to block. `all` needs every reviewer
     to block; an abstention is not a block.
 
     Args:
-        per_seat: The seats' verdicts.
+        per_reviewer: The reviewers' verdicts.
         ctx: The review context.
         block_on: The gating rule.
         min_blocking_models: The distinct blocking routes `model_quorum` needs.
@@ -274,23 +274,23 @@ def aggregate_verdicts(
     hunks = review.diff_hunks(ctx.diff)
     prior_keys = {review_records.finding_key(f) for f in ctx.prior_findings}
 
-    grounded_seats: list[review_records.ReviewVerdict] = []
+    grounded_reviewers: list[review_records.ReviewVerdict] = []
     blocking_models: set[str] = set()  # distinct routes with >=1 surviving non-prior block
-    n_abstain = n_seats_blocking = 0
-    for v in per_seat:
+    n_abstain = n_reviewers_blocking = 0
+    for v in per_reviewer:
         if v.error is not None or v.verdict == "abstain":
             n_abstain += 1
-            grounded_seats.append(dataclasses.replace(v, verdict="abstain", findings=()))
+            grounded_reviewers.append(dataclasses.replace(v, verdict="abstain", findings=()))
             continue
-        gv = _ground_seat(v, ctx, hunks)
-        grounded_seats.append(gv)
+        gv = _ground_reviewer(v, ctx, hunks)
+        grounded_reviewers.append(gv)
         if _has_new_block(gv, prior_keys):
             blocking_models.add(v.model_route)
-            n_seats_blocking += 1
+            n_reviewers_blocking += 1
 
     # Merge and dedup the grounded findings, dropping those already injected.
     merged: dict[str, review_records.Finding] = {}
-    for v in grounded_seats:
+    for v in grounded_reviewers:
         for f in v.findings:
             key = review_records.finding_key(f)
             if key in prior_keys:
@@ -307,8 +307,8 @@ def aggregate_verdicts(
         block_on,
         n_block,
         min_blocking_models,
-        n_seats_blocking=n_seats_blocking,
-        n_total=len(grounded_seats),
+        n_reviewers_blocking=n_reviewers_blocking,
+        n_total=len(grounded_reviewers),
     )
 
     return PanelResult(
@@ -316,7 +316,7 @@ def aggregate_verdicts(
         block_on=block_on,
         blocked=blocked,
         merged_findings=merged_findings,
-        per_seat=tuple(grounded_seats),
+        per_reviewer=tuple(grounded_reviewers),
         n_block=n_block,
         n_abstain=n_abstain,
     )

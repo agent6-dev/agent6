@@ -269,7 +269,7 @@ def all_session_dirs(repo_root: pathlib.Path) -> list[pathlib.Path]:
 
 
 def _default_bucket_dirs(repo_root: pathlib.Path) -> list[pathlib.Path]:
-    """Return the buckets a bare command chooses from: every one but the review seats'."""
+    """Return the buckets a bare command chooses from: every one but the reviewers'."""
     return [
         bucket
         for bucket in session_bucket_dirs(repo_root)

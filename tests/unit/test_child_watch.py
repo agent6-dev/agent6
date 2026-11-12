@@ -227,29 +227,29 @@ def test_the_watch_journals_the_meter_as_running_children_move_it(
 ) -> None:
     """A parent's journal carries its running children's spend, so its own parent reads it.
 
-    A lane waiting on its review seats journaled nothing until they settled.
+    A lane waiting on its reviewers journaled nothing until they settled.
     """
     parent = _Parent(tmp_path)
     budget = agent6_budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=-1, max_plan_points=-1)
     rows: list[journal.Event] = []
     watch = child_watch.ChildWatch(parent.prompts, parent.dir, budget, rows.append)
     child = _child(tmp_path, _spend(0.25))
-    watch(child, "seat 1 child", "running")
-    watch(child, "seat 1 child", "running")
+    watch(child, "reviewer 1 child", "running")
+    watch(child, "reviewer 1 child", "running")
     (row,) = rows
     assert isinstance(row, journal.BudgetUpdate)
     assert (row.usd_total, row.usd_running_lanes) == (0.0, 0.25)
 
     # A move inside the interval waits for it; the cap does not.
     (child / "logs.jsonl").write_text(json.dumps(_spend(0.5)) + "\n")
-    watch(child, "seat 1 child", "running")
+    watch(child, "reviewer 1 child", "running")
     assert len(rows) == 1
     monkeypatch.setattr(child_watch, "ROW_INTERVAL_S", 0.0)
-    watch(child, "seat 1 child", "running")
+    watch(child, "reviewer 1 child", "running")
     assert [r.usd_running_lanes for r in rows if isinstance(r, journal.BudgetUpdate)] == [0.25, 0.5]
     monkeypatch.setattr(child_watch, "ROW_INTERVAL_S", 3600.0)
     (child / "logs.jsonl").write_text(json.dumps(_spend(1.5)) + "\n")
-    assert watch(child, "seat 1 child", "running") is True
+    assert watch(child, "reviewer 1 child", "running") is True
     last = rows[-1]
     assert isinstance(last, journal.BudgetUpdate) and last.usd_running_lanes == 1.5
 

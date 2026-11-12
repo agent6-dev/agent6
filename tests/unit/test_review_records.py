@@ -84,12 +84,12 @@ def test_locations_render_without_an_ambiguous_stored_citation(
     assert str(location) == text
 
 
-def test_findings_and_seat_replies_round_trip() -> None:
+def test_findings_and_reviewer_replies_round_trip() -> None:
     finding = _finding()
-    reply = review_records.SeatReply(
+    reply = review_records.ReviewerReply(
         verdict="block", summary="Credential leak", findings=(finding,)
     )
-    restored = review_records.SeatReply.model_validate_json(reply.model_dump_json())
+    restored = review_records.ReviewerReply.model_validate_json(reply.model_dump_json())
     assert restored == reply
     assert restored.findings[0].location.side == "base"
     assert set(finding.model_dump()) == {"category", "severity", "title", "detail", "location"}
@@ -118,7 +118,7 @@ def test_frozen_records_round_trip() -> None:
         source="worktree",
     )
     verdict = review_records.ReviewVerdict(
-        seat_index=2,
+        reviewer_index=2,
         focus="security",
         model_route="provider/model",
         verdict="block",
@@ -127,7 +127,7 @@ def test_frozen_records_round_trip() -> None:
         error=None,
     )
     observation = review_records.FindingObservation(
-        finding_id="finding-1", panel_id="panel-1", finding=_finding(), seat_indexes=(0, 2)
+        finding_id="finding-1", panel_id="panel-1", finding=_finding(), reviewer_indexes=(0, 2)
     )
     for record in (target, verdict, observation):
         adapter = pydantic.TypeAdapter(type(record))
@@ -157,7 +157,9 @@ def test_review_target_defaults_missing_hidden_paths_and_round_trips_exclusions(
 
 def test_observation_line_origin_round_trips_and_defaults_to_historical_unknown() -> None:
     adapter = pydantic.TypeAdapter(review_records.FindingObservation)
-    legacy = dict(finding_id="f", panel_id="p", finding=_finding().model_dump(), seat_indexes=[0])
+    legacy = dict(
+        finding_id="f", panel_id="p", finding=_finding().model_dump(), reviewer_indexes=[0]
+    )
     observation = adapter.validate_python(legacy)
     assert observation.line_origin.kind == "unknown"
     assert "historical" in observation.line_origin.reason.lower()
@@ -176,7 +178,7 @@ def test_observation_line_origin_round_trips_and_defaults_to_historical_unknown(
 
 def test_abstentions_are_distinct_from_passes() -> None:
     verdict = review_records.ReviewVerdict(
-        seat_index=0,
+        reviewer_index=0,
         focus="security",
         model_route="provider/model",
         verdict="abstain",
@@ -187,7 +189,7 @@ def test_abstentions_are_distinct_from_passes() -> None:
     adapter = pydantic.TypeAdapter(review_records.ReviewVerdict)
     assert adapter.validate_json(adapter.dump_json(verdict)) == verdict
     with pytest.raises(pydantic.ValidationError):
-        review_records.SeatReply.model_validate(
+        review_records.ReviewerReply.model_validate(
             {"verdict": "abstain", "summary": "", "findings": []}
         )
 
@@ -263,7 +265,7 @@ def test_boundary_models_are_frozen_and_reject_unknown_fields() -> None:
     models = (
         _finding(),
         _finding().location,
-        review_records.SeatReply(verdict="pass", summary="", findings=()),
+        review_records.ReviewerReply(verdict="pass", summary="", findings=()),
         review_records.FindingResolution(disposition="fixed", reason="Corrected."),
         review_records.FindingAction(request_id="request-1", expected_version=0, action="fix"),
     )

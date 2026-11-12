@@ -327,7 +327,7 @@ def test_a_filed_answer_ends_the_terminal_prompt(tmp_path: pathlib.Path) -> None
     """A foreground run blocked on its terminal takes an answer written over the file bridge.
 
     The approval and the question both read it and the journal names the source; every other
-    seat's "answered" was a lie while the run waited on the terminal.
+    reviewer's "answered" was a lie while the run waited on the terminal.
     """
     from agent6.sessions import ipc
 

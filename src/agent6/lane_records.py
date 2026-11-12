@@ -82,7 +82,7 @@ class LaneTask:
         allowance: The lane's share of the parent's allowance; None for the config's caps.
         limits: The lane's turn cap and deadline; None for the config's own.
         contract: A harness-owned bounded conversation; None for work.
-        settings: Resolved panel-seat settings; None resolves the model selector.
+        settings: Resolved panel-reviewer settings; None resolves the model selector.
     """
 
     task: str

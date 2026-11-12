@@ -484,7 +484,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         # environment, so every commit leaves it out as it does the operator's files.
         unready: str | None = None
         untracked_at_start = inputs.untracked_at_start
-        # A review seat handed `run_command` needs what git does not track, as any lane does.
+        # A reviewer handed `run_command` needs what git does not track, as any lane does.
         runs_commands = inputs.contract is None or (
             schema.RunCommandInput.TOOL_NAME in inputs.contract.allowed_tools
             and dispatcher.command_policy() != "deny"
@@ -634,7 +634,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             review=review_gate.ReviewSettings(
                 when=cfg.review.when,
                 interval_turns=cfg.review.interval_turns,
-                reviewers=session.review_seats,
+                reviewers=session.reviewers,
                 block_on=cfg.review.block_on,
                 min_blocking_models=cfg.review.min_blocking_models,
                 max_rejections=cfg.review.max_rejections,

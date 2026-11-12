@@ -117,8 +117,8 @@ def test_open_findings_survive_later_events(later: dict[str, Any]) -> None:
     "rule,blocked,disarmed,words",
     [
         ("none", False, False, "nothing"),
-        ("any", True, False, "any blocking seat"),
-        ("all", True, False, "every seat blocking"),
+        ("any", True, False, "any blocking reviewer"),
+        ("all", True, False, "every reviewer blocking"),
         ("model_quorum", False, True, "a quorum of distinct models"),
     ],
 )
@@ -370,7 +370,7 @@ def test_freshness_compares_both_trees_and_coverage() -> None:
     [
         [],
         [{"type": "review.panel", "blocked": False}],
-        [{"type": "review.seat", "findings": 0, "verdict": "pass"}],
+        [{"type": "review.verdict", "findings": 0, "verdict": "pass"}],
     ],
 )
 def test_legacy_and_missing_evidence_are_not_clean(rows: list[dict[str, Any]]) -> None:
@@ -483,20 +483,20 @@ def test_bad_disposition_preserves_the_open_finding(change: dict[str, Any]) -> N
     assert view.findings[0].actions == ()
 
 
-def test_start_and_seat_keep_the_roster_and_full_verdict() -> None:
+def test_start_and_reviewer_keep_the_roster_and_full_verdict() -> None:
     panel = _panel()
     start = {
         "type": "review.start",
         "panel_id": "p1",
         "execution_id": "exec",
         "target": panel["target"],
-        "seats": [{"seat_index": 0, "model_route": "p/m", "focus": "security"}],
+        "reviewers": [{"reviewer_index": 0, "model_route": "p/m", "focus": "security"}],
     }
-    seat = {
-        "type": "review.seat",
+    reviewer = {
+        "type": "review.verdict",
         "panel_id": "p1",
         "execution_id": "exec",
-        "seat_index": 0,
+        "reviewer_index": 0,
         "model_route": "p/m",
         "focus": "security",
         "verdict": "block",
@@ -504,12 +504,12 @@ def test_start_and_seat_keep_the_roster_and_full_verdict() -> None:
         "error": None,
         "findings": [panel["findings"][0]["finding"]],
     }
-    running = state.fold_session([start, seat]).review
+    running = state.fold_session([start, reviewer]).review
     assert running.completion == "running"
     assert running.panels[0].roster[0].model_route == "p/m"
-    finished = state.fold_session([start, seat, panel]).review
-    assert finished.panels[0].seats[0].summary == "leak"
-    assert finished.panels[0].seats[0].findings[0].title == "leak"
+    finished = state.fold_session([start, reviewer, panel]).review
+    assert finished.panels[0].reviewers[0].summary == "leak"
+    assert finished.panels[0].reviewers[0].findings[0].title == "leak"
 
 
 def test_a_reused_panel_covers_the_trees_of_the_panel_it_names() -> None:

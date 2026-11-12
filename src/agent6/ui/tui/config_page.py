@@ -75,7 +75,7 @@ CONFIG_ACTIONS: tuple[Action, ...] = (
     Action(
         "remove_entry",
         "Remove entry",
-        "Remove the selected provider, MCP server or skill entry, or a seat of the roster",
+        "Remove the selected provider, MCP server or skill entry, or a reviewer of the roster",
     ),
     # The labels match the home and run footers.
     Action("reset", "Unset override", "Unset the selected setting in its source config layer"),
@@ -702,7 +702,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self.app.push_screen(
             config_forms.RemoveReviewerModal(
                 self.repo_root,
-                tuple(seat.focus for seat in roster),
+                tuple(reviewer.focus for reviewer in roster),
                 to_repo=to_repo,
                 config_paths=self.config_paths,
                 preset=selected,
@@ -713,7 +713,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
     def action_remove_entry(self) -> None:
         """Confirm removal of the selected entry from its highest config layer.
 
-        On the reviewer roster the entry is a seat, chosen by position.
+        On the reviewer roster the entry is a reviewer, chosen by position.
         """
         setting = self._current_setting()
         if setting is not None and setting.key == "review.reviewers":

@@ -58,17 +58,17 @@ def descendants_of(session_dir: pathlib.Path) -> tuple[pathlib.Path, ...]:
     return tuple(found)
 
 
-def seat_records(state_dir: pathlib.Path, parents: Collection[str]) -> tuple[pathlib.Path, ...]:
+def reviewer_records(state_dir: pathlib.Path, parents: Collection[str]) -> tuple[pathlib.Path, ...]:
     """Find the bounded read-only conversations the named sessions dispatched.
 
-    No listing shows a seat's record, so whatever removes its parent removes it too.
+    No listing shows a reviewer's record, so whatever removes its parent removes it too.
 
     Args:
         state_dir: The repository's state dir.
         parents: The dispatching sessions' ids.
 
     Returns:
-        The seat records, in name order.
+        The reviewer records, in name order.
     """
     directory = layout.bucket_dir(state_dir, layout.EVIDENCE_BUCKET)
     if not parents or not directory.is_dir():

@@ -159,7 +159,7 @@ def decompose_default(model_id: str) -> bool:
 
 
 def model_effort(cfg: Config, rm: RoleModel | None) -> str | None:
-    """Return the reasoning effort a resolved role or review seat carries.
+    """Return the reasoning effort a resolved role or reviewer carries.
 
     The configured `[models.<role>].effort` when set, else each wire's default: `low` for an
     OpenAI-compatible reasoning model, `off` (no thinking) for Anthropic.

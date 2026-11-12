@@ -107,9 +107,9 @@ def test_in_loop_subdirectory_panel_uses_repository_relative_evidence(
     sink = event_log.EventSink(tmp_path / "journal" / "logs.jsonl")
     blobs = mock.Mock(wraps=git_files.blob_at)
     monkeypatch.setattr(git_files, "blob_at", blobs)
-    reviewer = review_gate.Reviewer(
+    gate = review_gate.ReviewGate(
         settings=review_gate.ReviewSettings(
-            reviewers=[review_lane_env.seat("security", "model", provider)], block_on="any"
+            reviewers=[review_lane_env.reviewer("security", "model", provider)], block_on="any"
         ),
         chain=chain,
         hide=hide,
@@ -121,7 +121,7 @@ def test_in_loop_subdirectory_panel_uses_repository_relative_evidence(
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
 
-    result = reviewer.critique(state, trigger="finish", turn=1)
+    result = gate.critique(state, trigger="finish", turn=1)
 
     assert result is not None and not result.satisfied
     rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
@@ -264,7 +264,7 @@ def test_panel_classifies_immutable_bytes_before_its_single_record(
     sink.subscribe(rows.append)
     provider = mock.MagicMock()
 
-    def seat(**_kwargs: object) -> object:
+    def reviewer(**_kwargs: object) -> object:
         (tmp_path / "code.py").write_text("workspace\nnot context\n")
         return test_review_gate._resp(
             json.dumps(
@@ -286,10 +286,10 @@ def test_panel_classifies_immutable_bytes_before_its_single_record(
             )
         )
 
-    provider.call.side_effect = seat
-    reviewer = review_gate.Reviewer(
+    provider.call.side_effect = reviewer
+    gate = review_gate.ReviewGate(
         settings=review_gate.ReviewSettings(
-            reviewers=[review_lane_env.seat("security", "model", provider)], block_on="any"
+            reviewers=[review_lane_env.reviewer("security", "model", provider)], block_on="any"
         ),
         chain=chain,
         hide=hide,
@@ -300,7 +300,7 @@ def test_panel_classifies_immutable_bytes_before_its_single_record(
         emit=sink.emit,
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
-    result = reviewer.critique(state, trigger="finish", turn=1)
+    result = gate.critique(state, trigger="finish", turn=1)
     assert result is not None and not result.satisfied
     panels = [row for row in rows if row["type"] == "review.panel"]
     assert len(panels) == 1

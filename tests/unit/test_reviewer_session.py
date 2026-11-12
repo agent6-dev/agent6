@@ -302,7 +302,7 @@ def test_a_retried_call_does_not_use_a_turn(tmp_path: pathlib.Path) -> None:
 
 
 def test_an_answer_on_the_last_allowed_turn_is_an_answer(tmp_path: pathlib.Path) -> None:
-    """A one-call seat that answers must not read as cut at its ceiling."""
+    """A one-call reviewer that answers must not read as cut at its ceiling."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = mock.MagicMock()
@@ -328,10 +328,10 @@ def test_the_reviewers_bucket_is_a_real_discoverable_one(tmp_path: pathlib.Path)
 
 
 @pytest.mark.parametrize(("policy", "handed"), [("allow", True), ("deny", True), ("allow", False)])
-def test_a_real_seat_never_edits_and_runs_only_the_commands_it_may(
+def test_a_real_reviewer_never_edits_and_runs_only_the_commands_it_may(
     short_repo: pathlib.Path, tmp_path: pathlib.Path, policy: str, handed: bool
 ) -> None:
-    """A seat's edit refuses; its command and setup need the hand-down and the policy."""
+    """A reviewer's edit refuses; its command and setup need the hand-down and the policy."""
     runs = handed and policy == "allow"
     clone = short_repo / "clone"
     _init_repo(clone)
@@ -419,10 +419,10 @@ def test_a_real_seat_never_edits_and_runs_only_the_commands_it_may(
     assert results["run_command"]["ok"] is runs
     assert results["read_file"]["ok"] is True
     assert (clone / "README.md").read_text(encoding="utf-8") == "hi\n"
-    # A seat that may run commands gets the worktree a lane gets, its setup included.
+    # A reviewer that may run commands gets the worktree a lane gets, its setup included.
     assert marker.exists() is runs
     assert (tmp_path / "command-ran").exists() is runs
-    # The operator's hook hears of the parent's end, never of a seat's.
+    # The operator's hook hears of the parent's end, never of a reviewer's.
     assert not (tmp_path / "hook-ran").exists()
     manifest = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["mode"] == "reviewer"

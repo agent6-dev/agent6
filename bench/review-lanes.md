@@ -6,7 +6,7 @@ This comparison measures execution parity and startup cost, not model quality.
 The corpus has 10 diff cases and 10 repo cases, each repeated three times per executor with identical prompts, repository contents, model settings and scripted responses.
 The route is a local OpenAI-compatible endpoint, temperature 0.0, no reasoning override.
 Each successful call reports 10 input tokens, 20 output tokens and USD 0.001; HTTP failures report no usage.
-Diff seats allow one call with 1,500 output tokens; repo seats allow three calls with 2,000 output tokens each.
+Diff reviewers allow one call with 1,500 output tokens; repo reviewers allow three calls with 2,000 output tokens each.
 
 | Case | Diff response | Repo response trace |
 | --- | --- | --- |
@@ -29,8 +29,8 @@ Measurements retain elapsed dispatch-to-verdict time, process CPU time, provider
 The baseline and lane arms each contain 60 runs (10 diff cases and 10 repo cases, three repetitions per case).
 The arms ran sequentially, not interleaved; pairs share scope, case and repetition.
 Raw results are [baseline](review-lanes-baseline.jsonl) and [lanes](review-lanes-new.jsonl).
-Both arms were measured with `review.scope` selecting a one-call diff seat or a tool-reading repo seat.
-`uv run python -m bench.review_lanes` runs the repo trace through the one seat shape and writes `review-lanes-rerun.jsonl`; it uses only the local scripted endpoint in `tests/review_traces.py`.
+Both arms were measured with `review.scope` selecting a one-call diff reviewer or a tool-reading repo reviewer.
+`uv run python -m bench.review_lanes` runs the repo trace through the one reviewer shape and writes `review-lanes-rerun.jsonl`; it uses only the local scripted endpoint in `tests/review_traces.py`.
 
 | Scope | Arm | n | Dispatch-to-verdict median (s) | Min to max (s) | Parent CPU median (s) | Requests | Reported USD |
 | --- | --- | ---: | ---: | --- | ---: | ---: | ---: |
@@ -46,12 +46,12 @@ Both arms were measured with `review.scope` selecting a one-call diff seat or a 
 
 Every pair matched on verdict, grounded findings, summary, diagnostic, risk text, truncation flag, provider request count and reported USD.
 The lane record additionally names its real child session.
-Diff seats made one request each; the repo tool-boundary case made three, including its final verdict beside an unexecuted tool request.
+Diff reviewers made one request each; the repo tool-boundary case made three, including its final verdict beside an unexecuted tool request.
 Each lane run started one additional read-only session process; the baseline started none.
 
 **Measurement limits:** dispatch timing includes clone, installed bootstrap, provider calls, wait and import, but excludes preparation of the retained target and local HTTP server.
 Startup and join were not timed separately.
-Parent CPU excludes the seat process; the raw lane data also records reaped child CPU, not a complete process-tree CPU total.
+Parent CPU excludes the reviewer process; the raw lane data also records reaped child CPU, not a complete process-tree CPU total.
 Reported USD comes from scripted usage, not paid requests.
-The extra diff-seat startup cost is visible in the table.
+The extra diff-reviewer startup cost is visible in the table.
 These deterministic traces test execution parity, not model quality or production-provider latency.

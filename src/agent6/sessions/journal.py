@@ -609,9 +609,9 @@ class ModelAttempt(Event):
     model_call_id: str = pydantic.Field(
         description="Identifier pairing the attempt with its model call.",
     )
-    seat_index: int | None = pydantic.Field(
+    reviewer_index: int | None = pydantic.Field(
         default=None,
-        description="Zero-based review seat index.",
+        description="Zero-based reviewer index.",
     )
     attempt: int = pydantic.Field(description="The attempt's number within the call, from 1.")
     request_id: str | None = pydantic.Field(
@@ -661,9 +661,9 @@ class ModelCall(Event):
     model_call_id: str = pydantic.Field(
         description="Identifier pairing the model call with its result.",
     )
-    seat_index: int | None = pydantic.Field(
+    reviewer_index: int | None = pydantic.Field(
         default=None,
-        description="Zero-based review seat index.",
+        description="Zero-based reviewer index.",
     )
 
 
@@ -695,9 +695,9 @@ class ModelResult(Event):
     model_call_id: str = pydantic.Field(
         description="Identifier pairing the model call with its result.",
     )
-    seat_index: int | None = pydantic.Field(
+    reviewer_index: int | None = pydantic.Field(
         default=None,
-        description="Zero-based review seat index.",
+        description="Zero-based reviewer index.",
     )
     ok: bool = pydantic.Field(description="Whether the operation succeeded.")
     text: str | None = pydantic.Field(default=None, description="The event's text.")
@@ -743,9 +743,9 @@ class ModelTextDelta(Event):
         description="The model call streaming the piece; null in a journal written before ids.",
     )
     panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
-    seat_index: int | None = pydantic.Field(
+    reviewer_index: int | None = pydantic.Field(
         default=None,
-        description="The review seat's roster position; null outside a review seat.",
+        description="The reviewer's roster position; null outside a reviewer.",
     )
 
 
@@ -764,9 +764,9 @@ class ModelThinkingDelta(Event):
         description="The model call streaming the piece; null in a journal written before ids.",
     )
     panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
-    seat_index: int | None = pydantic.Field(
+    reviewer_index: int | None = pydantic.Field(
         default=None,
-        description="The review seat's roster position; null outside a review seat.",
+        description="The reviewer's roster position; null outside a reviewer.",
     )
 
 
@@ -1061,9 +1061,9 @@ class ProviderRequest(Event):
         description="The logical model call that made this request.",
     )
     panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
-    seat_index: int | None = pydantic.Field(
+    reviewer_index: int | None = pydantic.Field(
         default=None,
-        description="Zero-based review seat index.",
+        description="Zero-based reviewer index.",
     )
     request_id: str = pydantic.Field(
         description="HTTP attempt identifier, also stored at the transcript's top level.",
@@ -1203,7 +1203,7 @@ class ReviewPanel(Event):
     block_on: str = pydantic.Field(description="The configured panel blocking rule.")
     roster: Sequence[Any] | None = pydantic.Field(
         default=None,
-        description="The seats that sat: index, model route, focus and temperature.",
+        description="The reviewers that sat: index, model route, focus and temperature.",
     )
     raw_blocked: bool = pydantic.Field(description="Whether the verdicts meet the blocking rule.")
     blocked: bool = pydantic.Field(description="Whether the armed gate blocks the finish.")
@@ -1211,7 +1211,7 @@ class ReviewPanel(Event):
         description="Whether the review gate's rejection cap disarmed it.",
     )
     n_block: int = pydantic.Field(description="Number of distinct blocking provider/model routes.")
-    n_abstain: int = pydantic.Field(description="Number of abstaining seats.")
+    n_abstain: int = pydantic.Field(description="Number of abstaining reviewers.")
     completion: str = pydantic.Field(description="Whether the panel completed or was inconclusive.")
 
 
@@ -1224,7 +1224,7 @@ class ReviewRejectionCapReached(Event):
 
 
 class ReviewReused(Event):
-    """A complete panel over the same trees, paths, seats and rule stood in for a new one."""
+    """A complete panel over the same trees, paths, reviewers and rule stood in for a new one."""
 
     TYPE: ClassVar[str] = "review.reused"
     panel_id: str = pydantic.Field(description="Review panel identifier.")
@@ -1236,29 +1236,6 @@ class ReviewReused(Event):
         description="The immutable review target both panels share.",
     )
     findings: int = pydantic.Field(description="How many findings the reused panel recorded.")
-
-
-class ReviewSeat(Event):
-    """A review seat returned a grounded verdict or abstained."""
-
-    TYPE: ClassVar[str] = "review.seat"
-    panel_id: str = pydantic.Field(description="Review panel identifier.")
-    execution_id: str = pydantic.Field(description="Execution identifier.")
-    turn: int | None = pydantic.Field(default=None, description="The execution's turn number.")
-    trigger: str | None = pydantic.Field(
-        default=None,
-        description="The action that triggered the gate or panel.",
-    )
-    seat_index: int = pydantic.Field(description="Zero-based review seat index.")
-    focus: str = pydantic.Field(description="The requested summary or review focus.")
-    model_route: str = pydantic.Field(description="The seat's configured model route.")
-    verdict: str = pydantic.Field(description="Seat verdict: pass, block or abstain.")
-    findings: Sequence[Any] = pydantic.Field(description="Grounded findings or panel observations.")
-    summary: str = pydantic.Field(description="The result or outcome in words.")
-    error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
-    session_id: str = pydantic.Field(
-        default="", description="The read-only seat session, when assigned."
-    )
 
 
 class ReviewSkipped(Event):
@@ -1296,7 +1273,30 @@ class ReviewStart(Event):
         default=None,
         description="Why rule collection was incomplete; null when complete.",
     )
-    seats: Sequence[Any] = pydantic.Field(description="The resolved review seat configurations.")
+    reviewers: Sequence[Any] = pydantic.Field(description="The resolved reviewer configurations.")
+
+
+class ReviewVerdict(Event):
+    """A reviewer returned a grounded verdict or abstained."""
+
+    TYPE: ClassVar[str] = "review.verdict"
+    panel_id: str = pydantic.Field(description="Review panel identifier.")
+    execution_id: str = pydantic.Field(description="Execution identifier.")
+    turn: int | None = pydantic.Field(default=None, description="The execution's turn number.")
+    trigger: str | None = pydantic.Field(
+        default=None,
+        description="The action that triggered the gate or panel.",
+    )
+    reviewer_index: int = pydantic.Field(description="Zero-based reviewer index.")
+    focus: str = pydantic.Field(description="The requested summary or review focus.")
+    model_route: str = pydantic.Field(description="The reviewer's configured model route.")
+    verdict: str = pydantic.Field(description="Reviewer verdict: pass, block or abstain.")
+    findings: Sequence[Any] = pydantic.Field(description="Grounded findings or panel observations.")
+    summary: str = pydantic.Field(description="The result or outcome in words.")
+    error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
+    session_id: str = pydantic.Field(
+        default="", description="The read-only reviewer session, when assigned."
+    )
 
 
 class SessionResume(Event):
@@ -1524,9 +1524,9 @@ class ToolCall(Event):
         description="The model call whose response made the call; null for a harness-run tool.",
     )
     panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
-    seat_index: int | None = pydantic.Field(
+    reviewer_index: int | None = pydantic.Field(
         default=None,
-        description="The review seat's roster position; null outside a review seat.",
+        description="The reviewer's roster position; null outside a reviewer.",
     )
     provider_tool_call_id: str | None = pydantic.Field(
         default=None,
@@ -1562,9 +1562,9 @@ class ToolResult(Event):
         description="The model call whose response made the call; null for a harness-run tool.",
     )
     panel_id: str | None = pydantic.Field(default=None, description="Review panel identifier.")
-    seat_index: int | None = pydantic.Field(
+    reviewer_index: int | None = pydantic.Field(
         default=None,
-        description="The review seat's roster position; null outside a review seat.",
+        description="The reviewer's roster position; null outside a reviewer.",
     )
     provider_tool_call_id: str | None = pydantic.Field(
         default=None,
@@ -1897,9 +1897,9 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "review.panel": ReviewPanel,
     "review.rejection_cap_reached": ReviewRejectionCapReached,
     "review.reused": ReviewReused,
-    "review.seat": ReviewSeat,
     "review.skipped": ReviewSkipped,
     "review.start": ReviewStart,
+    "review.verdict": ReviewVerdict,
     "session.resume": SessionResume,
     "session.resume.interrupted": SessionResumeInterrupted,
     "session.start": SessionStart,

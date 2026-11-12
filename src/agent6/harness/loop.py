@@ -122,7 +122,7 @@ class Harness:
         bridge: What the operator can do to the run, as the front-end injects it.
         call: The worker call's knobs: retries, temperature, output caps.
         compaction: The compaction tiers' thresholds, the tail kept, the summariser.
-        review: The in-loop review panel's trigger, seats and decision rule.
+        review: The in-loop review panel's trigger, reviewers and decision rule.
         initial_pins: Pins seeded before the first turn (a lane inherits the parent's);
             fresh runs only, a resume restores pins from the snapshot.
         resume_state_path: Where the provider-agnostic resume snapshot is written before
@@ -472,9 +472,9 @@ class Harness:
         self, state: loop_state.LoopState, conversation: loop_conversation.Conversation
     ) -> None:
         """Sit the panel on a `/review` session's range before the worker reads it."""
-        if self.review_target is None or not self.reviewer.available():
+        if self.review_target is None or not self.review_gate.available():
             return
-        critique = self.reviewer.review_target(state, *self.review_target)
+        critique = self.review_gate.review_target(state, *self.review_target)
         if critique is not None:
             conversation.notice(review_panel.review_notice(critique.text))
 
@@ -661,7 +661,7 @@ class Harness:
         result = self._turn_auto_commit_and_metric(state, turn)
         if result is not None or self.contract is not None:
             return result
-        self.reviewer.triggers(state, turn)
+        self.review_gate.triggers(state, turn)
         self._turn_finish_gates(state, turn, ctx)
         return self._turn_advisors(state, turn, ctx)
 
@@ -862,7 +862,7 @@ class Harness:
             state.call_context = kinds.CallContext(
                 execution_id=self.execution_id,
                 panel_id=binding.panel_id if binding else None,
-                seat_index=binding.seat_index if binding else None,
+                reviewer_index=binding.reviewer_index if binding else None,
             )
             return self.caller.call(
                 system,
@@ -1355,7 +1355,7 @@ class Harness:
             finish_validator=self.finish_validator,
             metric=self.metrics.goal is not None,
             memory_advisory=self.state_dir is not None and self.config.harness.memory_advisory,
-            end_rejected=lambda turn, ending: self.reviewer.end_rejected(
+            end_rejected=lambda turn, ending: self.review_gate.end_rejected(
                 state, turn, ending=ending
             ),
             standing_absorb=lambda reason, turn: self.standing.absorb(
@@ -1996,15 +1996,15 @@ class Harness:
         )
 
     @functools.cached_property
-    def reviewer(self) -> review_gate.Reviewer:
+    def review_gate(self) -> review_gate.ReviewGate:
         """Return the in-loop review panel."""
-        return review_gate.Reviewer(
+        return review_gate.ReviewGate(
             settings=self.review,
             session_id=self.session_id,
             chain=self.chain,
             hide=self.config.sandbox.hide_paths,
             executor=lambda: self.parallel,
-            # A seat inherits the state of the world its parent has now, tools included.
+            # A reviewer inherits the state of the world its parent has now, tools included.
             tools=lambda: tuple(
                 d.name for d in toolset.tool_definitions(self.dispatcher, mode=self.mode)
             ),

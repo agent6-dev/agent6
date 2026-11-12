@@ -555,7 +555,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `model` | `str` | Model identifier. |
 | `provider` | `str` | Configured provider name. |
 | `model_call_id` | `str` | Identifier pairing the attempt with its model call. |
-| `seat_index` | `int, optional` | Zero-based review seat index. |
+| `reviewer_index` | `int, optional` | Zero-based reviewer index. |
 | `attempt` | `int` | The attempt's number within the call, from 1. |
 | `request_id` | `str, optional` | The HTTP attempt's id, as provider.request and the transcript name it. |
 | `ok` | `bool` | Whether the attempt returned a response. |
@@ -579,7 +579,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `model` | `str` | Model identifier. |
 | `provider` | `str` | Configured provider name. |
 | `model_call_id` | `str` | Identifier pairing the model call with its result. |
-| `seat_index` | `int, optional` | Zero-based review seat index. |
+| `reviewer_index` | `int, optional` | Zero-based reviewer index. |
 
 ### model.reasoning_starvation
 
@@ -604,7 +604,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `model` | `str` | Model identifier. |
 | `provider` | `str` | Configured provider name. |
 | `model_call_id` | `str` | Identifier pairing the model call with its result. |
-| `seat_index` | `int, optional` | Zero-based review seat index. |
+| `reviewer_index` | `int, optional` | Zero-based reviewer index. |
 | `ok` | `bool` | Whether the operation succeeded. |
 | `text` | `str, optional` | The event's text. |
 | `input_tokens` | `int, optional` | Input tokens used by this model call. |
@@ -626,7 +626,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
 | `model_call_id` | `str, optional` | The model call streaming the piece; null in a journal written before ids. |
 | `panel_id` | `str, optional` | Review panel identifier. |
-| `seat_index` | `int, optional` | The review seat's roster position; null outside a review seat. |
+| `reviewer_index` | `int, optional` | The reviewer's roster position; null outside a reviewer. |
 
 ### model.thinking_delta
 
@@ -639,7 +639,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `execution_id` | `str, optional` | The execution the call ran in; null for a call outside one. |
 | `model_call_id` | `str, optional` | The model call streaming the piece; null in a journal written before ids. |
 | `panel_id` | `str, optional` | Review panel identifier. |
-| `seat_index` | `int, optional` | The review seat's roster position; null outside a review seat. |
+| `reviewer_index` | `int, optional` | The reviewer's roster position; null outside a reviewer. |
 
 ### nudge.loop_guard
 
@@ -927,7 +927,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `model` | `str` | Model identifier. |
 | `model_call_id` | `str` | The logical model call that made this request. |
 | `panel_id` | `str, optional` | Review panel identifier. |
-| `seat_index` | `int, optional` | Zero-based review seat index. |
+| `reviewer_index` | `int, optional` | Zero-based reviewer index. |
 | `request_id` | `str` | HTTP attempt identifier, also stored at the transcript's top level. |
 | `target` | `str` | The immutable review target, or provider request class. |
 
@@ -1045,12 +1045,12 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `findings` | `list` | Grounded findings or panel observations. |
 | `injected_finding_ids` | `list` | Finding identifiers supplied to the worker. |
 | `block_on` | `str` | The configured panel blocking rule. |
-| `roster` | `list, optional` | The seats that sat: index, model route, focus and temperature. |
+| `roster` | `list, optional` | The reviewers that sat: index, model route, focus and temperature. |
 | `raw_blocked` | `bool` | Whether the verdicts meet the blocking rule. |
 | `blocked` | `bool` | Whether the armed gate blocks the finish. |
 | `disarmed` | `bool` | Whether the review gate's rejection cap disarmed it. |
 | `n_block` | `int` | Number of distinct blocking provider/model routes. |
-| `n_abstain` | `int` | Number of abstaining seats. |
+| `n_abstain` | `int` | Number of abstaining reviewers. |
 | `completion` | `str` | Whether the panel completed or was inconclusive. |
 
 ### review.rejection_cap_reached
@@ -1064,7 +1064,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### review.reused
 
-**Support: public.** A complete panel over the same trees, paths, seats and rule stood in for a new one.
+**Support: public.** A complete panel over the same trees, paths, reviewers and rule stood in for a new one.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1075,25 +1075,6 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `reused_panel_id` | `str` | The complete panel whose verdict stood in. |
 | `target` | `object` | The immutable review target both panels share. |
 | `findings` | `int` | How many findings the reused panel recorded. |
-
-### review.seat
-
-**Support: public.** A review seat returned a grounded verdict or abstained.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `panel_id` | `str` | Review panel identifier. |
-| `execution_id` | `str` | Execution identifier. |
-| `turn` | `int, optional` | The execution's turn number. |
-| `trigger` | `str, optional` | The action that triggered the gate or panel. |
-| `seat_index` | `int` | Zero-based review seat index. |
-| `focus` | `str` | The requested summary or review focus. |
-| `model_route` | `str` | The seat's configured model route. |
-| `verdict` | `str` | Seat verdict: pass, block or abstain. |
-| `findings` | `list` | Grounded findings or panel observations. |
-| `summary` | `str` | The result or outcome in words. |
-| `error` | `str, optional` | The failure diagnostic. |
-| `session_id` | `str, optional` | The read-only seat session, when assigned. |
 
 ### review.skipped
 
@@ -1123,7 +1104,26 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `rule_sources` | `list` | Base-tree rule files supplied to the panel. |
 | `rules_complete` | `bool` | Whether every required rule was supplied. |
 | `rules_reason` | `str, optional` | Why rule collection was incomplete; null when complete. |
-| `seats` | `list` | The resolved review seat configurations. |
+| `reviewers` | `list` | The resolved reviewer configurations. |
+
+### review.verdict
+
+**Support: public.** A reviewer returned a grounded verdict or abstained.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `panel_id` | `str` | Review panel identifier. |
+| `execution_id` | `str` | Execution identifier. |
+| `turn` | `int, optional` | The execution's turn number. |
+| `trigger` | `str, optional` | The action that triggered the gate or panel. |
+| `reviewer_index` | `int` | Zero-based reviewer index. |
+| `focus` | `str` | The requested summary or review focus. |
+| `model_route` | `str` | The reviewer's configured model route. |
+| `verdict` | `str` | Reviewer verdict: pass, block or abstain. |
+| `findings` | `list` | Grounded findings or panel observations. |
+| `summary` | `str` | The result or outcome in words. |
+| `error` | `str, optional` | The failure diagnostic. |
+| `session_id` | `str, optional` | The read-only reviewer session, when assigned. |
 
 ### session.resume
 
@@ -1337,7 +1337,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `execution_id` | `str, optional` | The dispatching execution; null in a journal written before ids. |
 | `model_call_id` | `str, optional` | The model call whose response made the call; null for a harness-run tool. |
 | `panel_id` | `str, optional` | Review panel identifier. |
-| `seat_index` | `int, optional` | The review seat's roster position; null outside a review seat. |
+| `reviewer_index` | `int, optional` | The reviewer's roster position; null outside a reviewer. |
 | `provider_tool_call_id` | `str, optional` | The provider's tool-use id for the block; null for a harness-run tool. |
 | `turn` | `int, optional` | The execution's turn number; null for a harness-run tool. |
 
@@ -1354,7 +1354,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `execution_id` | `str, optional` | The dispatching execution; null in a journal written before ids. |
 | `model_call_id` | `str, optional` | The model call whose response made the call; null for a harness-run tool. |
 | `panel_id` | `str, optional` | Review panel identifier. |
-| `seat_index` | `int, optional` | The review seat's roster position; null outside a review seat. |
+| `reviewer_index` | `int, optional` | The reviewer's roster position; null outside a reviewer. |
 | `provider_tool_call_id` | `str, optional` | The provider's tool-use id for the block; null for a harness-run tool. |
 | `turn` | `int, optional` | The execution's turn number; null for a harness-run tool. |
 | `exit_code` | `int, optional` | A command's exit code; null while it runs in the background or when unknown. |
@@ -1616,7 +1616,7 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `continued_task` | `str` | The latest resume steer, whole; empty without a continuation. |
 | `task_line` | `str` | The task clipped to 200 characters, then a newline and `continued: <steer>`, clipped the same way, when a resume steer exists. |
 | `model` | `str` | The resolved provider/model route, or ? when unknown. |
-| `models` | `dict[str, Any]` | The recorded driver, reviewer, helper and review seats, with effort and origin. |
+| `models` | `dict[str, Any]` | The recorded driver, reviewer, helper and reviewers, with effort and origin. |
 | `model_from_flag` | `bool` | Whether a model flag selected the route. |
 | `preset` | `str \| None` | The launch preset, or null when absent. |
 | `status` | `str` | The lifecycle status word shared with listings. |
@@ -2574,7 +2574,7 @@ Source: [`agent6.sessions.completion.CompletionRecord`](https://github.com/agent
 | `calls` | `int` | The provider attempts made, retries included. |
 | `diagnostics` | `tuple[str, ...]` | What the ceiling or the contract cut, one line each; empty when nothing was. |
 | `session_id` | `str` | The producing read-only session, empty in legacy records. |
-| `review_binding` | `ReviewBinding \| None` | The parent-assigned panel, seat and target, or null outside a panel. |
+| `review_binding` | `ReviewBinding \| None` | The parent-assigned panel, reviewer and target, or null outside a panel. |
 | `response_stop_reason` | `str` | The last provider response's stop reason. |
 | `response_output_tokens` | `int` | The last response's output tokens. |
 | `reasoning_chars` | `int` | The last response's reasoning character count. |
@@ -3112,14 +3112,14 @@ Source: [`agent6.kinds.ConversationContract`](https://github.com/agent6-dev/agen
 
 ### ReviewBinding
 
-**Support: public.** Bind a completion to the parent-assigned panel, seat and immutable target.
+**Support: public.** Bind a completion to the parent-assigned panel, reviewer and immutable target.
 
 Source: [`agent6.review_records.ReviewBinding`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/review_records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `panel_id` | `str` | The parent-assigned panel identity. |
-| `seat_index` | `int` | The zero-based roster position. |
+| `reviewer_index` | `int` | The zero-based roster position. |
 | `target` | `ReviewTarget` | The exact retained comparison. |
 
 ### RankRecord
@@ -3177,7 +3177,7 @@ Source: [`agent6.sessions.manifest.ModelsBrief`](https://github.com/agent6-dev/a
 | `driver` | `ModelBrief \| None` | The model that drove the run, the worker or a plan's planner; None unset. |
 | `reviewer` | `ModelBrief \| None` | The reviewer; None unset. |
 | `helper` | `ModelBrief \| None` | The helper; None unset. |
-| `review_seats` | `dict[str, ModelBrief]` | Each panel seat's facts, in roster order, labelled by index and focus. |
+| `reviewers` | `dict[str, ModelBrief]` | Each reviewer's facts, in roster order, labelled by index and focus. |
 | `driver_from_flag` | `bool` | The driver came from a `--model`, the run's or a resume's. |
 
 ### HarnessStamp
@@ -3820,8 +3820,8 @@ Source: [`agent6.viewmodel.review.PanelView`](https://github.com/agent6-dev/agen
 | `panel_id` | `str` | The panel identifier. |
 | `execution_id` | `str` | The execution that requested the panel. |
 | `target` | `ReviewTarget \| None` | The recorded comparison target, or null. |
-| `roster` | `tuple[SeatAssignment, ...]` | The resolved seat assignments. |
-| `seats` | `tuple[ReviewVerdict, ...]` | The recorded verdicts from individual seats. |
+| `roster` | `tuple[ReviewerAssignment, ...]` | The resolved reviewer assignments. |
+| `reviewers` | `tuple[ReviewVerdict, ...]` | The recorded verdicts from individual reviewers. |
 | `result` | `ReviewPanel \| None` | The completed panel result, or null while unavailable. |
 | `completion` | `Literal['unknown', 'running', 'complete', 'inconclusive', 'skipped', 'reused']` | The panel's completion state. |
 | `reason` | `str \| None` | The explanation for a skipped or incomplete panel, or null. |
@@ -3922,35 +3922,35 @@ Source: [`agent6.viewmodel.session.records.Question`](https://github.com/agent6-
 | `question` | `str` | The question's text. |
 | `options` | `tuple[str, ...]` | Selectable presets; the operator may also type a free-text answer. |
 
-### SeatAssignment
+### ReviewerAssignment
 
-**Support: public.** Identify the resolved route and settings of one panel seat.
+**Support: public.** Identify the resolved route and settings of one reviewer.
 
-Source: [`agent6.review_records.SeatAssignment`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/review_records.py).
+Source: [`agent6.review_records.ReviewerAssignment`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/review_records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `seat_index` | `int` | The seat's zero-based position in the roster. |
+| `reviewer_index` | `int` | The reviewer's zero-based position in the roster. |
 | `model_route` | `str` | The resolved provider/model route. |
-| `focus` | `str` | The seat's assigned review focus. |
+| `focus` | `str` | The reviewer's assigned review focus. |
 | `temperature` | `float \| None` | The configured sampling temperature, or null for the provider default. |
 
 ### ReviewVerdict
 
-**Support: public.** Hold one indexed seat's verdict, including an explicit abstention on failure.
+**Support: public.** Hold one indexed reviewer's verdict, including an explicit abstention on failure.
 
 Source: [`agent6.review_records.ReviewVerdict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/review_records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `seat_index` | `int` | The seat's zero-based position in the roster. |
-| `focus` | `str` | The seat's assigned review focus. |
+| `reviewer_index` | `int` | The reviewer's zero-based position in the roster. |
+| `focus` | `str` | The reviewer's assigned review focus. |
 | `model_route` | `str` | The provider/model route that reviewed. |
-| `verdict` | `Literal['pass', 'block', 'abstain']` | The seat's pass, block or abstention decision. |
-| `findings` | `tuple[Finding, ...]` | The grounded findings from this seat. |
-| `summary` | `str` | The seat's closing summary. |
+| `verdict` | `Literal['pass', 'block', 'abstain']` | The reviewer's pass, block or abstention decision. |
+| `findings` | `tuple[Finding, ...]` | The grounded findings from this reviewer. |
+| `summary` | `str` | The reviewer's closing summary. |
 | `error` | `str \| None` | The failure diagnostic for an abstention, or null. |
-| `session_id` | `str` | The read-only seat session, empty in legacy verdicts. |
+| `session_id` | `str` | The read-only reviewer session, empty in legacy verdicts. |
 
 ### ReviewPanel
 
@@ -3965,7 +3965,7 @@ Source: [`agent6.review_records.ReviewPanel`](https://github.com/agent6-dev/agen
 | `turn` | `int` | The turn that triggered the panel. |
 | `trigger` | `str` | The review trigger. |
 | `target` | `ReviewTarget` | The immutable reviewed comparison. |
-| `roster` | `tuple[SeatAssignment, ...]` | The seats that sat; empty on a record written before rosters were kept. |
+| `roster` | `tuple[ReviewerAssignment, ...]` | The reviewers that sat; empty on a record written before rosters were kept. |
 | `findings` | `tuple[FindingObservation, ...]` | The panel's grounded finding observations. |
 | `injected_finding_ids` | `tuple[str, ...]` | Findings supplied to the worker as feedback. |
 | `block_on` | `Literal['none', 'any', 'all', 'model_quorum']` | The configured worker-finish blocking rule. |
@@ -3973,7 +3973,7 @@ Source: [`agent6.review_records.ReviewPanel`](https://github.com/agent6-dev/agen
 | `blocked` | `bool` | Whether the panel blocks worker completion. |
 | `disarmed` | `bool` | Whether the harness disarmed the review block. |
 | `n_block` | `int` | The number of distinct blocking provider/model routes. |
-| `n_abstain` | `int` | The number of abstaining seats. |
+| `n_abstain` | `int` | The number of abstaining reviewers. |
 | `completion` | `Literal['complete', 'inconclusive']` | Whether the panel completed conclusively. |
 
 ### RuleSource
@@ -3990,7 +3990,7 @@ Source: [`agent6.review_records.RuleSource`](https://github.com/agent6-dev/agent
 
 ### FindingObservation
 
-**Support: public.** Associate a finding with its panel and the seats that reported it.
+**Support: public.** Associate a finding with its panel and the reviewers that reported it.
 
 Source: [`agent6.review_records.FindingObservation`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/review_records.py).
 
@@ -3999,7 +3999,7 @@ Source: [`agent6.review_records.FindingObservation`](https://github.com/agent6-d
 | `finding_id` | `str` | The finding identifier shared across observations. |
 | `panel_id` | `str` | The panel that recorded this observation. |
 | `finding` | `Finding` | The grounded finding text and location. |
-| `seat_indexes` | `tuple[int, ...]` | The zero-based seats that reported the finding. |
+| `reviewer_indexes` | `tuple[int, ...]` | The zero-based reviewers that reported the finding. |
 | `line_origin` | `LineOrigin` | The line-attribution evidence for this observation. |
 
 ### ActionRecord

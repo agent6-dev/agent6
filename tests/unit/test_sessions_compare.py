@@ -891,28 +891,30 @@ def _three_candidates() -> list[harness_judge.CandidateBrief]:
     ]
 
 
-def _seat_judges(monkeypatch: pytest.MonkeyPatch, replies: dict[str, str | Exception]) -> list[str]:
-    """Answer each judge by its model, and return the list of `role=model` seats as built."""
-    seats: list[str] = []
+def _reviewer_judges(
+    monkeypatch: pytest.MonkeyPatch, replies: dict[str, str | Exception]
+) -> list[str]:
+    """Answer each judge by its model, and return the list of `role=model` reviewers as built."""
+    reviewers: list[str] = []
 
     def build(cfg: Config, role: Any, **_k: Any) -> Provider:
         resolved = cfg.models.resolve(role)
         assert resolved is not None
-        seats.append(f"{role}={resolved.model}")
+        reviewers.append(f"{role}={resolved.model}")
         reply = replies[resolved.model]
         if isinstance(reply, Exception):
             return cast(Provider, _SlowFakeProvider(sleep_s=0, raise_exc=reply))
         return cast(Provider, _FakeProvider([reply]))
 
     monkeypatch.setattr(role_providers, "build_role_provider", build)
-    return seats
+    return reviewers
 
 
 def test_several_judges_rank_by_the_lowest_sum_of_ranks(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Each of `[harness.parallel].judges` ranks once, seated in the reviewer role."""
-    seats = _seat_judges(
+    reviewers = _reviewer_judges(
         monkeypatch,
         {
             "reviewer-1": '{"ranking": ["run-A", "run-C", "run-B"], "rationale": "a first"}',
@@ -927,7 +929,7 @@ def test_several_judges_rank_by_the_lowest_sum_of_ranks(
     # Places summed: A 0+2, B 2+1, C 1+0.
     assert outcome.ranking == ("run-C", "run-A", "run-B")
     assert outcome.ranked_by == "judge"
-    assert seats == ["reviewer=reviewer-1", "reviewer=worker-1"]
+    assert reviewers == ["reviewer=reviewer-1", "reviewer=worker-1"]
     assert outcome.rationale == (
         "lowest sum of ranks over 2 judges\n  reviewer: a first\n  worker: c first"
     )
@@ -937,7 +939,7 @@ def test_a_tied_vote_falls_to_the_mechanical_order(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Three judges, each candidate first once: every sum is 3, so the gate and the cost decide."""
-    _seat_judges(
+    _reviewer_judges(
         monkeypatch,
         {
             "reviewer-1": '{"ranking": ["run-A", "run-C", "run-B"], "rationale": "a"}',
@@ -960,7 +962,7 @@ def test_a_judge_that_fails_is_named_and_the_others_still_decide(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """One failed judge does not turn a judged table into a mechanical one."""
-    _seat_judges(
+    _reviewer_judges(
         monkeypatch,
         {
             "reviewer-1": ProviderError("down"),
@@ -987,12 +989,12 @@ def test_an_empty_judges_list_is_the_mechanical_order_with_no_call(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`judges = []` is the switch for no judge; a configured reviewer is not asked."""
-    seats = _seat_judges(monkeypatch, {})
+    reviewers = _reviewer_judges(monkeypatch, {})
 
     outcome = compare_ranking.rank(_judges_cfg(), _three_candidates(), transcript_dir=tmp_path)
 
     assert outcome.ranking == ("run-B", "run-A", "run-C")
-    assert (outcome.ranked_by, seats) == ("mechanical", [])
+    assert (outcome.ranked_by, reviewers) == ("mechanical", [])
     assert capsys.readouterr() == ("", "")
 
 

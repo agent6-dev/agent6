@@ -1013,7 +1013,7 @@
     },
     "status": 200
   },
-  "seat": "worker",
+  "reviewer": "worker",
   "seq": 14,
   "ts": "20261027T012203208385Z"
 }

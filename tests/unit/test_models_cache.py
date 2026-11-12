@@ -480,10 +480,10 @@ def test_legacy_listing_has_unknown_modalities(cache_home: pathlib.Path) -> None
     assert (fact.image, fact.document) == ("unknown", "unknown")
 
 
-def test_review_seats_resolve_their_own_modality_facts(
+def test_review_reviewers_resolve_their_own_modality_facts(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Review seats receive their exact route's capability, not the worker's state."""
+    """Reviewers receive their exact route's capability, not the worker's state."""
     from agent6.app import role_providers
     from agent6.config import Config
 
@@ -509,8 +509,8 @@ def test_review_seats_resolve_their_own_modality_facts(
     monkeypatch.setattr(transport, "http_request", fake_get)
     models_cache.fetch_models_live("p", cfg.providers["p"], None)
     worker = role_providers.input_capabilities(cfg, cfg.models.resolve("worker"))
-    seats = role_providers.resolve_review_seats(cfg)
-    lane_cfg = cfg.with_model_settings("worker", seats[0].settings)
+    reviewers = role_providers.resolve_reviewers(cfg)
+    lane_cfg = cfg.with_model_settings("worker", reviewers[0].settings)
     capability = role_providers.input_capabilities(lane_cfg, lane_cfg.models.resolve("worker"))
     assert worker.image == "unsupported"
     assert capability.image == "supported"

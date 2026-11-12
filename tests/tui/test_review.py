@@ -165,7 +165,7 @@ def test_selected_finding_shows_its_own_panels_rules(
             turn=2,
             trigger="finish",
             target=start["target"],
-            seats=[],
+            reviewers=[],
             rule_sources=[],
             rules_complete=False,
             rules_reason="Later rule set is hidden",

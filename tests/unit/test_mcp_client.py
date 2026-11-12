@@ -424,7 +424,7 @@ def test_manager_close_is_idempotent() -> None:
 def test_concurrent_calls_do_not_interleave_stdin_writes() -> None:
     """Concurrent calls do not interleave stdin writes.
 
-    tools/call from concurrent threads (explore-review seats share one dispatcher across a thread
+    tools/call from concurrent threads (explore-reviewers share one dispatcher across a thread
     pool) serializes on the server's stdin: pipe writes larger than PIPE_BUF interleave across
     unlocked writers and corrupt the JSON-RPC framing, so the server reads malformed JSON and dies,
     failing every in-flight call.
@@ -769,7 +769,7 @@ def test_a_restarted_servers_survivors_accumulate(monkeypatch: pytest.MonkeyPatc
 
 
 def test_a_call_cut_short_by_another_callers_restart_is_retried_once() -> None:
-    """Two callers on one server (review seats share a dispatcher).
+    """Two callers on one server (reviewers share a dispatcher).
 
     A's timeout replaces the process under B's in-flight call. B neither times out on the replaced
     server nor restarts the fresh one: it goes once more on it. One restart in total.

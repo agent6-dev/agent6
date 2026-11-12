@@ -128,7 +128,7 @@ def input_capabilities(cfg: Config, rm: RoleModel | None) -> media.InputCapabili
 
     Args:
         cfg: The effective configuration.
-        rm: The resolved worker, planner or reviewer seat.
+        rm: The resolved worker, planner or reviewer.
 
     Returns:
         The route's cached facts, unknown when no route is configured.
@@ -379,7 +379,7 @@ class InstrumentedProvider:
         provider_name: The provider entry name the events carry.
         events: The sink the events go to; None emits nothing.
         budget: The tracker whose snapshot `budget.update` carries.
-        seat_index: The review panel seat's index, carried by its events; None outside a
+        reviewer_index: The reviewer's index, carried by its events; None outside a
             panel.
         stream_text: Whether to fan text and reasoning deltas out as events without a
             caller callback.
@@ -393,7 +393,7 @@ class InstrumentedProvider:
     events: event_log.EventSink | None
     budget: agent6_budget.BudgetTracker
     stream_text: bool = False
-    seat_index: int | None = None
+    reviewer_index: int | None = None
     conversations: conversation_state.Conversations = dataclasses.field(
         default_factory=conversation_state.Conversations
     )
@@ -436,7 +436,7 @@ class InstrumentedProvider:
             ProviderError: The inner call failed; the provider name is filled in.
         """
         call_context = (context.call_context if context is not None else None) or (
-            kinds.CallContext(seat_index=self.seat_index)
+            kinds.CallContext(reviewer_index=self.reviewer_index)
         )
         caller_observe = context.observe if context is not None else None
         request_ids: list[str] = []  # the attempt's HTTP request, for its model.attempt row
@@ -646,23 +646,23 @@ def helper_seat_provider(
     )
 
 
-def resolve_review_seats(cfg: Config) -> list[review_gate.ReviewSeat]:
+def resolve_reviewers(cfg: Config) -> list[review_gate.Reviewer]:
     """Resolve the ordered roster without constructing providers.
 
-    Omitted fields inherit the reviewer, including seats with a pinned route.
+    Omitted fields inherit the reviewer role, including reviewers with a pinned route.
 
     Args:
         cfg: The effective configuration.
 
     Returns:
-        The roster, or one security seat when the roster is empty.
+        The roster, or one security reviewer when the roster is empty.
 
     Raises:
-        ProviderError: A seat has no route or names a missing provider.
+        ProviderError: A reviewer has no route or names a missing provider.
     """
     cfg.require_runnable("reviewer")
     reviewer = cfg.models.resolve("reviewer")
-    seats: list[review_gate.ReviewSeat] = []
+    reviewers: list[review_gate.Reviewer] = []
     for entry in cfg.review.reviewers or (ReviewerConfig(focus="security"),):
         rm = entry.resolve(reviewer)
         if rm is None:
@@ -674,12 +674,12 @@ def resolve_review_seats(cfg: Config) -> list[review_gate.ReviewSeat]:
                 f"reviewer {entry.focus!r} names provider {rm.provider!r} but"
                 f" [providers.{rm.provider}] is missing"
             )
-        seats.append(
-            review_gate.ReviewSeat(
+        reviewers.append(
+            review_gate.Reviewer(
                 focus=entry.focus,
                 settings=kinds.ModelSettings(
                     kinds.ModelRoute(rm.provider, rm.model), rm.effort, rm.temperature
                 ),
             )
         )
-    return seats
+    return reviewers

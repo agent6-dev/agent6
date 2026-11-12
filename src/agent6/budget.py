@@ -633,7 +633,7 @@ class BudgetTracker:
 
         A window's first reading is its baseline. A rise within the window is movement. A
         reset time later by more than `RESET_SLACK_S` is a new window, whose reading counts
-        whole. A reading out of order (another seat read the account first) counts nothing:
+        whole. A reading out of order (another reviewer read the account first) counts nothing:
         a lower percent on the same window, or any reading from a window already left. A
         credit balance that fell is money spent. The lock is held.
 

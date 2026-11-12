@@ -219,9 +219,9 @@ class TelemetryFold:
         execution, event = step.execution, step.event
         execution.sequence += 1
         key = str(event.get("model_call_id") or f"seq:{execution.sequence}")
-        seat = telemetry_records.as_int(event.get("seat_index"))
+        reviewer = telemetry_records.as_int(event.get("reviewer_index"))
         parent = execution.parent()
-        if seat is not None and execution.panels:
+        if reviewer is not None and execution.panels:
             parent = next(reversed(execution.panels.values())).span_id
         model = str(event.get("model", ""))
         fields: dict[str, telemetry_records.AttributeValue] = {
@@ -231,8 +231,8 @@ class TelemetryFold:
             "gen_ai.conversation.id": self.session_id,
             "agent6.role": str(event.get("role", "")),
         }
-        if seat is not None:
-            fields["agent6.seat"] = seat
+        if reviewer is not None:
+            fields["agent6.reviewer"] = reviewer
         span_id = telemetry_records.hex_id(f"{execution.trace_id}:call:{key}", 16)
         name = f"{telemetry_records.OPERATION_CHAT} {model}".rstrip()
         execution.calls[key] = telemetry_records.OpenSpan(
@@ -406,29 +406,29 @@ class TelemetryFold:
     def _review_start(self, step: telemetry_records.Step) -> None:
         execution, event = step.execution, step.event
         key = str(event.get("panel_id") or f"seq:{execution.sequence}")
-        seats = event.get("seats")
+        reviewers = event.get("reviewers")
         fields: dict[str, telemetry_records.AttributeValue] = {
             "agent6.panel.id": key,
             "agent6.panel.trigger": str(event.get("trigger", "")),
-            "agent6.panel.seats": len(seats) if isinstance(seats, list) else 0,
+            "agent6.panel.reviewers": len(reviewers) if isinstance(reviewers, list) else 0,
         }
         span_id = telemetry_records.hex_id(f"{execution.trace_id}:panel:{key}", 16)
         execution.panels[key] = telemetry_records.OpenSpan(
             span_id, execution.parent(), telemetry_records.SPAN_REVIEW, step.now, attributes=fields
         )
 
-    def _review_seat(self, step: telemetry_records.Step) -> None:
+    def _review_verdict(self, step: telemetry_records.Step) -> None:
         execution, event = step.execution, step.event
         panel = execution.panels.get(str(event.get("panel_id") or ""))
         verdict = str(event.get("verdict", ""))
         findings = event.get("findings")
         fields: dict[str, telemetry_records.AttributeValue | None] = {
-            "agent6.seat": telemetry_records.as_int(event.get("seat_index")),
+            "agent6.reviewer": telemetry_records.as_int(event.get("reviewer_index")),
             "agent6.verdict": verdict or None,
             "agent6.findings": len(findings) if isinstance(findings, list) else 0,
         }
         severity: telemetry_records.Severity = "WARN" if verdict == "block" else "INFO"
-        body = f"review seat {verdict or 'abstained'}"
+        body = f"reviewer {verdict or 'abstained'}"
         span_id = panel.span_id if panel is not None else ""
         step.logs.append(execution.log(step.now, severity, body, fields, span_id))
 
@@ -642,7 +642,7 @@ class TelemetryFold:
         "verify.start": _verify_start,
         "verify.end": _verify_end,
         "review.start": _review_start,
-        "review.seat": _review_seat,
+        "review.verdict": _review_verdict,
         "review.panel": _review_panel,
         "review.reused": _review_reused,
         "review.skipped": _review_skipped,

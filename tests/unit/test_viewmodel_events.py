@@ -57,21 +57,21 @@ def test_unknown_and_telemetry_and_typeless_become_rawevent() -> None:
 def test_coercion_matches_the_folds_historical_defaults() -> None:
     # Missing fields default, not raise (the fold never validated).
     assert ev.parse_event({"type": "model.call"}) == journal.ModelCall(
-        role="", model="", provider="", model_call_id="", seat_index=None
+        role="", model="", provider="", model_call_id="", reviewer_index=None
     )
     # The pairing fields read with defaults, so a journal written without them folds as before;
-    # a seat index is an int, never a bool.
+    # a reviewer index is an int, never a bool.
     paired = ev.parse_event(
-        {"type": "model.call", "role": "review:x", "model_call_id": "abc", "seat_index": 1}
+        {"type": "model.call", "role": "review:x", "model_call_id": "abc", "reviewer_index": 1}
     )
     assert paired == journal.ModelCall(
-        role="review:x", model="", provider="", model_call_id="abc", seat_index=1
+        role="review:x", model="", provider="", model_call_id="abc", reviewer_index=1
     )
     result = ev.parse_event(
-        {"type": "model.result", "ok": False, "model_call_id": "abc", "seat_index": True}
+        {"type": "model.result", "ok": False, "model_call_id": "abc", "reviewer_index": True}
     )
     assert isinstance(result, journal.ModelResult)
-    assert result.ok is False and result.seat_index is None and result.input_tokens == 0
+    assert result.ok is False and result.reviewer_index is None and result.input_tokens == 0
     # An unknown verification word reads as none; a garbled numeric degrades the row.
     stop = ev.parse_event({"type": "session.stop", "verification": "maybe"})
     assert isinstance(stop, journal.SessionStop) and ev.verification_word(stop.verification) is None
@@ -96,7 +96,7 @@ def test_coercion_matches_the_folds_historical_defaults() -> None:
 
 
 def test_tool_rows_and_deltas_read_their_call_identity() -> None:
-    """The execution, the model call, the seat and the provider's block id ride into the records."""
+    """The execution, the model call, the reviewer and the provider's block id reach the records."""
     call = ev.parse_event(
         {
             "type": "tool.call",
@@ -106,12 +106,12 @@ def test_tool_rows_and_deltas_read_their_call_identity() -> None:
             "execution_id": "e1",
             "model_call_id": "c1",
             "panel_id": "p",
-            "seat_index": 1,
+            "reviewer_index": 1,
             "provider_tool_call_id": "toolu_1",
         }
     )
     assert isinstance(call, journal.ToolCall)
-    assert (call.execution_id, call.model_call_id, call.panel_id, call.seat_index) == (
+    assert (call.execution_id, call.model_call_id, call.panel_id, call.reviewer_index) == (
         "e1",
         "c1",
         "p",

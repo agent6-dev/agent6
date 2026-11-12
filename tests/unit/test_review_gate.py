@@ -7,7 +7,7 @@ test_review_panel.py; here the LOOP's plumbing is the unit, a NEEDS-WORK
 verdict revokes finish_session and injects the findings, the rejection cap
 disarms the gate, trigger "off" never runs a panel, and the periodic /
 `verify_fail` panels fire only on their schedule. The panel is stubbed at
-the `Reviewer.critique` seam.
+the `ReviewGate.critique` seam.
 """
 
 from __future__ import annotations
@@ -128,7 +128,7 @@ def _resp_with_tool_use(text: str, tool_use: dict[str, Any]) -> ProviderResponse
 
 
 class _PanelScript:
-    """A scripted `Reviewer.critique` stand-in.
+    """A scripted `ReviewGate.critique` stand-in.
 
     Pops verdicts in order and counts how often the loop consulted the panel.
     """
@@ -175,7 +175,7 @@ def test_before_finish_panel_revokes_finish_and_injects_findings() -> None:
         dispatcher=dispatcher,
         review=review_gate.ReviewSettings(when="finish", reviewers=[mock.MagicMock()]),
     )
-    with mock.patch.object(review_gate.Reviewer, "critique", panel):
+    with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         conversation = loop_conversation.Conversation.from_wire(_MSGS)
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
@@ -210,7 +210,7 @@ def test_before_finish_panel_satisfied_accepts_finish() -> None:
         dispatcher=dispatcher,
         review=review_gate.ReviewSettings(when="finish", reviewers=[mock.MagicMock()]),
     )
-    with mock.patch.object(review_gate.Reviewer, "critique", panel):
+    with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=loop_conversation.Conversation.from_wire(_MSGS),
@@ -247,7 +247,7 @@ def test_before_finish_rejection_cap_lets_finish_through() -> None:
             when="finish", max_rejections=2, reviewers=[mock.MagicMock()]
         ),
     )
-    with mock.patch.object(review_gate.Reviewer, "critique", panel):
+    with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=loop_conversation.Conversation.from_wire(_MSGS),
@@ -274,7 +274,7 @@ def test_trigger_off_never_runs_a_panel() -> None:
         dispatcher=dispatcher,
         review=review_gate.ReviewSettings(when="never", reviewers=[mock.MagicMock()]),
     )
-    with mock.patch.object(review_gate.Reviewer, "critique", panel):
+    with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=loop_conversation.Conversation.from_wire(_MSGS),
@@ -321,7 +321,7 @@ def test_silent_finish_panel_revokes_and_continues() -> None:
         dispatcher=dispatcher,
         review=review_gate.ReviewSettings(when="finish", reviewers=[mock.MagicMock()]),
     )
-    with mock.patch.object(review_gate.Reviewer, "critique", panel):
+    with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         conversation = loop_conversation.Conversation.from_wire(_MSGS)
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
@@ -381,7 +381,7 @@ def test_periodic_panel_fires_every_n_turns() -> None:
     # Each verify pass commits real progress (the normal success path), so the
     # verify-settled detector stays dormant and all 5 turns run.
     with (
-        mock.patch.object(review_gate.Reviewer, "critique", panel),
+        mock.patch.object(review_gate.ReviewGate, "critique", panel),
         mock.patch("agent6.vcs.git.ops.chain_commit", return_value="sha"),
     ):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -417,7 +417,7 @@ def test_periodic_panel_injects_text_into_next_user_msg() -> None:
         ),
     )
     conversation = loop_conversation.Conversation.from_wire(_MSGS)
-    with mock.patch.object(review_gate.Reviewer, "critique", panel):
+    with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=conversation,
@@ -460,7 +460,7 @@ def test_on_verify_fail_panel_fires_only_on_nonzero_exit() -> None:
         review=review_gate.ReviewSettings(when="verify_fail", reviewers=[mock.MagicMock()]),
     )
     conversation = loop_conversation.Conversation.from_wire(_MSGS)
-    with mock.patch.object(review_gate.Reviewer, "critique", panel):
+    with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=conversation,
@@ -498,7 +498,7 @@ def test_on_verify_fail_panel_skipped_when_no_verify_call() -> None:
         dispatcher=dispatcher,
         review=review_gate.ReviewSettings(when="verify_fail", reviewers=[mock.MagicMock()]),
     )
-    with mock.patch.object(review_gate.Reviewer, "critique", panel):
+    with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=loop_conversation.Conversation.from_wire(_MSGS),
@@ -552,7 +552,7 @@ def test_a_settled_end_is_reviewed_like_a_finish() -> None:
             review_gate.CritiqueResult(text="* fine", satisfied=True),
         ]
     )
-    with mock.patch.object(review_gate.Reviewer, "critique", panel):
+    with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         state = _settled_state()
         turn = _idle_turn()
         assert _settle(wf, state, turn) is None
@@ -590,8 +590,8 @@ def test_a_periodic_finding_on_a_settling_turn_is_delivered_once() -> None:
     )
     state = _settled_state()
     turn = _idle_turn()
-    with mock.patch.object(review_gate.Reviewer, "critique", panel):
-        wf.reviewer.triggers(state, turn)
+    with mock.patch.object(review_gate.ReviewGate, "critique", panel):
+        wf.review_gate.triggers(state, turn)
         wf._turn_notices(state, turn)  # pyright: ignore[reportPrivateUsage]
         _settle(wf, state, turn)
     delivered = [
@@ -613,8 +613,8 @@ def test_a_rejected_plateau_end_is_named_as_one() -> None:
         [review_gate.CritiqueResult(text="* the gain is unmeasured", satisfied=False)]
     )
     turn = _idle_turn()
-    with mock.patch.object(review_gate.Reviewer, "critique", panel):
-        assert wf.reviewer.end_rejected(_settled_state(), turn, ending="metric_plateau")
+    with mock.patch.object(review_gate.ReviewGate, "critique", panel):
+        assert wf.review_gate.end_rejected(_settled_state(), turn, ending="metric_plateau")
     assert turn.review_text is not None
     assert turn.review_text.startswith("The review panel rejected the end at the metric plateau")
     assert "the gain is unmeasured" in turn.review_text
@@ -772,7 +772,7 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     state.verify.note_pass()
     state.verify.note_edit()  # green once, edited since: stale
     conv = loop_conversation.Conversation()
-    with mock.patch.object(review_gate.Reviewer, "critique", panel):
+    with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         turn = loop_state.TurnState(number=5, resp=_resp("Done."), assistant=mock.MagicMock())
         ctx = wf._turn_context(state, turn=5, execution_start=1)  # pyright: ignore[reportPrivateUsage]
         assert quiet_turns.handle_silent_finish(wf, "Done.", conv, state, turn, ctx) is None
@@ -829,7 +829,7 @@ def test_before_finish_panel_reviews_a_model_controlled_run(tmp_path: pathlib.Pa
         review=review_gate.ReviewSettings(when="finish", reviewers=[mock.MagicMock()]),
         events=event_log.EventSink(log),
     )
-    with mock.patch.object(review_gate.Reviewer, "critique", panel):
+    with mock.patch.object(review_gate.ReviewGate, "critique", panel):
         wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
             system="S",
             conversation=loop_conversation.Conversation.from_wire(_MSGS),
@@ -852,7 +852,7 @@ _TARGET_DIFF = (
     "-x = 1\n"
     "+x = 2\n"
 )
-_SEAT_REPLY = json.dumps(
+_REVIEWER_REPLY = json.dumps(
     {
         "verdict": "block",
         "summary": "one defect",
@@ -871,11 +871,11 @@ _SEAT_REPLY = json.dumps(
 
 def _target_reviewer(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, events: list[Any]
-) -> review_gate.Reviewer:
-    """Return a reviewer with one scripted seat and no git behind its grounding."""
+) -> review_gate.ReviewGate:
+    """Return a reviewer with one scripted reviewer and no git behind its grounding."""
     provider = mock.MagicMock()
-    provider.call.return_value = _resp(_SEAT_REPLY)
-    seat = review_lane_env.seat(focus="correctness", model="p/m", provider=provider)
+    provider.call.return_value = _resp(_REVIEWER_REPLY)
+    reviewer = review_lane_env.reviewer(focus="correctness", model="p/m", provider=provider)
 
     def rules(*_args: Any, **_kwargs: Any) -> review_records.ReviewRules:
         return review_records.ReviewRules()
@@ -890,14 +890,14 @@ def _target_reviewer(
         panel_id: str, verdicts: Any, known: Any, **_kw: Any
     ) -> tuple[review_records.FindingObservation, ...]:
         return tuple(
-            review_records.FindingObservation("f-1", panel_id, f, (v.seat_index,))
+            review_records.FindingObservation("f-1", panel_id, f, (v.reviewer_index,))
             for v in verdicts
             for f in v.findings
         )
 
     monkeypatch.setattr(review_gate.review_history, "observations", observations)
-    return review_gate.Reviewer(
-        settings=review_gate.ReviewSettings(when="finish", reviewers=[seat]),
+    return review_gate.ReviewGate(
+        settings=review_gate.ReviewSettings(when="finish", reviewers=[reviewer]),
         chain=mock.MagicMock(root=tmp_path),
         hide=(),
         executor=mock.MagicMock,
@@ -932,8 +932,8 @@ def test_a_review_session_panel_sits_on_its_target_once(
     assert critique is not None and critique.satisfied
     assert "x = 2 breaks the invariant" in critique.text
     kinds = [type(e).__name__ for e in events]
-    assert kinds == ["ReviewStart", "ReviewSeat", "ReviewPanel"]
-    start, _seat, panel = events
+    assert kinds == ["ReviewStart", "ReviewVerdict", "ReviewPanel"]
+    start, _reviewer, panel = events
     assert start.trigger == "review_target" and start.turn == 0
     assert start.target["head_tree"] == "ht" and start.target["base_tree"] == "bt"
     assert panel.trigger == "review_target" and panel.block_on == "none" and not panel.blocked

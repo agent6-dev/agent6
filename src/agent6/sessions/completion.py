@@ -28,7 +28,7 @@ class CompletionRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         calls: The provider attempts made, retries included.
         diagnostics: What the ceiling or the contract cut, one line each; empty when nothing was.
         session_id: The producing read-only session, empty in legacy records.
-        review_binding: The parent-assigned panel, seat and target, or null outside a panel.
+        review_binding: The parent-assigned panel, reviewer and target, or null outside a panel.
         response_stop_reason: The last provider response's stop reason.
         response_output_tokens: The last response's output tokens.
         reasoning_chars: The last response's reasoning character count.

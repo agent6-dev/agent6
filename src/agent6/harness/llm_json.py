@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Pull one structured JSON object out of an LLM's prose reply.
 
-Shared by the review seats and the compare judge: a model asked for a JSON
+Shared by the reviewers and the compare judge: a model asked for a JSON
 verdict often wraps it in markdown fences, prose, or a stray example object,
 so the parse tolerates all three and picks the object that carries the
 caller's expected keys.

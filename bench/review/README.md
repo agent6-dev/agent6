@@ -1,7 +1,7 @@
 # Adversarial review panel: validation
 
 agent6 runs reviewer subagents over a diff and aggregates their verdicts through the in-loop `[review]` config.
-The `review` preset enables a three-seat `finish` panel.
+The `review` preset enables a three-reviewer `finish` panel.
 The configuration reference documents its triggers, roster and blocking rules.
 `agent6 ask "/review <range>"` is a separate markdown review, not a structured panel.
 
@@ -14,7 +14,7 @@ The old `reviewer.py` blocked correct, green-verify work because its grounding w
 prose ("do not block on speculation"), and models rationalize around prose. The
 panel makes the grounding executable in the aggregator instead. A reviewer's
 `block` gates only if a machine check passes: the cited `file_line` is actually
-present in the diff the seat was shown, and the category is in the allowed-block
+present in the diff the reviewer was shown, and the category is in the allowed-block
 set (`security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`,
 `verify-uncovered-correctness`). A block that fails either check is downgraded to
 `warn` before any blocking-model counting. Taste, naming, "should add a test", and
@@ -30,23 +30,23 @@ time.
 
 | Diff | Result |
 |------|--------|
-| Hardcoded API key + path traversal | 2 grounded blocks (deduped from 3 seats); both real, cited at real lines |
+| Hardcoded API key + path traversal | 2 grounded blocks (deduped from 3 reviewers); both real, cited at real lines |
 | `token ==` compare + stray `.err` files | 3 grounded blocks: timing side-channel + 2 off-topic-edit |
 | Clean (constant-time compare, env secret) | PASS under veto; the lone finding was a non-gating `warn` |
 
 The grounded aggregator caught real, cited, block-eligible defects and did not
 false-block clean work with the veto on. About $0.03 to $0.06 per panel; 3
-concurrent seats run in about 2 minutes.
+concurrent reviewers run in about 2 minutes.
 
 ### In-loop veto, full run
 
-A `read_doc(name)` task with a path-traversal trap (`finish`, 3 seats,
-veto). The worker's naive `open("files/" + name)` was blocked by all 3 seats. Its
+A `read_doc(name)` task with a path-traversal trap (`finish`, 3 reviewers,
+veto). The worker's naive `open("files/" + name)` was blocked by all 3 reviewers. Its
 first fix (an abspath check) still let symlink traversal through, and security
 blocked again. It switched to `os.path.realpath` and the panel passed. Three
 rounds, no stall, final code symlink-safe.
 
-### A/B, off vs veto (3 seats, kimi)
+### A/B, off vs veto (3 reviewers, kimi)
 
 | Task | off | veto |
 |------|-----|------|
@@ -66,22 +66,22 @@ as off-topic edits.
 ### Explore tier, cross-file
 
 `parse(s)` gained a required argument, breaking a caller in `main.py` that was not
-in the diff. A diff-tier seat passed (it cannot see the caller). An explore-tier
-seat (read-only `read_file` + `find_references`) found `main.py` and blocked with
+in the diff. A diff-tier reviewer passed (it cannot see the caller). An explore-tier
+reviewer (read-only `read_file` + `find_references`) found `main.py` and blocked with
 `verify-uncovered-correctness`, cited at the diff line. The explore tier adds
 value over the diff tier for cross-file impact; the diff tier is the default.
 
 ## The risk-field prompt A/B (measured, then removed)
 
-The panel prompt once asked each seat what could fail and what the supplied checks do not establish, returned as a `risk` string of at most 1,000 characters.
+The panel prompt once asked each reviewer what could fail and what the supplied checks do not establish, returned as a `risk` string of at most 1,000 characters.
 
 - **Arms:** A omitted the risk instruction and JSON field; B included them.
 - **Cases:** two development cases and four evaluation cases, frozen before tuning.
-- **Protocol:** both arms on each case, three repetitions, three diff-scope seats per panel, identical routes, temperatures, token caps and supplied checks (36 panels, 108 seats).
+- **Protocol:** both arms on each case, three repetitions, three diff-scope reviewers per panel, identical routes, temperatures, token caps and supplied checks (36 panels, 108 reviewers).
 - **Result:** measured 2026-11-05 on `chatgpt/gpt-6-astra` at effort high.
   Neither arm blocked or abstained on the clean cases.
-  Every arm-B seat returned a risk within the bound.
-  Arm B cost 69 more input tokens and 84 to 151 more output tokens per seat, and one to three seconds more per panel.
+  Every arm-B reviewer returned a risk within the bound.
+  Arm B cost 69 more input tokens and 84 to 151 more output tokens per reviewer, and one to three seconds more per panel.
   The planted cases' blocks were not adjudicated against the oracle.
 - **Outcome:** no behavior improvement was shown, so the risk field and its instruction were removed with the A/B's runner.
-  A seat reports a concern as a finding.
+  A reviewer reports a concern as a finding.

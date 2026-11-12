@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Hold conversation ids and the completed-call counts that decide `is_first_turn`.
 
-Each role's calls to one provider form a conversation; review seats use panel id and seat index.
+Each role's calls to one provider form a conversation; reviewers use panel id and reviewer index.
 Its id is minted here, never derived from a path, a name or a host.
 The ids and counts persist in `conversations.json` beside the session.
 A resume continues the same conversations; a fork starts new ones.
@@ -33,19 +33,19 @@ class _Route:
 
 
 def _route_key(role: str, provider: str, call_context: kinds.CallContext | None) -> str:
-    """Return a panel seat key or a role and provider key."""
+    """Return a reviewer key or a role and provider key."""
     if (
         call_context is not None
         and call_context.panel_id is not None
-        and call_context.seat_index is not None
+        and call_context.reviewer_index is not None
     ):
-        return f"review:{call_context.panel_id}:{call_context.seat_index}"
+        return f"review:{call_context.panel_id}:{call_context.reviewer_index}"
     return f"{role}@{provider}"
 
 
 @dataclasses.dataclass(slots=True)
 class Conversations:
-    """A session's conversations, one per role and provider or panel seat.
+    """A session's conversations, one per role and provider or reviewer.
 
     Attributes:
         path: Where the state persists; None keeps it in memory for one process.
@@ -89,7 +89,7 @@ class Conversations:
             provider: The provider entry's name.
             initiator: `user` or `agent`.
             observe: Receives each HTTP attempt's facts; None observes nothing.
-            call_context: The call's identity; panel seats have separate conversations.
+            call_context: The call's identity; reviewers have separate conversations.
 
         Returns:
             The context.

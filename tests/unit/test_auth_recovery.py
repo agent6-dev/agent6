@@ -138,7 +138,7 @@ def test_a_stale_401_retries_once_with_the_current_bearer(
         sent.append(headers["authorization"])
         if len(sent) == 1:
             clock["now"] = 4550.0
-            assert cred.token() == "AT2"  # another seat refreshes while this attempt is in flight
+            assert cred.token() == "AT2"  # another caller refreshes while this attempt is in flight
             return httpx2.Response(401, json={})
         return httpx2.Response(final_status, json={})
 

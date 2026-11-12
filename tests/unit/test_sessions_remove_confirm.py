@@ -362,14 +362,14 @@ def test_remove_asks_removes_their_review_refs(
     assert git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID))
 
 
-def _seat(state: pathlib.Path, seat_id: str, parent: str) -> pathlib.Path:
-    seat = state / "sessions" / "reviewers" / seat_id
-    seat.mkdir(parents=True)
-    (seat / "manifest.json").write_text(
+def _reviewer(state: pathlib.Path, reviewer_id: str, parent: str) -> pathlib.Path:
+    reviewer = state / "sessions" / "reviewers" / reviewer_id
+    reviewer.mkdir(parents=True)
+    (reviewer / "manifest.json").write_text(
         json.dumps(
             {
                 "version": 2,
-                "session_id": seat_id,
+                "session_id": reviewer_id,
                 "mode": "reviewer",
                 "user_task": "Review: security",
                 "parallel": {"group": f"{parent}-rpanel", "lane": 1, "parent": parent},
@@ -378,38 +378,38 @@ def _seat(state: pathlib.Path, seat_id: str, parent: str) -> pathlib.Path:
         + "\n",
         encoding="utf-8",
     )
-    return seat
+    return reviewer
 
 
-def test_remove_takes_the_review_seat_records_no_listing_shows(
+def test_remove_takes_the_review_reviewer_records_no_listing_shows(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A removed run left its panel's seat sessions behind, where nothing lists them."""
+    """A removed run left its panel's reviewer sessions behind, where nothing lists them."""
     monkeypatch.chdir(tmp_path)
     _ended_unmerged_run(tmp_path)
     state = paths.state_dir(tmp_path)
-    mine = _seat(state, f"{_ID}-rpanel-l1", _ID)
-    theirs = _seat(state, "other-rpanel-l1", "other")
+    mine = _reviewer(state, f"{_ID}-rpanel-l1", _ID)
+    theirs = _reviewer(state, "other-rpanel-l1", "other")
     ref = f"refs/agent6/{mine.name}/review/tree"
     _git(tmp_path, "update-ref", ref, "HEAD")
     assert main(["sessions", "remove", _ID]) == 0
     assert not mine.exists() and theirs.exists()
     assert git_read.chain_tip(tmp_path, ref) is None
-    assert "1 review seat record" in capsys.readouterr().out
+    assert "1 reviewer record" in capsys.readouterr().out
 
 
-def test_remove_asks_takes_their_review_seat_records(
+def test_remove_asks_takes_their_review_reviewer_records(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A /review ask's seats go with the asks; a run's seats stay with the run."""
+    """A /review ask's reviewers go with the asks; a run's reviewers stay with the run."""
     monkeypatch.chdir(tmp_path)
     _ended_unmerged_run(tmp_path)
     state = paths.state_dir(tmp_path)
     (state / "sessions" / "asks" / "review-ask").mkdir(parents=True)
-    asked = _seat(state, "review-ask-rpanel-l1", "review-ask")
-    kept = _seat(state, f"{_ID}-rpanel-l1", _ID)
+    asked = _reviewer(state, "review-ask-rpanel-l1", "review-ask")
+    kept = _reviewer(state, f"{_ID}-rpanel-l1", _ID)
     assert main(["sessions", "remove", "--asks", "--yes"]) == 0
     assert not asked.exists() and kept.exists()
 
@@ -450,7 +450,7 @@ def test_remove_takes_the_runs_lanes_with_it(
     _ended_unmerged_run(tmp_path)
     state = paths.state_dir(tmp_path)
     lane = _lane(state, f"{_ID}-p1-l1", _ID)
-    lane_seat = _seat(state, f"{lane.name}-rpanel-l1", lane.name)
+    lane_reviewer = _reviewer(state, f"{lane.name}-rpanel-l1", lane.name)
     other = _lane(state, "other-p1-l1", "other")
     chain = git_read.chain_ref_for(lane.name)
     _git(tmp_path, "update-ref", chain, "HEAD")
@@ -458,12 +458,12 @@ def test_remove_takes_the_runs_lanes_with_it(
 
     assert main(["sessions", "remove", _ID]) == 0
 
-    assert not lane.exists() and not lane_seat.exists() and other.exists()
+    assert not lane.exists() and not lane_reviewer.exists() and other.exists()
     assert git_read.chain_tip(tmp_path, chain) is None
     # A lane's branch is git's, as a run's is: prune is the branch verb.
     assert git_read.branch_exists(tmp_path, f"agent6/{lane.name}")
     out = capsys.readouterr().out
-    assert "1 lane" in out and "1 review seat record" in out
+    assert "1 lane" in out and "1 reviewer record" in out
 
 
 def test_remove_refuses_while_a_lane_of_the_run_is_live(

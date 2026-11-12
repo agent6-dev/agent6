@@ -213,7 +213,7 @@ def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
         The rows, every session appearing once: a lane whose parent is not listed
         stays a row of its own; lanes keep lane order under their parent.
     """
-    items = [s for s in summaries if not is_seat_record(s)]
+    items = [s for s in summaries if not is_reviewer_record(s)]
     by_id = {s.session_id: s for s in items}
     children: dict[str, list[SessionSummary]] = {}
     for s in items:
@@ -296,10 +296,10 @@ def rows_for(
     return rows, winners
 
 
-def is_seat_record(summary: SessionSummary) -> bool:
+def is_reviewer_record(summary: SessionSummary) -> bool:
     """Return whether a session is a bounded read-only conversation its parent dispatched.
 
-    A review seat is evidence of its panel, reached from the receipt and the findings; it
+    A reviewer is evidence of its panel, reached from the receipt and the findings; it
     has no work to join, so no listing counts it among its parent's lanes or rows.
 
     Args:
@@ -334,7 +334,7 @@ def lanes_of(
         s
         for d in session_dirs(state_dir)
         if (s := summarize_session_dir(d, branch_tips=branch_tips)).parent == parent
-        and not is_seat_record(s)
+        and not is_reviewer_record(s)
     ]
     return sorted(lanes, key=_lane_order)
 

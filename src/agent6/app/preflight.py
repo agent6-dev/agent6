@@ -77,7 +77,7 @@ def budget_preflight(
     Args:
         cfg: The run's config.
         routes: The exact `(provider, model)` routes to judge; None uses the config's
-            roles and review seats.
+            roles and reviewers.
         reporter: Receives the notices.
 
     Returns:
@@ -87,7 +87,7 @@ def budget_preflight(
         reachable = {(role, rm.provider, rm.model) for role, rm in cfg.models.configured().items()}
         for entry in cfg.review.reviewers:
             if route := entry.resolve(None):
-                reachable.add((f"review seat {entry.focus}", route.provider, route.model))
+                reachable.add((f"reviewer {entry.focus}", route.provider, route.model))
     else:
         # A machine's states carry routes with no role of the run's config.
         reachable = {("", prov, m) for prov, m in routes if m}

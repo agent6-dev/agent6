@@ -15,7 +15,7 @@ from agent6.app import role_providers
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
 
-# The tools the measured seat is handed: the ones the recorded repo seats had.
+# The tools the measured reviewer is handed: the ones the recorded repo reviewers had.
 READING_TOOLS = ("find_definition", "find_references", "list_dir", "outline", "read_file")
 
 
@@ -49,7 +49,7 @@ def main() -> None:
                         before = resource.getrusage(resource.RUSAGE_CHILDREN)
                         start, cpu = time.perf_counter(), time.process_time()
                         result = review_gate.run_panel(
-                            role_providers.resolve_review_seats(cfg),
+                            role_providers.resolve_reviewers(cfg),
                             review_panel.ReviewContext(task="Review changes", diff=diff),
                             target=target,
                             executor=executor,
@@ -60,7 +60,7 @@ def main() -> None:
                             tools=READING_TOOLS,
                         )
                         after = resource.getrusage(resource.RUSAGE_CHILDREN)
-                        verdict = result.per_seat[0]
+                        verdict = result.per_reviewer[0]
                         row = {
                             "case": case,
                             "rep": rep,

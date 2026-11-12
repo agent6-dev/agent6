@@ -12,7 +12,7 @@ from agent6 import errors
 from agent6.harness import loop_state, repo_context, run_chain
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
-from agent6.harness.review import seat as review_seat
+from agent6.harness.review import verdict as review_verdict
 from agent6.sessions import event_log
 from agent6.vcs.git import files as git_files
 from agent6.vcs.git import read as git_read
@@ -221,7 +221,7 @@ def test_combined_limit_counts_utf8_bytes(repo: pathlib.Path, size: int, complet
 
 def _reviewer_for(
     repo: pathlib.Path, provider: Any, sink: event_log.EventSink
-) -> review_gate.Reviewer:
+) -> review_gate.ReviewGate:
     base = _git(repo, "rev-parse", "HEAD")
     chain = run_chain.RunChain(
         repo, ref="refs/agent6/test/head", fallback_parent=base, base_sha=base
@@ -229,8 +229,8 @@ def _reviewer_for(
     (repo / "foo.py").write_text("x = 2\n")
     (repo / "AGENTS.md").unlink()
     chain.commit("edit")
-    return review_gate.Reviewer(
-        review_gate.ReviewSettings(reviewers=[review_lane_env.seat("s", "m", provider)]),
+    return review_gate.ReviewGate(
+        review_gate.ReviewSettings(reviewers=[review_lane_env.reviewer("s", "m", provider)]),
         chain,
         (),
         mock.MagicMock,
@@ -307,7 +307,7 @@ def test_unborn_tree_has_no_base_rules(repo: pathlib.Path) -> None:
     (repo / "AGENTS.md").write_text("uncommitted rule")
     rules = repo_context.review_rules(repo, git_read.EMPTY_TREE)
     assert rules.complete and rules.sources == ()
-    assert "No base rules exist." in review_seat.build_user_message(
+    assert "No base rules exist." in review_verdict.build_user_message(
         review_panel.ReviewContext(rules=rules)
     )
 
@@ -362,26 +362,26 @@ def test_malicious_rules_do_not_add_tools_or_change_grounding(repo: pathlib.Path
         )
     )
     result = review_lane_env.run_panel(
-        [review_lane_env.seat("s", "m", provider)],
+        [review_lane_env.reviewer("s", "m", provider)],
         review_panel.ReviewContext(rules=rules, diff="diff --git a/foo.py b/foo.py\n"),
         block_on="any",
         min_blocking_models=1,
         panel_id="p",
         max_turns=1,
     )
-    # The seat has the tools its parent handed down, whatever the rules ask for.
+    # The reviewer has the tools its parent handed down, whatever the rules ask for.
     offered = tuple(sorted(t.name for t in provider.call.call_args.kwargs["tools"]))
     assert offered == review_lane_env.READING_TOOLS
     assert not result.blocked and result.merged_findings[0].severity == "warn"
 
 
-def test_seat_prompt_supplies_whole_rule_text(repo: pathlib.Path) -> None:
+def test_reviewer_prompt_supplies_whole_rule_text(repo: pathlib.Path) -> None:
     body = " " + "x" * 9000 + "\n"
     (repo / "AGENTS.md").write_text(body)
     tree = _commit(repo)
     rules = repo_context.review_rules(repo, tree)
     expected = f"REVIEW RULES (base tree):\n{rules.text}"
-    assert review_seat.build_user_message(
+    assert review_verdict.build_user_message(
         review_panel.ReviewContext(task="t", rules=rules, diff="d")
     ) == (f"TASK:\nt\n\n{expected}\n\nVERIFY: not run.\n\nDIFF:\nd")
 

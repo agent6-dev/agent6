@@ -789,7 +789,7 @@ def _window(used: float, resets_at: float) -> budget.PlanUsage:
 
 
 def test_an_out_of_order_reading_counts_nothing() -> None:
-    """Concurrent seats delivered readings out of order and each drop counted as a reset."""
+    """Concurrent reviewers delivered readings out of order and each drop counted as a reset."""
     tracker = _t()
     for used in (20.0, 23.0, 21.0, 23.0):
         tracker.record_plan_preflight("m", _window(used, 2e9))

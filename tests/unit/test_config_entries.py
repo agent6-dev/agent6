@@ -214,7 +214,7 @@ def test_a_roster_written_as_an_array_of_tables_takes_an_edit(tmp_path: pathlib.
 def test_remove_reviewer_by_position_and_keep_empty_override(
     tmp_path: pathlib.Path, *, to_repo: bool
 ) -> None:
-    """Shared focuses stay distinct; removing the last inherited seat writes an empty list."""
+    """Shared focuses stay distinct; removing the last inherited reviewer writes an empty list."""
     assert (
         write.set_config_value(
             tmp_path,
@@ -258,7 +258,7 @@ def test_invalid_reviewer_keeps_roster(tmp_path: pathlib.Path, fields: dict[str,
 
 @pytest.mark.parametrize("index", [-1, 1])
 def test_remove_reviewer_refuses_out_of_range(tmp_path: pathlib.Path, index: int) -> None:
-    """An invalid position cannot remove a different seat or rewrite the config."""
+    """An invalid position cannot remove a different reviewer or rewrite the config."""
     assert write.set_config_value(tmp_path, "review.reviewers", '[{ focus = "security" }]') is None
     target = paths.global_config_path()
     before = target.read_text()
@@ -377,7 +377,7 @@ def test_add_preset_creates_a_table_and_selects_it(
 
 
 def test_entries_and_reviewers_land_under_the_selected_preset(tmp_path: pathlib.Path) -> None:
-    """An entry or a seat added under a preset writes its table, and is removed from it."""
+    """An entry or a reviewer added under a preset writes its table, and is removed from it."""
     assert write.add_preset(tmp_path, "fast") is None
     provider = next(t for t in write.ENTRY_TABLES if t.path == "providers")
     fields = {"backend": "openai", "base_url": "https://acme.example/v1", "api_key_env": "ACME"}
@@ -396,7 +396,7 @@ def test_entries_and_reviewers_land_under_the_selected_preset(tmp_path: pathlib.
 
 
 def test_a_write_under_a_built_in_preset_keeps_the_built_ins_values(tmp_path: pathlib.Path) -> None:
-    """The first `presets.review.*` write copies the built-in in, so `review` keeps its seats.
+    """The first `presets.review.*` write copies the built-in in, so `review` keeps its reviewers.
 
     A `[presets.<name>]` table replaces the built-in of that name wholesale; one page edit
     under a selected built-in dropped every other value it set.

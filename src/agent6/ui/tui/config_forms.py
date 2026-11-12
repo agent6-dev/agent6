@@ -190,7 +190,7 @@ class EditModal(FormModal[tuple[str, str, bool] | None]):
             self.dismiss(("add_entry", "", False))
 
     def action_remove_entry(self) -> None:
-        """Hand the page the remove: it confirms, or picks the roster seat."""
+        """Hand the page the remove: it confirms, or picks the roster reviewer."""
         if not self._done:
             self._done = True
             self.dismiss(("remove_entry", "", False))

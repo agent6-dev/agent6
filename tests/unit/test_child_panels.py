@@ -92,7 +92,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
             limits=lane_records.LaneLimits(deadline_at=time.time() + 1800),
         )
         result = executor.dispatch_panel(
-            [request], panel_id="seat-test", at=child_env.git(clone, "rev-parse", "HEAD")
+            [request], panel_id="reviewer-test", at=child_env.git(clone, "rev-parse", "HEAD")
         )
         assert result.dispatched and len(result.lanes) == 1, result.message
         assert result.lanes[0].status == "no_changes"
@@ -412,7 +412,7 @@ def test_import_retains_descendant_records_receipts_and_target_objects(
     assert (
         child_env.git(repo, "show", f"{target.snapshot_commit}:README.md") == "reviewed dirty tree"
     )
-    # The seat is the worker's child by lineage and none of its lanes.
+    # The reviewer is the worker's child by lineage and none of its lanes.
     assert [child.name for child in lineage.children_of(imported.session_dir)] == [leaf.name]
     assert listing.lanes_of(paths.state_dir(repo), worker.name) == []
     assert receipt.read_receipt(dest, repo).session_id == leaf.name

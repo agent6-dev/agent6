@@ -26,13 +26,13 @@ from tests.unit import test_run_lifecycle_bugfix
 
 
 def test_max_turns_defaults_to_twenty_in_config_surfaces() -> None:
-    """An unset seat budget is visible as 20 model calls."""
+    """An unset reviewer budget is visible as 20 model calls."""
     assert layer_data.config_leaves(Config())["review.max_turns"] == 20
 
 
 @pytest.mark.parametrize("value", [0, -1])
 def test_max_turns_requires_a_positive_call_budget(value: int) -> None:
-    """A seat needs at least one model call for its verdict."""
+    """A reviewer needs at least one model call for its verdict."""
     with pytest.raises(pydantic.ValidationError) as caught:
         ReviewConfig.model_validate({"max_turns": value})
     assert any(
@@ -41,12 +41,12 @@ def test_max_turns_requires_a_positive_call_budget(value: int) -> None:
     )
 
 
-def test_configured_call_budget_reaches_the_seat(
+def test_configured_call_budget_reaches_the_reviewer(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The in-loop panel stops a tool-only seat at the configured budget and names it."""
+    """The in-loop panel stops a tool-only reviewer at the configured budget and names it."""
     repo = test_run_lifecycle_bugfix._setup(tmp_path, monkeypatch)
     config = tmp_path / "review.toml"
     config.write_text(
@@ -57,14 +57,14 @@ def test_configured_call_budget_reaches_the_seat(
         encoding="utf-8",
     )
     tool = {"type": "tool_use", "id": "r1", "name": "read_file", "input": {"path": "a.py"}}
-    seat = test_run_lifecycle_bugfix._Scripted([("", (tool,))] * 3)
-    seat_call = mock.Mock(wraps=seat.call)
-    monkeypatch.setattr(seat, "call", seat_call)
+    reviewer = test_run_lifecycle_bugfix._Scripted([("", (tool,))] * 3)
+    reviewer_call = mock.Mock(wraps=reviewer.call)
+    monkeypatch.setattr(reviewer, "call", reviewer_call)
 
-    def resolve_seats(_cfg: Config) -> list[review_gate.ReviewSeat]:
-        return [review_lane_env.seat("security", "p/m", seat)]
+    def resolve_reviewers(_cfg: Config) -> list[review_gate.Reviewer]:
+        return [review_lane_env.reviewer("security", "p/m", reviewer)]
 
-    monkeypatch.setattr(role_providers, "resolve_review_seats", resolve_seats)
+    monkeypatch.setattr(role_providers, "resolve_reviewers", resolve_reviewers)
     monkeypatch.setattr(review_gate, "run_panel", review_lane_env.run_panel)
     aggregate = mock.Mock(wraps=review_panel.aggregate_verdicts)
     monkeypatch.setattr(review_panel, "aggregate_verdicts", aggregate)
@@ -80,14 +80,14 @@ def test_configured_call_budget_reaches_the_seat(
 
     captured = capsys.readouterr()
     assert rc == 1, captured.err
-    assert seat.calls == 2
+    assert reviewer.calls == 2
     (verdict,) = aggregate.call_args.args[0]
     assert verdict.error == "no verdict within 2 turns"
-    assert "at most 2 replies" in seat_call.call_args_list[0].kwargs["system"]
-    assert "x = 2" in json.dumps(seat_call.call_args_list[1].kwargs["messages"])
+    assert "at most 2 replies" in reviewer_call.call_args_list[0].kwargs["system"]
+    assert "x = 2" in json.dumps(reviewer_call.call_args_list[1].kwargs["messages"])
     session = paths.state_dir(repo) / "sessions" / "runs" / "review-TURNS1"
     snapshot = (session / "loop_state.json").read_text(encoding="utf-8")
-    assert "review inconclusive: all 1 seats abstained" in snapshot
+    assert "review inconclusive: all 1 reviewers abstained" in snapshot
 
 
 @pytest.mark.parametrize("route", [{"provider": "o"}, {"model": "m"}])
@@ -177,7 +177,7 @@ def test_reviewers_refuse_strings_blank_focus_and_unknown_fields(entry: object) 
 def test_reviewer_sampling_reaches_provider_call(
     pinned: bool, overrides: dict[str, object], effort: str, temperature: float
 ) -> None:
-    """A seat sends its entry's settings, off and zero included; a pinned seat inherits too."""
+    """A reviewer sends its entry's settings, off and zero included; a pinned one inherits too."""
     route = {"model": "o/moonshotai/kimi-k2"}
     cfg = Config.model_validate(
         {
@@ -209,9 +209,9 @@ def test_reviewer_sampling_reaches_provider_call(
             },
         )
 
-    seats = role_providers.resolve_review_seats(cfg)
+    reviewers = role_providers.resolve_reviewers(cfg)
     wired = []
-    for resolved in seats:
+    for resolved in reviewers:
         provider = role_providers.build_role_provider(
             cfg.with_model_settings("worker", resolved.settings),
             "worker",
@@ -219,7 +219,7 @@ def test_reviewer_sampling_reaches_provider_call(
             budget=mock.MagicMock(),
         )
         wired.append(
-            review_lane_env.seat(
+            review_lane_env.reviewer(
                 resolved.focus,
                 resolved.model,
                 provider,
@@ -257,7 +257,7 @@ def test_reviewers_are_one_serializable_config_leaf() -> None:
     assert config_view.display_value(setting) == '[{ focus = "security", effort = "off" }]'
 
 
-def test_trigger_on_with_no_reviewers_builds_the_one_seat_roster() -> None:
+def test_trigger_on_with_no_reviewers_builds_the_one_reviewer_roster() -> None:
     cfg = Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
@@ -268,7 +268,7 @@ def test_trigger_on_with_no_reviewers_builds_the_one_seat_roster() -> None:
             "review": {"when": "finish"},
         }
     )
-    seats = role_providers.resolve_review_seats(cfg)
-    assert len(seats) == 1
-    assert seats[0].model == "o/rm"
-    assert seats[0].focus == "security"
+    reviewers = role_providers.resolve_reviewers(cfg)
+    assert len(reviewers) == 1
+    assert reviewers[0].model == "o/rm"
+    assert reviewers[0].focus == "security"

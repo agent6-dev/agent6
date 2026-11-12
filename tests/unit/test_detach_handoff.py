@@ -232,7 +232,7 @@ def _stub_execution_internals(
         rm_role=types.SimpleNamespace(model="fake/model", provider="fake"),
         provider=None,
         summariser_provider=None,
-        review_seats=[],
+        reviewers=[],
         close=lambda: None,
     )
     tools = types.SimpleNamespace(

@@ -103,10 +103,10 @@ def _transcripts(tmp_path: pathlib.Path) -> list[dict[str, Any]]:
     return [json.loads(path.read_text()) for path in (tmp_path / "transcripts").glob("*.json")]
 
 
-def test_review_requests_belong_to_real_distinct_seat_sessions(
+def test_review_requests_belong_to_real_distinct_reviewer_sessions(
     short_repo: pathlib.Path,
 ) -> None:
-    """Duplicate-focus seats have distinct sessions, conversations and bound call transcripts."""
+    """Reviewers with one focus have distinct sessions, conversations and bound call transcripts."""
     repo = short_repo / "origin"
     child_env.init_repo(repo)
     directory = child_env.create_record(repo, "parent")
@@ -130,9 +130,9 @@ def test_review_requests_belong_to_real_distinct_seat_sessions(
         target = executor.chain.review_target()
         assert target is not None
         target = executor.chain.retain_review_target(target, directory.name)
-        seats = role_providers.resolve_review_seats(cfg)
+        reviewers = role_providers.resolve_reviewers(cfg)
         result = review_gate.run_panel(
-            seats,
+            reviewers,
             review_panel.ReviewContext(task="review", diff=""),
             target=target,
             executor=executor,
@@ -143,14 +143,16 @@ def test_review_requests_belong_to_real_distinct_seat_sessions(
             tools=review_lane_env.READING_TOOLS,
             concurrency=2,
         )
-        assert [s.verdict for s in result.per_seat] == ["pass", "pass"], result
+        assert [s.verdict for s in result.per_reviewer] == ["pass", "pass"], result
         assert len(calls) == 2
-        child_dirs = [directory.parent.parent / "reviewers" / s.session_id for s in result.per_seat]
+        child_dirs = [
+            directory.parent.parent / "reviewers" / s.session_id for s in result.per_reviewer
+        ]
         requests = [r for child in child_dirs for r in _events(child, "provider.request")]
         logical = [r for child in child_dirs for r in _events(child, "model.call")]
         transcripts = [r for child in child_dirs for r in _transcripts(child)]
         assert len(requests) == len(logical) == len(transcripts) == 2
-        assert {r["seat_index"] for r in requests} == {0, 1}
+        assert {r["reviewer_index"] for r in requests} == {0, 1}
         assert {r["panel_id"] for r in requests} == {"panel-a"}
         assert len({r["model_call_id"] for r in requests}) == 2
         by_id = {r["request_id"]: r for r in requests}
@@ -160,7 +162,7 @@ def test_review_requests_belong_to_real_distinct_seat_sessions(
         assert len({r["execution_id"] for r in logical}) == 2
         # A repeated identity never buys replacement children or another grant.
         repeated = review_gate.run_panel(
-            seats,
+            reviewers,
             review_panel.ReviewContext(task="review", diff=""),
             target=target,
             executor=executor,
@@ -175,7 +177,7 @@ def test_review_requests_belong_to_real_distinct_seat_sessions(
 
 
 @pytest.mark.parametrize("streaming", [False, True])
-def test_worker_request_and_transcript_carry_call_id_without_seat_fields(
+def test_worker_request_and_transcript_carry_call_id_without_reviewer_fields(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, streaming: bool
 ) -> None:
     """The ordinary worker uses the same join without inventing a review identity."""
@@ -188,5 +190,5 @@ def test_worker_request_and_transcript_carry_call_id_without_seat_fields(
     assert request.get("model_call_id") == call["model_call_id"]
     assert transcript["model_call_id"] == call["model_call_id"]
     assert transcript["request_id"] == request["request_id"]
-    assert "panel_id" not in request and "seat_index" not in request
+    assert "panel_id" not in request and "reviewer_index" not in request
     providers.close()

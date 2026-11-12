@@ -375,7 +375,7 @@ def lanes_section(children: tuple[lanes.ChildView, ...]) -> list[str]:
     """Return the receipt's `Lanes` lines: one per lane, then the spend they add to the total.
 
     Args:
-        children: The session's children; a panel's seats are listed with their panel.
+        children: The session's children; a panel's reviewers are listed with their panel.
 
     Returns:
         The lines; none for a session without lanes.
@@ -461,18 +461,21 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
             f"Panel {panel.panel_id}: {panel.completion}; "
             f"reviewed head {target.head_tree if target else 'unknown'}"
         )
-        for seat in panel.seats:
-            if not seat.session_id:
+        for reviewer in panel.reviewers:
+            if not reviewer.session_id:
                 continue
             spend = next(
                 (
                     f", {budget.format_usd(child.spend_usd)}"
                     for child in view.children
-                    if child.session_id == seat.session_id and child.settled
+                    if child.session_id == reviewer.session_id and child.settled
                 ),
                 "",
             )
-            lines.append(f"Seat {seat.seat_index + 1} ({seat.focus}): {seat.session_id}{spend}")
+            lines.append(
+                f"Reviewer {reviewer.reviewer_index + 1} ({reviewer.focus}):"
+                f" {reviewer.session_id}{spend}"
+            )
     if view.review.read_failure:
         lines.append(view.review.read_failure)
     lines.extend(lanes_section(view.children))

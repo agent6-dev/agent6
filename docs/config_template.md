@@ -109,7 +109,7 @@ A literal string (`"x-title" = "agent6"`) rides every API request: model calls, 
 A template table renders from request facts for the request classes it names.
 Only a template whose `targets` name `oauth` or `exchange` reaches a configured issuer's credential endpoint.
 
-The facts: `request_id` (fresh per HTTP attempt) and `agent6_version` on every request; `model`, `conversation_id` (an opaque id per role and provider or per review panel and seat, kept across a resume), `initiator` (`user` or `agent`), `is_first_turn`, `is_subagent`, `has_tool_results` and `has_images` on a model call.
+The facts: `request_id` (fresh per HTTP attempt) and `agent6_version` on every request; `model`, `conversation_id` (an opaque id per role and provider or per review panel and reviewer, kept across a resume), `initiator` (`user` or `agent`), `is_first_turn`, `is_subagent`, `has_tool_results` and `has_images` on a model call.
 `{{` and `}}` are literal braces; a placeholder holds a fact name and nothing else.
 
 The transport owns `authorization`, `proxy-authorization`, `x-api-key`, `api-key`, `cookie`, `host`, `connection`, `content-length`, `transfer-encoding`, `content-type` and `accept`; naming one refuses at config load, as does a control character, two spellings of one header, or a template its target cannot render.
@@ -400,7 +400,7 @@ reviewers = [
 ```
 
 A finding grounds on the path, side and lines it cites against the diff; an ungrounded finding is dropped.
-A `block` holds only when its seat's verdict is `block` and its category is one of `security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`, `verify-uncovered-correctness` (the last only when verify passed); otherwise it reads as `warn`, which cannot stall the run.
+A `block` holds only when its reviewer's verdict is `block` and its category is one of `security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`, `verify-uncovered-correctness` (the last only when verify passed); otherwise it reads as `warn`, which cannot stall the run.
 Findings injected in an earlier round or execution neither repeat nor count toward a later panel's gate while the blob they cite is unchanged.
 
 ## `[compaction]`

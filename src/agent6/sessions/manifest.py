@@ -53,7 +53,7 @@ class ModelsBrief(pydantic.BaseModel):
         driver: The model that drove the run, the worker or a plan's planner; None unset.
         reviewer: The reviewer; None unset.
         helper: The helper; None unset.
-        review_seats: Each panel seat's facts, in roster order, labelled by index and focus.
+        reviewers: Each reviewer's facts, in roster order, labelled by index and focus.
         driver_from_flag: The driver came from a `--model`, the run's or a resume's.
     """
 
@@ -62,7 +62,7 @@ class ModelsBrief(pydantic.BaseModel):
     driver: ModelBrief | None = None
     reviewer: ModelBrief | None = None
     helper: ModelBrief | None = None
-    review_seats: dict[str, ModelBrief] = pydantic.Field(default_factory=dict)
+    reviewers: dict[str, ModelBrief] = pydantic.Field(default_factory=dict)
     driver_from_flag: bool = False
 
     @property

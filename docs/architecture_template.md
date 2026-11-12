@@ -24,7 +24,7 @@ Only its modules import the runner, `git_command.py`.
     - the write helpers: `ui/spawn`, `ui/notify`, `ui/steer` (the steer-file seam every front-end writes) and `ui/btw` (the side question a run answers without losing its place)
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` group
     - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `LaneRuntime`); output goes through the injected `Reporter`
-- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`), `review_session` (the read-only pass behind `agent6 sessions review`) and the review panel (`review_panel`, `review_seat`, `review_gate`); the agent loop makes its own provider calls through `provider_call`.
+- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`), `review_session` (the read-only pass behind `agent6 sessions review`) and the review panel (`review_panel`, `reviewer`, `review_gate`); the agent loop makes its own provider calls through `provider_call`.
   `harness/loop_resume.py` owns snapshot carryover and persistence; `harness/loop_steer.py` applies steering at turn and execution boundaries.
 - **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed tool surface the LLM sees, plus dispatch.
   `harness/toolset.py` picks the subset each mode exposes, and appends the MCP tools in the modes that edit.
@@ -83,13 +83,13 @@ A run keeps one message history with one provider and one model.
 - `repo_context.review_rules` loads base-tree rule blobs through `vcs.review_rule_reader`; `review.start` records the paths, blob IDs, byte counts and completeness for the panel
 - under `backend = "claude_code"` the provider keeps one `claude` process per execution and replays that history as labelled text and retained media whenever a call is not a continuation of its last round ([Config](config.md))
 
-An in-loop panel records the run base and reviewed head's tree IDs, full grounded seat verdicts, and findings with durable IDs in `loop.review.*` events.
+An in-loop panel records the run base and reviewed head's tree IDs, full grounded reviewer verdicts, and findings with durable IDs in `loop.review.*` events.
 Panel preparation retains the exact comparison under `refs/agent6/<session>/review/<base-tree>-<head-tree>`, including uncommitted work after failed verification or with `git.commit_per_turn = false`.
 The snapshot commit retains the base history as well as the head tree; an existing head commit is reused when it already retains both.
 Before creating or reusing a snapshot, git checks the trees, retained history and every file object they reference.
 Retention never moves the operator's index, HEAD, visible branches or run chain.
-`Reviewer.prepare` binds the panel ID and target to an immutable `ReviewInput` containing complete historical rules, prior findings and verification evidence.
-The current seat executor consumes that context; lane execution is not enabled by preparation.
+`ReviewGate.prepare` binds the panel ID and target to an immutable `ReviewInput` containing complete historical rules, prior findings and verification evidence.
+The current reviewer executor consumes that context; lane execution is not enabled by preparation.
 Unreadable targets or failed retention skip the panel with `target_unreadable`, never substitute the chain tip for unreadable worktree content.
 The refs survive chain pruning and are removed with their owning session record (`sessions remove`, including `--asks`).
 `harness/review/history.py` restores those records on resume.
@@ -462,10 +462,10 @@ The table routes <!-- generated: tool-names -->.
 
 The in-loop review panel returns structured findings over the run's diff.
 
-[Review records](data-contracts.md#review-records) owns the shared findings, seat replies, verdicts, immutable target identifiers, observations and operator request models in `review_records.py`.
+[Review records](data-contracts.md#review-records) owns the shared findings, reviewer replies, verdicts, immutable target identifiers, observations and operator request models in `review_records.py`.
 
 `viewmodel/review.py` folds panel evidence and finding history for both live `SessionState` updates and `scan_session_log`.
-`prompts.review.panel_prompt` renders both seat scopes.
+`prompts.review.panel_prompt` renders both reviewer scopes.
 An observation opens a new finding but does not reopen a resolved one.
 Only resolution and reopening events change that state.
 In the journal fold, a Fix request leaves the finding open and reads as delivery unknown until a submission or failure event arrives.
@@ -516,7 +516,7 @@ The directive uses the session's tools and permissions and returns markdown, wit
 ## Parallel runs
 
 The primitive is a task run as a child in its own worktree, whose branch joins back.
-One rule holds for every child (a lane, a review seat): the parent hands down, the child pushes up, and the root is the one owner.
+One rule holds for every child (a lane, a reviewer): the parent hands down, the child pushes up, and the root is the one owner.
 
 - handed down: the config snapshot, the task and pins, the turn cap and deadline, and what the parent's budget has left
 - pushed up: the child's approvals and waiting questions, its spend while it runs, and at its end its branch, its record and its memory, which the parent imports
@@ -570,7 +570,7 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
     - under `git.control = "model"` the run has no chain: every lane is placed and none is joined
     - a resume with a steer continues from the joined work with the worker model
 - every lane's manifest names the session that dispatched it (`parallel.parent`, stamped from the private launch), so each listing nests lanes under their parent, folded into a count
-- a lane's session dir is in its mode's bucket under the state of the root repository from its first event (its launch file names that state dir, `LaneLaunch.record_state`), and so is every seat a lane dispatches: a lane is visible in every hub while it runs, and nothing is moved when it ends
+- a lane's session dir is in its mode's bucket under the state of the root repository from its first event (its launch file names that state dir, `LaneLaunch.record_state`), and so is every reviewer a lane dispatches: a lane is visible in every hub while it runs, and nothing is moved when it ends
 - a lane's memory and rulings stay in its clone's own state: seeded from its dispatcher's when it starts, merged back when it is imported (`parallel_results.carry_back`), and left untouched by a lane that fails
 - on completion a lane's branch is fetched into the origin; a failed-to-start lane keeps its clone, and a lane whose import is refused keeps its clone and says where it is (never the only copy lost)
 - a lane is the parent's own child, tied to it with PDEATHSIG (SIGTERM): a parent that dies ends its lanes as a Ctrl-C would; a lane that does not stop when asked (an interrupt, a deadline) is TERMed, KILLed after the kill grace and reaped by its recorded pid, reported failed with its clone kept, and a lane that never reported a session dir is stopped the same way
@@ -604,14 +604,14 @@ A read-only conversation contract grants neither authority, ending the structure
 
 `ParallelDispatcher.dispatch_panel` accepts bounded read-only conversations and a retained target through an internal record-only policy, independent of `harness.parallel.tool`.
 It shares the work dispatch's executor, reservation, import, settlement and recovery paths; `parallel_join` owns merge and DAG projections.
-`review_gate.run_panel` prepares ordered requests using provider-free seats resolved by `app.role_providers.resolve_review_seats`.
-The dispatcher reserves the entire roster before launching batches of at most `min(review.concurrency, harness.parallel.max_lanes)` seats; no seat is dropped.
-Every seat is one contract: the panel prompt, `review.max_turns` turns and the tools the parent's own model is offered at that moment (`Reviewer.tools`), cut to the `reviewer` mode's surface (`kinds.SESSION_KINDS`, `tools.schema.mode_tools`): every base tool but the two that edit, and `use_skill`; never the task list, `parallel`, `ask_user` or an MCP tool.
-A seat's reply has the output limit every session's has, and its conversation compacts as a run's does; a restart keeps the opening.
-A seat runs on the common bounded Harness path, including media recovery and final-turn verdict handling.
-`review_seat` owns message preparation, finding coercion, verdict parsing and abstention diagnostics, not execution.
-The parent validates each completion's session, panel, seat and retained target before parsing and grounding; an ordinary worker answer or successful exit is not evidence.
-Events, replay and receipts keep each seat's session ID.
+`review_gate.run_panel` prepares ordered requests using provider-free reviewers resolved by `app.role_providers.resolve_reviewers`.
+The dispatcher reserves the entire roster before launching batches of at most `min(review.concurrency, harness.parallel.max_lanes)` reviewers; no reviewer is dropped.
+Every reviewer is one contract: the panel prompt, `review.max_turns` turns and the tools the parent's own model is offered at that moment (`ReviewGate.tools`), cut to the `reviewer` mode's surface (`kinds.SESSION_KINDS`, `tools.schema.mode_tools`): every base tool but the two that edit, and `use_skill`; never the task list, `parallel`, `ask_user` or an MCP tool.
+A reviewer's reply has the output limit every session's has, and its conversation compacts as a run's does; a restart keeps the opening.
+A reviewer runs on the common bounded Harness path, including media recovery and final-turn verdict handling.
+`review_verdict` owns message preparation, finding coercion, verdict parsing and abstention diagnostics, not execution.
+The parent validates each completion's session, panel, reviewer and retained target before parsing and grounding; an ordinary worker answer or successful exit is not evidence.
+Events, replay and receipts keep each reviewer's session ID.
 Configured top-level ask and plan reviews can schedule panels, but cannot dispatch work.
 Panel shares come from the worker's remaining allowance, and their deadlines take the minimum of the requested bound, the 1,800-second panel ceiling and the owning lane's deadline.
 
@@ -716,8 +716,8 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 Transcript callers supply the object directory explicitly: sessions use the layout's `objects/`, and `sessions review` uses `<state-dir>/reviews/objects/`.
 The [Formats reference](formats.md#provider-transcripts) describes provider attempt records, their pre-send write and finalization, and their call and request ids.
 Review calls carry a frozen `CallContext` through `RequestContext` to the transport and transcript writer.
-Panel seats have distinct read-only session directories and provider transcripts, including duplicate-focus seats.
-Their completion artifacts carry the parent-owned `(panel_id, seat_index, target)` binding; the parent links verdicts to those sessions.
+Panel reviewers have distinct read-only session directories and provider transcripts, including duplicate-focus reviewers.
+Their completion artifacts carry the parent-owned `(panel_id, reviewer_index, target)` binding; the parent links verdicts to those sessions.
 
 `finish_planning` is `plan.md`'s only writer and `agent6 plan edit` its only editor.
 The planner re-reads it before every turn and is shown it whenever it differs from what it last saw.
@@ -838,8 +838,8 @@ Every other approval publishes as `approval.prompt` before its answer.
 | Tool surface | [tools/schema.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/schema.py) |
 | Tool dispatch | [tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py) |
 | Agent loop | [harness/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/loop.py) |
-| Prompt text | [prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (templates and seat renderers the loop, review, judge, and machine assemble; `compaction.py` holds the summariser, gist and restart-notice prompts) |
-| Review panel | `harness/review/panel.py`, `harness/review/seat.py` and `harness/review/gate.py` |
+| Prompt text | [prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (templates and reviewer renderers the loop, review, judge, and machine assemble; `compaction.py` holds the summariser, gist and restart-notice prompts) |
+| Review panel | `harness/review/panel.py`, `harness/review/verdict.py` and `harness/review/gate.py` |
 | Jail sessions and detached jobs | [sandbox/jail_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_session.py), [sandbox/jail_jobs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_jobs.py) |
 | Jail launcher | [sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py) (Python), [jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs) (Rust) |
 | Git policy | [git_policy.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git/policy.py) |

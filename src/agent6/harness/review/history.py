@@ -93,16 +93,16 @@ def observations(
     grouped: dict[str, tuple[review_records.Finding, list[int]]] = {}
     for verdict in verdicts:
         for finding in verdict.findings:
-            _, seats = grouped.setdefault(review_records.finding_key(finding), (finding, []))
-            if verdict.seat_index not in seats:
-                seats.append(verdict.seat_index)
+            _, reviewers = grouped.setdefault(review_records.finding_key(finding), (finding, []))
+            if verdict.reviewer_index not in reviewers:
+                reviewers.append(verdict.reviewer_index)
     return tuple(
         review_records.FindingObservation(
             finding_id=known.get(key) or uuid.uuid4().hex,
             panel_id=panel_id,
             finding=finding,
-            seat_indexes=tuple(seats),
+            reviewer_indexes=tuple(reviewers),
             line_origin=review.classify_line_origin(root, target, finding.location, hide=hide),
         )
-        for key, (finding, seats) in grouped.items()
+        for key, (finding, reviewers) in grouped.items()
     )

@@ -299,7 +299,7 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
     """Return why a provider the run can reach cannot run, else None.
 
     Every provider the run can statically reach is checked: the configured roles, the review
-    seats, and a machine's per-state pins, so a route found mid-run cannot fail after spend has
+    reviewers, and a machine's per-state pins, so a route found mid-run cannot fail after spend has
     started.
 
     Args:
@@ -321,7 +321,7 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
     if absent := sorted(needed - cfg.providers.keys()):
         return (
             f"no [providers.{absent[0]}] entry, but a model route references it"
-            " (a role, a review seat, or a machine state pin). Add the provider"
+            " (a role, a reviewer, or a machine state pin). Add the provider"
             " or fix the reference."
         )
     for name in sorted(needed):

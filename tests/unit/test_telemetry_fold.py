@@ -201,7 +201,7 @@ def test_a_journal_folds_into_a_deterministic_span_tree() -> None:
 
 
 def test_panel_telemetry_counts_distinct_blocking_routes() -> None:
-    """Three blocking seats on two routes export two routes, not seats or findings."""
+    """Three blocking reviewers on two routes export two routes, not reviewers or findings."""
     finding = review_records.Finding(
         category="security",
         severity="block",
@@ -213,7 +213,7 @@ def test_panel_telemetry_counts_distinct_blocking_routes() -> None:
     result = review_panel.aggregate_verdicts(
         [
             review_records.ReviewVerdict(
-                seat_index=index,
+                reviewer_index=index,
                 focus="security",
                 model_route=route,
                 verdict="block",

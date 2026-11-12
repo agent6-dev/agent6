@@ -19,7 +19,7 @@ from agent6.tools import results
 from tests import child_env
 
 _run_panel = review_gate.run_panel
-# What a parent whose command policy is `deny` hands a seat.
+# What a parent whose command policy is `deny` hands a reviewer.
 READING_TOOLS = ("find_definition", "find_references", "list_dir", "outline", "read_file")
 _providers: dict[int, Any] = {}
 
@@ -30,16 +30,16 @@ class Dispatch(Protocol):
     ) -> results.ToolResult: ...
 
 
-def seat(
+def reviewer(
     focus: str,
     model: str,
     provider: Any,
     *,
     temperature: float | None = 0.0,
     media_input: media.InputCapabilities | None = None,
-) -> review_gate.ReviewSeat:
+) -> review_gate.Reviewer:
     entry, sep, name = model.partition("/")
-    result = review_gate.ReviewSeat(
+    result = review_gate.Reviewer(
         focus,
         kinds.ModelSettings(
             kinds.ModelRoute(entry if sep else "", name if sep else entry), None, temperature
@@ -78,7 +78,7 @@ class ResponseAdapter:
 
 
 def run_panel(
-    seats: Sequence[review_gate.ReviewSeat],
+    reviewers: Sequence[review_gate.Reviewer],
     ctx: review_panel.ReviewContext,
     *,
     dispatch: Dispatch | None = None,
@@ -109,7 +109,7 @@ def run_panel(
                 index, request = pair
                 assert request.contract is not None and request.contract.review_binding is not None
                 provider, capabilities = _providers[
-                    id(seats[request.contract.review_binding.seat_index])
+                    id(reviewers[request.contract.review_binding.reviewer_index])
                 ]
                 sid = f"parent-{group}-l{index}"
                 child = directory.parent.parent / "reviewers" / sid
@@ -177,7 +177,7 @@ def run_panel(
             session_dir=directory,
             authority=lane_records.DispatchAuthority(panels=True),
         )
-        return _run_panel(seats, ctx, target=target, executor=executor, **kwargs)
+        return _run_panel(reviewers, ctx, target=target, executor=executor, **kwargs)
 
 
 def single_verdict(
@@ -187,9 +187,9 @@ def single_verdict(
     dispatch: Dispatch | None = None,
     **kwargs: Any,
 ) -> review_records.ReviewVerdict:
-    index = kwargs.pop("seat_index")
+    index = kwargs.pop("reviewer_index")
     focus, route = kwargs.pop("focus"), kwargs.pop("model_route")
-    resolved = seat(focus, route, provider, temperature=kwargs.pop("temperature", 0.0))
+    resolved = reviewer(focus, route, provider, temperature=kwargs.pop("temperature", 0.0))
     turns = kwargs.pop("max_turns", 20)
     kwargs.pop("max_tokens", None)
     result = run_panel(
@@ -202,4 +202,4 @@ def single_verdict(
         dispatch=dispatch,
         **kwargs,
     )
-    return dataclasses.replace(result.per_seat[0], seat_index=index)
+    return dataclasses.replace(result.per_reviewer[0], reviewer_index=index)

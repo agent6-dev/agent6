@@ -210,7 +210,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             if not state.tool_calls:
                 return state
             if cid is not None:
-                # Concurrent seats interleave events, so the matching call may not be the last.
+                # Concurrent reviewers interleave events, so the matching call may not be the last.
                 for i in range(len(state.tool_calls) - 1, -1, -1):
                     if state.tool_calls[i].call_id == cid:
                         updated = dataclasses.replace(

@@ -809,7 +809,7 @@ def test_the_conversation_seat_is_the_driving_provider_not_always_worker(
 ) -> None:
     """The seat filter keeps the mode's driving role, plan mode's "planner" included.
 
-    Keeping only "worker" filtered every plan run out; review seats stay excluded since their
+    Keeping only "worker" filtered every plan run out; reviewers stay excluded since their
     one-message requests read as a restart.
     """
     import json

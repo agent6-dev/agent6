@@ -79,10 +79,10 @@ def test_openrouter_config_does_not_double_refresh(monkeypatch: pytest.MonkeyPat
     assert not called, "a configured openrouter provider already refreshes with a key"
 
 
-def test_a_review_seat_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A seat pinning a provider and model gets key preflight too.
+def test_a_reviewer_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A reviewer pinning a provider and model gets key preflight too.
 
-    Without it the run starts, mutates state, and dies only when the seat is constructed.
+    Without it the run starts, mutates state, and dies only when the reviewer is constructed.
     """
 
     def _no_key(*_a: object, **_k: object) -> str:
@@ -94,20 +94,20 @@ def test_a_review_seat_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) 
         {
             "providers": {
                 "main": {"backend": "anthropic", "auth_style": "none"},
-                "seatp": {"backend": "anthropic", "api_key_env": "SEAT_KEY"},
+                "judgep": {"backend": "anthropic", "api_key_env": "JUDGE_KEY"},
             },
             "models": {
                 "worker": {"model": "main/m"},
                 "reviewer": {"model": "main/m"},
             },
-            "review": {"reviewers": [{"focus": "security", "model": "seatp/judge-1"}]},
+            "review": {"reviewers": [{"focus": "security", "model": "judgep/judge-1"}]},
         }
     )
     err = session_setup.check_provider_keys(cfg)
-    assert err is not None and "seatp" in err
+    assert err is not None and "judgep" in err
 
 
-def test_a_seat_naming_an_absent_provider_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_reviewer_naming_an_absent_provider_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(secret_store, "load_secrets", dict)
     with pytest.raises(pydantic.ValidationError, match="ghost"):
         Config.model_validate(
@@ -137,10 +137,10 @@ def test_machine_state_pins_ride_the_same_preflight(monkeypatch: pytest.MonkeyPa
     assert session_setup.check_provider_keys(cfg) is None
 
 
-def test_budget_preflight_prices_a_seat_pinned_model() -> None:
-    """A seat's pinned model joins the reachable set.
+def test_budget_preflight_prices_a_reviewer_pinned_model() -> None:
+    """A reviewer's pinned model joins the reachable set.
 
-    With unmetered calls refused, an unpriced seat model refuses up front instead of mid-review.
+    With unmetered calls refused, an unpriced reviewer model refuses up front instead of mid-review.
     """
     from agent6.app import preflight
 

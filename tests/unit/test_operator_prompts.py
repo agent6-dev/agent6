@@ -111,12 +111,12 @@ def test_a_question_is_journaled_with_the_call_it_gates(tmp_path: pathlib.Path) 
     assert (answer["answers"], answer["source"]) == (["b"], "stdin")
 
 
-def test_concurrent_seats_each_name_their_own_call(tmp_path: pathlib.Path) -> None:
-    """Concurrent seats each name their own call.
+def test_concurrent_reviewers_each_name_their_own_call(tmp_path: pathlib.Path) -> None:
+    """Concurrent reviewers each name their own call.
 
-    Two seats dispatching at once on one dispatcher, both past their stamp before either reads it:
+    Two reviewers dispatch at once on one dispatcher, both past their stamp before either reads it:
     each prompt names the call its own thread is dispatching (a stamp shared across threads would
-    name the other seat's).
+    name the other reviewer's).
     """
     session_dir = tmp_path / "run"
     events = _sink(session_dir)
@@ -136,10 +136,10 @@ def test_concurrent_seats_each_name_their_own_call(tmp_path: pathlib.Path) -> No
 
     d.command_policy = _rendezvous  # read after the stamp, before the gate
     with futures.ThreadPoolExecutor(max_workers=2) as pool:
-        seats = [pool.submit(d.dispatch, "run_command", {"argv": ["ls", arg]}) for arg in "ab"]
-        for seat in seats:
+        reviewers = [pool.submit(d.dispatch, "run_command", {"argv": ["ls", arg]}) for arg in "ab"]
+        for reviewer in reviewers:
             with pytest.raises(tool_errors.ToolDeniedError):
-                seat.result(timeout=30)
+                reviewer.result(timeout=30)
     stamped = {
         " ".join(e["args_preview"]["argv"]): e["call_id"] for e in _of(session_dir, "tool.call")
     }

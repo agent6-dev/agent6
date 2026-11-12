@@ -151,7 +151,7 @@ class GitWorktreeConfig(pydantic.BaseModel):
             "any container, and agent6 copies its commits into the repository as the run makes "
             "them; a linked worktree is smaller for a large repository whose base is on "
             "another filesystem, commits straight into the repository, and under a container "
-            "needs the workspace mounted at its host path; lanes and review seats are clones."
+            "needs the workspace mounted at its host path; lanes and reviewers are clones."
         ),
     )
     setup_command: validation.Argv = pydantic.Field(

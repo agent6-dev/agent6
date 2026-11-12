@@ -100,8 +100,8 @@ def immutable_target(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(git_read, "tree_entry", mock.Mock(return_value="100644 blob cited-blob"))
 
 
-def _seat(provider: Any, focus: str = "security", model: str = "m1") -> review_gate.ReviewSeat:
-    return review_lane_env.seat(focus=focus, model=model, provider=provider)
+def _reviewer(provider: Any, focus: str = "security", model: str = "m1") -> review_gate.Reviewer:
+    return review_lane_env.reviewer(focus=focus, model=model, provider=provider)
 
 
 def _disp() -> mock.MagicMock:
@@ -134,37 +134,37 @@ def _drive(wf: loop.Harness, messages: list[dict[str, Any]]) -> Any:
     return result
 
 
-def test_has_reviewer_true_with_seats() -> None:
-    wf = _wf(review=review_gate.ReviewSettings(reviewers=[_seat(mock.MagicMock())]))
-    assert wf.reviewer.available() is True
-    assert _wf(review=review_gate.ReviewSettings(reviewers=[])).reviewer.available() is False
+def test_has_reviewer_true_with_reviewers() -> None:
+    wf = _wf(review=review_gate.ReviewSettings(reviewers=[_reviewer(mock.MagicMock())]))
+    assert wf.review_gate.available() is True
+    assert _wf(review=review_gate.ReviewSettings(reviewers=[])).review_gate.available() is False
 
 
 @pytest.mark.usefixtures("immutable_target")
 def test_panel_blocks_finish_under_veto_then_accepts() -> None:
-    """A grounded security block under veto revokes the finish until the seat passes.
+    """A grounded security block under veto revokes the finish until the reviewer passes.
 
-    The first `finish_session` is revoked; once the seat passes, the second is accepted.
+    The first `finish_session` is revoked; once the reviewer passes, the second is accepted.
     """
     worker = mock.MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("f1", _finish_tool_use("a", "done")),
         _resp_with_tool_use("f2", _finish_tool_use("b", "done")),
     ]
-    seat_provider = mock.MagicMock()
-    seat_provider.call.side_effect = [_resp(_BLOCK), _resp(_PASS)]
+    reviewer_provider = mock.MagicMock()
+    reviewer_provider.call.side_effect = [_resp(_BLOCK), _resp(_PASS)]
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="any", when="finish"
+            reviewers=[_reviewer(reviewer_provider)], block_on="any", when="finish"
         ),
         base_sha="b",
     )
     messages = _begin()
     result = _drive(wf, messages)
     assert result.reason == "finish_session" and result.turns == 2
-    assert seat_provider.call.call_count == 2  # panel ran at each finish attempt
+    assert reviewer_provider.call.call_count == 2  # panel ran at each finish attempt
     # the first (blocked) finish injected the findings for the worker to address
     injected = "".join(
         b.get("text", "") for m in messages for b in (m.get("content") or []) if isinstance(b, dict)
@@ -184,8 +184,8 @@ def test_panels_count_and_inject_each_finding_once(
     worker.call.side_effect = [
         _resp_with_tool_use(f"f{i}", _finish_tool_use(str(i), "done")) for i in range(4)
     ]
-    seat_provider = mock.MagicMock()
-    seat_provider.call.side_effect = [
+    reviewer_provider = mock.MagicMock()
+    reviewer_provider.call.side_effect = [
         _resp(_BLOCK),
         _resp(second_panel),
         _resp(second_panel),
@@ -197,7 +197,7 @@ def test_panels_count_and_inject_each_finding_once(
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="any", when="finish"
+            reviewers=[_reviewer(reviewer_provider)], block_on="any", when="finish"
         ),
         base_sha="b",
         resume_state_path=snapshot,
@@ -231,12 +231,12 @@ def test_panels_count_and_inject_each_finding_once(
     worker.call.side_effect = [
         _resp_with_tool_use(f"resumed{i}", _finish_tool_use(f"r{i}", "done")) for i in range(3)
     ]
-    seat_provider.call.reset_mock()
-    seat_provider.call.side_effect = [_resp(_BLOCK), _resp(_BLOCK), _resp(_PASS)]
+    reviewer_provider.call.reset_mock()
+    reviewer_provider.call.side_effect = [_resp(_BLOCK), _resp(_BLOCK), _resp(_PASS)]
     resumed = wf.resume()
     assert json.loads(snapshot.read_text())["review_rejections_total"] == rejections
     assert resumed.reason == "finish_session" and resumed.turns == rejections + 2
-    prompt = seat_provider.call.call_args_list[0].kwargs["messages"][0]["content"][0]["text"]
+    prompt = reviewer_provider.call.call_args_list[0].kwargs["messages"][0]["content"][0]["text"]
     assert "ALREADY RAISED" in prompt
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
     starts = [row for row in rows if row["type"] == "review.start"]
@@ -267,8 +267,8 @@ def test_resumes_match_findings_by_the_cited_git_blob(tmp_path: pathlib.Path) ->
     worker.call.side_effect = [
         _resp_with_tool_use(f"f{i}", _finish_tool_use(str(i), "done")) for i in range(5)
     ]
-    seat_provider = mock.MagicMock()
-    seat_provider.call.return_value = _resp(_BLOCK)
+    reviewer_provider = mock.MagicMock()
+    reviewer_provider.call.return_value = _resp(_BLOCK)
     snapshot = tmp_path / "session" / "loop_state.json"
     events = event_log.EventSink(snapshot.with_name("logs.jsonl"))
 
@@ -281,7 +281,7 @@ def test_resumes_match_findings_by_the_cited_git_blob(tmp_path: pathlib.Path) ->
             provider=worker,
             dispatcher=_disp(),
             review=review_gate.ReviewSettings(
-                reviewers=[_seat(seat_provider)], block_on="any", when="finish"
+                reviewers=[_reviewer(reviewer_provider)], block_on="any", when="finish"
             ),
             resume_state_path=snapshot,
             events=events,
@@ -340,24 +340,24 @@ def test_resumes_match_findings_by_the_cited_git_blob(tmp_path: pathlib.Path) ->
 
 @pytest.mark.usefixtures("immutable_target")
 def test_second_panel_prompt_names_prior_finding() -> None:
-    """The second seat call receives the finding injected after the first panel."""
+    """The second reviewer call receives the finding injected after the first panel."""
     worker = mock.MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("f1", _finish_tool_use("a", "done")),
         _resp_with_tool_use("f2", _finish_tool_use("b", "done")),
     ]
-    seat_provider = mock.MagicMock()
-    seat_provider.call.side_effect = [_resp(_BLOCK), _resp(_PASS)]
+    reviewer_provider = mock.MagicMock()
+    reviewer_provider.call.side_effect = [_resp(_BLOCK), _resp(_PASS)]
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="any", when="finish"
+            reviewers=[_reviewer(reviewer_provider)], block_on="any", when="finish"
         ),
         base_sha="b",
     )
     _drive(wf, _begin())
-    prompt = seat_provider.call.call_args_list[1].kwargs["messages"][0]["content"][0]["text"]
+    prompt = reviewer_provider.call.call_args_list[1].kwargs["messages"][0]["content"][0]["text"]
     assert "ALREADY RAISED (do not repeat): foo.py:11 security" in prompt
 
 
@@ -365,7 +365,7 @@ def test_second_panel_prompt_names_prior_finding() -> None:
 def test_a_finish_retried_on_unchanged_trees_reuses_the_panel(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """The second finish on the trees a panel rejected sits no seat; the finish stands."""
+    """The second finish on the trees a panel rejected sits no reviewer; the finish stands."""
     target = review_records.ReviewTarget(
         "base", "base-tree", "tip", "head-tree", "tip", (), "revisions"
     )
@@ -374,14 +374,14 @@ def test_a_finish_retried_on_unchanged_trees_reuses_the_panel(
     worker.call.side_effect = [
         _resp_with_tool_use(f"f{i}", _finish_tool_use(str(i), "done")) for i in range(2)
     ]
-    seat_provider = mock.MagicMock()
-    seat_provider.call.side_effect = [_resp(_BLOCK)]  # a second seat call would raise
+    reviewer_provider = mock.MagicMock()
+    reviewer_provider.call.side_effect = [_resp(_BLOCK)]  # a second reviewer call would raise
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="any", when="finish"
+            reviewers=[_reviewer(reviewer_provider)], block_on="any", when="finish"
         ),
         base_sha="b",
         events=events,
@@ -389,7 +389,7 @@ def test_a_finish_retried_on_unchanged_trees_reuses_the_panel(
     messages = _begin()
     result = _drive(wf, messages)
     assert result.reason == "finish_session" and result.turns == 2
-    assert seat_provider.call.call_count == 1
+    assert reviewer_provider.call.call_count == 1
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
     kinds = [r["type"] for r in rows if r["type"].startswith(("review.", "finish.refused."))]
     assert kinds.count("review.start") == 1 and kinds.count("review.reused") == 1
@@ -411,7 +411,7 @@ def test_a_finish_retried_on_unchanged_trees_reuses_the_panel(
 def test_observe_only_panels_do_not_repeat_findings(
     trigger: Literal["periodic", "verify_fail"],
 ) -> None:
-    """Advisory panels carry their injected findings to the next seat call."""
+    """Advisory panels carry their injected findings to the next reviewer call."""
     worker = mock.MagicMock()
     worker.call.side_effect = [
         _resp_with_tool_use("t1", _verify_pass_tool_use("v1")),
@@ -424,13 +424,13 @@ def test_observe_only_panels_do_not_repeat_findings(
         _exec(1, stderr="test x failed"),
         results.RawResult({"ok": True}),
     ]
-    seat_provider = mock.MagicMock()
-    seat_provider.call.side_effect = [_resp(_BLOCK), _resp(_BLOCK), _resp(_PASS)]
+    reviewer_provider = mock.MagicMock()
+    reviewer_provider.call.side_effect = [_resp(_BLOCK), _resp(_BLOCK), _resp(_PASS)]
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], when=trigger, interval_turns=1
+            reviewers=[_reviewer(reviewer_provider)], when=trigger, interval_turns=1
         ),
         base_sha="b",
     )
@@ -444,7 +444,7 @@ def test_observe_only_panels_do_not_repeat_findings(
         if b.get("type") == "text" and b["text"].startswith("[review]")
     )
     assert feedback.count("hardcoded key") == 1
-    prompt = seat_provider.call.call_args_list[1].kwargs["messages"][0]["content"][0]["text"]
+    prompt = reviewer_provider.call.call_args_list[1].kwargs["messages"][0]["content"][0]["text"]
     assert "ALREADY RAISED (do not repeat): foo.py:11 security" in prompt
 
 
@@ -452,24 +452,24 @@ def test_observe_only_panels_do_not_repeat_findings(
 def test_panel_skipped_when_budget_fraction_low() -> None:
     """Below `min_remaining_budget_fraction` the panel is skipped and the finish stands.
 
-    Reviewing costs most when budget is scarcest. The seat that WOULD block is never called, and
+    Reviewing costs most when budget is scarcest. The reviewer that WOULD block is never called, and
     finish_session is accepted. This is the only behavioural test of the floor.
     """
     worker = mock.MagicMock()
     worker.call.return_value = _resp_with_tool_use("f1", _finish_tool_use("a", "done"))
-    seat_provider = mock.MagicMock()
-    seat_provider.call.side_effect = [_resp(_BLOCK)]  # would block IF the panel ran
+    reviewer_provider = mock.MagicMock()
+    reviewer_provider.call.side_effect = [_resp(_BLOCK)]  # would block IF the panel ran
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="any", when="finish"
+            reviewers=[_reviewer(reviewer_provider)], block_on="any", when="finish"
         ),
         base_sha="b",
     )  # min_remaining_budget_fraction defaults to 0.25
     with mock.patch.object(loop.Harness, "_budget_fraction_remaining", return_value=0.10):
         result = _drive(wf, _begin())
-    assert seat_provider.call.call_count == 0  # panel skipped, not run
+    assert reviewer_provider.call.call_count == 0  # panel skipped, not run
     assert result.reason == "finish_session" and result.turns == 1
 
 
@@ -478,19 +478,19 @@ def test_panel_advisory_does_not_block_finish() -> None:
     """The SAME grounded block under advisory does not gate -> finish on turn 1."""
     worker = mock.MagicMock()
     worker.call.side_effect = [_resp_with_tool_use("f1", _finish_tool_use("a", "done"))]
-    seat_provider = mock.MagicMock()
-    seat_provider.call.return_value = _resp(_BLOCK)
+    reviewer_provider = mock.MagicMock()
+    reviewer_provider.call.return_value = _resp(_BLOCK)
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="none", when="finish"
+            reviewers=[_reviewer(reviewer_provider)], block_on="none", when="finish"
         ),
         base_sha="b",
     )
     result = _drive(wf, _begin())
     assert result.reason == "finish_session" and result.turns == 1
-    assert seat_provider.call.call_count == 1  # panel still ran (events), just didn't gate
+    assert reviewer_provider.call.call_count == 1  # panel still ran (events), just didn't gate
 
 
 @pytest.mark.usefixtures("immutable_target")
@@ -501,13 +501,13 @@ def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
     """
     worker = mock.MagicMock()
     worker.call.side_effect = [_resp_with_tool_use("f1", _finish_tool_use("a", "done"))]
-    seat_provider = mock.MagicMock()
-    seat_provider.call.return_value = _resp(_NONGATING)
+    reviewer_provider = mock.MagicMock()
+    reviewer_provider.call.return_value = _resp(_NONGATING)
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="any", when="finish"
+            reviewers=[_reviewer(reviewer_provider)], block_on="any", when="finish"
         ),
         base_sha="b",
     )
@@ -528,8 +528,8 @@ def test_the_configured_cap_counts_rejected_finishes(cap: int) -> None:
     worker.call.side_effect = [
         _resp_with_tool_use(f"f{i}", _finish_tool_use(str(i), "done")) for i in range(8)
     ]
-    seat_provider = mock.MagicMock()
-    seat_provider.call.side_effect = [
+    reviewer_provider = mock.MagicMock()
+    reviewer_provider.call.side_effect = [
         _resp(_BLOCK.replace('"security"', f'"{category}"'))
         for category in (
             "security",
@@ -543,7 +543,7 @@ def test_the_configured_cap_counts_rejected_finishes(cap: int) -> None:
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)],
+            reviewers=[_reviewer(reviewer_provider)],
             block_on="any",
             when="finish",
             max_rejections=cap,
@@ -567,28 +567,28 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     from agent6.harness.review import panel as review_panel
 
     abstain = review_records.ReviewVerdict(
-        seat_index=0, focus="s", model_route="m", verdict="abstain", error="output hit the cap"
+        reviewer_index=0, focus="s", model_route="m", verdict="abstain", error="output hit the cap"
     )
     res = review_panel.PanelResult(
         panel_id="p",
         block_on="none",
         blocked=False,
         merged_findings=(),
-        per_seat=(abstain, abstain, abstain),
+        per_reviewer=(abstain, abstain, abstain),
         n_block=0,
         n_abstain=3,
     )
     wf = _wf(
         provider=mock.MagicMock(),
         dispatcher=_disp(),
-        review=review_gate.ReviewSettings(reviewers=[_seat(mock.MagicMock())], block_on="none"),
+        review=review_gate.ReviewSettings(reviewers=[_reviewer(mock.MagicMock())], block_on="none"),
         base_sha="b",
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     with (
         mock.patch.object(review_gate, "run_panel", return_value=res),
     ):
-        out = wf.reviewer.critique(state, trigger="periodic", turn=1)
+        out = wf.review_gate.critique(state, trigger="periodic", turn=1)
     assert out is not None
     assert "inconclusive" in out.text and "abstained" in out.text
     assert "No blocking findings" not in out.text
@@ -626,13 +626,13 @@ def test_findings_the_notice_cut_are_not_remembered_as_injected(
     worker.call.side_effect = [
         _resp_with_tool_use(f"f{i}", _finish_tool_use(str(i), "done")) for i in range(4)
     ]
-    seat_provider = mock.MagicMock()
-    seat_provider.call.side_effect = [_resp(big), _resp(big), _resp(big), _resp(_PASS)]
+    reviewer_provider = mock.MagicMock()
+    reviewer_provider.call.side_effect = [_resp(big), _resp(big), _resp(big), _resp(_PASS)]
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
         review=review_gate.ReviewSettings(
-            reviewers=[_seat(seat_provider)], block_on="any", when="finish"
+            reviewers=[_reviewer(reviewer_provider)], block_on="any", when="finish"
         ),
         base_sha="b",
     )
@@ -656,7 +656,7 @@ def test_findings_the_notice_cut_are_not_remembered_as_injected(
     assert "[1 more finding not shown]" in notices[1]
     assert "not shown" not in notices[2]
     category = {"finding 1": "security", "finding 2": "data-loss", "finding 3": "sandbox-bypass"}
-    prompt = seat_provider.call.call_args_list[1].kwargs["messages"][0]["content"][0]["text"]
+    prompt = reviewer_provider.call.call_args_list[1].kwargs["messages"][0]["content"][0]["text"]
     assert f"foo.py:11 {category[shown[0][0]]}" in prompt
     assert all(f"foo.py:11 {category[t[0]]}" not in prompt for t in shown[1:])
 

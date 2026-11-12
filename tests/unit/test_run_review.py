@@ -66,7 +66,7 @@ _EVENTS: list[dict[str, Any]] = [
         "stdout_tail": "3 passed",
         "stderr_tail": "",
     },
-    {"type": "model.result", "role": "reviewer", "text": "a side seat's answer"},
+    {"type": "model.result", "role": "reviewer", "text": "a side reviewer's answer"},
     {"type": "model.result", "role": "worker", "text": "Done: the lexer is untouched."},
     {"type": "budget.update", "usd_total": 0.25},
     {"type": "session.stop", "reason": "finish_session", "turns": 6, "verification": "passed"},
@@ -123,7 +123,7 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: pathlib.Path) -> None:
     assert d.memory_wrote == ("lexer-rule",)
     assert d.memory_index == "- money-rounding: Money rounds half-up on the cent."
     assert "assistant: Done: the lexer is untouched." in d.conversation
-    assert "a side seat's answer" not in d.conversation
+    assert "a side reviewer's answer" not in d.conversation
     text = d.render()
     assert text.startswith(
         "session run-AAAA11 (run): fix the parser\n"

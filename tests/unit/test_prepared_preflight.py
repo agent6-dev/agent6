@@ -54,7 +54,7 @@ def test_initial_inference_uses_the_prepared_target_through_run_task(
         rm_role=RoleModel(provider="test", model="test"),
         provider=mock.Mock(),
         summariser_provider=None,
-        review_seats=[],
+        reviewers=[],
     )
     monkeypatch.setattr(
         session_runtime, "build_session_providers", mock.Mock(return_value=providers)

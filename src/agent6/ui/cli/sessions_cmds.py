@@ -440,7 +440,7 @@ def _remove_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
     state_dir = agent6_paths.state_dir(cwd)
     bucket = sessions_layout.bucket_dir(state_dir, "asks")
     sessions = tuple(bucket.iterdir()) if bucket.is_dir() else ()
-    seats = lineage.seat_records(state_dir, {session.name for session in sessions})
+    reviewers = lineage.reviewer_records(state_dir, {session.name for session in sessions})
     gone = len(sessions)
     count = f"{gone} ask{'' if gone == 1 else 's'}"
     if gone and not yes and not portable.has_controlling_tty():
@@ -459,14 +459,14 @@ def _remove_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
     try:
         with contextlib.suppress(FileNotFoundError):
             shutil.rmtree(bucket)
-        for seat in seats:
-            shutil.rmtree(seat)
+        for reviewer in reviewers:
+            shutil.rmtree(reviewer)
     except OSError as exc:
         common.error(f"could not remove {exc.filename or bucket}: {exc}")
         return 1
     try:
         if git_read.is_git_repo(cwd):
-            for session in (*sessions, *seats):
+            for session in (*sessions, *reviewers):
                 for ref in git_read.session_refs(cwd, session.name):
                     git_ops.delete_ref(cwd, ref)
     except errors.GitError as exc:
@@ -614,9 +614,9 @@ def _remove_session(
     sharing: list[str],
     tips: tuple[str, ...],
 ) -> int:
-    """Delete one session's record with its lanes' and seats', then its worktree and owned refs.
+    """Delete one session's record with its lanes' and reviewers', then its worktree and owned refs.
 
-    The listings fold a run's lanes under it and show no seat, so they go with the run. A
+    The listings fold a run's lanes under it and show no reviewer, so they go with the run. A
     lane's branch stays, as the run's does.
 
     Args:
@@ -630,8 +630,8 @@ def _remove_session(
         The exit code; 1 on a partial delete.
     """
     children = lineage.descendants_of(layout.session_dir)
-    seats = [c for c in children if c.parent.name == sessions_layout.EVIDENCE_BUCKET]
-    lanes = [c for c in children if c not in seats]
+    reviewers = [c for c in children if c.parent.name == sessions_layout.EVIDENCE_BUCKET]
+    lanes = [c for c in children if c not in reviewers]
     try:
         shutil.rmtree(layout.session_dir)
         for child in children:
@@ -643,8 +643,8 @@ def _remove_session(
     went: list[str] = []  # what went with the record
     if lanes:
         went.append(f"its {len(lanes)} lane{'' if len(lanes) == 1 else 's'}")
-    if seats:
-        went.append(f"{len(seats)} review seat record{'' if len(seats) == 1 else 's'}")
+    if reviewers:
+        went.append(f"{len(reviewers)} reviewer record{'' if len(reviewers) == 1 else 's'}")
     stays = ""
     if worktree is not None and sharing:
         verb = "names" if len(sharing) == 1 else "name"

@@ -278,8 +278,8 @@ def test_parallel_joined_names_lane_ids_branches_shas() -> None:
     assert "conflict  co-p1-l2  agent6/co-p1-l2" in item.body
 
 
-def test_a_panel_dispatch_reads_as_review_seats_not_lanes() -> None:
-    """A panel's seats read as lanes "listed under this session" that joined with no changes."""
+def test_a_panel_dispatch_reads_as_review_reviewers_not_lanes() -> None:
+    """A panel's reviewers read as lanes "listed under this session" that joined with no changes."""
     dispatched, joined = fold_transcript(
         [
             {
@@ -306,11 +306,11 @@ def test_a_panel_dispatch_reads_as_review_seats_not_lanes() -> None:
         ]
     )
     assert dispatched.body.startswith(
-        "dispatched 2 review seats (group rpanel); each runs as a read-only session"
+        "dispatched 2 reviewers (group rpanel); each runs as a read-only session"
     )
     assert "lane" not in dispatched.body and "• Review: tests" in dispatched.body
     assert joined.body.splitlines() == [
-        "review seats returned (group run-rpanel): 2",
+        "reviewers returned (group run-rpanel): 2",
         "returned  run-rpanel-l1",
         "failed  run-rpanel-l2  lane deadline exceeded",
     ]
@@ -362,7 +362,7 @@ def test_interleaved_tool_calls_pair_by_name() -> None:
 
 
 def test_same_name_concurrent_calls_pair_by_call_id() -> None:
-    # Two review seats reading different files concurrently: name-keyed pairing
+    # Two reviewers reading different files concurrently: name-keyed pairing
     # rendered one item with crossed arg/summary and dropped the other result.
     # call_id (stamped per dispatch) pairs each result with its own call, even
     # out of call order.

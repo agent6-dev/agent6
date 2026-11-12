@@ -81,7 +81,7 @@ _ROOT = pathlib.Path(__file__).resolve().parents[2]
                 "`sessions review`",
                 "`sessions compare`",
                 "`--parallel` judge",
-                "in-loop review panel seats without a route",
+                "in-loop reviewers without a route",
             ),
         ),
         (model_roles.ModelsConfig, "planner", ("plan resumes",)),

@@ -541,22 +541,22 @@ class CallContext:
     Attributes:
         model_call_id: The call's id, shared by its events and transcripts.
         panel_id: The review panel's id; None outside a panel.
-        seat_index: The seat's zero-based roster position; None outside a review seat.
+        reviewer_index: The reviewer's zero-based roster position; None outside a reviewer.
         execution_id: The execution the call runs in; None for a call outside one.
     """
 
     model_call_id: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex)
     panel_id: str | None = None
-    seat_index: int | None = None
+    reviewer_index: int | None = None
     execution_id: str | None = None
 
     def event_fields(self) -> dict[str, Any]:
-        """Return the call identity, omitting absent seat and execution fields."""
+        """Return the call identity, omitting absent reviewer and execution fields."""
         fields: dict[str, Any] = {"model_call_id": self.model_call_id}
         if self.panel_id is not None:
             fields["panel_id"] = self.panel_id
-        if self.seat_index is not None:
-            fields["seat_index"] = self.seat_index
+        if self.reviewer_index is not None:
+            fields["reviewer_index"] = self.reviewer_index
         if self.execution_id is not None:
             fields["execution_id"] = self.execution_id
         return fields

@@ -1248,7 +1248,7 @@ def test_provider_form_uses_the_schema_name_refusal(repo: pathlib.Path, name: st
 
 
 def test_reviewer_form_and_positional_removal(repo: pathlib.Path) -> None:
-    """The roster form appends; the removal chooser distinguishes seats with a shared focus."""
+    """The roster form appends; the removal chooser distinguishes reviewers with a shared focus."""
     from agent6.config import write
 
     assert (
@@ -1284,7 +1284,7 @@ def test_reviewer_form_and_positional_removal(repo: pathlib.Path) -> None:
             await pilot.pause()
             assert app.screen is screen
             roster = layer.load_effective(repo).config.review.reviewers
-            assert [seat.focus for seat in roster] == ["tests", "tests", "security"]
+            assert [reviewer.focus for reviewer in roster] == ["tests", "tests", "security"]
             assert roster[2].model == "anthropic/claude-sonnet-4-5"
             assert roster[2].effort == "high" and roster[2].temperature == 0.5
             table = screen.query_one("#tbl-review", widgets.DataTable)
@@ -1295,7 +1295,7 @@ def test_reviewer_form_and_positional_removal(repo: pathlib.Path) -> None:
             table.move_cursor(row=row)
             table.focus()
             await pilot.pause()
-            screen.action_remove_entry()  # one action: on the roster row it picks a seat
+            screen.action_remove_entry()  # one action: on the roster row it picks a reviewer
             await pilot.pause()
             chooser = app.screen
             assert isinstance(chooser, config_forms.RemoveReviewerModal)
@@ -1314,7 +1314,7 @@ def test_reviewer_form_and_positional_removal(repo: pathlib.Path) -> None:
             await pilot.pause()
             assert app.screen is screen
             roster = layer.load_effective(repo).config.review.reviewers
-            assert [seat.focus for seat in roster] == ["tests", "security"]
+            assert [reviewer.focus for reviewer in roster] == ["tests", "security"]
             assert roster[0].effort == "off"
             footer_actions = {
                 active.binding.action

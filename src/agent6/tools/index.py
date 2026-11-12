@@ -306,7 +306,7 @@ class SymbolIndex:
         self._parsers: dict[
             str, tuple[tree_sitter.Parser, tree_sitter.Query, tree_sitter.Query]
         ] = {}
-        # Shared across the concurrent review seats; re-entrant because queries call each other.
+        # Shared across the concurrent reviewers; re-entrant because queries call each other.
         self._lock = threading.RLock()
 
     def mark_changed(self, path: pathlib.Path) -> None:
