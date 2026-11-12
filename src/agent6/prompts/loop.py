@@ -104,7 +104,6 @@ PARTIAL_FS_RULE = """- Under partial isolation, jailed commands cannot CREATE ne
 
 # `__CREATE_HINT__` names the edit tool the run offers for that first file.
 CREATE_HINT = '`apply_edit` using `kind="create"`'
-CREATE_HINT_PATCH_ONLY = "`apply_patch` with `--- /dev/null` as the source side"
 
 # One of these two fills __DAG_RULES_BLOCK__ in run mode, keyed on `[prompt].decompose`; the
 # decompose-first block is measured per model (`models.registry.decompose_default`).

@@ -15,7 +15,6 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import json
-import os
 from collections.abc import Callable, Mapping
 from typing import Any
 from urllib import parse
@@ -126,9 +125,6 @@ def _is_openai_direct_reasoning_model(model: str) -> bool:
     )
 
 
-_EFFORT_LEVELS = ("off", "low", "medium", "high", "xhigh", "max")
-
-
 def is_openai_direct_host(base_url: str, deployment: str) -> bool:
     """Return whether requests go to api.openai.com itself, whose parameters differ."""
     return deployment == "direct" and parse.urlsplit(base_url).hostname == "api.openai.com"
@@ -141,8 +137,7 @@ def sent_reasoning_effort(
 
     Args:
         model: The model id.
-        configured: The role's `effort` or a per-call override; None defers to the
-            `AGENT6_REASONING_EFFORT` variable, then `low`.
+        configured: The role's `effort` or a per-call override; None sends `low`.
         direct_openai: Whether the request targets api.openai.com.
 
     Returns:
@@ -154,10 +149,7 @@ def sent_reasoning_effort(
         _is_reasoning_model(model) or (direct_openai and _is_openai_direct_reasoning_model(model))
     ):
         return None
-    if configured is not None:
-        return configured.strip().lower()
-    env_override = os.environ.get("AGENT6_REASONING_EFFORT", "").strip().lower()
-    return env_override if env_override in _EFFORT_LEVELS else "low"
+    return configured.strip().lower() if configured is not None else "low"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

@@ -43,7 +43,6 @@ _PROMPT_CONSTANTS = (
     prompts.MODEL_GIT_RULE,
     prompts.MODEL_GIT_RULE_NO_COMMANDS,
     prompts.CREATE_HINT,
-    prompts.CREATE_HINT_PATCH_ONLY,
 )
 
 # Backticked identifiers in the prompts that are deliberately not tool names.

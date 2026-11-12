@@ -10,7 +10,6 @@ the text they render.
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 from typing import Literal
 
@@ -287,14 +286,9 @@ def build_system_prompt(
     # A run with no curator (a machine agent state) has no DAG tools to teach.
     dag_block = loop.dag_rules_block(config.prompt.decompose == "on") if dag_available else ""
     base = base.replace("__DAG_RULES_BLOCK__", dag_block)
-    patch_only = mode == "run" and os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1"
-    if patch_only:
-        base = base.replace(loop.APPLY_EDIT_RULE, "")
     # PARTIAL_FS_RULE holds only under `partial` with extra protect paths.
     carved = isolation == "partial" and protected_paths
-    partial_rule = loop.PARTIAL_FS_RULE.replace(
-        "__CREATE_HINT__", loop.CREATE_HINT_PATCH_ONLY if patch_only else loop.CREATE_HINT
-    )
+    partial_rule = loop.PARTIAL_FS_RULE.replace("__CREATE_HINT__", loop.CREATE_HINT)
     base = base.replace("__PARTIAL_FS_RULE__", partial_rule if carved else "")
     # `.git` is read-only under `full` with protect_git, and in a linked worktree under any jail.
     git_read_only = (isolation == "full" and config.protects_git) or (
@@ -327,17 +321,6 @@ def build_system_prompt(
         _commit_rule(config, commands_allowed=allowed),
     )
     parts = [base]
-
-    # The model is told when apply_edit is filtered out (`AGENT6_DISABLE_APPLY_EDIT=1`).
-    if patch_only:
-        parts.append(
-            "<patch-only-mode>\n"
-            "The only edit primitive available is `apply_patch` (unified\n"
-            "diff). Use it\n"
-            "for every change, including file creation (emit a diff with\n"
-            "`--- /dev/null` as the source side).\n"
-            "</patch-only-mode>\n"
-        )
 
     # Machine agent states get only the budget cap and their base prompt.
     if mode == "read_only":

@@ -86,7 +86,6 @@ def test_detached_lane_loads_snapshot_and_records_notes(
 ) -> None:
     """Dropping either snapshot marker at the launcher changes the child's durable facts."""
     monkeypatch.setenv("AGENT6_ALLOW_ROOT", "1")
-    monkeypatch.delenv("AGENT6_REASONING_EFFORT", raising=False)
     subprocess.run(["git", "init", "-q", "-b", "main", str(short_repo)], check=True)
     (short_repo / "README.md").write_text("Local lane smoke.\n")
     subprocess.run(["git", "-C", str(short_repo), "add", "-A"], check=True)

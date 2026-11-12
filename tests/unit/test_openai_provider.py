@@ -408,13 +408,12 @@ def test_call_does_not_bump_max_tokens_for_normal_models() -> None:
     assert captured["body"]["max_tokens"] == 4096
 
 
-def test_reasoning_effort_arg_overrides_default(monkeypatch: Any) -> None:
-    """An explicit `reasoning_effort` argument wins over the env override and the default.
+def test_reasoning_effort_arg_overrides_default() -> None:
+    """An explicit `reasoning_effort` argument wins over the `low` default.
 
     `"off"` sends `reasoning={"enabled": False}` to disable the reasoning channel; omitting the
     block leaves it on by default on K2.6, so the recovery turn still starves.
     """
-    monkeypatch.setenv("AGENT6_REASONING_EFFORT", "medium")
     provider = openai.OpenAIProvider(api_key="sk", model="moonshotai/kimi-k2.6")
     captured: dict[str, Any] = {}
 
@@ -422,10 +421,10 @@ def test_reasoning_effort_arg_overrides_default(monkeypatch: Any) -> None:
         captured["body"] = json.loads(kw["content"])
         return _fake_response({"choices": [{"message": {"content": "ok"}}], "usage": {}})
 
-    # No arg -> env override wins.
+    # No arg -> the `low` default.
     with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
-    assert captured["body"]["reasoning"] == {"effort": "medium"}
+    assert captured["body"]["reasoning"] == {"effort": "low"}
 
     # Explicit "off" -> reasoning channel explicitly disabled.
     with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
@@ -434,12 +433,12 @@ def test_reasoning_effort_arg_overrides_default(monkeypatch: Any) -> None:
         )
     assert captured["body"]["reasoning"] == {"enabled": False}
 
-    # Explicit "low" -> overrides env "medium".
+    # Explicit "high" -> sent as given.
     with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         provider.call(
-            system="s", messages=[{"role": "user", "content": "hi"}], reasoning_effort="low"
+            system="s", messages=[{"role": "user", "content": "hi"}], reasoning_effort="high"
         )
-    assert captured["body"]["reasoning"] == {"effort": "low"}
+    assert captured["body"]["reasoning"] == {"effort": "high"}
 
 
 def test_call_captures_reasoning_content_in_raw() -> None:

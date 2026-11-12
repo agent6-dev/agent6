@@ -1428,37 +1428,6 @@ def test_run_metric_command_score_null_on_no_match(
     assert "no number here" in out["stdout"]
 
 
-def test_disable_apply_edit_env_hides_tool(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # AGENT6_DISABLE_APPLY_EDIT=1 removes apply_edit
-    # from the surface advertised to the LLM and refuses to dispatch
-    # any straggler calls. apply_patch stays available — it's the
-    # whole point of the experiment.
-    monkeypatch.setenv("AGENT6_DISABLE_APPLY_EDIT", "1")
-    cfg = _config(tmp_path)
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
-    names = d.available_tool_names()
-    assert "apply_edit" not in names
-    assert "apply_patch" in names
-
-
-def test_disable_apply_edit_env_blocks_dispatch(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("AGENT6_DISABLE_APPLY_EDIT", "1")
-    cfg = _config(tmp_path)
-    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(tool_errors.ToolError, match="AGENT6_DISABLE_APPLY_EDIT"):
-        d.dispatch(
-            "apply_edit",
-            {
-                "path": "f.py",
-                "edits": [{"kind": "create", "old_string": "", "new_string": "x\n"}],
-            },
-        )
-
-
 def test_disable_apply_edit_unset_leaves_tool_available(tmp_path: pathlib.Path) -> None:
     # Default behaviour: env var unset, both tools available.
     cfg = _config(tmp_path)

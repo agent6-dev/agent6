@@ -182,7 +182,6 @@ def test_an_unset_effort_shows_what_the_openai_wire_actually_sends(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An unset effort shows the `low` the OpenAI wire sends to a reasoning model, not `(unset)`."""
-    monkeypatch.delenv("AGENT6_REASONING_EFFORT", raising=False)
     eff = _effort_config(
         tmp_path,
         '[providers.openrouter]\nbackend = "openai"\n'
@@ -230,24 +229,6 @@ def test_a_configured_effort_is_not_marked_resolved(tmp_path: pathlib.Path) -> N
     )
 
     assert "models.worker.effort" not in registry.resolved_adaptive_values(eff.config)
-
-
-def test_the_env_override_is_the_value_shown(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """AGENT6_REASONING_EFFORT is the value shown.
-
-    `config show` reads the resolver the request does.
-    """
-    monkeypatch.setenv("AGENT6_REASONING_EFFORT", "medium")
-    eff = _effort_config(
-        tmp_path,
-        '[providers.openrouter]\nbackend = "openai"\n'
-        'base_url = "https://openrouter.ai/api/v1"\n'
-        '[models.worker]\nmodel = "openrouter/moonshotai/kimi-k2.6"\n',
-    )
-
-    assert registry.resolved_adaptive_values(eff.config)["models.worker.effort"] == "medium"
 
 
 def test_an_empty_string_default_renders_a_visible_token(tmp_path: pathlib.Path) -> None:

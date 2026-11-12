@@ -574,26 +574,6 @@ def test_partial_fs_rule_renders_only_under_partial(tmp_path: pathlib.Path) -> N
     assert "Under partial isolation" in partial
 
 
-def test_patch_only_prompt_names_only_the_offered_edit_tool(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The patch-only experiment removes apply_edit's contract from the prompt with the tool."""
-    monkeypatch.setenv("AGENT6_DISABLE_APPLY_EDIT", "1")
-    cfg = _cfg(verify=True)
-    prompt = prompt_blocks.build_system_prompt(
-        config=cfg, repo=_repo(tmp_path), mode="run", skills=None
-    )
-    from agent6.harness import toolset
-
-    names = {
-        tool.name
-        for tool in toolset.tool_definitions(dispatch.ToolDispatcher(root=tmp_path, config=cfg))
-    }
-    assert "apply_edit" not in names
-    assert "apply_edit" not in prompt
-    assert "apply_patch" in names and "apply_patch" in prompt
-
-
 def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: pathlib.Path) -> None:
     """The '.git/ is protected' line renders only under `full` with protect_git on.
 

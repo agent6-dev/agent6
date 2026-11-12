@@ -315,11 +315,6 @@ class ToolDispatcher:
             return "not available (a jailed command has the network)"
         if name in _SYMBOL_TOOL_ARMS.get(os.environ.get("AGENT6_SYMBOL_TOOLS", ""), frozenset()):
             return "not available (AGENT6_SYMBOL_TOOLS)"
-        if (
-            os.environ.get("AGENT6_DISABLE_APPLY_EDIT") == "1"
-            and name == schema.ApplyEditInput.TOOL_NAME
-        ):
-            return f"{name} is disabled (AGENT6_DISABLE_APPLY_EDIT=1); use apply_patch instead"
         return None
 
     def available_tool_names(self) -> tuple[str, ...]:

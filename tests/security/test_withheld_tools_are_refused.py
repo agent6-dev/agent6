@@ -81,9 +81,8 @@ def test_tools_withheld_by_a_bench_switch_are_refused(
 ) -> None:
     """A measurement the model can contaminate measures nothing."""
     monkeypatch.setenv("AGENT6_SYMBOL_TOOLS", "none")
-    monkeypatch.setenv("AGENT6_DISABLE_APPLY_EDIT", "1")
     d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="none")
-    _assert_withheld_are_refused(d, {"outline", "find_definition", "find_references", "apply_edit"})
+    _assert_withheld_are_refused(d, {"outline", "find_definition", "find_references"})
 
 
 def test_tools_withheld_by_the_mode_are_refused(tmp_path: pathlib.Path) -> None:
