@@ -852,8 +852,6 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `findings` | `list` | Grounded findings or panel observations. |
 | `summary` | `str` | The result or outcome in words. |
 | `error` | `str, optional` | The failure diagnostic. |
-| `risk` | `str` | The seat's stated risk. |
-| `risk_truncated` | `bool` | Whether the risk text was truncated. |
 | `session_id` | `str, optional` | The read-only seat session, when assigned. |
 
 ### loop.review.skipped
@@ -3965,8 +3963,6 @@ Source: [`agent6.review_records.ReviewVerdict`](https://github.com/agent6-dev/ag
 | `findings` | `tuple[Finding, ...]` | The grounded findings from this seat. |
 | `summary` | `str` | The seat's closing summary. |
 | `error` | `str \| None` | The failure diagnostic for an abstention, or null. |
-| `risk` | `str` | The seat's retained risk assessment. |
-| `risk_truncated` | `bool` | Whether the risk text was truncated. |
 | `session_id` | `str` | The read-only seat session, empty in legacy verdicts. |
 
 ### ReviewPanel

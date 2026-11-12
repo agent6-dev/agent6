@@ -108,19 +108,19 @@ def test_receipt_renders_job_settlement_separately_from_environment_lifecycle(
     assert not errors, errors
 
 
-def test_receipt_client_uses_literal_risk_and_existing_new_work() -> None:
+def test_receipt_client_uses_literal_text_and_existing_new_work() -> None:
     """The receipt text and output bodies render literally; the revert button pre-fills new work."""
     test_client_review._run("""
 const host = el('div'); globalThis.location = {hash:''};
 const r = {session_id:'run',
- text:'Receipt run\\n\\nTesting\\n\\nRisk\\n<script>raw risk</script>\\n\\nHow to revert',
+ text:'Receipt run\\n\\nTesting\\n\\nReview\\n<script>raw text</script>\\n\\nHow to revert',
  revert_request:'Inspect the recorded run before reverting',
  children:[{lane:1, session_id:'worker-rpanel-l1'}],
  review:{panels:[{panel_id:'panel',
    seats:[{seat_index:0, focus:'security', session_id:'worker-rpanel-l1'}]}]},
  verifications:[{verify_id:'v', stdout_tail:'<b>out</b>', stderr_tail:''}]};
 drawReceipt(host, r);
-assert.ok(host.textContent.includes('<script>raw risk</script>'));
+assert.ok(host.textContent.includes('<script>raw text</script>'));
 assert.ok(host.textContent.includes('<b>out</b>'));
 assert.ok(host.textContent.includes('seat 1 (security)'));
 assert.equal(host.querySelector('a').href, '#/session/worker-rpanel-l1');

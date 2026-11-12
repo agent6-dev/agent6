@@ -411,7 +411,7 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
         include_output: Whether to include the retained stdout and stderr bodies.
 
     Returns:
-        Testing, review, risk and reversal sections as plain text.
+        Testing, review, lanes and reversal sections as plain text.
     """
     final = next(
         (
@@ -459,13 +459,9 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
             f"Panel {panel.panel_id}: {panel.completion}; "
             f"reviewed head {target.head_tree if target else 'unknown'}"
         )
-    if view.review.read_failure:
-        lines.append(view.review.read_failure)
-    lines.extend(("", "Risk"))
-    seats = [(p.panel_id, seat) for p in view.review.panels for seat in p.seats]
-    for panel_id, seat in seats:
-        lines.append(f"{panel_id} / {seat.model_route}:\n{seat.risk or 'not recorded'}")
-        if seat.session_id:
+        for seat in panel.seats:
+            if not seat.session_id:
+                continue
             spend = next(
                 (
                     f", {budget.format_usd(child.spend_usd)}"
@@ -475,10 +471,8 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
                 "",
             )
             lines.append(f"Seat {seat.seat_index + 1} ({seat.focus}): {seat.session_id}{spend}")
-        if seat.risk_truncated:
-            lines.append("Risk truncated at 1000 characters.")
-    if not seats:
-        lines.append("not recorded")
+    if view.review.read_failure:
+        lines.append(view.review.read_failure)
     lines.extend(lanes_section(view.children))
     lines.extend(
         (

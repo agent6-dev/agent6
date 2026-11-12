@@ -90,7 +90,7 @@ Start a machine on the State machines page and watch the current state stream, a
 
 ## Receipts
 
-The Findings card's **Receipt** button opens Testing, Review, Risk, Lanes and How to revert from the [recorded session evidence](usage.md#session-receipts); each lane named links to its own view.
+The Findings card's **Receipt** button opens Testing, Review, Lanes and How to revert from the [recorded session evidence](usage.md#session-receipts); each lane named links to its own view.
 **Ask a run to revert** fills the Sessions page's new-work composer with a proposed task; it does not submit the task or run a git command.
 `GET /api/session/<id>/receipt` returns the same derived receipt as JSON.
 

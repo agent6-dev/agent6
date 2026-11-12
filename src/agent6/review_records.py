@@ -163,8 +163,6 @@ class SeatReply(pydantic.BaseModel):
     verdict: Literal["pass", "block"]
     summary: str
     findings: tuple[Finding, ...]
-    risk: str = pydantic.Field(default="", max_length=1000)
-    risk_truncated: bool = False
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -179,8 +177,6 @@ class ReviewVerdict:
         findings: The grounded findings from this seat.
         summary: The seat's closing summary.
         error: The failure diagnostic for an abstention, or null.
-        risk: The seat's retained risk assessment.
-        risk_truncated: Whether the risk text was truncated.
         session_id: The read-only seat session, empty in legacy verdicts.
     """
 
@@ -191,8 +187,6 @@ class ReviewVerdict:
     findings: tuple[Finding, ...] = ()
     summary: str = ""
     error: str | None = None
-    risk: str = ""
-    risk_truncated: bool = False
     session_id: str = ""
 
 

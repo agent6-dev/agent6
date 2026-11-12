@@ -76,44 +76,6 @@ def _ctx() -> review_panel.ReviewContext:
     return review_panel.ReviewContext(task="add auth", diff=SAMPLE_DIFF, verification="passed")
 
 
-@pytest.mark.parametrize("repo_scope", [False, True])
-def test_risk_ablation_changes_only_the_risk_line(
-    monkeypatch: pytest.MonkeyPatch, repo_scope: bool
-) -> None:
-    """Both seat paths omit the risk instruction only for the explicit off arm."""
-    provider = mock.Mock()
-    provider.call.return_value = _RepoResp('{"verdict":"pass","summary":"ok","findings":[]}')
-
-    def call() -> str:
-        if repo_scope:
-            review_lane_env.repo_verdict(
-                provider,
-                _ctx(),
-                seat_index=0,
-                focus="security",
-                model_route="p/m",
-                tools=[],
-                dispatch=lambda _name, _args, origin=None: results.RawResult({}),
-                max_turns=2,
-            )
-        else:
-            review_lane_env.diff_verdict(
-                provider, _ctx(), seat_index=0, focus="security", model_route="p/m"
-            )
-        return str(provider.call.call_args.kwargs["system"])
-
-    monkeypatch.delenv("AGENT6_REVIEW_RISK", raising=False)
-    default = call()
-    monkeypatch.setenv("AGENT6_REVIEW_RISK", "off")
-    arm_a = call()
-    monkeypatch.setenv("AGENT6_REVIEW_RISK", "on")
-    arm_b = call()
-    assert '"risk":' not in arm_a
-    assert "what could fail" not in arm_a
-    assert default == arm_b
-    assert arm_a == "\n".join(line for line in arm_b.split("\n") if '"risk":' not in line)
-
-
 def test_structured_review_parses_clean_json() -> None:
     v = review_lane_env.diff_verdict(
         _prov(_BLOCK_JSON), _ctx(), seat_index=0, focus="security", model_route="m1"
@@ -700,27 +662,13 @@ def test_empty_roster_builds_one_security_seat_on_the_reviewer_route(monkeypatch
     ]
 
 
-def test_risk_is_the_seats_verbatim_text() -> None:
-    """Risk survives the parsed verdict without summary rewriting."""
-    text = "  A race may remain.\nThe supplied checks do not exercise concurrent writers.  "
-    verdict = review_seat.verdict_from_obj(
-        {"verdict": "pass", "findings": [], "summary": "done", "risk": text},
-        0,
-        "general",
-        "provider/model",
-    )
-    assert getattr(verdict, "risk", None) == text
-
-
-@pytest.mark.parametrize("risk", ["  " + "x" * 1000, None, ["a"]])
-def test_risk_cannot_discard_a_valid_block(risk: object) -> None:
-    """Missing or excessive risk never removes a seat's valid verdict and findings."""
+@pytest.mark.parametrize("extra", ["  " + "x" * 1100, None, ["a"]])
+def test_an_unknown_reply_key_cannot_discard_a_valid_block(extra: object) -> None:
+    """A key the reply format does not name never removes a seat's valid verdict and findings."""
     reply = json.loads(_BLOCK_JSON)
-    reply["risk"] = risk
+    reply["risk"] = extra
     verdict = review_seat.verdict_from_obj(reply, 0, "security", "provider/model")
     assert verdict.verdict == "block" and len(verdict.findings) == 1
-    assert verdict.risk == (risk[:1000] if isinstance(risk, str) else "")
-    assert getattr(verdict, "risk_truncated", False) is isinstance(risk, str)
 
 
 def test_repo_review_preserves_image_result() -> None:

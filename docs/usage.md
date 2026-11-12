@@ -364,7 +364,7 @@ The web hub shows the state as a pill on the row; `sessions list --json` include
 
 ## Session receipts
 
-`agent6 sessions receipt <id> [--json]` reads testing, review, risk and reversal evidence from the journal and manifest.
+`agent6 sessions receipt <id> [--json]` reads testing, review and reversal evidence from the journal and manifest.
 It makes no provider call and reruns no checks.
 
 - **Testing:** the receipt includes each [recorded verification attempt](formats.md#verificationevidence).
@@ -376,9 +376,7 @@ It makes no provider call and reruns no checks.
 - **Missing checks:** denial, inability to execute and interruption are not passes.
   Baseline failures stay marked separately; a run without a gate says “No verification recorded”.
   Other commands are not verification evidence.
-- **Review and risk:** the receipt shows recorded panel state and each seat's own risk words with its model route.
-  Risk keeps its first 1,000 characters, with truncation marked.
-  Missing or non-string risk reads “not recorded”; the receipt assigns no risk tier.
+- **Review:** the receipt shows recorded panel state and names each seat's session.
 - **How to revert:** recorded merge bounds determine the explanation.
   A squash names its landed commit; a merge verifies its target parent; a fast-forward lists landed commits in reverse order.
   Fast-forwards containing merges need an explicit plan.

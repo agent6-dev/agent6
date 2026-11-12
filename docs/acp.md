@@ -61,7 +61,7 @@ Fix does not support mid-run steering through ACP.
 
 ## Receipts
 
-The advertised `/receipt` command reads [testing, review, risk and reversal evidence](usage.md#session-receipts) without calling the worker or rerunning checks.
+The advertised `/receipt` command reads [testing, review and reversal evidence](usage.md#session-receipts) without calling the worker or rerunning checks.
 Ask for a reversal in a subsequent prompt or a new isolated run; displayed git commands are explanations, not executable actions.
 
 ## Code-review rule sources

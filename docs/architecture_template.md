@@ -464,8 +464,7 @@ The in-loop review panel returns structured findings over the run's diff.
 [Review records](data-contracts.md#review-records) owns the shared findings, seat replies, verdicts, immutable target identifiers, observations and operator request models in `review_records.py`.
 
 `viewmodel/review.py` folds panel evidence and finding history for both live `SessionState` updates and `scan_session_log`.
-`SeatReply` and `ReviewVerdict` retain each seat's bounded risk text verbatim; the receipt labels it with the model route and uses no second model summary.
-`prompts.review.panel_prompt` renders both seat scopes; the explicit `AGENT6_REVIEW_RISK=off` environment switch omits the risk instruction for the registered [B14 benchmark](https://github.com/agent6-dev/agent6/blob/master/bench/review/README.md#running-b14), without changing parsing or grounding.
+`prompts.review.panel_prompt` renders both seat scopes.
 An observation opens a new finding but does not reopen a resolved one.
 Only resolution and reopening events change that state.
 In the journal fold, a Fix request leaves the finding open and reads as delivery unknown until a submission or failure event arrives.
@@ -600,7 +599,7 @@ Diff seats use the existing prompt, one call, a 1,500-token output cap and no to
 Repo seats use the existing prompt, a 2,000-token per-call cap and `review.repo_max_turns` on the common bounded Harness path, including media recovery and final-turn verdict handling.
 `review_seat` owns message preparation, finding coercion, verdict parsing and abstention diagnostics, not execution.
 The parent validates each completion's session, panel, seat and retained target before parsing and grounding; an ordinary worker answer or successful exit is not evidence.
-Events, replay and receipts keep each seat's session ID, `risk` and `risk_truncated`.
+Events, replay and receipts keep each seat's session ID.
 Configured top-level ask and plan reviews can schedule panels, but cannot dispatch work.
 Panel shares come from the worker's remaining allowance, and their deadlines take the minimum of the requested bound, the 1,800-second panel ceiling and the owning lane's deadline.
 

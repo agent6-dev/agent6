@@ -920,8 +920,6 @@ class LoopReviewSeat(Event):
     findings: Sequence[Any] = pydantic.Field(description="Grounded findings or panel observations.")
     summary: str = pydantic.Field(description="The result or outcome in words.")
     error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
-    risk: str = pydantic.Field(description="The seat's stated risk.")
-    risk_truncated: bool = pydantic.Field(description="Whether the risk text was truncated.")
     session_id: str = pydantic.Field(
         default="", description="The read-only seat session, when assigned."
     )

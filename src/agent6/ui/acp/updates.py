@@ -64,7 +64,7 @@ _TOOL_KINDS = {
 REVIEW_COMMANDS: tuple[dict[str, Any], ...] = (
     {
         "name": "receipt",
-        "description": "Inspect recorded testing, review, risk and reversal evidence",
+        "description": "Inspect recorded testing, review and reversal evidence",
     },
     {
         "name": "findings",
