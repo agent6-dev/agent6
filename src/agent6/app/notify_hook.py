@@ -79,7 +79,7 @@ def fire(
 
     Args:
         notify: The notify config.
-        event: `session.waiting`, `session.end`, `machine.notify` or `machine.end`.
+        event: `session.waiting`, `session.stop`, `machine.notify` or `machine.end`.
         message: The prompt's first line, the end reason, or the machine's notify message.
         level: `info` for a wait or a machine notify (`warn`, `error` as the machine says);
             `ok` or `failed` for an end.
@@ -145,7 +145,7 @@ def session_end(
     verification: str,
     note: Callable[[str], None],
 ) -> None:
-    """Fire `session.end` for a run, resume, plan or ask that ended.
+    """Fire `session.stop` for a run, resume, plan or ask that stopped.
 
     Args:
         notify: The notify config.
@@ -158,7 +158,7 @@ def session_end(
     """
     fire(
         notify,
-        "session.end",
+        "session.stop",
         message=reason,
         level="ok" if ok else "failed",
         note=note,

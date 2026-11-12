@@ -326,7 +326,7 @@ class NotifyConfig(pydantic.BaseModel):
     under `child_env.curated_env` (never a provider key); a failed hook is logged and leaves
     the exit code. Its environment carries:
 
-    - `AGENT6_NOTIFY_EVENT`: `session.waiting`, `session.end`, `machine.notify` or
+    - `AGENT6_NOTIFY_EVENT`: `session.waiting`, `session.stop`, `machine.notify` or
       `machine.end`
     - `AGENT6_NOTIFY_MESSAGE`: the prompt's first line, the end reason, or the machine's
       notify message

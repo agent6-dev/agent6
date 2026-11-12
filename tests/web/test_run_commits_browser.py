@@ -43,7 +43,7 @@ def test_commit_picker_requests_the_selected_commit(
         {"type": "session.start", "mode": "run", "user_task": "Select history"},
         {"type": "loop.auto_commit", "turn": 1, "sha": first, "subject": "first change"},
         {"type": "loop.auto_commit", "turn": 2, "sha": second, "subject": "second change"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "all_passed": True},
     ]
     (session / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
     page, errors = open_page(git_port)
@@ -83,7 +83,7 @@ def test_git_control_gates_session_actions(
     if live:
         (session / "worker.pid").write_text(str(os.getpid()))
     else:
-        events.append({"type": "session.end", "reason": "finish_session"})
+        events.append({"type": "session.stop", "reason": "finish_session"})
     (session / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/session/git-control")

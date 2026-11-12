@@ -47,7 +47,7 @@ def test_a_session_diff_line_is_quoted_into_the_sessions_composer(
         {"type": "session.start", "mode": "run", "user_task": "Quote a line"},
         {"type": "loop.auto_commit", "turn": 1, "sha": first, "subject": "first change"},
         {"type": "loop.auto_commit", "turn": 2, "sha": second, "subject": "second change"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "all_passed": True},
     ]
     (session / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
     page, errors = open_page(git_port)

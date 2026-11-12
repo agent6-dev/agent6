@@ -225,7 +225,7 @@ def test_model_git_disables_fork_and_merge(tmp_path: pathlib.Path, control: str)
     (run / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run"})
         + "\n"
-        + json.dumps({"type": "session.end", "reason": "finish_session"})
+        + json.dumps({"type": "session.stop", "reason": "finish_session"})
         + "\n"
     )
 

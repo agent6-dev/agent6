@@ -285,7 +285,7 @@ def test_the_hook_env_names_the_session_not_the_run(tmp_path: pathlib.Path) -> N
     _end(NotifyConfig(on_event=argv), tmp_path, session_id="brave-oak-AAAAAA")
     env = json.loads(out.read_text(encoding="utf-8"))
     assert env == {
-        "AGENT6_NOTIFY_EVENT": "session.end",
+        "AGENT6_NOTIFY_EVENT": "session.stop",
         "AGENT6_NOTIFY_MESSAGE": "finish_session",
         "AGENT6_NOTIFY_LEVEL": "ok",
         "AGENT6_SESSION_ID": "brave-oak-AAAAAA",

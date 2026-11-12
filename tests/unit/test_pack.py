@@ -49,7 +49,7 @@ def test_session_listing_survives_move(
     )
     _write(
         session / "logs.jsonl",
-        json.dumps({"type": "session.end", "ts": "2020-01-02T03:04:05Z"}) + "\n",
+        json.dumps({"type": "session.stop", "ts": "2020-01-02T03:04:05Z"}) + "\n",
     )
     parked = session.parent / "parked"
     _write(
