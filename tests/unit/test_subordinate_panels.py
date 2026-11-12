@@ -479,6 +479,48 @@ def test_an_unfinished_panel_keeps_the_ancestor_reservation(short_repo: pathlib.
     assert lanes.lane_usage(worker) is None
 
 
+def test_a_settled_panel_keeps_the_ancestor_hold_until_the_journal_names_it(
+    short_repo: pathlib.Path,
+) -> None:
+    """A worker that died before journaling a panel's charge must not settle without it."""
+    repo = short_repo / "origin"
+    subordinate_env.init_repo(repo)
+    worker = subordinate_env.create_record(repo, "parent-p1-l1", parent="parent")
+    leaf = worker.name + "-r1-l1"
+    record = lane_dispatch.DispatchRecord(
+        identity=worker.name + "-r1",
+        source="panel",
+        join_policy="record_only",
+        owner="w",
+        turn=1,
+        base="",
+        segments=(),
+        children=(
+            lane_dispatch.ChildRecord(
+                session_id=leaf,
+                lane=1,
+                task="review",
+                settled=True,
+                usage=lane_dispatch.UsageRecord(usd=2.0),
+            ),
+        ),
+        state="complete",
+    )
+    lane_dispatch.write_record(worker, record, now=time.time())
+    tracker = budget.BudgetTracker(max_usd=10, max_tokens_fallback=100, max_plan_points=20)
+    sink = event_log.EventSink(worker / "logs.jsonl")
+    sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(tracker)))
+    assert lanes.lane_usage(worker) is None
+    tracker.reserve(record.identity, [leaf], owner="w")
+    tracker.settle_lane(
+        record.identity, leaf, budget.UsageSettlement(usd=2.0, usd_partial=False, tokens=0)
+    )
+    sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(tracker)))
+    usage = lanes.lane_usage(worker)
+    assert usage is not None
+    assert usage.usd == pytest.approx(2.0)
+
+
 @pytest.mark.parametrize("worker_dead", [False, True])
 def test_stop_follows_clone_state_and_readonly_bucket_and_keeps_unresolved_hold(
     short_repo: pathlib.Path,
