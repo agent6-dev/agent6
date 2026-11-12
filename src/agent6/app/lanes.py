@@ -230,12 +230,12 @@ def bridge_spawner(
     lane_state = paths.state_dir(spec.workdir)
     # The clone's state dir is empty; the origin's memory and rulings are seeded into it.
     memory.seed_store(paths.state_dir(origin), lane_state)
-    lane_runs = sessions_layout.bucket_dir(lane_state, "runs")
+    lane_bucket = sessions_layout.bucket_dir(lane_state, kinds.session_bucket(spec.mode))
 
     def list_dirs() -> list[pathlib.Path]:
-        if not lane_runs.is_dir():
+        if not lane_bucket.is_dir():
             return []
-        return [p for p in lane_runs.iterdir() if p.is_dir()]
+        return [p for p in lane_bucket.iterdir() if p.is_dir()]
 
     # AGENT6_SUBRUN keeps a lane from fanning out itself: depth 1 by construction.
     markers = {
@@ -253,7 +253,7 @@ def bridge_spawner(
     if session_dir is None:
         return lane_records.LaneResult(
             spec=spec,
-            session_dir=lane_runs / spec.session_id,
+            session_dir=lane_bucket / spec.session_id,
             branch=branch,
             ok=False,
             error=err,

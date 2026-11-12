@@ -97,10 +97,11 @@ class ExecutionInputs:
         worker_lock_fd: The lifecycle's held session writer lock, shared with auto-merge.
         base_rules: A review session's base-tree AGENTS.md, in place of the checkout's.
         review_target: A review session's comparison and its diff, for the panel.
+        contract: The bounded conversation a `read_only` session drives; None for a worker's.
     """
 
     session_id: str
-    mode: kinds.ResumableMode
+    mode: kinds.LoopMode
     role: RoleName
     explicit_leaves: frozenset[str]
     isolation: kinds.IsolationLevel
@@ -128,6 +129,7 @@ class ExecutionInputs:
     worker_lock_fd: int | None = None
     base_rules: str | None = None
     review_target: tuple[review_records.ReviewTarget, str] | None = None
+    contract: kinds.ConversationContract | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -418,9 +420,16 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             for line in policy.session_policy(layout.session_dir).models:
                 reporter.note(line)
 
-        mcp_manager = session_setup.start_mcp_manager_if_enabled(
-            cfg, cwd, inputs.isolation, reporter=reporter, events=events, session_net=session_net
-        )
+        # A bounded conversation starts no server: its tool surface is the contract's.
+        if inputs.contract is None:
+            mcp_manager = session_setup.start_mcp_manager_if_enabled(
+                cfg,
+                cwd,
+                inputs.isolation,
+                reporter=reporter,
+                events=events,
+                session_net=session_net,
+            )
 
         loop_log = frontend.loop_logger(mode)
         if not console_stream:
@@ -462,7 +471,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         # environment, so every commit leaves it out as it does the operator's files.
         unready: str | None = None
         untracked_at_start = inputs.untracked_at_start
-        if workspace_setup.session_needs_setup(layout.session_dir):
+        if inputs.contract is None and workspace_setup.session_needs_setup(layout.session_dir):
             # The run's own earlier files read untracked too: the chain never moves the index.
             before = git_read.untracked_paths(cwd) if mode == "run" else frozenset[str]()
             prepared = workspace_setup.prepare(cfg, cwd, runner=dispatcher, reporter=reporter)
@@ -581,6 +590,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             operator_edits=inputs.operator_edits,
             merged_in=inputs.merged_in,
             mode=mode,
+            contract=inputs.contract,
             plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
             review=review_gate.ReviewSettings(
                 trigger=cfg.review.trigger,

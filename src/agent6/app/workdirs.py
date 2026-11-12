@@ -90,7 +90,9 @@ def adopt_orphan_lane(
     real = layout.session_dir.resolve()
     layout.session_dir.unlink()
     try:
-        subrun.import_run(origin, clone, manifest.run_branch, real, layout.state_dir)
+        subrun.import_run(
+            origin, clone, manifest.run_branch, real, layout.state_dir, mode=manifest.mode
+        )
     except subrun.SubrunError:
         layout.session_dir.symlink_to(real)
         raise

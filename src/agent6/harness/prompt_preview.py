@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
-from typing import Literal
 
 from agent6 import kinds
 from agent6.config import Config
@@ -20,7 +19,7 @@ from agent6.tools import dispatch
 def system_prompt_for(
     config: Config,
     root: pathlib.Path,
-    mode: Literal["run", "plan", "ask", "read_only"] = "run",
+    mode: kinds.LoopMode = "run",
     *,
     state_dir: pathlib.Path | None = None,
 ) -> str:
@@ -75,7 +74,7 @@ class ModelExchange:
 def model_exchange_for(
     config: Config,
     root: pathlib.Path,
-    mode: Literal["run", "plan", "ask", "read_only"] = "run",
+    mode: kinds.LoopMode = "run",
     *,
     state_dir: pathlib.Path | None = None,
 ) -> ModelExchange:
@@ -122,7 +121,7 @@ def _shown_isolation(config: Config) -> kinds.IsolationLevel:
 
 
 def _installed_skills(
-    root: pathlib.Path, config: Config, mode: Literal["run", "plan", "ask", "read_only"]
+    root: pathlib.Path, config: Config, mode: kinds.LoopMode
 ) -> skills.ResolvedSkills | None:
     """Return the skills the loop would show: run mode only, None when nothing is installed."""
     if mode != "run":

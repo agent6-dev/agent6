@@ -82,12 +82,14 @@ class LaneSpec:
         workdir: The lane's workspace clone.
         settings: The lane's route, effort and temperature, resolved from its selector; None
             for the worker's own, which the lane's config carries unchanged.
+        mode: The lane's session mode, which names its bucket under the origin's state.
     """
 
     lane: int
     session_id: str
     workdir: pathlib.Path
     settings: kinds.ModelSettings | None
+    mode: kinds.LoopMode = "run"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

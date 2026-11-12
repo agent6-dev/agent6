@@ -48,6 +48,7 @@ SessionEndReason = Literal[
     "plan_unreadable",
     "max_turns",
     "ask_repl_empty",
+    "calls_exhausted",
     "gate_stale",
     "gate_red_at_base",
     "lanes_ranked",
@@ -95,6 +96,8 @@ class SessionResult:
             layer).
         no_lane_result: no lane of a fan-out produced a rankable result (the app layer).
         no_lane_passed: no lane of a fan-out went green (the app layer).
+        calls_exhausted: a bounded conversation reached its contract's call ceiling; the last
+            response's text is kept.
 
     Attributes:
         completed: Whether the model stopped deliberately; never whether the work verified.

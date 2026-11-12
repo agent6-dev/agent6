@@ -197,6 +197,7 @@ Every end has one reason (`stop_reason` in `agent6 sessions show --json` and `se
 | `plan_unreadable` | `failed · plan unreadable` | `1` |
 | `max_turns` | `failed · max turns` | `1` |
 | `ask_repl_empty` | none: no end is recorded | `0` |
+| `calls_exhausted` | `failed · calls exhausted` | `1` |
 | `gate_stale` | `finished · gate stale` | `4` (gate red, gate timed out, unverified under a harness gate), `0` (unverified with the harness gate off) |
 | `gate_red_at_base` | `finished · gate red at base` | `4` |
 | `lanes_ranked` | `finished · lanes ranked` | `0` |

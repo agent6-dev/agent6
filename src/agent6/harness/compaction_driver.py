@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import pydantic
 
-from agent6 import budget
+from agent6 import budget, kinds
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
 from agent6.harness import (
@@ -59,7 +59,7 @@ class Compactor:
     settings: compaction_window.CompactionSettings
     provider: Provider
     curator: graph_curator.GraphCurator | None
-    mode: Literal["run", "plan", "ask", "read_only"]
+    mode: kinds.LoopMode
     dag_available: bool
     decisions: Callable[[], str]
     verify_fact: Callable[[loop_state.LoopState], str]

@@ -19,7 +19,7 @@ import pathlib
 import time
 import uuid
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import pydantic
 
@@ -80,7 +80,7 @@ from agent6.providers import (
     ProviderResponse,
     ToolDefinition,
 )
-from agent6.sessions import journal, process
+from agent6.sessions import completion, journal, process
 from agent6.tools import dispatch, operator_prompts, schema, tool_errors
 from agent6.tools import results as tools_results
 from agent6.vcs import git_ops
@@ -141,6 +141,9 @@ class Harness:
         mode: The mode; `plan` uses the planning prompt and tool list, never auto-commits,
             and writes `plan_markdown` to `plan_output_path` on finish_planning.
         plan_output_path: Where a plan is written; required when `mode="plan"`.
+        contract: The bounded conversation a `read_only` session drives in place of a
+            worker's: its own system prompt and opening, a call ceiling, no gates, no
+            advisors, no compaction; None for the worker's execution.
         turns_reached: The turn being driven, 0 before the loop starts; the app's
             interrupt fallbacks read it for a truthful `session.stop`.
     """
@@ -184,11 +187,14 @@ class Harness:
     # The gate a resumed execution carried from the last one, set before the state is built.
     adopted_on_resume: tuple[str, ...] = ()
     interactive: bool = False
-    mode: Literal["run", "plan", "ask", "read_only"] = "run"
+    mode: kinds.LoopMode = "run"
     plan_output_path: pathlib.Path | None = None
+    contract: kinds.ConversationContract | None = None
     # A snapshot write fault warns once, not every turn; it disables resume, never the run.
     snapshot_write_failed: bool = dataclasses.field(default=False, init=False)
     turns_reached: int = dataclasses.field(default=0, init=False)
+    # What a contract's ceiling cut, for its completion record.
+    _contract_diagnostics: list[str] = dataclasses.field(default_factory=list, init=False)
     _execution_started: bool = dataclasses.field(default=False, init=False)
     # The turn whose tools are running, for the `parallel` tool's dispatch.
     _tool_turn: tuple[loop_conversation.Conversation, loop_state.LoopState, int] | None = (
@@ -229,6 +235,31 @@ class Harness:
                 execution_id=self.execution_id,
             )
         )
+        system, conversation, root_id = (
+            self._open_task(user_task)
+            if self.contract is None
+            else self._open_contract(self.contract)
+        )
+        return self._drive_loop(
+            system=system,
+            conversation=conversation,
+            tool_calls=0,
+            start_turn=1,
+            root_task_id=root_id,
+            original_task=user_task,
+            operator_task=operator_task,
+        )
+
+    def _open_task(self, user_task: str) -> tuple[str, loop_conversation.Conversation, str | None]:
+        """Open a worker's execution: the assembled system prompt, the task block, the root task.
+
+        Args:
+            user_task: The task, with any seed digest or skill block prepended.
+
+        Returns:
+            The system prompt, the conversation holding the task block, and the root task's
+            id, None without a curator.
+        """
         self.log("LOOP: LOAD_CONTEXT")
         self._prepare_rulings_file()
         repo = repo_context.load_repo_summary(self.chain.root, self.config.sandbox.hide_paths)
@@ -275,16 +306,23 @@ class Harness:
         initial_user = f"TASK:\n{user_task}\n\n{instructions}{dag_hint}"
         conversation = loop_conversation.Conversation()
         conversation.notice(initial_user, origin="operator")
+        return system, conversation, root_id
 
-        return self._drive_loop(
-            system=system,
-            conversation=conversation,
-            tool_calls=0,
-            start_turn=1,
-            root_task_id=root_id,
-            original_task=user_task,
-            operator_task=operator_task,
-        )
+    def _open_contract(
+        self, contract: kinds.ConversationContract
+    ) -> tuple[str, loop_conversation.Conversation, None]:
+        """Open a bounded conversation: the contract's system prompt and opening, no task block.
+
+        Args:
+            contract: The contract.
+
+        Returns:
+            The system prompt, the conversation holding the opening, and no root task.
+        """
+        self.log(f"LOOP: contract={contract.kind} max_calls={contract.max_calls}")
+        conversation = loop_conversation.Conversation()
+        conversation.notice(contract.opening, origin="operator")
+        return contract.system, conversation, None
 
     def _container_roots(self) -> tuple[str, str] | None:
         """Return the command and host roots when the commands run in a container, else None."""
@@ -472,14 +510,9 @@ class Harness:
         )
         loop_resume.seed_carryover(self, state, conversation, resume_from)
         if resume_from is None:
-            try:
-                for notice in self.gate.start_baseline(state):
-                    conversation.notice(notice.text)
-            except tool_errors.OperatorCommandUnexecutableError as exc:
-                return self._unexecutable_abort(exc, turn=start_turn, state=state)
-            # The start gate is the harness's time: the stagnation window opens at the first turn.
-            state.stagnation = guards.StagnationGuard(wait_at_start=self.dispatcher.operator_wait_s)
-            self._sit_review_target(state, conversation)
+            aborted = self._start_fresh(state, conversation, start_turn=start_turn)
+            if aborted is not None:
+                return aborted
         # The allowance is this execution's: a resumed one re-arms it (-1 is unbounded).
         for turn in (
             range(start_turn, start_turn + self.max_turns)
@@ -487,7 +520,7 @@ class Harness:
             else itertools.count(start_turn)
         ):
             self.turns_reached = turn
-            if turn == start_turn:
+            if turn == start_turn and self.contract is None:
                 opened = loop_steer.execution_opening(
                     self, conversation, turn, state, resuming=resume_from is not None
                 )
@@ -517,6 +550,9 @@ class Harness:
                 continue
             # The response's blocks enter the history verbatim, so tool_use ids round-trip.
             assistant = conversation.assistant(got.raw.get("content") or [])
+            ended = self._contract_turn(state, got, assistant, turn=turn)
+            if ended is not None:
+                return ended
             if not assistant.tool_uses:
                 result = quiet_turns.handle_no_tool_use(
                     self, got, assistant, conversation, state, ctx
@@ -540,12 +576,7 @@ class Harness:
             # One graph snapshot per turn, however many mutations the turn made.
             if turn_state.dag_mutated:
                 self._emit_graph_snapshot()
-            result = self._turn_auto_commit_and_metric(state, turn_state)
-            if result is not None:
-                return result
-            self.reviewer.triggers(state, turn_state)
-            self._turn_finish_gates(state, turn_state, ctx)
-            result = self._turn_advisors(state, turn_state, ctx)
+            result = self._turn_after_tools(state, turn_state, ctx)
             if result is not None:
                 return result
             conversation.results(turn_state.tool_results)
@@ -574,6 +605,56 @@ class Harness:
             turn=self.turns_reached,
         )
 
+    def _start_fresh(
+        self,
+        state: loop_state.LoopState,
+        conversation: loop_conversation.Conversation,
+        *,
+        start_turn: int,
+    ) -> loop_snapshot.SessionResult | None:
+        """Open a fresh execution: the worker's baseline, the stagnation window, the review target.
+
+        Args:
+            state: The execution's state.
+            conversation: The conversation the baseline's notices enter.
+            start_turn: The first turn.
+
+        Returns:
+            The end when the operator's verify command cannot execute, else None.
+        """
+        if self.contract is None:
+            try:
+                for notice in self.gate.start_baseline(state):
+                    conversation.notice(notice.text)
+            except tool_errors.OperatorCommandUnexecutableError as exc:
+                return self._unexecutable_abort(exc, turn=start_turn, state=state)
+        # The start gate is the harness's time: the stagnation window opens at the first turn.
+        state.stagnation = guards.StagnationGuard(wait_at_start=self.dispatcher.operator_wait_s)
+        self._sit_review_target(state, conversation)
+        return None
+
+    def _turn_after_tools(
+        self, state: loop_state.LoopState, turn: loop_state.TurnState, ctx: advice.TurnContext
+    ) -> loop_snapshot.SessionResult | None:
+        """Run the worker's phases after the turn's tools: commit and metric, review, gates, advice.
+
+        A contract keeps the commit step, which run mode alone takes, and none of the others.
+
+        Args:
+            state: The execution's state.
+            turn: This turn's state.
+            ctx: This turn's context.
+
+        Returns:
+            The end a phase declared, else None.
+        """
+        result = self._turn_auto_commit_and_metric(state, turn)
+        if result is not None or self.contract is not None:
+            return result
+        self.reviewer.triggers(state, turn)
+        self._turn_finish_gates(state, turn, ctx)
+        return self._turn_advisors(state, turn, ctx)
+
     def _turn_pre_call(
         self,
         *,
@@ -599,14 +680,15 @@ class Harness:
         # The turn the `parallel` tool dispatches for, set before its calls run.
         self._tool_turn = (conversation, state, ctx.turn)
         self._emit_budget(ctx.turn)
-        if self.compactor.compact(conversation, state, prefix_chars=prefix_chars):
-            # A tier-2 restart wiped the focus banner and the plan block; both go back below.
-            state.focus.surfaced_task_id = None
-            state.plan_injected = ""
-        parked = self._maybe_inject_plan(conversation, state, turn=ctx.turn)
-        if parked is not None:
-            return parked
-        self._turn_before_call(conversation, state, ctx)
+        if self.contract is None:
+            if self.compactor.compact(conversation, state, prefix_chars=prefix_chars):
+                # A tier-2 restart wiped the focus banner and the plan block; both go back below.
+                state.focus.surfaced_task_id = None
+                state.plan_injected = ""
+            parked = self._maybe_inject_plan(conversation, state, turn=ctx.turn)
+            if parked is not None:
+                return parked
+            self._turn_before_call(conversation, state, ctx)
         for call_id, reason in conversation.limit_attachments():
             self.emit(journal.LoopMediaRefused(provider_tool_call_id=call_id, reason=reason))
         conversation.roll_cache_marks()
@@ -839,6 +921,55 @@ class Harness:
                 turn=turn,
             )
 
+    def _contract_turn(
+        self,
+        state: loop_state.LoopState,
+        resp: ProviderResponse,
+        assistant: loop_conversation.AssistantMessage,
+        *,
+        turn: int,
+    ) -> loop_snapshot.SessionResult | None:
+        """End a bounded conversation at its call ceiling, or on a response with no tool call.
+
+        The response's text is the deliverable either way; the tool calls of a response at
+        the ceiling are not executed, and the completion record names them.
+
+        Args:
+            state: The execution's state.
+            resp: The model's response.
+            assistant: The turn as it entered the conversation.
+            turn: The current turn.
+
+        Returns:
+            The end, or None when the turn's tool calls run or no contract drives the loop.
+        """
+        if self.contract is None:
+            return None
+        text = (resp.text or "").strip()
+        if self.caller.counter.attempts >= self.contract.max_calls:
+            if assistant.tool_uses:
+                names = ", ".join(tu.name for tu in assistant.tool_uses)
+                cause = (
+                    "this conversation has no tools"
+                    if self.contract.kind == "no_tools"
+                    else f"the call ceiling {self.contract.max_calls} was reached"
+                )
+                self._contract_diagnostics.append(f"not executed, {cause}: {names}")
+            self.log(f"LOOP: call ceiling {self.contract.max_calls} reached at turn {turn}")
+            return self.finish(
+                state, loop_snapshot.End("calls_exhausted", text, checkpoint=False), turn=turn
+            )
+        if not assistant.tool_uses:
+            self.log(f"LOOP: answered at turn {turn}")
+            return self.finish(
+                state,
+                loop_snapshot.End(
+                    "answered", text, completed=True, verdict="passed", checkpoint=False
+                ),
+                turn=turn,
+            )
+        return None
+
     def _worker_max_tokens(self, state: loop_state.LoopState) -> int:
         """Return the output cap for the worker's call.
 
@@ -852,6 +983,8 @@ class Harness:
         Returns:
             The cap in tokens.
         """
+        if self.contract is not None:
+            return self.contract.max_output_tokens
         if (
             self.metrics.active
             and state.quiet.went_quiet_nudges_used < _STARVATION_BACKOFF_AFTER_QUIETS
@@ -1426,6 +1559,17 @@ class Harness:
                 )
             )
         self._record_memory_use(state)
+        if self.contract is not None and self.resume_state_path is not None:
+            completion.write_completion(
+                self.resume_state_path.parent,
+                completion.CompletionRecord(
+                    text=end.summary,
+                    stop_reason=end.reason,
+                    output_tokens=self.caller.counter.output_tokens,
+                    calls=self.caller.counter.attempts,
+                    diagnostics=tuple(self._contract_diagnostics),
+                ),
+            )
         return loop_snapshot.SessionResult(
             completed=end.completed,
             verification=verification,
@@ -1832,13 +1976,19 @@ class Harness:
 
     @functools.cached_property
     def caller(self) -> provider_call.ProviderCaller:
-        """Return the worker's provider caller under the retry knobs."""
+        """Return the worker's provider caller under the retry knobs and the contract's bounds."""
+        contract = self.contract
         return provider_call.ProviderCaller(
             provider=self.provider,
             retry_count=self.call.retry_count,
             retry_delay_s=self.call.retry_delay_s,
             retry_max_delay_s=self.call.retry_max_delay_s,
-            temperature=self.call.temperature,
+            temperature=(
+                contract.temperature
+                if contract is not None and contract.temperature is not None
+                else self.call.temperature
+            ),
+            max_calls=contract.max_calls if contract is not None else 0,
             should_abort=self.bridge.should_abort,
             should_interrupt=self.bridge.should_interrupt,
             log=self.log,

@@ -375,7 +375,7 @@ def _drive_fanout(
     model_refs = {}
     for spec in batch.imported:
         manifest = sessions_manifest.read_manifest(
-            lane_watch.lane_link(origin_state, spec.session_id)
+            lane_watch.lane_link(origin_state, spec.session_id, mode=spec.mode)
         )
         if manifest.git_control == "model":
             model_refs[spec.session_id] = wire.commits_ref(manifest, origin)

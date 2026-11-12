@@ -11,7 +11,7 @@ from __future__ import annotations
 import pathlib
 import shutil
 
-from agent6 import errors, lane_records, paths
+from agent6 import errors, kinds, lane_records, paths
 from agent6.sessions import layout
 from agent6.vcs import git_ops, git_read
 
@@ -44,8 +44,9 @@ def import_run(
     origin_state: pathlib.Path,
     *,
     model_control: bool = False,
+    mode: str,
 ) -> lane_records.Imported:
-    """Land a finished lane's branch in the origin and move its run dir under the origin's state.
+    """Land a finished lane's branch in the origin and move its session dir under its state.
 
     A model-controlled lane lands HEAD on its chain ref and keeps a free branch name.
     A harness-controlled lane without a branch imports only its record.
@@ -57,19 +58,25 @@ def import_run(
         lane_session_dir: The lane's run dir.
         origin_state: The origin's state dir.
         model_control: Import HEAD instead of a harness-owned branch.
+        mode: The lane's session mode, which names its bucket.
 
     Returns:
         The imported run dir and the ref the work landed in, with its tip; a lane that
         committed nothing imports its record alone.
 
     Raises:
-        SubrunError: When the branch or run dir already exists in the origin, or the fetch fails.
+        SubrunError: When the branch or session dir already exists in the origin, the fetch
+            fails, or the mode names no bucket.
     """
     if not model_control and git_read.branch_exists(origin, branch):
         raise SubrunError(f"branch {branch!r} already exists in {origin}")
-    dest_session_dir = layout.bucket_dir(origin_state, "runs") / lane_session_dir.name
+    try:
+        bucket = kinds.session_bucket(mode)
+    except kinds.UnknownSessionKindError as exc:
+        raise SubrunError(str(exc)) from exc
+    dest_session_dir = layout.bucket_dir(origin_state, bucket) / lane_session_dir.name
     if dest_session_dir.exists():
-        raise SubrunError(f"run dir already exists: {dest_session_dir}")
+        raise SubrunError(f"session dir already exists: {dest_session_dir}")
     ref = tip = ""
     if model_control:
         try:

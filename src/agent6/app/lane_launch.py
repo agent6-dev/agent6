@@ -17,7 +17,7 @@ import sys
 
 import pydantic
 
-from agent6 import budget_reservations, lane_records
+from agent6 import budget_reservations, kinds, lane_records
 from agent6.config import Config, ConfigError
 from agent6.sessions import ipc, manifest
 
@@ -57,6 +57,7 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
         gate_source: Where the verify gate in the snapshot came from; "" for none.
         operator_task: The task's words before composition; None when they are the task.
         limits: The turn cap and deadline the lane runs under; None for the config's own.
+        contract: The bounded conversation a `read_only` lane drives; None for a run lane.
     """
 
     workdir: pathlib.Path
@@ -75,6 +76,7 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     gate_source: manifest.GateSource = ""
     operator_task: str | None = None
     limits: lane_records.LaneLimits | None = None
+    contract: kinds.ConversationContract | None = None
 
 
 def apply_limits(cfg: Config, limits: lane_records.LaneLimits | None) -> Config:

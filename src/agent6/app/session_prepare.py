@@ -91,7 +91,7 @@ def headless_check(
     *,
     tui: bool,
     interactive: bool,
-    mode: kinds.ResumableMode,
+    mode: kinds.LoopMode,
     away: str,
     parking_away: str | None = None,
     reporter: app_reporter.Reporter,

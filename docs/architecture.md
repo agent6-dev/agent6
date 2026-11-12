@@ -594,6 +594,9 @@ The primitive is git plumbing in [subrun.py](https://github.com/agent6-dev/agent
 [app/workdirs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/workdirs.py) resolves `[workspace].base_dir` for clones and linked worktrees, writes lane configs, recovers orphaned lanes and removes imported or safely swept clones.
 The detached spawn `app/lanes.py` drives (`ui.spawn`'s `spawn_lane`: the fixed `python -P -E -m agent6.ui.cli.lane_agent` argv, the child's pid kept) is injected as a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`; liveness probes use `sessions.process` and stop requests use the run-dir bridge (`sessions.ipc`).
 A lane's task, pins, caps, away mode and lineage travel in its launch file (`app/lane_launch.py`, `0600` under `<origin_state>/launch/<group>/`), beside its config snapshot; the bootstrap validates both and drives `app.run.run_task` with the CLI's session seam.
+A launch file that carries a `kinds.ConversationContract` starts a `read_only` session instead of a run: the same bootstrap, `run_task` and `Harness`, with the contract's system prompt and opening in place of the task block, a call ceiling counted at the provider caller (retries included), the navigation tools plus `finish_session` (`no_tools`: none), and no baseline, setup command, MCP server, compaction, advisor, review trigger or finish gate.
+The ceiling ends it `calls_exhausted` with the last response's text; a response with no tool call ends it `answered`; either way `completion.json` (`sessions/completion.py`) holds the text, the stop reason, the attempts and what the ceiling cut.
+Its session dir is `sessions/read_only/<id>` in the lane's clone and imports under the same bucket in the origin (`lane_watch.lane_link`, `subrun.import_run` read the bucket from the lane's mode); `resume` refuses it.
 
 **`agent6 run --parallel N|selector,...`** resolves each selector (a role name, or `[provider/]model` on the worker's effort and temperature) to one `kinds.ModelSettings` through `Config.lane_settings`, the resolver every entry point shares, and plans one `LaneSpec` per lane, each started through the lane bootstrap as an ordinary detached run with its own jail and `run_commands` policy.
 
@@ -699,7 +702,7 @@ A run branch that is not at the chain tip (a commit made on `agent6/<id>`) refus
 
 The temporary workspace `.agent6/` layout and the transfer rules are documented under [Carry your state with the workspace](usage.md#carry-your-state-with-the-workspace).
 
-Each session directory is `<state-dir>/sessions/<bucket>/<session-id>/`, where the bucket is the mode plus `s`: `runs/`, `plans/`, `asks/`, and `machines/` for `machine create` authoring.
+Each session directory is `<state-dir>/sessions/<bucket>/<session-id>/`, where the bucket is named for the mode (`kinds.SessionKind.bucket`): `runs/`, `plans/`, `asks/`, `machines/` for `machine create` authoring, and `read_only/` for the bounded conversations lanes run under a contract.
 Ids are one namespace across every bucket, since every surface addresses a session by bare id.
 Minting picks an id no bucket holds; `run --session-id` refuses one another bucket holds (reusing a same-bucket id is the resume or parked-start path), and `fork --session-id` refuses one any bucket holds.
 

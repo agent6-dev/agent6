@@ -285,6 +285,19 @@ class CallSettings:
     metric_task_max_tokens: int = 65536
 
 
+@dataclasses.dataclass(slots=True)
+class CallCounter:
+    """Count one execution's provider attempts and their output.
+
+    Attributes:
+        attempts: The attempts made, retries and media-free retries included.
+        output_tokens: The output tokens of every response returned.
+    """
+
+    attempts: int = 0
+    output_tokens: int = 0
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class ProviderCaller:
     """Call the provider with at most `retry_count + 1` attempts.
@@ -304,6 +317,8 @@ class ProviderCaller:
         should_interrupt: Whether an operator steer is pending.
         log: The run's text logger.
         emit: The run's event emitter.
+        max_calls: The attempts allowed in all, retries included; 0 for no ceiling.
+        counter: The attempts made so far, shared by every call of the execution.
     """
 
     provider: Provider
@@ -315,6 +330,8 @@ class ProviderCaller:
     should_interrupt: Callable[[], bool]
     log: Callable[[str], None]
     emit: Callable[..., None]
+    max_calls: int = 0
+    counter: CallCounter = dataclasses.field(default_factory=CallCounter)
 
     def call(
         self,
@@ -342,12 +359,19 @@ class ProviderCaller:
             The first usable response, or the last empty one.
 
         Raises:
-            ProviderError: A permanent error, or a transient one after the last attempt.
+            ProviderError: A permanent error, a transient one after the last attempt, or a
+                call past the ceiling.
             MediaInputError: A recognized rejection handled by the canonical-history recovery.
             ProviderAborted: An operator stop.
             ProviderInterrupted: An operator steer.
         """
         attempts = max(1, self.retry_count + 1)
+        if self.max_calls:
+            # The ceiling counts attempts: a retry cannot stretch it.
+            remaining = self.max_calls - self.counter.attempts
+            if remaining < 1:
+                raise ProviderError(f"call ceiling {self.max_calls} reached", fatal=True)
+            attempts = min(attempts, remaining)
         attempt = 1
         # One logical call: its retries share the call id, each attempt with its own request id.
         context = request_headers.RequestContext.initiated_by(
@@ -355,6 +379,7 @@ class ProviderCaller:
         )
         while True:
             context = dataclasses.replace(context, attempt=attempt, attempts=attempts)
+            self.counter.attempts += 1
             try:
                 resp = self.provider.call(
                     system=system,
@@ -388,6 +413,7 @@ class ProviderCaller:
                 )
                 self.emit(journal.LoopProviderRetry(attempt=attempt, error=str(exc)[:200]))
             else:
+                self.counter.output_tokens += resp.output_tokens
                 if settles_call(resp, context):
                     return resp
                 # Model flakiness, not rate limiting: a short fixed delay.
@@ -430,6 +456,7 @@ __all__ = [
     "NON_RETRYABLE_HTTP_STATUSES",
     "RETRY_AFTER_CEILING_S",
     "TOOL_CALL_STOP_REASONS",
+    "CallCounter",
     "ProviderCaller",
     "is_empty_tool_call_response",
     "provider_error_hint",

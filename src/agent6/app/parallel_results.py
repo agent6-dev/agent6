@@ -107,7 +107,8 @@ def stamp_compare_outcomes(
             and (not any_verified or by_id[session_id].verification == "passed")
         )
         compare = sessions_manifest.CompareStamp(rank=rank_pos, of=of, winner=winner, group=group)
-        err = stamp(lane_watch.lane_link(origin_state, session_id), compare=compare)
+        # A judged fan-out ranks run lanes.
+        err = stamp(lane_watch.lane_link(origin_state, session_id, mode="run"), compare=compare)
         if err is not None:
             reporter.note(f"lane [{session_id}]: imported, but the compare stamp failed: {err}")
 
@@ -185,7 +186,7 @@ def import_lane(
     Raises:
         SubrunError: The import failed; nothing moved.
     """
-    link = lane_watch.lane_link(origin_state, res.spec.session_id)
+    link = lane_watch.lane_link(origin_state, res.spec.session_id, mode=res.spec.mode)
     had_link = link.is_symlink()
     with contextlib.suppress(FileNotFoundError):
         link.unlink()
@@ -202,6 +203,7 @@ def import_lane(
                 res.session_dir,
                 origin_state,
                 model_control=model_control,
+                mode=res.spec.mode,
             )
             if free_branch:
                 stamps.write_manifest(

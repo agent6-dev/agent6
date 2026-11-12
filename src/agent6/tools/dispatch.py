@@ -19,7 +19,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any
 
 import pydantic
 
@@ -106,6 +106,8 @@ class ToolDispatcher:
         extra_protect_paths: Paths every jail re-binds read-only and the edit tools refuse,
             such as a running machine's own bundle; read by the prompt assembly too.
         mode: The mode whose tool surface the dispatcher enforces as its backstop.
+        no_tools: Whether the conversation has no tools at all: none is offered and every
+            name refuses.
         state_dir: The per-repo state dir, for the sessions roster and the memory grant.
         session_dir: The run's dir, for background commands, the file bridge and the
             effective command policy; None leaves them unwired.
@@ -127,7 +129,8 @@ class ToolDispatcher:
         run_root_node_id: str | None = None,
         mcp_manager: mcp_client.MCPManager | None = None,
         extra_protect_paths: tuple[pathlib.Path, ...] = (),
-        mode: Literal["run", "plan", "ask", "machine"] = "run",
+        mode: kinds.SessionMode = "run",
+        no_tools: bool = False,
         state_dir: pathlib.Path | None = None,
         session_dir: pathlib.Path | None = None,
         findings: Callable[[], results.FindingsResult] | None = None,
@@ -157,7 +160,8 @@ class ToolDispatcher:
             config, self._root, memory_dir=mem, grants=self._grants
         )
         self.isolation: kinds.IsolationLevel = isolation
-        self._mode: Literal["run", "plan", "ask", "machine"] = mode
+        self._mode: kinds.SessionMode = mode
+        self.no_tools = no_tools
         # next() is atomic under the GIL, so seats on a shared dispatcher need no lock.
         self._call_seq = itertools.count(1)
         self.extra_protect_paths = extra_protect_paths
@@ -335,6 +339,8 @@ class ToolDispatcher:
 
     def available_tool_names(self) -> tuple[str, ...]:
         """Return the base tools on offer right now, MCP tools included, sorted."""
+        if self.no_tools:
+            return ()
         names = [
             cls.TOOL_NAME for cls in schema.ALL_TOOLS if self._tool_refusal(cls.TOOL_NAME) is None
         ]
@@ -362,7 +368,7 @@ class ToolDispatcher:
 
     def mcp_descriptors(self) -> tuple[mcp_client.MCPToolDescriptor, ...]:
         """Return the MCP tools on offer right now, minus any server denied for the session."""
-        if self._mcp_manager is None:
+        if self._mcp_manager is None or self.no_tools:
             return ()
         return tuple(
             d for d in self._mcp_manager.descriptors() if not self.mcp_denied(d.server_name)
@@ -449,6 +455,8 @@ class ToolDispatcher:
         Raises:
             ToolError: The tool is unknown, withheld, outside the mode's surface, or failed.
         """
+        if self.no_tools:
+            raise tool_errors.ToolError("not available: this conversation has no tools")
         if name.startswith(mcp_client.MCP_TOOL_PREFIX):
             if not kinds.session_kind(self._mode).edits:
                 # An MCP tool cannot be classified as read-only, so every non-run mode refuses it.

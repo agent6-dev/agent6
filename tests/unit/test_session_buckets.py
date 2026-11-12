@@ -12,39 +12,32 @@ from agent6 import kinds, paths
 from agent6.sessions import layout as sessions_layout
 
 
-def test_a_bucket_is_the_mode_plus_s() -> None:
-    """The bucket is derived rather than stored.
+def test_a_bucket_is_named_by_its_kind() -> None:
+    """The bucket is derived from the kind table rather than stored.
 
     A record cannot disagree with where its sessions actually go.
     """
-    assert [kinds.session_bucket(name) for name in ("run", "plan", "ask", "machine")] == [
+    modes = ("run", "plan", "ask", "machine", "read_only")
+    assert [kinds.session_bucket(name) for name in modes] == [
         "runs",
         "plans",
         "asks",
         "machines",
+        "read_only",
     ]
+    assert [kinds.bucket_mode(kinds.session_bucket(name)) for name in modes] == list(modes)
 
 
 def test_an_unknown_mode_has_no_bucket() -> None:
     with pytest.raises(kinds.UnknownSessionKindError):
         kinds.session_bucket("nonsense")
-
-
-def test_an_agent_execution_has_no_sessions_bucket() -> None:
-    """A machine's agent states live inside their machine instance's own directory.
-
-    Answering "agents" here minted a bucket nothing writes, so a misrouted session landed somewhere
-    no listing scans instead of failing loudly at the routing bug.
-    """
     with pytest.raises(kinds.UnknownSessionKindError):
-        kinds.session_bucket("read_only")
+        kinds.bucket_mode("nonsense")
 
 
 def test_every_mode_has_a_scanned_bucket() -> None:
     """A mode whose bucket no listing scans writes a session dir nothing can find."""
     for name in kinds.SESSION_KINDS:
-        if name == "read_only":
-            continue  # no directory of its own (see the refusal test)
         assert kinds.session_bucket(name) in sessions_layout.SESSION_BUCKETS
 
 

@@ -7,7 +7,7 @@ from __future__ import annotations
 import dataclasses
 import tempfile
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any
 
 from agent6 import kinds
 from agent6.sandbox import jail, jail_session
@@ -70,7 +70,7 @@ def _roster(shells: background.BackgroundShells) -> tuple[str, ...]:
 def start_detached(
     argv: tuple[str, ...],
     *,
-    mode: Literal["run", "plan", "ask", "machine"],
+    mode: kinds.SessionMode,
     get_background: Callable[[], background.BackgroundShells],
     access: JailAccess,
 ) -> results.ExecResult:
@@ -117,7 +117,7 @@ def start_detached(
 def run_model_command(
     argv: tuple[str, ...],
     *,
-    mode: Literal["run", "plan", "ask", "machine"],
+    mode: kinds.SessionMode,
     shells: background.BackgroundShells | None,
     checkin: float,
     interrupted: Callable[[], bool],

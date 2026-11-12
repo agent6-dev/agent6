@@ -72,7 +72,9 @@ def test_import_run_lands_branch_and_moves_run_dir(tmp_path: pathlib.Path) -> No
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
     origin_state = tmp_path / "origin-state"
 
-    result = subrun.import_run(origin, lane_repo, branch, lane_session_dir, origin_state)
+    result = subrun.import_run(
+        origin, lane_repo, branch, lane_session_dir, origin_state, mode="run"
+    )
     imported = result.session_dir
 
     assert imported == origin_state / "sessions" / "runs" / "01ABC"
@@ -98,7 +100,7 @@ def test_import_run_lands_a_lane_that_never_committed(tmp_path: pathlib.Path) ->
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
 
     result = subrun.import_run(
-        origin, lane_repo, "agent6/lane-1", lane_session_dir, tmp_path / "origin-state"
+        origin, lane_repo, "agent6/lane-1", lane_session_dir, tmp_path / "origin-state", mode="run"
     )
 
     assert (result.session_dir / "manifest.json").is_file()
@@ -128,7 +130,13 @@ def test_import_run_under_model_control_lands_the_hidden_chain_ref(
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
 
     result = subrun.import_run(
-        origin, lane_repo, "", lane_session_dir, tmp_path / "origin-state", model_control=True
+        origin,
+        lane_repo,
+        "",
+        lane_session_dir,
+        tmp_path / "origin-state",
+        model_control=True,
+        mode="run",
     )
 
     chain = git_read.chain_ref_for("01MC")
@@ -155,7 +163,7 @@ def test_import_run_refuses_existing_branch(tmp_path: pathlib.Path) -> None:
     origin_state = tmp_path / "origin-state"
 
     with pytest.raises(subrun.SubrunError):
-        subrun.import_run(origin, lane_repo, branch, lane_session_dir, origin_state)
+        subrun.import_run(origin, lane_repo, branch, lane_session_dir, origin_state, mode="run")
     # Refused before moving anything.
     assert lane_session_dir.exists()
     assert not (origin_state / "sessions" / "runs" / "01ABC").exists()
@@ -179,7 +187,7 @@ def test_import_run_refuses_existing_run_dir(tmp_path: pathlib.Path) -> None:
     (origin_state / "sessions" / "runs" / "01ABC").mkdir(parents=True)  # already imported
 
     with pytest.raises(subrun.SubrunError):
-        subrun.import_run(origin, lane_repo, branch, lane_session_dir, origin_state)
+        subrun.import_run(origin, lane_repo, branch, lane_session_dir, origin_state, mode="run")
     # Refused before fetching or moving anything.
     assert not git_read.branch_exists(origin, branch)
     assert lane_session_dir.exists()

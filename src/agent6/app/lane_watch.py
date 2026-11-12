@@ -18,7 +18,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from agent6 import lane_records, paths
+from agent6 import kinds, lane_records, paths
 from agent6.app import reporter as app_reporter
 from agent6.app import stop
 from agent6.sandbox import jail
@@ -159,13 +159,22 @@ def drain_lane(
     return False
 
 
-def lane_link(origin_state: pathlib.Path, session_id: str) -> pathlib.Path:
-    """Return where a lane's live symlink sits under the origin's runs dir."""
-    return layout.bucket_dir(origin_state, "runs") / session_id
+def lane_link(origin_state: pathlib.Path, session_id: str, *, mode: str) -> pathlib.Path:
+    """Return where a lane's live symlink sits: the origin's bucket for the lane's mode.
+
+    Args:
+        origin_state: The origin's state dir.
+        session_id: The lane's session id.
+        mode: The lane's session mode.
+
+    Returns:
+        The lane's dir under the origin's state.
+    """
+    return layout.bucket_dir(origin_state, kinds.session_bucket(mode)) / session_id
 
 
 def symlink_lane(origin_state: pathlib.Path, res: lane_records.LaneResult) -> None:
-    """Symlink a lane's clone-side run dir into the origin's `runs/` so the hub shows it live.
+    """Symlink a lane's clone-side session dir into the origin's bucket so the hub shows it live.
 
     The import replaces the link with the real dir.
 
@@ -173,7 +182,7 @@ def symlink_lane(origin_state: pathlib.Path, res: lane_records.LaneResult) -> No
         origin_state: The origin's state dir.
         res: The started lane.
     """
-    link = lane_link(origin_state, res.spec.session_id)
+    link = lane_link(origin_state, res.spec.session_id, mode=res.spec.mode)
     paths.mkdir_for_real_user(link.parent)
     with contextlib.suppress(FileNotFoundError):
         link.unlink()

@@ -15,6 +15,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
+from agent6 import kinds
 from agent6.graph import models, order
 from agent6.harness import loop_snapshot
 from agent6.sessions import journal
@@ -72,7 +73,7 @@ class TurnContext:
     is needed.
     """
 
-    mode: Literal["run", "plan", "ask", "read_only"]
+    mode: kinds.LoopMode
     turn: int
     # The execution's first turn: a turn allowance counts from it.
     execution_start: int

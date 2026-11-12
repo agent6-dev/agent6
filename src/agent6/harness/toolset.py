@@ -8,7 +8,7 @@ The in-loop panel uses the read-only review surface.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from agent6 import kinds
 from agent6.config import Config
@@ -41,7 +41,7 @@ DAG_TOOLS = (
 def tool_definitions(
     dispatcher: tools_dispatch.ToolDispatcher,
     *,
-    mode: Literal["run", "plan", "ask", "machine", "read_only"] = "run",
+    mode: kinds.SessionMode = "run",
 ) -> list[ToolDefinition]:
     """Build the tool list the loop exposes in a mode.
 
@@ -52,6 +52,8 @@ def tool_definitions(
     Returns:
         The tool definitions, with MCP tools appended in the editing modes only.
     """
+    if dispatcher.no_tools:
+        return []
     available = set(dispatcher.available_tool_names())
     surface = tools_schema.mode_tools(mode)
     out: list[ToolDefinition] = []

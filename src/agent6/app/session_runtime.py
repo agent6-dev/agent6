@@ -554,7 +554,7 @@ def build_session_tools(
     state_dir: pathlib.Path,
     layout: sessions_layout.SessionLayout,
     isolation: kinds.IsolationLevel,
-    mode: kinds.ResumableMode,
+    mode: kinds.LoopMode,
     events: event_log.EventSink,
     prompts: operator_prompts.OperatorPrompts,
     loop_log: Callable[[str], None],

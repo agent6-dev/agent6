@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import pathlib
-from typing import Literal
 
 from agent6 import kinds
 from agent6.config import Config, plan_metered
@@ -233,7 +232,7 @@ def build_system_prompt(
     *,
     config: Config,
     repo: kinds.RepoSummary,
-    mode: Literal["run", "plan", "ask", "read_only"] = "run",
+    mode: kinds.LoopMode = "run",
     memory_index: str = "",
     memory_dir_path: str = "",
     decisions: str = "",

@@ -197,7 +197,7 @@ class VerifyGate:
     timeout_s: float
     infer: bool
     hide: tuple[str, ...]
-    mode: Literal["run", "plan", "ask", "read_only"]
+    mode: kinds.LoopMode
     chain: run_chain.RunChain
     dispatcher: dispatch.ToolDispatcher
     log: Callable[[str], None]

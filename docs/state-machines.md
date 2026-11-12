@@ -260,7 +260,7 @@ An `agent` state spins up a normal agent6 run: its own transcript, budget slice,
 
 `mode` chooses the tool surface.
 
-- `"read_only"` (default): a read-only, structured-output loop: the read and navigation tools (`read_file`, `list_dir`, `outline`, `find_definition`, `find_references`) plus `finish_session`
+- `"read_only"` (default): a read-only, structured-output loop: the read and navigation tools (`read_file`, `list_dir`, `outline`, `find_definition`, `find_references`) plus `finish_session`; the same `read_only` session kind a lane runs under a conversation contract, driven here by the machine agent inside the instance
 - `"run"`: coding work (edit + verify tools and the auto-commit), as `agent6 run` has
 
 Where a run state's work lands:

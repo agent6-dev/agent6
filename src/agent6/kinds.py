@@ -27,6 +27,10 @@ MODEL_ROLES: tuple[RoleName, ...] = ("default", "helper", "planner", "reviewer",
 EffortLevel = Literal["off", "low", "medium", "high", "xhigh", "max"]
 # The modes `agent6 resume` accepts; `session_kind` answers the wider "is this a known mode".
 ResumableMode = Literal["run", "plan", "ask"]
+# The modes `run_task` starts and the Harness drives; `machine` is driven by the machine agent.
+LoopMode = Literal["run", "plan", "ask", "read_only"]
+# Every session mode, the tool surface's vocabulary.
+SessionMode = Literal["run", "plan", "ask", "machine", "read_only"]
 # What the REPL's after-commit hook tells the loop to do next; `exit` stops with no prompt.
 AutoCommitDirective = Literal["continue", "stop", "undo", "exit"]
 
@@ -104,6 +108,7 @@ class SessionKind:
         clamps_commands: Forces approval even where config says "allow".
         resumable: `agent6 resume` can pick it up; a machine's states are driven by the
             machine agent instead.
+        bucket: The directory under `sessions/` its sessions get, named after the mode.
     """
 
     name: str
@@ -112,6 +117,7 @@ class SessionKind:
     runs_commands: bool
     clamps_commands: bool
     resumable: bool
+    bucket: str
 
 
 SESSION_KINDS: dict[str, SessionKind] = {
@@ -124,6 +130,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
             runs_commands=True,
             clamps_commands=False,
             resumable=True,
+            bucket="runs",
         ),
         # Operator-present like ask, so it clamps commands to ask.
         SessionKind(
@@ -133,6 +140,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
             runs_commands=True,
             clamps_commands=True,
             resumable=True,
+            bucket="plans",
         ),
         # No edit or graph tools; a jailed command may write the workspace, so it is approval-gated.
         SessionKind(
@@ -142,6 +150,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
             runs_commands=True,
             clamps_commands=True,
             resumable=True,
+            bucket="asks",
         ),
         # A read-only machine state: the deliverable is the finish payload.
         SessionKind(
@@ -151,7 +160,10 @@ SESSION_KINDS: dict[str, SessionKind] = {
             runs_commands=False,
             clamps_commands=False,
             resumable=False,
+            bucket="machines",
         ),
+        # A bounded conversation under a `ConversationContract`: a lane the harness dispatches,
+        # or a machine `agent` state, which lives in its instance instead of the bucket.
         SessionKind(
             name="read_only",
             role="worker",
@@ -159,6 +171,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
             runs_commands=False,
             clamps_commands=False,
             resumable=False,
+            bucket="read_only",
         ),
     )
 }
@@ -215,18 +228,59 @@ def session_bucket(name: str) -> str:
         name: The mode, such as `run`.
 
     Returns:
-        The mode's name plus `s`, such as `runs`.
+        The kind's bucket, such as `runs`.
 
     Raises:
-        UnknownSessionKindError: The mode is unknown, or is `read_only`, whose executions
-            live under their machine instance.
+        UnknownSessionKindError: The mode is unknown.
     """
-    kind = session_kind(name)
-    if kind.name == "read_only":
-        raise UnknownSessionKindError(
-            "a read_only execution lives under its machine instance, not sessions/"
-        )
-    return f"{kind.name}s"
+    return session_kind(name).bucket
+
+
+def bucket_mode(bucket: str) -> str:
+    """Return the mode whose sessions a bucket holds.
+
+    Args:
+        bucket: A directory name under `sessions/`, such as `runs`.
+
+    Returns:
+        The mode, such as `run`.
+
+    Raises:
+        UnknownSessionKindError: No mode has the bucket.
+    """
+    for kind in SESSION_KINDS.values():
+        if kind.bucket == bucket:
+            return kind.name
+    raise UnknownSessionKindError(f"no session mode has the bucket {bucket!r}")
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ConversationContract:
+    """Bound one conversation the Harness drives in place of a worker's.
+
+    The session it drives is `read_only`: a review seat, a judge, a question over a tree.
+
+    Attributes:
+        kind: `read_only` offers the navigation tools and `finish_session`; `no_tools`
+            offers none and refuses every call.
+        system: The system prompt, in place of the worker's assembled one.
+        opening: The first user message, in place of the task block.
+        max_calls: The provider attempts allowed, retries included; the ceiling ends the
+            conversation `calls_exhausted` with the last response's text kept.
+        max_output_tokens: One call's output cap.
+        temperature: The sampling temperature; None keeps the worker's.
+    """
+
+    kind: Literal["read_only", "no_tools"]
+    system: str
+    opening: str
+    max_calls: int
+    max_output_tokens: int
+    temperature: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.max_calls < 1 or self.max_output_tokens < 1:
+            raise ValueError("a conversation contract allows at least one call and one token")
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

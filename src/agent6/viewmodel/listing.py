@@ -104,7 +104,7 @@ class SessionSummary:
 
     Attributes:
         session_id: The session's id.
-        mode: "run", "plan", "ask" or "?".
+        mode: "run", "plan", "ask", "read_only" or "?".
         task_label: The original task and latest continuation, before display clipping.
         status: The status word (created, starting, running, waiting, stale, passed,
             answered, planned, finished, stopped, undone, failed).

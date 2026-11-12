@@ -199,6 +199,7 @@ depends_on = [
   # renders the same level-aware blocks the loop does
   "agent6.sandbox",
   "agent6.sandbox.detect",
+  "agent6.sessions.completion",
   "agent6.sessions.event_log",
   # the start-family emitter stamps worker.pid before the event is readable
   "agent6.sessions.ipc",
@@ -254,6 +255,10 @@ depends_on = [
 [[modules]]
 path = "agent6.review_records"
 depends_on = []
+
+[[modules]]
+path = "agent6.sessions.completion"
+depends_on = ["agent6.portable"]
 
 [[modules]]
 path = "agent6.sessions.event_log"

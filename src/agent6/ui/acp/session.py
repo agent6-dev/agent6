@@ -186,7 +186,7 @@ class Sessions:
             raise rpc.RpcError(rpc.INVALID_PARAMS, f"no recorded run {session_id!r} in {cwd}")
         bucket = saved.session_dir.parent.name
         if bucket != kinds.session_bucket(ACP_MODE):
-            mode = "an ask" if bucket == "asks" else f"a {bucket[:-1]}"
+            mode = "an ask" if bucket == "asks" else f"a {kinds.bucket_mode(bucket)}"
             raise rpc.RpcError(
                 rpc.INVALID_PARAMS, f"{session_id} is {mode}; an editor resumes runs"
             )

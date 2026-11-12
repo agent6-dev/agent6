@@ -18,7 +18,7 @@ import threading
 import time
 from collections.abc import Callable
 
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.app import lane_launch, preflight, session_setup, stop
 from agent6.app import run as app_run
 from agent6.config import ConfigError
@@ -114,11 +114,13 @@ def main() -> int:
         else session_setup.BudgetOverrides(max_usd=launch.max_usd)
     )
     sandbox = session_setup.SandboxOverrides(auto_approve=launch.auto_approve)
+    # A contract makes the lane a bounded read-only conversation; without one it is a run.
+    mode: kinds.LoopMode = "read_only" if launch.contract is not None else "run"
     try:
         effective = session_setup.load_session_config(
             launch.workdir,
             (launch.config,),
-            mode="run",
+            mode=mode,
             budget_overrides=budget,
             sandbox_overrides=sandbox,
         )
@@ -127,8 +129,10 @@ def main() -> int:
         return 2
     cfg = lane_launch.apply_limits(effective.config, launch.limits)
     if launch.limits is not None and launch.limits.deadline_at is not None:
-        runs = sessions_layout.bucket_dir(paths.state_dir(launch.workdir), "runs")
-        arm_deadline(runs / launch.session_id, launch.limits.deadline_at)
+        bucket = sessions_layout.bucket_dir(
+            paths.state_dir(launch.workdir), kinds.session_bucket(mode)
+        )
+        arm_deadline(bucket / launch.session_id, launch.limits.deadline_at)
     return app_run.run_task(
         cfg,
         launch.task,
@@ -137,7 +141,8 @@ def main() -> int:
         started_at=time.time(),
         operator_task=launch.operator_task if launch.operator_task is not None else launch.task,
         session_id=launch.session_id,
-        mode="run",
+        mode=mode,
+        contract=launch.contract,
         budget_overrides=budget,
         sandbox_overrides=sandbox,
         pins=launch.pins,

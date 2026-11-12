@@ -2545,6 +2545,21 @@ Source: [`agent6.app.lane_launch.LaneLaunch`](https://github.com/agent6-dev/agen
 | `gate_source` | `Literal['', 'configured', 'inferred', 'adopted']` | Where the verify gate in the snapshot came from; "" for none. |
 | `operator_task` | `str \| None` | The task's words before composition; None when they are the task. |
 | `limits` | `LaneLimits \| None` | The turn cap and deadline the lane runs under; None for the config's own. |
+| `contract` | `ConversationContract \| None` | The bounded conversation a `read_only` lane drives; None for a run lane. |
+
+### CompletionRecord
+
+**Support: public.** What a bounded conversation delivered, written once at its end.
+
+Source: [`agent6.sessions.completion.CompletionRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/completion.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `text` | `str` | The last response's text, or the finish summary when the model finished. |
+| `stop_reason` | `str` | The session's end reason, as the journal's `session.stop` carries it. |
+| `output_tokens` | `int` | The output tokens of every attempt. |
+| `calls` | `int` | The provider attempts made, retries included. |
+| `diagnostics` | `tuple[str, ...]` | What the ceiling or the contract cut, one line each; empty when nothing was. |
 
 ### DispatchRecord
 
@@ -3069,6 +3084,21 @@ Source: [`agent6.lane_records.LaneLimits`](https://github.com/agent6-dev/agent6/
 | --- | --- | --- |
 | `max_turns` | `int \| None` | The turn cap the lane's `harness.max_turns` is clamped to; None keeps the config's value. |
 | `deadline_at` | `float \| None` | The wall-clock second (epoch) the lane must have ended by; None for none. Wall-clock, since it crosses the process boundary into the lane. |
+
+### ConversationContract
+
+**Support: public.** Bound one conversation the Harness drives in place of a worker's.
+
+Source: [`agent6.kinds.ConversationContract`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/kinds.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `kind` | `Literal['read_only', 'no_tools']` | `read_only` offers the navigation tools and `finish_session`; `no_tools` offers none and refuses every call. |
+| `system` | `str` | The system prompt, in place of the worker's assembled one. |
+| `opening` | `str` | The first user message, in place of the task block. |
+| `max_calls` | `int` | The provider attempts allowed, retries included; the ceiling ends the conversation `calls_exhausted` with the last response's text kept. |
+| `max_output_tokens` | `int` | One call's output cap. |
+| `temperature` | `float \| None` | The sampling temperature; None keeps the worker's. |
 
 ### SegmentRecord
 

@@ -2530,10 +2530,17 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
         origin_state: pathlib.Path,
         *,
         model_control: bool = False,
+        mode: str,
     ) -> lane_records.Imported:
         held.append(lock.locked())
         return real_import_run(
-            origin, lane_repo, branch, lane_session_dir, origin_state, model_control=model_control
+            origin,
+            lane_repo,
+            branch,
+            lane_session_dir,
+            origin_state,
+            model_control=model_control,
+            mode=mode,
         )
 
     monkeypatch.setattr(subrun, "import_run", observe)

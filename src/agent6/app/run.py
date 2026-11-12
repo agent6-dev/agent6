@@ -59,7 +59,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     source_session_id: str | None = None,
     interactive: bool = False,
     tui: bool = False,
-    mode: kinds.ResumableMode = "run",
+    mode: kinds.LoopMode = "run",
     standing_goal: str = "",
     budget_overrides: session_setup.BudgetOverrides | None = None,
     sandbox_overrides: session_setup.SandboxOverrides | None = None,
@@ -73,6 +73,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     config_paths: tuple[pathlib.Path, ...] = (),
     config_sources: Mapping[str, str] | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
+    contract: kinds.ConversationContract | None = None,
 ) -> int:
     """Run one session from preflight to finalize; the sole `agent6 run` path.
 
@@ -111,10 +112,17 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         config_paths: The `--config` files, which an `/undo` fork is stamped under.
         config_sources: The layer that supplied each config leaf.
         reporter: Receives every refusal and note.
+        contract: The bounded conversation a `read_only` session drives; None for every
+            other mode.
 
     Returns:
         The process exit code.
+
+    Raises:
+        ValueError: `read_only` without a contract, or a contract under another mode.
     """
+    if (mode == "read_only") != (contract is not None):
+        raise ValueError("mode 'read_only' is the one mode that drives a conversation contract")
     if operator_task is None:
         operator_task = task
     role = kinds.session_kind(mode).role
@@ -508,6 +516,13 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                         layout.manifest_path, current.model_copy(update={"includes": included})
                     )
 
+        def _no_gate(
+            cfg: Config, budget: agent6_budget.BudgetTracker, available: Callable[[str], bool]
+        ) -> Config:
+            # A bounded conversation never verifies: no inference, no gate rows in its journal.
+            del budget, available
+            return cfg
+
         def _gate(
             cfg: Config, budget: agent6_budget.BudgetTracker, available: Callable[[str], bool]
         ) -> Config:
@@ -549,7 +564,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 interactive=interactive,
                 task=task,
                 operator_task=operator_task,
-                gate=_gate,
+                gate=_gate if contract is None else _no_gate,
+                contract=contract,
                 chain_branch=run_branch,
                 base_sha=base_sha,
                 untracked_at_start=untracked_at_start,
