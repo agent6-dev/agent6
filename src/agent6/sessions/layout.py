@@ -162,6 +162,9 @@ def write_untracked_at_start(session_dir: pathlib.Path, paths: Collection[str]) 
 SESSIONS_ROOT = "sessions"
 # One bucket per session mode, named after it; a test pins it to `kinds.session_bucket`.
 SESSION_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks", "machines", "read_only")
+# A bounded read-only conversation's record: its parent's evidence, never a listing's row or
+# a bare command's default.
+EVIDENCE_BUCKET = "read_only"
 # A hub gives machine authoring its own card; an `agent` state's sessions live in the instance.
 HUB_BUCKETS: tuple[str, ...] = ("runs", "plans", "asks", "read_only")
 

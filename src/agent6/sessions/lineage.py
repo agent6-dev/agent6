@@ -71,7 +71,7 @@ def seat_records(state_dir: pathlib.Path, parents: Collection[str]) -> tuple[pat
     Returns:
         The seat records, in name order.
     """
-    directory = layout.bucket_dir(state_dir, "read_only")
+    directory = layout.bucket_dir(state_dir, layout.EVIDENCE_BUCKET)
     if not parents or not directory.is_dir():
         return ()
     found: list[pathlib.Path] = []

@@ -118,7 +118,8 @@ def dispatches_of(session_dir: pathlib.Path) -> tuple[DispatchView, ...]:
                         record,
                         child,
                         layout.bucket_dir(
-                            state_dir, "read_only" if record.source == "panel" else "runs"
+                            state_dir,
+                            layout.EVIDENCE_BUCKET if record.source == "panel" else "runs",
                         ),
                     )
                     for child in record.children

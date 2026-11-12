@@ -157,7 +157,7 @@ def resolve_session(
     if len(matches) > 1:
         shortest = min(matches, key=lambda match: len(match.session_id))
         if matches.count(shortest) == 1 and all(
-            match.subdir in (shortest.subdir, "read_only")
+            match.subdir in (shortest.subdir, layout.EVIDENCE_BUCKET)
             and match.session_id.startswith(shortest.session_id)
             for match in matches
         ):

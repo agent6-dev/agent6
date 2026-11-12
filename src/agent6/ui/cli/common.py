@@ -276,6 +276,15 @@ def all_session_dirs(repo_root: pathlib.Path) -> list[pathlib.Path]:
     return dirs
 
 
+def _default_bucket_dirs(repo_root: pathlib.Path) -> list[pathlib.Path]:
+    """Return the buckets a bare command chooses from: every one but the review seats'."""
+    return [
+        bucket
+        for bucket in session_bucket_dirs(repo_root)
+        if bucket.name != sessions_layout.EVIDENCE_BUCKET
+    ]
+
+
 def resolve_session_layout(
     repo_root: pathlib.Path, query: str, *, allow_husk: bool = False
 ) -> sessions_layout.SessionLayout:
@@ -319,7 +328,13 @@ def newest_layout_holding(
     repo_root: pathlib.Path, *children: str
 ) -> sessions_layout.SessionLayout | None:
     """Return the newest session holding any named child, or None."""
-    candidates = [d for d in all_session_dirs(repo_root) if any((d / c).exists() for c in children)]
+    candidates = [
+        d
+        for bucket in _default_bucket_dirs(repo_root)
+        if bucket.is_dir()
+        for d in bucket.iterdir()
+        if d.is_dir() and any((d / c).exists() for c in children)
+    ]
     if not candidates:
         return None
     from agent6.viewmodel import session_mtime  # noqa: PLC0415
@@ -347,7 +362,7 @@ def resolve_or_newest_layout(
         return resolve_session_layout(repo_root, session_id, allow_husk=allow_husk)
     from agent6.viewmodel import newest_session_dir  # noqa: PLC0415
 
-    newest = newest_session_dir(session_bucket_dirs(repo_root))
+    newest = newest_session_dir(_default_bucket_dirs(repo_root))
     if newest is None:
         return None
     return sessions_layout.layout_of(newest)
