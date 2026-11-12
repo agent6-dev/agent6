@@ -350,7 +350,8 @@ class ParallelDispatcher:
         """  # noqa: DOC501  # the spawner's SubrunError is caught below
         assert self.lane_spawner is not None
         identity = record.identity
-        self.log(f"PARALLEL: dispatching group {identity} ({len(lanes)} lane(s))")
+        what = "review seat(s)" if record.source == "panel" else "lane(s)"
+        self.log(f"PARALLEL: dispatching group {identity} ({len(lanes)} {what})")
         self.emit(
             journal.LoopParallelDispatched(
                 group=group,
@@ -419,7 +420,9 @@ class ParallelDispatcher:
             }
             for j in joins
         ]
-        self.emit(journal.LoopParallelJoined(group=record.identity, lanes=payload))
+        self.emit(
+            journal.LoopParallelJoined(group=record.identity, lanes=payload, source=record.source)
+        )
         failures = [
             p
             for p, j in zip(payload, joins, strict=True)

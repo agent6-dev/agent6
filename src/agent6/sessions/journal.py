@@ -609,6 +609,10 @@ class LoopParallelJoined(Event):
     lanes: Sequence[Any] = pydantic.Field(
         description="Lane count for dispatch, or lane results for completion.",
     )
+    source: str = pydantic.Field(
+        default="operator",
+        description="Who dispatched: operator (a steer), model (the tool) or panel.",
+    )
 
 
 class LoopParked(Event):

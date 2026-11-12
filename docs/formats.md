@@ -555,6 +555,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `group` | `str` | Parallel dispatch group identifier. |
 | `lanes` | `list` | Lane count for dispatch, or lane results for completion. |
+| `source` | `str, optional` | Who dispatched: operator (a steer), model (the tool) or panel. |
 
 ### loop.parked
 
