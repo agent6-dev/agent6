@@ -71,6 +71,5 @@
   },
   "includes": null,
   "parallel": null,
-  "placement": null,
-  "fanout": null
+  "placement": null
 }

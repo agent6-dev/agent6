@@ -193,7 +193,7 @@ def run_guarded(body: Callable[[], int]) -> int:
 
 
 def _dispatch_run(args: argparse.Namespace) -> int:
-    """Return the exit code, routing first-prompt fan-outs through `--parallel`."""
+    """Return the exit code, routing a first-prompt `/parallel` through `--parallel`."""
     from agent6 import directive
 
     if args.task and not getattr(args, "parallel", ""):

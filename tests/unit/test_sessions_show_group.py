@@ -31,7 +31,7 @@ def _session(repo: pathlib.Path, session_id: str, manifest: dict[str, object]) -
 
 
 @pytest.fixture
-def fan_out(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+def group(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -108,7 +108,7 @@ def test_show_names_the_preset_the_run_continues_under(
 
 
 def test_show_labels_the_session_status(
-    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Text and JSON call the session's lifecycle result status."""
     assert main(["sessions", "show", "fan-l1"]) == 0
@@ -120,7 +120,7 @@ def test_show_labels_the_session_status(
 
 
 def test_show_on_a_parent_lists_its_lanes(
-    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["sessions", "show", "fan"]) == 0
     out = capsys.readouterr().out
@@ -135,7 +135,7 @@ def test_show_on_a_parent_lists_its_lanes(
 
 
 def test_show_on_a_parent_lists_each_lanes_route(
-    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["sessions", "show", "fan"]) == 0
     lines = [ln for ln in capsys.readouterr().out.splitlines() if "fan-l" in ln]
@@ -149,10 +149,10 @@ def test_show_on_a_parent_lists_each_lanes_route(
 
 
 def test_stale_parent_does_not_offer_resume(
-    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A stale fan-out parent has no loop for a resume command to continue."""
-    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(fan_out), session_id="fan")
+    """A stale group parent has no loop for a resume command to continue."""
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(group), session_id="fan")
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
@@ -166,10 +166,10 @@ def test_stale_parent_does_not_offer_resume(
 
 
 def test_show_keeps_a_failed_setups_output_and_network_diagnostic(
-    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A lane's setup failure remains readable when the clone and child streams are gone."""
-    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(fan_out), session_id="fan-l1")
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(group), session_id="fan-l1")
     problem = (
         "the setup command failed (exit 1): uv sync --offline\n"
         "    no cached package\n"
@@ -198,7 +198,7 @@ def test_show_keeps_a_failed_setups_output_and_network_diagnostic(
 
 
 def test_show_on_a_lane_names_its_parent(
-    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["sessions", "show", "fan-l1"]) == 0
     out = capsys.readouterr().out
@@ -215,28 +215,28 @@ def test_show_on_a_lane_names_its_parent(
 
 
 def test_show_marks_a_lane_unmerged_like_the_listing(
-    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A lane whose branch holds commits its base lacks reads unmerged in the fan-out view."""
+    """A lane whose branch holds commits its base lacks reads unmerged in the group view."""
     import subprocess
 
     def git(*args: str) -> str:
         return subprocess.run(
-            ["git", "-C", str(fan_out), *args], check=True, capture_output=True, text=True
+            ["git", "-C", str(group), *args], check=True, capture_output=True, text=True
         ).stdout.strip()
 
     git("init", "-q", "-b", "main")
-    (fan_out / "a.txt").write_text("a\n", encoding="utf-8")
+    (group / "a.txt").write_text("a\n", encoding="utf-8")
     git("add", "a.txt")
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base")
     base = git("rev-parse", "HEAD")
     git("branch", "agent6/fan-l1", base)
     git("checkout", "-q", "agent6/fan-l1")
-    (fan_out / "b.txt").write_text("b\n", encoding="utf-8")
+    (group / "b.txt").write_text("b\n", encoding="utf-8")
     git("add", "b.txt")
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "lane work")
     git("checkout", "-q", "main")
-    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(fan_out), session_id="fan-l1")
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(group), session_id="fan-l1")
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     manifest.update({"base_sha": base, "base_branch": "main", "run_branch": "agent6/fan-l1"})
     layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -509,11 +509,11 @@ def _stopped_short(repo: pathlib.Path, session_id: str, reason: str) -> None:
 
 @pytest.mark.parametrize("reason", ["steer_abort", "budget_exhausted"])
 def test_show_offers_resume_for_a_run_that_stopped_short(
-    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str], reason: str
+    group: pathlib.Path, capsys: pytest.CaptureFixture[str], reason: str
 ) -> None:
     """A stopped or failed run prints the resume command, as a stale one does."""
-    _session(fan_out, "solo-1", {})
-    _stopped_short(fan_out, "solo-1", reason)
+    _session(group, "solo-1", {})
+    _stopped_short(group, "solo-1", reason)
 
     assert main(["sessions", "show", "solo-1"]) == 0
 
@@ -521,24 +521,23 @@ def test_show_offers_resume_for_a_run_that_stopped_short(
 
 
 def test_show_offers_fork_for_a_lane_that_stopped_short(
-    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A stopped lane names `fork`: the resume command it printed was one resume refuses."""
-    _stopped_short(fan_out, "fan-l1", "steer_abort")
+    _stopped_short(group, "fan-l1", "steer_abort")
 
     assert main(["sessions", "show", "fan-l1"]) == 0
 
     out = capsys.readouterr().out
     assert "resume with:" not in out
     assert (
-        "resume:     a lane of the fan-out fan, whose work is on its own branch; `agent6 fork"
-        in out
+        "resume:     a lane of the group fan, whose work is on its own branch; `agent6 fork" in out
     )
     assert 'fan-l1 --steer "..."` continues it in a worktree of its own' in out
 
 
 def test_show_json_and_the_listing_name_the_stop_reason_alike(
-    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Both JSON forms carry `stop_reason`; the listing's `reason` stays the label's detail."""
     assert main(["sessions", "show", "fan-l1", "--json"]) == 0
@@ -554,11 +553,11 @@ def test_show_json_and_the_listing_name_the_stop_reason_alike(
 
 
 def test_show_nests_attempts_directly_under_the_verify_field(
-    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Verification attempts stay with their summary instead of trailing the other fields."""
     _log(
-        fan_out,
+        group,
         "fan-l1",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
@@ -580,11 +579,11 @@ def test_show_nests_attempts_directly_under_the_verify_field(
 
 
 def test_show_names_the_start_gates_verdict_beside_the_final_one(
-    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The verify line says what the gate made of the tree before the run's first turn."""
     _log(
-        fan_out,
+        group,
         "fan-l1",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
@@ -601,7 +600,7 @@ def test_show_names_the_start_gates_verdict_beside_the_final_one(
 
 
 def test_status_json_keeps_comparison_on_its_owner(
-    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Lane status names the group; parent status carries its ranking and judge cost."""
     assert main(["sessions", "show", "fan-l2", "--json"]) == 0
@@ -625,7 +624,7 @@ def test_status_json_keeps_comparison_on_its_owner(
 
 @pytest.fixture
 def ordinary_parent(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """A run that used `/parallel` once: no fan-out stamp, two lanes by lineage, one record."""
+    """A run that used `/parallel` once: no group stamp, two lanes by lineage, one record."""
     from agent6.sessions import lane_dispatch
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -684,10 +683,10 @@ def ordinary_parent(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> 
 def test_show_on_an_ordinary_parent_lists_its_lanes_with_their_joins(
     ordinary_parent: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A `/parallel` run is no fan-out: no fan-out line, its lanes listed with their outcomes."""
+    """A `/parallel` run is no group: no group line, its lanes listed with their outcomes."""
     assert main(["sessions", "show", "co"]) == 0
     out = capsys.readouterr().out
-    assert "fan-out:" not in out
+    assert "group:" not in out
     assert "lanes:      2" in out
     assert "lane 1" in out and "co-p1-l1" in out and "openai/lane-1" in out
     assert "joined at bbbbbbbbbbbb" in out

@@ -81,7 +81,7 @@ CONTRACTS: tuple[Contract, ...] = (
         module="agent6.ui.cli.sessions_show",
         primary=("_cmd_status",),
         writers=("ui/cli/sessions_show.py",),
-        pins=("tests/unit/test_sessions_show_fanout.py",),
+        pins=("tests/unit/test_sessions_show_group.py",),
         public_format="cli-json",
     ),
     Contract(
@@ -728,14 +728,14 @@ def _module_graph_svg() -> tuple[str, int, int, int]:
     out.append('</g><g id="nodes">')
     for m in sorted(mods):
         x, y = xy(m)
-        fan_out = sum(1 for s, _ in edges if s == m)
+        group = sum(1 for s, _ in edges if s == m)
         fan_in = sum(1 for _, d in edges if d == m)
         out.append(
             f'<g class="node g{colidx[m]}" data-id="{m}" tabindex="0">'
             f'<rect x="{x}" y="{y}" rx="5" width="{cw}" height="{nh}"/>'
             f'<text x="{x + 10}" y="{y + 17.5}">{html.escape(m.removeprefix("agent6."))}</text>'
             f'<text x="{x + cw - 8}" y="{y + 17.5}" text-anchor="end" class="deg">'
-            f"{fan_out}&#8594; &#8592;{fan_in}</text></g>"
+            f"{group}&#8594; &#8592;{fan_in}</text></g>"
         )
     out.append("</g></svg>")
     upward = sum(1 for s, d in edges if colidx[d] > colidx[s])

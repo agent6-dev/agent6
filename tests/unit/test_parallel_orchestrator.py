@@ -89,7 +89,7 @@ def _write_fake_run(
 ) -> None:
     session_dir.mkdir(parents=True)
     # A real lane's manifest records its lineage from birth (the spawn env);
-    # the fakes mirror that for `<fanout>-l<N>` ids so post-import assertions
+    # the fakes mirror that for `<group>-l<N>` ids so post-import assertions
     # hold for the same reason they do live.
     manifest: dict[str, object] = {
         "version": 2,
@@ -99,11 +99,11 @@ def _write_fake_run(
     }
     if base_sha:
         manifest["base_sha"] = base_sha
-    fanout, sep, lane_s = session_dir.name.rpartition("-l")
+    stem, sep, lane_s = session_dir.name.rpartition("-l")
     if parallel_id is not None:
         group, number = parallel_id, lane
-    elif sep and fanout and lane_s.isdigit():
-        group, number = fanout, int(lane_s)
+    elif sep and stem and lane_s.isdigit():
+        group, number = stem, int(lane_s)
     else:
         group, number = None, None
     if group is not None:
@@ -177,7 +177,7 @@ class _FakeSpawner:
         status_by_lane: dict[int, str] | None = None,
         cost_by_lane: dict[int, float] | None = None,
         pid_lanes: set[int] | None = None,
-        fanout_id: str | None = None,
+        group_id: str | None = None,
         points_by_lane: dict[int, float] | None = None,
         read_at_by_lane: dict[int, float] | None = None,
         no_commit: set[int] | None = None,
@@ -199,9 +199,9 @@ class _FakeSpawner:
         # process), simulating the teardown window where session.stop is already in
         # logs.jsonl but the lane process has not yet cleared its pid.
         self.pid_lanes = pid_lanes or set()
-        # The group/fanout id the real bridge spawner stamps into the lane env;
+        # The group id the real bridge spawner stamps into the lane env;
         # the fabricated manifest mirrors it (None = derive from the id).
-        self.fanout_id = fanout_id
+        self.group_id = group_id
         self.prior_link_was_symlink: dict[int, bool] = {}
         self.tasks: list[str] = []
 
@@ -231,8 +231,8 @@ class _FakeSpawner:
         _write_fake_run(
             session_dir,
             task,
-            parallel_id=self.fanout_id,
-            lane=spec.lane if self.fanout_id is not None else None,
+            parallel_id=self.group_id,
+            lane=spec.lane if self.group_id is not None else None,
             status=self.status_by_lane.get(spec.lane, "passed"),
             cost=self.cost_by_lane.get(spec.lane, 0.05),
             points=self.points_by_lane.get(spec.lane),
@@ -578,7 +578,7 @@ def test_bridge_spawner_keeps_the_task_out_of_the_argv(
         origin=origin,
         record_state=paths.state_dir(origin),
         max_usd=2.0,
-        fanout_id="fan",
+        group_id="fan",
         runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         parent="co",
     )
@@ -618,7 +618,7 @@ def test_a_lane_is_seeded_with_the_repos_memory(
         spec, "task", explicit_leaves=frozenset(), cfg=cfg, origin=origin,
         record_state=paths.state_dir(origin),
         max_usd=None,
-        fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
+        group_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         parent="co",
     )  # fmt: skip
 
@@ -631,7 +631,7 @@ def test_a_lane_is_seeded_with_the_repos_memory(
 def test_bridge_spawner_launch_carries_auto_approve_when_set(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
-    """A parent or fan-out started with `--auto-approve` forwards it to the lane.
+    """A parent or group started with `--auto-approve` forwards it to the lane.
 
     Otherwise the lane sits on `run_commands=ask` with nothing to answer it.
     """
@@ -657,7 +657,7 @@ def test_bridge_spawner_launch_carries_auto_approve_when_set(
         record_state=paths.state_dir(origin),
         max_usd=None, auto_approve=True,
         explicit_leaves=frozenset(),
-        fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
+        group_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         parent="co",
     )  # fmt: skip
 
@@ -688,7 +688,7 @@ def test_bridge_spawner_launch_omits_auto_approve_by_default(
         spec, "do it", explicit_leaves=frozenset(), cfg=cfg, origin=origin,
         record_state=paths.state_dir(origin),
         max_usd=None,
-        fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
+        group_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         parent="co",
     )  # fmt: skip
 
@@ -827,7 +827,7 @@ def test_lane_setup_output_survives_import_and_a_failed_one_reaches_the_operator
         env: dict[str, str],
     ) -> tuple[pathlib.Path, int, str]:
         del before, list_dirs
-        # A detached child's stdout and stderr are not the fan-out's own streams.
+        # A detached child's stdout and stderr are not the group's own streams.
         lane_output, lane_errors = io.StringIO(), io.StringIO()
         with (
             monkeypatch.context() as child,
@@ -1249,7 +1249,7 @@ def test_run_lane_to_completion_imports_and_stamps(
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()
-    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", fanout_id="p1")
+    spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", group_id="p1")
     spec = lane_records.LaneSpec(
         lane=1,
         session_id="co-p1-l1",
@@ -1380,7 +1380,7 @@ def test_a_failed_lane_never_joins_the_parent(
 ) -> None:
     """A failed lane never joins the parent.
 
-    Candidacy is one question, `produced_result`, the same one the fan-out asks; gating only on
+    Candidacy is one question, `produced_result`, the same one the group asks; gating only on
     died-without-end lets a lane that ended `provider_error` come back ok=True, merge its half-done
     branch into the parent's checkout and tell the model "joined at <sha>".
     """
@@ -1531,7 +1531,7 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
         group="p1",
         parent="co",
         runtime=runtime,
-        spawner=_FakeSpawner(origin, origin_state, tmp_path / "lane-state", fanout_id="p1"),
+        spawner=_FakeSpawner(origin, origin_state, tmp_path / "lane-state", group_id="p1"),
         import_lock=lock,
         poll_interval_s=0.01,
     )
@@ -1924,7 +1924,7 @@ def test_lane_config_carries_the_lane_route(tmp_path: pathlib.Path) -> None:
 def test_the_judge_is_capped_like_a_lane(tmp_path: pathlib.Path) -> None:
     """The judge is capped like a lane.
 
-    The fan-out advertises "$X/lane x N + judge = $Y total"; a judge tracker on the full config
+    The group advertises "$X/lane x N + judge = $Y total"; a judge tracker on the full config
     budget quietly exceeds the printed ceiling. `rank` caps the judge at the lane cap when one is
     given, with the config budget as the fallback.
     """
@@ -1974,10 +1974,10 @@ def test_the_judge_is_capped_like_a_lane(tmp_path: pathlib.Path) -> None:
     assert [b.max_usd for b in seen] == [0.25]  # the lane cap, not the $10 config budget
 
 
-def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
+def test_an_unattended_group_does_not_park_its_lanes_on_a_question(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
-    """An unattended fan-out does not park its lanes on a question.
+    """An unattended group does not park its lanes on a question.
 
     `bridge_spawner` stamps each lane with the away-mode it is given; a lane run with `wait` under a
     pipe or a cron parks on a model's question until someone attaches, which nobody can.
@@ -2004,7 +2004,7 @@ def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
             record_state=paths.state_dir(origin),
             max_usd=None, lane_away=away,
             explicit_leaves=frozenset(),
-            fanout_id="fan", parent="co",
+            group_id="fan", parent="co",
             runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         )  # fmt: skip
         assert result.ok, result.error
@@ -2019,7 +2019,7 @@ def test_lane_is_self_describing_from_birth(
 ) -> None:
     """A lane is self-describing from birth.
 
-    The spawn env carries the fan-out lineage and the manifest's one writer records it, so the
+    The spawn env carries the group lineage and the manifest's one writer records it, so the
     grouping survives a parent death; a stamp written only after import leaves orphaned lanes
     listed as unrelated runs.
     """
@@ -2045,7 +2045,7 @@ def test_lane_is_self_describing_from_birth(
         spec, "do it", explicit_leaves=frozenset(), cfg=Config(), origin=origin,
         record_state=paths.state_dir(origin),
         max_usd=None,
-        fanout_id="fan", parent="co", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
+        group_id="fan", parent="co", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         gate_source="inferred",
     )  # fmt: skip
     envelope = _launch_of(captured[-1])
@@ -2171,7 +2171,7 @@ def test_lane_sampling_notes_survive_import_and_reach_both_reports(
         origin=origin,
         record_state=paths.state_dir(origin),
         max_usd=None,
-        fanout_id="notes",
+        group_id="notes",
         parent="notes",
         runtime=dataclasses.replace(runtime, spawn=child),
     )
@@ -2197,7 +2197,7 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
 ) -> None:
     """The sweep is content-safe by commit proof.
 
-    A fan-out dir whose lane clone holds any commit the origin lacks is kept whole (the clone may be
+    A group dir whose lane clone holds any commit the origin lacks is kept whole (the clone may be
     the only copy); one whose every lane tip the origin holds is deleted. The scan is scoped to this
     repo's `<repo-id>` subdir: another repo's clones can neither be swept by a commit proof made
     against the wrong origin nor kept forever with advice that cannot apply here.
@@ -2227,7 +2227,7 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
     for clone in (unmerged, merged):
         paths.jail_cache_home(clone).mkdir(parents=True)
 
-    swept, kept = worktrees.sweep_fanout_clones(origin, cfg)
+    swept, kept = worktrees.sweep_group_clones(origin, cfg)
     assert (swept, kept) == (1, 1)  # the foreign repo's dir is not counted
     assert (scoped / "fan-a").is_dir()  # unique commits: kept whole
     assert not (scoped / "fan-b").exists()
@@ -2267,7 +2267,7 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
         assert not before and not list_dirs()
         envelope = _launch_of(env)
         assert (envelope.parent, envelope.group, envelope.lane) == ("failed11", "failed11", 1)
-        assert worktrees.sweep_fanout_clones(origin, cfg) == (0, 1)
+        assert worktrees.sweep_group_clones(origin, cfg) == (0, 1)
         return None, 1, "lane refused before creating a session"
 
     failed_runtime = dataclasses.replace(runtime, spawn=fail_spawn)
@@ -2281,7 +2281,7 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
             origin=origin,
             record_state=paths.state_dir(origin),
             max_usd=None,
-            fanout_id="failed11",
+            group_id="failed11",
             parent="failed11",
             runtime=failed_runtime,
         )
@@ -2328,25 +2328,25 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
     child_repo.clone_worktree(origin, lane)
     # No session dir yet: a lane between its clone and its first write looks
     # like one that never started, and a prune in that window must not win.
-    assert worktrees.sweep_fanout_clones(origin, cfg) == (0, 1)
+    assert worktrees.sweep_group_clones(origin, cfg) == (0, 1)
     # The lane's record is in the origin's state, named for its group and number.
     session = paths.state_dir(origin) / "sessions" / "runs" / "fan-starting-l1"
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text("", encoding="utf-8")  # a record, not a husk
     process.write_worker_pid(session, os.getpid())
 
-    assert worktrees.sweep_fanout_clones(origin, cfg) == (0, 1)
+    assert worktrees.sweep_group_clones(origin, cfg) == (0, 1)
     assert lane.is_dir()
 
     (session / "worker.pid").unlink()
-    assert worktrees.sweep_fanout_clones(origin, cfg) == (1, 0)
+    assert worktrees.sweep_group_clones(origin, cfg) == (1, 0)
     assert not lane.parent.exists()
 
     # A lane that died in preflight leaves a husk (a session dir with no
     # record and no worker): ended, so its clone goes too.
     child_repo.clone_worktree(origin, lane)
     (session / "logs.jsonl").unlink()
-    assert worktrees.sweep_fanout_clones(origin, cfg) == (1, 0)
+    assert worktrees.sweep_group_clones(origin, cfg) == (1, 0)
 
 
 def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
@@ -2378,13 +2378,13 @@ def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
         ["git", "-C", str(origin), "fetch", str(lane), tip], check=True, capture_output=True
     )
 
-    swept, kept = worktrees.sweep_fanout_clones(origin, cfg)
+    swept, kept = worktrees.sweep_group_clones(origin, cfg)
 
     assert (swept, kept) == (0, 1)
     assert lane.is_dir(), "the last ref reaching the lane's work was deleted"
 
 
-def test_sweep_leaves_a_dir_that_is_not_a_fan_out_group_alone(
+def test_sweep_leaves_a_dir_that_is_not_a_group_alone(
     origin: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Only a group dir holding `lane-*` clones is agent6's to judge by commit proof.
@@ -2403,7 +2403,7 @@ def test_sweep_leaves_a_dir_that_is_not_a_fan_out_group_alone(
     notes.mkdir()
     (notes / "todo.md").write_text("mine\n", encoding="utf-8")
 
-    swept, kept = worktrees.sweep_fanout_clones(origin, cfg)
+    swept, kept = worktrees.sweep_group_clones(origin, cfg)
     assert (swept, kept) == (0, 0)
     assert (theirs / "draft.txt").read_text(encoding="utf-8") == "uncommitted\n"
     assert (notes / "todo.md").read_text(encoding="utf-8") == "mine\n"

@@ -30,7 +30,7 @@ def _note(text: str) -> None:
 
 
 def lane_away_mode() -> ipc.AwayMode:
-    """Return the away-mode a fan-out's lanes run with.
+    """Return the away-mode a group's lanes run with.
 
     Returns:
         The parent's `AGENT6_DETACHED_AWAY` when valid, else `wait` with a terminal to

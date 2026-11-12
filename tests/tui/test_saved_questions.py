@@ -104,7 +104,7 @@ def test_question_header_and_saved_notice_name_when_the_answer_is_read(
     asyncio.run(scenario())
 
 
-def test_stop_modal_names_fanout_wait_and_conditional_resume(
+def test_stop_modal_names_group_wait_and_conditional_resume(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Stop does not promise every session a five-second wait or a resumable checkpoint."""
@@ -120,7 +120,7 @@ def test_stop_modal_names_fanout_wait_and_conditional_resume(
             modal = app.screen
             assert isinstance(modal, modals.ConfirmModal)
             body = str(modal.query(widgets.Static).first().render())
-            assert "5 s (30 s for a fan-out)" in body
+            assert "5 s (30 s for a group)" in body
             assert "A run `agent6 resume` accepts stays resumable." in body
 
     asyncio.run(scenario())

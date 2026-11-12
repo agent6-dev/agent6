@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The lane records every fan-out shares: what a lane runs, what it returned, how it joined.
+"""The lane records every group shares: what a lane runs, what it returned, how it joined.
 
 `run --parallel`, the `/parallel` steer and the import plumbing read and write these; the
 code that clones, spawns and merges lives in `harness.child_repo`, `app.lanes` and

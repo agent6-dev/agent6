@@ -28,7 +28,7 @@ class RequestContext:
         conversation_id: The opaque id of the conversation the call belongs to; "" names the
             initiator only, and the application fills the rest from its conversation state.
         is_first_turn: No call of this conversation has completed yet.
-        is_subagent: The call belongs to a fan-out lane.
+        is_subagent: The call belongs to a lane.
         initiator: `user` when the latest input is the operator's (the task, a steer, an
             answer), else `agent`.
         observe: Receives each HTTP attempt's facts; None observes nothing.

@@ -94,10 +94,10 @@ class SessionResult:
         gate_stale: the worker finished over a red gate it declares stale, with a replacement
             proposed; the gate is unchanged and the run does not pass.
         gate_red_at_base: the gate was red before the run touched anything.
-        lanes_ranked: a fan-out's lanes ran and were ranked; no model finished it (the app
+        lanes_ranked: a group's lanes ran and were ranked; no model finished it (the app
             layer).
-        no_lane_result: no lane of a fan-out produced a rankable result (the app layer).
-        no_lane_passed: no lane of a fan-out went green (the app layer).
+        no_lane_result: no lane of a group produced a rankable result (the app layer).
+        no_lane_passed: no lane of a group went green (the app layer).
 
     Attributes:
         completed: Whether the model stopped deliberately; never whether the work verified.

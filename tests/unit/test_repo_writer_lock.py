@@ -320,7 +320,7 @@ def test_hub_new_work_fans_out_while_checkout_busy(
 ) -> None:
     """A hub's New Work fans out while the checkout is busy.
 
-    A fan-out takes no writer lock (its lanes clone the checkout), and the plain-run refusal tells
+    A group takes no writer lock (its lanes clone the checkout), and the plain-run refusal tells
     the operator to `/parallel` instead, so the same check must not refuse the `/parallel` message
     before parsing it.
     """
@@ -898,7 +898,7 @@ def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs
     assert "as yours" not in err
 
 
-def test_resume_of_a_fan_out_lane_from_the_origin_checkout_refuses(
+def test_resume_of_a_lane_from_the_origin_checkout_refuses(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A lane resumed from the origin ran on the checkout's tree, not the lane's.
@@ -965,7 +965,7 @@ def test_resume_of_a_fan_out_lane_from_the_origin_checkout_refuses(
 
     assert rc == 2 and ran == []
     err = capsys.readouterr().err
-    assert "fan-AAAA11-l1 is a lane of the fan-out fan-AAAA11" in err
+    assert "fan-AAAA11-l1 is a lane of the group fan-AAAA11" in err
     assert "agent6 fork fan-AAAA11-l1" in err
 
 

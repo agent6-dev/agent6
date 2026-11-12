@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """`ui.spawn.spawn_new_work`, the one start every hub makes for a new run, plan or ask.
 
-Its argv, its `/parallel` fan-out and its refusals.
+Its argv, its `/parallel` dispatch and its refusals.
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ def test_the_run_options_ride_as_their_flags_and_a_seeded_run_needs_no_task(
     assert captured[-1][1:] == ["ask", "--max-usd", "1", "--", "why?"]
 
 
-def test_run_only_options_are_refused_for_other_modes_and_fan_outs(
+def test_run_only_options_are_refused_for_other_modes_and_groups(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     captured = _capture_locate(monkeypatch)
@@ -128,7 +128,7 @@ def test_detached_env_streams_and_waits(
     assert "PATH" in captured_env
 
 
-# --- the `/parallel` new-work directive: fan out lanes ------------------------
+# --- the `/parallel` new-work directive: dispatch lanes ------------------------
 
 
 def test_parallel_lane_count(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -287,7 +287,7 @@ def test_parallel_unknown_model_no_cache_proceeds(
 def test_parallel_only_for_run_mode(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # plan/ask cannot fan out: the text is a literal task (rides behind `--`).
+    # plan/ask cannot dispatch lanes: the text is a literal task (rides behind `--`).
     captured = _capture_locate(monkeypatch)
     spawn.spawn_new_work(tmp_path, "plan", "/parallel 2 -- add a greeting")
     assert captured[-1][1:] == ["plan", "--", "/parallel 2 -- add a greeting"]
@@ -302,7 +302,7 @@ def test_parallel_omitted_spec_is_one_lane(
     assert captured[-1][1:] == ["run", "--parallel", "1", "--", "refactor the parser"]
 
 
-def test_parallel_multi_segment_spawns_one_fanout_per_segment(
+def test_parallel_multi_segment_spawns_one_group_per_segment(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _configure_worker()

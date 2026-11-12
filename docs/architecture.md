@@ -34,7 +34,7 @@ Only its modules import the runner, `git_command.py`.
     - the four front-ends: `ui/cli`, `ui/tui`, `ui/web`, `ui/acp`
     - `ui/mcp_server.py`: agent6 as an MCP server
     - the write helpers: `ui/spawn`, `ui/notify`, `ui/steer` (the steer-file seam every front-end writes) and `ui/btw` (the side question a run answers without losing its place)
-- **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` fan-out
+- **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` group
     - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `LaneRuntime`); output goes through the injected `Reporter`
 - **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`), `review_session` (the read-only pass behind `agent6 sessions review`) and the review panel (`review_panel`, `review_seat`, `review_gate`); the agent loop makes its own provider calls through `provider_call`.
   `harness/loop_resume.py` owns snapshot carryover and persistence; `harness/loop_steer.py` applies steering at turn and execution boundaries.
@@ -63,7 +63,7 @@ The four optional roles inherit each unset field directly from it; their jobs ar
 | unit | what it is | bounded by |
 |---|---|---|
 | machine | a state-machine instance; each of its agent states hands one task to the harness | the `.asm.toml` and its journal |
-| fan-out | a `/parallel` group: N sessions on one task | the parent's session |
+| group | a `/parallel` group: N sessions on one task | the parent's session |
 | session | one task's durable record: its dir, journal, task graph, chain of commits and memory use | the id; it holds several executions |
 | execution | one continuous run of the harness over a session, from a `run`, `resume` or `fork` to an end | `max_turns` and the budget cap, re-armed per execution |
 | turn | one harness loop iteration: a model call and the tool dispatch, advisors, gates and notices for its answer; a prose-only answer is a turn too | its number in the session: a resume continues the count, and each execution gets its own `max_turns` allowance |
@@ -167,7 +167,7 @@ What the turn leans on sits beside it, one module each:
 - `finish_gates` (what a finish call declares, what it must satisfy and what an end is called)
 - `standing_goal` (the standing goal's re-entry)
 - `operator_tasks` (the operator's writes to the task graph: the root, the goal, `/task` and `/retire`)
-- `parallel_dispatch` (the `/parallel` fan-out)
+- `parallel_dispatch` (the `/parallel` dispatch)
 - `run_checkpoint` (the per-turn commit and the final one)
 - `compaction_driver` (the compaction driver over `compaction_rules`'s tier-1 rules, `compaction_elision`'s markers and caps, and `compaction_window`'s sizing and restart rules)
 - `memory_touch` (what a tool call did to the memory store)
@@ -906,7 +906,7 @@ Every other approval publishes as `approval.prompt` before its answer.
 | Child repository primitive | [harness/child_repo.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/child_repo.py) |
 | Run-dir single-writer lock | [sessions/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lock.py) |
 | Compare judge | [harness/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py) |
-| Fan-out orchestrator | [app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) (lanes), [app/parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel_results.py) (import and ranking stamps), [app/worktrees.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/worktrees.py) (working directories), [ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
+| Lane orchestrator | [app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) (lanes), [app/parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel_results.py) (import and ranking stamps), [app/worktrees.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/worktrees.py) (working directories), [ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
 | Provider clients | [providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers) (`oauth.py` holds bound grants; `oauth_profile.py` holds resolved settings and identity and expiry policies; `oauth_exchange.py` exchanges issuer bearers for model tokens; `claude_code.py` orchestrates rounds; `claude_code_protocol.py` handles control messages and tool continuations; `claude_code_session.py` owns session state and pipe I/O; `claude_code_stream.py` folds stream events and scrubs email; `claude_code_wire.py` holds wire shapes) |
 | Task graph | [graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph) |
 | Event log and fold | [event_log.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/event_log.py) (writer), [viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (fold) |

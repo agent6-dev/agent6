@@ -1583,7 +1583,7 @@ Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/b
 | `unmerged` | `bool` | Whether the run holds unmerged work. |
 | `verification` | `Literal['passed', 'failed', 'unverified', 'not_applicable'] \| None` | The gate verdict, or null without a verdict. |
 | `winner` | `bool` | Whether this lane won its comparison. |
-| `lane` | `int \| None` | The lane number, or null outside a fan-out. |
+| `lane` | `int \| None` | The lane number, or null outside a group. |
 | `parent` | `str` | The session that dispatched this lane. |
 | `worktree` | `str \| None` | The linked worktree path, or null in the operator's checkout. |
 | `branch` | `str \| None` | The run's branch while it exists, or null. |
@@ -2553,7 +2553,7 @@ Source: [`agent6.app.lane_launch.LaneLaunch`](https://github.com/agent6-dev/agen
 | `config` | `pathlib.Path` | The lane's config snapshot, beside this file; the lane's sole `--config`. |
 | `notes` | `tuple[str, ...]` | The snapshot's serialization loss notes, recorded in the lane's manifest. |
 | `parent` | `str` | The session every listing nests the lane under. |
-| `group` | `str` | The fan-out the lane belongs to. |
+| `group` | `str` | The group the lane belongs to. |
 | `lane` | `int` | The lane's number, from 1. |
 | `gate_source` | `Literal['', 'configured', 'inferred', 'adopted']` | Where the verify gate in the snapshot came from; "" for none. |
 | `operator_task` | `str \| None` | The task's words before composition; None when they are the task. |
@@ -2640,8 +2640,8 @@ Source: [`agent6.sessions.manifest.SessionManifest`](https://github.com/agent6-d
 | `workspace_set_up` | `bool` | Whether the setup command ran in the session's own worktree or clone; a resume runs it only while this is False. A fork's new worktree starts False, and an `/undo` fork carries its source's. |
 | `merged` | `MergeStamp \| None` | The merge record, None until the run branch is merged. |
 | `includes` | `IncludedRun \| None` | The unmerged run this run took in under `dirty_tree = "include"`, stamped merged when this run lands; None when it took none, or more than that run's tip. |
-| `parallel` | `ParallelLineage \| None` | A fan-out lane's lineage, or None. |
-| `placement` | `PlacementStamp \| None` | A fan-out lane's rank and group reference, or None. |
+| `parallel` | `ParallelLineage \| None` | A lane's lineage, or None. |
+| `placement` | `PlacementStamp \| None` | A lane's rank and group reference, or None. |
 | `comparison` | `ComparisonStamp \| None` | The group's ranking and judge spend on its parent, or None. |
 
 ### `agent6 ps` JSON row
@@ -2661,7 +2661,7 @@ Source: [`agent6.ui.cli.ps_cmd._Row`](https://github.com/agent6-dev/agent6/blob/
 | `pid` | `int \| None` | The worker pid, when readable. |
 | `attached` | `bool` | A front end is live on the session. |
 | `parent` | `str` | For a lane, the live parent row it nests under. |
-| `lanes` | `tuple[agent6.ui.cli.ps_cmd._Row, ...]` | The fan-out's live lanes, nested. |
+| `lanes` | `tuple[agent6.ui.cli.ps_cmd._Row, ...]` | The group's live lanes, nested. |
 | `worktree` | `str \| None` | The linked worktree the run works in, None for a run in the checkout. |
 
 ### MergeReviewGuard
@@ -2716,7 +2716,7 @@ Source: [`agent6.viewmodel.lanes.ChildView`](https://github.com/agent6-dev/agent
 | `model` | `str \| None` | Its selector, None for the worker's own settings. |
 | `route` | `str` | The `provider/model` its manifest records; "" when it never started. |
 | `status` | `str` | Its own status word; "" when it never started. |
-| `outcome` | `str` | How it joined: `joined`, `no_changes`, `conflict` or `failed`; "" when no join is recorded, as for a fan-out's lanes. |
+| `outcome` | `str` | How it joined: `joined`, `no_changes`, `conflict` or `failed`; "" when no join is recorded, as for a group's lanes. |
 | `join_sha` | `str` | The merge commit, "" when none. |
 | `imported_ref` | `str` | The branch the join read, "" when none. |
 | `error` | `str` | The join's detail, "" when none. |
@@ -3270,7 +3270,7 @@ Source: [`agent6.sessions.manifest.IncludedRun`](https://github.com/agent6-dev/a
 
 ### ParallelLineage
 
-**Support: public.** A fan-out lane's place.
+**Support: public.** A lane's place.
 
 Source: [`agent6.sessions.manifest.ParallelLineage`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py).
 
@@ -3283,7 +3283,7 @@ Source: [`agent6.sessions.manifest.ParallelLineage`](https://github.com/agent6-d
 
 ### PlacementStamp
 
-**Support: public.** A fan-out lane's auto-compare placement.
+**Support: public.** A lane's auto-compare placement.
 
 Source: [`agent6.sessions.manifest.PlacementStamp`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py).
 

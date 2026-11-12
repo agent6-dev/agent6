@@ -510,7 +510,7 @@ function paintRun(cards, s) {
   if (s.ports && s.ports.length) {
     add('serving', s.ports.join(', ') + ' · agent6 forward ' + (s.session_id || cards._id || '') + ' ' + s.ports[0]);
   }
-  // Fan-out compare outcome (stamped into a lane's manifest by --parallel's
+  // Compare outcome (stamped into a lane's manifest by --parallel's
   // auto-compare): where this lane placed and why. Absent for a non-lane run.
   if (s.placement && s.placement.line) add('compare', s.placement.line); // format_compare, server-side
   cards.head.appendChild(kv);

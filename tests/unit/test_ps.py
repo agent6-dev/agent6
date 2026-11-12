@@ -76,7 +76,7 @@ def test_ps_reads_a_live_machine_through_the_shared_status_word(
 def test_ps_lists_a_linked_lane_once(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fan-out lane's run dir is linked under the parent repo as well as its own state dir.
+    """A lane's run dir is linked under the parent repo as well as its own state dir.
 
     One live session, one row.
     """
@@ -229,7 +229,7 @@ def test_ps_folds_a_live_lane_under_its_live_parent(
 ) -> None:
     """`ps` folds a live lane under its live parent.
 
-    A fan-out in flight is one row with its live lane count; `--lanes` lists the lanes under it; a
+    A group in flight is one row with its live lane count; `--lanes` lists the lanes under it; a
     lane whose parent is not live stays a row of its own.
     """
     base = tmp_path / "state"

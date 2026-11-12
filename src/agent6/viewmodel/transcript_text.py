@@ -141,7 +141,7 @@ def parallel_dispatched_body(event: dict[str, Any]) -> str:
 
 
 def parallel_compared_body(event: dict[str, Any]) -> str:
-    """Word a fan-out's ranking: best first, each with its gate verdict and cost.
+    """Word a group's ranking: best first, each with its gate verdict and cost.
 
     Args:
         event: The `parallel.compared` event.

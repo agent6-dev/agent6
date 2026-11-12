@@ -96,7 +96,7 @@ def stamp_compare_outcomes(
         placement = sessions_manifest.PlacementStamp(
             rank=rank_pos, of=of, winner=session_id == winner, group=group
         )
-        # A judged fan-out ranks run lanes.
+        # A judged group ranks run lanes.
         err = stamp(lane_watch.lane_dir(record_state, session_id, mode="run"), placement=placement)
         if err is not None:
             reporter.note(f"lane [{session_id}]: imported, but the placement stamp failed: {err}")

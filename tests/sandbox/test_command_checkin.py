@@ -280,7 +280,7 @@ def test_an_immediate_stop_ends_a_running_command_at_once(
 ) -> None:
     """An immediate stop ends a foreground command without leaving a live handle in its result.
 
-    `agent6 stop` writes the abort steer; a fan-out stops its lanes with the marker's `now` urgency.
+    `agent6 stop` writes the abort steer; a group stops its lanes with the marker's `now` urgency.
     """
     from agent6.sessions import ipc
 

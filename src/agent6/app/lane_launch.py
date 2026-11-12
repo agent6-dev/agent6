@@ -55,7 +55,7 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
         config: The lane's config snapshot, beside this file; the lane's sole `--config`.
         notes: The snapshot's serialization loss notes, recorded in the lane's manifest.
         parent: The session every listing nests the lane under.
-        group: The fan-out the lane belongs to.
+        group: The group the lane belongs to.
         lane: The lane's number, from 1.
         gate_source: Where the verify gate in the snapshot came from; "" for none.
         operator_task: The task's words before composition; None when they are the task.

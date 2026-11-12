@@ -165,7 +165,7 @@ def test_run_compare_and_is_winner_read_the_manifest_block(tmp_path: pathlib.Pat
     loser = tmp_path / "loser"
     _stamp(loser, {"group": "fan", "rank": 2, "of": 2, "winner": False})
     assert is_winner(loser) is False
-    # A run outside any fan-out (no manifest / no placement block) reads as None.
+    # A run outside any group (no manifest / no placement block) reads as None.
     plain = tmp_path / "plain"
     plain.mkdir()
     assert session_placement(plain) is None and is_winner(plain) is False
@@ -456,7 +456,7 @@ def test_the_row_names_the_branch_while_the_tips_hold_it(tmp_path: pathlib.Path)
 def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathlib.Path) -> None:
     """The judge's verify tri-state reads the gate facts, not the folded status word.
 
-    finish_session over a red gate folds to "finished", so an all-red fan-out crowned a rank 1
+    finish_session over a red gate folds to "finished", so an all-red group crowned a rank 1
     and exited 0.
     """
     red_finish: list[dict[str, object]] = [
@@ -1885,7 +1885,7 @@ def test_older_journal_keeps_raw_task_blocks(tmp_path: pathlib.Path) -> None:
 
 
 def test_a_plan_reading_carries_its_own_time(tmp_path: pathlib.Path) -> None:
-    """A fan-out picked its newest lane reading by journal mtime, which any later event moves."""
+    """A group picked its newest lane reading by journal mtime, which any later event moves."""
     window = {"name": "primary", "used_percent": 40.0, "window_minutes": 10080, "resets_at": 1.0}
     events = [
         {"ts": "2026-10-20T10:00:00+00:00", "type": "budget.update", "plan_windows": [window]},

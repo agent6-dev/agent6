@@ -31,7 +31,7 @@ class ChildView:
         route: The `provider/model` its manifest records; "" when it never started.
         status: Its own status word; "" when it never started.
         outcome: How it joined: `joined`, `no_changes`, `conflict` or `failed`; "" when no
-            join is recorded, as for a fan-out's lanes.
+            join is recorded, as for a group's lanes.
         join_sha: The merge commit, "" when none.
         imported_ref: The branch the join read, "" when none.
         error: The join's detail, "" when none.

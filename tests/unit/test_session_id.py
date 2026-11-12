@@ -122,7 +122,7 @@ def test_resolve_ambiguous_prefix(tmp_path: pathlib.Path) -> None:
         id.resolve_session(tmp_path, "sunny", buckets=("plans",))
 
 
-def test_resolve_fanout_prefix(tmp_path: pathlib.Path) -> None:
+def test_resolve_group_prefix(tmp_path: pathlib.Path) -> None:
     """A parent's prefix resolves despite its lanes, which remain addressable."""
     parent = "sweet-marsh-DFQQ4G"
     _bucket(tmp_path, parent, f"{parent}-l1", f"{parent}-l2", bucket="runs")

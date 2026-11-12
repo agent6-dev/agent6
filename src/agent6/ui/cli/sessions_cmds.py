@@ -33,14 +33,14 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
     """List this repo's sessions, newest activity first.
 
     Columns: updated, status (the mode folded in when the word does not imply it, the
-    failure reason, the unmerged mark), usage, id, task. A fan-out's lanes nest under
+    failure reason, the unmerged mark), usage, id, task. A group's lanes nest under
     its row: folded into a count, or listed indented with `lanes`; the JSON row always
     nests them. Every bucket, unlike the TUI and web hubs, which give `machine create`
     drafts their own card.
 
     Args:
         as_json: Print the rows as JSON.
-        lanes: List each fan-out's lanes.
+        lanes: List each group's lanes.
 
     Returns:
         The exit code, 0.

@@ -116,7 +116,7 @@ def chain_refusal(
         allow_model: Permit a read-only comparison of a model-controlled run.
 
     Returns:
-        The refusal for a fan-out, whose lanes hold the commits, or for a run whose model
+        The refusal for a group, whose lanes hold the commits, or for a run whose model
         managed git itself.
     """
     return None if allow_model else sessions_manifest.model_git_refusal(manifest, "sessions")

@@ -33,7 +33,7 @@ class _Row:
         pid: The worker pid, when readable.
         attached: A front end is live on the session.
         parent: For a lane, the live parent row it nests under.
-        lanes: The fan-out's live lanes, nested.
+        lanes: The group's live lanes, nested.
         worktree: The linked worktree the run works in, None for a run in the checkout.
     """
 
@@ -82,7 +82,7 @@ class _Live:
     machines: list[_Row]
 
     def nested(self) -> list[_Row]:
-        """Return the session rows with a fan-out's live lanes under it, then the machines."""
+        """Return the session rows with a group's live lanes under it, then the machines."""
         summaries_by_repo: dict[str, list[listing.SessionSummary]] = {}
         rows_by_repo: dict[str, dict[str, _Row]] = {}
         for real, own in self.rows.items():
@@ -169,12 +169,12 @@ def cmd_ps(*, as_json: bool = False, lanes: bool = False) -> int:
     """Print one row per live session: directory, id, mode, status, pid, front end, worktree.
 
     Liveness is the worker-pid rule every listing uses (a foreign-owned or reused pid reads
-    dead). A fan-out's live lanes nest under its row: folded into a count, or listed
+    dead). A group's live lanes nest under its row: folded into a count, or listed
     indented with `lanes`; the JSON row always nests them.
 
     Args:
         as_json: Print the rows as JSON.
-        lanes: List each fan-out's lanes.
+        lanes: List each group's lanes.
 
     Returns:
         The exit code, 0.

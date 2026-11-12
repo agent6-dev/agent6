@@ -131,7 +131,7 @@ def test_children_come_from_the_records_in_dispatch_then_lane_order(tmp_path: pa
     assert len(dispatches[0].children) == 2
 
 
-def test_a_fan_out_without_records_reads_its_lanes_from_lineage(tmp_path: pathlib.Path) -> None:
+def test_a_group_without_records_reads_its_lanes_from_lineage(tmp_path: pathlib.Path) -> None:
     """`run --parallel` writes no record: its lanes still show, with no join to report."""
     state = tmp_path / "state"
     parent = _session(state, "fan")
@@ -167,7 +167,7 @@ def test_an_unreadable_record_is_reported_not_hidden(tmp_path: pathlib.Path) -> 
 def test_the_header_carries_lanes_and_dispatches_for_an_ordinary_parent(
     tmp_path: pathlib.Path,
 ) -> None:
-    """No fan-out stamp is invented: the parent keeps its actions and gains its children."""
+    """No group stamp is invented: the parent keeps its actions and gains its children."""
     state = tmp_path / "state"
     parent = _session(state, "run-abc")
     _session(state, "run-abc-p1-l1", parent="run-abc", lane=1, group="run-abc-p1", usd=0.5)

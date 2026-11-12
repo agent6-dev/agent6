@@ -53,7 +53,6 @@ def test_merge_planner_passes_the_explicit_config_path(
         base_sha = "0" * 40
         run_branch = "agent6/x"
         merged = None
-        fanout = None
         git_control = "agent6"
 
     def _exists(cwd: pathlib.Path, b: str) -> bool:

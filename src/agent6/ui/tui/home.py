@@ -183,7 +183,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
     COMMANDS: ClassVar = textual_screen.Screen.COMMANDS | {screen_chrome.MenuCommands}
     HELP_HINTS: ClassVar = (
         "Enter opens the selected run",
-        "Space folds or expands a fan-out's lanes",
+        "Space folds or expands a group's lanes",
         "Pickers: ↑↓ highlight · Space selects",
     )
 
@@ -203,8 +203,8 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self._summaries: dict[str, SessionSummary] = {}
         # The last poll's status per session; None before the first, which announces nothing.
         self._statuses: dict[str, str] | None = None
-        # The fan-outs listed, by parent id, and the ones the operator expanded.
-        self._fanouts: dict[str, viewmodel_listing.ListingRow] = {}
+        # The groups listed, by parent id, and the ones the operator expanded.
+        self._groups: dict[str, viewmodel_listing.ListingRow] = {}
         self._expanded: set[str] = set()
 
     def compose(self) -> app.ComposeResult:
@@ -268,12 +268,12 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         listing = viewmodel_listing.nested_rows(
             summarize_session_dir(rd, branch_tips=tips) for rd in dirs.values()
         )
-        self._fanouts = {row.summary.session_id: row for row in listing if row.lanes}
+        self._groups = {row.summary.session_id: row for row in listing if row.lanes}
 
         pending: list[tuple[tuple[str | text.Text, ...], session_status.TaskLabel]] = []
 
         def add(row: viewmodel_listing.ListingRow, id_cell: str) -> None:
-            # The time is the row's: a fan-out's latest lane activity, as `sessions list` shows it.
+            # The time is the row's: a group's latest lane activity, as `sessions list` shows it.
             s = row.summary
             cells: dict[str, str | text.Text] = {
                 "updated": format.format_when(row.group_last_activity, short=narrow),
@@ -340,8 +340,8 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         table.show_cursor = table.row_count > 0  # no full-height cursor over an empty body
 
     def action_toggle_lanes(self) -> None:
-        """Expand or fold the selected fan-out's lanes; the cursor stays on the fan-out's row."""
-        target = self._selected_fanout()
+        """Expand or fold the selected group's lanes; the cursor stays on the group's row."""
+        target = self._selected_group()
         if target is None:
             return
         if target in self._expanded:
@@ -354,13 +354,13 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         if row is not None:
             table.move_cursor(row=row)
 
-    def _selected_fanout(self) -> str | None:
-        """Return the fan-out the cursor's row belongs to, its own or a lane's; else None."""
+    def _selected_group(self) -> str | None:
+        """Return the group the cursor's row belongs to, its own or a lane's; else None."""
         rd = self._selected_dir()
         if rd is None:
             return None
         sid = rd.name
-        while sid not in self._fanouts:
+        while sid not in self._groups:
             s = self._summaries.get(sid)
             if s is None or not s.parent or s.parent == sid:
                 return None
@@ -413,7 +413,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         )
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Grey unavailable actions and hide Lanes without a fan-out.
+        """Grey unavailable actions and hide Lanes without a group.
 
         None greys a key where False would hide it, and a missing key reads as a
         capability the hub lacks. Model-controlled runs cannot merge.
@@ -430,7 +430,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         """
         del parameters
         if action == "toggle_lanes":
-            return self._selected_fanout() is not None
+            return self._selected_group() is not None
         if action == "review_selected":
             rd = self._selected_dir()
             s = self._summaries.get(rd.name) if rd is not None else None
@@ -548,7 +548,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 "Prune merged runs?",
                 "Runs `agent6 sessions prune`: deletes run branches git can remove as merged"
                 " (reachable from the checked-out branch), merged runs' chain refs, the"
-                " worktrees of merged forks and fan-out clone dirs whose lanes are all here."
+                " worktrees of merged forks and group clone dirs whose lanes are all here."
                 " A run whose base branch already holds its work is recorded as merged first."
                 " Squash-merged branches and ones merged elsewhere are kept and named;"
                 " unmerged ones are never touched.",

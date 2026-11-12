@@ -1010,7 +1010,7 @@ def test_compaction_renders_as_markers_on_the_conversation() -> None:
 
 
 def test_parallel_compared_renders_the_ranking() -> None:
-    """A fan-out's auto-compare marker lists the candidates best first and names the judge."""
+    """A group's auto-compare marker lists the candidates best first and names the judge."""
     (item,) = fold_transcript(
         [
             {
@@ -1036,7 +1036,7 @@ def test_parallel_compared_renders_the_ranking() -> None:
 
 
 def test_parallel_dispatched_counts_lanes_when_the_event_carries_them() -> None:
-    """A fan-out names its lanes, the count every listing shows.
+    """A group names its lanes, the count every listing shows.
 
     The task count alone said "dispatched 1 parallel task" over two lanes.
     """

@@ -206,7 +206,7 @@ def _add_stop_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     stop_p.add_argument(
         "--all",
         action="store_true",
-        help="Stop every live session of this repository (a fan-out's lanes with it).",
+        help="Stop every live session of this repository (a group's lanes with it).",
     )
 
 

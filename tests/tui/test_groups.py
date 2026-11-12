@@ -8,19 +8,19 @@ from textual import widgets
 from agent6 import paths
 from agent6.sessions import layout
 from agent6.ui.tui import app, dashboard
-from tests.unit import test_sessions_show_fanout
+from tests.unit import test_sessions_show_group
 
-fan_out = test_sessions_show_fanout.fan_out
-
-
-def test_dashboard_lanes_refresh_and_open(fan_out: pathlib.Path) -> None:
-    asyncio.run(_scenario(fan_out))
+group = test_sessions_show_group.group
 
 
-async def _scenario(fan_out: pathlib.Path) -> None:
-    group = layout.SessionLayout(state_dir=paths.state_dir(fan_out), session_id="fan")
-    lane = layout.SessionLayout(state_dir=paths.state_dir(fan_out), session_id="fan-l1")
-    tui = app.Agent6TUI(group.session_dir)
+def test_dashboard_lanes_refresh_and_open(group: pathlib.Path) -> None:
+    asyncio.run(_scenario(group))
+
+
+async def _scenario(repo: pathlib.Path) -> None:
+    parent = layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="fan")
+    lane = layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="fan-l1")
+    tui = app.Agent6TUI(parent.session_dir)
     async with tui.run_test(size=(140, 45)) as pilot:
         tui.action_toggle_dashboard()
         await pilot.pause()
@@ -40,7 +40,7 @@ async def _scenario(fan_out: pathlib.Path) -> None:
     assert tui.return_value == app.TuiExit(open_next=lane.session_dir)
 
 
-ordinary_parent = test_sessions_show_fanout.ordinary_parent
+ordinary_parent = test_sessions_show_group.ordinary_parent
 
 
 def test_dashboard_shows_a_lane_that_appears_after_the_view_opens(

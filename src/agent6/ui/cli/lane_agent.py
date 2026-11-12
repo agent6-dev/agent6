@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Start one fan-out lane from its launch file.
+"""Start one lane from its launch file.
 
 Invoked as `python -P -E -m agent6.ui.cli.lane_agent` with `AGENT6_LANE` naming the file:
 validates it and the config snapshot beside it, loads the lane's config and drives

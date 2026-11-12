@@ -285,7 +285,7 @@ def _run_info_command(
     elif cmd == "/answer":
         print(_answer_pending(session_dir))
     elif cmd == "/parallel":
-        print("[agent6] fan out needs a task: `/parallel [SPEC --] TASK`")
+        print("[agent6] /parallel needs a task: `/parallel [SPEC --] TASK`")
     elif cmd == "/shells":
         _print_shells(session_dir)
     elif cmd == "/restate":

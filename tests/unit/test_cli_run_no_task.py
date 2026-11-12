@@ -178,7 +178,7 @@ def test_parallel_refuses_a_standing_goal(
 def test_parallel_takes_the_tui_like_any_run(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--parallel --tui` was refused while a fan-out had no session of its own to show."""
+    """`--parallel --tui` was refused while a group had no session of its own to show."""
     from agent6.ui.cli import run as run_mod
 
     monkeypatch.chdir(tmp_path)

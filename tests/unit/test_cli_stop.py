@@ -257,7 +257,7 @@ def test_all_with_nothing_live_is_a_successful_noop(
     assert "no live session to stop" in captured.err and not captured.out
 
 
-def test_a_fanout_stops_only_its_live_lanes(
+def test_a_group_stops_only_its_live_lanes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -320,7 +320,7 @@ with (d / "logs.jsonl").open("a") as fh:
 """
 
 
-def _fanout(tmp_path: pathlib.Path, fan: str, lane: str) -> tuple[pathlib.Path, pathlib.Path]:
+def _group(tmp_path: pathlib.Path, fan: str, lane: str) -> tuple[pathlib.Path, pathlib.Path]:
     fan_dir, lane_dir = _run(tmp_path, fan), _run(tmp_path, lane)
     (fan_dir / "manifest.json").write_text(
         json.dumps(
@@ -348,13 +348,13 @@ def _fanout(tmp_path: pathlib.Path, fan: str, lane: str) -> tuple[pathlib.Path, 
     return fan_dir, lane_dir
 
 
-def test_a_fanouts_lanes_end_before_its_parent_drains(
+def test_a_groups_lanes_end_before_its_parent_drains(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A run's lanes end before the run drains them: it is waited for, not killed."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(stop_mod, "LANES_WAIT_S", 3.0)
-    fan, lane = _fanout(tmp_path, "drain-run-AAAAAA", "drain-run-AAAAAA-l1")
+    fan, lane = _group(tmp_path, "drain-run-AAAAAA", "drain-run-AAAAAA-l1")
     # The lane is live before the parent starts, or its first poll drains and ends at once.
     worker = subprocess.Popen(
         [sys.executable, "-c", _ANSWERING_WORKER, str(lane)], start_new_session=True
@@ -508,7 +508,7 @@ def test_a_bare_stop_with_nothing_live_is_a_successful_noop(
     assert not captured.out
 
 
-def test_a_bare_stop_passes_over_a_fan_outs_lane(
+def test_a_bare_stop_passes_over_a_groups_lane(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A lane stops with its parent; the newest live lane is not what a bare stop means."""

@@ -16,7 +16,7 @@ from agent6.viewmodel import session_dirs, session_is_live
 
 
 def _is_lane(session_dir: pathlib.Path) -> bool:
-    """Return whether the session is a fan-out's lane, which its parent's stop ends."""
+    """Return whether the session is a group's lane, which its parent's stop ends."""
     try:
         return sessions_manifest.read_manifest(session_dir).parallel is not None
     except sessions_manifest.ManifestError:

@@ -121,7 +121,7 @@ class SessionSummary:
         verification: The gate verdict from the gate facts, not the status word: the
             compare table and the judge read it.
         parent: The session that dispatched this lane, the row it nests under.
-        lane: The lane number within its fan-out.
+        lane: The lane number within its group.
         plan_observed_points: The plan movement observed across executions, in points.
         plan_cap: The plan's points cap, `[budget].max_plan_points`.
         plan_used_percent: The account's reading; 0 unless a plan provider answered.
@@ -192,7 +192,7 @@ class SessionSummary:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ListingRow:
-    """One listing row: a session and the fan-out lanes nested under it, rows themselves."""
+    """One listing row: a session and the lanes nested under it, rows themselves."""
 
     summary: SessionSummary
     lanes: tuple[ListingRow, ...] = ()
@@ -280,7 +280,7 @@ def same_path_runs(
 def rows_for(
     cwd: pathlib.Path, *, buckets: Iterable[str] = layout.HUB_BUCKETS
 ) -> tuple[list[ListingRow], set[str]]:
-    """Return a repository's listing rows and its fan-out winners' ids.
+    """Return a repository's listing rows and its group winners' ids.
 
     Args:
         cwd: The repository.
@@ -384,7 +384,7 @@ def row_json(row: ListingRow, *, winners: Container[str]) -> SummaryRow:
 
     Args:
         row: The row.
-        winners: The ids of the fan-out compare winners.
+        winners: The ids of the compare winners.
 
     Returns:
         The `summary_row` dict with group activity and a rendered `when`.
@@ -432,7 +432,7 @@ def summary_row(
         id_cell: The session identifier with winner and worktree marks.
         unmerged: Whether the run holds unmerged work.
         verification: The gate verdict, or null without a verdict.
-        lane: The lane number, or null outside a fan-out.
+        lane: The lane number, or null outside a group.
         parent: The session that dispatched this lane.
         worktree: The linked worktree path, or null in the operator's checkout.
         branch: The run's branch while it exists, or null.
@@ -444,7 +444,7 @@ def summary_row(
 
     Args:
         s: The row's summary.
-        winner: The row is its fan-out's compare winner.
+        winner: The row is its group's compare winner.
         lanes: The nested lane rows, as `row_json` builds them.
 
     Returns:
@@ -570,7 +570,7 @@ def resume_blocker(session_dir: pathlib.Path) -> str:
         m = sessions_manifest.read_manifest(session_dir)
         if m.parallel is not None:
             return (
-                f"a lane of the fan-out {m.parallel.parent}, whose work is on its own"
+                f"a lane of the group {m.parallel.parent}, whose work is on its own"
                 f' branch; `agent6 fork {session_dir.name} --steer "..."` continues it in a'
                 " worktree of its own"
             )
@@ -586,7 +586,7 @@ def resume_blocker(session_dir: pathlib.Path) -> str:
 def live_sessions_in_checkout(state_dir: pathlib.Path) -> tuple[str, ...]:
     """Return the ids of the live sessions working in the repository's own checkout.
 
-    A worktree run, a fork and a fan-out lane work elsewhere and are left out; a session
+    A worktree run, a fork and a lane work elsewhere and are left out; a session
     whose manifest cannot be read counts, since nothing says it works elsewhere.
 
     Args:

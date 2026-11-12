@@ -142,7 +142,7 @@ def _lane_snapshot(
     *,
     gate_source: sessions_manifest.GateSource = "",
 ) -> pathlib.Path:
-    """Make this process lane 1 of a fan-out over `repo`, started on a real config snapshot."""
+    """Make this process lane 1 of a group over `repo`, started on a real config snapshot."""
     effective = layer.load_effective(repo)
     spec = lane_records.LaneSpec(
         lane=1, session_id="fan-l1", worktree=tmp_path / "lanes" / "lane-1", settings=None

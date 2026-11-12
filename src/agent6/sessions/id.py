@@ -74,7 +74,7 @@ def friendly_token() -> str:
     """Mint a fresh `<adj>-<noun>-<suffix>` token.
 
     A session directory is named through `unused_session_id`, which also checks the
-    buckets; this is for any other readable unique string (an ACP connection, a fan-out).
+    buckets; this is for any other readable unique string (an ACP connection, a group).
 
     Returns:
         The token.

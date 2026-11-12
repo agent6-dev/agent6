@@ -125,7 +125,7 @@ class GitWorktreeConfig(pydantic.BaseModel):
 
     model_config = validation.MODEL_CONFIG
 
-    # A lane: `<base_dir>/<repo-id>/<fanout-id>/lane-<i>`; a fork or a `run --worktree` run:
+    # A lane: `<base_dir>/<repo-id>/<group-id>/lane-<i>`; a fork or a `run --worktree` run:
     # `<base_dir>/<repo-id>/<session-id>`.
     base_dir: str = pydantic.Field(
         default="",

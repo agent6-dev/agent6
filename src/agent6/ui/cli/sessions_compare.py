@@ -115,7 +115,7 @@ def _screen_candidates(
     return candidates, rows, notes
 
 
-def _fanout_lanes(cwd: pathlib.Path, parallel_id: str) -> tuple[str, ...]:
+def _group_lanes(cwd: pathlib.Path, parallel_id: str) -> tuple[str, ...]:
     """Return the lane ids of a ranked group in lane order; empty when no run names it.
 
     Args:
@@ -145,7 +145,7 @@ def _recorded_outcome(
     resolved: list[tuple[sessions_layout.SessionLayout, sessions_manifest.SessionManifest]],
     candidates: list[judge.CandidateBrief],
 ) -> compare.RankOutcome | None:
-    """Return a fan-out's stamped verdict as a `RankOutcome`, for the ranking table.
+    """Return a group's stamped verdict as a `RankOutcome`, for the ranking table.
 
     Args:
         resolved: The runs with their manifests.
@@ -182,28 +182,28 @@ def _cmd_compare(
 
     The same ranked report `--parallel`'s auto-compare prints (the reviewer model as judge
     when configured, else the mechanical verify-then-cost ranking), for runs picked by hand,
-    not necessarily from one fan-out or one task. Read-only: no merges, no stamps. A
-    fan-out id prints the verdict it recorded; ids named one by one are judged; `rejudge`
+    not necessarily from one group or one task. Read-only: no merges, no stamps. A
+    group id prints the verdict it recorded; ids named one by one are judged; `rejudge`
     judges either way, and can rank differently from the stamp the listings read.
 
     Args:
-        session_ids: Two or more run ids, or one fan-out id.
+        session_ids: Two or more run ids, or one group id.
         config_paths: The `--config` files in command-line order, if any.
-        rejudge: Judge afresh even for a fan-out with a recorded verdict.
+        rejudge: Judge afresh even for a group with a recorded verdict.
 
     Returns:
         The exit code; 2 when the ids do not name two comparable runs.
     """
     cwd = pathlib.Path.cwd()
-    by_fanout = False
+    by_group = False
     if len(session_ids) == 1:
-        # One id is a fan-out's, comparing its lanes; anything else is one run, too few.
-        lanes = _fanout_lanes(cwd, session_ids[0])
-        by_fanout = bool(lanes)
+        # One id is a group's, comparing its lanes; anything else is one run, too few.
+        lanes = _group_lanes(cwd, session_ids[0])
+        by_group = bool(lanes)
         session_ids = lanes or session_ids
     if len(session_ids) < 2:
         common.error(
-            "sessions compare needs 2 or more run ids, or one --parallel fan-out id"
+            "sessions compare needs 2 or more run ids, or one --parallel group id"
             f" (its lanes); got {len(session_ids)}."
         )
         return 2
@@ -244,7 +244,7 @@ def _cmd_compare(
         for layout, manifest in resolved
         if manifest.git_control == "model"
     }
-    recorded = _recorded_outcome(resolved, candidates) if by_fanout and not rejudge else None
+    recorded = _recorded_outcome(resolved, candidates) if by_group and not rejudge else None
     if recorded is not None:
         print(f"[agent6] the recorded verdict for {common.plural(len(candidates), 'lane')}:")
         compare.print_ranked_candidates(
@@ -255,11 +255,11 @@ def _cmd_compare(
             committed=committed,
             model_refs=model_refs,
         )
-        print("\n(recorded when the fan-out ran; `--rejudge` spends a fresh judge call)")
+        print("\n(recorded when the group ran; `--rejudge` spends a fresh judge call)")
         return 0
 
     reviewer = cfg.models.resolve("reviewer")
-    # Advisory and stateless: only the fan-out's auto-compare stamps a manifest.
+    # Advisory and stateless: only the group's auto-compare stamps a manifest.
     outcome = compare_ranking.rank(cfg, candidates, transcript_dir=paths.state_dir(cwd) / "compare")
     print(f"[agent6] comparing {len(candidates)} runs:")
     compare.print_ranked_candidates(
@@ -270,7 +270,7 @@ def _cmd_compare(
         committed=committed,
         model_refs=model_refs,
     )
-    # Re-judging one fan-out's lanes can contradict its stamp, which the listings read: say so.
+    # Re-judging one group's lanes can contradict its stamp, which the listings read: say so.
     groups = {manifest.parallel.group if manifest.parallel else None for _, manifest in resolved}
     if outcome.ranking and len(groups) == 1 and None not in groups:
         stamped = next(
@@ -283,7 +283,7 @@ def _cmd_compare(
         )
         if stamped is not None and stamped != outcome.ranking[0]:
             print(
-                f"\nnote: the recorded fan-out verdict picked {stamped}"
+                f"\nnote: the recorded group verdict picked {stamped}"
                 f" (the {format.WINNER_GLYPH} in listings); this fresh ranking is advisory"
                 " and nothing was re-stamped."
             )

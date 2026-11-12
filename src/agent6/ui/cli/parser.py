@@ -305,7 +305,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     ps_p.add_argument(
         "--lanes",
         action="store_true",
-        help="List each fan-out's live lanes under its row (folded into a count otherwise;"
+        help="List each group's live lanes under its row (folded into a count otherwise;"
         " the JSON form nests them always).",
     )
 

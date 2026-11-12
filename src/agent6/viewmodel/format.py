@@ -312,7 +312,7 @@ def budget_usd_text(
     return f"{text} (unlimited)" if usd_cap == -1 else text
 
 
-# The mark on the lane a fan-out's compare ranked first.
+# The mark on the lane a group's compare ranked first.
 WINNER_GLYPH = "★"
 # The mark on a run that works in its own git worktree, not in the checkout.
 WORKTREE_MARK = "(worktree)"
@@ -357,10 +357,10 @@ def format_lineage(parent: str | None, turn: int | None, sha: str | None) -> str
 def format_compare(
     placement: manifest.PlacementStamp | None, comparison: manifest.ComparisonStamp | None = None
 ) -> tuple[str, str] | None:
-    """Word a lane's fan-out compare outcome.
+    """Word a lane's compare outcome.
 
     Args:
-        placement: The lane's placement stamp, None for a run outside a compared fan-out.
+        placement: The lane's placement stamp, None for a run outside a compared group.
         comparison: The group record from its parent, None when unavailable.
 
     Returns:
@@ -402,7 +402,7 @@ def lane_count(n: int) -> str:
 
 
 def lane_id_cell(id_cell: str, depth: int = 1) -> str:
-    """Return a lane's id cell nested under its fan-out's row, stepped in once per depth."""
+    """Return a lane's id cell nested under its group's row, stepped in once per depth."""
     return f"{'  ' * depth}└ {id_cell}"
 
 

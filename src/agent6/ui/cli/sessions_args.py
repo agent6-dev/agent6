@@ -63,7 +63,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         dest="list_lanes",
         action="store_true",
         help=(
-            "List each fan-out's lanes under its row. Default: show only the count. JSON always"
+            "List each group's lanes under its row. Default: show only the count. JSON always"
             " includes the nested lanes."
         ),
     )
@@ -170,7 +170,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "--rejudge",
         action="store_true",
         help=(
-            "Rank again instead of printing a fan-out's saved result. With a reviewer"
+            "Rank again instead of printing a group's saved result. With a reviewer"
             " model, this spends a new call. The result can differ from listings and is not"
             " saved."
         ),
@@ -180,7 +180,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         nargs="+",
         metavar="SESSION_ID",
         help=(
-            "Two or more session ids or unambiguous prefixes. Or give one fan-out id to"
+            "Two or more session ids or unambiguous prefixes. Or give one group id to"
             " compare its lanes."
         ),
     )

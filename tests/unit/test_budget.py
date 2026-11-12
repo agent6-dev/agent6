@@ -730,7 +730,7 @@ def test_each_subscription_plan_prints_its_own_named_line() -> None:
 def test_unique_duration_plan_output_omits_backend_keys(
     name: str, minutes: int, label: str
 ) -> None:
-    """A unique duration needs no key in the run receipt or fan-out reading."""
+    """A unique duration needs no key in the run receipt or group reading."""
     window = budget.PlanWindow(name, 30, minutes, 0)
     usage = budget.PlanUsage(windows=(window,))
     tracker = budget.BudgetTracker(max_usd=1, max_tokens_fallback=100, max_plan_points=-1)

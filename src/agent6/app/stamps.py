@@ -30,7 +30,7 @@ def _policy_stamp(cfg: Config, isolation: str) -> manifest.PolicyStamp:
 
     Args:
         cfg: The run's config.
-        isolation: The resolved isolation level; "" for a stamp naming no level (a fan-out
+        isolation: The resolved isolation level; "" for a stamp naming no level (a group
             parent's), which then knows no network either.
 
     Returns:
@@ -240,7 +240,7 @@ def lane_gate_source() -> manifest.GateSource:
 
 
 def parallel_lineage() -> manifest.ParallelLineage | None:
-    """Return the fan-out lineage the parent handed this lane, or None outside a lane.
+    """Return the group lineage the parent handed this lane, or None outside a lane.
 
     Read at the manifest's write so the grouping survives a parent death.
 

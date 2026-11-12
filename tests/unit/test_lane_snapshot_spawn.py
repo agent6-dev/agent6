@@ -80,7 +80,7 @@ def test_detached_lane_loads_snapshot_and_records_notes(
             origin=short_repo,
             record_state=paths.state_dir(short_repo),
             max_usd=None,
-            fanout_id="detached",
+            group_id="detached",
             parent="detached",
             runtime=parallel.lane_runtime(),
         )

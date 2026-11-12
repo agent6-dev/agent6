@@ -35,7 +35,7 @@ def _cmd_sessions_review(
         The exit code: 0 reviewed, 2 refused, 3 budget exceeded.
     """
     cwd = pathlib.Path.cwd()
-    # Every bucket: the review reads a journal, so a plan, an ask or a fan-out is a record too.
+    # Every bucket: the review reads a journal, so a plan, an ask or a group is a record too.
     try:
         layout = common.resolve_or_newest_layout(cwd, session_id)
     except id.SessionIdError as exc:

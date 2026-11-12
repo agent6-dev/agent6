@@ -221,7 +221,7 @@ class ParallelConfig(pydantic.BaseModel):
         le=1024,
         default=4,
         description=(
-            "The most lanes one `--parallel` fan-out may run, `1` to `1024`; a spec asking for "
+            "The most lanes one `--parallel` group may run, `1` to `1024`; a spec asking for "
             "more is refused before anything is cloned; a review roster longer than this "
             "runs in batches of this width, with no seat dropped."
         ),
@@ -230,7 +230,7 @@ class ParallelConfig(pydantic.BaseModel):
     judges: validation.StrTuple = pydantic.Field(
         default=("reviewer",),
         description=(
-            "who ranks the candidates of a `run --parallel` fan-out and of `sessions compare`: "
+            "who ranks the candidates of a `run --parallel` group and of `sessions compare`: "
             "selectors as `--parallel` takes them, a role name or `[provider/]model`; each "
             "judges once and the lowest sum of ranks wins, a tie going to the mechanical order "
             "(a passed gate first, then the lower cost); a role with no model route judges "

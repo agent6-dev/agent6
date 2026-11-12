@@ -17,7 +17,7 @@ def session_placement(session_dir: pathlib.Path) -> sessions_manifest.PlacementS
         session_dir: The session's state dir.
 
     Returns:
-        The stamp, or None for a run outside a compared fan-out or with an unreadable
+        The stamp, or None for a run outside a compared group or with an unreadable
         manifest.
     """
     try:
@@ -28,7 +28,7 @@ def session_placement(session_dir: pathlib.Path) -> sessions_manifest.PlacementS
 
 
 def is_winner(session_dir: pathlib.Path) -> bool:
-    """Return whether a run is its fan-out's compare winner."""
+    """Return whether a run is its group's compare winner."""
     placement = session_placement(session_dir)
     return placement is not None and placement.winner
 

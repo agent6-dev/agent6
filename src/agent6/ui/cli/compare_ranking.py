@@ -3,7 +3,7 @@
 """The CLI's adapter over the ranking core in `agent6.app.compare`.
 
 It supplies the two pieces the headless core cannot: the `judging...` spinner
-and the reviewer-provider builder; the fan-out binds the same two through its
+and the reviewer-provider builder; the group binds the same two through its
 `LaneRuntime`.
 """
 

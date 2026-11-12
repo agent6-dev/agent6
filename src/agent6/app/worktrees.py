@@ -25,7 +25,7 @@ from agent6.vcs.git import read as git_read
 def child_worktree_root(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
     """Return the base dir for a group of children's worktrees.
 
-    Fan-out ids, `machine-<id>` and fork ids are all groups, so one prune sweep
+    Lane group ids, `machine-<id>` and fork ids are all groups, so one prune sweep
     covers them; the dir is scoped by repo id, so another repo's clones never enter
     a sweep.
 
@@ -260,13 +260,13 @@ def lane_keep_reason(record_state: pathlib.Path, clone: pathlib.Path) -> str:
     )
 
 
-def sweep_fanout_clones(  # noqa: PLR0912  # one refusal per retained clone condition
+def sweep_group_clones(  # noqa: PLR0912  # one refusal per retained clone condition
     origin: pathlib.Path,
     cfg: Config,
     *,
     note_keep: Callable[[pathlib.Path, str], None] = lambda _path, _why: None,
 ) -> tuple[int, int]:
-    """Delete idle fan-out and machine clone groups whose tips the origin reaches.
+    """Delete idle lane and machine clone groups whose tips the origin reaches.
 
     Unreachable commits keep the group: it may be the only copy. A lane with no session
     record stays because a spawn timeout can leave a live child before its first write.
@@ -284,19 +284,19 @@ def sweep_fanout_clones(  # noqa: PLR0912  # one refusal per retained clone cond
     if not base.is_dir():
         return 0, 0
     swept = kept = 0
-    for fanout in sorted(p for p in base.iterdir() if p.is_dir()):
+    for group_dir in sorted(p for p in base.iterdir() if p.is_dir()):
         machine_id = (
-            fanout.name.removeprefix("machine-") if fanout.name.startswith("machine-") else ""
+            group_dir.name.removeprefix("machine-") if group_dir.name.startswith("machine-") else ""
         )
         pattern = "state-*" if machine_id else "lane-*"
-        clones = [c for c in sorted(fanout.glob(pattern)) if (c / ".git").is_dir()]
+        clones = [c for c in sorted(group_dir.glob(pattern)) if (c / ".git").is_dir()]
         if not clones:
             continue
         if machine_id and process.worker_is_alive(
             sessions_layout.machines_root(paths.state_dir(origin)) / machine_id
         ):
             kept += 1
-            note_keep(fanout, "live machine; stop it before pruning")
+            note_keep(group_dir, "live machine; stop it before pruning")
             continue
         why = ""
         for clone in clones:
@@ -334,11 +334,11 @@ def sweep_fanout_clones(  # noqa: PLR0912  # one refusal per retained clone cond
         if not why:
             for clone in clones:
                 shutil.rmtree(paths.jail_cache_home(clone), ignore_errors=True)
-            shutil.rmtree(fanout, ignore_errors=True)
+            shutil.rmtree(group_dir, ignore_errors=True)
             swept += 1
         else:
             kept += 1
-            note_keep(fanout, why)
+            note_keep(group_dir, why)
     return swept, kept
 
 

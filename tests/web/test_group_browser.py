@@ -8,26 +8,26 @@ import pytest
 
 from agent6 import paths
 from agent6.sessions import layout
-from tests.unit import test_sessions_show_fanout
+from tests.unit import test_sessions_show_group
 from tests.web import test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 pytestmark = pytest.mark.browser
-fan_out = test_sessions_show_fanout.fan_out
-ordinary_parent = test_sessions_show_fanout.ordinary_parent
+group = test_sessions_show_group.group
+ordinary_parent = test_sessions_show_group.ordinary_parent
 browser = test_web_browser.browser
 open_page = test_web_browser.open_page
 
 
 @pytest.fixture
-def fan_port(fan_out: pathlib.Path) -> Iterator[int]:
-    yield from test_web_browser._serve(fan_out)
+def fan_port(group: pathlib.Path) -> Iterator[int]:
+    yield from test_web_browser._serve(group)
 
 
 def test_group_lanes_refresh_and_link(
-    fan_out: pathlib.Path,
+    group: pathlib.Path,
     fan_port: int,
     open_page: Callable[[int], tuple[Page, list[str]]],
 ) -> None:
@@ -40,7 +40,7 @@ def test_group_lanes_refresh_and_link(
     expect(block.locator("h2")).to_have_text("lanes: 2")
     expect(block.locator("tr")).to_have_count(3)
     expect(block).to_contain_text("openai/lane-1")
-    lane = layout.SessionLayout(state_dir=paths.state_dir(fan_out), session_id="fan-l1")
+    lane = layout.SessionLayout(state_dir=paths.state_dir(group), session_id="fan-l1")
     with lane.logs_path.open("a") as log:
         log.write('{"type":"budget.update","usd_total":1.25}\n')
         log.write('{"type":"session.stop","reason":"steer_abort"}\n')

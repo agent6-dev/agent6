@@ -300,7 +300,7 @@ def test_a_lanes_clone_and_a_machine_clone_share_the_repositorys_home(
     repo, base = tmp_path / "repo", tmp_path / "work"
     repo.mkdir()
     rid = paths.repo_id(repo)
-    lane = base / rid / "fanout-AAAAAA" / "lane-1"
+    lane = base / rid / "group-AAAAAA" / "lane-1"
     state_clone = base / rid / "machine-digest" / "state-0003"
     stranger = tmp_path / "elsewhere" / rid / "x"
     for made in (lane, state_clone, stranger):

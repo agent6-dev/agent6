@@ -3,7 +3,7 @@
 """Compose the engine into the run, resume, fork and machine lifecycles.
 
 `agent6.app` sits below `ui/` and never imports it: the lifecycles (`run`, `resume`, `fork`,
-`machine`) and the `--parallel` fan-out (`parallel`, `lanes`, `compare`) drive `harness`,
+`machine`) and the `--parallel` dispatch (`parallel`, `lanes`, `compare`) drive `harness`,
 `git_ops`, `sessions` and the headless `viewmodel`. What needs a terminal, a live view, a detached
 `agent6` process or the run-dir bridge is injected by `ui/cli` as frozen values of callables
 (`frontend.SessionFrontend`, `lanes.LaneRuntime`). Output goes through the injected

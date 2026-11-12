@@ -94,7 +94,7 @@ def spawn_new_work(  # noqa: PLR0911
     In run mode a `/parallel` message fans out one detached `run --parallel` per
     segment: a malformed directive refuses before any spawn, and any segment's
     failure fails the whole message while naming the lanes already running. A plain
-    run into a checkout another run is driving refuses at once; a fan-out's lanes
+    run into a checkout another run is driving refuses at once; a group's lanes
     clone the checkout and a worktree run has a checkout of its own, so neither
     takes that lock.
 
@@ -108,7 +108,7 @@ def spawn_new_work(  # noqa: PLR0911
         config_paths: The front-end's explicit config, when any.
 
     Returns:
-        The new session's dir (the first lane's for a fan-out) and "", or None and why.
+        The new session's dir (the first lane's for a group) and "", or None and why.
     """
     options = options or RunOptions()
     if (problem := _refusal(mode, task, options)) is not None:
@@ -207,7 +207,7 @@ def _spawn_run(
         task: The task text, passed after `--` so it never reads as a flag; "" passes none.
         preset: The `--preset` value, when any.
         model: The `--model` value, when any.
-        spec: The `--parallel` spec of a fan-out lane; "" for a plain run.
+        spec: The `--parallel` spec of a lane; "" for a plain run.
         options: The run options beside the preset and model.
         config_paths: The front-end's explicit config, when any.
 

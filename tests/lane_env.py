@@ -126,7 +126,7 @@ def mark_lane(
         where: A directory for the launch file.
         config: The snapshot the launch names; a placeholder path when the test loads none.
         parent: The parent session id.
-        group: The fan-out id.
+        group: The group id.
         lane: The lane number.
         gate_source: The gate's origin.
         notes: The snapshot's loss notes.

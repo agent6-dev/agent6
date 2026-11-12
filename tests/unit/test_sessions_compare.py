@@ -61,7 +61,7 @@ def _setup_run(
     """Cut agent6/<session_id> off base_sha with commits and write the run's state fixture.
 
     Writes manifest.json and logs.jsonl, then returns the checkout to where it was;
-    *manifest_extra* merges extra manifest fields (a fan-out lane's lineage, a compare stamp).
+    *manifest_extra* merges extra manifest fields (a lane's lineage, a compare stamp).
     """
     branch = f"agent6/{session_id}"
     current = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
@@ -133,13 +133,13 @@ def test_compare_needs_at_least_two_ids(
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     rc = main(["sessions", "compare", "run-AAAA11"])
     assert rc == 2
-    assert "2 or more run ids, or one --parallel fan-out id" in capsys.readouterr().err
+    assert "2 or more run ids, or one --parallel group id" in capsys.readouterr().err
 
 
-def test_compare_of_a_fanout_id_compares_its_lanes(
+def test_compare_of_a_group_id_compares_its_lanes(
     repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fan-out id given alone names every lane carrying it, in lane order.
+    """A group id given alone names every lane carrying it, in lane order.
 
     It read as one run, too few, and `sessions show` called it ambiguous.
     """
@@ -316,7 +316,7 @@ def test_compare_excludes_a_run_that_never_finished(
     """A run that died before session.stop is dropped from a hand-picked comparison, and said so.
 
     Its truncated spend is the lowest, so mechanical ranking floated it to first place with a
-    merge suggestion; the fan-out already excludes such lanes.
+    merge suggestion; the group already excludes such lanes.
     """
     base = _init_repo(repo)
     _setup_run(
@@ -576,7 +576,7 @@ def _lane_extra(*, winner: bool, rank: int) -> dict[str, Any]:
 def test_compare_discloses_a_fresh_verdict_that_contradicts_the_stamp(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Re-judging a fan-out's lanes never rewrites the stamp, and a flipped winner is said."""
+    """Re-judging a group's lanes never rewrites the stamp, and a flipped winner is said."""
     base = _init_repo(repo)
     _setup_run(
         repo,
@@ -603,7 +603,7 @@ def test_compare_discloses_a_fresh_verdict_that_contradicts_the_stamp(
 
     assert rc == 0
     out = capsys.readouterr().out
-    assert "note: the recorded fan-out verdict picked run-BBBB22" in out
+    assert "note: the recorded group verdict picked run-BBBB22" in out
     assert "nothing was re-stamped" in out
 
 
@@ -1022,8 +1022,8 @@ def test_compare_reads_a_pruned_runs_change_from_the_recorded_merge(
     assert "empty diff" not in out.lower()
 
 
-def _stamped_fanout(repo: pathlib.Path) -> None:
-    """Two lanes of one fan-out, stamped with the verdict its auto-compare recorded."""
+def _stamped_group(repo: pathlib.Path) -> None:
+    """Two lanes of one group, stamped with the verdict its auto-compare recorded."""
     base = _init_repo(repo)
     _setup_run(
         repo,
@@ -1058,11 +1058,11 @@ def _stamped_fanout(repo: pathlib.Path) -> None:
     _write_reviewer_config(repo)
 
 
-def test_compare_of_a_fanout_id_prints_the_recorded_verdict_without_judging(
+def test_compare_of_a_group_id_prints_the_recorded_verdict_without_judging(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Asking a fan-out for its comparison reads the stamp, never a fresh judge call."""
-    _stamped_fanout(repo)
+    """Asking a group for its comparison reads the stamp, never a fresh judge call."""
+    _stamped_group(repo)
     judge = _FakeProvider(['{"ranking": ["run-AAAA11", "run-BBBB22"], "rationale": "flip"}'])
     monkeypatch.setattr(role_providers, "build_role_provider", _stub_builder(judge))
 
@@ -1078,10 +1078,10 @@ def test_compare_of_a_fanout_id_prints_the_recorded_verdict_without_judging(
     assert "--rejudge" in out, "the way to a fresh opinion is named"
 
 
-def test_rejudge_on_a_fanout_id_spends_a_fresh_judge_call(
+def test_rejudge_on_a_group_id_spends_a_fresh_judge_call(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _stamped_fanout(repo)
+    _stamped_group(repo)
     judge = _FakeProvider(['{"ranking": ["run-AAAA11", "run-BBBB22"], "rationale": "flip"}'])
     monkeypatch.setattr(role_providers, "build_role_provider", _stub_builder(judge))
 
@@ -1091,10 +1091,10 @@ def test_rejudge_on_a_fanout_id_spends_a_fresh_judge_call(
     assert judge.calls == 1
     out = capsys.readouterr().out
     assert out.index("run-AAAA11") < out.index("run-BBBB22"), "the fresh ranking"
-    assert "note: the recorded fan-out verdict picked run-BBBB22" in out
+    assert "note: the recorded group verdict picked run-BBBB22" in out
 
 
-def test_a_fanout_with_no_recorded_verdict_is_judged(
+def test_a_group_with_no_recorded_verdict_is_judged(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An auto-compare that never ran leaves no stamp, so the lanes are ranked instead."""

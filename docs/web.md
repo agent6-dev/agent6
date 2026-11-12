@@ -59,13 +59,13 @@ agent6 web --secret 'a phrase of your own'        # the flag wins over the varia
 Buttons do what the matching CLI command does, and prompts are answered inline on every page that shows a run.
 A question the model queued, or an ended run's, keeps its box: the answer reaches the run at its next turn, or at its resume.
 
-- **Sessions page**: every session (mode, status, last activity, usage), newest activity first, a fan-out's lanes folded under its row, each row carrying its [merge note](usage.md#a-rows-merge-note)
+- **Sessions page**: every session (mode, status, last activity, usage), newest activity first, a group's lanes folded under its row, each row carrying its [merge note](usage.md#a-rows-merge-note)
     - a run's row names its worktree and its branch while the branch exists; **Review** fills the composer with `/review <branch>`, and **Merge** lands the branch as `sessions merge` does when the run holds unmerged commits, after a confirm that names the unmerged runs that changed some of the same paths
     - the composer starts a run, plan or ask under a chosen preset and model (the model box shows what the config resolves; a pick overrides it); **worktree** starts the run in a new git worktree (`run --worktree`); **advanced** holds the plan to run from (`run --from`) and a spend cap (`--max-usd`)
     - **Run this plan** on a plan's view opens this composer with the plan chosen; Enter on an empty task runs the plan as written
 - **State machines page**: instances, `machine create` drafts, and buttons that run an authored machine file; the composer creates a new one
 - **Session view** (live over SSE): the conversation, the same folded transcript the CLI and TUI render, with the turn in flight streaming underneath; a detail toggle cycles collapsed, expanded, hidden
-    - **Lanes**: every lane the session dispatched (a `run --parallel` fan-out's or a run's `/parallel` groups), each a link to its own view, with its model, status, usage and how it joined; the card follows lanes that appear while the run waits
+    - **Lanes**: every lane the session dispatched (a `run --parallel` group's or a run's `/parallel` groups), each a link to its own view, with its model, status, usage and how it joined; the card follows lanes that appear while the run waits
     - the composer steers a live run or resumes an ended one under the preset and model picked above it, and takes the [steer directives](usage.md#follow-and-steer-a-run); Ctrl+Enter sends a live steer as `/now`, Ctrl-R searches past messages
     - **?** outside a field lists the keyboard shortcuts; **Ctrl-Shift-P**, or `>` typed into Ctrl-K's box, opens the command palette: the pages, the switcher, the theme, new work and the controls the current page shows, each by name
     - Ctrl-K on any page opens the session switcher: live and recent sessions newest first, narrowed as you type by id, task, branch or worktree; each row names its checkout and the ref holding its commits; Enter opens the highlighted one, **Review code** and **Merge** act as the Sessions page's row buttons do; a draft typed in a composer waits for the way back

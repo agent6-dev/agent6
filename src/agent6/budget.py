@@ -1012,7 +1012,7 @@ def format_plan_window(window: PlanWindow, windows: tuple[PlanWindow, ...]) -> s
 
 
 def format_plan_reading(route: str, usage: PlanUsage) -> str:
-    """Return a plan's reading with no observed movement, as a fan-out prints its lanes' newest.
+    """Return a plan's reading with no observed movement, as a group prints its lanes' newest.
 
     Args:
         route: The provider entry's name.

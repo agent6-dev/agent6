@@ -107,7 +107,7 @@ agent6 sessions merge         # land on the run's starting branch (warns first w
 agent6 resume ID --merge main # merge main into the run's work first; a conflict's markers are the run's first task
 agent6 sessions transcript    # the conversation as text; --no-thinking, --seq N, --tools calls|none
 agent6 sessions graph         # the task graph, each line led by the id /retire takes
-agent6 sessions compare <ids> # >=2 runs ranked by harness.parallel.judges (the reviewer model by default; the mechanical order when no judge returns a ranking), or a fan-out's saved verdict; --rejudge
+agent6 sessions compare <ids> # >=2 runs ranked by harness.parallel.judges (the reviewer model by default; the mechanical order when no judge returns a ranking), or a group's saved verdict; --rejudge
 agent6 sessions dir [<id>]    # the repo's run history, or that session's directory
 agent6 history search <text>  # grep this repository's sessions' persisted data; --regex
 ```
@@ -167,7 +167,7 @@ It must not fabricate an answer or automatically resume the chain.
 
 Queued questions (`wait=false`), answered questions and questions from earlier executions do not meet this condition.
 `operator_blocked` alone is insufficient: approvals can also block a run.
-This is a contract for external chain drivers, not a change to interactive fan-out waits; no such external development-chain driver is included in this repository.
+This is a contract for external chain drivers, not a change to interactive group waits; no such external development-chain driver is included in this repository.
 
 ## Exit codes and end reasons
 

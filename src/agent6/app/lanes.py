@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The lanes of a fan-out: the front-end runtime, planning, spawning, running and dispatch."""
+"""The lanes of a group: the front-end runtime, planning, spawning, running and dispatch."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ from agent6.viewmodel.session import log as session_log
 
 
 class ParallelError(Exception):
-    """The fan-out could not be set up: over the lane cap, or a route that names nothing."""
+    """The group could not be set up: over the lane cap, or a route that names nothing."""
 
 
 class SpawnRun(Protocol):
@@ -120,7 +120,7 @@ def bridge_spawner(
     auto_approve: bool = False,
     lane_away: ipc.AwayMode = "wait",
     at: str | None = None,
-    fanout_id: str,
+    group_id: str,
     parent: str,
     gate_source: sessions_manifest.GateSource = "",
     limits: lane_records.LaneLimits | None = None,
@@ -143,11 +143,11 @@ def bridge_spawner(
         origin: The repository.
         record_state: The state dir the lane's record goes under: its dispatcher's.
         max_usd: The lane's spend cap.
-        auto_approve: The fan-out's own `--auto-approve`, forwarded.
+        auto_approve: The group's own `--auto-approve`, forwarded.
         lane_away: The lane's away-mode: "wait" parks a question for `agent6 attach`,
             "deny" answers it empty.
         at: A commit to detach the clone at; the parent's chain tip.
-        fanout_id: The group the lane belongs to.
+        group_id: The group the lane belongs to.
         parent: The session every listing nests the lane under.
         gate_source: Where the gate in the lane's config came from, "" when it has none.
         limits: The turn cap and deadline the lane runs under; None for the config's own.
@@ -172,7 +172,7 @@ def bridge_spawner(
         )
     # The lane's own manifest records its lineage, so a parent death orphans nothing; the
     # gate's origin was resolved in the origin, where the repo signals are.
-    private = lane_launch.launch_dir(paths.state_dir(origin), fanout_id)
+    private = lane_launch.launch_dir(paths.state_dir(origin), group_id)
     try:
         config = worktrees.write_lane_config(
             cfg, spec, explicit_leaves=explicit_leaves, into=private
@@ -191,7 +191,7 @@ def bridge_spawner(
                 config=config.path,
                 notes=config.notes,
                 parent=parent,
-                group=fanout_id,
+                group=group_id,
                 lane=spec.lane,
                 gate_source=gate_source,
                 operator_task=operator_task,
@@ -330,7 +330,7 @@ def run_lane_to_completion(
             lane_away=lane_away,
             at=at,
             explicit_leaves=explicit_leaves,
-            fanout_id=group,
+            group_id=group,
             parent=parent,
             gate_source=gate_source,
             limits=limits,

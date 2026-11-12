@@ -80,7 +80,7 @@ A capable model loses no score to the 16k regime on these tasks; it pays in re-r
 
 ## Tools measured
 
-- `add_dependency`: unused by qwen and kimi across every session, including relay's strict chain; mistral-small-3.2 (decompose on) calls it unprompted, 1.7 edges per session on orchard-weekend and 0.3 on relay, with sensible investigate-first fan-outs. Kept: a weak-model affordance, free when unused.
+- `add_dependency`: unused by qwen and kimi across every session, including relay's strict chain; mistral-small-3.2 (decompose on) calls it unprompted, 1.7 edges per session on orchard-weekend and 0.3 on relay, with sensible investigate-first groups. Kept: a weak-model affordance, free when unused.
 - The orchard trap catches real behaviour: qwen hand-edits the generated `data/catalog.tsv`, tests around verify, finishes believing it is done (hidden score 0.889, the unfixed-seed signature) and root-causes it in session 2 when verify regenerates the file; kimi never falls in (8/8 sessions at 1.0); mistral-small falls in 3/3 and never recovers. With the store wiped the trap re-fires on the same model within one sequence (qwen fresh_state hand-edited the clearance feed in 2 of 6 session-3 reps, baseline in 0 of 6).
 - `trap_edits` matches the edit call's `path` when present; repeated hand-edit attempts each count, so a faller's session-1 count runs 4 to 6.
 

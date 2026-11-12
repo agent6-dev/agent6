@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 sessions` (list): the winner marker on fan-out compare winners."""
+"""`agent6 sessions` (list): the winner marker on compare winners."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def _run(runs: pathlib.Path, session_id: str, *, winner: bool | None = None) -> 
     )
 
 
-def test_runs_list_marks_the_fan_out_winner(
+def test_runs_list_marks_the_group_winner(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -44,7 +44,7 @@ def test_runs_list_marks_the_fan_out_winner(
     runs = common._runs_dir(repo)
     _run(runs, "fan-l1", winner=False)
     _run(runs, "fan-l2", winner=True)
-    _run(runs, "solo")  # a run outside any fan-out: no marker
+    _run(runs, "solo")  # a run outside any group: no marker
 
     assert sessions_cmds._cmd_list() == 0
     out = capsys.readouterr().out
@@ -610,8 +610,8 @@ def test_the_json_row_carries_the_journal_task(
     assert row["task"] == task
 
 
-def _fan_out(runs: pathlib.Path) -> None:
-    """A `run --parallel` fan-out as it lands: the parent's record and two lanes naming it."""
+def _group(runs: pathlib.Path) -> None:
+    """A `run --parallel` group as it lands: the parent's record and two lanes naming it."""
     _run(runs, "fan")
     (runs / "fan" / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
     for lane in (1, 2):
@@ -632,10 +632,10 @@ def _fan_out(runs: pathlib.Path) -> None:
         )
 
 
-def test_runs_list_folds_a_fan_outs_lanes_under_it(
+def test_runs_list_folds_a_groups_lanes_under_it(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fan-out is one row with its lane count; `--lanes` indents the lanes under it.
+    """A group is one row with its lane count; `--lanes` indents the lanes under it.
 
     The JSON row nests them always.
     """
@@ -643,7 +643,7 @@ def test_runs_list_folds_a_fan_outs_lanes_under_it(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    _fan_out(common._runs_dir(repo))
+    _group(common._runs_dir(repo))
 
     assert sessions_cmds._cmd_list() == 0
     out = capsys.readouterr().out
@@ -661,12 +661,12 @@ def test_runs_list_folds_a_fan_outs_lanes_under_it(
     assert all(lane["model_from_flag"] is True for lane in row["lanes"])
 
 
-def test_a_folded_fan_out_shows_its_groups_latest_activity(
+def test_a_folded_group_shows_its_latest_activity(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A folded fan-out sorts by and shows its group's latest activity.
+    """A folded group sorts by and shows its group's latest activity.
 
-    The parent's own journal is quiet for the whole fan-out.
+    The parent's own journal is quiet for the whole group.
     """
     import os
 
@@ -675,7 +675,7 @@ def test_a_folded_fan_out_shows_its_groups_latest_activity(
     repo.mkdir()
     monkeypatch.chdir(repo)
     runs = common._runs_dir(repo)
-    _fan_out(runs)
+    _group(runs)
     _run(runs, "solo")
     old, mid, new = 1_700_000_000, 1_700_003_600, 1_700_007_200
     os.utime(runs / "fan" / "logs.jsonl", (old, old))

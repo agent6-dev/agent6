@@ -70,7 +70,7 @@ def _print_lineage(manifest: sessions_manifest.SessionManifest) -> None:
 def _print_parallel_compare(
     manifest: sessions_manifest.SessionManifest, session_dir: pathlib.Path
 ) -> None:
-    """Print a lane's place in its fan-out; a no-op for any other run.
+    """Print a lane's place in its group; a no-op for any other run.
 
     The parent it nests under, then the compare outcome once there is one: its place,
     whether it won, judged or mechanical, and the judge's rationale.
@@ -131,7 +131,7 @@ def _print_lanes(
     lane_manifests: Mapping[str, sessions_manifest.SessionManifest],
     outcomes: Mapping[str, str],
 ) -> None:
-    """Print the fan-out line for a fan-out, the lane count otherwise, then one line per lane.
+    """Print the group line for a group, the lane count otherwise, then one line per lane.
 
     Args:
         manifest: The session's manifest.

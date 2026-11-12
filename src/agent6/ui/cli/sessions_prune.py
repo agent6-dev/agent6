@@ -222,7 +222,7 @@ def cmd_prune(*, delete_squashed: bool = False, config_paths: tuple[pathlib.Path
     """Delete what `git branch -d` can safely remove, and sweep the merged clones and worktrees.
 
     Run branches reachable-merged into HEAD go; squash-merged and unmerged ones are
-    reported. Fan-out clone dirs go when every lane branch tip exists in this repo; a clone
+    reported. Group clone dirs go when every lane branch tip exists in this repo; a clone
     holding any commit this repo lacks is kept whole. The worktree of a merged fork goes;
     an unmerged fork keeps its worktree, and an unstarted fork keeps its branch too.
     With `--delete-squashed`, branches and chain refs
@@ -310,7 +310,7 @@ def cmd_prune(*, delete_squashed: bool = False, config_paths: tuple[pathlib.Path
 def _sweep_workdirs(
     cwd: pathlib.Path, state: pathlib.Path, config_paths: tuple[pathlib.Path, ...]
 ) -> tuple[str, bool]:
-    """Sweep fan-out and machine clones and fork worktrees under `[git.worktree].base_dir`.
+    """Sweep group and machine clones and fork worktrees under `[git.worktree].base_dir`.
 
     Prints each keep and each worktree removal.
 
@@ -327,7 +327,7 @@ def _sweep_workdirs(
     except ConfigError as exc:
         print(f"[agent6] worktree sweep skipped (config unreadable: {exc})", file=sys.stderr)
         return "", False
-    clones_swept, clones_kept = worktrees.sweep_fanout_clones(
+    clones_swept, clones_kept = worktrees.sweep_group_clones(
         cwd,
         cfg,
         note_keep=lambda path, why: print(f"[agent6] kept clone group at {path} ({why})"),

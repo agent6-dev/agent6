@@ -1410,10 +1410,10 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
     assert "budget.update" in sink.types, "the squash spend never reached the log"
 
 
-def test_merge_adopts_an_orphaned_fanout_lane(
+def test_merge_adopts_an_orphaned_group_lane(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions merge` adopts an orphaned fan-out lane from its clone and lands it like any run.
+    """`sessions merge` adopts an orphaned lane from its clone and lands it like any run.
 
     A parent death leaves a finished lane's branch only in its clone; `sessions prune` then
     sweeps the clone dir.
@@ -1427,7 +1427,7 @@ def test_merge_adopts_an_orphaned_fanout_lane(
     _git(tmp_path, "commit", "-q", "-m", "init")
     base_sha = _git(tmp_path, "rev-parse", "HEAD")
 
-    # The lane clone as the spawner leaves it: workdir cache / repo-id / fanout / lane-1.
+    # The lane clone as the spawner leaves it: workdir cache / repo-id / group / lane-1.
     workdir = tmp_path / "cache" / "worktrees"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     (tmp_path / "cfg" / "agent6").mkdir(parents=True, exist_ok=True)
@@ -1476,7 +1476,7 @@ def test_merge_adopts_an_orphaned_fanout_lane(
     assert "imported orphaned lane branch agent6/fan-l1" in out
     assert (tmp_path / "work.txt").read_text(encoding="utf-8") == "lane work\n"
 
-    # Every lane commit is now in the origin: prune sweeps the fan-out dir.
+    # Every lane commit is now in the origin: prune sweeps the group dir.
     assert main(["sessions", "prune", "--delete-squashed"]) == 0
     out = capsys.readouterr().out
     assert "clone groups: swept 1" in out

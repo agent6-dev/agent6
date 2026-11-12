@@ -168,7 +168,7 @@ def test_write_manifest_bytes_fresh(tmp_path: pathlib.Path) -> None:
 
 
 def test_write_manifest_bytes_stamped_lane(tmp_path: pathlib.Path) -> None:
-    # Byte pin of a fully-stamped fan-out lane: fork lineage + merge stamp +
+    # Byte pin of a fully-stamped lane: fork lineage + merge stamp +
     # parallel lineage + placement, so every optional nested stamp's serialized
     # shape is frozen, not just the fresh subset.
     from agent6.app import stamps
@@ -178,7 +178,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: pathlib.Path) -> None:
         session_id="r-lane02",
         mode="run",
         start_ts="2026-07-16T00:00:00.000000+00:00",
-        user_task="fan-out lane",
+        user_task="lane",
         base_sha="1" * 40,
         base_branch="master",
         run_branch="agent6/r-lane02",

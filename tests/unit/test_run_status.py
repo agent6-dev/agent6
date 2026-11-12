@@ -578,10 +578,10 @@ def test_status_of_a_provider_failure_keeps_the_providers_error(
     assert f"status:     failed · provider error ({error})\n" in capsys.readouterr().out
 
 
-def test_status_shows_fan_out_compare_outcome(
+def test_status_shows_compare_outcome(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions show` prints where a lane placed in its fan-out, with the judge's rationale.
+    """`sessions show` prints where a lane placed in its group, with the judge's rationale.
 
     The JSON carries the raw compare block.
     """

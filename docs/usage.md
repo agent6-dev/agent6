@@ -134,7 +134,7 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 
 ### Parallel directive
 
-`/parallel [SPEC --] TASK` runs a task in isolated lanes, including as the first prompt to `agent6 run`, through the same fan-out as `run --parallel SPEC TASK`.
+`/parallel [SPEC --] TASK` runs a task in isolated lanes, including as the first prompt to `agent6 run`, through the same dispatch as `run --parallel SPEC TASK`.
 A lane is a child of the run that dispatched it: the parent hands down, the child pushes up, and the root is the one owner.
 The lane gets its config, task and remaining budget from its parent; its approvals, questions and spend go up to the parent while it runs; its work and memory reach the repository only when the parent imports it at its end.
 Its record is in the repository's state from its first event, so `sessions list --lanes`, `attach` and the hubs read a lane while it runs.
@@ -180,7 +180,7 @@ Their spend is included in the worker's total, not an extra charge, and their ev
 A lane that needs an approval, or waits on an `ask_user`, asks on the run that dispatched it: the prompt names the lane, and a standing answer given there covers the run's lanes.
 A question nobody answers on that run (`away mode deny`) returns `unanswered` to the lane with the same note; a question the lane queued (`wait: false`) stays on the lane's own row.
 A run interrupted while its lanes ran finishes that dispatch first when resumed: lanes still running are stopped, finished ones are imported and joined once, their spend is settled once, and the model hears the group's outcome before its first call.
-Every session that dispatched lanes shows them: `sessions show`, the hubs and `attach --json` list a run's lanes under it whether it is a `run --parallel` fan-out or a run that used `/parallel`, and the run's receipt carries a `Lanes` section (one line per lane: its join, its spend) with the spend the lanes added to the run's total named, so the total is read as inclusive.
+Every session that dispatched lanes shows them: `sessions show`, the hubs and `attach --json` list a run's lanes under it whether it is a `run --parallel` group or a run that used `/parallel`, and the run's receipt carries a `Lanes` section (one line per lane: its join, its spend) with the spend the lanes added to the run's total named, so the total is read as inclusive.
 The refusal names the lane session IDs.
 While a steer waits on disk, `sessions show`, the TUI header and the web session status show `steer queued, not yet delivered` with its text and the count waiting behind it.
 Steers sent while one waits queue in order and reach the model one per step; `abort`, `exit`, `/undo` and `detach` take the slot at once.

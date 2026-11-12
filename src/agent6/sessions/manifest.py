@@ -222,7 +222,7 @@ class IncludedRun(pydantic.BaseModel):
 
 
 class ParallelLineage(pydantic.BaseModel):
-    """A fan-out lane's place.
+    """A lane's place.
 
     Attributes:
         group: The group it was dispatched in: the parent's id for `run --parallel`,
@@ -241,7 +241,7 @@ class ParallelLineage(pydantic.BaseModel):
 
 
 class PlacementStamp(pydantic.BaseModel):
-    """A fan-out lane's auto-compare placement.
+    """A lane's auto-compare placement.
 
     Attributes:
         rank: The lane's place, 1 first.
@@ -335,8 +335,8 @@ class SessionManifest(pydantic.BaseModel):
         merged: The merge record, None until the run branch is merged.
         includes: The unmerged run this run took in under `dirty_tree = "include"`, stamped
             merged when this run lands; None when it took none, or more than that run's tip.
-        parallel: A fan-out lane's lineage, or None.
-        placement: A fan-out lane's rank and group reference, or None.
+        parallel: A lane's lineage, or None.
+        placement: A lane's rank and group reference, or None.
         comparison: The group's ranking and judge spend on its parent, or None.
     """
 

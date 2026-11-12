@@ -1062,8 +1062,8 @@ def test_merge_is_greyed_out_for_a_live_run(tmp_path: pathlib.Path) -> None:
     asyncio.run(scenario())
 
 
-def test_hub_folded_fan_out_shows_the_groups_latest_activity(tmp_path: pathlib.Path) -> None:
-    """A folded fan-out's row time is the group's latest activity, as `sessions list` shows it.
+def test_hub_folded_group_shows_its_latest_activity(tmp_path: pathlib.Path) -> None:
+    """A folded group's row time is the group's latest activity, as `sessions list` shows it.
 
     The parent's own journal is quiet while its lanes run.
     """
@@ -1104,7 +1104,7 @@ def test_hub_folded_fan_out_shows_the_groups_latest_activity(tmp_path: pathlib.P
             screen = app.screen
             assert isinstance(screen, tui_home.HomeScreen)
             table = screen.query_one("#sessions", widgets.DataTable)
-            assert table.row_count == 1  # folded: one row for the fan-out
+            assert table.row_count == 1  # folded: one row for the group
             assert str(table.get_row_at(0)[0]) == format.format_when(new)
 
     asyncio.run(scenario())
@@ -1252,8 +1252,8 @@ def test_prune_and_clear_asks_are_hub_actions_that_shell_the_cli(
     asyncio.run(scenario())
 
 
-def test_the_hub_folds_a_fan_outs_lanes_and_space_expands_them(tmp_path: pathlib.Path) -> None:
-    """A fan-out is one row with its lane count; Space lists its lanes, Space again folds."""
+def test_the_hub_folds_a_groups_lanes_and_space_expands_them(tmp_path: pathlib.Path) -> None:
+    """A group is one row with its lane count; Space lists its lanes, Space again folds."""
     import asyncio
 
     from textual import widgets

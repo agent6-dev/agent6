@@ -413,7 +413,7 @@ def unstarted_status(session_dir: pathlib.Path) -> tuple[str, str]:
     return "created", ""
 
 
-# Terminal without a session.stop: the fan-out's await accepts them so it cannot hang.
+# Terminal without a session.stop: the group's await accepts them so it cannot hang.
 DIED_WITHOUT_END = frozenset({"stale", "created", "parked", "unreadable", "?"})
 
 
@@ -422,14 +422,14 @@ def died_without_end(status: str) -> bool:
     return status in DIED_WITHOUT_END
 
 
-# A positive set: a new status word is not a result a fan-out may rank until it is listed.
+# A positive set: a new status word is not a result a group may rank until it is listed.
 RESULT_WORDS = frozenset({"passed", "finished", "stopped", "planned", "answered"})
 
 
 def produced_result(status: str) -> bool:
     """Return whether the status word means a deliberate end that left mergeable work.
 
-    Only such a lane is a fan-out compare candidate or joins a parent's branch.
+    Only such a lane is a compare candidate or joins a parent's branch.
 
     Args:
         status: The session's status word.

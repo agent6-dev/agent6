@@ -462,7 +462,7 @@ def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
     """The verb reviews any session by id, and the newest session across buckets without one.
 
     The review reads a journal, so it does not go through the git verbs' resolver, which refuses a
-    model-git run, a fan-out and a session with no manifest, and with no id picks the newest run
+    model-git run, a group and a session with no manifest, and with no id picks the newest run
     while a plan that just ended is newer.
     """
     import time

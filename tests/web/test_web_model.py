@@ -282,7 +282,7 @@ def test_plan_snapshot_carries_the_plan_md(tmp_path: pathlib.Path) -> None:
     assert "plan_md" not in session_snapshot(run)
 
 
-def test_hub_marks_the_fan_out_winner(tmp_path: pathlib.Path) -> None:
+def test_hub_marks_the_group_winner(tmp_path: pathlib.Path) -> None:
     d = _run(tmp_path, "lane-win", [{"type": "session.start", "mode": "run", "user_task": "t"}])
     (d / "manifest.json").write_text(
         json.dumps({"placement": {"rank": 1, "of": 2, "winner": True}}), encoding="utf-8"
@@ -1041,8 +1041,8 @@ reason = "routed"
     assert "sp.usd ||" not in line, f"a clean $0 is falsy and drops the figure: {line!r}"
 
 
-def test_hub_folds_a_fan_outs_lanes_under_its_row(tmp_path: pathlib.Path) -> None:
-    """The hub's session rows nest a fan-out's lanes under it, as `sessions list --json` prints."""
+def test_hub_folds_a_groups_lanes_under_its_row(tmp_path: pathlib.Path) -> None:
+    """The hub's session rows nest a group's lanes under it, as `sessions list --json` prints."""
     start: dict[str, object] = {"type": "session.start", "mode": "run", "user_task": "t"}
     end: dict[str, object] = {"type": "session.stop", "verification": "passed"}
     fan = _run(tmp_path, "fan", [start, end])

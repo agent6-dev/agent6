@@ -542,10 +542,10 @@ function listCard(title, entries, empty, paint) {
   return card;
 }
 
-// The fan-outs whose lanes the operator expanded, kept across the hub's repaints.
-const expandedFanouts = new Set();
+// The groups whose lanes the operator expanded, kept across the hub's repaints.
+const expandedGroups = new Set();
 
-// One session row; a fan-out's lanes (`r.lanes`, the server's nested rows)
+// One session row; a group's lanes (`r.lanes`, the server's nested rows)
 // fold under it behind a `lanes: N` line, and expand to the same rows indented.
 function taskTitle(parent, taskLine) {
   const [task, continued] = taskLine.split('\n');
@@ -567,7 +567,7 @@ function paintSession(r, it, g) {
   it.appendChild(pill(r.status_level, r.status_label)); // the server's one shared label + level
   // Review fills the new-work composer with `/review <branch>`; Merge lands the branch
   // as `sessions merge` does. Both need a finished run whose branch exists; Merge also
-  // needs commits no merge stamped. A fan-out has no branch of its own.
+  // needs commits no merge stamped. A group has no branch of its own.
   const live = LIVE_WORDS.includes(r.status);
   if (r.branch && !live) {
     const review = el('button', 'mini', 'Review');
@@ -588,11 +588,11 @@ function paintSession(r, it, g) {
   }
   const lanes = r.lanes || [];
   if (!lanes.length) return;
-  const open = expandedFanouts.has(r.session_id);
+  const open = expandedGroups.has(r.session_id);
   const toggle = el('button', 'lanes-toggle', `lanes: ${lanes.length} · ${open ? 'hide' : 'show'}`);
   toggle.onclick = (e) => {
     e.stopPropagation();
-    if (open) expandedFanouts.delete(r.session_id); else expandedFanouts.add(r.session_id);
+    if (open) expandedGroups.delete(r.session_id); else expandedGroups.add(r.session_id);
     for (const c of [...it.children]) if (c !== g) c.remove();
     g.innerHTML = '';
     paintSession(r, it, g);
@@ -946,7 +946,7 @@ function highlightCmd(text) {
 const STEER_COMMANDS = [
   ['/pin', 'pin an instruction that survives compaction: /pin <text>'],
   ['/compact', 'compact the context now; /compact <focus> steers the summary'],
-  ['/parallel', 'fan out lanes: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)'],
+  ['/parallel', 'dispatch lanes: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)'],
   ['/restate', 'restate the conversation since your last message (local, no model call)'],
   ['/review', 'review changes in this session: /review [TARGET] (a ref or A..B or A...B)'],
   ['/undo', 'fork back to before your last message (the text returns to edit and resend)'],

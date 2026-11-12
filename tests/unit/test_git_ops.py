@@ -692,10 +692,10 @@ def test_restore_stash_raced_drop_puts_the_bystander_back(
 def test_find_stash_does_not_prefix_match_another_runs_stash(tmp_path: pathlib.Path) -> None:
     """The stash lookup matches the pushed message exactly: `-l1` is a prefix of `-l10`."""
     _init_repo(tmp_path)
-    _stash_change(tmp_path, "one.txt", "lane l1 work\n", git_ops.auto_stash_message("fanout-l1"))
+    _stash_change(tmp_path, "one.txt", "lane l1 work\n", git_ops.auto_stash_message("group-l1"))
     # newer: listed first
-    _stash_change(tmp_path, "ten.txt", "lane l10 work\n", git_ops.auto_stash_message("fanout-l10"))
-    entry = git_read.find_stash(tmp_path, git_ops.auto_stash_message("fanout-l1"))
+    _stash_change(tmp_path, "ten.txt", "lane l10 work\n", git_ops.auto_stash_message("group-l10"))
+    entry = git_read.find_stash(tmp_path, git_ops.auto_stash_message("group-l1"))
     assert entry is not None
     assert entry.ref == "stash@{1}"  # the l1 stash, not the newer l10 one
 

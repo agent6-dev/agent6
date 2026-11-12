@@ -58,7 +58,7 @@ _COMPLETED: dict[str, tuple[_Gate, ...]] = {
     "lanes_ranked": _ANY_GATE,
 }
 # Exit codes another owner decides: `execution` for the operator's undo and detach, the
-# fan-out for its own verdict, and the CLI for a refused sandbox and a closed output pipe.
+# group for its own verdict, and the CLI for a refused sandbox and a closed output pipe.
 _OTHER_EXITS: dict[str, dict[int, list[str]]] = {
     "undone": {0: []},
     "detached": {0: []},

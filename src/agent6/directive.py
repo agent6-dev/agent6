@@ -347,7 +347,7 @@ STEER_COMMANDS: dict[str, str] = {
     "/pin": "pin an instruction that survives compaction: /pin <text>",
     "/compact": "compact the context now; /compact <focus> steers the summary",
     "/parallel": (
-        "fan out lanes: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)"
+        "dispatch lanes: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)"
     ),
     "/restate": "restate the conversation since your last message (local, no model call)",
     "/review": "review changes in this session: /review [TARGET] (a ref or A..B or A...B)",

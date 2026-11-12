@@ -200,7 +200,7 @@ def draft_dir_paths(cwd: pathlib.Path) -> list[pathlib.Path]:
 
 
 def _list_sessions(cwd: pathlib.Path) -> list[listing.SummaryRow]:
-    """Return every session the hub lists, newest first, a fan-out's lanes under its row."""
+    """Return every session the hub lists, newest first, a group's lanes under its row."""
     rows, winners = listing.rows_for(cwd)
     return [listing.row_json(r, winners=winners) for r in rows]
 

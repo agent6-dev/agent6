@@ -35,7 +35,7 @@ from agent6.viewmodel.session import status as session_status
 
 # The run stopped at its budget; resumable from its snapshot once the cap is raised.
 _EXIT_BUDGET_EXHAUSTED = 3
-# The agent finished but the gate was red, or unverified under a harness gate; the fan-out and a
+# The agent finished but the gate was red, or unverified under a harness gate; the group and a
 # BLOCK verdict too.
 EXIT_VERIFY_FAILED = 4
 # The agent finished green but no commit landed and the edits sit uncommitted.

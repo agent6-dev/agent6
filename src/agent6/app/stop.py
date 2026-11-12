@@ -6,14 +6,14 @@ A stop now writes both bridges the loop reads (the abort steer cuts a model call
 the stop marker, written with its `now` urgency, breaks a command or approval wait), then
 waits for the run to end. A worker that has not ended by then is not reading requests: it and
 the background commands it started on the host get SIGTERM, then SIGKILL after a grace, and
-the jail's children die with it. A run's worker and a fan-out's parent take the
+the jail's children die with it. A run's worker and a group's parent take the
 SIGTERM as a Ctrl-C stop and journal their end; resume continues a run.
 A request-only stop writes both bridges without waiting for or signalling the worker.
 ACP cancel uses this form because its server is the worker. A stop after the step writes
 the plain marker alone, so the step's command finishes and its tool results and auto-commit
 land first.
 
-A fan-out's stop ends its live lanes first, then the parent, which imports and ranks what
+A group's stop ends its live lanes first, then the parent, which imports and ranks what
 the lanes landed before it ends; that drain gets a longer wait.
 """
 
@@ -48,7 +48,7 @@ class StopOutcome:
             were stopped), `not_live` (nothing to stop) or `failed` (a request could not be
             written).
         message: The line every surface shows.
-        resumable: `agent6 resume` continues it (a fan-out has no loop to resume).
+        resumable: `agent6 resume` continues it (a group has no loop to resume).
     """
 
     session_id: str
