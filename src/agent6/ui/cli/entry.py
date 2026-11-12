@@ -709,7 +709,16 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
     if args.sessions_command == "commits":
         return sessions_cmds._cmd_commits(session_id=args.session_id)
     if args.sessions_command == "prune":
-        if args.older_than is not None:
+        if args.older_than is not None and not args.history:
+            common.error("--older-than DAYS prunes session history, not git data; add --history")
+            return 2
+        if args.history:
+            if args.older_than is None:
+                common.error("--history needs --older-than DAYS")
+                return 2
+            if args.delete_squashed:
+                common.error("--delete-squashed is git cleanup; it does not combine with --history")
+                return 2
             from agent6.app import session_prune
 
             return session_prune.prune_artifacts(

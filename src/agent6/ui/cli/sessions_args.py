@@ -247,37 +247,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         ),
     )
 
-    sessions_prune = common._sub(
-        sessions_sub,
-        "prune",
-        help=(
-            "Clean up merged session git data. Delete safe-to-remove agent6/* branches,"
-            " internal commit references whose recorded targets contain their work, parallel"
-            " clones whose commits are present, and the worktrees of sessions that are merged"
-            " or hold no work. Keep unstarted forks. Report kept clones with their paths and"
-            " reasons."
-        ),
-    ).add_mutually_exclusive_group()
-    sessions_prune.add_argument(
-        "--older-than",
-        type=int,
-        metavar="DAYS",
-        help=(
-            "Instead prune transcripts, checkpoints and objects of finished sessions whose last"
-            " execution ended more than DAYS ago. Keep recovery state, journals, receipts and"
-            " git data. DAYS must be nonnegative. Nothing is deleted automatically."
-        ),
-    )
-    sessions_prune.add_argument(
-        "--delete-squashed",
-        action="store_true",
-        help=(
-            "Also force-delete branches and internal commit references whose session records"
-            " prove a squash merge remains on the recorded target. git's safe deletion rejects"
-            " these. Each deletion prints a recovery command."
-        ),
-    )
-
+    _add_prune_parser(sessions_sub)
     sessions_tr = common._sub(
         sessions_sub,
         "transcript",
@@ -322,5 +292,45 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         completers._complete_session_ids,
         help_text=(
             "Session id or unambiguous prefix; omit for the newest session with a graph directory."
+        ),
+    )
+
+
+def _add_prune_parser(sessions_sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Add `sessions prune`: git cleanup by default, session history with `--history`."""
+    sessions_prune = common._sub(
+        sessions_sub,
+        "prune",
+        help=(
+            "Clean up merged session git data. Delete safe-to-remove agent6/* branches,"
+            " internal commit references whose recorded targets contain their work, parallel"
+            " clones whose commits are present, and the worktrees of sessions that are merged"
+            " or hold no work. Keep unstarted forks. Report kept clones with their paths and"
+            " reasons. With --history --older-than DAYS, prune session history instead."
+        ),
+    )
+    sessions_prune.add_argument(
+        "--history",
+        action="store_true",
+        help=(
+            "Prune session history, not git data: with --older-than DAYS, delete the"
+            " transcripts, checkpoints and objects of finished sessions whose last execution"
+            " ended more than DAYS ago. Keep recovery state, journals, receipts and git data."
+            " Nothing is deleted automatically."
+        ),
+    )
+    sessions_prune.add_argument(
+        "--older-than",
+        type=int,
+        metavar="DAYS",
+        help="The age, in days, --history prunes beyond; nonnegative.",
+    )
+    sessions_prune.add_argument(
+        "--delete-squashed",
+        action="store_true",
+        help=(
+            "Also force-delete branches and internal commit references whose session records"
+            " prove a squash merge remains on the recorded target. git's safe deletion rejects"
+            " these. Each deletion prints a recovery command."
         ),
     )

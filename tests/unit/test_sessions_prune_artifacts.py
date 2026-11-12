@@ -76,7 +76,7 @@ def test_prune_artifacts_keeps_recovery_and_records_counts_and_sequence(
         if p.is_file() and p.parent.name not in names
     }
     before = datetime.datetime.now(datetime.UTC)
-    assert main(["sessions", "prune", "--older-than", "7"]) == 0
+    assert main(["sessions", "prune", "--history", "--older-than", "7"]) == 0
     assert all(not (layout.session_dir / name).exists() for name in names)
     assert {p: p.read_bytes() for p in kept} == kept
     receipt = json.loads((layout.session_dir / "pruned.json").read_text())
@@ -101,7 +101,7 @@ def test_prune_artifacts_keeps_recovery_and_records_counts_and_sequence(
     assert main(["sessions", "transcript", layout.session_id, "--json", "--seq", "3"]) == 0
     captured = capsys.readouterr()
     assert stamp in captured.err and json.loads(captured.out)[0]["seq"] == 3
-    assert main(["sessions", "prune", "--older-than", "7"]) == 0
+    assert main(["sessions", "prune", "--history", "--older-than", "7"]) == 0
     assert (
         provider_types.TranscriptSink(layout.transcripts_dir, objects_dir=layout.objects_dir)
         .open(request_headers={}, request_body={})
@@ -141,7 +141,7 @@ def test_prune_uses_last_execution_end_across_buckets_and_respects_writer_lock(
     fd = lock.acquire_single_writer(held.session_dir)
     assert fd is not None
     try:
-        assert main(["sessions", "prune", "--older-than", "7"]) == 0
+        assert main(["sessions", "prune", "--history", "--older-than", "7"]) == 0
     finally:
         lock.release_single_writer(fd)
     assert not old.transcripts_dir.exists()
@@ -156,5 +156,31 @@ def test_prune_rejects_negative_age(
     """A negative age cannot turn a retention request into deletion of every finished run."""
     monkeypatch.chdir(tmp_path)
     layout = _session(tmp_path, "recent-run", age=1)
-    assert main(["sessions", "prune", "--older-than", "-1"]) == 2
+    assert main(["sessions", "prune", "--history", "--older-than", "-1"]) == 2
+    assert layout.transcripts_dir.is_dir()
+
+
+@pytest.mark.parametrize(
+    ("argv", "said"),
+    [
+        (["--older-than", "7"], "add --history"),
+        (["--history"], "--history needs --older-than DAYS"),
+        (
+            ["--history", "--older-than", "7", "--delete-squashed"],
+            "does not combine with --history",
+        ),
+    ],
+)
+def test_history_pruning_needs_both_flags_and_no_git_flag(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    said: str,
+) -> None:
+    """A bare `--older-than` once switched prune from git cleanup to deleting history."""
+    monkeypatch.chdir(tmp_path)
+    layout = _session(tmp_path, "old-run", age=10)
+    assert main(["sessions", "prune", *argv]) == 2
+    assert said in capsys.readouterr().err
     assert layout.transcripts_dir.is_dir()
