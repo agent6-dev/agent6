@@ -38,9 +38,8 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 from agent6 import paths
 from agent6.app import fork, reporter, stop, undo
 from agent6.models import choices
-from agent6.sessions import ipc, layout, process
+from agent6.sessions import ipc, layout, process, shells
 from agent6.sessions import manifest as sessions_manifest
-from agent6.tools import background
 from agent6.ui import directive_actions, spawn
 from agent6.ui.tui import composer, conversation, dashboard, modals, prompts, theme
 from agent6.vcs import git_read
@@ -465,7 +464,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
     def _show_shells(self) -> None:
         """Show the background commands."""
         self.push_screen(
-            modals.TextModal("background commands", background.shells_text(self.session_dir))
+            modals.TextModal("background commands", shells.shells_text(self.session_dir))
         )
 
     def _typed_stop(self) -> None:

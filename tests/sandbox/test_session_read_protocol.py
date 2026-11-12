@@ -7,6 +7,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.sandbox import jail, jail_session
+from agent6.sessions import shells as session_shells
 from agent6.tools import background
 
 
@@ -117,7 +118,9 @@ def test_invalid_read_keeps_its_reason_after_status_and_stop_fail(
             record = json.loads((tmp_path / "state" / view.id / "result.json").read_text())
             assert "invalid background read" in record["error"]
             assert "invalid background read" in record["capture_error"]
-            assert "invalid background read" in background.roster_from_dir(tmp_path / "state")[0]
+            assert (
+                "invalid background read" in session_shells.roster_from_dir(tmp_path / "state")[0]
+            )
         assert session._proc.poll() is not None  # pyright: ignore[reportPrivateUsage]
     finally:
         shells.stop_all()

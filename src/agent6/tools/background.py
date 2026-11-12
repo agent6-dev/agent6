@@ -22,16 +22,13 @@ from collections.abc import Callable
 
 from agent6 import kinds, paths, terminal
 from agent6.sandbox import jail, jail_jobs, jail_session
-from agent6.sessions import process
+from agent6.sessions import shells
 
 # Host records are not granted to commands. Reads and writes retain the opened descriptor.
 _LOG_ROOT = "logs"
 _LOG_NAME = "out.log"
 # Tail rendering reads at most 1 MiB from the host copy.
 _TAIL_BYTES = 1 << 20
-# Written at start so `/shells` and a dashboard read the roster off disk without the dispatcher.
-SHELLS_DIR = "shells"  # under the session dir
-_META_NAME = "meta.json"
 
 
 # (argv, extra read-write paths) -> the sandbox policy; the dispatcher owns policy construction.
@@ -83,11 +80,6 @@ class _Shell:
     output_error: str = ""
 
 
-def _seq_of(name: str) -> int:
-    """Return the N in a `bg<N>` directory name, 0 for any other name."""
-    return int(name[2:]) if name.startswith("bg") and name[2:].isdigit() else 0
-
-
 def _highest_shell_seq(root: pathlib.Path) -> int:
     """Return the largest `bg<N>` already recorded under the root, or 0.
 
@@ -104,7 +96,7 @@ def _highest_shell_seq(root: pathlib.Path) -> int:
     for directory in (root, root / _LOG_ROOT):
         with contextlib.suppress(OSError):
             for entry in directory.iterdir():
-                highest = max(highest, _seq_of(entry.name))
+                highest = max(highest, shells.seq_of(entry.name))
     return highest
 
 
@@ -227,7 +219,7 @@ class BackgroundShells:
         Raises:
             BackgroundError: The record could not be written.
         """
-        meta = shell.dir / _META_NAME
+        meta = shell.dir / shells.META_NAME
         try:
             meta.write_text(
                 json.dumps(
@@ -458,7 +450,7 @@ class BackgroundShells:
     def _get(self, shell_id: str) -> _Shell:
         shell = self._shells.get(shell_id)
         if shell is None:
-            if 0 < _seq_of(shell_id) <= self._earlier:
+            if 0 < shells.seq_of(shell_id) <= self._earlier:
                 raise BackgroundError(
                     f"{shell_id} was started by an earlier execution of this run and ended with it"
                 )
@@ -484,100 +476,3 @@ class BackgroundShells:
         if status.returncode is None:
             return ShellView(shell.id, shell.command, "died", None, detail)
         return ShellView(shell.id, shell.command, "exited", status.returncode, detail)
-
-
-def shells_text(session_dir: pathlib.Path) -> str:
-    """Return the roster as one block for a text view, or a line saying there is none."""
-    return "\n".join(roster_from_dir(session_dir / SHELLS_DIR)) or "no background commands this run"
-
-
-def shell_host_processes(root: pathlib.Path) -> list[process.ProcessIdentity]:
-    """Return the live host processes the run's background commands recorded.
-
-    Only historical host-process records carry these identities. Supervisor-owned
-    jobs record no command pid. A stale record cannot target a recycled pid.
-
-    Args:
-        root: The run's shells dir.
-
-    Returns:
-        Each live process's pid and start time.
-    """
-    if not root.is_dir():
-        return []
-    processes: list[process.ProcessIdentity] = []
-    try:
-        directories = sorted(root.iterdir())
-    except OSError:
-        return []
-    for d in directories:
-        try:
-            meta = json.loads((d / _META_NAME).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        pid = meta.get("pid") if isinstance(meta, dict) else None
-        started = meta.get("pid_start") if isinstance(meta, dict) else None
-        if type(pid) is int and pid > 0 and isinstance(started, str):
-            identity = (pid, started)
-            if process.process_is_alive(identity):
-                processes.append(identity)
-    return processes
-
-
-def roster_from_dir(root: pathlib.Path) -> list[str]:
-    """Return the run's background commands as lines, read off disk.
-
-    For surfaces in another process: liveness needs the owning process, so this reports what
-    each command was and how it ended, and says when it cannot tell.
-
-    Args:
-        root: The run's shells dir.
-
-    Returns:
-        One line per recorded command, in `bg<N>` order.
-    """
-    if not root.is_dir():
-        return []
-    lines: list[str] = []
-    # By sequence: as text, bg10 sorts ahead of bg2.
-    try:
-        directories = sorted(root.iterdir(), key=lambda p: (_seq_of(p.name), p.name))
-    except OSError:
-        return []
-    for d in directories:
-        if not d.is_dir():
-            continue
-        try:
-            meta = json.loads((d / _META_NAME).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        if not isinstance(meta, dict):
-            continue
-        command = str(meta.get("command", ""))
-        try:
-            raw = (d / "result.json").read_text(errors="replace").strip()
-        except OSError:
-            raw = ""
-        if not raw:
-            lines.append(f"[{d.name}] still running (or the run that owns it ended): {command}")
-            continue
-        record: object = None
-        with contextlib.suppress(ValueError, IndexError):
-            record = json.loads(raw.splitlines()[-1])
-        if not isinstance(record, dict):
-            lines.append(f"[{d.name}] ended without a result: {command}")
-            continue
-        errors = "; ".join(
-            dict.fromkeys(str(record[key]) for key in ("error", "capture_error") if record.get(key))
-        )
-        code = record.get("returncode")
-        if isinstance(code, int):
-            detail = f" -- {errors}" if errors else ""
-            lines.append(f"[{d.name}] exited {code}: {command}{detail}")
-        elif record.get("stopped"):
-            # Historical records can carry a stop without an observed exit code.
-            lines.append(f"[{d.name}] stopped: {command}")
-        else:
-            ending = f"outcome unknown ({errors})" if errors else "ended without a result"
-            lines.append(f"[{d.name}] {ending}: {command}")
-    return lines

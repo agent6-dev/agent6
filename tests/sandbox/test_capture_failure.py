@@ -10,6 +10,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.sandbox import jail, jail_session
+from agent6.sessions import shells as session_shells
 from agent6.tools import background
 
 
@@ -75,7 +76,7 @@ def test_launcher_capture_failure_is_visible_before_stop(
             assert ended.state == "exited" and ended.returncode == 0
             assert "output incomplete" in output and "File too large" in output
             assert "File too large" in ended.detail
-            replay = background.roster_from_dir(tmp_path / "shells")
+            replay = session_shells.roster_from_dir(tmp_path / "shells")
             assert "exited 0" in replay[0] and "File too large" in replay[0]
         if lose_worker:
             pid = session._proc.pid  # pyright: ignore[reportPrivateUsage]
@@ -92,7 +93,7 @@ def test_launcher_capture_failure_is_visible_before_stop(
         lost, output = shells.read(view.id, tail_lines=10)
         code = 0 if observe_exit else None
         assert lost.returncode == code and "output incomplete" in output
-        replay = background.roster_from_dir(tmp_path / "shells")[0]
+        replay = session_shells.roster_from_dir(tmp_path / "shells")[0]
         assert ("exited 0" if observe_exit else "outcome unknown") in replay
         for detail in (lost.detail, output, replay):
             assert "File too large" in detail and reason in detail
@@ -106,7 +107,7 @@ def test_launcher_capture_failure_is_visible_before_stop(
         if observe_exit:
             assert after["capture_error"] == record["capture_error"]
         stopped = shells.roster()[0]
-        replay = background.roster_from_dir(tmp_path / "shells")[0]
+        replay = session_shells.roster_from_dir(tmp_path / "shells")[0]
         for detail in (stopped.detail, replay):
             assert "File too large" in detail and reason in detail
     finally:

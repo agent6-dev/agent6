@@ -27,8 +27,7 @@ import signal
 import time
 
 from agent6.sandbox import jail
-from agent6.sessions import ipc, layout, manifest, process
-from agent6.tools import background
+from agent6.sessions import ipc, layout, manifest, process, shells
 from agent6.viewmodel import listing, session_is_live, session_status, summarize_session_dir
 
 STOP_WAIT_S = 5.0  # a run that reads its requests ends within this
@@ -227,7 +226,7 @@ def _kill(
         targets.append(worker)
     commands = [
         identity
-        for identity in background.shell_host_processes(session_dir / background.SHELLS_DIR)
+        for identity in shells.shell_host_processes(session_dir / shells.SHELLS_DIR)
         if identity[0] != me and process.process_is_alive(identity)
     ]
     targets.extend(commands)

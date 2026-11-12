@@ -23,6 +23,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.sandbox import jail, jail_jobs, jail_session
+from agent6.sessions import shells as session_shells
 from agent6.tools import background
 
 pytestmark = pytest.mark.needs_namespaces
@@ -267,16 +268,16 @@ def test_the_roster_is_readable_from_another_process(
     done = shells.start(("/bin/sh", "-c", "exit 5"), _policy_for(tmp_path))
     assert _wait_state(shells, done.id, "exited") == "exited"
 
-    lines = background.roster_from_dir(tmp_path / "shells")
+    lines = session_shells.roster_from_dir(tmp_path / "shells")
     assert any(f"[{done.id}] exited 5" in line and "exit 5" in line for line in lines)
     assert any(f"[{live.id}] still running" in line for line in lines)
     shells.stop_all()
 
 
 def test_an_empty_or_missing_dir_is_not_an_error(tmp_path: pathlib.Path) -> None:
-    assert background.roster_from_dir(tmp_path / "nope") == []
+    assert session_shells.roster_from_dir(tmp_path / "nope") == []
     (tmp_path / "empty").mkdir()
-    assert background.roster_from_dir(tmp_path / "empty") == []
+    assert session_shells.roster_from_dir(tmp_path / "empty") == []
 
 
 @pytest.mark.parametrize("isolation", ["full", "partial"])
@@ -325,7 +326,7 @@ def test_a_command_cannot_forge_its_own_exit_code_or_name(
     after = next(v for v in shells.roster() if v.id == view.id)
     assert after.returncode == 42  # not the 0 it wrote
     assert after.command == shlex.join(argv)  # not the name it wrote
-    assert any("exited 42" in line for line in background.roster_from_dir(tmp_path / "shells"))
+    assert any("exited 42" in line for line in session_shells.roster_from_dir(tmp_path / "shells"))
     # The trail lives in the shell dir the command was never granted, so its
     # result.json carries the real 42 and no forged returncode=0 reached it.
     # BY ID, never next(iterdir()): the shells root also holds the logs/
@@ -496,7 +497,6 @@ def test_a_command_that_failed_to_start_is_not_listed_as_running(
     meta.json is what the out-of-process surfaces read; written before the start attempt, it
     listed the command as running while the roster and read_background knew no such id.
     """
-    from agent6.tools import background as bg
 
     def refuses(*_a: object, **_k: object) -> jail_jobs.SessionJob:
         raise jail.JailUnavailableError("no launcher today")
@@ -508,7 +508,9 @@ def test_a_command_that_failed_to_start_is_not_listed_as_running(
     with pytest.raises(background.BackgroundError):
         shells.start(("/bin/true",), _policy_for(tmp_path))
     assert shells.roster() == []
-    assert bg.roster_from_dir(root) == [], "a command that never started is listed on disk"
+    assert session_shells.roster_from_dir(root) == [], (
+        "a command that never started is listed on disk"
+    )
 
 
 def test_background_jobs_need_no_host_proc_scan(
@@ -546,7 +548,7 @@ def test_an_unsandboxed_commands_exit_code_reaches_another_process(tmp_path: pat
     live = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path, "none"))
     try:
         assert _wait_state(shells, done.id, "exited") == "exited"
-        lines = background.roster_from_dir(tmp_path / "shells")
+        lines = session_shells.roster_from_dir(tmp_path / "shells")
         assert any(f"[{done.id}] exited 42" in line for line in lines), lines
         assert any(f"[{live.id}] still running" in line for line in lines), lines
     finally:
@@ -559,7 +561,7 @@ def test_a_stopped_unsandboxed_command_records_its_ending(tmp_path: pathlib.Path
     view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path, "none"))
     assert _wait_state(shells, view.id, "running") == "running"
     shells.stop(view.id)
-    lines = background.roster_from_dir(tmp_path / "shells")
+    lines = session_shells.roster_from_dir(tmp_path / "shells")
     assert not any("still running" in line for line in lines), lines
 
 
@@ -570,7 +572,7 @@ def test_a_stopped_jailed_command_records_its_ending(
     view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
     assert _wait_state(shells, view.id, "running") == "running"
     shells.stop(view.id)
-    lines = background.roster_from_dir(tmp_path / "shells")
+    lines = session_shells.roster_from_dir(tmp_path / "shells")
     assert not any("still running" in line for line in lines), lines
     assert any(f"[{view.id}] exited 137" in line for line in lines), lines
 
@@ -586,7 +588,7 @@ def test_stopping_an_already_exited_command_keeps_its_exit_code(
     view = shells.start(("/bin/sh", "-c", "exit 42"), _policy_for(tmp_path))
     assert _wait_state(shells, view.id, "exited") == "exited"
     shells.stop_all()
-    lines = background.roster_from_dir(tmp_path / "shells")
+    lines = session_shells.roster_from_dir(tmp_path / "shells")
     assert any(f"[{view.id}] exited 42" in line for line in lines), lines
 
 
@@ -604,12 +606,12 @@ def test_settle_records_an_ending_nobody_asked_about(
         shells.settle()
         if any(
             f"[{done.id}] exited 7" in line
-            for line in background.roster_from_dir(tmp_path / "shells")
+            for line in session_shells.roster_from_dir(tmp_path / "shells")
         ):
             return
         time.sleep(0.05)
     pytest.fail(
-        f"settle never recorded the ending: {background.roster_from_dir(tmp_path / 'shells')}"
+        f"settle never recorded the ending: {session_shells.roster_from_dir(tmp_path / 'shells')}"
     )
 
 
@@ -646,7 +648,8 @@ def test_stopping_an_already_exited_command_still_reads_exited(tmp_path: pathlib
     assert (stopped.state, stopped.returncode) == ("exited", 7), stopped
     assert [v.state for v in shells.roster()] == ["exited"]
     assert any(
-        f"[{view.id}] exited 7" in line for line in background.roster_from_dir(tmp_path / "shells")
+        f"[{view.id}] exited 7" in line
+        for line in session_shells.roster_from_dir(tmp_path / "shells")
     )
 
 
@@ -660,7 +663,7 @@ def test_the_disk_roster_is_in_start_order(tmp_path: pathlib.Path) -> None:
         ]
         listed = [
             line.split("]")[0].lstrip("[")
-            for line in background.roster_from_dir(tmp_path / "shells")
+            for line in session_shells.roster_from_dir(tmp_path / "shells")
         ]
         assert listed == started, listed
     finally:

@@ -17,6 +17,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.sandbox import jail, jail_session
+from agent6.sessions import shells as session_shells
 from agent6.tools import background
 
 
@@ -351,7 +352,7 @@ def test_client_loss_persists_unknown_not_an_invented_completion(tmp_path: pathl
         assert view.returncode is None and view.state == "died"
         record = json.loads((tmp_path / "shells/bg1/result.json").read_text())
         assert record["returncode"] is None and record["error"]
-        assert "unknown" in background.roster_from_dir(tmp_path / "shells")[0]
+        assert "unknown" in session_shells.roster_from_dir(tmp_path / "shells")[0]
     finally:
         shells.stop_all()
         session.close()

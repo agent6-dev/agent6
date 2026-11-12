@@ -356,6 +356,7 @@ banned-from = [
     "agent6.sessions.objects",
     "agent6.sessions.process",
     "agent6.sessions.retention",
+    "agent6.sessions.shells",
     "agent6.task_text",
     "agent6.terminal",
     "agent6.tools.arguments",

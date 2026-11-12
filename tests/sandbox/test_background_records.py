@@ -13,6 +13,7 @@ from agent6 import config, kinds, paths
 from agent6.app import session_runtime
 from agent6.sandbox import jail_session
 from agent6.sessions import layout
+from agent6.sessions import shells as session_shells
 from agent6.tools import background, dispatch
 
 
@@ -71,7 +72,7 @@ def test_loss_after_confirmed_stop_preserves_exit_and_records_missing_output(
         assert shell.job.stop() == ""
         shells.stop_all()
         assert json.loads((shell.dir / "result.json").read_text()) == record
-        replay = background.roster_from_dir(tmp_path / "state")
+        replay = session_shells.roster_from_dir(tmp_path / "state")
         assert "exited 0" in replay[0] and record["capture_error"] in replay[0]
     finally:
         shells.stop_all()
@@ -160,7 +161,7 @@ def test_dispatcher_adoption_does_not_grant_host_records(
             ).to_wire()
             assert started["background_id"] == "bg1" and started["still_running"]
             tools.dispatch("stop_background", {"id": "bg1"})
-            root = session_dir / background.SHELLS_DIR
+            root = session_dir / session_shells.SHELLS_DIR
             records = [root / "logs/bg1/out.log", root / "bg1/meta.json", root / "bg1/result.json"]
             saved = [p.read_bytes() for p in records]
             assert b"adopted" in saved[0]

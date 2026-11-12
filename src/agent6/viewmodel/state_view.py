@@ -16,9 +16,8 @@ import pathlib
 from typing import Any
 
 from agent6.models import registry
-from agent6.sessions import ipc, process
+from agent6.sessions import ipc, process, shells
 from agent6.sessions import manifest as sessions_manifest
-from agent6.tools import background
 from agent6.viewmodel import events, format, listing, policy, review, session_status, state_types
 from agent6.viewmodel import state as session_fold
 
@@ -226,7 +225,7 @@ def session_state_as_dict(
         d["policy"] = policy.manifest_policy(manifest, target=state.targets.current).line()
         d["ports"] = process.listening_ports(session_dir)
         # On every frame: the run view streams from this dict.
-        d["shells"] = background.roster_from_dir(session_dir / background.SHELLS_DIR)
+        d["shells"] = shells.roster_from_dir(session_dir / shells.SHELLS_DIR)
         if d["mode"] == "plan":
             with contextlib.suppress(OSError):
                 d["plan_md"] = (session_dir / "plan.md").read_text(encoding="utf-8")

@@ -19,6 +19,7 @@ from agent6 import kinds
 from agent6.app import stop
 from agent6.sandbox import jail
 from agent6.sessions import ipc, process
+from agent6.sessions import shells as session_shells
 from agent6.tools import background
 
 _ANSWERING_WORKER = """
@@ -204,7 +205,7 @@ def test_a_started_shell_records_no_host_signal_authority(tmp_path: pathlib.Path
         view = shells.start(("/bin/sh", "-c", "sleep 60"), policy_for)
         meta = json.loads((tmp_path / "shells" / view.id / "meta.json").read_text(encoding="utf-8"))
         assert "pid" not in meta and "pid_start" not in meta
-        assert background.shell_host_processes(tmp_path / "shells") == []
+        assert session_shells.shell_host_processes(tmp_path / "shells") == []
     finally:
         shells.stop_all()
 
@@ -220,7 +221,7 @@ def test_a_gone_shell_pid_is_ignored(tmp_path: pathlib.Path) -> None:
     )
     proc.terminate()
     proc.wait(timeout=3.0)
-    assert background.shell_host_processes(tmp_path / "shells") == []
+    assert session_shells.shell_host_processes(tmp_path / "shells") == []
 
 
 def test_a_namespace_local_shell_has_no_host_target(tmp_path: pathlib.Path) -> None:
@@ -230,7 +231,7 @@ def test_a_namespace_local_shell_has_no_host_target(tmp_path: pathlib.Path) -> N
         json.dumps({"id": "bg1", "command": "sleep 60", "pid": None, "pid_start": None}),
         encoding="utf-8",
     )
-    assert background.shell_host_processes(tmp_path / "shells") == []
+    assert session_shells.shell_host_processes(tmp_path / "shells") == []
 
 
 def test_a_stop_does_not_kill_a_worker_from_a_new_resume(tmp_path: pathlib.Path) -> None:

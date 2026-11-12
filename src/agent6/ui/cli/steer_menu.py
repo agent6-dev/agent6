@@ -22,8 +22,8 @@ from agent6 import budget, directive, paths
 from agent6.config import layer
 from agent6.context import skills as agent6_skills
 from agent6.graph import order
-from agent6.sessions import ipc, layout, manifest
-from agent6.tools import background, schema
+from agent6.sessions import ipc, layout, manifest, shells
+from agent6.tools import schema
 from agent6.ui import directive_actions
 from agent6.ui.cli import common, menu_input
 from agent6.viewmodel import (
@@ -248,7 +248,7 @@ BtwRunner = Callable[[str, pathlib.Path], tuple[bool, str]]
 
 def _print_shells(session_dir: pathlib.Path) -> None:
     """Print the run's background commands, read off disk like every other surface."""
-    lines = background.roster_from_dir(session_dir / background.SHELLS_DIR)
+    lines = shells.roster_from_dir(session_dir / shells.SHELLS_DIR)
     if not lines:
         print("[agent6] no background commands this run")
         return

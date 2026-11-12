@@ -19,6 +19,7 @@ from agent6 import kinds, paths
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox import detect, jail, landlock, tool_paths
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import shells as session_shells
 from agent6.tools import background
 from agent6.ui.cli import check_cmds, check_render, check_sandbox, sandbox_paths
 
@@ -153,7 +154,7 @@ def test_commands_report_the_background_log_grant_beneath_hidden_state(
     monkeypatch.chdir(tmp_path)
     _force_profile(monkeypatch, isolation)
     layout = sessions_layout.SessionLayout(paths.state_dir(tmp_path), "<id>")
-    shells = background.BackgroundShells(layout.session_dir / background.SHELLS_DIR)
+    shells = background.BackgroundShells(layout.session_dir / session_shells.SHELLS_DIR)
     check_sandbox.check_sandbox_section(Config())
     rows = _commands_block(capsys.readouterr().out)
     row = next((line for line in rows if str(shells.log_root) in line), "")

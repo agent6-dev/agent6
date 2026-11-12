@@ -27,7 +27,7 @@ from agent6 import paths
 from agent6.app import fork
 from agent6.config import io, write
 from agent6.machine import journal as machine_journal
-from agent6.sessions import process
+from agent6.sessions import process, shells
 from agent6.ui import spawn
 from agent6.ui.cli import main
 from agent6.ui.web import server as web_server
@@ -2155,7 +2155,6 @@ def test_prune_route_passes_the_squash_opt_in_through(
 
 def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: pathlib.Path) -> None:
     """The run stream's frames stamp `shells`, so the Background shells card survives them."""
-    from agent6.tools import background
     from agent6.ui.web import sse
 
     d = tmp_path / "sessions" / "runs" / "shellrun-AAAAAA"
@@ -2170,7 +2169,7 @@ def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: pathlib.Path)
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
         encoding="utf-8",
     )
-    bg = d / background.SHELLS_DIR / "bg1"
+    bg = d / shells.SHELLS_DIR / "bg1"
     bg.mkdir(parents=True)
     (bg / "meta.json").write_text(
         json.dumps({"id": "bg1", "command": "python -m http.server"}), encoding="utf-8"
@@ -2194,7 +2193,6 @@ def test_idle_session_frames_only_follow_changed_state(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, finished: bool, changed: bool
 ) -> None:
     """Two idle heartbeats send nothing unchanged, or one frame per shell result change."""
-    from agent6.tools import background
     from agent6.ui.web import sse
 
     monkeypatch.setattr(sse, "HEARTBEAT_S", 0.02)
@@ -2206,7 +2204,7 @@ def test_idle_session_frames_only_follow_changed_state(
     )
     d = paths.state_dir(tmp_path) / "sessions" / "runs" / sid
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    shell = d / background.SHELLS_DIR / "bg1"
+    shell = d / shells.SHELLS_DIR / "bg1"
     shell.mkdir(parents=True)
     (shell / "meta.json").write_text('{"command": "sleep 60"}', encoding="utf-8")
     heartbeat = 0
@@ -2242,7 +2240,6 @@ def test_shell_cleanup_after_end_reaches_the_open_stream(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Shell cleanup after session.stop reaches the page without another log event."""
-    from agent6.tools import background
     from agent6.ui.web import sse
 
     monkeypatch.chdir(tmp_path)
@@ -2257,7 +2254,7 @@ def test_shell_cleanup_after_end_reaches_the_open_stream(
         ],
     )
     d = paths.state_dir(tmp_path) / "sessions" / "runs" / sid
-    shell = d / background.SHELLS_DIR / "bg1"
+    shell = d / shells.SHELLS_DIR / "bg1"
     shell.mkdir(parents=True)
     (shell / "meta.json").write_text(json.dumps({"command": "sleep 60"}), encoding="utf-8")
     log_before = (d / "logs.jsonl").read_bytes()

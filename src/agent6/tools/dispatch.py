@@ -29,7 +29,7 @@ from agent6.config import Config
 from agent6.context import memory, skills
 from agent6.graph import curator as graph_curator
 from agent6.sandbox import jail, tool_paths
-from agent6.sessions import event_log, ipc
+from agent6.sessions import event_log, ipc, shells
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import (
     arguments,
@@ -181,7 +181,7 @@ class ToolDispatcher:
         self._findings = findings
         # Background commands live under the run dir so they die with the run.
         self._shells = (
-            background.BackgroundShells(session_dir / background.SHELLS_DIR)
+            background.BackgroundShells(session_dir / shells.SHELLS_DIR)
             if session_dir is not None
             else None
         )
