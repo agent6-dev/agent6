@@ -72,6 +72,16 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path
     return tmp_path
 
 
+class _Dispatcher:
+    """Stand in for the dispatcher; the agent closes it on its way out."""
+
+    def __init__(self, **_kw: object) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
 def test_run_one_returns_finish_payload(
     iso: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -99,7 +109,7 @@ def test_run_one_returns_finish_payload(
     monkeypatch.setattr(harness_loop, "Harness", _FakeWf)
     monkeypatch.setattr(role_providers, "build_role_provider", _fake)
     monkeypatch.setattr(role_providers, "helper_seat_provider", _fake)
-    monkeypatch.setattr(dispatch, "ToolDispatcher", _fake)
+    monkeypatch.setattr(dispatch, "ToolDispatcher", _Dispatcher)
 
     req = agent.MachineAgentRequest(
         cwd=iso,
@@ -140,9 +150,9 @@ def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         def __init__(self, **kw: object) -> None:
             captured["harness"] = kw
 
-    def _disp(**kw: object) -> object:
+    def _disp(**kw: object) -> _Dispatcher:
         captured.update(kw)
-        return object()
+        return _Dispatcher()
 
     def _prov(*_a: object, **_k: object) -> object:
         return object()
