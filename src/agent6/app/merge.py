@@ -26,10 +26,11 @@ from agent6.graph import storage
 from agent6.sessions import event_log, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
+from agent6.vcs import commit_message
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import policy as git_policy
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import scan_session_log
+from agent6.viewmodel import scan_session_log, tail_events, worker_models
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -59,6 +60,30 @@ class MergeOutcome:
     recorded: bool = False
     left_behind: tuple[str, ...] = ()
     target_before: str = ""
+
+
+def commit_identity(
+    cfg: Config, session_dir: pathlib.Path, manifest: sessions_manifest.SessionManifest
+) -> git_read.CommitIdentity:
+    """Return the identity a session's merge commits carry.
+
+    Args:
+        cfg: The config whose `[git.commit]` names the author and the trailer.
+        session_dir: The session, whose journal names the worker models.
+        manifest: The session's manifest, whose driver stands in when no call was journaled.
+
+    Returns:
+        The configured name and email, with the trailer rendered for the session's models.
+    """
+    return git_read.CommitIdentity(
+        name=cfg.git.commit.name,
+        email=cfg.git.commit.email,
+        trailer=commit_message.render_commit_trailer(
+            cfg.git.commit.trailer,
+            models=worker_models(tail_events(session_dir / sessions_layout.LOGS_NAME, follow=False))
+            or ((manifest.models.driver.model,) if manifest.models.driver else ()),
+        ),
+    )
 
 
 def record_merge_in_manifest(

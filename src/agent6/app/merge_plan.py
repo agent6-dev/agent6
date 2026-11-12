@@ -20,9 +20,8 @@ from agent6.harness import subrun
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
-from agent6.vcs import commit_message
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import listing, scan_session_log, tail_events, wire, worker_models
+from agent6.viewmodel import listing, scan_session_log, wire
 
 # The gate words that mean the gate did not certify the run's final tree.
 UNVERIFIED_WARNINGS = {
@@ -238,17 +237,7 @@ def plan_merge(  # noqa: PLR0911
     if not git_read.branch_exists(cwd, target):
         reporter.error(f"target branch {target!r} does not exist; pass --into <existing-branch>.")
         return 2
-    identity = git_read.CommitIdentity(
-        name=cfg.git.commit.name,
-        email=cfg.git.commit.email,
-        trailer=commit_message.render_commit_trailer(
-            cfg.git.commit.trailer,
-            models=worker_models(
-                tail_events(layout.session_dir / sessions_layout.LOGS_NAME, follow=False)
-            )
-            or ((manifest.models.driver.model,) if manifest.models.driver else ()),
-        ),
-    )
+    identity = merge.commit_identity(cfg, layout.session_dir, manifest)
     try:
         git_read.verify_git_identity(cwd, identity)  # refuse cleanly before mutating anything
     except errors.GitError as exc:

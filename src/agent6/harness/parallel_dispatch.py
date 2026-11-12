@@ -775,22 +775,8 @@ class ParallelDispatcher:
         """Journal the meter after a settlement, so the lanes' charge is on the record."""
         if self.budget is None:
             return
-        self.emit(
-            journal.BudgetUpdate(
-                **budget_events.budget_update_fields(self.budget),
-            )
-        )
-        snap = self.budget.snapshot()
-        cost, _ = self.budget.estimate_usd()
-        self.emit(
-            journal.BudgetTurn(
-                turn=turn,
-                input_tokens=snap.input_total,
-                output_tokens=snap.output_total,
-                cache_read_tokens=snap.cache_read_total,
-                cost_usd=round(cost, 6),
-            )
-        )
+        self.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(self.budget)))
+        self.emit(budget_events.budget_turn(self.budget, turn))
 
     def ensure_clean(self, turn: int) -> bool:
         """Chain-commit a changed tree so lanes cut from the tip see current work.

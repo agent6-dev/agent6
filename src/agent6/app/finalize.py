@@ -23,16 +23,13 @@ from agent6.harness import advice, loop_snapshot
 from agent6.sessions import budget_events, event_log, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import commit_message
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import (
     format,
     scan_session_log,
     summarize_session_dir,
-    tail_events,
     wire,
-    worker_models,
 )
 from agent6.viewmodel.session import status as session_status
 
@@ -770,17 +767,7 @@ def finalize_auto_merge(
     run_branch = manifest.run_branch or git_read.chain_ref_for(manifest.session_id)
     if not base_branch or git_read.chain_tip(cwd, run_branch) is None:
         return
-    identity = git_read.CommitIdentity(
-        name=cfg.git.commit.name,
-        email=cfg.git.commit.email,
-        trailer=commit_message.render_commit_trailer(
-            cfg.git.commit.trailer,
-            models=worker_models(
-                tail_events(layout.session_dir / sessions_layout.LOGS_NAME, follow=False)
-            )
-            or ((manifest.models.driver.model,) if manifest.models.driver else ()),
-        ),
-    )
+    identity = merge.commit_identity(cfg, layout.session_dir, manifest)
     try:
         git_read.verify_git_identity(cwd, identity)
     except errors.GitError as exc:

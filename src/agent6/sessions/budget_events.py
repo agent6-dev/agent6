@@ -10,6 +10,19 @@ from agent6 import budget as agent6_budget
 from agent6.sessions import journal
 
 
+def budget_turn(budget: agent6_budget.BudgetTracker, turn: int) -> journal.BudgetTurn:
+    """Return a `budget.turn` event: the tracker's cumulative tokens and cost at a turn."""
+    snap = budget.snapshot()
+    cost, _ = budget.estimate_usd()
+    return journal.BudgetTurn(
+        turn=turn,
+        input_tokens=snap.input_total,
+        output_tokens=snap.output_total,
+        cache_read_tokens=snap.cache_read_total,
+        cost_usd=round(cost, 6),
+    )
+
+
 def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
     """Return a `budget.update` event's fields: the tracker's cumulative spend and plan reading."""
     snap = budget.snapshot()

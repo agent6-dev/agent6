@@ -80,7 +80,7 @@ from agent6.providers import (
     ProviderResponse,
     ToolDefinition,
 )
-from agent6.sessions import completion, journal, process
+from agent6.sessions import budget_events, completion, journal, process
 from agent6.tools import dispatch, operator_prompts, schema, tool_errors
 from agent6.tools import results as tools_results
 from agent6.vcs.git import ops as git_ops
@@ -2068,16 +2068,5 @@ class Harness:
         Args:
             turn: The turn about to call.
         """
-        if self.budget is None:
-            return
-        snap = self.budget.snapshot()
-        cost, _ = self.budget.estimate_usd()
-        self.emit(
-            journal.BudgetTurn(
-                turn=turn,
-                input_tokens=snap.input_total,
-                output_tokens=snap.output_total,
-                cache_read_tokens=snap.cache_read_total,
-                cost_usd=round(cost, 6),
-            )
-        )
+        if self.budget is not None:
+            self.emit(budget_events.budget_turn(self.budget, turn))
