@@ -130,6 +130,47 @@ def context_fill(state: state_types.SessionState) -> int | None:
     return min(100, round(100 * call.context_tokens / window))
 
 
+def budget_dict(budget: state_types.BudgetView) -> dict[str, Any]:
+    """Return the wire form of a `BudgetView`, the one `attach --json` and `sessions show` share.
+
+    Attributes:
+        usd_text: The rendered session spend, then this execution's against its cap.
+        plan_text: The account's reading: the binding window's percent, its reset and
+            when it was read; "" without a reading.
+
+    Args:
+        budget: The usage.
+
+    Returns:
+        The view's fields plus the rendered `usd_text` and `plan_text`.
+    """
+    d = dataclasses.asdict(budget)
+    account = budget.account
+    d["usd_text"] = format.budget_usd_text(
+        budget.session.usd,
+        partial=budget.session.usd_partial,
+        execution_usd=budget.execution.usd,
+        usd_cap=budget.execution.usd_cap,
+        cell=session_status.usage_cell(
+            budget.session.usd,
+            partial=budget.session.usd_partial,
+            plan_observed_points=budget.session.plan_observed_points,
+            plan_used_percent=account.used_percent if account else 0.0,
+        ),
+    )
+    d["plan_text"] = (
+        format.plan_readout(
+            account.used_percent,
+            account.resets_at,
+            now=time.time(),
+            observed_at=account.observed_at,
+        )
+        if account is not None and account.used_percent > 0
+        else ""
+    )
+    return d
+
+
 def session_state_as_dict(
     state: state_types.SessionState,
     session_dir: pathlib.Path | None = None,
@@ -142,9 +183,7 @@ def session_state_as_dict(
         review: The shared review evidence with computed merge facts.
         context_used_percent: The last model call's context fill percentage, or null when unknown.
         needs_new_work: Whether a resume requires a new task rather than continuing work.
-        budget.usd_text: The rendered session spend, then this execution's against its cap.
-        budget.plan_text: The account's reading: the binding window's percent, its reset and
-            when it was read; "" without a reading.
+        budget: The BudgetView with its rendered `usd_text` and `plan_text`.
         open_approval: The current approval identifier, or null when none is open.
         status: The lifecycle status word.
         status_label: The rendered status with mode and unmerged marks when available.
@@ -191,29 +230,7 @@ def session_state_as_dict(
         verification=state.verification,
         saved_answers=len(ipc.saved_question_answers(session_dir)) if session_dir else 0,
     )
-    d["budget"]["usd_text"] = format.budget_usd_text(
-        state.budget.session.usd,
-        partial=state.budget.session.usd_partial,
-        execution_usd=state.budget.execution.usd,
-        usd_cap=state.budget.execution.usd_cap,
-        cell=session_status.usage_cell(
-            state.budget.session.usd,
-            partial=state.budget.session.usd_partial,
-            plan_observed_points=state.budget.session.plan_observed_points,
-            plan_used_percent=state.budget.account.used_percent if state.budget.account else 0.0,
-        ),
-    )
-    account = state.budget.account
-    d["budget"]["plan_text"] = (
-        format.plan_readout(
-            account.used_percent,
-            account.resets_at,
-            now=time.time(),
-            observed_at=account.observed_at,
-        )
-        if account is not None and account.used_percent > 0
-        else ""
-    )
+    d["budget"] = budget_dict(state.budget)
     for ap, row in zip(state.approvals, d["approvals"], strict=True):
         row["head"], row["payload"] = state_types.approval_parts(ap.prompt)
     for commit, row in zip(state.commits, d["commits"], strict=True):

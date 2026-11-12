@@ -549,7 +549,7 @@ def lane_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement | Non
     # The journal includes settled descendants already. Never sum their journals again.
     scan = session_log.scan_session_log(session_dir / sessions_layout.LOGS_NAME)
     if any(
-        child.session_id not in scan.settled_lanes
+        child.session_id not in scan.budget.session.settled_lanes
         for record in records
         if record.source == "panel"
         for child in record.children
@@ -576,9 +576,9 @@ def lane_usage(session_dir: pathlib.Path) -> agent6_budget.UsageSettlement | Non
             )
             readings.append((events.event_epoch(raw.get("ts")) or 0.0, provider, plan))
     return agent6_budget.UsageSettlement(
-        usd=scan.cost_usd or 0.0,
-        usd_partial=scan.usd_partial,
-        tokens=scan.unmetered_tokens,
+        usd=scan.budget.session.usd,
+        usd_partial=scan.budget.session.usd_partial,
+        tokens=scan.budget.session.unmetered_tokens,
         plan_readings=tuple((p, r) for _, p, r in sorted(readings, key=lambda item: item[0])),
     )
 

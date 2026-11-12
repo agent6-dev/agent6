@@ -297,8 +297,9 @@ def import_lanes(
         summary = summarize_session_dir(dest)
         scan = session_log.scan_session_log(dest / sessions_layout.LOGS_NAME)
         budget_stops += scan.stop_reason == "budget_exhausted"
-        if scan.plan_usage is not None and (provider := lane_provider(dest)):
-            seen = (scan.plan_usage_at, scan.plan_usage)
+        account = scan.budget.account
+        if account is not None and account.windows and (provider := lane_provider(dest)):
+            seen = (account.observed_at, agent6_budget.PlanUsage(windows=account.windows))
             readings[provider] = max(readings.get(provider, seen), seen, key=lambda r: r[0])
         if not produced_result(summary.status):
             # Only a deliberate end is rankable work.

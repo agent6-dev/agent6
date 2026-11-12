@@ -551,8 +551,10 @@ class RunBridge:
 
         order = ProseOrder(self.server, session.acp_id, layout.logs_path)
         start_at = journal_before if resuming else None
-        banked = session_log.scan_session_log(layout.logs_path).cost_usd if resuming else None
-        info = updates.RunInfo(session.acp_id, banked_usd=banked or 0.0)
+        banked = (
+            session_log.scan_session_log(layout.logs_path).budget.session.usd if resuming else 0.0
+        )
+        info = updates.RunInfo(session.acp_id, banked_usd=banked)
         tail = threading.Thread(
             target=self._stream,
             args=(session, layout.logs_path, _stop, start_at, announced, order),

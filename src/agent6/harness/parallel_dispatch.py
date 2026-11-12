@@ -591,7 +591,8 @@ class ParallelDispatcher:
             return
         for found in records:
             record = found
-            accounted = session_log.scan_session_log(self.session_dir / "logs.jsonl").settled_lanes
+            scan = session_log.scan_session_log(self.session_dir / "logs.jsonl")
+            accounted = scan.budget.session.settled_lanes
             if record.source == "panel":
                 record = record.model_copy(
                     update={

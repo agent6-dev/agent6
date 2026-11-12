@@ -1631,18 +1631,10 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `stop_reason` | `str \| None` | The journaled end reason, or null while unfinished. |
 | `baseline_ok` | `bool \| None` | Whether baseline verification passed, or null when unrecorded. |
 | `verification` | `Literal['passed', 'failed', 'unverified', 'not_applicable'] \| None` | The final gate word, or null when unrecorded. |
-| `input_tokens` | `int \| None` | Recorded input tokens. |
-| `output_tokens` | `int \| None` | Recorded output tokens. |
-| `cache_read_tokens` | `int \| None` | Recorded cached input tokens. |
-| `cache_write_tokens` | `int \| None` | Recorded cache-write tokens. |
-| `cost_usd` | `float \| None` | Cumulative spend in USD, or null when unknown. |
-| `plan_observed_points` | `float` | The plan movement observed across executions, in points. |
-| `plan_prior_executions` | `float` | Subscription points banked by earlier executions. |
-| `plan_cap` | `float` | The subscription points cap. |
+| `budget` | `dict[str, Any]` | The BudgetView with its rendered `usd_text` and `plan_text`, as `attach --json` carries it. |
 | `unattended_questions` | `int` | Questions answered empty because nobody was attached. |
 | `setup_output` | `str \| None` | Retained setup output, or null when absent. |
 | `environment_evidence` | `dict[str, Any]` | Recorded targets, setup and lifecycle observations. |
-| `usd_partial` | `bool \| None` | Whether unpriced usage makes spend a lower bound, or null without a cost. |
 | `source_session_id` | `str \| None` | The source session used by run --from, or null. |
 | `parent_session_id` | `str \| None` | The fork parent, or null. |
 | `forked_from_turn` | `int \| None` | The fork's source turn, or null. |
@@ -1701,7 +1693,7 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `last_verify` | `VerifyView \| None` | The last verify gate run. |
 | `review` | `JSON` | The shared review evidence with computed merge facts. |
 | `environment` | `EnvironmentView \| None` | The container this execution holds, its start and its end; None outside one. |
-| `budget` | `BudgetView` | The spend. |
+| `budget` | `JSON` | The BudgetView with its rendered `usd_text` and `plan_text`. |
 | `approvals` | `tuple[ApprovalPrompt, ...]` | Every approval asked this execution, answered or not. |
 | `questions` | `tuple[QuestionPrompt, ...]` | Every question prompt asked this execution, answered or not. |
 | `log_tail` | `JSON` | The retained log lines as plain strings rather than LogLine records. |
@@ -1728,8 +1720,6 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `last_event_at` | `float \| None` | The last folded event's own ts, the idle anchor every "working… Ns" timer measures from, so replayed history reads as its true age. |
 | `context_used_percent` | `JSON` | The last model call's context fill percentage, or null when unknown. |
 | `needs_new_work` | `JSON` | Whether a resume requires a new task rather than continuing work. |
-| `budget.usd_text` | `JSON` | The rendered session spend, then this execution's against its cap. |
-| `budget.plan_text` | `JSON` | The account's reading: the binding window's percent, its reset and when it was read; "" without a reading. |
 | `open_approval` | `JSON` | The current approval identifier, or null when none is open. |
 | `status` | `JSON` | The lifecycle status word. |
 | `status_label` | `JSON` | The rendered status with mode and unmerged marks when available. |
@@ -1777,6 +1767,17 @@ Source: [`viewmodel.state_view.session_state_as_dict`](https://github.com/agent6
 | `head` | `JSON` | The question part added to each pending approval. |
 | `payload` | `JSON` | The command part added to each pending approval. |
 | `label` | `JSON` | The picker label added to each commit. |
+
+### `budget` rendered fields
+
+**Support: public.** Return the wire form of a `BudgetView`, the one `attach --json` and `sessions show` share.
+
+Source: [`viewmodel.state_view.budget_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_view.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `usd_text` | `JSON` | The rendered session spend, then this execution's against its cap. |
+| `plan_text` | `JSON` | The account's reading: the binding window's percent, its reset and when it was read; "" without a reading. |
 
 ## Machine snapshots
 
@@ -2515,7 +2516,8 @@ Source: [`viewmodel.receipt.as_dict`](https://github.com/agent6-dev/agent6/blob/
 
 `SessionManifest` is the private, durable `manifest.json` record.
 `HarnessStamp.gate` separates the pinned command and source from execution availability.
-`ComparisonStamp` holds group facts on the coordinator; `PlacementStamp` links each lane.
+`ComparisonStamp` holds group facts on the coordinator.
+`PlacementStamp` links each lane to it.
 Other records are nested objects used by the CLI and web serializers above.
 Properties are absent unless a serializer adds them explicitly.
 

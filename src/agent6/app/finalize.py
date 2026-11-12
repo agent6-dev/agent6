@@ -687,9 +687,9 @@ def _print_run_total_across_executions(
         reporter: Receives the line.
     """
     scan = scan_session_log(layout.session_dir / sessions_layout.LOGS_NAME)
-    if scan.executions > 1 and scan.cost_usd is not None:
+    if scan.executions > 1 and scan.budget_seen:
         # The listing's cell, with a clean $0 spelled out.
-        cost = scan.usage_cell or agent6_budget.format_usd(scan.cost_usd)
+        cost = scan.usage_cell or agent6_budget.format_usd(scan.budget.session.usd)
         reporter.cost(f"  RUN TOTAL (all {scan.executions} executions): {cost}")
 
 

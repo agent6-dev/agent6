@@ -361,6 +361,7 @@ SESSION = (
     Producer("viewmodel.wire", "manifest_header", "`attach --json` header fields", "header"),
     Producer("viewmodel.wire", "session_snapshot", "`/api/session/<id>` snapshot", "snap"),
 )
+BUDGET = Producer("viewmodel.state_view", "budget_dict", "`budget` rendered fields", "d")
 MACHINE = (
     Producer(
         "viewmodel.machine_state", "machine_state_as_dict", "`attach --json` machine snapshot", "d"
@@ -679,6 +680,7 @@ def build_markdown() -> str:
         + "."
     )
     sections.append(SESSION[1].render())
+    sections.append(BUDGET.render())
     sections.append("## Machine snapshots\n\n**Support: public.**")
     sections.append(
         "A machine's `attach --json` and `/api/machine/<name>` read `MachineState` "
@@ -715,7 +717,8 @@ def build_markdown() -> str:
     sections.append(
         "`SessionManifest` is the private, durable `manifest.json` record.\n"
         "`HarnessStamp.gate` separates the pinned command and source from execution availability.\n"
-        "`ComparisonStamp` holds group facts on the coordinator; `PlacementStamp` links each lane.\n"
+        "`ComparisonStamp` holds group facts on the coordinator.\n"
+        "`PlacementStamp` links each lane to it.\n"
         "Other records are nested objects used by the CLI and web serializers above.\n"
         "Properties are absent unless a serializer adds them explicitly."
     )

@@ -63,7 +63,8 @@ def test_the_settled_reading_reaches_the_journal_and_the_end_block(
         reporter=reporter.STDIO_REPORTER,
     )
     assert "window moved ~10 points" in capsys.readouterr().out
-    assert session_log.scan_session_log(layout.logs_path).plan_observed_points == 10.0
+    scan = session_log.scan_session_log(layout.logs_path)
+    assert scan.budget.session.plan_observed_points == 10.0
 
 
 def test_finish_session_over_red_verify_is_not_headlined_passed(

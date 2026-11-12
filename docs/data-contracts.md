@@ -309,5 +309,5 @@ Render session status, context usage, and the wire snapshot.
 Public fields: [Formats](formats.md#session-snapshots).
 
 - **Written by:** viewmodel/{machine_state, state_view}
-- **Read by:** ui/acp/updates, ui/cli/steer_menu, ui/tui/app, ui/web/{model, sse}, viewmodel/{__init__, wire}
+- **Read by:** ui/acp/updates, ui/cli/{sessions_show, steer_menu}, ui/tui/app, ui/web/{model, sse}, viewmodel/{__init__, wire}
 - **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (13 test files exercise it)

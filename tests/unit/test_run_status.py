@@ -672,8 +672,9 @@ def test_status_shows_usage_from_budget_update_event(
     # json carries the same
     sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True)
     obj = json.loads(capsys.readouterr().out)
-    assert obj["input_tokens"] == 4200 and obj["cost_usd"] == 0.0456
-    assert (obj["cache_read_tokens"], obj["cache_write_tokens"]) == (42486, 22617)
+    execution = obj["budget"]["execution"]
+    assert execution["input_tokens"] == 4200 and obj["budget"]["session"]["usd"] == 0.0456
+    assert (execution["cache_read_tokens"], execution["cache_write_tokens"]) == (42486, 22617)
 
 
 def test_status_names_the_pins_in_force(
@@ -746,11 +747,12 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
     process.write_worker_pid(d, os.getpid())
     sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True)
     obj = json.loads(capsys.readouterr().out)
-    assert obj["cost_usd"] == pytest.approx(0.025)
-    assert obj["usd_partial"] is True  # sticky: execution 1's unpriced spend
+    session, execution = obj["budget"]["session"], obj["budget"]["execution"]
+    assert session["usd"] == pytest.approx(0.025)
+    assert session["usd_partial"] is True  # sticky: execution 1's unpriced spend
     assert obj["status"] == "running"  # not execution 1's "passed (finish_session)"
-    assert obj["input_tokens"] == 300  # token gauges stay per-execution
-    assert obj["cache_read_tokens"] is None  # execution 1's cached side does not carry over
+    assert execution["input_tokens"] == 300  # token gauges stay per-execution
+    assert execution["cache_read_tokens"] is None  # execution 1's cached side does not carry over
 
 
 def test_status_missing_id_and_empty_state_speak_human(
@@ -1385,10 +1387,7 @@ def test_show_says_why_a_stale_run_with_no_snapshot_cannot_be_resumed(
 def test_show_json_carries_the_points_earlier_executions_banked(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`plan_observed_points` sums every execution and `plan_cap` is the latest one's.
-
-    The banked points ride beside them, so a script can tell this execution's spend.
-    """
+    """The session's `plan_observed_points` sums every execution; the execution's is its own."""
     _make_run(
         tmp_path,
         monkeypatch,
@@ -1421,11 +1420,9 @@ def test_show_json_carries_the_points_earlier_executions_banked(
     )
     assert sessions_show._cmd_status("winsome-dawn", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
-    assert (obj["plan_observed_points"], obj["plan_prior_executions"], obj["plan_cap"]) == (
-        5.0,
-        3.0,
-        10.0,
-    )
+    session, execution = obj["budget"]["session"], obj["budget"]["execution"]
+    assert (session["plan_observed_points"], execution["plan_observed_points"]) == (5.0, 2.0)
+    assert execution["plan_cap"] == 10.0
 
 
 def test_a_live_run_asking_after_an_earlier_end_reads_waiting(

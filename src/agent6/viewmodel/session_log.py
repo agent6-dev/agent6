@@ -12,7 +12,7 @@ import pathlib
 from collections.abc import Iterator
 from typing import Any
 
-from agent6 import budget, evidence, kinds, terminal
+from agent6 import evidence, kinds, terminal
 from agent6.sessions import journal
 from agent6.viewmodel import events, format, review, session_core, session_status, state_types
 
@@ -46,22 +46,9 @@ class LogScan:
         undone_to: The fork `/undo` continues the session as; "" when it was never undone.
         provider_error: The last failed driving call's error, the reason behind a
             `provider_error` end; "" when none failed.
-        cost_usd: The spend across every execution; None when no budget.update was seen.
-        usd_partial: Some execution had unpriced spend, so `cost_usd` is a lower bound.
-        unmetered_tokens: Fallback tokens across every execution, including settled lanes.
-        settled_lanes: Child sessions whose spend is durably included in the journal.
+        budget: The usage, each amount with one lifetime, as the viewers' fold holds it.
+        budget_seen: A budget.update was read.
         executions: One plus the completed resume executions.
-        input_tokens: This execution's input tokens, None until a budget.update carries them.
-        output_tokens: This execution's output tokens.
-        cache_read_tokens: The cached side of the input, None when the event lacked it.
-        cache_write_tokens: Cache-write tokens, None when the event lacked it.
-        plan_observed_points: The plan movement observed across every execution, in points; 0.0
-            until a plan call runs.
-        plan_prior_executions: The points banked by completed executions.
-        plan_cap: `[budget].max_plan_points` for this execution, 0.0 until a plan call runs.
-        plan_used_percent: The account's last reading, 0.0 until a plan call runs.
-        plan_usage: That reading's windows, None until a plan call reports them.
-        plan_usage_at: When the reading was taken, as epoch seconds; 0.0 without one.
         turn: The last event's turn.
         start_ep: session.start's epoch, else the first event's (a fork's log has none).
         last_ep: The last event's epoch.
@@ -111,21 +98,9 @@ class LogScan:
     end_tree: str = ""
     undone_to: str = ""
     provider_error: str = ""
-    cost_usd: float | None = None
-    usd_partial: bool = False
-    unmetered_tokens: int = 0
-    settled_lanes: frozenset[str] = frozenset()
+    budget: state_types.BudgetView = dataclasses.field(default_factory=state_types.BudgetView)
+    budget_seen: bool = False
     executions: int = 1
-    input_tokens: int | None = None
-    output_tokens: int | None = None
-    cache_read_tokens: int | None = None
-    cache_write_tokens: int | None = None
-    plan_observed_points: float = 0.0
-    plan_prior_executions: float = 0.0
-    plan_cap: float = 0.0
-    plan_used_percent: float = 0.0
-    plan_usage: budget.PlanUsage | None = None
-    plan_usage_at: float = 0.0
     turn: int | None = None
     start_ep: float | None = None
     last_ep: float | None = None
@@ -170,14 +145,13 @@ class LogScan:
 
     @property
     def usage_cell(self) -> str:
-        """The session's cost as `usage_cell` spells it; "" before any budget.update."""
-        if self.cost_usd is None:
-            return ""
+        """The session's cost as `usage_cell` spells it; "" for a clean $0."""
+        usage, account = self.budget.session, self.budget.account
         return session_status.usage_cell(
-            self.cost_usd,
-            partial=self.usd_partial,
-            plan_observed_points=self.plan_observed_points,
-            plan_used_percent=self.plan_used_percent,
+            usage.usd,
+            partial=usage.usd_partial,
+            plan_observed_points=usage.plan_observed_points,
+            plan_used_percent=account.used_percent if account else 0.0,
         )
 
     def status_facts(self) -> session_status.StatusFacts:
@@ -481,8 +455,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     except OSError as exc:
         evidence_notes.append(f"Journal unreadable: {exc}")
         review_view = dataclasses.replace(review_view, read_failure=str(exc))
-    life, usage = core.lifecycle, core.budget
-    account = usage.account
+    life = core.lifecycle
     oldest = min(
         pending_prompts.values(),
         key=lambda kv: kv[1] if kv[1] is not None else float("inf"),
@@ -519,25 +492,9 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         end_tree=end_tree,
         undone_to=life.undone_to,
         provider_error=life.provider_error,
-        cost_usd=usage.session.usd if saw_budget else None,
-        usd_partial=usage.session.usd_partial,
-        unmetered_tokens=usage.session.unmetered_tokens,
-        settled_lanes=frozenset(usage.session.settled_lanes),
+        budget=core.budget,
+        budget_seen=saw_budget,
         executions=life.executions,
-        input_tokens=usage.execution.input_tokens,
-        output_tokens=usage.execution.output_tokens,
-        cache_read_tokens=usage.execution.cache_read_tokens,
-        cache_write_tokens=usage.execution.cache_write_tokens,
-        plan_observed_points=usage.session.plan_observed_points,
-        plan_prior_executions=(
-            usage.session.plan_observed_points - usage.execution.plan_observed_points
-        ),
-        plan_cap=usage.execution.plan_cap or 0.0,
-        plan_used_percent=account.used_percent if account else 0.0,
-        plan_usage=budget.PlanUsage(windows=account.windows)
-        if account and account.windows
-        else None,
-        plan_usage_at=account.observed_at if account else 0.0,
         unattended_questions=life.unattended_questions,
         pending_questions=len(open_questions),
         oldest_pending_question_ep=min(

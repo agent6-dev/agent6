@@ -180,10 +180,14 @@ subprocess.run(["git", "-C", str(dir), "commit", "-q", "-m", "bench: add TASK.md
 PY
 }
 
-# Print one field of the `sessions show --json` capture, or nothing when it is absent.
+# Print one field of the `sessions show --json` capture by its dotted path, or nothing when it is absent.
 session_field() {
-  python3 -c "import json,sys; v=json.load(open(sys.argv[1])).get(sys.argv[2]); print('' if v is None else v)" \
-    "$1" "$2" 2>/dev/null || true
+  python3 -c "
+import json, sys
+v = json.load(open(sys.argv[1]))
+for key in sys.argv[2].split('.'):
+    v = v.get(key) if isinstance(v, dict) else None
+print('' if v is None else v)" "$1" "$2" 2>/dev/null || true
 }
 
 # ----- main loop --------------------------------------------------------------
@@ -369,7 +373,7 @@ PY
       > "$logdir/session.json" 2>/dev/null || true
   fi
   stop_reason=$(session_field "$logdir/session.json" stop_reason)
-  plan_points=$(session_field "$logdir/session.json" plan_observed_points)
+  plan_points=$(session_field "$logdir/session.json" budget.session.plan_observed_points)
   [[ "$plan_points" =~ ^[0-9]+(\.[0-9]+)?$ ]] || plan_points=0
   model_ran=$(session_field "$logdir/session.json" model)
   # The header names the last model that ran.

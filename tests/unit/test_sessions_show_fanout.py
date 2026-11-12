@@ -322,7 +322,9 @@ def test_show_usage_and_json_carry_the_plan_points(
     assert usage.split(None, 1)[1] == "in=18 out=2194 plan moved=2.5/6pt  usage 2.5pt"
     assert main(["sessions", "show", "capped", "--json"]) == 0
     obj = json.loads(capsys.readouterr().out)
-    assert (obj["plan_observed_points"], obj["plan_cap"]) == (2.5, 6.0)
+    budget_json = obj["budget"]
+    assert budget_json["session"]["plan_observed_points"] == 2.5
+    assert budget_json["execution"]["plan_cap"] == 6.0
     layout.logs_path.write_text(
         "\n".join([lines[0], json.dumps({**budget, "plan_cap": 0.0}), *lines[1:]]) + "\n",
         encoding="utf-8",

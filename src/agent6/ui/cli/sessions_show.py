@@ -32,6 +32,7 @@ from agent6.viewmodel import (
     policy,
     receipt,
     scan_session_log,
+    state_view,
     summarize_session_dir,
     tail,
     transcript,
@@ -337,13 +338,13 @@ def _usage_line(scan: LogScan) -> str:
         percent-metered execution observed against its cap, then the usage as the listing's
         cell spells it (blank for a clean $0).
     """
-    tokens = f"in={scan.input_tokens or 0} out={scan.output_tokens or 0}"
-    if scan.cache_read_tokens is not None or scan.cache_write_tokens is not None:
-        tokens += f" cache_r={scan.cache_read_tokens or 0}"
-        tokens += f" cache_w={scan.cache_write_tokens or 0}"
-    if scan.plan_cap > 0:
-        execution_pt = scan.plan_observed_points - scan.plan_prior_executions
-        tokens += f" plan moved={execution_pt:g}/{scan.plan_cap:g}pt"
+    run = scan.budget.execution
+    tokens = f"in={run.input_tokens or 0} out={run.output_tokens or 0}"
+    if run.cache_read_tokens is not None or run.cache_write_tokens is not None:
+        tokens += f" cache_r={run.cache_read_tokens or 0}"
+        tokens += f" cache_w={run.cache_write_tokens or 0}"
+    if run.plan_cap is not None and run.plan_cap > 0:
+        tokens += f" plan moved={run.plan_observed_points:g}/{run.plan_cap:g}pt"
     execution_s = " (latest execution)" if scan.executions > 1 else ""
     cell = scan.usage_cell
     executions_s = f" (all {scan.executions} executions)" if scan.executions > 1 else ""
@@ -376,18 +377,10 @@ class StatusJSON(TypedDict):
     stop_reason: str | None
     baseline_ok: bool | None
     verification: kinds.Verification | None
-    input_tokens: int | None
-    output_tokens: int | None
-    cache_read_tokens: int | None
-    cache_write_tokens: int | None
-    cost_usd: float | None
-    plan_observed_points: float
-    plan_prior_executions: float
-    plan_cap: float
+    budget: dict[str, Any]
     unattended_questions: int
     setup_output: str | None
     environment_evidence: dict[str, Any]
-    usd_partial: bool | None
     source_session_id: str | None
     parent_session_id: str | None
     forked_from_turn: int | None
@@ -434,18 +427,11 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         stop_reason: The journaled end reason, or null while unfinished.
         baseline_ok: Whether baseline verification passed, or null when unrecorded.
         verification: The final gate word, or null when unrecorded.
-        input_tokens: Recorded input tokens.
-        output_tokens: Recorded output tokens.
-        cache_read_tokens: Recorded cached input tokens.
-        cache_write_tokens: Recorded cache-write tokens.
-        cost_usd: Cumulative spend in USD, or null when unknown.
-        plan_observed_points: The plan movement observed across executions, in points.
-        plan_prior_executions: Subscription points banked by earlier executions.
-        plan_cap: The subscription points cap.
+        budget: The BudgetView with its rendered `usd_text` and `plan_text`, as `attach --json`
+            carries it.
         unattended_questions: Questions answered empty because nobody was attached.
         setup_output: Retained setup output, or null when absent.
         environment_evidence: Recorded targets, setup and lifecycle observations.
-        usd_partial: Whether unpriced usage makes spend a lower bound, or null without a cost.
         source_session_id: The source session used by run --from, or null.
         parent_session_id: The fork parent, or null.
         forked_from_turn: The fork's source turn, or null.
@@ -533,19 +519,10 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             "stop_reason": scan.stop_reason if scan.finished else None,
             "baseline_ok": scan.baseline_ok,
             "verification": scan.verification or None,
-            "input_tokens": scan.input_tokens,
-            "output_tokens": scan.output_tokens,
-            "cache_read_tokens": scan.cache_read_tokens,
-            "cache_write_tokens": scan.cache_write_tokens,
-            "cost_usd": scan.cost_usd,
-            "plan_observed_points": scan.plan_observed_points,
-            "plan_prior_executions": scan.plan_prior_executions,
-            "plan_cap": scan.plan_cap,
+            "budget": state_view.budget_dict(scan.budget),
             "unattended_questions": scan.unattended_questions,
             "setup_output": scan.setup_output or None,
             "environment_evidence": receipt.environment_dict(scan),
-            # An under-estimate when some spend was unpriced; the text render marks it too.
-            "usd_partial": scan.usd_partial if scan.cost_usd is not None else None,
             "source_session_id": manifest.source_session_id,
             "parent_session_id": manifest.parent_session_id,
             "forked_from_turn": manifest.forked_from_turn,
@@ -609,7 +586,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     # First start to last event: the time between executions is in it.
     spans = f" (wall, {scan.executions} executions)" if scan.executions > 1 else ""
     print(f"elapsed:    {_fmt_dur(elapsed)}{spans}")
-    if scan.input_tokens is not None or scan.cost_usd is not None:
+    if scan.budget_seen:
         print(f"usage:      {_usage_line(scan)}")
     _print_end_facts(
         scan,

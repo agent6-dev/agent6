@@ -1066,7 +1066,7 @@ def test_a_forks_single_execution_is_one_execution(tmp_path: pathlib.Path) -> No
     )
     scan = session_log.scan_session_log(rd / "logs.jsonl")
     assert scan.executions == 1
-    assert scan.cost_usd == 0.05
+    assert scan.budget.session.usd == 0.05
 
     # A real second execution still counts (and banks the first execution's spend).
     rd2 = _write_run(
@@ -1082,7 +1082,7 @@ def test_a_forks_single_execution_is_one_execution(tmp_path: pathlib.Path) -> No
     )
     scan2 = session_log.scan_session_log(rd2 / "logs.jsonl")
     assert scan2.executions == 2
-    assert scan2.cost_usd == pytest.approx(0.06)
+    assert scan2.budget.session.usd == pytest.approx(0.06)
 
 
 def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: pathlib.Path) -> None:
@@ -1510,13 +1510,14 @@ def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: pathlib.Pat
         encoding="utf-8",
     )
     scan = session_log.scan_session_log(logs)
-    assert (scan.input_tokens, scan.output_tokens) == (18, 2194)
-    assert (scan.cache_read_tokens, scan.cache_write_tokens) == (42486, 22617)
+    run = scan.budget.execution
+    assert (run.input_tokens, run.output_tokens) == (18, 2194)
+    assert (run.cache_read_tokens, run.cache_write_tokens) == (42486, 22617)
     logs.write_text(
         json.dumps({"type": "budget.update", "input_total": 1, "output_total": 2}) + "\n",
         encoding="utf-8",
     )
-    old = session_log.scan_session_log(logs)
+    old = session_log.scan_session_log(logs).budget.execution
     assert (old.cache_read_tokens, old.cache_write_tokens) == (None, None)
     # The four travel as one group: an aggregate event without the cached side
     # (a draft's summed attempts) shows none, not an earlier event's figures.
@@ -1535,7 +1536,7 @@ def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: pathlib.Pat
         + "\n",
         encoding="utf-8",
     )
-    aggregate = session_log.scan_session_log(logs)
+    aggregate = session_log.scan_session_log(logs).budget.execution
     assert (aggregate.input_tokens, aggregate.output_tokens) == (250, 50)
     assert (aggregate.cache_read_tokens, aggregate.cache_write_tokens) == (None, None)
 
@@ -1898,9 +1899,10 @@ def test_a_plan_reading_carries_its_own_time(tmp_path: pathlib.Path) -> None:
     log = tmp_path / "logs.jsonl"
     log.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     scan = session_log.scan_session_log(log)
-    assert scan.plan_usage is not None and scan.plan_usage.windows[0].used_percent == 41.0
+    account = scan.budget.account
+    assert account is not None and account.windows[0].used_percent == 41.0
     taken = datetime.datetime(2026, 10, 20, 11, tzinfo=datetime.UTC)
-    assert scan.plan_usage_at == taken.timestamp()
+    assert account.observed_at == taken.timestamp()
 
 
 def test_a_journal_written_before_the_turn_rename_keeps_its_end_turn(
