@@ -156,7 +156,7 @@ Public fields: [Formats](formats.md#sessionmanifest).
 
 - **Written by:** app/stamps
 - **Read by:** app/{compare, execution, finalize, fork, fork_worktrees, lane_launch, lanes, merge, merge_message, merge_plan, parallel, parallel_results, preflight, resume, resume_chain, run, stop, undo, workdirs, workspace_setup}, app/review/actions, app/session/{prepare, setup}, models/choices, sessions/{layout, lineage}, tools/sessions, ui/{directive_actions, mcp_server}, ui/acp/session, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_prune, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/model, viewmodel/{comparison, format, lanes, listing, policy, receipt, state_view, wire}, viewmodel/session/status
-- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (48 test files exercise it)
+- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (49 test files exercise it)
 
 ## SessionSnapshot
 

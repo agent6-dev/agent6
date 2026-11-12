@@ -255,6 +255,8 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         run_ask_repl=_no_ask_repl,
         save_ask_transcript=lambda _layout, _question, _answer: None,
         build_coordinator_spawner=_no_coordinator,
+        build_judge_provider=None,
+        judging_status=contextlib.nullcontext,
         agent6_exe=agent6_exe,
         spawn_detached_resume=spawn_detached_resume,
     )

@@ -75,6 +75,7 @@ class OperatorBridge:
             dispatch. `lane_authority` controls which entry point may use it.
         lane_recoverer: Finds an interrupted dispatch's lanes on resume: stops what runs,
             imports what finished; None leaves such a dispatch diagnosed from its record.
+        lane_ranker: Orders the lanes of a dispatch joined by rank; None refuses such a join.
     """
 
     steer_requested: Callable[[], bool] = dataclasses.field(default=lambda: False)
@@ -98,6 +99,7 @@ class OperatorBridge:
     )
     lane_spawner: lane_records.GroupLaneSpawner | None = None
     lane_recoverer: lane_records.LaneRecoverer | None = None
+    lane_ranker: lane_records.LaneRanker | None = None
     review_preparer: Callable[[str], tuple[bool, str]] | None = None
 
 

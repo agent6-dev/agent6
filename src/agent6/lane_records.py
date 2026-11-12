@@ -208,8 +208,8 @@ class Ranking:
 class LaneRanker(Protocol):
     """Rank a dispatch's finished lanes, best first."""
 
-    def __call__(self, results: Sequence[LaneResult], *, base: str) -> Ranking:
-        """Return the order of the lanes that ended with a result, cut from the commit `base`."""
+    def __call__(self, results: Sequence[LaneResult], *, group: str, base: str) -> Ranking:
+        """Return the order of a group's lanes that ended with a result, cut from `base`."""
         ...
 
 

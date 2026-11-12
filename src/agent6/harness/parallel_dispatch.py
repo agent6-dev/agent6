@@ -553,7 +553,9 @@ class ParallelDispatcher:
             if (res := by_id.get(child.session_id)) is not None and res.ok
         ]
         ranking = (
-            self.ranker(rankable, base=record.base) if rankable else lane_records.Ranking(order=())
+            self.ranker(rankable, group=record.identity, base=record.base)
+            if rankable
+            else lane_records.Ranking(order=())
         )
         ids = [res.spec.session_id for res in rankable]
         # Every rankable lane has a place, whatever the ranker returned.

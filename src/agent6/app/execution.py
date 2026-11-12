@@ -593,6 +593,20 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 lane_recoverer=app_lanes.build_lane_recoverer(
                     cfg, cwd, state_dir, mode=mode, reporter=reporter
                 ),
+                lane_ranker=app_lanes.build_lane_ranker(
+                    cfg,
+                    cwd,
+                    state_dir,
+                    coordinator_dir=layout.session_dir,
+                    base_sha=inputs.base_sha,
+                    build_provider=frontend.build_judge_provider,
+                    judging_status=frontend.judging_status,
+                    budget=budget,
+                    events=events,
+                    reporter=reporter,
+                )
+                if frontend.build_judge_provider is not None and mode == "run"
+                else None,
             ),
             budget=budget,
             state_dir=state_dir,

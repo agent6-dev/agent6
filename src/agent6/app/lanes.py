@@ -21,9 +21,10 @@ from agent6.app import lane_launch, lane_watch, parallel_results, stop, workdirs
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError
 from agent6.context import memory
+from agent6.harness import judge as harness_judge
 from agent6.harness import subrun
 from agent6.models import validate
-from agent6.sessions import ipc, journal, lane_dispatch, lineage
+from agent6.sessions import event_log, ipc, journal, lane_dispatch, lineage
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
@@ -734,6 +735,106 @@ def lane_has_commits(session_dir: pathlib.Path, imported: lane_records.Imported)
     except sessions_manifest.ManifestError:
         return True
     return imported.tip != base
+
+
+def build_lane_ranker(
+    cfg: Config,
+    origin: pathlib.Path,
+    origin_state: pathlib.Path,
+    *,
+    coordinator_dir: pathlib.Path,
+    base_sha: str,
+    build_provider: app_compare.BuildProvider,
+    judging_status: app_compare.JudgingStatus,
+    budget: agent6_budget.BudgetTracker,
+    events: event_log.EventSink,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
+) -> lane_records.LaneRanker:
+    """Build the ranker a rank join asks: `[harness.parallel].judges` over the imported lanes.
+
+    The judges bill the coordinator's own budget. Each ranking is stamped on the coordinator
+    and the lanes, journaled, and printed as the ranked table.
+
+    Args:
+        cfg: The coordinator's config.
+        origin: The repository.
+        origin_state: The origin's state dir.
+        coordinator_dir: The coordinator's session dir, which holds the judges' transcripts.
+        base_sha: The commit the lanes were cut from when the dispatch names none.
+        build_provider: Builds the reviewer provider a judge sits in.
+        judging_status: Shown around the judge calls.
+        budget: The coordinator's tracker.
+        events: The coordinator's journal.
+        reporter: Receives the ranked table and a failed judge's line.
+
+    Returns:
+        The ranker.
+    """
+
+    def rank(
+        results: Sequence[lane_records.LaneResult], *, group: str, base: str
+    ) -> lane_records.Ranking:
+        rows = {res.spec.session_id: summarize_session_dir(res.session_dir) for res in results}
+        candidates = [
+            harness_judge.CandidateBrief(
+                session_id=res.spec.session_id,
+                task=app_compare.manifest_task(res.session_dir, ""),
+                diff=git_read.diff_range(origin, base or base_sha, res.imported_tip)
+                if res.imported_tip
+                else "",
+                verification=rows[res.spec.session_id].verification,
+                cost_usd=rows[res.spec.session_id].cost_usd,
+            )
+            for res in results
+        ]
+        outcome = app_compare.rank(
+            cfg,
+            candidates,
+            transcript_dir=coordinator_dir / "judges",
+            build_provider=build_provider,
+            judging_status=judging_status,
+            budget=budget,
+            events=events,
+            reporter=reporter,
+        )
+        parallel_results.stamp_compare_outcomes(
+            candidates,
+            outcome,
+            origin_state=origin_state,
+            coordinator_dir=coordinator_dir,
+            group=group,
+            reporter=reporter,
+        )
+        events.emit(
+            journal.ParallelCompared(
+                group=group,
+                ranked_by=outcome.ranked_by,
+                rationale=outcome.rationale,
+                ranking=[
+                    {
+                        "session_id": rid,
+                        "verify": app_compare.verify_word(rows[rid].verification),
+                        "cost_usd": rows[rid].cost_usd,
+                        "cost": rows[rid].usage_cell,
+                    }
+                    for rid in outcome.ranking
+                ],
+                judge_cost_usd=outcome.judge_cost_usd,
+                judge_cost_partial=outcome.judge_cost_partial,
+            )
+        )
+        app_compare.print_ranked_candidates(
+            candidates,
+            outcome,
+            rows=rows,
+            committed={res.spec.session_id: res.has_commits for res in results},
+            reporter=reporter,
+        )
+        return lane_records.Ranking(
+            order=outcome.ranking, ranked_by=outcome.ranked_by, rationale=outcome.rationale
+        )
+
+    return rank
 
 
 def build_lane_spawner(

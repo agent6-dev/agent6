@@ -4,14 +4,20 @@
 
 from __future__ import annotations
 
+import contextlib
+import dataclasses
+import json
 import pathlib
 import subprocess
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
-from agent6 import budget, directive, lane_records
+from agent6 import budget, directive, lane_records, paths
+from agent6.app import lanes as app_lanes
+from agent6.app import reporter as app_reporter
+from agent6.config import Config
 from agent6.harness import (
     loop_conversation,
     loop_state,
@@ -19,7 +25,10 @@ from agent6.harness import (
     parallel_join,
     run_chain,
 )
-from agent6.sessions import journal, lane_dispatch
+from agent6.providers import Provider, ProviderResponse
+from agent6.sessions import event_log, journal, lane_dispatch
+from agent6.sessions import layout as sessions_layout
+from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import read as git_read
 
 
@@ -81,8 +90,9 @@ class _Lanes:
         )
 
     def rank(
-        self, results: Sequence[lane_records.LaneResult], *, base: str
+        self, results: Sequence[lane_records.LaneResult], *, group: str, base: str
     ) -> lane_records.Ranking:
+        assert group == "root-p1"
         self.ranked.append([res.spec.session_id for res in results])
         return lane_records.Ranking(
             order=tuple(rid for rid in self.order if rid in self.ranked[-1]),
@@ -245,3 +255,101 @@ def test_an_outranked_lane_reads_as_its_place_in_the_task_graph_note() -> None:
     join = lane_records.LaneJoin("root-p1-l1", "agent6/root-p1-l1", "outranked", "", "3 of 3")
 
     assert parallel_join.lane_note(join) == "root-p1-l1 ranked 3 of 3; not joined"
+
+
+class _Judge:
+    """A judge that keeps what it was shown and puts lane 2 first."""
+
+    def __init__(self) -> None:
+        self.shown: list[str] = []
+
+    def call(self, **kw: Any) -> ProviderResponse:
+        self.shown.append(kw["messages"][0]["content"])
+        reply = {"ranking": ["root-p1-l2", "root-p1-l1"], "rationale": "two is tidier"}
+        return ProviderResponse(
+            text=json.dumps(reply),
+            tool_uses=(),
+            stop_reason="end_turn",
+            input_tokens=10,
+            output_tokens=5,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+            raw={"content": [{"type": "text", "text": json.dumps(reply)}]},
+        )
+
+
+def _lane_record(repo: pathlib.Path, sid: str, verification: str) -> pathlib.Path:
+    """Write an imported lane's record: a manifest and a journal that ends with a verdict."""
+    dest = sessions_layout.bucket_dir(paths.state_dir(repo), "runs") / sid
+    dest.mkdir(parents=True)
+    manifest = {"version": 2, "session_id": sid, "mode": "run", "user_task": "rewrite a.txt"}
+    (dest / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    rows = [
+        {"type": "session.start", "mode": "run", "user_task": "rewrite a.txt"},
+        {"type": "session.stop", "reason": "finish_session", "verification": verification},
+    ]
+    (dest / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), "utf-8")
+    return dest
+
+
+def test_the_apps_ranker_judges_the_imported_work_and_records_the_outcome(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The judge reads each lane's diff from its base; the stamps and the journal keep the order."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(repo.parent / "state"))
+    origin_state = paths.state_dir(repo)
+    root = _lane_record(repo, "root", "not_applicable")
+    lanes = _Lanes(repo, order=())
+    results = [
+        dataclasses.replace(res, session_dir=_lane_record(repo, res.spec.session_id, "passed"))
+        for res in (lanes.result(1), lanes.result(2))
+    ]
+    judge = _Judge()
+
+    def seat(*_a: object) -> Provider:
+        return cast(Provider, judge)
+
+    said: list[str] = []
+    cfg = Config.model_validate(
+        {
+            "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
+            "models": {"default": {"model": "o/worker-1"}},
+        }
+    )
+    ranker = app_lanes.build_lane_ranker(
+        cfg,
+        repo,
+        origin_state,
+        coordinator_dir=root,
+        base_sha=_git(repo, "rev-parse", "main"),
+        build_provider=seat,
+        judging_status=contextlib.nullcontext,
+        budget=budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20),
+        events=event_log.EventSink(root / "logs.jsonl"),
+        reporter=app_reporter.Reporter(out=said.append, err=said.append),
+    )
+
+    ranking = ranker(results, group="root-p1", base="")
+
+    assert ranking == lane_records.Ranking(
+        order=("root-p1-l2", "root-p1-l1"), ranked_by="judge", rationale="two is tidier"
+    )
+    (shown,) = judge.shown
+    assert "--- CANDIDATE root-p1-l1 ---" in shown and "+lane 1" in shown and "+lane 2" in shown
+    placements = {
+        sid: sessions_manifest.read_manifest(origin_state / "sessions" / "runs" / sid).placement
+        for sid in ("root-p1-l1", "root-p1-l2")
+    }
+    assert placements["root-p1-l2"] == sessions_manifest.PlacementStamp(
+        rank=1, of=2, winner=True, group="root-p1"
+    )
+    assert placements["root-p1-l1"] == sessions_manifest.PlacementStamp(
+        rank=2, of=2, winner=False, group="root-p1"
+    )
+    comparison = sessions_manifest.read_manifest(root).comparison
+    assert comparison is not None and comparison.ranking == ("root-p1-l2", "root-p1-l1")
+    journaled = [json.loads(line) for line in (root / "logs.jsonl").read_text().splitlines()]
+    (compared,) = [row for row in journaled if row["type"] == "parallel.compared"]
+    assert [lane["session_id"] for lane in compared["ranking"]] == ["root-p1-l2", "root-p1-l1"]
+    assert said[0] == "ranked candidates (best first):"
+    assert said[1].startswith("  1. root-p1-l2  passed  ")

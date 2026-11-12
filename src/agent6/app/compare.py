@@ -74,6 +74,7 @@ def rank(
     build_provider: BuildProvider,
     judging_status: JudgingStatus,
     max_usd: float | None = None,
+    budget: agent6_budget.BudgetTracker | None = None,
     events: event_log.EventSink | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> RankOutcome:
@@ -90,6 +91,8 @@ def rank(
         build_provider: Builds the reviewer provider.
         judging_status: Shown around the judge calls.
         max_usd: Caps the judging like one more lane; None uses the config budget.
+        budget: The run's own tracker, which the judges then bill; None gives them one of
+            their own under `max_usd`.
         events: The coordinator's journal; when present, a judge streams role events into it.
         reporter: Where a failed judge is reported.
 
@@ -103,7 +106,8 @@ def rank(
     if len(candidates) < 2 or not selectors:
         return RankOutcome(mechanical, "", "mechanical")
     sink = TranscriptSink(transcript_dir, objects_dir=transcript_dir / "objects")
-    budget = session_setup.budget_tracker(cfg, max_usd=max_usd)
+    budget = budget or session_setup.budget_tracker(cfg, max_usd=max_usd)
+    before, _ = budget.estimate_usd()
     verdicts: list[tuple[str, harness_judge.CompareVerdict]] = []
     with judging_status():
         for selector in selectors:
@@ -120,7 +124,8 @@ def rank(
                 # A failed judge is reported: the table must not read as ranked by it.
                 detail = str(exc).splitlines()[0] if str(exc).strip() else exc.__class__.__name__
                 reporter.err(f"judge {selector} failed ({detail})")
-    spent, unknown = budget.estimate_usd()
+    after, unknown = budget.estimate_usd()
+    spent = after - before
     if not verdicts:
         spent_s = (
             f"; judge spend {agent6_budget.format_usd(spent, partial=unknown)}"

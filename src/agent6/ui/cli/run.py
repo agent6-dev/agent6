@@ -28,6 +28,7 @@ from agent6.ui import btw, spawn, steer
 from agent6.ui.cli import (
     ask,
     common,
+    compare_ranking,
     console_render,
     interact,
     live,
@@ -207,6 +208,8 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
                 )
             )
         ),
+        build_judge_provider=compare_ranking._reviewer_provider,
+        judging_status=compare_ranking._judging_status,
         agent6_exe=spawn.agent6_exe,
         spawn_detached_resume=lambda cwd, sid, flags: spawn.spawn_detached_resume(
             cwd, sid, config_paths=config_paths, flags=flags

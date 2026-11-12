@@ -1975,6 +1975,7 @@ class Harness:
                 self.resume_state_path.parent if self.resume_state_path is not None else None
             ),
             lane_recoverer=self.bridge.lane_recoverer,
+            ranker=self.bridge.lane_ranker,
         )
 
     @functools.cached_property
