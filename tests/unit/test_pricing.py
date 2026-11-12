@@ -163,7 +163,7 @@ def test_a_model_two_providers_list_is_priced_by_its_route(
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     assert budget.estimate_usd()[0] == pytest.approx(12.5)
 
@@ -217,7 +217,7 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
         input_tokens=0,
         output_tokens=0,
         cache_read_tokens=1_000_000,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     assert listed.estimate_usd()[0] == pytest.approx(1.0)  # the listed 0.5x, not 0.1x
     assumed = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
@@ -226,7 +226,7 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
         input_tokens=0,
         output_tokens=0,
         cache_read_tokens=1_000_000,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     assert assumed.estimate_usd()[0] == pytest.approx(0.2)  # Anthropic's 0.1x of $2
     assert "cache rates assumed" in assumed.format_summary()

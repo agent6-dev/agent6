@@ -30,8 +30,8 @@ def worker() -> list[dict[str, Any]]:
             "type": "role.result",
             "ts": "2026-07-16T00:00:04+00:00",
             "model_call_id": "c",
-            "tokens_in": 1000,
-            "tokens_out": 200,
+            "input_tokens": 1000,
+            "output_tokens": 200,
         },
         {"type": "budget.update", "ts": "2026-07-16T00:00:04+00:00", "usd_total": 0.25},
         {

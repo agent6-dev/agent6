@@ -30,7 +30,7 @@ def _resp() -> ProviderResponse:
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": [{"type": "text", "text": "ok"}]},
     )
 
@@ -70,7 +70,7 @@ def test_a_call_and_its_result_share_one_id_and_identity() -> None:
             "moonshotai/kimi-k2.6",
             "openai",
         )
-    assert result["ok"] is True and result["tokens_out"] == 1
+    assert result["ok"] is True and result["output_tokens"] == 1
 
 
 def test_a_failed_call_keeps_its_id_and_a_seat_carries_its_index() -> None:
@@ -140,7 +140,7 @@ def test_the_journal_records_what_the_assistant_said(tmp_path: pathlib.Path) -> 
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={},
     )
     role_providers.InstrumentedProvider(
@@ -188,7 +188,7 @@ def test_a_failed_call_still_reports_what_it_spent(
             input_tokens=50_000,
             output_tokens=120,
             cache_read_tokens=7_000,
-            cache_creation_tokens=1_100,
+            cache_write_tokens=1_100,
         )
         raise ProviderError("stream cut before completion")
 
@@ -213,7 +213,7 @@ def test_a_failed_call_still_reports_what_it_spent(
     ]
     assert [(e["input_total"], e["output_total"]) for e in updates] == [(50_000, 120)]
     # The cached side rides the same event: the scan and every surface read it there.
-    assert (updates[0]["cache_read_total"], updates[0]["cache_creation_total"]) == (7_000, 1_100)
+    assert (updates[0]["cache_read_total"], updates[0]["cache_write_total"]) == (7_000, 1_100)
     assert updates[0]["usd_total"] > 0.0
 
 

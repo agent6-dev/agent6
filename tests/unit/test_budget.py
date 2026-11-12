@@ -40,15 +40,15 @@ def _t(*, fallback: int = 100) -> budget.BudgetTracker:
 
 
 def test_usd_ceiling_counts_cache_tokens_token_caps_would_miss() -> None:
-    # Token caps huge and fresh input ~0, but cache_creation alone costs over $1.
+    # Token caps huge and fresh input ~0, but cache_write alone costs over $1.
     t = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=-1, max_plan_points=-1)
-    # sonnet-4 input $3/M, cache_creation 1.25x = $3.75/M; 300k * 3.75/1e6 = $1.125 > $1.
+    # sonnet-4 input $3/M, cache_write 1.25x = $3.75/M; 300k * 3.75/1e6 = $1.125 > $1.
     t.record(
         route=kinds.ModelRoute("claude-sonnet-4-20250514", "claude-sonnet-4-20250514"),
         input_tokens=10,
         output_tokens=10,
         cache_read_tokens=0,
-        cache_creation_tokens=300_000,
+        cache_write_tokens=300_000,
     )
     with pytest.raises(budget.BudgetExceededError) as exc:
         t.check()
@@ -63,7 +63,7 @@ def test_usd_ceiling_off_when_unlimited() -> None:
         input_tokens=10,
         output_tokens=10,
         cache_read_tokens=0,
-        cache_creation_tokens=300_000,
+        cache_write_tokens=300_000,
     )
     t.check()  # no raise
 
@@ -80,7 +80,7 @@ def test_negative_usage_never_reduces_the_ledger() -> None:
         input_tokens=5,
         output_tokens=3,
         cache_read_tokens=1,
-        cache_creation_tokens=2,
+        cache_write_tokens=2,
     )
     before = t.snapshot()
     t.record(
@@ -88,14 +88,14 @@ def test_negative_usage_never_reduces_the_ledger() -> None:
         input_tokens=-500,
         output_tokens=-500,
         cache_read_tokens=-500,
-        cache_creation_tokens=-500,
+        cache_write_tokens=-500,
         cost_usd=-9.0,
     )
     snap = t.snapshot()
     assert snap.input_total == before.input_total
     assert snap.output_total == before.output_total
     assert snap.cache_read_total == before.cache_read_total
-    assert snap.cache_creation_total == before.cache_creation_total
+    assert snap.cache_write_total == before.cache_write_total
     assert t.estimate_usd()[0] >= 0.0
 
 
@@ -106,20 +106,20 @@ def test_record_accumulates() -> None:
         input_tokens=5,
         output_tokens=3,
         cache_read_tokens=1,
-        cache_creation_tokens=2,
+        cache_write_tokens=2,
     )
     t.record(
         route=kinds.ModelRoute("m", "m"),
         input_tokens=4,
         output_tokens=2,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     snap = t.snapshot()
     assert snap.input_total == 9
     assert snap.output_total == 5
     assert snap.cache_read_total == 1
-    assert snap.cache_creation_total == 2
+    assert snap.cache_write_total == 2
     assert snap.exhausted is False
     t.check()  # should not raise
 
@@ -132,7 +132,7 @@ def test_fallback_ceiling_hard_stop() -> None:
         input_tokens=7,
         output_tokens=3,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     assert t.is_exhausted()
     with pytest.raises(budget.BudgetExceededError, match="fallback token budget"):
@@ -146,21 +146,21 @@ def test_per_model_tracking() -> None:
         input_tokens=10,
         output_tokens=2,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     t.record(
         route=kinds.ModelRoute("b", "b"),
         input_tokens=20,
         output_tokens=4,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     t.record(
         route=kinds.ModelRoute("a", "a"),
         input_tokens=5,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     pm = t.snapshot().per_model
     assert pm[kinds.ModelRoute("a", "a")].input_tokens == 15
@@ -177,14 +177,14 @@ def test_format_summary_renders_known_and_unknown_prices() -> None:
         input_tokens=1000,
         output_tokens=100,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     t.record(
         route=kinds.ModelRoute("totally-fake-model", "totally-fake-model"),
         input_tokens=500,
         output_tokens=50,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     summary = t.format_summary()
     assert "claude-sonnet-4-5" in summary
@@ -212,7 +212,7 @@ def test_format_summary_marks_exhausted() -> None:
         input_tokens=10,
         output_tokens=0,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     assert "STATUS: fallback token budget exhausted" in t.format_summary()
 
@@ -255,7 +255,7 @@ def test_percent_meter_sawtooth_and_cap() -> None:
             input_tokens=1000,
             output_tokens=50,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             plan_usage=budget.PlanUsage.single(
                 used_percent=pct, window_minutes=10080, resets_at=resets_at
             ),
@@ -289,7 +289,7 @@ def test_a_plan_cap_names_the_same_window_as_its_usage_line() -> None:
         input_tokens=5,
         output_tokens=0,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         plan_usage=budget.PlanUsage.single(49, 10080, 2e9),
     )
     with pytest.raises(budget.BudgetExceededError, match="account at 49% on its 7-day window"):
@@ -304,7 +304,7 @@ def test_percent_zero_refuses_plan_metered_calls() -> None:
         input_tokens=10,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         plan_usage=budget.PlanUsage.single(used_percent=1.0, window_minutes=300, resets_at=2e9),
     )
     with pytest.raises(budget.BudgetExceededError, match="percent budget is 0"):
@@ -328,7 +328,7 @@ def _record_plan(t: budget.BudgetTracker, plan: budget.PlanUsage) -> None:
         input_tokens=10,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         plan_usage=plan,
     )
 
@@ -404,7 +404,7 @@ def test_fraction_remaining_counts_the_plan_percent_ledger() -> None:
         input_tokens=10,
         output_tokens=10,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         plan_usage=budget.PlanUsage.single(used_percent=40.0, window_minutes=300, resets_at=0.0),
     )
     t.record(
@@ -412,7 +412,7 @@ def test_fraction_remaining_counts_the_plan_percent_ledger() -> None:
         input_tokens=10,
         output_tokens=10,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         plan_usage=budget.PlanUsage.single(used_percent=42.5, window_minutes=300, resets_at=0.0),
     )
     # The run consumed ~2.5 points of its 5-point cap.
@@ -433,7 +433,7 @@ def test_preflight_reading_seeds_the_baseline_and_guards_credits() -> None:
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         plan_usage=budget.PlanUsage.single(used_percent=42.0, window_minutes=10080, resets_at=0),
     )
     assert t.snapshot().plan_observed_points == 2.0
@@ -551,7 +551,7 @@ def test_plan_readings_enforce_combined_usd_spend(operation: str) -> None:
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         cost_usd=8,
     )
     tracker.record_plan_preflight(
@@ -605,7 +605,7 @@ def test_credit_balances_are_tracked_per_provider_entry() -> None:
             input_tokens=1,
             output_tokens=1,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             plan_usage=budget.PlanUsage.single(
                 100.0,
                 10080,
@@ -668,7 +668,7 @@ def test_an_all_unpriced_run_does_not_claim_a_usd_ceiling() -> None:
         input_tokens=10,
         output_tokens=5,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         cost_usd=None,
     )
 
@@ -692,7 +692,7 @@ def test_each_subscription_plan_prints_its_own_named_line() -> None:
             input_tokens=10,
             output_tokens=1,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             plan_usage=budget.PlanUsage.single(
                 used_percent=pct, window_minutes=10080, resets_at=2e9
             ),
@@ -866,7 +866,7 @@ def test_reserve_splits_what_is_available_and_a_spent_parent_refuses() -> None:
         input_tokens=0,
         output_tokens=0,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         cost_usd=4.0,
     )
     assert t.available().usd == pytest.approx(6.0)
@@ -886,7 +886,7 @@ def test_reserve_splits_what_is_available_and_a_spent_parent_refuses() -> None:
         input_tokens=0,
         output_tokens=0,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         cost_usd=1.0,
     )
     with pytest.raises(budget.BudgetExceededError):

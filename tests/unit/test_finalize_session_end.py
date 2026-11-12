@@ -140,7 +140,7 @@ def test_a_budget_stop_prints_its_detail_once(
         input_tokens=5,
         output_tokens=0,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     result = loop_snapshot.SessionResult(
         completed=False,
@@ -249,7 +249,7 @@ def test_a_timed_out_gate_names_the_timeout_key_not_the_base_commit_check(
             {"type": "session.start", "session_id": "r-slow", "user_task": "t"},
             {
                 "type": "verify.end",
-                "cmd": ["pytest"],
+                "command": ["pytest"],
                 "exit_code": 124,
                 "outcome": "timed_out",
                 "timeout_s": 300.0,

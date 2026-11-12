@@ -96,7 +96,7 @@ class _Scripted:
             input_tokens=10,
             output_tokens=5,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             raw={"content": list(tools)},
         )
 
@@ -509,7 +509,7 @@ def test_a_budget_stopped_lane_continues_with_the_reports_fork_command(
                 input_tokens=10,
                 output_tokens=5,
                 cache_read_tokens=0,
-                cache_creation_tokens=0,
+                cache_write_tokens=0,
             )
             return _Scripted([_edit("lane.txt", "work\n")]).call()
 
@@ -1064,7 +1064,7 @@ def test_the_setup_is_journaled_and_a_resume_never_runs_it_again(
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-SETU05"))
     assert manifest.workspace_set_up and manifest.worktree is not None
     (event,) = _setup_events(repo, "wt-SETU05")
-    assert event["cmd"] == ["sh", "-c", "echo ran >> .setup-ran"]
+    assert event["command"] == ["sh", "-c", "echo ran >> .setup-ran"]
     assert event["exit_code"] == 0 and event["duration_s"] >= 0
 
     capsys.readouterr()
@@ -1185,7 +1185,7 @@ def test_the_setup_command_is_inferred_from_the_agents_md_block(
         "setup_command not set; inferred from AGENTS.md: sh -c 'echo from-agents-md > .setup-ran'"
     ) in err
     (event,) = _setup_events(repo, "wt-SETU08")
-    assert event["cmd"] == ["sh", "-c", "echo from-agents-md > .setup-ran"]
+    assert event["command"] == ["sh", "-c", "echo from-agents-md > .setup-ran"]
 
 
 @pytest.mark.parametrize("committed", [False, True])

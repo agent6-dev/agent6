@@ -413,10 +413,10 @@ class ClaudeCodeProvider:
         """
         input_tokens = _int(r.usage.get("input_tokens"))
         cache_read = _int(r.usage.get("cache_read_input_tokens"))
-        cache_creation = _int(r.usage.get("cache_creation_input_tokens"))
+        cache_write = _int(r.usage.get("cache_creation_input_tokens"))
         output_tokens = _int(r.usage.get("output_tokens"))
-        self._record(s, input_tokens, output_tokens, cache_read, cache_creation)
-        live_context = input_tokens + cache_read + cache_creation
+        self._record(s, input_tokens, output_tokens, cache_read, cache_write)
+        live_context = input_tokens + cache_read + cache_write
         if self.context_tokens and live_context > self.context_tokens - _CONTEXT_RESERVE_TOKENS:
             s.restart_next = True  # the next call replays the compacted mirror
         return provider_types.ProviderResponse(
@@ -430,7 +430,7 @@ class ClaudeCodeProvider:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cache_read_tokens=cache_read,
-            cache_creation_tokens=cache_creation,
+            cache_write_tokens=cache_write,
             raw={
                 "content": r.blocks,
                 "model": s.resolved_model,
@@ -511,7 +511,7 @@ class ClaudeCodeProvider:
         inp: int,
         out: int,
         cache_read: int,
-        cache_creation: int,
+        cache_write: int,
     ) -> None:
         """Record the round's spend against the plan window.
 
@@ -520,7 +520,7 @@ class ClaudeCodeProvider:
             inp: Input tokens.
             out: Output tokens.
             cache_read: Cache-read tokens.
-            cache_creation: Cache-write tokens.
+            cache_write: Cache-write tokens.
 
         Raises:
             ProviderError: No plan reading (fatal: a retry would bill another round
@@ -540,10 +540,10 @@ class ClaudeCodeProvider:
             input_tokens=inp,
             output_tokens=out,
             cache_read_tokens=cache_read,
-            cache_creation_tokens=cache_creation,
+            cache_write_tokens=cache_write,
             plan_usage=s.plan,
         )
-        if inp + cache_read + cache_creation <= 0:
+        if inp + cache_read + cache_write <= 0:
             raise provider_types.ProviderError(
                 "claude reported no usage input tokens for this round; budgeted runs require"
                 " provider usage accounting"

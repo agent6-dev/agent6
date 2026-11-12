@@ -760,7 +760,7 @@ def stuck_on_task(
     return advice.Nudge(
         dag_focus.stuck_on_task_nudge(current_id, node, focus.turns_on_task),
         event=journal.LoopTaskStuckNudge(
-            task_id=current_id, turns=focus.turns_on_task, n=focus.stuck_nudges_fired
+            task_id=current_id, turns=focus.turns_on_task, nudges_used=focus.stuck_nudges_fired
         ),
         log=(
             f"LOOP: stuck-on-task nudge #{focus.stuck_nudges_fired} for {current_id}"

@@ -968,7 +968,7 @@ def test_anthropic_usage_counts_accept_integer_strings_and_integral_floats() -> 
         response.input_tokens,
         response.output_tokens,
         response.cache_read_tokens,
-        response.cache_creation_tokens,
+        response.cache_write_tokens,
     ) == (10, 2, 3, 4)
 
 

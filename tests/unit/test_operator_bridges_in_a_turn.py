@@ -53,7 +53,7 @@ def _tool_call(name: str, args: dict[str, Any], call_id: str) -> provider_types.
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": [block]},
     )
 

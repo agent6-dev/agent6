@@ -95,7 +95,7 @@ def _resp(
         input_tokens=3,
         output_tokens=7,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": blocks},
     )
 

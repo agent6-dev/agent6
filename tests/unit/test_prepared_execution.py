@@ -480,7 +480,7 @@ def test_mid_run_gate_adoption_uses_the_prepared_target(
                 input_tokens=0,
                 output_tokens=0,
                 cache_read_tokens=0,
-                cache_creation_tokens=0,
+                cache_write_tokens=0,
             ),
             assistant=loop_conversation.AssistantMessage((), ()),
         )

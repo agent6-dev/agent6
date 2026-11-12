@@ -179,7 +179,7 @@ def test_stream_attempt_keeps_one_record_with_its_outcome(
             "input_tokens": 100,
             "output_tokens": 10,
             "cache_read_tokens": 25,
-            "cache_creation_tokens": 0,
+            "cache_write_tokens": 0,
             "cost_usd": 0.0,
         }
     if ending != "completed":

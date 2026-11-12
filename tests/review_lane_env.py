@@ -78,7 +78,7 @@ class ResponseAdapter:
             input_tokens=10,
             output_tokens=getattr(resp, "output_tokens", 20),
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             raw=raw,
         )
 

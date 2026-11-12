@@ -69,7 +69,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
                 input_tokens=1,
                 output_tokens=4,
                 cache_read_tokens=0,
-                cache_creation_tokens=0,
+                cache_write_tokens=0,
                 cost_usd=cost,
             )
         event_log.EventSink(worker_dir / "logs.jsonl").emit(

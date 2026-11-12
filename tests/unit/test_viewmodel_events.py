@@ -73,7 +73,7 @@ def test_coercion_matches_the_folds_historical_defaults() -> None:
         {"type": "role.result", "ok": False, "model_call_id": "abc", "seat_index": True}
     )
     assert isinstance(result, journal.RoleResult)
-    assert result.ok is False and result.seat_index is None and result.tokens_in == 0
+    assert result.ok is False and result.seat_index is None and result.input_tokens == 0
     # An unknown verification word reads as none; a garbled numeric degrades the row.
     stop = ev.parse_event({"type": "session.stop", "verification": "maybe"})
     assert isinstance(stop, journal.SessionStop) and ev.verification_word(stop.verification) is None

@@ -208,7 +208,7 @@ def test_a_redirecting_model_endpoint_is_refused_without_a_second_request(
             input_tokens=0,
             output_tokens=0,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             raw={},
         ),
     )

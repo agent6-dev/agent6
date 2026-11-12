@@ -332,7 +332,7 @@ def parse_output_items(
         input_tokens=prompt_total - cached,
         output_tokens=usage_count(usage.get("output_tokens"), "output_tokens", label=label),
         cache_read_tokens=cached,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": blocks, "usage": dict(usage), "output": items},
     )
 

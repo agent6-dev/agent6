@@ -160,7 +160,7 @@ def test_receipt_binds_pass_to_observed_tree(
             "type": "verify.end",
             "verify_id": "v",
             "execution_id": "exec",
-            "cmd": ["true"],
+            "command": ["true"],
             "tree_before": before,
             "tree_after": after,
             "scoped": False,
@@ -191,7 +191,7 @@ def test_legacy_receipt_marks_unknown_capture_and_no_gate(tmp_path: pathlib.Path
 
     (tmp_path / "manifest.json").write_text("{}")
     (tmp_path / "logs.jsonl").write_text(
-        json.dumps({"type": "verify.end", "cmd": ["true"], "exit_code": 0, "stdout_tail": "ok"})
+        json.dumps({"type": "verify.end", "command": ["true"], "exit_code": 0, "stdout_tail": "ok"})
         + "\n"
     )
     text = receipt.render(receipt.read_receipt(tmp_path, tmp_path))
@@ -301,8 +301,8 @@ def test_historical_baseline_marks_only_its_observation(tmp_path: pathlib.Path) 
     from agent6.viewmodel import receipt
 
     (tmp_path / "logs.jsonl").write_text(
-        '{"type":"verify.end","cmd":["true"],"exit_code":0}\n'
-        '{"type":"verify.end","cmd":["false"],"exit_code":1}\n'
+        '{"type":"verify.end","command":["true"],"exit_code":0}\n'
+        '{"type":"verify.end","command":["false"],"exit_code":1}\n'
         '{"type":"loop.baseline","ok":false}\n',
         encoding="utf-8",
     )
@@ -353,7 +353,7 @@ def _record(**changes: Any) -> evidence.VerificationEvidence:
         evidence.VerificationEvidence(
             verify_id="v",
             execution_id=None,
-            cmd=("true",),
+            command=("true",),
             tree_before=None,
             tree_after=None,
             scoped=False,
@@ -417,7 +417,7 @@ def test_receipt_uses_one_shared_scan_without_per_line_adapters(tmp_path: pathli
 
     from agent6.viewmodel import receipt, session_log
 
-    row = json.dumps({"type": "verify.end", "verify_id": "v", "cmd": ["true"], "exit_code": 0})
+    row = json.dumps({"type": "verify.end", "verify_id": "v", "command": ["true"], "exit_code": 0})
     (tmp_path / "logs.jsonl").write_text((row + "\n") * 2000)
     with (
         mock.patch.object(
@@ -439,7 +439,7 @@ def test_torn_live_journal_keeps_evidence_but_cannot_certify(tmp_path: pathlib.P
     sink.emit(
         journal.VerifyEnd(
             verify_id="v",
-            cmd=["true"],
+            command=["true"],
             exit_code=0,
             tree_before="tree",
             tree_after="tree",

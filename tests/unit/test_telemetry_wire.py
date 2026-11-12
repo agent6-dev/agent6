@@ -84,7 +84,7 @@ def test_otlp_json_follows_the_protobuf_mapping_with_its_otlp_exceptions() -> No
     assert (root["kind"], call["kind"]) == (1, 3)
     assert root["status"] == {"code": 2} and call["status"] == {"code": 1}
     by_key = {a["key"]: a["value"] for a in call["attributes"]}
-    assert by_key["agent6.tokens_in"] == {"intValue": "10"}
+    assert by_key["agent6.input_tokens"] == {"intValue": "10"}
     assert by_key["agent6.ok"] == {"boolValue": True}
     assert by_key["agent6.model"] == {"stringValue": "m"}
     scope = traces["resourceSpans"][0]["scopeSpans"][0]["scope"]

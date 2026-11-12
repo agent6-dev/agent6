@@ -101,7 +101,7 @@
       "input_tokens": null,
       "output_tokens": null,
       "cache_read_tokens": null,
-      "cache_creation_tokens": null,
+      "cache_write_tokens": null,
       "usd": 0.0,
       "usd_partial": false,
       "unmetered_tokens": 0,

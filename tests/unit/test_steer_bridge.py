@@ -297,7 +297,7 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: pathlib.Path) -
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": [{"type": "text", "text": "done"}]},
     )
     dispatcher = mock.MagicMock(

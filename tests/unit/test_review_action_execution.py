@@ -76,7 +76,7 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
             input_tokens=1,
             output_tokens=1,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             raw={"content": [tool]},
         )
 

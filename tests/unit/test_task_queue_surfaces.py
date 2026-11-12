@@ -57,7 +57,7 @@ def test_the_transcript_says_a_task_arrived() -> None:
     items = transcript.fold_transcript(
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "loop.task.queued", "id": "01M2", "title": "add a --json flag"},
+            {"type": "loop.task.queued", "task_id": "01M2", "title": "add a --json flag"},
         ]
     )
 

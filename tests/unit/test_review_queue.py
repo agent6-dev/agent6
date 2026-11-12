@@ -67,11 +67,11 @@ def _verify_rows(
 ) -> list[dict[str, Any]]:
     """Return a verification attempt that observed `tree` on both sides."""
     return [
-        {"type": "verify.start", "verify_id": "v", "cmd": ["pytest"], "tree_before": tree},
+        {"type": "verify.start", "verify_id": "v", "command": ["pytest"], "tree_before": tree},
         {
             "type": "verify.end",
             "verify_id": "v",
-            "cmd": ["pytest"],
+            "command": ["pytest"],
             "exit_code": exit_code,
             "tree_before": tree,
             "tree_after": tree,

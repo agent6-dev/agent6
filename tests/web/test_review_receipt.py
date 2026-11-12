@@ -38,7 +38,7 @@ def test_receipt_route_and_card_state_the_output_cap_once(
     for cut in (False, True):
         sink.emit(
             journal.VerifyEnd(
-                cmd=["pytest"],
+                command=["pytest"],
                 exit_code=0,
                 stdout_tail="out",
                 stderr_tail="",

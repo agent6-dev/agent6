@@ -269,7 +269,7 @@ def test_submitted_fixes_survive_completed_resume(tmp_path: pathlib.Path) -> Non
     verify: dict[str, Any] = dict(
         verify_id="verify-fix",
         execution_id="resumed",
-        cmd=["pytest", "-q"],
+        command=["pytest", "-q"],
         tree_before="fixed-tree",
         scoped=False,
         selected_paths=[],

@@ -437,7 +437,7 @@ class VerifyGate:
         if not (runs and self.present(verdict)):
             return []
         self.log("LOOP: harness verify (start)")
-        self.emit(journal.LoopVerifyHarness(why="start", turn=0))
+        self.emit(journal.LoopVerifyHarness(reason="start", turn=0))
         try:
             result = self.dispatcher.run_verify()
         except tool_errors.ToolDeniedError as exc:
@@ -498,7 +498,7 @@ class VerifyGate:
         if why is None:
             return
         self.log(f"LOOP: harness verify ({why}) at turn {turn.number}")
-        self.emit(journal.LoopVerifyHarness(why=why, turn=turn.number))
+        self.emit(journal.LoopVerifyHarness(reason=why, turn=turn.number))
         try:
             scope = self.scope_paths(state.verify) if state.verify.scoped else ()
             result = self.dispatcher.run_verify(extra_argv=scope)

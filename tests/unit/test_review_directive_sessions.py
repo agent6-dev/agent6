@@ -75,7 +75,7 @@ class ScriptedReview:
             input_tokens=10,
             output_tokens=5,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             raw={"content": list(tools)},
         )
 
@@ -153,7 +153,7 @@ class SeatProvider:
             input_tokens=10,
             output_tokens=5,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
         )
 
 

@@ -97,7 +97,7 @@ class MetricSampler:
                 turn=turn,
                 label=label,
                 score=score,
-                returncode=result.returncode,
+                exit_code=result.returncode,
                 sha=sha[:12],
             )
         )

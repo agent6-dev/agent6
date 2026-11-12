@@ -35,7 +35,7 @@ def _rec(
         input_tokens=tokens_in,
         output_tokens=tokens_out,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         cost_usd=cost,
     )
 
@@ -102,7 +102,7 @@ def test_a_plan_call_zeroes_only_its_own_calls_not_the_model_id() -> None:
         input_tokens=10,
         output_tokens=10,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         plan_usage=budget.PlanUsage(windows=(budget.PlanWindow("primary", 12.0, 300, 0.0),)),
     )
     _rec(bt, "claude-sonnet-4-5", 250_000, 20_000)  # the SAME id, on the paid API
@@ -125,7 +125,7 @@ def test_a_pure_subscription_model_still_costs_an_authoritative_zero() -> None:
             input_tokens=5_000,
             output_tokens=5_000,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             plan_usage=budget.PlanUsage(windows=(budget.PlanWindow("primary", 12.0, 300, 0.0),)),
         )
 

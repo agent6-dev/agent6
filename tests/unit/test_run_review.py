@@ -51,7 +51,7 @@ _EVENTS: list[dict[str, Any]] = [
     {"type": "loop.no_progress.nudge", "turn": 4},
     {
         "type": "verify.end",
-        "cmd": ["pytest"],
+        "command": ["pytest"],
         "exit_code": 1,
         "duration_s": 2.5,
         "stdout_tail": "",
@@ -59,7 +59,7 @@ _EVENTS: list[dict[str, Any]] = [
     },
     {
         "type": "verify.end",
-        "cmd": ["pytest"],
+        "command": ["pytest"],
         "exit_code": 0,
         "duration_s": 2.0,
         "stdout_tail": "3 passed",
@@ -286,7 +286,7 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
         {"type": "session.start", "session_id": "r", "mode": "run", "user_task": "t"},
         {
             "type": "verify.end",
-            "cmd": ["pytest"],
+            "command": ["pytest"],
             "exit_code": 1,
             "duration_s": 1.0,
             "stdout_tail": "",
@@ -327,7 +327,7 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
         {"type": "session.start", "session_id": "k", "mode": "run", "user_task": "t"},
         {
             "type": "verify.end",
-            "cmd": ["pytest"],
+            "command": ["pytest"],
             "exit_code": 0,
             "duration_s": 1.0,
             "stdout_tail": "ok",
@@ -386,7 +386,7 @@ class _FakeProvider:
             input_tokens=10,
             output_tokens=5,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
         )
 
 
@@ -624,7 +624,7 @@ def test_digest_names_verification_identity_and_capture_limit(repo: pathlib.Path
             {
                 "type": "verify.end",
                 "verify_id": "observed-gate",
-                "cmd": ["pytest"],
+                "command": ["pytest"],
                 "tree_before": "tree-one",
                 "tree_after": "tree-one",
                 "exit_code": 0,
@@ -647,9 +647,9 @@ def test_verify_details_stay_with_their_own_run(tmp_path: pathlib.Path) -> None:
                 "type": "verify.end",
                 "verify_id": "first",
                 "exit_code": 1,
-                "cmd": ["python", "a b.py"],
+                "command": ["python", "a b.py"],
             },
-            {"type": "verify.end", "verify_id": "second", "exit_code": 0, "cmd": ["true"]},
+            {"type": "verify.end", "verify_id": "second", "exit_code": 0, "command": ["true"]},
         ],
     )
     text = review_session.run_digest(saved).render()

@@ -174,7 +174,8 @@ class RunInfo:
                 self._owed = {"role.result", "budget.update"}
             case "role.result":
                 used = sum(
-                    int(event.get(k) or 0) for k in ("tokens_in", "cache_read", "cache_creation")
+                    int(event.get(k) or 0)
+                    for k in ("input_tokens", "cache_read_tokens", "cache_write_tokens")
                 )
                 self._used = used if used > 0 else self._used
                 return self._settle("role.result")

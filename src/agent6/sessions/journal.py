@@ -61,7 +61,7 @@ class ApprovalAnswer(Event):
     """The operator answered an approval request."""
 
     TYPE: ClassVar[str] = "approval.answer"
-    id: str = pydantic.Field(description="Prompt, task or background-job identifier.")
+    id: str = pydantic.Field(description="Approval prompt identifier.")
     approved: bool = pydantic.Field(description="Whether the operator approved the request.")
     source: str = pydantic.Field(description="Where the request or result came from.")
 
@@ -70,7 +70,7 @@ class ApprovalPrompt(Event):
     """A command is waiting for the operator's approval."""
 
     TYPE: ClassVar[str] = "approval.prompt"
-    id: str = pydantic.Field(description="Prompt, task or background-job identifier.")
+    id: str = pydantic.Field(description="Approval prompt identifier.")
     prompt: str = pydantic.Field(description="The words presented to the operator.")
     standing: bool = pydantic.Field(
         description="Whether approval can cover later calls in this scope.",
@@ -115,9 +115,9 @@ class BudgetUpdate(Event):
         default=None,
         description="Cumulative cached input tokens.",
     )
-    cache_creation_total: int | None = pydantic.Field(
+    cache_write_total: int | None = pydantic.Field(
         default=None,
-        description="Cumulative cache-creation tokens.",
+        description="Cumulative cache-write tokens.",
     )
     usd_partial: bool | None = pydantic.Field(
         default=None,
@@ -153,9 +153,9 @@ class CommandBackgrounded(Event):
     """A command was handed back as a background job."""
 
     TYPE: ClassVar[str] = "command.backgrounded"
-    id: str = pydantic.Field(description="Prompt, task or background-job identifier.")
+    background_id: str = pydantic.Field(description="Background job identifier.")
     handle: str = pydantic.Field(description="Launcher-instance-scoped job handle.")
-    seconds: float = pydantic.Field(description="Elapsed command time in seconds at handback.")
+    elapsed_s: float = pydantic.Field(description="Elapsed command time in seconds at handback.")
 
 
 class DiffUpdated(Event):
@@ -295,7 +295,7 @@ class LoopCompactDeduped(Event):
     """Repeated tool results were removed from context."""
 
     TYPE: ClassVar[str] = "loop.compact.deduped"
-    n: int = pydantic.Field(description="Number of affected entries or notices.")
+    count: int = pydantic.Field(description="Number of affected entries or notices.")
     calls: Sequence[Any] = pydantic.Field(description="The affected tool call identities.")
 
 
@@ -303,7 +303,7 @@ class LoopCompactDropped(Event):
     """Tool results were elided from context."""
 
     TYPE: ClassVar[str] = "loop.compact.dropped"
-    n: int = pydantic.Field(description="Number of affected entries or notices.")
+    count: int = pydantic.Field(description="Number of affected entries or notices.")
     calls: Sequence[Any] = pydantic.Field(description="The affected tool call identities.")
 
 
@@ -489,7 +489,7 @@ class LoopMetricSample(Event):
         default=None,
         description="Parsed metric score; null when unavailable.",
     )
-    returncode: int | None = pydantic.Field(
+    exit_code: int | None = pydantic.Field(
         default=None,
         description="Command exit code; null when unavailable.",
     )
@@ -1017,7 +1017,7 @@ class LoopStandingSet(Event):
     """The operator set a standing goal."""
 
     TYPE: ClassVar[str] = "loop.standing.set"
-    id: str = pydantic.Field(description="Prompt, task or background-job identifier.")
+    task_id: str = pydantic.Field(description="Task identifier.")
     title: str = pydantic.Field(description="Task or standing-goal text.")
 
 
@@ -1081,7 +1081,7 @@ class LoopTaskQueued(Event):
     """The operator queued a task."""
 
     TYPE: ClassVar[str] = "loop.task.queued"
-    id: str = pydantic.Field(description="Prompt, task or background-job identifier.")
+    task_id: str = pydantic.Field(description="Task identifier.")
     title: str = pydantic.Field(description="Task or standing-goal text.")
 
 
@@ -1089,7 +1089,7 @@ class LoopTaskRetired(Event):
     """The operator retired a task."""
 
     TYPE: ClassVar[str] = "loop.task.retired"
-    id: str = pydantic.Field(description="Prompt, task or background-job identifier.")
+    task_id: str = pydantic.Field(description="Task identifier.")
     title: str = pydantic.Field(description="Task or standing-goal text.")
 
 
@@ -1101,7 +1101,7 @@ class LoopTaskStuckNudge(Event):
     turns: int = pydantic.Field(
         description="Number of execution turns, or turns spent on one task.",
     )
-    n: int = pydantic.Field(description="Number of affected entries or notices.")
+    nudges_used: int = pydantic.Field(description="Number of notices issued for this condition.")
 
 
 class LoopTaskSurfaced(Event):
@@ -1126,14 +1126,6 @@ class LoopTestOnlyGreenNotice(Event):
     TYPE: ClassVar[str] = "loop.test_only_green.notice"
     turn: int = pydantic.Field(description="The execution's turn number.")
     paths: Sequence[Any] = pydantic.Field(description="Affected repository-relative paths.")
-
-
-class LoopToolCall(Event):
-    """The loop began dispatching a tool call."""
-
-    TYPE: ClassVar[str] = "loop.tool.call"
-    name: str = pydantic.Field(description="Tool or skill name.")
-    turn: int = pydantic.Field(description="The execution's turn number.")
 
 
 class LoopToolErrorNudge(Event):
@@ -1165,7 +1157,7 @@ class LoopVerifyHarness(Event):
     """The harness requested verification."""
 
     TYPE: ClassVar[str] = "loop.verify_harness"
-    why: str = pydantic.Field(description="Why the harness requested verification.")
+    reason: str = pydantic.Field(description="Why the harness requested verification.")
     turn: int = pydantic.Field(description="The execution's turn number.")
 
 
@@ -1229,7 +1221,7 @@ class MetricEnd(Event):
     """The metric command finished."""
 
     TYPE: ClassVar[str] = "metric.end"
-    cmd: Sequence[Any] = pydantic.Field(description="Command argv.")
+    command: Sequence[Any] = pydantic.Field(description="Command argv.")
     exit_code: int | None = pydantic.Field(
         default=None,
         description="Command exit code; null if no exit was observed.",
@@ -1247,7 +1239,7 @@ class MetricStart(Event):
     """The metric command started."""
 
     TYPE: ClassVar[str] = "metric.start"
-    cmd: Sequence[Any] = pydantic.Field(description="Command argv.")
+    command: Sequence[Any] = pydantic.Field(description="Command argv.")
 
 
 class ProviderAuth(Event):
@@ -1290,7 +1282,7 @@ class QuestionAnswer(Event):
     """The operator answered questions or nobody could answer."""
 
     TYPE: ClassVar[str] = "question.answer"
-    id: str = pydantic.Field(description="Prompt, task or background-job identifier.")
+    id: str = pydantic.Field(description="Question prompt identifier.")
     answers: Sequence[Any] = pydantic.Field(
         description="Answers aligned with the requested questions.",
     )
@@ -1304,7 +1296,7 @@ class QuestionPrompt(Event):
     """Questions were presented to the operator."""
 
     TYPE: ClassVar[str] = "question.prompt"
-    id: str = pydantic.Field(description="Prompt, task or background-job identifier.")
+    id: str = pydantic.Field(description="Question prompt identifier.")
     questions: Sequence[Any] = pydantic.Field(description="The questions presented.")
     call_id: int | None = pydantic.Field(
         default=None,
@@ -1338,21 +1330,21 @@ class RoleAttempt(Event):
         description="The HTTP attempt's id, as provider.request and the transcript name it.",
     )
     ok: bool = pydantic.Field(description="Whether the attempt returned a response.")
-    tokens_in: int | None = pydantic.Field(
+    input_tokens: int | None = pydantic.Field(
         default=None,
         description="Input tokens the attempt used.",
     )
-    tokens_out: int | None = pydantic.Field(
+    output_tokens: int | None = pydantic.Field(
         default=None,
         description="Output tokens the attempt used.",
     )
-    cache_read: int | None = pydantic.Field(
+    cache_read_tokens: int | None = pydantic.Field(
         default=None,
         description="Cached input tokens the attempt used.",
     )
-    cache_creation: int | None = pydantic.Field(
+    cache_write_tokens: int | None = pydantic.Field(
         default=None,
-        description="Cache-creation tokens the attempt used.",
+        description="Cache-write tokens the attempt used.",
     )
     cost_usd: float | None = pydantic.Field(
         default=None,
@@ -1407,21 +1399,21 @@ class RoleResult(Event):
     )
     ok: bool = pydantic.Field(description="Whether the operation succeeded.")
     text: str | None = pydantic.Field(default=None, description="The event's text.")
-    tokens_in: int | None = pydantic.Field(
+    input_tokens: int | None = pydantic.Field(
         default=None,
         description="Input tokens used by this model call.",
     )
-    tokens_out: int | None = pydantic.Field(
+    output_tokens: int | None = pydantic.Field(
         default=None,
         description="Output tokens used by this model call.",
     )
-    cache_read: int | None = pydantic.Field(
+    cache_read_tokens: int | None = pydantic.Field(
         default=None,
         description="Cached input tokens used by this model call.",
     )
-    cache_creation: int | None = pydantic.Field(
+    cache_write_tokens: int | None = pydantic.Field(
         default=None,
-        description="Cache-creation tokens used by this model call.",
+        description="Cache-write tokens used by this model call.",
     )
     cost_usd: float | None = pydantic.Field(
         default=None,
@@ -1587,6 +1579,10 @@ class ToolCall(Event):
         default=None,
         description="The provider's tool-use id for the block; null for a harness-run tool.",
     )
+    turn: int | None = pydantic.Field(
+        default=None,
+        description="The execution's turn number; null for a harness-run tool.",
+    )
 
 
 class ToolResult(Event):
@@ -1620,6 +1616,10 @@ class ToolResult(Event):
     provider_tool_call_id: str | None = pydantic.Field(
         default=None,
         description="The provider's tool-use id for the block; null for a harness-run tool.",
+    )
+    turn: int | None = pydantic.Field(
+        default=None,
+        description="The execution's turn number; null for a harness-run tool.",
     )
     exit_code: int | None = pydantic.Field(
         default=None,
@@ -1692,7 +1692,7 @@ class VerifyEnd(Event):
         default=None,
         description="Recorded execution-target reference.",
     )
-    cmd: Sequence[Any] = pydantic.Field(description="Command argv.")
+    command: Sequence[Any] = pydantic.Field(description="Command argv.")
     tree_before: str | None = pydantic.Field(
         default=None,
         description="Content identifier observed before verification.",
@@ -1753,7 +1753,7 @@ class VerifyStart(Event):
         default=None,
         description="Content identifier observed before verification.",
     )
-    cmd: Sequence[Any] = pydantic.Field(description="Command argv.")
+    command: Sequence[Any] = pydantic.Field(description="Command argv.")
     scoped: bool = pydantic.Field(
         description="Whether verification ran only the selected nearby tests.",
     )
@@ -1772,7 +1772,7 @@ class WorkspaceSetup(Event):
         default=None,
         description="Recorded execution-target reference.",
     )
-    cmd: Sequence[Any] = pydantic.Field(description="Command argv.")
+    command: Sequence[Any] = pydantic.Field(description="Command argv.")
     exit_code: int | None = pydantic.Field(
         default=None,
         description="Command exit code; null if no exit was observed.",
@@ -1888,7 +1888,6 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "loop.task.surfaced": LoopTaskSurfaced,
     "loop.task_finish.gated": LoopTaskFinishGated,
     "loop.test_only_green.notice": LoopTestOnlyGreenNotice,
-    "loop.tool.call": LoopToolCall,
     "loop.tool_error.nudge": LoopToolErrorNudge,
     "loop.verify_broken.nudge": LoopVerifyBrokenNudge,
     "loop.verify_finish.gated": LoopVerifyFinishGated,

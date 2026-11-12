@@ -118,8 +118,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
             if event.get("error"):
                 salient = f"{role} error: {_cut(str(event.get('error')), 160)}"
             else:
-                tin = event.get("tokens_in")
-                tout = event.get("tokens_out")
+                tin = event.get("input_tokens")
+                tout = event.get("output_tokens")
                 salient = f"{role} in={tin} out={tout}"
         case "loop.provider.retry":
             salient = f"attempt {event.get('attempt')}: {_cut(str(event.get('error', '')), 160)}"
@@ -137,13 +137,13 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
         case "loop.compact.dropped":
             calls = _as_list(event.get("calls"))
             named = ", ".join(str(c) for c in calls)
-            salient = f"elided {event.get('n')} old tool results"
+            salient = f"elided {event.get('count')} old tool results"
             if named:
                 salient += f": {_cut(named, 160)}"
         case "loop.compact.deduped":
             calls = _as_list(event.get("calls"))
             named = ", ".join(str(c) for c in calls)
-            salient = f"deduplicated {event.get('n')} identical tool results"
+            salient = f"deduplicated {event.get('count')} identical tool results"
             if named:
                 salient += f": {_cut(named, 160)}"
         case "loop.compact.thinking_dropped":

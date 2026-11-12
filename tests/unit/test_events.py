@@ -22,13 +22,13 @@ def _read_lines(path: pathlib.Path) -> list[dict[str, object]]:
 def test_emit_appends_json_lines(tmp_path: pathlib.Path) -> None:
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     sink.emit(journal.LoopNote(text="do a thing"))
-    sink.emit(journal.LoopToolCall(turn=1, name="read_file"))
+    sink.emit(journal.LoopSteerRequested(turn=1))
     lines = _read_lines(tmp_path / "logs.jsonl")
     assert len(lines) == 2
     assert lines[0]["type"] == "loop.note"
     assert lines[0]["text"] == "do a thing"
     assert "ts" in lines[0]
-    assert lines[1]["type"] == "loop.tool.call"
+    assert lines[1]["type"] == "loop.steer.requested"
     assert lines[1]["turn"] == 1
 
 
@@ -230,6 +230,6 @@ def test_the_log_dir_is_created_once_not_per_event(
     monkeypatch.setattr(agent6_paths, "mkdir_for_real_user", counting)
     sink = event_log.EventSink(tmp_path / "run" / "logs.jsonl")
     sink.emit(journal.LoopNote(text="ready"))
-    sink.emit(journal.LoopToolCall(name="read_file", turn=1))
+    sink.emit(journal.LoopSteerRequested(turn=1))
     assert calls == [tmp_path / "run"]
     assert (tmp_path / "run" / "logs.jsonl").read_text(encoding="utf-8").count("\n") == 2

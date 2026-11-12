@@ -104,7 +104,7 @@ def _resp(text: str) -> ProviderResponse:
         input_tokens=10,
         output_tokens=20,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
 
 
@@ -127,7 +127,7 @@ def _resp_with_tool_use(text: str, tool_use: dict[str, Any]) -> ProviderResponse
         input_tokens=10,
         output_tokens=20,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": blocks},
     )
 

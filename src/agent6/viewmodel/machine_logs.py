@@ -128,7 +128,7 @@ class Spend:
         partial: An unpriced model contributed $0, so `usd` is a lower bound; it ORs
             across folds and the render adds the shared "~" marker.
         cache_read_tokens: The cached side of the input; 0 where never recorded.
-        cache_creation_tokens: Cache-creation tokens; 0 where never recorded.
+        cache_write_tokens: Cache-write tokens; 0 where never recorded.
     """
 
     usd: float = 0.0
@@ -136,7 +136,7 @@ class Spend:
     output_tokens: int = 0
     partial: bool = False
     cache_read_tokens: int = 0
-    cache_creation_tokens: int = 0
+    cache_write_tokens: int = 0
 
     def __add__(self, other: Spend) -> Spend:
         """Return the field-wise sum, `partial` ORed."""
@@ -146,7 +146,7 @@ class Spend:
             self.output_tokens + other.output_tokens,
             self.partial or other.partial,
             self.cache_read_tokens + other.cache_read_tokens,
-            self.cache_creation_tokens + other.cache_creation_tokens,
+            self.cache_write_tokens + other.cache_write_tokens,
         )
 
 
@@ -184,7 +184,7 @@ def read_budget_totals(log_path: pathlib.Path, *, from_offset: int = 0) -> Spend
                 tin = int(e.get("input_total", tin) or 0)
                 tout = int(e.get("output_total", tout) or 0)
                 cr = int(e.get("cache_read_total", cr) or 0)
-                cc = int(e.get("cache_creation_total", cc) or 0)
+                cc = int(e.get("cache_write_total", cc) or 0)
                 partial = partial or bool(e.get("usd_partial", False))
     return Spend(usd, tin, tout, partial, cr, cc)
 

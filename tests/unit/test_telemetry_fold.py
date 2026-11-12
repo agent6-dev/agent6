@@ -49,10 +49,10 @@ def _journal() -> list[dict[str, Any]]:
             "provider": "p",
             "model_call_id": "c1",
             "ok": True,
-            "tokens_in": 10,
-            "tokens_out": 5,
-            "cache_read": 2,
-            "cache_creation": 0,
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "cache_read_tokens": 2,
+            "cache_write_tokens": 0,
             "stop_reason": "tool_use",
         },
         {
@@ -73,12 +73,12 @@ def _journal() -> list[dict[str, Any]]:
             "call_id": 1,
             "exit_code": 0,
         },
-        {"type": "verify.start", "ts": _ts(10), "verify_id": "v1", "cmd": ["pytest"]},
+        {"type": "verify.start", "ts": _ts(10), "verify_id": "v1", "command": ["pytest"]},
         {
             "type": "verify.end",
             "ts": _ts(40),
             "verify_id": "v1",
-            "cmd": ["pytest"],
+            "command": ["pytest"],
             "exit_code": 1,
             "duration_s": 30.0,
             "tree_before": "t",
@@ -189,7 +189,7 @@ def test_a_journal_folds_into_a_deterministic_span_tree() -> None:
         named[telemetry_records.SPAN_WAIT].end_ns - named[telemetry_records.SPAN_WAIT].start_ns
         == 6_000_000_000
     )
-    assert _attr(named[telemetry_records.SPAN_MODEL_CALL], "agent6.tokens_out") == 5
+    assert _attr(named[telemetry_records.SPAN_MODEL_CALL], "agent6.output_tokens") == 5
     assert _attr(named[telemetry_records.SPAN_VERIFY], "agent6.verify.outcome") == "failed"
     assert _attr(named[telemetry_records.SPAN_REVIEW], "agent6.panel.blocked") is True
     assert _fold1.first_ns == telemetry_records.event_ns(_ts(0))
@@ -264,9 +264,7 @@ def test_the_metrics_count_what_the_journal_records() -> None:
     assert _counter(fold, "agent6_tokens_total", model="m", provider="p", type="input") == 10
     assert _counter(fold, "agent6_tokens_total", model="m", provider="p", type="output") == 5
     assert _counter(fold, "agent6_tokens_total", model="m", provider="p", type="cache_read") == 2
-    assert (
-        _counter(fold, "agent6_tokens_total", model="m", provider="p", type="cache_creation") == 0
-    )
+    assert _counter(fold, "agent6_tokens_total", model="m", provider="p", type="cache_write") == 0
     assert _counter(fold, "agent6_model_calls_total", model="m", outcome="ok", provider="p") == 1
     assert _counter(fold, "agent6_tool_calls_total", outcome="ok", tool="run_command") == 1
     assert _counter(fold, "agent6_approvals_total", decision="approved", source="tui") == 1
@@ -440,7 +438,7 @@ def test_a_journal_without_pairing_ids_pairs_only_what_is_certain() -> None:
         {"type": "session.start", "ts": _ts(0), "execution_id": "e"},
         {"type": "role.call", "ts": _ts(1), "role": "review:a", "model": "m", "provider": "p"},
         {"type": "role.call", "ts": _ts(1), "role": "review:b", "model": "m", "provider": "p"},
-        {"type": "role.result", "ts": _ts(2), "role": "review:b", "ok": True, "tokens_in": 7},
+        {"type": "role.result", "ts": _ts(2), "role": "review:b", "ok": True, "input_tokens": 7},
         {
             "type": "session.stop",
             "ts": _ts(3),
@@ -476,7 +474,7 @@ def test_free_labels_stop_at_the_bound() -> None:
                 "ts": _ts(i),
                 "model_call_id": f"c{i}",
                 "ok": True,
-                "tokens_in": 1,
+                "input_tokens": 1,
             }
         )
     fold, _spans, _logs = _run(rows)
@@ -551,8 +549,8 @@ def test_attempts_count_their_own_tokens_under_one_model_call_span() -> None:
             **identity,
             "attempt": 1,
             "ok": False,
-            "tokens_in": 10,
-            "tokens_out": 0,
+            "input_tokens": 10,
+            "output_tokens": 0,
             "error": "busy",
         },
         {
@@ -561,8 +559,8 @@ def test_attempts_count_their_own_tokens_under_one_model_call_span() -> None:
             **identity,
             "attempt": 2,
             "ok": True,
-            "tokens_in": 10,
-            "tokens_out": 5,
+            "input_tokens": 10,
+            "output_tokens": 5,
         },
     ]
     rows[at:at] = attempts

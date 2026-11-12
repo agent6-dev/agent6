@@ -180,7 +180,7 @@ def test_show_keeps_a_failed_setups_output_and_network_diagnostic(
     )
     events = [
         {"type": "session.start", "mode": "run"},
-        {"type": "workspace.setup", "cmd": ["uv", "sync", "--offline"], "exit_code": 1},
+        {"type": "workspace.setup", "command": ["uv", "sync", "--offline"], "exit_code": 1},
         {
             "type": "session.stop",
             "reason": "setup_command_failed",
@@ -271,7 +271,7 @@ def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
         "input_total": 18,
         "output_total": 2194,
         "cache_read_total": 42486,
-        "cache_creation_total": 22617,
+        "cache_write_total": 22617,
         "usd_total": 0.0,
     }
     lines = layout.logs_path.read_text(encoding="utf-8").splitlines()
@@ -280,14 +280,14 @@ def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
     )
     assert main(["sessions", "show", "cached"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
-    assert usage.split(None, 1)[1] == "in=18 out=2194 cache_r=42486 cache_c=22617"
+    assert usage.split(None, 1)[1] == "in=18 out=2194 cache_r=42486 cache_w=22617"
     layout.logs_path.write_text(
         "\n".join([lines[0], json.dumps({**budget, "usd_total": 0.5}), *lines[1:]]) + "\n",
         encoding="utf-8",
     )
     assert main(["sessions", "show", "cached"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
-    assert usage.endswith("cache_c=22617  usage $0.50")
+    assert usage.endswith("cache_w=22617  usage $0.50")
 
 
 def test_show_usage_and_json_carry_the_plan_points(

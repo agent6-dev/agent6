@@ -46,7 +46,7 @@ def test_estimate_usd_known_model() -> None:
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     usd, partial = bt.estimate_usd()
     assert usd == 18.0
@@ -60,7 +60,7 @@ def test_estimate_usd_unknown_model_flags_partial() -> None:
         input_tokens=500_000,
         output_tokens=100_000,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     usd, partial = bt.estimate_usd()
     assert usd == 0.0  # unknown model contributes nothing
@@ -75,16 +75,16 @@ def test_estimate_usd_cache_read_priced_at_10_percent() -> None:
         input_tokens=0,
         output_tokens=0,
         cache_read_tokens=1_000_000,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     usd, _ = bt.estimate_usd()
     assert abs(usd - 0.30) < 1e-9
 
 
-def test_estimate_usd_cache_creation_priced_at_125_percent() -> None:
-    """Anthropic bills 5-minute cache_creation at 1.25x the input rate.
+def test_estimate_usd_cache_write_priced_at_125_percent() -> None:
+    """Anthropic bills 5-minute cache_write at 1.25x the input rate.
 
-    Sonnet at $3/Mtok input is $3.75/Mtok for cache_creation.
+    Sonnet at $3/Mtok input is $3.75/Mtok for cache_write.
     """
     bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     bt.record(
@@ -92,23 +92,23 @@ def test_estimate_usd_cache_creation_priced_at_125_percent() -> None:
         input_tokens=0,
         output_tokens=0,
         cache_read_tokens=0,
-        cache_creation_tokens=1_000_000,
+        cache_write_tokens=1_000_000,
     )
     usd, _ = bt.estimate_usd()
     assert abs(usd - 3.75) < 1e-9
 
 
-def test_estimate_usd_fresh_input_excludes_cache_creation() -> None:
-    """cache_creation tokens are priced as their own term, never summed into the input term."""
+def test_estimate_usd_fresh_input_excludes_cache_write() -> None:
+    """cache_write tokens are priced as their own term, never summed into the input term."""
     bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     bt.record(
         route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
         input_tokens=1_000_000,
         output_tokens=0,
         cache_read_tokens=0,
-        cache_creation_tokens=1_000_000,
+        cache_write_tokens=1_000_000,
     )
-    # 1M fresh @ $3 + 1M cache_creation @ $3.75 = $6.75 (NOT 2M @ $3 = $6).
+    # 1M fresh @ $3 + 1M cache_write @ $3.75 = $6.75 (NOT 2M @ $3 = $6).
     usd, _ = bt.estimate_usd()
     assert abs(usd - 6.75) < 1e-9
 
@@ -121,14 +121,14 @@ def test_estimate_usd_matches_format_summary_total() -> None:
         input_tokens=12_345,
         output_tokens=6_789,
         cache_read_tokens=100,
-        cache_creation_tokens=42,
+        cache_write_tokens=42,
     )
     bt.record(
         route=kinds.ModelRoute("claude-haiku-4-5", "claude-haiku-4-5"),
         input_tokens=500,
         output_tokens=200,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     usd, _ = bt.estimate_usd()
     summary = bt.format_summary()
@@ -145,7 +145,7 @@ def test_reported_cost_overrides_table_estimate() -> None:
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         cost_usd=99.99,  # would be $18.00 by the table
     )
     usd, partial = bt.estimate_usd()
@@ -167,7 +167,7 @@ def test_reported_zero_is_never_table_priced(model: str) -> None:
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=1_000_000,
-        cache_creation_tokens=1_000_000,
+        cache_write_tokens=1_000_000,
         cost_usd=0.0,
     )
     assert bt.estimate_usd() == (0.0, False)
@@ -186,7 +186,7 @@ def test_unreported_call_after_free_call_is_estimated() -> None:
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         cost_usd=0.0,
     )
     bt.record(
@@ -194,7 +194,7 @@ def test_unreported_call_after_free_call_is_estimated() -> None:
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     assert bt.estimate_usd() == (18.0, False)
     assert "(reported + estimated)" in bt.format_summary()
@@ -208,7 +208,7 @@ def test_reported_cost_works_for_unknown_model() -> None:
         input_tokens=10_000,
         output_tokens=2_000,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         cost_usd=0.1234,
     )
     usd, partial = bt.estimate_usd()
@@ -227,7 +227,7 @@ def test_mixed_reported_cost_adds_table_estimate_for_unreported_calls() -> None:
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         cost_usd=50.0,  # authoritative; this call's tokens must NOT be re-priced
     )
     bt.record(
@@ -235,7 +235,7 @@ def test_mixed_reported_cost_adds_table_estimate_for_unreported_calls() -> None:
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=1_000_000,  # 1M @ $3*0.1/M = $0.30: cache banks per call too
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         # no cost_usd
     )
     usd, partial = bt.estimate_usd()
@@ -254,7 +254,7 @@ def test_mixed_reported_cost_counts_toward_usd_ceiling() -> None:
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         cost_usd=50.0,
     )
     bt.record(
@@ -262,7 +262,7 @@ def test_mixed_reported_cost_counts_toward_usd_ceiling() -> None:
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     assert bt.is_exhausted()
 
@@ -280,7 +280,7 @@ def test_fraction_remaining_tracks_usd_ceiling() -> None:
         input_tokens=100_000,  # $0.30 fresh input
         output_tokens=100_000,  # $1.50 output
         cache_read_tokens=10_000_000,  # 10M @ $3*0.1/M = $3.00
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     usd, _ = bt.estimate_usd()
     assert usd == pytest.approx(4.8)  # 0.30 + 1.50 + 3.00
@@ -296,7 +296,7 @@ def test_fraction_remaining_unlimited_usd_never_depletes() -> None:
         input_tokens=5_000_000,
         output_tokens=1_000_000,  # ~$30 metered, uncapped
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     assert bt.fraction_remaining() == 1.0
     bt.record(
@@ -304,7 +304,7 @@ def test_fraction_remaining_unlimited_usd_never_depletes() -> None:
         input_tokens=400,
         output_tokens=100,  # 500 of 1000 fallback tokens
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     assert bt.fraction_remaining() == pytest.approx(0.5)
 
@@ -320,7 +320,7 @@ def test_partially_reported_unpriced_model_keeps_the_reported_spend() -> None:
         input_tokens=1_000,
         output_tokens=500,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         cost_usd=0.60,  # the provider reported this call
     )
     bt.record(
@@ -328,7 +328,7 @@ def test_partially_reported_unpriced_model_keeps_the_reported_spend() -> None:
         input_tokens=1_000,
         output_tokens=500,
         cache_read_tokens=0,
-        cache_creation_tokens=0,  # this one's usage block carried no cost
+        cache_write_tokens=0,  # this one's usage block carried no cost
     )
     usd, partial = bt.estimate_usd()
     assert usd == pytest.approx(0.60)  # not dropped to 0.0
@@ -348,7 +348,7 @@ def test_a_sub_cent_cap_prints_at_the_spends_precision() -> None:
         input_tokens=5000,
         output_tokens=2000,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         cost_usd=0.0046,  # reported by the provider: this spend IS metered
     )
     summary = bt.format_summary()

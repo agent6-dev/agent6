@@ -463,7 +463,7 @@ def _resp(text: str = "ok") -> ProviderResponse:
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
 
 
@@ -482,7 +482,7 @@ def _tool_resp(
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": [block]},
     )
 
@@ -606,7 +606,7 @@ def _empty_tool_call_resp() -> ProviderResponse:
         input_tokens=1,
         output_tokens=20,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
 
 
@@ -637,7 +637,7 @@ def test_reasoning_starvation_counts_only_a_cap_cut_turn() -> None:
         input_tokens=1,
         output_tokens=100,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": [{"type": "thinking", "thinking": "x" * 40}]},
     )
     assert provider_call.reasoning_starvation(starved) == 40
@@ -663,7 +663,7 @@ def test_is_empty_tool_call_response_discriminates() -> None:
         input_tokens=1,
         output_tokens=20,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
     assert not provider_call.is_empty_tool_call_response(starved)
 
@@ -1786,7 +1786,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
             input_tokens=1,
             output_tokens=1,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             raw={"content": [{"type": "tool_use", **tu} for tu in tus]},
         )
 
@@ -2043,7 +2043,7 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: pathlib.Path)
                     input_tokens=1,
                     output_tokens=1,
                     cache_read_tokens=0,
-                    cache_creation_tokens=0,
+                    cache_write_tokens=0,
                     raw={"content": []},
                 )
             # Tightened cap: the model is forced to act.
@@ -3207,7 +3207,7 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: pathlib.Path
                 input_tokens=1,
                 output_tokens=1,
                 cache_read_tokens=0,
-                cache_creation_tokens=0,
+                cache_write_tokens=0,
                 raw={"content": [{"type": "tool_use", **u} for u in uses]},
             )
 
@@ -4487,7 +4487,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
                 input_tokens=1,
                 output_tokens=1,
                 cache_read_tokens=0,
-                cache_creation_tokens=0,
+                cache_write_tokens=0,
                 raw={
                     "content": [
                         {"type": "text", "text": "working"},
@@ -4578,7 +4578,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
                 input_tokens=1,
                 output_tokens=1,
                 cache_read_tokens=0,
-                cache_creation_tokens=0,
+                cache_write_tokens=0,
                 raw={
                     "content": [
                         {"type": "text", "text": big},
@@ -5353,7 +5353,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
                 input_tokens=1,
                 output_tokens=1,
                 cache_read_tokens=0,
-                cache_creation_tokens=0,
+                cache_write_tokens=0,
                 raw={
                     "content": [
                         {"type": "text", "text": big},
@@ -7476,7 +7476,7 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None
                 input_tokens=1,
                 output_tokens=1,
                 cache_read_tokens=0,
-                cache_creation_tokens=0,
+                cache_write_tokens=0,
                 raw={"content": [{"type": "text", "text": "still thinking about the approach"}]},
             )
 
@@ -8217,7 +8217,7 @@ def _two_call_resp() -> ProviderResponse:
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": blocks},
     )
 
@@ -9231,7 +9231,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
             input_tokens=1,
             output_tokens=1,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             raw={"content": [block]},
         )
 
@@ -9261,7 +9261,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
                     input_tokens=1,
                     output_tokens=1,
                     cache_read_tokens=0,
-                    cache_creation_tokens=0,
+                    cache_write_tokens=0,
                     raw={"content": blocks},
                 )
             return _tool_use("run_verify_command", f"v{self.calls}", {})

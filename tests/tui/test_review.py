@@ -392,7 +392,7 @@ def test_receipt_screen_expands_recorded_output(tmp_path: pathlib.Path) -> None:
             json.dumps(
                 {
                     "type": "verify.end",
-                    "cmd": ["pytest"],
+                    "command": ["pytest"],
                     "exit_code": 1,
                     "stdout_tail": "failed <literal>",
                     "stderr_tail": "error",

@@ -57,7 +57,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `id` | `str` | Prompt, task or background-job identifier. |
+| `id` | `str` | Approval prompt identifier. |
 | `approved` | `bool` | Whether the operator approved the request. |
 | `source` | `str` | Where the request or result came from. |
 
@@ -67,7 +67,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `id` | `str` | Prompt, task or background-job identifier. |
+| `id` | `str` | Approval prompt identifier. |
 | `prompt` | `str` | The words presented to the operator. |
 | `standing` | `bool` | Whether approval can cover later calls in this scope. |
 | `call_id` | `int, optional` | The tool call correlated with this event. |
@@ -101,7 +101,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `input_total` | `int, optional` | Cumulative input tokens. |
 | `output_total` | `int, optional` | Cumulative output tokens. |
 | `cache_read_total` | `int, optional` | Cumulative cached input tokens. |
-| `cache_creation_total` | `int, optional` | Cumulative cache-creation tokens. |
+| `cache_write_total` | `int, optional` | Cumulative cache-write tokens. |
 | `usd_partial` | `bool, optional` | Whether unpriced usage makes spend a lower bound. |
 | `usd_cap` | `float, optional` | Spend cap in USD; -1 means unlimited. |
 | `tokens_unmetered` | `int, optional` | Tokens with no known price. |
@@ -127,9 +127,9 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `id` | `str` | Prompt, task or background-job identifier. |
+| `background_id` | `str` | Background job identifier. |
 | `handle` | `str` | Launcher-instance-scoped job handle. |
-| `seconds` | `float` | Elapsed command time in seconds at handback. |
+| `elapsed_s` | `float` | Elapsed command time in seconds at handback. |
 
 ### diff.updated
 
@@ -261,7 +261,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `n` | `int` | Number of affected entries or notices. |
+| `count` | `int` | Number of affected entries or notices. |
 | `calls` | `list` | The affected tool call identities. |
 
 ### loop.compact.dropped
@@ -270,7 +270,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `n` | `int` | Number of affected entries or notices. |
+| `count` | `int` | Number of affected entries or notices. |
 | `calls` | `list` | The affected tool call identities. |
 
 ### loop.compact.gist.call
@@ -454,7 +454,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `turn` | `int` | The execution's turn number. |
 | `label` | `str` | Metric sample label. |
 | `score` | `float, optional` | Parsed metric score; null when unavailable. |
-| `returncode` | `int, optional` | Command exit code; null when unavailable. |
+| `exit_code` | `int, optional` | Command exit code; null when unavailable. |
 | `sha` | `str` | The commit identifier, possibly abbreviated. |
 
 ### loop.metric_ceiling.stop
@@ -943,7 +943,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `id` | `str` | Prompt, task or background-job identifier. |
+| `task_id` | `str` | Task identifier. |
 | `title` | `str` | Task or standing-goal text. |
 
 ### loop.steer.aborted
@@ -1014,7 +1014,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `id` | `str` | Prompt, task or background-job identifier. |
+| `task_id` | `str` | Task identifier. |
 | `title` | `str` | Task or standing-goal text. |
 
 ### loop.task.retired
@@ -1023,7 +1023,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `id` | `str` | Prompt, task or background-job identifier. |
+| `task_id` | `str` | Task identifier. |
 | `title` | `str` | Task or standing-goal text. |
 
 ### loop.task.stuck_nudge
@@ -1034,7 +1034,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `task_id` | `str` | Task identifier. |
 | `turns` | `int` | Number of execution turns, or turns spent on one task. |
-| `n` | `int` | Number of affected entries or notices. |
+| `nudges_used` | `int` | Number of notices issued for this condition. |
 
 ### loop.task.surfaced
 
@@ -1062,15 +1062,6 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `turn` | `int` | The execution's turn number. |
 | `paths` | `list` | Affected repository-relative paths. |
-
-### loop.tool.call
-
-**Support: public.** The loop began dispatching a tool call.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `name` | `str` | Tool or skill name. |
-| `turn` | `int` | The execution's turn number. |
 
 ### loop.tool_error.nudge
 
@@ -1106,7 +1097,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `why` | `str` | Why the harness requested verification. |
+| `reason` | `str` | Why the harness requested verification. |
 | `turn` | `int` | The execution's turn number. |
 
 ### loop.verify_inferred
@@ -1172,7 +1163,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `cmd` | `list` | Command argv. |
+| `command` | `list` | Command argv. |
 | `exit_code` | `int, optional` | Command exit code; null if no exit was observed. |
 | `duration_s` | `float` | Command duration in seconds. |
 | `stdout_tail` | `str` | Capped standard-output tail. |
@@ -1185,7 +1176,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `cmd` | `list` | Command argv. |
+| `command` | `list` | Command argv. |
 
 ### provider.auth
 
@@ -1219,7 +1210,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `id` | `str` | Prompt, task or background-job identifier. |
+| `id` | `str` | Question prompt identifier. |
 | `answers` | `list` | Answers aligned with the requested questions. |
 | `source` | `str` | Where the request or result came from. |
 | `unseen` | `bool` | Whether nobody could answer and no question remains queued. |
@@ -1230,7 +1221,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `id` | `str` | Prompt, task or background-job identifier. |
+| `id` | `str` | Question prompt identifier. |
 | `questions` | `list` | The questions presented. |
 | `call_id` | `int, optional` | The tool call correlated with this event. |
 | `wait` | `bool` | Whether the call waits for answers. |
@@ -1251,10 +1242,10 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `attempt` | `int` | The attempt's number within the call, from 1. |
 | `request_id` | `str, optional` | The HTTP attempt's id, as provider.request and the transcript name it. |
 | `ok` | `bool` | Whether the attempt returned a response. |
-| `tokens_in` | `int, optional` | Input tokens the attempt used. |
-| `tokens_out` | `int, optional` | Output tokens the attempt used. |
-| `cache_read` | `int, optional` | Cached input tokens the attempt used. |
-| `cache_creation` | `int, optional` | Cache-creation tokens the attempt used. |
+| `input_tokens` | `int, optional` | Input tokens the attempt used. |
+| `output_tokens` | `int, optional` | Output tokens the attempt used. |
+| `cache_read_tokens` | `int, optional` | Cached input tokens the attempt used. |
+| `cache_write_tokens` | `int, optional` | Cache-write tokens the attempt used. |
 | `cost_usd` | `float, optional` | Provider-reported USD cost; zero means free, absent means unreported. |
 | `stop_reason` | `str, optional` | The provider's response stop reason. |
 | `error` | `str, optional` | The failure diagnostic. |
@@ -1288,10 +1279,10 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `seat_index` | `int, optional` | Zero-based review seat index. |
 | `ok` | `bool` | Whether the operation succeeded. |
 | `text` | `str, optional` | The event's text. |
-| `tokens_in` | `int, optional` | Input tokens used by this model call. |
-| `tokens_out` | `int, optional` | Output tokens used by this model call. |
-| `cache_read` | `int, optional` | Cached input tokens used by this model call. |
-| `cache_creation` | `int, optional` | Cache-creation tokens used by this model call. |
+| `input_tokens` | `int, optional` | Input tokens used by this model call. |
+| `output_tokens` | `int, optional` | Output tokens used by this model call. |
+| `cache_read_tokens` | `int, optional` | Cached input tokens used by this model call. |
+| `cache_write_tokens` | `int, optional` | Cache-write tokens used by this model call. |
 | `cost_usd` | `float, optional` | Provider-reported USD cost; zero means free, absent means unreported. |
 | `stop_reason` | `str, optional` | The provider's response stop reason. |
 | `error` | `str, optional` | The failure diagnostic. |
@@ -1402,6 +1393,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `panel_id` | `str, optional` | Review panel identifier. |
 | `seat_index` | `int, optional` | The review seat's roster position; null outside a review seat. |
 | `provider_tool_call_id` | `str, optional` | The provider's tool-use id for the block; null for a harness-run tool. |
+| `turn` | `int, optional` | The execution's turn number; null for a harness-run tool. |
 
 ### tool.result
 
@@ -1418,6 +1410,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `panel_id` | `str, optional` | Review panel identifier. |
 | `seat_index` | `int, optional` | The review seat's roster position; null outside a review seat. |
 | `provider_tool_call_id` | `str, optional` | The provider's tool-use id for the block; null for a harness-run tool. |
+| `turn` | `int, optional` | The execution's turn number; null for a harness-run tool. |
 | `exit_code` | `int, optional` | A command's exit code; null while it runs in the background or when unknown. |
 | `duration_s` | `float, optional` | A command's wall-clock seconds until the result. |
 | `timed_out` | `bool, optional` | Whether the runner ended the command at its deadline. |
@@ -1442,7 +1435,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `verify_id` | `str, optional` | Verification attempt identifier. |
 | `execution_id` | `str, optional` | Execution identifier. |
 | `target_id` | `str, optional` | Recorded execution-target reference. |
-| `cmd` | `list` | Command argv. |
+| `command` | `list` | Command argv. |
 | `tree_before` | `str, optional` | Content identifier observed before verification. |
 | `tree_after` | `str, optional` | Content identifier observed after verification. |
 | `scoped` | `bool` | Whether verification ran only the selected nearby tests. |
@@ -1470,7 +1463,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `execution_id` | `str, optional` | Execution identifier. |
 | `target_id` | `str, optional` | Recorded execution-target reference. |
 | `tree_before` | `str, optional` | Content identifier observed before verification. |
-| `cmd` | `list` | Command argv. |
+| `command` | `list` | Command argv. |
 | `scoped` | `bool` | Whether verification ran only the selected nearby tests. |
 | `selected_paths` | `list` | Paths selected for scoped verification. |
 | `timeout_s` | `float` | Verification wall-clock limit in seconds. |
@@ -1483,7 +1476,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `execution_id` | `str, optional` | Execution identifier. |
 | `target_id` | `str, optional` | Recorded execution-target reference. |
-| `cmd` | `list` | Command argv. |
+| `command` | `list` | Command argv. |
 | `exit_code` | `int, optional` | Command exit code; null if no exit was observed. |
 | `duration_s` | `float` | Command duration in seconds. |
 | `exec_failed` | `bool` | Whether the setup command could not be executed. |
@@ -1548,7 +1541,7 @@ Source: [`providers.provider_types.TranscriptAttempt.write`](https://github.com/
 | `usage.input_tokens` | `int` | Fresh input tokens billed. |
 | `usage.output_tokens` | `int` | Completion tokens billed. |
 | `usage.cache_read_tokens` | `int` | Prompt tokens served from the cache. |
-| `usage.cache_creation_tokens` | `int` | Prompt tokens written to the cache. |
+| `usage.cache_write_tokens` | `int` | Prompt tokens written to the cache. |
 | `usage.cost_usd` | `float \| None` | The reported cost; None means unreported and zero means a free call. |
 
 ## CLI JSON
@@ -1641,7 +1634,7 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `input_tokens` | `int \| None` | Recorded input tokens. |
 | `output_tokens` | `int \| None` | Recorded output tokens. |
 | `cache_read_tokens` | `int \| None` | Recorded cached input tokens. |
-| `cache_creation_tokens` | `int \| None` | Recorded cache-creation tokens. |
+| `cache_write_tokens` | `int \| None` | Recorded cache-write tokens. |
 | `cost_usd` | `float \| None` | Cumulative spend in USD, or null when unknown. |
 | `plan_observed_points` | `float` | The plan movement observed across executions, in points. |
 | `plan_prior_executions` | `float` | Subscription points banked by earlier executions. |
@@ -1680,7 +1673,7 @@ Source: [`budget.BudgetTracker.format_summary`](https://github.com/agent6-dev/ag
 | `in` | `text` | Fresh input tokens for the route, or all routes on the TOTAL line. |
 | `out` | `text` | Output tokens for the route, or all routes on the TOTAL line. |
 | `cache_r` | `text` | Cache-read tokens for the route. |
-| `cache_c` | `text` | Cache-creation tokens for the route. |
+| `cache_w` | `text` | Cache-write tokens for the route. |
 | `calls` | `text` | Calls recorded for the route. |
 | `cost` | `text` | USD spend, reported or estimated from that route's prices. The TOTAL includes purchased credits spent. `=` marks an exact total, `~` an estimate or lower bound, and `+` unpriced calls. |
 | `of` | `text` | The USD cap when a route is USD-metered; `unlimited` means no cap. |
@@ -3383,7 +3376,7 @@ Source: [`agent6.viewmodel.state_types.VerifyView`](https://github.com/agent6-de
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `cmd` | `tuple[str, ...]` | The gate's argv. |
+| `command` | `tuple[str, ...]` | The gate's argv. |
 | `exit_code` | `int \| None` | The exit code, None when no exit was observed. |
 | `duration_s` | `float` | How long it ran. |
 | `stdout_tail` | `str` | The capped stdout tail. |
@@ -3584,7 +3577,7 @@ Source: [`agent6.evidence.VerificationEvidence`](https://github.com/agent6-dev/a
 | --- | --- | --- |
 | `verify_id` | `str \| None` | The verification attempt identifier, or null when unrecorded. |
 | `execution_id` | `str \| None` | The execution that ran the attempt, or null when unrecorded. |
-| `cmd` | `tuple[str, ...]` | The verification command's argv. |
+| `command` | `tuple[str, ...]` | The verification command's argv. |
 | `tree_before` | `str \| None` | The observed tree before the attempt, or null when unknown. |
 | `tree_after` | `str \| None` | The observed tree after the attempt, or null when unknown. |
 | `scoped` | `bool` | Whether verification ran over selected paths instead of the full gate. |
@@ -3636,7 +3629,7 @@ Source: [`agent6.evidence.SetupEvidence`](https://github.com/agent6-dev/agent6/b
 | --- | --- | --- |
 | `execution_id` | `str \| None` | The execution that ran setup, or None when unrecorded. |
 | `target_id` | `str \| None` | The setup target reference, or None when unrecorded. |
-| `cmd` | `tuple[str, ...]` | The setup command's argv. |
+| `command` | `tuple[str, ...]` | The setup command's argv. |
 | `exit_code` | `int \| None` | The observed exit code, or None when unknown. |
 | `duration_s` | `float` | Elapsed setup time in seconds. |
 | `exec_failed` | `bool` | Whether the command could not be executed. |
@@ -3897,7 +3890,7 @@ Source: [`agent6.viewmodel.state_types.ExecutionUsage`](https://github.com/agent
 | `input_tokens` | `int \| None` | Input tokens; None until a budget row carries the counters. |
 | `output_tokens` | `int \| None` | Output tokens; None until a budget row carries the counters. |
 | `cache_read_tokens` | `int \| None` | The cached side of the input; None when the row lacked it. |
-| `cache_creation_tokens` | `int \| None` | Cache-creation tokens; None when the row lacked it. |
+| `cache_write_tokens` | `int \| None` | Cache-write tokens; None when the row lacked it. |
 | `usd` | `float` | The metered spend. |
 | `usd_partial` | `bool` | Some model had no price, so `usd` is a lower bound. |
 | `unmetered_tokens` | `int` | Input and output tokens of calls the meter could not price. |

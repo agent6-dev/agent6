@@ -179,7 +179,7 @@ def _resp_tool(name: str, args: dict[str, Any], tu_id: str) -> ProviderResponse:
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": [block]},
     )
 

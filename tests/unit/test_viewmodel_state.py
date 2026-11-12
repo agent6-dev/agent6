@@ -150,8 +150,8 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
             "type": "role.result",
             "role": "worker",
             "ok": True,
-            "tokens_in": 1_000,
-            "cache_read": 40_000,
+            "input_tokens": 1_000,
+            "cache_read_tokens": 40_000,
         },
     ):
         s = viewmodel_state.apply_event(s, ev)
@@ -366,7 +366,7 @@ def test_role_call_then_result_clears_in_flight() -> None:
     assert s.last_role is not None
     assert s.last_role.in_flight is True
     s = viewmodel_state.apply_event(
-        s, {"type": "role.result", "role": "worker", "tokens_in": 10, "tokens_out": 20}
+        s, {"type": "role.result", "role": "worker", "input_tokens": 10, "output_tokens": 20}
     )
     assert s.last_role is not None
     assert s.last_role.in_flight is False
@@ -444,7 +444,7 @@ def test_budget_usd_cumulative_across_resume_executions() -> None:
 
 def test_verify_lifecycle() -> None:
     s = viewmodel_state.apply_event(
-        viewmodel_state.initial_state(), {"type": "verify.start", "cmd": ["pytest", "-q"]}
+        viewmodel_state.initial_state(), {"type": "verify.start", "command": ["pytest", "-q"]}
     )
     assert s.last_verify is not None
     assert s.last_verify.exit_code is None
@@ -452,7 +452,7 @@ def test_verify_lifecycle() -> None:
         s,
         {
             "type": "verify.end",
-            "cmd": ["pytest", "-q"],
+            "command": ["pytest", "-q"],
             "exit_code": 0,
             "duration_s": 1.5,
             "stdout_tail": "ok",
@@ -528,7 +528,7 @@ def test_full_run_trace_replay() -> None:
         {"type": "role.call", "role": "worker", "model": "gpt-5"},
         {"type": "tool.call", "name": "apply_patch", "args_preview": {"path": "x.py"}},
         {"type": "tool.result", "name": "apply_patch", "ok": True, "summary": "applied=1"},
-        {"type": "role.result", "role": "worker", "tokens_in": 50, "tokens_out": 100},
+        {"type": "role.result", "role": "worker", "input_tokens": 50, "output_tokens": 100},
         {
             "type": "budget.update",
             "input_total": 50,
@@ -645,7 +645,7 @@ def test_run_status_label_distinguishes_stop_finish_error() -> None:
             viewmodel_state.initial_state(), {"type": "session.start", "user_task": "t"}
         )
         if verify_rc is not None:
-            verify = {"cmd": ["pytest"], "exit_code": verify_rc, "duration_s": 1.0}
+            verify = {"command": ["pytest"], "exit_code": verify_rc, "duration_s": 1.0}
             s = viewmodel_state.apply_event(
                 s, {"type": "verify.end", "stdout_tail": "", "stderr_tail": "", **verify}
             )
@@ -718,9 +718,9 @@ def test_role_result_tracks_context_tokens_and_provider() -> None:
             "type": "role.result",
             "role": "worker",
             "ok": True,
-            "tokens_in": 1_000,
-            "cache_read": 40_000,
-            "cache_creation": 2_000,
+            "input_tokens": 1_000,
+            "cache_read_tokens": 40_000,
+            "cache_write_tokens": 2_000,
         },
     )
     assert s.last_role is not None and s.last_role.ctx_tokens == 43_000
@@ -889,7 +889,7 @@ def test_compaction_events_fold_into_elision_counters() -> None:
     """/status counts elided markers and live gists in the current context."""
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(
-        s, {"type": "loop.compact.dropped", "n": 3, "calls": ["read_file a.py", "grep 'q'"]}
+        s, {"type": "loop.compact.dropped", "count": 3, "calls": ["read_file a.py", "grep 'q'"]}
     )
     s = viewmodel_state.apply_event(
         s,
@@ -902,7 +902,7 @@ def test_compaction_events_fold_into_elision_counters() -> None:
         },
     )
     s = viewmodel_state.apply_event(
-        s, {"type": "loop.compact.dropped", "n": 1, "calls": ["read_file d.py"]}
+        s, {"type": "loop.compact.dropped", "count": 1, "calls": ["read_file d.py"]}
     )
     assert s.compact_elided == 4
     assert s.compact_gists_live == 1
@@ -910,7 +910,7 @@ def test_compaction_events_fold_into_elision_counters() -> None:
 
 def test_format_log_line_compaction_identities() -> None:
     dropped = log_line.format_log_line(
-        {"type": "loop.compact.dropped", "n": 2, "calls": ["read_file a.py", "grep 'q'"]}
+        {"type": "loop.compact.dropped", "count": 2, "calls": ["read_file a.py", "grep 'q'"]}
     )
     assert "elided 2" in dropped and "read_file a.py" in dropped and "grep 'q'" in dropped
     gists = log_line.format_log_line(
@@ -944,7 +944,7 @@ def test_tier2_restart_resets_elision_counters() -> None:
     """A summarise-and-restart resets the /status elision counters with the context it wiped."""
     s = viewmodel_state.initial_state()
     s = viewmodel_state.apply_event(
-        s, {"type": "loop.compact.dropped", "n": 9, "calls": ["read_file a.py"]}
+        s, {"type": "loop.compact.dropped", "count": 9, "calls": ["read_file a.py"]}
     )
     s = viewmodel_state.apply_event(
         s,
@@ -990,7 +990,7 @@ _WRONG_SHAPE_EVENTS: list[dict[str, Any]] = [
     {"type": "tool.call", "name": "x", "args_preview": "not-a-dict"},
     {"type": "question.prompt", "questions": {"question": "q"}},
     {"type": "question.answer", "id": "q1", "answers": 5},
-    {"type": "loop.compact.dropped", "n": 1, "calls": 5},
+    {"type": "loop.compact.dropped", "count": 1, "calls": 5},
     {"type": "loop.compact.gists", "gisted": 1, "paths": True, "demoted": 1, "demoted_paths": 1},
     {"type": "graph.update", "nodes": {"a": {"title": "a", "children": 5}}},
 ]

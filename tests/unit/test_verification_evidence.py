@@ -373,7 +373,7 @@ def test_denied_attempt_uses_cmd_and_keeps_reason_out_of_stderr(tmp_path: pathli
     rows = denied_rows(tmp_path)
     for row in rows:
         if row["type"] in ("verify.start", "verify.end"):
-            assert row["cmd"] == ["true"] and "command" not in row
+            assert row["command"] == ["true"] and "cmd" not in row
     end = next(row for row in rows if row["type"] == "verify.end")
     assert "run_commands" in end["reason"]
     assert end["stderr_tail"] == ""

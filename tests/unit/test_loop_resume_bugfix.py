@@ -208,7 +208,7 @@ def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: pathl
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": [{"type": "text", "text": "answer in prose"}]},
     )
     wf = _wf(
@@ -1086,7 +1086,7 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={
             "content": [
                 {
@@ -1159,7 +1159,7 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={
             "content": [
                 {

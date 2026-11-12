@@ -157,7 +157,7 @@ MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, st
         "finished-gate-red",
         [
             _START,
-            {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
+            {"type": "verify.end", "command": ["pytest"], "exit_code": 1},
             _end("finish_session", "failed"),
         ],
         "",
@@ -237,7 +237,7 @@ def test_harness_end_labels_agree_across_the_scan_and_both_folds(
         events.append(
             {
                 "type": "verify.end",
-                "cmd": ["pytest"],
+                "command": ["pytest"],
                 "exit_code": verify_exit,
                 "timeout_s": 300.0,
                 "timed_out": gate_detail == "gate timed out",
@@ -300,9 +300,9 @@ def test_a_verify_cut_short_leaves_no_verdict_in_either_producer(tmp_path: pathl
     """
     events: list[dict[str, object]] = [
         _START,
-        {"type": "verify.start", "cmd": ["true"]},
-        {"type": "verify.end", "cmd": ["true"], "exit_code": 1, "duration_s": 1.0},
-        {"type": "verify.start", "cmd": ["true"]},
+        {"type": "verify.start", "command": ["true"]},
+        {"type": "verify.end", "command": ["true"], "exit_code": 1, "duration_s": 1.0},
+        {"type": "verify.start", "command": ["true"]},
     ]
     d = _mk(tmp_path, "cut-short", events)
     scan_facts = session_log.scan_session_log(d / "logs.jsonl").status_facts()
@@ -479,7 +479,7 @@ def test_a_saved_answer_reads_as_saved_not_pending(tmp_path: pathlib.Path) -> No
 
 def test_pending_steer_is_visible_until_consumed(tmp_path: pathlib.Path) -> None:
     """A verify can be silent while a steer waits on disk, without a new log event."""
-    events: list[dict[str, object]] = [_START, {"type": "verify.start", "cmd": ["pytest"]}]
+    events: list[dict[str, object]] = [_START, {"type": "verify.start", "command": ["pytest"]}]
     d = _mk(tmp_path, "steer-AAAA11", events, pid=LIVE)
     fold = viewmodel_state.fold_session(events)
     assert ipc.submit_steer(d, "Please finish the tests")

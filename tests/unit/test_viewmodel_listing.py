@@ -459,7 +459,7 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathl
     """
     red_finish: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
+        {"type": "verify.end", "command": ["pytest"], "exit_code": 1},
         {"type": "session.stop", "verification": "failed", "reason": "finish_session"},
     ]
     rd = _write_run(tmp_path, "runs", "r-red", red_finish)
@@ -467,8 +467,8 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathl
 
     green: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
-        {"type": "verify.end", "cmd": ["pytest"], "exit_code": 0},
+        {"type": "verify.end", "command": ["pytest"], "exit_code": 1},
+        {"type": "verify.end", "command": ["pytest"], "exit_code": 0},
         {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
     ]
     assert (
@@ -499,7 +499,7 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathl
     # the token counters (the resumed execution may never run the gate at all).
     resumed: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
+        {"type": "verify.end", "command": ["pytest"], "exit_code": 1},
         {"type": "session.resume"},
         {"type": "session.stop", "verification": None, "reason": "finish_session"},
     ]
@@ -515,7 +515,7 @@ def test_a_finish_over_a_red_gate_resumes_plainly(tmp_path: pathlib.Path) -> Non
     """
     red: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
+        {"type": "verify.end", "command": ["pytest"], "exit_code": 1},
         {"type": "session.stop", "verification": "unverified", "reason": "finish_session"},
     ]
     assert listing.finished_needs_new_work(_write_run(tmp_path, "runs", "r-red", red)) is False
@@ -575,7 +575,7 @@ def test_a_finish_over_a_red_gate_reads_gate_red(tmp_path: pathlib.Path) -> None
     """A finish_session over an observed red gate reads "finished · gate red"."""
     red: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
+        {"type": "verify.end", "command": ["pytest"], "exit_code": 1},
         {"type": "session.stop", "verification": "failed", "reason": "finish_session"},
     ]
     s = summarize_session_dir(_write_run(tmp_path, "runs", "r-red", red))
@@ -601,7 +601,7 @@ def test_implicit_clean_ends_do_not_read_as_failures(
     """Silent and metric-driven completion are clean ends; a not-green tree qualifies them."""
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "verify.end", "cmd": ["pytest"], "exit_code": verify_exit},
+        {"type": "verify.end", "command": ["pytest"], "exit_code": verify_exit},
         {
             "type": "session.stop",
             "verification": "failed" if verify_exit else "unverified",
@@ -1096,7 +1096,7 @@ def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: path
         "fork-3",
         [
             {"type": "session.resume", "mode": "run", "turn": 1},
-            {"type": "verify.end", "cmd": ["pytest"], "exit_code": 0, "duration_s": 1.0},
+            {"type": "verify.end", "command": ["pytest"], "exit_code": 0, "duration_s": 1.0},
             {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
@@ -1293,7 +1293,7 @@ def test_summary_settle_after_a_red_gate_reads_gate_red(tmp_path: pathlib.Path) 
         "red-settle",
         [
             {"type": "session.start", "mode": "run", "user_task": "fix it"},
-            {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
+            {"type": "verify.end", "command": ["pytest"], "exit_code": 1},
             {"type": "session.stop", "verification": "failed", "reason": "settled"},
         ],
     )
@@ -1500,7 +1500,7 @@ def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: pathlib.Pat
                 "input_total": 18,
                 "output_total": 2194,
                 "cache_read_total": 42486,
-                "cache_creation_total": 22617,
+                "cache_write_total": 22617,
                 "usd_total": 0.0,
             }
         )
@@ -1509,13 +1509,13 @@ def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: pathlib.Pat
     )
     scan = session_log.scan_session_log(logs)
     assert (scan.input_tokens, scan.output_tokens) == (18, 2194)
-    assert (scan.cache_read_tokens, scan.cache_creation_tokens) == (42486, 22617)
+    assert (scan.cache_read_tokens, scan.cache_write_tokens) == (42486, 22617)
     logs.write_text(
         json.dumps({"type": "budget.update", "input_total": 1, "output_total": 2}) + "\n",
         encoding="utf-8",
     )
     old = session_log.scan_session_log(logs)
-    assert (old.cache_read_tokens, old.cache_creation_tokens) == (None, None)
+    assert (old.cache_read_tokens, old.cache_write_tokens) == (None, None)
     # The four travel as one group: an aggregate event without the cached side
     # (a draft's summed attempts) shows none, not an earlier event's figures.
     logs.write_text(
@@ -1525,7 +1525,7 @@ def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: pathlib.Pat
                 "input_total": 18,
                 "output_total": 2194,
                 "cache_read_total": 42486,
-                "cache_creation_total": 22617,
+                "cache_write_total": 22617,
             }
         )
         + "\n"
@@ -1535,7 +1535,7 @@ def test_scan_carries_the_cached_tokens_the_budget_reports(tmp_path: pathlib.Pat
     )
     aggregate = session_log.scan_session_log(logs)
     assert (aggregate.input_tokens, aggregate.output_tokens) == (250, 50)
-    assert (aggregate.cache_read_tokens, aggregate.cache_creation_tokens) == (None, None)
+    assert (aggregate.cache_read_tokens, aggregate.cache_write_tokens) == (None, None)
 
 
 def test_summary_names_the_questions_nobody_answered(tmp_path: pathlib.Path) -> None:
@@ -1909,7 +1909,7 @@ def test_a_journal_written_before_the_turn_rename_keeps_its_end_turn(
 
     journal = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "loop.tool.call", "name": "read_file", "iteration": 4},
+        {"type": "tool.call", "name": "read_file", "iteration": 4},
         {
             "type": "session.stop",
             "reason": "finish_session",

@@ -41,7 +41,7 @@ _STREAM_TAIL = 6000
 # Live-view only: a reasoning model would flood the log with contentless delta lines.
 STREAM_DELTA_EVENTS = frozenset({"role.thinking_delta", "role.text_delta"})
 # Loop-side mirrors of events the log already shows.
-LOG_NOISE_EVENTS = frozenset({"loop.tool.call", "loop.budget"})
+LOG_NOISE_EVENTS = frozenset({"loop.budget"})
 
 
 def _answered_only(
@@ -184,7 +184,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 last_role=dataclasses.replace(last, streamed_thinking=joined[-_STREAM_TAIL:]),
             )
 
-        case journal.RoleResult(tokens_in=tin, cache_read=cr, cache_creation=cc):
+        case journal.RoleResult(input_tokens=tin, cache_read_tokens=cr, cache_write_tokens=cc):
             last = state.last_role
             if last is None:
                 return state
@@ -239,11 +239,13 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 tool_calls=(*state.tool_calls[:-1], updated_last),
             )
 
-        case journal.VerifyStart(cmd=cmd):
-            return dataclasses.replace(state, last_verify=state_types.VerifyView(cmd=tuple(cmd)))
+        case journal.VerifyStart(command=cmd):
+            return dataclasses.replace(
+                state, last_verify=state_types.VerifyView(command=tuple(cmd))
+            )
 
         case journal.VerifyEnd(
-            cmd=cmd,
+            command=cmd,
             exit_code=code,
             duration_s=dur,
             stdout_tail=out,
@@ -255,7 +257,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             return dataclasses.replace(
                 state,
                 last_verify=state_types.VerifyView(
-                    cmd=tuple(cmd),
+                    command=tuple(cmd),
                     exit_code=code,
                     duration_s=dur,
                     stdout_tail=out,
@@ -311,7 +313,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
         case journal.LoopCompactRestored(elided=elided, gists=gists):
             return dataclasses.replace(state, compact_elided=elided, compact_gists_live=gists)
 
-        case journal.LoopCompactDropped(n=n):
+        case journal.LoopCompactDropped(count=n):
             return dataclasses.replace(state, compact_elided=state.compact_elided + n)
 
         case journal.LoopCompactGists(gisted=gisted, demoted=demoted):

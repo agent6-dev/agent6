@@ -463,7 +463,7 @@ class _CostingFakeProvider(_FakeProvider):
             input_tokens=1000,
             output_tokens=100,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             cost_usd=0.0102,
         )
         return super().call(**kw)
@@ -675,7 +675,7 @@ class _UnpricedFakeProvider(_FakeProvider):
             input_tokens=1000,
             output_tokens=100,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
         )
         return super().call(**kw)
 

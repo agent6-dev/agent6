@@ -223,9 +223,9 @@ def assert_execution_receipt(session: jail_session.JailSession) -> str:
         assert record.execution_id == view.execution_id
         assert record.target_id == stamp.target_id
         assert record.exit_code == 0
-        assert record.stdout_tail.splitlines() == [record.cmd[-1], *expected]
-    assert view.setups[0].cmd == cfg.workspace.setup_command
-    assert all(record.cmd == cfg.harness.verify_command for record in view.verifications)
+        assert record.stdout_tail.splitlines() == [record.command[-1], *expected]
+    assert view.setups[0].command == cfg.workspace.setup_command
+    assert all(record.command == cfg.harness.verify_command for record in view.verifications)
     assert all(record.certifies(view.end_tree) for record in view.verifications)
     assert view.final_verify_id == view.verifications[-1].verify_id
     assert len(view.jobs) == len(view.environments) == 1

@@ -58,7 +58,7 @@ METRICS: tuple[MetricDef, ...] = (
     MetricDef(
         "agent6_tokens_total",
         "counter",
-        "Tokens by type (input, output, cache_read, cache_creation), model and provider.",
+        "Tokens by type (input, output, cache_read, cache_write), model and provider.",
         "{token}",
     ),
     MetricDef(

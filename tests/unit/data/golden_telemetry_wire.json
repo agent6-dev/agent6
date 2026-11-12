@@ -349,7 +349,7 @@
                   "unit": "1"
                 },
                 {
-                  "description": "Tokens by type (input, output, cache_read, cache_creation), model and provider.",
+                  "description": "Tokens by type (input, output, cache_read, cache_write), model and provider.",
                   "name": "agent6_tokens_total",
                   "sum": {
                     "aggregationTemporality": 2,
@@ -816,13 +816,13 @@
                       }
                     },
                     {
-                      "key": "agent6.tokens_in",
+                      "key": "agent6.input_tokens",
                       "value": {
                         "intValue": "1000"
                       }
                     },
                     {
-                      "key": "agent6.tokens_out",
+                      "key": "agent6.output_tokens",
                       "value": {
                         "intValue": "200"
                       }
@@ -1013,7 +1013,7 @@
                 "unit": "1"
               },
               {
-                "description": "Tokens by type (input, output, cache_read, cache_creation), model and provider.",
+                "description": "Tokens by type (input, output, cache_read, cache_write), model and provider.",
                 "name": "agent6_tokens_total",
                 "sum": {
                   "aggregationTemporality": 2,
@@ -1464,25 +1464,25 @@
                     }
                   },
                   {
-                    "key": "agent6.tokens_in",
+                    "key": "agent6.input_tokens",
                     "value": {
                       "intValue": "10"
                     }
                   },
                   {
-                    "key": "agent6.tokens_out",
+                    "key": "agent6.output_tokens",
                     "value": {
                       "intValue": "5"
                     }
                   },
                   {
-                    "key": "agent6.cache_read",
+                    "key": "agent6.cache_read_tokens",
                     "value": {
                       "intValue": "2"
                     }
                   },
                   {
-                    "key": "agent6.cache_creation",
+                    "key": "agent6.cache_write_tokens",
                     "value": {
                       "intValue": "0"
                     }

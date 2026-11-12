@@ -252,10 +252,8 @@ def test_recovered_id_and_result_are_echoed_once_on_the_next_turn(
     assert recorded[1]["request"]["body"] == request_bodies[1]
     journal_events = [json.loads(line) for line in journal.read_text().splitlines()]
     assert [event["type"] for event in journal_events] == [
-        "loop.tool.call",
         "tool.call",
         "tool.result",
-        "loop.tool.call",
         "tool.call",
         "tool.result",
     ]

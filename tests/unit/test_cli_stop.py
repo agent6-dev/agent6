@@ -128,7 +128,7 @@ def test_worker_stop_words_match_the_request(
             input_tokens=1,
             output_tokens=1,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             raw={"content": [tool]},
         )
 

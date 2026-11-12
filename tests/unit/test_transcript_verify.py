@@ -18,7 +18,7 @@ def attempt(*, model: bool = False, verify_id: str = "v1") -> list[dict[str, Any
             {
                 "type": "verify.start",
                 "verify_id": verify_id,
-                "cmd": ["pytest", "-q"],
+                "command": ["pytest", "-q"],
                 "approval_required": True,
                 **call,
             },
@@ -32,7 +32,7 @@ def attempt(*, model: bool = False, verify_id: str = "v1") -> list[dict[str, Any
             {
                 "type": "verify.end",
                 "verify_id": verify_id,
-                "cmd": ["pytest", "-q"],
+                "command": ["pytest", "-q"],
                 "exit_code": 0,
                 "outcome": "passed",
                 "duration_s": 0.2,
@@ -108,7 +108,7 @@ def test_repeated_and_idless_verification_attempts_stay_distinct() -> None:
 def test_verification_without_approval_shows_the_command_at_start() -> None:
     """An allowed command never claims to be waiting for an operator."""
     (item,) = transcript.fold_transcript(
-        [{"type": "verify.start", "cmd": ["echo", "two words"], "approval_required": False}]
+        [{"type": "verify.start", "command": ["echo", "two words"], "approval_required": False}]
     )
     assert item.body == "verify: running `echo 'two words'`"
 

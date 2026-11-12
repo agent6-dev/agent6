@@ -1044,7 +1044,6 @@ class Harness:
             except (TypeError, ValueError):
                 sig = f"{name}:<unhashable>"
             state.spiral.note_call(sig, polling=name == schema.ReadBackgroundInput.TOOL_NAME)
-            self.emit(journal.LoopToolCall(name=name, turn=turn.number))
             served = None
             attachment = None
             try:
@@ -1057,7 +1056,7 @@ class Harness:
                     name,
                     tool_input,
                     origin=(
-                        kinds.ToolCallOrigin(state.call_context, tu.id)
+                        kinds.ToolCallOrigin(state.call_context, tu.id, turn.number)
                         if state.call_context is not None
                         else None
                     ),

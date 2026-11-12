@@ -244,7 +244,7 @@ def test_helper_jobs_do_not_use_the_reviewer_route(
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
 
     def build(config: model.Config, role: kinds.RoleName, **kwargs: Any) -> Any:

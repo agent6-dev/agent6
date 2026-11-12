@@ -303,7 +303,12 @@ def test_pause_menu_status_shows_ctx_and_profile(
                     "provider": "anthropic",
                     "model": "claude-sonnet-4-5",
                 },
-                {"type": "role.result", "role": "worker", "tokens_in": 90_000, "tokens_out": 10},
+                {
+                    "type": "role.result",
+                    "role": "worker",
+                    "input_tokens": 90_000,
+                    "output_tokens": 10,
+                },
             )
         ),
         encoding="utf-8",
@@ -330,7 +335,7 @@ def test_pause_menu_status_shows_compaction_truth(
             json.dumps(e) + "\n"
             for e in (
                 {"type": "session.start", "user_task": "polish", "mode": "run"},
-                {"type": "loop.compact.dropped", "n": 9, "calls": ["read_file a.py"]},
+                {"type": "loop.compact.dropped", "count": 9, "calls": ["read_file a.py"]},
                 {
                     "type": "loop.compact.gists",
                     "gisted": 3,

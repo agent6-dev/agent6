@@ -357,10 +357,10 @@ def _usage_fields(usage: provider_types.ProviderUsage | None) -> dict[str, Any]:
     if usage is None:
         return {}
     fields: dict[str, int | float] = {
-        "tokens_in": usage.input_tokens,
-        "tokens_out": usage.output_tokens,
-        "cache_read": usage.cache_read_tokens,
-        "cache_creation": usage.cache_creation_tokens,
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "cache_read_tokens": usage.cache_read_tokens,
+        "cache_write_tokens": usage.cache_write_tokens,
     }
     if usage.cost_usd is not None:
         fields["cost_usd"] = usage.cost_usd

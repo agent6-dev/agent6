@@ -492,7 +492,7 @@ class ChatGPTProvider:
                 input_tokens=billed.input_tokens,
                 output_tokens=billed.output_tokens,
                 cache_read_tokens=billed.cache_read_tokens,
-                cache_creation_tokens=0,
+                cache_write_tokens=0,
                 plan_usage=plan_usage,
             )
             call.transcript.usage = billed.usage if state.usage else None
@@ -526,7 +526,7 @@ class ChatGPTProvider:
                     input_tokens=parsed.input_tokens,
                     output_tokens=parsed.output_tokens,
                     cache_read_tokens=parsed.cache_read_tokens,
-                    cache_creation_tokens=0,
+                    cache_write_tokens=0,
                     plan_usage=plan_usage,
                 )
             call.transcript.usage = parsed.usage if state.usage else None

@@ -305,8 +305,8 @@ def _cmd_machine_status(machine_id: str) -> int:
     print(f"  state: {result.state!r}")
     print(f"  transitions: {result.transitions}")
     cached = (
-        f", cache_r={spend.cache_read_tokens} tok, cache_c={spend.cache_creation_tokens} tok"
-        if spend.cache_read_tokens or spend.cache_creation_tokens
+        f", cache_r={spend.cache_read_tokens} tok, cache_w={spend.cache_write_tokens} tok"
+        if spend.cache_read_tokens or spend.cache_write_tokens
         else ""
     )
     print(

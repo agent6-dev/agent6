@@ -2171,9 +2171,9 @@ def test_the_tail_sends_the_title_the_commands_and_the_usage(tmp_path: pathlib.P
             provider="p",
             model_call_id="call",
             ok=True,
-            tokens_in=10,
-            cache_read=0,
-            cache_creation=0,
+            input_tokens=10,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
         )
     )
     sink.emit(journal.BudgetUpdate(usd_total=0.0, usd_partial=True))

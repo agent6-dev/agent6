@@ -143,7 +143,7 @@ class OperatorTasks:
             )
         )
         self.log(f"LOOP: operator queued task {node.id}: {title}")
-        self.emit(journal.LoopTaskQueued(id=node.id, title=title))
+        self.emit(journal.LoopTaskQueued(task_id=node.id, title=title))
 
     def retire(self, task_id: str) -> None:
         """Retire a task the operator no longer wants: obsolete, not skipped.
@@ -160,7 +160,7 @@ class OperatorTasks:
             )
         )
         self.log(f"LOOP: operator retired task {node.id}")
-        self.emit(journal.LoopTaskRetired(id=node.id, title=node.title))
+        self.emit(journal.LoopTaskRetired(task_id=node.id, title=node.title))
 
     def set_standing(self, root_id: str, goal: str) -> None:
         """Set the standing goal, retiring the one it replaces.
@@ -188,7 +188,7 @@ class OperatorTasks:
             )
         )
         self.log(f"LOOP: standing goal set: {node.id}")
-        self.emit(journal.LoopStandingSet(id=node.id, title=goal))
+        self.emit(journal.LoopStandingSet(task_id=node.id, title=goal))
 
     @property
     def _graph(self) -> graph_curator.GraphCurator:

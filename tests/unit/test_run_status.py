@@ -70,7 +70,7 @@ def test_status_running_with_live_pid(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start", "mode": "run"},
-            {"ts": _ts(3), "type": "loop.tool.call", "turn": 3},
+            {"ts": _ts(3), "type": "tool.call", "turn": 3},
         ],
     )
     # this test process is genuinely alive
@@ -183,7 +183,10 @@ def test_status_waiting_when_blocked_on_an_operator_answer(
 @pytest.mark.parametrize(
     ("last", "detail"),
     [
-        ({"type": "verify.start", "cmd": ["pytest"], "timeout_s": 1800}, "verify command running"),
+        (
+            {"type": "verify.start", "command": ["pytest"], "timeout_s": 1800},
+            "verify command running",
+        ),
         ({"type": "tool.call", "name": "run_command", "args_preview": {}}, "tool call running"),
         ({"type": "role.call", "role": "worker"}, "provider call in flight"),
         ({"type": "role.text_delta", "role": "worker", "text": "x"}, "provider call in flight"),
@@ -226,7 +229,7 @@ def test_status_crashed_when_pid_dead_and_no_run_end(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start"},
-            {"ts": _ts(30), "type": "loop.tool.call", "turn": 1},
+            {"ts": _ts(30), "type": "tool.call", "turn": 1},
         ],
     )
     (d / "worker.pid").write_text("999999")  # almost certainly not a live pid
@@ -250,7 +253,7 @@ def test_show_stale_run_offers_resume(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start", "mode": "run"},
-            {"ts": _ts(30), "type": "loop.tool.call", "turn": 1},
+            {"ts": _ts(30), "type": "tool.call", "turn": 1},
         ],
     )
     (d / "loop_state.json").write_text("{}", encoding="utf-8")  # a turn ran: a resume can start
@@ -384,7 +387,7 @@ def test_show_prints_a_setup_failure_once(
         monkeypatch,
         [
             {"type": "session.start", "mode": "run"},
-            {"type": "workspace.setup", "cmd": ["uv", "sync", "--offline"], "exit_code": 1},
+            {"type": "workspace.setup", "command": ["uv", "sync", "--offline"], "exit_code": 1},
             {
                 "type": "session.stop",
                 "reason": "setup_command_failed",
@@ -504,7 +507,7 @@ def test_status_finish_without_all_passed_reads_finished(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start"},
-            {"ts": _ts(2), "type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
+            {"ts": _ts(2), "type": "verify.end", "command": ["pytest"], "exit_code": 1},
             {
                 "ts": _ts(1),
                 "type": "session.stop",
@@ -655,7 +658,7 @@ def test_status_shows_usage_from_budget_update_event(
                 "input_total": 4200,
                 "output_total": 800,
                 "cache_read_total": 42486,
-                "cache_creation_total": 22617,
+                "cache_write_total": 22617,
                 "usd_total": 0.0456,
                 "usd_partial": False,
             },
@@ -664,13 +667,13 @@ def test_status_shows_usage_from_budget_update_event(
     process.write_worker_pid(d, os.getpid())
     sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
-    assert "in=4200 out=800 cache_r=42486 cache_c=22617" in out  # the latest update wins
+    assert "in=4200 out=800 cache_r=42486 cache_w=22617" in out  # the latest update wins
     assert "$0.05" in out
     # json carries the same
     sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True)
     obj = json.loads(capsys.readouterr().out)
     assert obj["input_tokens"] == 4200 and obj["cost_usd"] == 0.0456
-    assert (obj["cache_read_tokens"], obj["cache_creation_tokens"]) == (42486, 22617)
+    assert (obj["cache_read_tokens"], obj["cache_write_tokens"]) == (42486, 22617)
 
 
 def test_status_names_the_pins_in_force(
@@ -717,7 +720,7 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
                 "input_total": 1000,
                 "output_total": 200,
                 "cache_read_total": 9000,
-                "cache_creation_total": 100,
+                "cache_write_total": 100,
                 "usd_total": 0.02,
                 "usd_partial": True,
             },
@@ -1033,7 +1036,7 @@ def test_a_started_session_with_no_pid_file_is_not_running(
         monkeypatch,
         [
             {"ts": _ts(20), "type": "session.start", "mode": "run"},
-            {"ts": _ts(2), "type": "loop.tool.call", "turn": 2},
+            {"ts": _ts(2), "type": "tool.call", "turn": 2},
         ],
     )
     assert not (d / "worker.pid").exists()
@@ -1370,7 +1373,7 @@ def test_show_says_why_a_stale_run_with_no_snapshot_cannot_be_resumed(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start", "mode": "run"},
-            {"ts": _ts(30), "type": "loop.tool.call", "turn": 1},
+            {"ts": _ts(30), "type": "tool.call", "turn": 1},
         ],
     )
     assert sessions_show._cmd_status("winsome-dawn") == 0

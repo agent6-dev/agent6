@@ -360,13 +360,13 @@ def test_the_ledger_carries_the_cached_tokens_and_sums_them(tmp_path: pathlib.Pa
                 "input_total": 18,
                 "output_total": 2194,
                 "cache_read_total": 42486,
-                "cache_creation_total": 22617,
+                "cache_write_total": 22617,
             }
         )
         + "\n",
         encoding="utf-8",
     )
     spend = machine_logs.read_budget_totals(log)
-    assert (spend.cache_read_tokens, spend.cache_creation_tokens) == (42486, 22617)
+    assert (spend.cache_read_tokens, spend.cache_write_tokens) == (42486, 22617)
     total = spend + machine_logs.Spend(0.0, 1, 1, False, 4, 6)
-    assert (total.cache_read_tokens, total.cache_creation_tokens) == (42490, 22623)
+    assert (total.cache_read_tokens, total.cache_write_tokens) == (42490, 22623)

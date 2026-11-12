@@ -251,7 +251,7 @@ def verification_summary(record: evidence.VerificationEvidence) -> str:
     return (
         f"{record.verify_id or 'unrecorded id'}: {baseline}{record.outcome}, {code}{scope}\n"
         f"{reason}"
-        f"Command: {shlex.join(record.cmd)}\n"
+        f"Command: {shlex.join(record.command)}\n"
         f"Environment: {record.target_id or 'unknown'}; "
         f"execution: {record.execution_id or 'unknown'}\n"
         f"Tested tree: {record.tree_before or 'unknown'}; after: {record.tree_after or 'unknown'}\n"
@@ -340,7 +340,7 @@ def environment_summary(view: ReceiptView | session_log.LogScan) -> str:
         lines.append(line)
     for setup in view.setups:
         lines.append(
-            f"Setup: {shlex.join(setup.cmd)}; "
+            f"Setup: {shlex.join(setup.command)}; "
             f"{evidence.result_label(setup.exit_code, 'unavailable')}; "
             f"Environment: {setup.target_id or 'unknown'}; "
             f"execution: {setup.execution_id or 'unknown'}"

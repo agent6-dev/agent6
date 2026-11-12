@@ -258,7 +258,7 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
         input_tokens=fresh_input,
         output_tokens=usage_count(usage, "completion_tokens"),
         cache_read_tokens=cached,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         cost_usd=reported_cost,
         raw=enriched_raw,
     )

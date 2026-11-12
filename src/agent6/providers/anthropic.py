@@ -593,7 +593,7 @@ class AnthropicProvider:
         usage_input = 0
         usage_output = 0
         usage_cache_read = 0
-        usage_cache_creation = 0
+        usage_cache_write = 0
         saw_usage = False
         saw_input_usage = False
         saw_output_usage = False
@@ -623,7 +623,7 @@ class AnthropicProvider:
                 ProviderError: A malformed event or a stream error frame.
             """
             nonlocal stop_reason, saw_message_stop, usage_input, usage_output
-            nonlocal usage_cache_read, usage_cache_creation, saw_input_usage, saw_output_usage
+            nonlocal usage_cache_read, usage_cache_write, saw_input_usage, saw_output_usage
             nonlocal saw_usage
             for event_type, data_str in stream_lifecycle.sse_events(resp):
                 if not data_str:
@@ -653,7 +653,7 @@ class AnthropicProvider:
                     usage_input = _usage_count(u, "input_tokens")
                     usage_output = _usage_count(u, "output_tokens")
                     usage_cache_read = _usage_count(u, "cache_read_input_tokens")
-                    usage_cache_creation = _usage_count(u, "cache_creation_input_tokens")
+                    usage_cache_write = _usage_count(u, "cache_creation_input_tokens")
                 elif et == "content_block_start":
                     idx = _non_negative_integer(evt.get("index", 0), "content block index")
                     if idx in open_blocks:
@@ -835,7 +835,7 @@ class AnthropicProvider:
                 input_tokens=usage_input,
                 output_tokens=usage_output,
                 cache_read_tokens=usage_cache_read,
-                cache_creation_tokens=usage_cache_creation,
+                cache_write_tokens=usage_cache_write,
             )
             if not saw_usage:
                 return None
@@ -843,7 +843,7 @@ class AnthropicProvider:
                 input_tokens=usage_input,
                 output_tokens=usage_output,
                 cache_read_tokens=usage_cache_read,
-                cache_creation_tokens=usage_cache_creation,
+                cache_write_tokens=usage_cache_write,
             )
             return call.transcript.usage
 
@@ -876,7 +876,7 @@ class AnthropicProvider:
                     "input_tokens": usage_input,
                     "output_tokens": usage_output,
                     "cache_read_input_tokens": usage_cache_read,
-                    "cache_creation_input_tokens": usage_cache_creation,
+                    "cache_creation_input_tokens": usage_cache_write,
                 },
             }
             call.record(status=200, response=synthesised)
@@ -967,6 +967,6 @@ def _parse_response(data: dict[str, Any]) -> provider_types.ProviderResponse:
         input_tokens=_usage_count(usage, "input_tokens"),
         output_tokens=_usage_count(usage, "output_tokens"),
         cache_read_tokens=_usage_count(usage, "cache_read_input_tokens"),
-        cache_creation_tokens=_usage_count(usage, "cache_creation_input_tokens"),
+        cache_write_tokens=_usage_count(usage, "cache_creation_input_tokens"),
         raw=data,
     )

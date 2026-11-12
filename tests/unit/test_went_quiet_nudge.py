@@ -38,7 +38,7 @@ def _empty_resp() -> ProviderResponse:
         input_tokens=1,
         output_tokens=0,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": []},
     )
 
@@ -51,7 +51,7 @@ def _resp_with_tool(name: str, args: dict[str, Any], tu_id: str = "tu1") -> Prov
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": [{"type": "tool_use", "id": tu_id, "name": name, "input": args}]},
     )
 
@@ -64,7 +64,7 @@ def _resp_text(text: str = "done") -> ProviderResponse:
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": [{"type": "text", "text": text}]},
     )
 
@@ -78,7 +78,7 @@ def _starved_resp() -> ProviderResponse:
         input_tokens=1,
         output_tokens=32768,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": [{"type": "thinking", "thinking": "x" * 4096}]},
     )
 
@@ -322,7 +322,7 @@ def test_a_billed_empty_turn_says_so(tmp_path: pathlib.Path) -> None:
         input_tokens=1,
         output_tokens=128,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": []},
     )
     provider = mock.MagicMock()
@@ -354,7 +354,7 @@ def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: pathlib.Path)
         input_tokens=1,
         output_tokens=128,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": []},
     )
     provider = mock.MagicMock()
@@ -369,7 +369,7 @@ def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: pathlib.Path)
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         plan_usage=budget.PlanUsage.single(used_percent=2.0, window_minutes=10080, resets_at=2e9),
     )
     wf.run("do something")

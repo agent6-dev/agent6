@@ -562,14 +562,19 @@ class ToolCallOrigin:
     Attributes:
         call: The model call whose response holds the block.
         provider_tool_call_id: The provider's tool-use id, the one the result is returned under.
+        turn: The turn the call belongs to; None outside the turn loop.
     """
 
     call: CallContext
     provider_tool_call_id: str
+    turn: int | None = None
 
     def event_fields(self) -> dict[str, Any]:
         """Return the origin's fields for a tool.call or tool.result row."""
-        return {**self.call.event_fields(), "provider_tool_call_id": self.provider_tool_call_id}
+        fields = {**self.call.event_fields(), "provider_tool_call_id": self.provider_tool_call_id}
+        if self.turn is not None:
+            fields["turn"] = self.turn
+        return fields
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -676,7 +681,7 @@ def workspace_setup_fields(result: CommandResult) -> dict[str, Any]:
         each cut to its last 2000 characters.
     """
     return {
-        "cmd": list(result.argv),
+        "command": list(result.argv),
         "exit_code": result.returncode,
         "duration_s": result.duration_s,
         "exec_failed": result.exec_failed,

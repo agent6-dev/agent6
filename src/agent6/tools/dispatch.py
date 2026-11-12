@@ -720,7 +720,7 @@ class ToolDispatcher:
             verify_id=uuid.uuid4().hex,
             execution_id=self.execution_id,
             target_id=self.target_id,
-            cmd=argv,
+            command=argv,
             tree_before=self.verify_tree() or None,
             tree_after=None,
             scoped=bool(extra_argv),
@@ -742,7 +742,7 @@ class ToolDispatcher:
                 execution_id=record.execution_id,
                 target_id=record.target_id,
                 tree_before=record.tree_before,
-                cmd=list(argv),
+                command=list(argv),
                 scoped=record.scoped,
                 selected_paths=list(extra_argv),
                 timeout_s=timeout_s,
@@ -1142,7 +1142,7 @@ class ToolDispatcher:
             raise tool_errors.ToolError("no [harness.metric] configured")
         argv = metric_cfg.command
         self._approve_command("run_metric_command", argv)
-        self._emit(journal.MetricStart(cmd=list(argv)))
+        self._emit(journal.MetricStart(command=list(argv)))
         outcome, timeout_s = command_tools.run_argv_raw(
             argv,
             label="metric_command",
@@ -1164,7 +1164,7 @@ class ToolDispatcher:
         res = result_format.exec_result(outcome, timeout_s=timeout_s)
         self._emit(
             journal.MetricEnd(
-                cmd=list(argv),
+                command=list(argv),
                 exit_code=res.returncode,
                 duration_s=res.duration_s,
                 stdout_tail=res.stdout[-2000:],

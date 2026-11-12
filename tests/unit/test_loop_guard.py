@@ -38,7 +38,7 @@ def _resp_with_tool(name: str, args: dict[str, Any], tu_id: str = "tu1") -> Prov
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": [block]},
     )
 
@@ -51,7 +51,7 @@ def _resp_text(text: str = "done") -> ProviderResponse:
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
     )
 
 

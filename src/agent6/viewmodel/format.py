@@ -56,7 +56,7 @@ def tool_path(value: str) -> str:
 
 def setup_output(event: Mapping[str, object]) -> str:
     """Return a setup event's command, exit code and retained output for every surface."""
-    raw = event.get("cmd")
+    raw = event.get("command")
     argv = [str(a) for a in raw] if isinstance(raw, (list, tuple)) else []
     how = "could not start" if event.get("exec_failed") else f"exit {event.get('exit_code', '?')}"
     lines = [

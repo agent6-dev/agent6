@@ -65,7 +65,7 @@ class VerifyVerdict:
         if record is None:
             return True
         self.final_verify_id = record.verify_id
-        self.command = tuple(record.cmd)
+        self.command = tuple(record.command)
         self.verify_tree = record.tree_after if record.stable_tree else None
         if not record.stable_tree or record.outcome not in ("passed", "failed"):
             self.last_ok = None

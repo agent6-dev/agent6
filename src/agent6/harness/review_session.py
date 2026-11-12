@@ -77,7 +77,7 @@ class VerifyRun:
     tree_after: str | None = None
     stdout_truncated: bool | None = None
     stderr_truncated: bool | None = None
-    cmd: tuple[str, ...] = ()
+    command: tuple[str, ...] = ()
     scoped: bool = False
     outcome: str = ""
     reason: str = ""
@@ -170,7 +170,7 @@ class RunDigest:
                 lines.append(
                     f"  {v.verify_id or 'unrecorded id'}: {v.outcome}; "
                     f"{'Reason: ' + v.reason + '; ' if v.reason else ''}"
-                    f"command {shlex.join(v.cmd)}; "
+                    f"command {shlex.join(v.command)}; "
                     f"{'scoped' if v.scoped else 'full gate'}; "
                     f"tree {v.tree_before or 'unknown'} -> {v.tree_after or 'unknown'}; "
                     f"journal cap 2000 characters per stream; "
@@ -281,7 +281,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
                     tree_after=event.get("tree_after"),
                     stdout_truncated=event.get("stdout_truncated"),
                     stderr_truncated=event.get("stderr_truncated"),
-                    cmd=tuple(event.get("cmd", ())),
+                    command=tuple(event.get("command", ())),
                     scoped=bool(event.get("scoped", False)),
                     outcome=evidence.outcome(event),
                     reason=str(event.get("reason", "")),

@@ -245,7 +245,7 @@ def meter_completion(
             input_tokens=parsed.input_tokens,
             output_tokens=parsed.output_tokens,
             cache_read_tokens=parsed.cache_read_tokens,
-            cache_creation_tokens=parsed.cache_creation_tokens,
+            cache_write_tokens=parsed.cache_write_tokens,
             cost_usd=parsed.cost_usd,
         )
     if (

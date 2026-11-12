@@ -54,7 +54,7 @@ class LogScan:
         input_tokens: This execution's input tokens, None until a budget.update carries them.
         output_tokens: This execution's output tokens.
         cache_read_tokens: The cached side of the input, None when the event lacked it.
-        cache_creation_tokens: Cache-creation tokens, None when the event lacked it.
+        cache_write_tokens: Cache-write tokens, None when the event lacked it.
         plan_observed_points: The plan movement observed across every execution, in points; 0.0
             until a plan call runs.
         plan_prior_executions: The points banked by completed executions.
@@ -119,7 +119,7 @@ class LogScan:
     input_tokens: int | None = None
     output_tokens: int | None = None
     cache_read_tokens: int | None = None
-    cache_creation_tokens: int | None = None
+    cache_write_tokens: int | None = None
     plan_observed_points: float = 0.0
     plan_prior_executions: float = 0.0
     plan_cap: float = 0.0
@@ -527,7 +527,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         input_tokens=usage.execution.input_tokens,
         output_tokens=usage.execution.output_tokens,
         cache_read_tokens=usage.execution.cache_read_tokens,
-        cache_creation_tokens=usage.execution.cache_creation_tokens,
+        cache_write_tokens=usage.execution.cache_write_tokens,
         plan_observed_points=usage.session.plan_observed_points,
         plan_prior_executions=(
             usage.session.plan_observed_points - usage.execution.plan_observed_points

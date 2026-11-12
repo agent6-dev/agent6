@@ -45,7 +45,7 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
             "input_total": 18,
             "output_total": 2194,
             "cache_read_total": 42486,
-            "cache_creation_total": 22617,
+            "cache_write_total": 22617,
             "usd_total": 0.25,
         },
         {
@@ -142,7 +142,7 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
         {
             "ts": "2026-07-14T10:00:30+00:00",
             "type": "verify.end",
-            "cmd": ["pytest"],
+            "command": ["pytest"],
             "exit_code": 1,
         },
         {**_END_PASSED, "verification": "failed"},
@@ -211,7 +211,7 @@ def _shared_facts(
             scan.input_tokens,
             scan.output_tokens,
             scan.cache_read_tokens,
-            scan.cache_creation_tokens,
+            scan.cache_write_tokens,
         ),
         "plan": (scan.plan_observed_points, scan.plan_prior_executions, scan.plan_cap),
         "pins": scan.pins,
@@ -233,7 +233,7 @@ def _shared_facts(
             state.budget.execution.input_tokens,
             state.budget.execution.output_tokens,
             state.budget.execution.cache_read_tokens,
-            state.budget.execution.cache_creation_tokens,
+            state.budget.execution.cache_write_tokens,
         ),
         "plan": (
             state.budget.session.plan_observed_points,
@@ -261,7 +261,7 @@ def _shared_facts(
             usage.execution.input_tokens,
             usage.execution.output_tokens,
             usage.execution.cache_read_tokens,
-            usage.execution.cache_creation_tokens,
+            usage.execution.cache_write_tokens,
         ),
         "plan": (
             usage.session.plan_observed_points,
@@ -300,7 +300,7 @@ def _verify_end(exit_code: int, **fields: Any) -> dict[str, Any]:
     return {
         "ts": "2026-07-14T10:00:50+00:00",
         "type": "verify.end",
-        "cmd": ["pytest"],
+        "command": ["pytest"],
         "exit_code": exit_code,
         "duration_s": 300.0,
         **fields,

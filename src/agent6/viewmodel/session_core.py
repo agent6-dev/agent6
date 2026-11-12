@@ -222,7 +222,7 @@ def _usage(
         input_tokens=row.input_total,
         output_tokens=row.output_total,
         cache_read_tokens=row.cache_read_total,
-        cache_creation_tokens=row.cache_creation_total,
+        cache_write_tokens=row.cache_write_total,
         usd=row.usd_total,
         usd_partial=bool(row.usd_partial),
         unmetered_tokens=row.tokens_unmetered or 0,

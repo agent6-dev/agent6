@@ -372,10 +372,10 @@ function paintDetails(cards, s, asOf) {
   // pause menu's readout): the fold's one rule, served as context_pct.
   const ctxPct = typeof s.context_pct === 'number' ? ` · context ${s.context_pct}%` : '';
   // The cached side of the input is the bulk of a long run's tokens (the run
-  // summary's cache_r/cache_c columns); absent from journals written before it
+  // summary's cache_r/cache_w columns); absent from journals written before it
   // was recorded, so it shows only when nonzero.
-  const cached = (run.cache_read_tokens || run.cache_creation_tokens)
-    ? ` · cached read ${run.cache_read_tokens||0} · cached written ${run.cache_creation_tokens||0}` : '';
+  const cached = (run.cache_read_tokens || run.cache_write_tokens)
+    ? ` · cached read ${run.cache_read_tokens||0} · cached written ${run.cache_write_tokens||0}` : '';
   cards.budget.appendChild(el('div', 'sub muted', `tokens: in ${run.input_tokens||0} · out ${run.output_tokens||0}${cached}${ctxPct}`));
 
   // task tree

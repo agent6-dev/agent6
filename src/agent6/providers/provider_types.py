@@ -32,14 +32,14 @@ class ProviderUsage:
         input_tokens: Fresh input tokens billed.
         output_tokens: Completion tokens billed.
         cache_read_tokens: Prompt tokens served from the cache.
-        cache_creation_tokens: Prompt tokens written to the cache.
+        cache_write_tokens: Prompt tokens written to the cache.
         cost_usd: The reported cost; None means unreported and zero means a free call.
     """
 
     input_tokens: int
     output_tokens: int
     cache_read_tokens: int
-    cache_creation_tokens: int
+    cache_write_tokens: int
     cost_usd: float | None = None
 
 
@@ -572,7 +572,7 @@ class ProviderResponse:
         input_tokens: Prompt tokens billed.
         output_tokens: Completion tokens billed.
         cache_read_tokens: Prompt tokens served from the cache.
-        cache_creation_tokens: Prompt tokens written to the cache.
+        cache_write_tokens: Prompt tokens written to the cache.
         cost_usd: The gateway-reported cost of this call (OpenRouter's `usage.cost`);
             None means unreported, so the price table estimates instead; zero means a free call.
         raw: The response body as received.
@@ -587,7 +587,7 @@ class ProviderResponse:
     input_tokens: int
     output_tokens: int
     cache_read_tokens: int
-    cache_creation_tokens: int
+    cache_write_tokens: int
     cost_usd: float | None = None
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
     refused: dict[str, str] = dataclasses.field(default_factory=dict)
@@ -599,7 +599,7 @@ class ProviderResponse:
             input_tokens=self.input_tokens,
             output_tokens=self.output_tokens,
             cache_read_tokens=self.cache_read_tokens,
-            cache_creation_tokens=self.cache_creation_tokens,
+            cache_write_tokens=self.cache_write_tokens,
             cost_usd=self.cost_usd,
         )
 

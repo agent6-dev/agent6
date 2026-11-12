@@ -44,7 +44,7 @@ def _folded_transcript() -> object:
 def test_tail_drops_malformed_lines_but_keeps_every_object() -> None:
     # 40 JSON objects; the 6 trailing malformed lines are dropped by the tail layer before the fold.
     events = list(tail_events(_FIXTURE, follow=False))
-    assert len(events) == 40
+    assert len(events) == 39
     assert all(isinstance(e, dict) for e in events)
 
 

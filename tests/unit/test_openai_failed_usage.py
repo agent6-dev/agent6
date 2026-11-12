@@ -115,7 +115,7 @@ def test_failed_stream_usage_reaches_the_journal_and_telemetry(
         snap.input_total,
         snap.output_total,
         snap.cache_read_total,
-        snap.cache_creation_total,
+        snap.cache_write_total,
     ) == (100, 10, 25, 0)
     assert snap.per_model[kinds.ModelRoute("test-provider", "test-model")].calls == 1
     assert snap.per_model[kinds.ModelRoute("test-provider", "test-model")].reported_cost_usd == (
@@ -128,8 +128,14 @@ def test_failed_stream_usage_reaches_the_journal_and_telemetry(
     assert result["ok"] is False
     assert result["model_call_id"] == call["model_call_id"]
     assert {
-        key: result.get(key) for key in ("tokens_in", "tokens_out", "cache_read", "cache_creation")
-    } == {"tokens_in": 100, "tokens_out": 10, "cache_read": 25, "cache_creation": 0}
+        key: result.get(key)
+        for key in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens")
+    } == {
+        "input_tokens": 100,
+        "output_tokens": 10,
+        "cache_read_tokens": 25,
+        "cache_write_tokens": 0,
+    }
     if reported_cost is None:
         assert "cost_usd" not in result
     else:
@@ -140,7 +146,7 @@ def test_failed_stream_usage_reaches_the_journal_and_telemetry(
     spans = [span for row in rows for span in fold.feed(row).spans]
     (model_span,) = [span for span in spans if span.name == telemetry_records.SPAN_MODEL_CALL]
     assert model_span.status == "error"
-    assert dict(model_span.attributes)["agent6.tokens_in"] == 100
+    assert dict(model_span.attributes)["agent6.input_tokens"] == 100
     counters = fold.metrics().counters
     labels = (("model", "test-model"), ("provider", "test-provider"))
     for kind, total in (("input", 100), ("output", 10), ("cache_read", 25)):
@@ -178,10 +184,10 @@ def test_successful_stream_reports_the_same_usage_fields(
     (result,) = [row for row in rows if row["type"] == "role.result"]
     assert result["ok"] is True
     assert (
-        result["tokens_in"],
-        result["tokens_out"],
-        result["cache_read"],
-        result["cache_creation"],
+        result["input_tokens"],
+        result["output_tokens"],
+        result["cache_read_tokens"],
+        result["cache_write_tokens"],
     ) == (100, 10, 0, 0)
     if reported_cost is None:
         assert "cost_usd" not in result
@@ -220,6 +226,7 @@ def test_failure_before_usage_does_not_invent_tokens(
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
     (result,) = [row for row in rows if row["type"] == "role.result"]
     assert (
-        not {"tokens_in", "tokens_out", "cache_read", "cache_creation", "cost_usd"} & result.keys()
+        not {"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "cost_usd"}
+        & result.keys()
     )
     assert tracker.snapshot().per_model == {}

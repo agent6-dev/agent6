@@ -131,11 +131,11 @@ class Compactor:
                 self.emit(journal.LoopCompactThinkingDropped(messages=n_messages, chars=n_chars))
         if n_deduped:
             self.log(f"LOOP: compaction deduplicated {n_deduped} identical tool results")
-            self.emit(journal.LoopCompactDeduped(n=n_deduped, calls=list(stats.deduped_calls)))
+            self.emit(journal.LoopCompactDeduped(count=n_deduped, calls=list(stats.deduped_calls)))
         if n_elided:
             detail = f", {n_gisted} kept as distilled gists" if n_gisted else ""
             self.log(f"LOOP: compaction elided {n_elided} old tool_result blocks{detail}")
-            self.emit(journal.LoopCompactDropped(n=n_elided, calls=list(stats.elided_calls)))
+            self.emit(journal.LoopCompactDropped(count=n_elided, calls=list(stats.elided_calls)))
         if n_demoted:
             self.log(f"LOOP: compaction demoted {n_demoted} gists to bare placeholders")
         if n_gisted or n_demoted:

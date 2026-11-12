@@ -1372,7 +1372,7 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
                 input_tokens=10,
                 output_tokens=5,
                 cache_read_tokens=0,
-                cache_creation_tokens=0,
+                cache_write_tokens=0,
             )
 
     def _brp(_cfg: Any, _role: str, *, budget: Any, **_k: Any) -> Any:

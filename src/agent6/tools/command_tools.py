@@ -177,7 +177,7 @@ def run_model_command(
     else:
         emit(
             journal.CommandBackgrounded(
-                id=view.id, handle=outcome.handle, seconds=outcome.duration_s
+                background_id=view.id, handle=outcome.handle, elapsed_s=outcome.duration_s
             )
         )
     return results.ExecResult(

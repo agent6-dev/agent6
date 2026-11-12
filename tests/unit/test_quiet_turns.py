@@ -26,7 +26,7 @@ def _empty(output_tokens: int = 0, *, starved: bool = False) -> ProviderResponse
         input_tokens=1,
         output_tokens=output_tokens,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         raw={"content": [{"type": "thinking", "thinking": "x" * 40}]} if starved else {},
     )
 

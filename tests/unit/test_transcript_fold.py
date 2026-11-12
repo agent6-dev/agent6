@@ -126,7 +126,7 @@ def test_verify_badge_replaces_the_tool_item() -> None:
     """A model verify call ends as one verify item carrying the gate's badge, not a tool item."""
     events = [
         {"type": "tool.call", "name": "run_verify_command", "args_preview": {}},
-        {"type": "verify.start", "cmd": ["pytest"]},
+        {"type": "verify.start", "command": ["pytest"]},
         {"type": "verify.end", "exit_code": 0, "duration_s": 0.2},
         {"type": "tool.result", "name": "run_verify_command", "ok": True, "summary": "exit=0"},
     ]

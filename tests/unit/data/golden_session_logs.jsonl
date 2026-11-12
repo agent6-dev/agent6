@@ -5,16 +5,15 @@
 {"ts": "2026-07-14T10:00:01.700000+00:00", "type": "role.text_delta", "role": "worker", "text": "Reading now"}
 {"ts": "2026-07-14T10:00:02.000000+00:00", "type": "budget.update", "input_total": 5850, "output_total": 82, "input_cap": 1500000, "output_cap": 200000, "usd_total": 0.004841036, "usd_partial": false}
 {"ts": "2026-07-14T10:00:02.100000+00:00", "type": "loop.budget", "turn": 1, "input_tokens": 5850, "output_tokens": 82}
-{"ts": "2026-07-14T10:00:02.500000+00:00", "type": "role.result", "role": "worker", "ok": true, "tokens_in": 5850, "tokens_out": 82, "cache_read": 4864, "cache_creation": 0, "stop_reason": "tool_calls"}
-{"ts": "2026-07-14T10:00:03.000000+00:00", "type": "loop.tool.call", "name": "read_file", "turn": 1}
-{"ts": "2026-07-14T10:00:03.100000+00:00", "type": "tool.call", "name": "read_file", "args": {"path": "src/x.py"}}
+{"ts": "2026-07-14T10:00:02.500000+00:00", "type": "role.result", "role": "worker", "ok": true, "input_tokens": 5850, "output_tokens": 82, "cache_read_tokens": 4864, "cache_write_tokens": 0, "stop_reason": "tool_calls"}
+{"ts": "2026-07-14T10:00:03.100000+00:00", "type": "tool.call", "name": "read_file", "args": {"path": "src/x.py"}, "turn": 1}
 {"ts": "2026-07-14T10:00:03.200000+00:00", "type": "tool.result", "name": "read_file", "ok": true, "summary": "4773 bytes"}
 {"ts": "2026-07-14T10:00:04.000000+00:00", "type": "tool.call", "name": "run_command", "args": {"argv": ["ls", "/nope"]}}
 {"ts": "2026-07-14T10:00:04.200000+00:00", "type": "tool.result", "name": "run_command", "ok": false, "summary": "exit=2", "stderr_tail": "ls: /nope: No such file", "stdout_tail": ""}
 {"ts": "2026-07-14T10:00:04.500000+00:00", "type": "tool.call", "name": "apply_patch", "args": {"path": "src/x.py"}}
 {"ts": "2026-07-14T10:00:04.700000+00:00", "type": "tool.result", "name": "apply_patch", "ok": "True", "summary": "applied=1"}
-{"ts": "2026-07-14T10:00:05.000000+00:00", "type": "verify.start", "cmd": ["pytest", "-x", "-q"], "timeout_s": 600.0}
-{"ts": "2026-07-14T10:00:06.700000+00:00", "type": "verify.end", "cmd": ["pytest", "-x", "-q"], "exit_code": 1, "duration_s": 1.714, "timeout_s": 600.0, "stdout_tail": "1 failed", "stderr_tail": ""}
+{"ts": "2026-07-14T10:00:05.000000+00:00", "type": "verify.start", "command": ["pytest", "-x", "-q"], "timeout_s": 600.0}
+{"ts": "2026-07-14T10:00:06.700000+00:00", "type": "verify.end", "command": ["pytest", "-x", "-q"], "exit_code": 1, "duration_s": 1.714, "timeout_s": 600.0, "stdout_tail": "1 failed", "stderr_tail": ""}
 {"ts": "2026-07-14T10:00:07.000000+00:00", "type": "loop.auto_commit", "turn": 1, "sha": "29251c4be62e"}
 {"ts": "2026-07-14T10:00:07.100000+00:00", "type": "diff.updated", "sha": "29251c4be62e06bd4de05693aeff4472db5c5626", "patch": "diff --git a/src/x.py b/src/x.py\n@@ -1 +1,2 @@\n+added\n"}
 {"ts": "2026-07-14T10:00:07.500000+00:00", "type": "loop.provider.retry", "attempt": 2, "error": "upstream 502"}

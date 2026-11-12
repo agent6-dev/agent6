@@ -122,7 +122,7 @@ def test_setup_baseline_and_repeated_executions_keep_their_target(
     view = receipt.read_receipt(saved.session_dir, pathlib.Path.cwd())
     assert view.verifications
     for verification in view.verifications:
-        assert verification.cmd == _ENVIRONMENT_COMMAND
+        assert verification.command == _ENVIRONMENT_COMMAND
         assert verification.outcome == "passed"
         assert verification.exit_code == 0
         assert verification.tree_before == verification.tree_after == expected_tree
@@ -131,7 +131,7 @@ def test_setup_baseline_and_repeated_executions_keep_their_target(
     assert len({stamp.execution_id for stamp in view.targets}) == 2
     assert len(view.setups) == 2
     for setup, stamp in zip(view.setups, view.targets, strict=True):
-        assert setup.cmd == _ENVIRONMENT_COMMAND
+        assert setup.command == _ENVIRONMENT_COMMAND
         assert setup.exit_code == 0
         assert not setup.exec_failed
         assert setup.execution_id == stamp.execution_id
@@ -312,7 +312,7 @@ def test_app_run_and_resume_preserve_execution_evidence(resumed: layout.SessionL
     expected_tree = subprocess.check_output(("git", "rev-parse", "HEAD^{tree}"), text=True).strip()
     assert expected_tree and view.verifications
     for verification in view.verifications:
-        assert verification.cmd == ("/bin/true",)
+        assert verification.command == ("/bin/true",)
         assert verification.outcome == "passed"
         assert verification.exit_code == 0
         assert verification.tree_before == verification.tree_after == expected_tree
@@ -359,7 +359,7 @@ def test_machine_setup_records_its_one_shot_target(
     view = receipt.read_receipt(saved.session_dir, pathlib.Path.cwd())
     assert len(view.setups) == len(view.targets) == 1
     setup, stamp = view.setups[0], view.targets[0]
-    assert setup.cmd == _ENVIRONMENT_COMMAND
+    assert setup.command == _ENVIRONMENT_COMMAND
     assert setup.exit_code == 0 and not setup.exec_failed
     assert setup.target_id is not None
     assert setup.target_id == stamp.target_id
@@ -397,9 +397,9 @@ def test_target_stamps_record_environment_policy_not_values(
 def test_old_logs_do_not_borrow_a_later_environment(saved: layout.SessionLayout) -> None:
     """Historical setup and verification keep unknown target references even beside a new stamp."""
     saved.logs_path.write_text(
-        json.dumps({"type": "workspace.setup", "cmd": ["true"], "exit_code": 0})
+        json.dumps({"type": "workspace.setup", "command": ["true"], "exit_code": 0})
         + "\n"
-        + json.dumps({"type": "verify.end", "cmd": ["true"], "exit_code": 0})
+        + json.dumps({"type": "verify.end", "command": ["true"], "exit_code": 0})
         + "\n"
     )
     tools = _tools(saved)

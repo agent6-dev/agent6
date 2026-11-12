@@ -161,7 +161,7 @@ class ModelUsage:
         input_tokens: Input tokens over every call.
         output_tokens: Output tokens over every call.
         cache_read_tokens: Cache-read tokens over every call.
-        cache_creation_tokens: Cache-creation tokens over every call.
+        cache_write_tokens: Cache-write tokens over every call.
         calls: How many calls.
         reported_cost_usd: The sum of provider-reported per-call cost, authoritative
             for the calls that carried one.
@@ -170,21 +170,21 @@ class ModelUsage:
             price table covers exactly this bucket, so no call is priced twice.
         unreported_output_tokens: Output tokens of those calls.
         unreported_cache_read_tokens: Cache-read tokens of those calls.
-        unreported_cache_creation_tokens: Cache-creation tokens of those calls.
+        unreported_cache_write_tokens: Cache-write tokens of those calls.
         percent_metered: A plan reading metered a call under this route.
     """
 
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
-    cache_creation_tokens: int = 0
+    cache_write_tokens: int = 0
     calls: int = 0
     reported_cost_usd: float = 0.0
     reported_calls: int = 0
     unreported_input_tokens: int = 0
     unreported_output_tokens: int = 0
     unreported_cache_read_tokens: int = 0
-    unreported_cache_creation_tokens: int = 0
+    unreported_cache_write_tokens: int = 0
     percent_metered: bool = False
 
 
@@ -237,7 +237,7 @@ def _billed_apart_from_plan(t: ModelUsage) -> bool:
         or t.unreported_input_tokens
         or t.unreported_output_tokens
         or t.unreported_cache_read_tokens
-        or t.unreported_cache_creation_tokens
+        or t.unreported_cache_write_tokens
     )
 
 
@@ -246,7 +246,7 @@ def _model_cost_usd(route: kinds.ModelRoute, t: ModelUsage) -> _ModelCost | None
 
     The enforced ceiling and the printed summary both read this. Reported cost is
     authoritative for the calls that carried it; the price table prices only the
-    unreported calls' tokens. Cache creation is priced at the listed rate, else 1.25
+    unreported calls' tokens. A cache write is priced at the listed rate, else 1.25
     times input; cache reads at the listed rate, else 0.1 times input.
 
     Args:
@@ -273,12 +273,12 @@ def _model_cost_usd(route: kinds.ModelRoute, t: ModelUsage) -> _ModelCost | None
         return None
     write_rate = price.cache_write if price.cache_write is not None else price.input * 1.25
     read_rate = price.cache_read if price.cache_read is not None else price.input * 0.1
-    cache_tokens = t.unreported_cache_creation_tokens + t.unreported_cache_read_tokens
+    cache_tokens = t.unreported_cache_write_tokens + t.unreported_cache_read_tokens
     in_usd = t.unreported_input_tokens * price.input / 1e6
-    cache_creation_usd = t.unreported_cache_creation_tokens * write_rate / 1e6
+    cache_write_usd = t.unreported_cache_write_tokens * write_rate / 1e6
     cache_read_usd = t.unreported_cache_read_tokens * read_rate / 1e6
     out_usd = t.unreported_output_tokens * price.output / 1e6
-    estimate = in_usd + cache_creation_usd + cache_read_usd + out_usd
+    estimate = in_usd + cache_write_usd + cache_read_usd + out_usd
     return _ModelCost(
         t.reported_cost_usd + estimate,
         reported=reported,
@@ -327,7 +327,7 @@ class BudgetSnapshot:
         input_total: Input tokens over every call.
         output_total: Output tokens over every call.
         cache_read_total: Cache-read tokens over every call.
-        cache_creation_total: Cache-creation tokens over every call.
+        cache_write_total: Cache-write tokens over every call.
         unmetered_tokens: Tokens of the calls the fallback ledger counts.
         max_usd: The USD cap.
         max_tokens_fallback: The fallback token cap.
@@ -344,7 +344,7 @@ class BudgetSnapshot:
     input_total: int
     output_total: int
     cache_read_total: int
-    cache_creation_total: int
+    cache_write_total: int
     unmetered_tokens: int
     max_usd: float
     max_tokens_fallback: int
@@ -398,7 +398,7 @@ class BudgetTracker:
     _input_total: int = 0
     _output_total: int = 0
     _cache_read_total: int = 0
-    _cache_creation_total: int = 0
+    _cache_write_total: int = 0
     _unmetered_tokens: int = 0
     _exceeded_reason: str = ""
     # Provider entry to its latest plan reading, the most recently reported last.
@@ -428,7 +428,7 @@ class BudgetTracker:
         input_tokens: int,
         output_tokens: int,
         cache_read_tokens: int,
-        cache_creation_tokens: int,
+        cache_write_tokens: int,
         cost_usd: float | None = None,
         plan_usage: PlanUsage | None = None,
     ) -> None:
@@ -439,7 +439,7 @@ class BudgetTracker:
             input_tokens: The call's input tokens.
             output_tokens: The call's output tokens.
             cache_read_tokens: The call's cache-read tokens.
-            cache_creation_tokens: The call's cache-creation tokens.
+            cache_write_tokens: The call's cache-write tokens.
             cost_usd: The provider-reported cost, including zero; None uses a table price,
                 or the fallback ledger when there is none.
             plan_usage: A plan reading, which meters the call in percentage points at an
@@ -451,14 +451,14 @@ class BudgetTracker:
             input_tokens = max(input_tokens, 0)
             output_tokens = max(output_tokens, 0)
             cache_read_tokens = max(cache_read_tokens, 0)
-            cache_creation_tokens = max(cache_creation_tokens, 0)
+            cache_write_tokens = max(cache_write_tokens, 0)
             if cost_usd is not None:
                 cost_usd = max(cost_usd, 0.0)
             totals = self._per_model.setdefault(route, ModelUsage())
             totals.input_tokens += input_tokens
             totals.output_tokens += output_tokens
             totals.cache_read_tokens += cache_read_tokens
-            totals.cache_creation_tokens += cache_creation_tokens
+            totals.cache_write_tokens += cache_write_tokens
             totals.calls += 1
             if plan_usage is not None:
                 totals.reported_calls += 1
@@ -471,11 +471,11 @@ class BudgetTracker:
                 totals.unreported_input_tokens += input_tokens
                 totals.unreported_output_tokens += output_tokens
                 totals.unreported_cache_read_tokens += cache_read_tokens
-                totals.unreported_cache_creation_tokens += cache_creation_tokens
+                totals.unreported_cache_write_tokens += cache_write_tokens
             self._input_total += input_tokens
             self._output_total += output_tokens
             self._cache_read_total += cache_read_tokens
-            self._cache_creation_total += cache_creation_tokens
+            self._cache_write_total += cache_write_tokens
             metered = (
                 plan_usage is not None
                 or cost_usd is not None
@@ -735,7 +735,7 @@ class BudgetTracker:
             if cost >= self.max_usd:
                 self._exceeded_reason = (
                     f"USD budget exhausted: ~{format_usd(cost)} >= {format_usd(self.max_usd)}"
-                    " (includes cache_read/cache_creation cost and purchased credits)"
+                    " (includes cache_read/cache_write cost and purchased credits)"
                 )
 
     def register_plan_reader(self, provider: str, reader: Callable[[], PlanUsage | None]) -> None:
@@ -844,7 +844,7 @@ class BudgetTracker:
                 input_total=self._input_total,
                 output_total=self._output_total,
                 cache_read_total=self._cache_read_total,
-                cache_creation_total=self._cache_creation_total,
+                cache_write_total=self._cache_write_total,
                 unmetered_tokens=self._unmetered_tokens,
                 max_usd=self.max_usd,
                 max_tokens_fallback=self.max_tokens_fallback,
@@ -930,7 +930,7 @@ class BudgetTracker:
                 f"  {route.spec}: "
                 f"in={totals.input_tokens} out={totals.output_tokens} "
                 f"cache_r={totals.cache_read_tokens} "
-                f"cache_c={totals.cache_creation_tokens} "
+                f"cache_w={totals.cache_write_tokens} "
                 f"calls={totals.calls} {cost_str}"
             )
         return lines, priced, metered, any_estimated
@@ -950,7 +950,7 @@ class BudgetTracker:
             in: Fresh input tokens for the route, or all routes on the TOTAL line.
             out: Output tokens for the route, or all routes on the TOTAL line.
             cache_r: Cache-read tokens for the route.
-            cache_c: Cache-creation tokens for the route.
+            cache_w: Cache-write tokens for the route.
             calls: Calls recorded for the route.
             cost: USD spend, reported or estimated from that route's prices.
                 The TOTAL includes purchased credits spent.

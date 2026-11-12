@@ -1128,7 +1128,7 @@ reason = "done"
         evs += [
             {"type": "role.call", "role": "worker", "model": "m1"},
             {"type": "role.thinking_delta", "text": f"turn {i} reasoning. "},
-            {"type": "role.result", "role": "worker", "tokens_in": 10, "tokens_out": 5},
+            {"type": "role.result", "role": "worker", "input_tokens": 10, "output_tokens": 5},
         ]
     evs.append({"type": "role.call", "role": "worker", "model": "m1"})  # in flight
     (sd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")

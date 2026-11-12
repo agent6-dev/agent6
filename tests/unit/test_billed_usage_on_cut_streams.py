@@ -142,7 +142,7 @@ def test_other_streams_keep_failed_usage_on_the_result(
             "input_tokens": 100,
             "output_tokens": 10,
             "cache_read_tokens": 25,
-            "cache_creation_tokens": creation,
+            "cache_write_tokens": creation,
             "cost_usd": None,
         }
         if reported_usage
@@ -154,7 +154,13 @@ def test_other_streams_keep_failed_usage_on_the_result(
     if not reported_usage:
         assert snap.per_model == {}
         assert (
-            not {"tokens_in", "tokens_out", "cache_read", "cache_creation", "cost_usd"}
+            not {
+                "input_tokens",
+                "output_tokens",
+                "cache_read_tokens",
+                "cache_write_tokens",
+                "cost_usd",
+            }
             & result.keys()
         )
         return
@@ -162,14 +168,14 @@ def test_other_streams_keep_failed_usage_on_the_result(
         snap.input_total,
         snap.output_total,
         snap.cache_read_total,
-        snap.cache_creation_total,
+        snap.cache_write_total,
     ) == (100, 10, 25, creation)
     assert snap.per_model[kinds.ModelRoute(api_format, "m")].calls == 1
     assert (
-        result["tokens_in"],
-        result["tokens_out"],
-        result["cache_read"],
-        result["cache_creation"],
+        result["input_tokens"],
+        result["output_tokens"],
+        result["cache_read_tokens"],
+        result["cache_write_tokens"],
     ) == (100, 10, 25, creation)
     assert result["ok"] is False
     assert "cost_usd" not in result
@@ -183,7 +189,7 @@ def test_other_streams_keep_failed_usage_on_the_result(
             counters[
                 (
                     "agent6_tokens_total",
-                    (("model", "m"), ("provider", api_format), ("type", "cache_creation")),
+                    (("model", "m"), ("provider", api_format), ("type", "cache_write")),
                 )
             ]
             == creation

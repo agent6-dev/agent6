@@ -265,18 +265,18 @@ def _extract_metrics(state_home: Path) -> dict[str, Any]:
             m["drops"] += 1
         elif t == "loop.task.surfaced":
             m["surfaced"] += 1
-        elif t == "loop.tool.call":
+        elif t == "tool.call":
             m["tool_calls"] += 1
-        elif t == "tool.call" and e.get("name") in read_tools:
-            sig = f"{e.get('name')}:{json.dumps(e.get('args'), sort_keys=True)}"
-            if sig in seen_calls:
-                m["redundant_reads"] += 1
-                if compacted:
-                    m["redundant_reads_post_compact"] += 1
-            else:
-                seen_calls.add(sig)
+            if e.get("name") in read_tools:
+                sig = f"{e.get('name')}:{json.dumps(e.get('args_preview'), sort_keys=True)}"
+                if sig in seen_calls:
+                    m["redundant_reads"] += 1
+                    if compacted:
+                        m["redundant_reads_post_compact"] += 1
+                else:
+                    seen_calls.add(sig)
         if t == "tool.call" and e.get("name") == "read_file":
-            path = str((e.get("args") or {}).get("path", ""))
+            path = str((e.get("args_preview") or {}).get("path", ""))
             if path:
                 if path in seen_paths:
                     m["repeat_path_reads"] += 1

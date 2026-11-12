@@ -230,7 +230,7 @@ def record_billed_usage(
     input_tokens: int,
     output_tokens: int,
     cache_read_tokens: int = 0,
-    cache_creation_tokens: int = 0,
+    cache_write_tokens: int = 0,
     cost_usd: float | None = None,
     plan_usage: agent6_budget.PlanUsage | None = None,
 ) -> None:
@@ -247,7 +247,7 @@ def record_billed_usage(
         input_tokens: Prompt tokens reported.
         output_tokens: Completion tokens reported.
         cache_read_tokens: Cache-read tokens reported.
-        cache_creation_tokens: Cache-write tokens reported.
+        cache_write_tokens: Cache-write tokens reported.
         cost_usd: The gateway-reported cost, including zero; None means unreported.
         plan_usage: The plan window the response reported.
     """
@@ -256,7 +256,7 @@ def record_billed_usage(
     if (
         plan_usage is None
         and cost_usd is None
-        and not (input_tokens or output_tokens or cache_read_tokens or cache_creation_tokens)
+        and not (input_tokens or output_tokens or cache_read_tokens or cache_write_tokens)
     ):
         return
     budget.record(
@@ -264,7 +264,7 @@ def record_billed_usage(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         cache_read_tokens=cache_read_tokens,
-        cache_creation_tokens=cache_creation_tokens,
+        cache_write_tokens=cache_write_tokens,
         cost_usd=cost_usd,
         plan_usage=plan_usage,
     )

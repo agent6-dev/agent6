@@ -85,7 +85,7 @@ class _Scripted:
             input_tokens=10,
             output_tokens=5,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             raw={"content": [*([{"type": "text", "text": text}] if text else []), *tools]},
         )
 
@@ -409,7 +409,7 @@ def test_a_plan_budget_stop_uses_one_label_and_prints_its_reason_once(
                 input_tokens=10,
                 output_tokens=5,
                 cache_read_tokens=0,
-                cache_creation_tokens=0,
+                cache_write_tokens=0,
                 plan_usage=agent6_budget.PlanUsage.single(49, 10080, time.time() + 148 * 3600),
             )
 
@@ -515,7 +515,7 @@ def test_resume_applies_the_manifest_plan_points_cap(
         input_tokens=10,
         output_tokens=5,
         cache_read_tokens=0,
-        cache_creation_tokens=0,
+        cache_write_tokens=0,
         plan_usage=budget.PlanUsage.single(42, 300, 0),
     )
     with pytest.raises(budget.BudgetExceededError, match="max_plan_points 2"):

@@ -337,7 +337,7 @@ reason = "setup failed"
     assert event["type"] == "workspace.setup"
     assert event["target_id"] == target["target_id"]
     assert event["execution_id"] == target["execution_id"]
-    assert event["cmd"] == list(expected_setup)
+    assert event["command"] == list(expected_setup)
     assert event["exit_code"] == setup_exit
     assert event["duration_s"] == 2.5
     assert not (origin / "environment.txt").exists()
@@ -677,7 +677,7 @@ class _Finishes:
             input_tokens=1,
             output_tokens=1,
             cache_read_tokens=0,
-            cache_creation_tokens=0,
+            cache_write_tokens=0,
             raw={"content": list(tools)},
         )
 

@@ -199,7 +199,7 @@ class PendingItems:
             self._next_verify += 1
             key = f"verify:{verify_id or self._next_verify}"
         previous = self._pending.pop(key, (TranscriptItem("verify", call_id=str(key)), ""))[0]
-        cmd = event.get("cmd")
+        cmd = event.get("command")
         command = (
             shlex.join(str(a) for a in cmd) if isinstance(cmd, (list, tuple)) else previous.arg
         )

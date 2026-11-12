@@ -1203,7 +1203,7 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
                 input_tokens=10,
                 output_tokens=5,
                 cache_read_tokens=0,
-                cache_creation_tokens=0,
+                cache_write_tokens=0,
                 raw={
                     "content": [
                         {
@@ -3794,7 +3794,7 @@ def test_the_compare_judge_streams_into_the_coordinators_journal(
                 input_tokens=10,
                 output_tokens=20,
                 cache_read_tokens=0,
-                cache_creation_tokens=0,
+                cache_write_tokens=0,
             )
 
     def build_provider(
@@ -4140,7 +4140,7 @@ def test_model_parallel_import_keeps_lane_commits(
                 input_tokens=10,
                 output_tokens=5,
                 cache_read_tokens=0,
-                cache_creation_tokens=0,
+                cache_write_tokens=0,
                 raw={"content": [tool]},
             )
 

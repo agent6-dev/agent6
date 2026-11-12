@@ -19,10 +19,10 @@ from agent6.viewmodel import review, telemetry_machine, telemetry_metrics, telem
 
 Capture = Literal["metadata", "content"]
 _TOKEN_TYPES = (
-    ("input", "tokens_in"),
-    ("output", "tokens_out"),
-    ("cache_read", "cache_read"),
-    ("cache_creation", "cache_creation"),
+    ("input", "input_tokens"),
+    ("output", "output_tokens"),
+    ("cache_read", "cache_read_tokens"),
+    ("cache_write", "cache_write_tokens"),
 )
 _FINDING_ACTIONS = ("loop.review.finding.resolved", "loop.review.finding.reopened")
 # What still folds once an execution has ended: the settled budget, the stranded notice and
@@ -338,9 +338,9 @@ class TelemetryFold:
             "agent6.verify.id": key,
             "agent6.verify.scoped": event.get("scoped") is True,
         }
-        if self.capture == "content" and event.get("cmd"):
+        if self.capture == "content" and event.get("command"):
             fields["agent6.verify.cmd"] = telemetry_records.excerpt(
-                " ".join(str(p) for p in event["cmd"])
+                " ".join(str(p) for p in event["command"])
             )
         span_id = telemetry_records.hex_id(f"{execution.trace_id}:verify:{key}", 16)
         execution.verifies[key] = telemetry_records.OpenSpan(

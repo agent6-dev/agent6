@@ -591,7 +591,7 @@ def test_message_start_input_usage_is_combined_with_message_delta_output_usage(
         resp.input_tokens,
         resp.output_tokens,
         resp.cache_read_tokens,
-        resp.cache_creation_tokens,
+        resp.cache_write_tokens,
     ) == (1200, 40, 300, 20)
 
 

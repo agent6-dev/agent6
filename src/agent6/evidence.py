@@ -18,7 +18,7 @@ class VerificationEvidence:
     Attributes:
         verify_id: The verification attempt identifier, or null when unrecorded.
         execution_id: The execution that ran the attempt, or null when unrecorded.
-        cmd: The verification command's argv.
+        command: The verification command's argv.
         tree_before: The observed tree before the attempt, or null when unknown.
         tree_after: The observed tree after the attempt, or null when unknown.
         scoped: Whether verification ran over selected paths instead of the full gate.
@@ -38,7 +38,7 @@ class VerificationEvidence:
 
     verify_id: str | None
     execution_id: str | None
-    cmd: tuple[str, ...]
+    command: tuple[str, ...]
     tree_before: str | None
     tree_after: str | None
     scoped: bool
@@ -94,7 +94,7 @@ class SetupEvidence:
     Attributes:
         execution_id: The execution that ran setup, or None when unrecorded.
         target_id: The setup target reference, or None when unrecorded.
-        cmd: The setup command's argv.
+        command: The setup command's argv.
         exit_code: The observed exit code, or None when unknown.
         duration_s: Elapsed setup time in seconds.
         exec_failed: Whether the command could not be executed.
@@ -104,7 +104,7 @@ class SetupEvidence:
 
     execution_id: str | None = None
     target_id: str | None = None
-    cmd: tuple[str, ...] = ()
+    command: tuple[str, ...] = ()
     exit_code: int | None = None
     duration_s: float = 0.0
     exec_failed: bool = False
@@ -387,7 +387,7 @@ def from_event(event: Mapping[str, Any]) -> VerificationEvidence:
             "verify_id": event.get("verify_id"),
             "execution_id": event.get("execution_id"),
             "target_id": event.get("target_id"),
-            "cmd": event.get("cmd", ()),
+            "command": event.get("command", ()),
             "tree_before": event.get("tree_before"),
             "tree_after": event.get("tree_after"),
             "scoped": event.get("scoped", False),

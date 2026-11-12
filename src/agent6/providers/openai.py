@@ -608,7 +608,7 @@ class OpenAIProvider:
                 input_tokens=billed.input_tokens,
                 output_tokens=billed.output_tokens,
                 cache_read_tokens=billed.cache_read_tokens,
-                cache_creation_tokens=billed.cache_creation_tokens,
+                cache_write_tokens=billed.cache_write_tokens,
                 cost_usd=billed.cost_usd,
             )
             call.transcript.usage = billed.usage

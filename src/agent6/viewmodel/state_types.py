@@ -108,7 +108,7 @@ class VerifyView:
     """The last verify gate run.
 
     Attributes:
-        cmd: The gate's argv.
+        command: The gate's argv.
         exit_code: The exit code, None when no exit was observed.
         outcome: The finished attempt's outcome; None while in flight.
         reason: Why the command did not run, separate from its output.
@@ -118,7 +118,7 @@ class VerifyView:
         timeout_s: The gate's wall-clock limit, 0.0 when the event carried none.
     """
 
-    cmd: tuple[str, ...]
+    command: tuple[str, ...]
     exit_code: int | None = None
     duration_s: float = 0.0
     stdout_tail: str = ""
@@ -140,7 +140,7 @@ class ExecutionUsage:
         input_tokens: Input tokens; None until a budget row carries the counters.
         output_tokens: Output tokens; None until a budget row carries the counters.
         cache_read_tokens: The cached side of the input; None when the row lacked it.
-        cache_creation_tokens: Cache-creation tokens; None when the row lacked it.
+        cache_write_tokens: Cache-write tokens; None when the row lacked it.
         usd: The metered spend.
         usd_partial: Some model had no price, so `usd` is a lower bound.
         unmetered_tokens: Input and output tokens of calls the meter could not price.
@@ -153,7 +153,7 @@ class ExecutionUsage:
     input_tokens: int | None = None
     output_tokens: int | None = None
     cache_read_tokens: int | None = None
-    cache_creation_tokens: int | None = None
+    cache_write_tokens: int | None = None
     usd: float = 0.0
     usd_partial: bool = False
     unmetered_tokens: int = 0

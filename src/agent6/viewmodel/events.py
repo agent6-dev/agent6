@@ -274,6 +274,12 @@ def _call_id(raw: dict[str, Any]) -> int | None:
     return cid if isinstance(cid, int) and not isinstance(cid, bool) else None
 
 
+def _turn(raw: dict[str, Any]) -> int | None:
+    """Return the event's `turn` when it is an int, else None."""
+    turn = raw.get("turn")
+    return turn if isinstance(turn, int) and not isinstance(turn, bool) else None
+
+
 def parse_event(raw: dict[str, Any]) -> Event:
     """Parse one raw logs.jsonl row into its journal record.
 
@@ -361,10 +367,10 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 attempt=as_int(raw.get("attempt")) or 1,
                 request_id=raw.get("request_id"),
                 ok=raw.get("ok") is not False,
-                tokens_in=as_int(raw.get("tokens_in")),
-                tokens_out=as_int(raw.get("tokens_out")),
-                cache_read=as_int(raw.get("cache_read")),
-                cache_creation=as_int(raw.get("cache_creation")),
+                input_tokens=as_int(raw.get("input_tokens")),
+                output_tokens=as_int(raw.get("output_tokens")),
+                cache_read_tokens=as_int(raw.get("cache_read_tokens")),
+                cache_write_tokens=as_int(raw.get("cache_write_tokens")),
             )
         case "role.result":
             return journal.RoleResult(
@@ -375,10 +381,10 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 seat_index=_seat_index(raw),
                 execution_id=raw.get("execution_id"),
                 ok=raw.get("ok") is not False,
-                tokens_in=as_int(raw.get("tokens_in")),
-                tokens_out=as_int(raw.get("tokens_out")),
-                cache_read=as_int(raw.get("cache_read")),
-                cache_creation=as_int(raw.get("cache_creation")),
+                input_tokens=as_int(raw.get("input_tokens")),
+                output_tokens=as_int(raw.get("output_tokens")),
+                cache_read_tokens=as_int(raw.get("cache_read_tokens")),
+                cache_write_tokens=as_int(raw.get("cache_write_tokens")),
                 error=str(raw["error"]) if raw.get("error") else None,
             )
         case "role.text_delta":
@@ -395,6 +401,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 name=_text(raw, "name"),
                 args_preview=call_args(raw),
                 call_id=_call_id(raw),
+                turn=_turn(raw),
                 **_call_identity(raw),
             )
         case "tool.result":
@@ -403,19 +410,20 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 ok=tool_result_ok(raw.get("ok")),
                 summary=readable_summary(raw.get("summary", "")),
                 call_id=_call_id(raw),
+                turn=_turn(raw),
                 **_call_identity(raw),
                 **{key: raw[key] for key in _OUTCOME_KEYS if key in raw},
             )
         case "verify.start":
             return journal.VerifyStart(
-                cmd=_strings(raw.get("cmd", []) or []),
+                command=_strings(raw.get("command", []) or []),
                 scoped=bool(raw.get("scoped", False)),
                 selected_paths=_strings(raw.get("selected_paths", []) or []),
                 timeout_s=float(raw.get("timeout_s", 0.0) or 0.0),
             )
         case "verify.end":
             return journal.VerifyEnd(
-                cmd=_strings(raw.get("cmd", []) or []),
+                command=_strings(raw.get("command", []) or []),
                 scoped=bool(raw.get("scoped", False)),
                 selected_paths=_strings(raw.get("selected_paths", []) or []),
                 exit_code=int(raw["exit_code"]) if raw.get("exit_code") is not None else None,
@@ -434,7 +442,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 input_total=_count(raw.get("input_total")),
                 output_total=_count(raw.get("output_total")),
                 cache_read_total=_count(raw.get("cache_read_total")),
-                cache_creation_total=_count(raw.get("cache_creation_total")),
+                cache_write_total=_count(raw.get("cache_write_total")),
                 usd_total=_amount(raw.get("usd_total", 0.0)),
                 usd_partial=bool(raw.get("usd_partial", False)),
                 # A row without a cap leaves it unknown; a recorded 0 (refuse) or -1 stays.
@@ -519,7 +527,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             )
         case "loop.compact.dropped":
             return journal.LoopCompactDropped(
-                n=as_int(raw.get("n")), calls=_strings(raw.get("calls", ()) or ())
+                count=as_int(raw.get("count")), calls=_strings(raw.get("calls", ()) or ())
             )
         case "loop.compact.gists":
             return journal.LoopCompactGists(

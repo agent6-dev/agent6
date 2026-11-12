@@ -381,7 +381,7 @@ def test_watch_shows_audit_events_not_streaming_fragments(
             "name": "read_file",
             "args_preview": {},
         },
-        {"type": "loop.tool.call", "ts": "2026-01-01T00:00:01Z", "name": "read_file"},
+        {"type": "loop.budget", "ts": "2026-01-01T00:00:01Z", "turn": 1},
         *(
             {"type": "role.thinking_delta", "ts": "2026-01-01T00:00:02Z", "text": f"w{i}"}
             for i in range(30)
@@ -391,7 +391,7 @@ def test_watch_shows_audit_events_not_streaming_fragments(
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     repl.repl_show_recent_events(tmp_path, "watchy-run-AAAAAA", n=20)
     out = capsys.readouterr()
-    assert "thinking_delta" not in out.out and "loop.tool.call" not in out.out
+    assert "thinking_delta" not in out.out and "loop.budget" not in out.out
     assert "tool.call" in out.out and "tool.result" in out.out and "session.start" in out.out
     assert "last 3 events" in out.err
 

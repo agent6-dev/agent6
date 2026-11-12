@@ -1177,9 +1177,9 @@ def test_context_pct_readout_in_top_line_and_bar(tmp_path: pathlib.Path, monkeyp
                     type="role.result",
                     role="worker",
                     ok=True,
-                    tokens_in=1_000,
-                    cache_read=40_000,
-                    cache_creation=0,
+                    input_tokens=1_000,
+                    cache_read_tokens=40_000,
+                    cache_write_tokens=0,
                 )
             )
             app._tick()

@@ -240,7 +240,7 @@ class DiffPane(forms.ScrollPane):
         # A running or failed verify outranks the diff, so a failure never hides behind a stale one.
         if verify is not None and verify.outcome is None and verify.exit_code is None:
             dt.append("verify running: ", style="bold")
-            dt.append(format.clip_cell(" ".join(verify.cmd), 200) + "\n")
+            dt.append(format.clip_cell(" ".join(verify.command), 200) + "\n")
             dt.append("…", style="dim")
         elif verify is not None and verify.exit_code != 0:
             label = evidence.result_label(
@@ -250,7 +250,7 @@ class DiffPane(forms.ScrollPane):
             if verify.reason:
                 dt.append(f"Reason: {verify.reason}\n")
             dt.append(
-                f"({verify.duration_s:.1f}s)  {format.clip_cell(' '.join(verify.cmd), 160)}\n"
+                f"({verify.duration_s:.1f}s)  {format.clip_cell(' '.join(verify.command), 160)}\n"
             )
             out = verify.stderr_tail or verify.stdout_tail
             dt.append(out[:2000] or "(no output)")
