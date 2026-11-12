@@ -1118,11 +1118,25 @@ def test_a_stop_asked_while_the_opening_ran_ends_the_run_as_a_stop(
         wf.bridge, stop_requested=lambda: True, stop_is_now=lambda: True
     )
 
+    asked: list[str] = []
+
+    def rank(
+        results: Sequence[lane_records.LaneResult], *, group: str, base: str
+    ) -> lane_records.Ranking:
+        asked.append(group)
+        return lane_records.Ranking(order=())
+
+    wf.bridge = dataclasses.replace(wf.bridge, lane_ranker=rank)
+
     result = wf.run("add a lane file")
 
     assert provider.call.call_count == 0
     assert (result.reason, result.completed) == ("steer_abort", False)
     assert [stop["reason"] for stop in events.of("session.stop")] == ["steer_abort"]
+    # No judge is asked and nothing joins after the stop: a resume ranks from the record.
+    assert asked == [] and git_read.chain_tip(repo, "refs/agent6/coord") is None
+    (record,) = lane_dispatch.read_records(tmp_path / "session")
+    assert (record.state, record.ranking, record.delivered) == ("settling", None, False)
 
 
 def test_an_opening_whose_ranking_crowns_no_lane_ends_no_lane_passed(

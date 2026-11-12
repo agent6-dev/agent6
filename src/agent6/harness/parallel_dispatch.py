@@ -74,6 +74,7 @@ class ParallelDispatcher:
         session_dir: Where the dispatch records live; None for a harness without a run dir.
         lane_recoverer: Finds an interrupted dispatch's lanes on resume; None when none can.
         ranker: Orders a rank join's lanes; None where no dispatch joins by rank.
+        stop_pending: Whether the operator asked the run to stop.
         authority: Work and harness-panel permissions from the application.
         clock: The wall clock.
     """
@@ -92,6 +93,7 @@ class ParallelDispatcher:
     session_dir: pathlib.Path | None = None
     lane_recoverer: lane_records.LaneRecoverer | None = None
     ranker: lane_records.LaneRanker | None = None
+    stop_pending: Callable[[], bool] = lambda: False
     authority: lane_records.DispatchAuthority = dataclasses.field(
         default_factory=lane_records.DispatchAuthority
     )
@@ -395,6 +397,10 @@ class ParallelDispatcher:
         """
         by_id = {res.spec.session_id: res for res in results}
         record = self.settled(record, by_id)
+        if record.join_policy == "rank" and record.ranking is None and self.stop_pending():
+            # No judge is asked after a stop: the record stays here and a resume ranks from it.
+            self.log(f"PARALLEL: group {record.identity} stopped before its ranking")
+            return lane_records.DispatchResult(record.identity, True, (), "", base=record.base)
         record = self.joined(record, by_id)
         joins = [parallel_join.join_of(child) for child in record.children]
         cursor = 0

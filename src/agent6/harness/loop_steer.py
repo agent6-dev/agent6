@@ -144,10 +144,10 @@ def ranked_opening(
     result = harness.parallel.dispatch(
         conversation, turn, state, [harness.opening], source="operator", join="rank"
     )
-    harness.parallel.record_delivery(result)
     stopped = operator_stop(harness, turn, state)
     if stopped is not None:
         return stopped
+    harness.parallel.record_delivery(result)
     # A refusal before any lane ran has no lanes to word: its own message is the summary.
     summary = parallel_join.rank_summary(result.lanes) if result.lanes else result.message
     statuses = {join.status for join in result.lanes}

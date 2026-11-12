@@ -1981,6 +1981,7 @@ class Harness:
             ),
             lane_recoverer=self.bridge.lane_recoverer,
             ranker=self.bridge.lane_ranker,
+            stop_pending=lambda: self.bridge.stop_requested() or self.bridge.should_abort(),
         )
 
     @functools.cached_property
