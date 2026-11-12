@@ -2542,6 +2542,7 @@ Source: [`agent6.app.lane_launch.LaneLaunch`](https://github.com/agent6-dev/agen
 | `lane` | `int` | The lane's number, from 1. |
 | `gate_source` | `Literal['', 'configured', 'inferred', 'adopted']` | Where the verify gate in the snapshot came from; "" for none. |
 | `operator_task` | `str \| None` | The task's words before composition; None when they are the task. |
+| `limits` | `LaneLimits \| None` | The turn cap and deadline the lane runs under; None for the config's own. |
 
 ### SessionManifest
 
@@ -2979,6 +2980,17 @@ Source: [`agent6.ui.web.server.ConfigSetBody`](https://github.com/agent6-dev/age
 | `value` | `str` | The string value parsed by the config writer. |
 | `repo` | `bool` | Whether to write repo config rather than global config. |
 | `unset` | `bool` | Whether to remove the setting instead of assigning value. |
+
+### LaneLimits
+
+**Support: public.** The ceiling a lane runs under.
+
+Source: [`agent6.lane_records.LaneLimits`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/lane_records.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `max_turns` | `int \| None` | The turn cap the lane's `harness.max_turns` is clamped to; None keeps the config's value. |
+| `deadline_at` | `float \| None` | The wall-clock second (epoch) the lane must have ended by; None for none. Wall-clock, since it crosses the process boundary into the lane. |
 
 ### ModelsBrief
 

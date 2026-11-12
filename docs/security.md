@@ -689,6 +689,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - the task, pins, caps, away mode and lineage travel in a launch file under the origin's state dir (`<state>/launch/<group>/lane-<n>.json`, `0600` in a `0700` dir, the config snapshot beside it); nothing model-written reaches the host argv
     - the bootstrap reads the file `AGENT6_LANE` names through `O_NOFOLLOW` and refuses a symlink, a foreign owner, a mode others can read or a dir others can write; `-P` keeps the clone off `sys.path` and `-E` ignores `PYTHONPATH`, so a planted `agent6/` or `sitecustomize.py` never imports (`tests/security/test_lane_launch_boundary.py`)
     - a detached lane has no terminal: a `run_commands = "ask"` prompt parks (`wait`) or is answered empty (`deny`) by the launch file's away mode, never approved
+    - a lane is tied to its coordinator with PDEATHSIG (SIGTERM), so a coordinator that dies cannot leave a model child running; a lane that does not stop when asked is TERMed, KILLed after the grace and reaped by its recorded pid; a dispatch's deadline is enforced by the coordinator's await and by the lane's own backstop
 - Every spawned lane carries `AGENT6_SUBRUN=1`; both the `--parallel` flag and the coordinator's `lane_spawner` wiring refuse when it is set, so a lane cannot fan out or dispatch again.
 - A lane's config carries key references, never secret values
     - the coordinator writes each lane's config snapshot beside its launch file (the resolved `Config`: provider `base_url`, `api_key_env` names)

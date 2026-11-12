@@ -11,13 +11,17 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import pathlib
+import signal
 import threading
 import time
 from collections.abc import Callable
 
 from agent6 import lane_records, paths
 from agent6.app import reporter as app_reporter
+from agent6.app import stop
+from agent6.sandbox import jail
 from agent6.sessions import ipc, layout, process
 from agent6.viewmodel import summarize_session_dir
 
@@ -52,16 +56,20 @@ def await_lane(
     *,
     poll_interval_s: float = POLL_INTERVAL_S,
     should_stop: Callable[[], bool] | None = None,
+    deadline_at: float | None = None,
+    clock: Callable[[], float] = time.time,
 ) -> bool:
-    """Block until the lane is terminal, or until the stop check goes true first.
+    """Block until the lane is terminal, or until the stop check or the deadline ends the wait.
 
     Args:
         res: The started lane, awaited on its real run dir.
         poll_interval_s: How often to poll.
         should_stop: The coordinator's abort channel, read between polls.
+        deadline_at: The wall-clock second the wait ends at; None for no deadline.
+        clock: The wall clock.
 
     Returns:
-        True when the lane ended, False when the stop check ended the wait.
+        True when the lane ended, False when the stop check or the deadline ended the wait.
     """
     while True:
         summary = summarize_session_dir(res.session_dir)
@@ -69,7 +77,58 @@ def await_lane(
             return True
         if should_stop is not None and should_stop():
             return False
+        if deadline_at is not None and clock() >= deadline_at:
+            return False
         time.sleep(poll_interval_s)
+
+
+def stop_child(pid: int, *, grace_s: float = stop.KILL_GRACE_S) -> str:
+    """Stop a lane process the coordinator spawned: TERM its group, KILL after the grace, reap.
+
+    Args:
+        pid: The child's pid; 0 for none.
+        grace_s: SIGTERM to SIGKILL.
+
+    Returns:
+        `gone` (nothing alive to stop), `stopped` (ended on TERM) or `killed`.
+    """
+    if pid <= 0 or not process.pid_alive(pid):
+        _reap(pid)
+        return "gone"
+    jail.signal_group(pid, signal.SIGTERM)
+    if _ended(pid, grace_s):
+        return "stopped"
+    jail.signal_group(pid, signal.SIGKILL)
+    _ended(pid, stop.KILL_GRACE_S)
+    return "killed"
+
+
+def _ended(pid: int, within_s: float) -> bool:
+    """Reap and poll the pid until it is gone or the wait runs out.
+
+    Args:
+        pid: The child.
+        within_s: The wait.
+
+    Returns:
+        True when the process is gone.
+    """
+    deadline = time.monotonic() + within_s
+    while True:
+        _reap(pid)
+        if not process.pid_alive(pid):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
+def _reap(pid: int) -> None:
+    """Collect a finished direct child, so a stopped lane never lingers as a zombie."""
+    if pid <= 0:
+        return
+    with contextlib.suppress(ChildProcessError, OSError):
+        os.waitpid(pid, os.WNOHANG)
 
 
 def drain_lane(

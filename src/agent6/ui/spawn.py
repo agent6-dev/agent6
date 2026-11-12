@@ -12,6 +12,7 @@ import dataclasses
 import os
 import pathlib
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -497,10 +498,12 @@ def spawn_lane(
     list_dirs: Callable[[], list[pathlib.Path]],
     env: dict[str, str] | None = None,
     timeout_s: float = 25.0,
+    tie_to_parent: bool = True,
 ) -> tuple[pathlib.Path | None, int, str]:
     """Spawn a lane detached, locate its session dir and keep the child's pid.
 
-    The pid lets the coordinator stop a child that never reports a session dir.
+    The pid lets the coordinator stop a child that never reports a session dir; the parent
+    tie (PDEATHSIG) ends the lane with a coordinator that dies, as a Ctrl-C stop would.
 
     Args:
         argv: The command.
@@ -509,12 +512,18 @@ def spawn_lane(
         list_dirs: Lists the session dirs now.
         env: The child's environment; None inherits this process's.
         timeout_s: How long to wait for the dir.
+        tie_to_parent: Deliver SIGTERM to the lane when this process dies.
 
     Returns:
         The new dir, the pid and "", or None, the pid (0 when nothing started) and why.
     """
     return _spawn_and_wait(
-        argv, cwd, ready=lambda pid: _located(list_dirs, before, pid), env=env, timeout_s=timeout_s
+        argv,
+        cwd,
+        ready=lambda pid: _located(list_dirs, before, pid),
+        env=env,
+        timeout_s=timeout_s,
+        preexec=jail.die_with_parent(os.getpid(), signal.SIGTERM) if tie_to_parent else None,
     )
 
 
@@ -526,6 +535,7 @@ def _spawn_and_wait[T](
     env: dict[str, str] | None,
     timeout_s: float,
     clean_exit: T | None = None,
+    preexec: Callable[[], None] | None = None,
 ) -> tuple[T | None, int, str]:
     """Spawn the argv detached with a stderr capture and poll until the child reports ready.
 
@@ -539,6 +549,7 @@ def _spawn_and_wait[T](
         timeout_s: How long to poll.
         clean_exit: The answer for a child that exited 0 without one; None hands back
             its exit instead.
+        preexec: Runs in the child before exec; a lane's parent tie.
 
     Returns:
         The answer, the child's pid and "", or None, the pid (0 when nothing started) and
@@ -559,6 +570,7 @@ def _spawn_and_wait[T](
                 stderr=err,
                 start_new_session=True,
                 env=env,
+                preexec_fn=preexec,  # noqa: PLW1509  # async-signal-minimal: one prctl
             )
         except OSError as exc:
             return None, 0, f"failed to start agent6 {label}: {exc}"

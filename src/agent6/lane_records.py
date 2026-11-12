@@ -98,6 +98,36 @@ class LaneResult:
     pid: int = 0
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class LaneLimits:
+    """The ceiling a lane runs under.
+
+    Attributes:
+        max_turns: The turn cap the lane's `harness.max_turns` is clamped to; None keeps the
+            config's value.
+        deadline_at: The wall-clock second (epoch) the lane must have ended by; None for none.
+            Wall-clock, since it crosses the process boundary into the lane.
+    """
+
+    max_turns: int | None = None
+    deadline_at: float | None = None
+
+    def clamp_turns(self, configured: int) -> int:
+        """Return the lane's turn cap: the smaller of the configured value and the cap.
+
+        Args:
+            configured: `harness.max_turns`, -1 for unlimited.
+
+        Returns:
+            The configured value under the cap; a configured -1 cannot lift the cap.
+        """
+        if self.max_turns is None:
+            return configured
+        if configured < 0:
+            return self.max_turns
+        return min(configured, self.max_turns)
+
+
 class LaneSpawner(Protocol):
     """Run one lane to its end."""
 

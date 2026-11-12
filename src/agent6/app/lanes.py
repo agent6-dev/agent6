@@ -10,6 +10,7 @@ import functools
 import os
 import pathlib
 import threading
+import time
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
@@ -144,6 +145,7 @@ def bridge_spawner(
     fanout_id: str,
     coordinator: str,
     gate_source: sessions_manifest.GateSource = "",
+    limits: lane_records.LaneLimits | None = None,
     runtime: LaneRuntime,
 ) -> lane_records.LaneResult:
     """Clone the origin and start the lane bootstrap detached in the clone.
@@ -167,11 +169,12 @@ def bridge_spawner(
         fanout_id: The group the lane belongs to.
         coordinator: The session every listing nests the lane under.
         gate_source: Where the gate in the lane's config came from, "" when it has none.
+        limits: The turn cap and deadline the lane runs under; None for the config's own.
         runtime: The front-end's spawn primitive.
 
     Returns:
         The lane's result once its session dir is located, the run still going;
-        `ok=False` when the clone or spawn failed.
+        `ok=False` when the clone or spawn failed, with the child's pid when one started.
     """
     branch = git_read.run_branch_for(spec.session_id)
     try:
@@ -207,6 +210,7 @@ def bridge_spawner(
                 lane=spec.lane,
                 gate_source=gate_source,
                 operator_task=operator_task,
+                limits=limits,
             ),
         )
     except (lane_launch.LaunchError, OSError) as exc:
@@ -274,13 +278,17 @@ def run_lane_to_completion(
     should_stop: Callable[[], bool] | None = None,
     stop_is_now: Callable[[], bool] | None = None,
     hard_stop: threading.Event | None = None,
+    limits: lane_records.LaneLimits | None = None,
+    clock: Callable[[], float] = time.time,
 ) -> lane_records.LaneResult:
     """Run one subordinate lane to its end and import it into the origin.
 
     The coordinator runs a group of these on a thread pool, so each is
-    self-contained. A lane that failed to start, was still running at teardown,
-    refused its import, or ended without a result comes back `ok=False`; an
-    imported branch is safe in the origin either way.
+    self-contained. A lane that failed to start, was still running at teardown or its
+    deadline, refused its import, or ended without a result comes back `ok=False`; an
+    imported branch is safe in the origin either way, and a clone that was not imported
+    keeps its work. The lane's process is owned to its end: one that does not stop when
+    asked is killed and reaped, never left running.
 
     Args:
         spec: The lane.
@@ -309,6 +317,8 @@ def run_lane_to_completion(
             plain request lets the lane finish its turn and waits for it, escalating to
             `now` when one arrives; `now` hands its command back and waits a bounded grace.
         hard_stop: Set to skip the grace.
+        limits: The turn cap and deadline the lane runs under; None for the config's own.
+        clock: The wall clock the deadline is read against.
 
     Returns:
         The lane's result, its `session_dir` the imported dir on success.
@@ -327,15 +337,29 @@ def run_lane_to_completion(
             fanout_id=group,
             coordinator=coordinator,
             gate_source=gate_source,
+            limits=limits,
             runtime=runtime,
         )
     res = spawner(spec, task)
     if not res.ok:
+        # A child that never reported its session dir is still a process of ours.
+        how = lane_watch.stop_child(res.pid)
+        if how != "gone":
+            res = dataclasses.replace(res, error=f"{res.error}; its process {how}")
         return res
     # The live symlink lets a hub answer the lane's prompts while it runs.
     lane_watch.symlink_lane(origin_state, res)
-    if not lane_watch.await_lane(res, poll_interval_s=poll_interval_s, should_stop=should_stop):
-        immediate = stop_is_now is None or stop_is_now()
+    deadline_at = limits.deadline_at if limits is not None else None
+    overdue = False
+    if not lane_watch.await_lane(
+        res,
+        poll_interval_s=poll_interval_s,
+        should_stop=should_stop,
+        deadline_at=deadline_at,
+        clock=clock,
+    ):
+        overdue = deadline_at is not None and clock() >= deadline_at
+        immediate = overdue or stop_is_now is None or stop_is_now()
         asked = ipc.request_stop(res.session_dir, now=immediate)
         if not immediate:
 
@@ -352,15 +376,19 @@ def run_lane_to_completion(
         if immediate and not lane_watch.drain_lane(
             res, poll_interval_s=poll_interval_s, hard_stop=hard_stop
         ):
-            # Still running: the clone and symlink hold the only copy of its branch.
+            # Not reading its requests: ended by signal. The clone keeps its branch.
+            how = lane_watch.stop_child(res.pid)
             return lane_records.LaneResult(
                 spec=spec,
                 session_dir=res.session_dir,
                 branch=res.branch,
                 ok=False,
-                error="interrupted; lane "
+                error=("ended at its deadline" if overdue else "interrupted")
+                + "; lane "
                 + ("was asked to stop and" if asked else "could not be asked to stop and")
-                + " keeps running detached; not imported",
+                + f" did not end within the grace; its process {how}; not imported"
+                " (its clone keeps its work)",
+                pid=res.pid,
             )
     try:
         imported = parallel_results.import_lane(res, origin, origin_state, import_lock)
@@ -394,7 +422,8 @@ def run_lane_to_completion(
             session_dir=dest,
             branch=res.branch,
             ok=False,
-            error=f"no result ({format.status_label(summary.status, summary.detail)});"
+            error=("ended at its deadline: " if overdue else "")
+            + f"no result ({format.status_label(summary.status, summary.detail)});"
             f" {parallel_results.imported_branch_note(origin, res.branch)}",
             imported_ref=imported.ref,
             imported_tip=imported.tip,

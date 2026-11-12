@@ -613,7 +613,9 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
     - a worker pid while the lanes run and the judge ranks them
 - every lane's manifest names the session that dispatched it (`parallel.coordinator`, stamped from the spawn env), so each listing nests lanes under their coordinator, folded into a count
 - each lane's live session dir symlinks into `<origin_state>/sessions/runs/` on locate: a fan-out is visible in every hub while it runs
-- on completion a lane imports and the symlink becomes the real directory; a failed-to-start lane keeps its clone, and a still-running or refused lane keeps its clone and symlink (never the only copy lost)
+- on completion a lane imports and the symlink becomes the real directory; a failed-to-start lane keeps its clone, and a refused lane keeps its clone and symlink (never the only copy lost)
+- a lane is the coordinator's own child, tied to it with PDEATHSIG (SIGTERM): a coordinator that dies ends its lanes as a Ctrl-C would; a lane that does not stop when asked (an interrupt, a deadline) is TERMed, KILLed after the kill grace and reaped by its recorded pid, reported failed with its clone kept, and a lane that never reported a session dir is stopped the same way
+- a dispatch may give a lane `LaneLimits` (a turn cap and a wall-clock deadline) in its launch file: the bootstrap clamps `harness.max_turns` (a configured `-1` cannot lift the cap) and arms its own backstop, the stop bridges at the deadline and SIGTERM to itself a grace later; the coordinator's await ends at the same deadline, and a lane that reaches it reads `ended at its deadline`, never a success
 - imported candidates auto-compare into a ranked report with `sessions merge <id>` lines: a structured judge ([judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py)) where a reviewer model exists, else verify-then-cost
 - the compare stamps each lane's manifest (`compare`, one writer): every view shows placement and why; listings star the winner
 - nothing merges automatically
@@ -792,7 +794,7 @@ A run started from a hub, or detached mid-run with `/detach`, keeps going with n
 - A run's worker and a fan-out's coordinator take the SIGTERM as a Ctrl-C stop (an `interrupted` end at exit 130).
 - Every target is named by process identity (pid plus start time), so a pid recycled before the identity check is never signalled.
 - `--after-turn` writes the plain marker alone, so the turn's running command finishes (or reaches `[harness].command_checkin_s`) and its tool results and auto-commit land first.
-- A fan-out passes its stop's urgency to its lanes: a plain marker lets each lane finish its turn, a `now` marker ends their running commands at once.
+- A session's live lanes, found by the lineage their manifests record, stop with it at the same urgency: a plain marker lets each lane finish its turn, a `now` marker ends their running commands at once; a parent that already ended still stops them (`lanes_stopped`).
 - An ACP cancel is request-only: it writes both requests without waiting for or signalling the worker, which is the ACP server itself.
 - An immediate stop ends a foreground `run_command` the launcher hands back.
   Its tool result carries `stopped_by_operator: true` and the output so far, without `still_running` or `background_id`, so the conversation a resume reads says the stop ended the command.

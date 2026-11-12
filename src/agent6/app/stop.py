@@ -44,8 +44,9 @@ class StopOutcome:
         session_id: The stopped session.
         ok: Whether the stop took.
         how: `after_turn`, `requested`, `stopped`, `killed`, `stale` (no answer and nothing
-            left to signal), `not_live` (nothing to stop) or `failed` (a request could not
-            be written).
+            left to signal), `lanes_stopped` (the session itself had ended; its live lanes
+            were stopped), `not_live` (nothing to stop) or `failed` (a request could not be
+            written).
         message: The line every surface shows.
         resumable: `agent6 resume` continues it (a fan-out has no loop to resume).
     """
@@ -80,14 +81,31 @@ def stop_session(
     rid = session_dir.name
     wait_s = STOP_WAIT_S if wait_s is None else wait_s
     grace_s = KILL_GRACE_S if grace_s is None else grace_s
+    # Lanes are found by lineage, so a `/parallel` coordinator's and a dead parent's count.
+    lanes = _live_lanes(session_dir)
+    lane_count = f"{len(lanes)} live lane{'s' if len(lanes) > 1 else ''}"
     if not session_is_live(session_dir):
+        if not lanes:
+            return StopOutcome(
+                rid, False, "not_live", f"{rid} {_not_live_state(session_dir)}; nothing to stop"
+            )
+        for lane in lanes:
+            stop_session(
+                lane,
+                after_turn=after_turn,
+                request_only=request_only,
+                wait_s=wait_s,
+                grace_s=grace_s,
+            )
         return StopOutcome(
-            rid, False, "not_live", f"{rid} {_not_live_state(session_dir)}; nothing to stop"
+            rid,
+            True,
+            "lanes_stopped",
+            f"{rid} {_not_live_state(session_dir)}; its {lane_count} stopped",
         )
     fanout = _is_fanout(session_dir)
     resumable = not listing.resume_blocker(session_dir)
-    lanes = _live_lanes(session_dir) if fanout else []
-    with_lanes = f" with its {len(lanes)} live lane{'s' if len(lanes) > 1 else ''}" if lanes else ""
+    with_lanes = f" with its {lane_count}" if lanes else ""
     worker = process.read_live_worker_identity(session_dir)
     # The session's own markers first: a coordinator reads its stop as its lanes end, and one
     # written after they ended is never read.
@@ -136,7 +154,7 @@ def _ended(
     """Return the outcome once both bridges are written: ended in time, or what the kill did."""
     rid = session_dir.name
     if _ended_within(session_dir, worker, wait_s):
-        landed = "; what they landed is imported and ranked" if with_lanes else ""
+        landed = "; what they landed is imported and ranked" if fanout and with_lanes else ""
         return StopOutcome(
             rid, True, "stopped", f"{rid} stopped{with_lanes}{landed}", resumable=resumable
         )
@@ -181,7 +199,7 @@ def _is_fanout(session_dir: pathlib.Path) -> bool:
 
 
 def _live_lanes(session_dir: pathlib.Path) -> list[pathlib.Path]:
-    """Return a fan-out's live lanes, in lane order."""
+    """Return the session's live lanes, by the lineage their manifests record, in lane order."""
     state = layout.layout_of(session_dir).state_dir
     return [
         lane_dir

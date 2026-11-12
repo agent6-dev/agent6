@@ -12,13 +12,56 @@ from __future__ import annotations
 
 import os
 import pathlib
+import signal
 import sys
+import threading
 import time
+from collections.abc import Callable
 
-from agent6.app import lane_launch, preflight, session_setup
+from agent6 import paths
+from agent6.app import lane_launch, preflight, session_setup, stop
 from agent6.app import run as app_run
 from agent6.config import ConfigError
+from agent6.sessions import ipc
+from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import common, entry, run
+
+
+def arm_deadline(
+    session_dir: pathlib.Path,
+    deadline_at: float,
+    *,
+    grace_s: float = stop.KILL_GRACE_S,
+    clock: Callable[[], float] = time.time,
+) -> tuple[threading.Timer, threading.Timer]:
+    """Arm the lane's own backstop: the stop bridges at the deadline, SIGTERM a grace later.
+
+    The run reads the abort steer and the `now` stop marker as `agent6 stop` writes them;
+    a run that is not reading them takes the SIGTERM as a Ctrl-C stop and journals its end.
+
+    Args:
+        session_dir: The lane's run dir, which may not exist yet.
+        deadline_at: The wall-clock second the lane must have ended by.
+        grace_s: From the bridges to the signal.
+        clock: The wall clock.
+
+    Returns:
+        The two daemon timers, for a caller that cancels them.
+    """
+
+    def ask() -> None:
+        ipc.submit_steer(session_dir, "abort", now=True)
+        ipc.request_stop(session_dir, now=True)
+
+    def term() -> None:
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    delay = max(0.0, deadline_at - clock())
+    timers = (threading.Timer(delay, ask), threading.Timer(delay + grace_s, term))
+    for timer in timers:
+        timer.daemon = True
+        timer.start()
+    return timers
 
 
 def trusted_launch() -> lane_launch.LaneLaunch:
@@ -74,8 +117,12 @@ def main() -> int:
     except ConfigError as exc:
         common.error(f"{exc}")
         return 2
+    cfg = lane_launch.apply_limits(effective.config, launch.limits)
+    if launch.limits is not None and launch.limits.deadline_at is not None:
+        runs = sessions_layout.bucket_dir(paths.state_dir(launch.workdir), "runs")
+        arm_deadline(runs / launch.session_id, launch.limits.deadline_at)
     return app_run.run_task(
-        effective.config,
+        cfg,
         launch.task,
         frontend=run.session_frontend((launch.config,)),
         cwd=launch.workdir,

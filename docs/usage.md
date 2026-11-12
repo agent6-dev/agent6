@@ -156,6 +156,7 @@ Task text keeps its internal whitespace and newlines, including later `--` token
 When the lanes return, each joins the run's chain in dispatch order and one notice names every outcome: `joined at <sha>`, `finished with no changes to join` (the lane ended with a result and committed nothing), `CONFLICT` (the merge is left for the operator) or `FAILED` with the reason.
 
 A fan-out group has no model loop: steer one of its lanes instead.
+`agent6 stop ID` on a session with live lanes stops the lanes too, by the lineage their manifests record, and still does when the session itself has already ended.
 The refusal names the lane session IDs.
 While a steer waits on disk, `sessions show`, the TUI header and the web session status show `steer queued, not yet delivered` with its text and the count waiting behind it.
 Steers sent while one waits queue in order and reach the model one per step; `abort`, `exit`, `/undo` and `detach` take the slot at once.

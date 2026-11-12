@@ -397,3 +397,51 @@ def test_a_fan_outs_own_stop_markers_land_before_its_lanes_are_stopped(
     out = stop.stop_session(coordinator, request_only=True)
     assert out.ok and out.how == "requested"
     assert pending_when_lane_stopped == [True]
+
+
+def _live_lane(tmp_path: pathlib.Path, name: str, coordinator: str) -> pathlib.Path:
+    """A live lane whose manifest names its coordinator, as a spawned lane's does from birth."""
+    d = _live_run(tmp_path, name)
+    (d / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "session_id": name,
+                "mode": "run",
+                "user_task": "t",
+                "parallel": {"group": coordinator, "lane": 1, "coordinator": coordinator},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    process.write_worker_pid(d, os.getpid())
+    return d
+
+
+def test_an_ordinary_parents_stop_reaches_its_lanes_by_lineage(tmp_path: pathlib.Path) -> None:
+    """A `/parallel` coordinator is a plain run: its live lanes stop with it, none ranked."""
+    parent = _live_run(tmp_path, "co-run-AAAAAA")
+    process.write_worker_pid(parent, os.getpid())
+    lane = _live_lane(tmp_path, "co-run-AAAAAA-p1-l1", "co-run-AAAAAA")
+    out = stop.stop_session(parent, request_only=True)
+    assert (out.ok, out.how) == (True, "requested")
+    assert "with its 1 live lane" in out.message and "ranked" not in out.message
+    assert ipc.stop_request_is_now(lane) and ipc.steer_answer_is_abort(lane)
+
+
+def test_a_dead_parents_live_lanes_are_still_stopped(tmp_path: pathlib.Path) -> None:
+    """A parent that already ended leaves no orphan: its live lanes are stopped by lineage."""
+    parent = _live_run(tmp_path, "gone-run-AAAAAA")
+    with (parent / "logs.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"type": "session.stop", "reason": "finish_session"}) + "\n")
+    lane = _live_lane(tmp_path, "gone-run-AAAAAA-p1-l1", "gone-run-AAAAAA")
+    out = stop.stop_session(parent, request_only=True)
+    assert (out.ok, out.how) == (True, "lanes_stopped"), out
+    assert "1 live lane" in out.message and "stopped" in out.message
+    assert ipc.stop_request_is_now(lane)
+    # Nothing live and no lanes: the refusal stands.
+    alone = _live_run(tmp_path, "alone-run-AAAAAA")
+    with (alone / "logs.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"type": "session.stop", "reason": "finish_session"}) + "\n")
+    assert stop.stop_session(alone).how == "not_live"

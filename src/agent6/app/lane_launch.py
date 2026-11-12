@@ -17,7 +17,8 @@ import sys
 
 import pydantic
 
-from agent6.config import ConfigError
+from agent6 import lane_records
+from agent6.config import Config, ConfigError
 from agent6.sessions import ipc, manifest
 
 ENV = "AGENT6_LANE"
@@ -53,6 +54,7 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
         lane: The lane's number, from 1.
         gate_source: Where the verify gate in the snapshot came from; "" for none.
         operator_task: The task's words before composition; None when they are the task.
+        limits: The turn cap and deadline the lane runs under; None for the config's own.
     """
 
     workdir: pathlib.Path
@@ -69,6 +71,25 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     lane: int = pydantic.Field(ge=1)
     gate_source: manifest.GateSource = ""
     operator_task: str | None = None
+    limits: lane_records.LaneLimits | None = None
+
+
+def apply_limits(cfg: Config, limits: lane_records.LaneLimits | None) -> Config:
+    """Return the config with `harness.max_turns` clamped to the lane's cap.
+
+    Args:
+        cfg: The lane's loaded config.
+        limits: The lane's limits; None, or one without a turn cap, leaves the config alone.
+
+    Returns:
+        The config, the same object when nothing changes.
+    """
+    if limits is None or limits.max_turns is None:
+        return cfg
+    turns = limits.clamp_turns(cfg.harness.max_turns)
+    if turns == cfg.harness.max_turns:
+        return cfg
+    return cfg.model_copy(update={"harness": cfg.harness.model_copy(update={"max_turns": turns})})
 
 
 def bootstrap_argv() -> list[str]:

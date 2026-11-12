@@ -857,7 +857,7 @@ Files:
     - predicates and templates are parsed-then-walked against an allow-list; never `eval`/`exec`, never `getattr`
     - dotted references are agent6-interpreted data navigation
 - **All side effects stay jailed**
-    - `tool` states go through `run_in_jail`; each `agent` state is an ordinary run in its own subprocess, commands jailed like any run's; like a lane, it starts from a fixed `python -P -m` argv with its request in a private file (`request.json` for a state, the launch file for a lane)
+    - `tool` states go through `run_in_jail`; each `agent` state is an ordinary run in its own subprocess, commands jailed like any run's; like a lane, it starts from a fixed `python -P -m` argv with its request in a private file (`request.json` for a state, the launch file for a lane), and a state's timeout ends its process as a lane's deadline does
     - `mode = "run"` machines never touch the operator's checkout: fresh clones per state, commits on `agent6/machine-<id>`, tool-state tree writes discarded with the clone
     - per-state network and refusals: [security.md, Network](security.md#5-network)
     - an overlay never widens the sandbox: [Machine config overlay](#machine-config-overlay-config)
