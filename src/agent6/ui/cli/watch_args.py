@@ -160,10 +160,19 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
             " /retire, /btw, /now)."
         ),
     )
-    finding = instruction.add_argument("--finding", help="Submit Fix for a stored finding ID.")
+    finding = instruction.add_argument(
+        "--finding",
+        action="append",
+        help="Submit Fix for a stored finding ID; repeat it to fix several in one steer.",
+    )
     finding.completer = completers.complete_finding_ids  # type: ignore[attr-defined]
+    instruction.add_argument(
+        "--all-findings",
+        action="store_true",
+        help="Submit Fix for every open finding without a queued Fix, in one steer.",
+    )
     steer_p.add_argument(
-        "--resume", action="store_true", help="Confirm Resume to fix for a stopped run's finding."
+        "--resume", action="store_true", help="Confirm Resume to fix for a stopped run's findings."
     )
     sessions_findings.add_action_options(steer_p)
     steer_p.add_argument(

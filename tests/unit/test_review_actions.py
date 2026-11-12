@@ -192,6 +192,50 @@ def test_fix_uses_stored_evidence_and_queues_a_second_fix(
         process.clear_worker_pid(saved.session_dir)
 
 
+def test_one_steer_carries_several_findings_with_a_result_each(tmp_path: pathlib.Path) -> None:
+    """A batch Fix writes one instruction naming every finding and records each one's request."""
+    saved = review_helpers.reviewed_session(tmp_path)
+    process.write_worker_pid(saved.session_dir, os.getpid())
+    try:
+        request = review_records.FindingAction(request_id="both", expected_version=1, action="fix")
+        view = review_actions.read_review(saved.session_dir)
+        assert review_actions.fixable_findings(saved.session_dir, view) == ("f1", "f2")
+        review_actions.act_many(saved.session_dir, ("f1", "f2"), request, source="cli", wait_s=0)
+        review_actions.drain(event_log.EventSink(saved.logs_path), execution_id="live")
+        results = review_actions.act_many(
+            saved.session_dir, ("f1", "f2"), request, source="cli", wait_s=0
+        )
+        assert [(r.finding_id, r.status) for r in results] == [
+            ("f1", "submitted"),
+            ("f2", "submitted"),
+        ]
+        text = (saved.session_dir / ipc.STEER_ANSWER_FILE).read_text()
+        assert text.startswith("Review findings f1, f2: each report below is one finding")
+        assert text.count("Reproduce this report before changing code.") == 2
+        assert "Review finding f1\n" in text and "Review finding f2\n" in text
+        view = review_actions.read_review(saved.session_dir)
+        assert [f.fix_state for f in view.findings] == ["submitted", "submitted"]
+        assert review_actions.fixable_findings(saved.session_dir, view) == ()
+        with pytest.raises(review_actions.ReviewActionError, match="already queued \\(f2\\)"):
+            review_actions.act_many(
+                saved.session_dir,
+                ("f2",),
+                request.model_copy(update={"request_id": "again"}),
+                source="cli",
+                wait_s=0,
+            )
+        with pytest.raises(review_actions.ReviewActionError, match="named twice"):
+            review_actions.act_many(
+                saved.session_dir,
+                ("f1", "f1"),
+                request.model_copy(update={"request_id": "twice"}),
+                source="cli",
+                wait_s=0,
+            )
+    finally:
+        process.clear_worker_pid(saved.session_dir)
+
+
 def test_crash_after_request_never_retries_delivery(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -231,7 +275,7 @@ def test_a_live_fix_in_delivery_reads_queued_not_unknown(
     view = review_actions.read_review(saved.session_dir)
     finding = view.findings[0]
     request = review_actions.ActionRequest(
-        finding_id=finding.finding_id,
+        finding_ids=(finding.finding_id,),
         source="cli",
         action=review_records.FindingAction(
             request_id="live", expected_version=view.version, action="fix"
@@ -242,19 +286,20 @@ def test_a_live_fix_in_delivery_reads_queued_not_unknown(
         events,
         request,
         "fix.requested",
+        finding_id=finding.finding_id,
         target=dataclasses.asdict(
             review_actions._target(view, finding)  # pyright: ignore[reportPrivateUsage]
         ),
         action="live-steer",
     )
     monkeypatch.setattr(process, "worker_is_alive", _alive)
-    result = review_actions._wait(  # pyright: ignore[reportPrivateUsage]
+    (result,) = review_actions._wait(  # pyright: ignore[reportPrivateUsage]
         saved.session_dir, request, 0.2
     )
     assert result.status == "queued"
     assert "queued" in result.message and "unknown" not in result.message
     monkeypatch.setattr(process, "worker_is_alive", _dead)
-    dead = review_actions._wait(  # pyright: ignore[reportPrivateUsage]
+    (dead,) = review_actions._wait(  # pyright: ignore[reportPrivateUsage]
         saved.session_dir, request, 0.2
     )
     assert dead.status == "delivery_unknown"
@@ -373,7 +418,7 @@ def test_a_fix_queues_behind_an_ordinary_steer_and_follows_it_into_the_slot(
         events = event_log.EventSink(saved.logs_path)
         review_actions.drain(events, execution_id="worker")
         reply = ipc.read_review_reply(saved.session_dir, "fix")
-        assert reply is not None and json.loads(reply)["result"]["status"] == "submitted"
+        assert reply is not None and json.loads(reply)["results"][0]["status"] == "submitted"
         assert ipc.take_steer_answer(saved.session_dir) == "ordinary steer"
         ipc.clear_steer_request(saved.session_dir)
         assert ipc.promote_queued_steer(saved.session_dir)

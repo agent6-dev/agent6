@@ -509,17 +509,19 @@ def _dispatch_steer(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 steer`."""
     from agent6.ui.cli import sessions_findings, steer_cmd
 
-    if args.finding:
+    if args.finding or args.all_findings:
         if args.now:
-            common.error("--finding waits for a safe boundary; it cannot be used with --now")
+            common.error("a Fix waits for a safe boundary; it cannot be used with --now")
             return 2
-        return sessions_findings.cmd_action(
+        if args.expected_version is not None:
+            common.error("a Fix names its findings, not a review version; drop --expected-version")
+            return 2
+        return sessions_findings.cmd_fix(
             args.target,
-            args.finding,
-            "fix",
+            tuple(args.finding or ()),
+            all_open=args.all_findings,
             resume=args.resume,
             request_id=args.request_id,
-            expected_version=args.expected_version,
             config_paths=args.config,
         )
     if args.resume or args.request_id or args.expected_version is not None:

@@ -336,6 +336,60 @@ def act(
     return 202 if result.status == "queued" else 200, result.model_dump(mode="json")
 
 
+def fix_many(
+    cwd: pathlib.Path,
+    session_dir: pathlib.Path,
+    finding_ids: tuple[str, ...],
+    *,
+    all_open: bool,
+    request_id: str,
+    resume: bool,
+    config_paths: tuple[pathlib.Path, ...],
+) -> tuple[int, dict[str, Any]]:
+    """Submit one Fix steer for several findings and return a result per finding.
+
+    Args:
+        cwd: The repository root.
+        session_dir: The session directory.
+        finding_ids: The findings to fix; empty with `all_open`.
+        all_open: Fix every open finding without a queued Fix.
+        request_id: The caller's retry identity.
+        resume: Whether the operator confirmed resuming an idle session.
+        config_paths: The config overlays for a detached resume, in order.
+
+    Returns:
+        An HTTP status and the per-finding results, or the refusal.
+    """
+    try:
+        view = review_actions.read_review(session_dir)
+        if all_open:
+            finding_ids = review_actions.fixable_findings(session_dir, view)
+            if not finding_ids:
+                return 409, {"error": "no open finding without a queued Fix"}
+        request = review_records.FindingAction(
+            request_id=request_id, expected_version=view.version, action="fix", resume=resume
+        )
+        results = review_actions.act_many(
+            session_dir,
+            finding_ids,
+            request,
+            source="web",
+            resume=lambda text: spawn.spawn_detached_resume(
+                cwd, session_dir.name, steer=text, config_paths=config_paths
+            ),
+        )
+    except review_actions.ReviewActionError as exc:
+        return exc.status, {"error": str(exc)}
+    except (pydantic.ValidationError, ValueError) as exc:
+        return 422, {"error": str(exc)}
+    status = 202 if any(result.status == "queued" for result in results) else 200
+    return status, {
+        "request_id": request_id,
+        "version": max(result.version for result in results),
+        "results": [result.model_dump(mode="json") for result in results],
+    }
+
+
 def receipt_payload(cwd: pathlib.Path, session_dir: pathlib.Path) -> dict[str, Any]:
     """Return the derived evidence receipt without running a provider or gate.
 

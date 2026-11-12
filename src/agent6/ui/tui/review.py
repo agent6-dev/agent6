@@ -119,7 +119,7 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             (
                 *(
                     menubar.MenuItem(keymap.REVIEW_TEXT[a], a)
-                    for a in ("fix", "resolve", "reopen", "receipt", "refresh")
+                    for a in ("fix", "fix_all", "resolve", "reopen", "receipt", "refresh")
                 ),
                 menubar.MenuItem(keymap.REVIEW_TEXT["back"], "close"),
             ),
@@ -133,7 +133,10 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         ),
     )
     FOOTER: ClassVar = (
-        *((a, keymap.REVIEW_TEXT[a]) for a in ("fix", "resolve", "reopen", "receipt", "refresh")),
+        *(
+            (a, keymap.REVIEW_TEXT[a])
+            for a in ("fix", "fix_all", "resolve", "reopen", "receipt", "refresh")
+        ),
         ("close", keymap.REVIEW_TEXT["back"]),
     )
     BINDINGS: ClassVar = menubar.menu_bindings("findings", MENUS, footer=FOOTER)
@@ -297,6 +300,25 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         finding = self._selected()
         if finding is None or self._busy:
             return
+        self._fix(
+            (finding.finding_id,),
+            keymap.REVIEW_TEXT["confirm"].format(finding_id=finding.finding_id),
+        )
+
+    def action_fix_all(self) -> None:
+        """Steer every open finding without a queued Fix as one instruction."""
+        if self._busy:
+            return
+        finding_ids = review_actions.fixable_findings(self._session_dir, self._view)
+        if not finding_ids:
+            self.query_one("#review-result", widgets.Static).update(
+                keymap.REVIEW_TEXT["nothing_to_fix"]
+            )
+            return
+        self._fix(finding_ids, keymap.REVIEW_TEXT["confirm_all"])
+
+    def _fix(self, finding_ids: tuple[str, ...], confirm_text: str) -> None:
+        """Submit one Fix to a live worker, or confirm the resume that carries it."""
         live = process.worker_is_alive(self._session_dir)
         request = review_records.FindingAction(
             request_id=uuid.uuid4().hex,
@@ -305,15 +327,15 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             resume=not live,
         )
         if live:
-            self._submit(finding.finding_id, request)
+            self._submit(finding_ids, request)
         else:
             self.app.push_screen(
                 modals.ConfirmModal(
                     keymap.REVIEW_TEXT["resume"],
-                    keymap.REVIEW_TEXT["confirm"].format(finding_id=finding.finding_id),
+                    confirm_text,
                     confirm_label=keymap.REVIEW_TEXT["resume"],
                 ),
-                lambda confirmed: self._submit(finding.finding_id, request) if confirmed else None,
+                lambda confirmed: self._submit(finding_ids, request) if confirmed else None,
             )
 
     def action_resolve(self) -> None:
@@ -329,20 +351,22 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         if finding is not None and not self._busy:
             self.app.push_screen(
                 DispositionModal(action, self._view.version),
-                lambda request: self._submit(finding.finding_id, request) if request else None,
+                lambda request: self._submit((finding.finding_id,), request) if request else None,
             )
 
-    def _submit(self, finding_id: str, request: review_records.FindingAction) -> None:
+    def _submit(self, finding_ids: tuple[str, ...], request: review_records.FindingAction) -> None:
         if not self._busy:
             self._busy = True
-            self.run_worker(self._apply(finding_id, request))
+            self.run_worker(self._apply(finding_ids, request))
 
-    async def _apply(self, finding_id: str, request: review_records.FindingAction) -> None:
+    async def _apply(
+        self, finding_ids: tuple[str, ...], request: review_records.FindingAction
+    ) -> None:
         try:
-            result = await asyncio.to_thread(
-                review_actions.act,
+            results = await asyncio.to_thread(
+                review_actions.act_many,
                 self._session_dir,
-                finding_id,
+                finding_ids,
                 request,
                 source="tui",
                 wait_s=0,
@@ -353,8 +377,14 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
                     config_paths=self._config_paths,
                 ),
             )
-            message = keymap.REVIEW_TEXT["result"].format(
-                message=result.message, request_id=result.request_id
+            message = "\n".join(
+                keymap.REVIEW_TEXT["result"].format(
+                    message=f"{result.finding_id}: {result.message}"
+                    if len(results) > 1
+                    else result.message,
+                    request_id=result.request_id,
+                )
+                for result in results
             )
         except (review_actions.ReviewActionError, OSError) as exc:
             message = str(exc)

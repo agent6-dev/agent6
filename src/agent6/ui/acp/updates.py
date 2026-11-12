@@ -76,8 +76,8 @@ REVIEW_COMMANDS: tuple[dict[str, Any], ...] = (
     },
     {
         "name": "fix",
-        "description": "Resume an idle session to reproduce a stored finding; leaves it open",
-        "input": {"hint": "<finding-id> --resume"},
+        "description": "Resume an idle session to reproduce stored findings; leaves them open",
+        "input": {"hint": "<finding-id>... --resume | --all --resume"},
     },
     {
         "name": "resolve",

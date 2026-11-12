@@ -154,6 +154,40 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
     assert resolved.panels == view.panels
 
 
+@pytest.mark.parametrize("flags", [("--finding", "f1", "--finding", "f2"), ("--all-findings",)])
+def test_cli_fixes_several_findings_with_one_resume(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    flags: tuple[str, ...],
+) -> None:
+    """Repeated --finding, or --all-findings, launch one resume and print a line per finding."""
+    saved = review_helpers.reviewed_session(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    launches: list[str] = []
+
+    def resume(cwd: pathlib.Path, session_id: str, *, steer: str, **kwargs: object) -> str:
+        launches.append(steer)
+        return ""
+
+    monkeypatch.setattr(spawn, "spawn_detached_resume", resume)
+    assert main(["steer", saved.session_id, *flags, "--resume", "--request-id", "many"]) == 0
+    assert len(launches) == 1
+    assert launches[0].startswith("Review findings f1, f2: each report below is one finding")
+    assert "Defect f1" in launches[0] and "Defect f2" in launches[0]
+    out = capsys.readouterr().out.splitlines()
+    assert [line.split(": ")[1] for line in out] == ["f1", "f2"]
+    assert all("run resumed to fix finding" in line and "(request many," in line for line in out)
+    view = review_actions.read_review(saved.session_dir)
+    assert [f.status for f in view.findings] == ["open", "open"]
+    assert all(f.actions[0].request_id == "many" for f in view.findings)
+    assert review_actions.fixable_findings(saved.session_dir, view) == ()
+    assert main(["steer", saved.session_id, "--all-findings", "--resume"]) == 2
+    assert "no open finding without a queued Fix" in capsys.readouterr().err
+    assert main(["steer", saved.session_id, "--finding", "f1", "--expected-version", "1"]) == 2
+    assert "drop --expected-version" in capsys.readouterr().err
+
+
 def test_cli_finding_resume_failure_keeps_diagnostic_and_exit_code(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -242,8 +276,6 @@ def test_cli_finding_resume_reports_launch_and_forwards_evidence_and_config(
                     "--resume",
                     "--request-id",
                     "cli-resume",
-                    "--expected-version",
-                    "1",
                 ]
             )
             == 0

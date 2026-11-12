@@ -166,6 +166,7 @@ def test_findings_show_only_pre_existing_line_origin(tmp_path: pathlib.Path, kin
     [
         "/findings surprise",
         "/fix",
+        "/fix f1 --all --resume",
         "/resolve f1 --as fixed --reason ''",
         "/resolve f1 --as duplicate --reason same --duplicate-of missing",
         "/reopen f1",
@@ -223,6 +224,38 @@ def test_fix_is_only_a_confirmed_idle_followup(tmp_path: pathlib.Path, state: st
         assert not ran
         assert any(frame.get("error") for frame in _messages(out))
         assert review_actions.read_review(saved.session_dir).version == 1
+
+
+@pytest.mark.parametrize("command", ["/fix f1 f2 --resume", "/fix --all --resume"])
+def test_fix_takes_several_findings_as_one_follow_up(tmp_path: pathlib.Path, command: str) -> None:
+    """Named IDs or --all send one prompt whose steer names every finding."""
+    ran: list[str] = []
+
+    def run(current: session.Session, text: str) -> str:
+        ran.append(text)
+        review_actions.drain(
+            event_log.EventSink(current.layout(paths.state_dir(tmp_path)).logs_path),
+            execution_id="followup",
+            resume_steer=text,
+        )
+        return "end_turn"
+
+    connection, current, out = _connection(tmp_path, run)
+    saved = current.layout(paths.state_dir(tmp_path))
+    (saved.session_dir / "loop_state.json").write_text("{}")
+    _prompt(connection, current, command)
+    assert len(ran) == 1 and ran[0].startswith("Review findings f1, f2: each report below")
+    assert "Defect f1" in ran[0] and "Defect f2" in ran[0]
+    view = review_actions.read_review(saved.session_dir)
+    assert [f.fix_state for f in view.findings] == ["submitted", "submitted"]
+    for finding_id in ("f1", "f2"):
+        _prompt(connection, current, f"/resolve {finding_id} --as fixed --reason done")
+    _prompt(connection, current, "/fix --all --resume")
+    assert len(ran) == 1
+    assert any(
+        "no open finding without a queued Fix" in str(frame.get("error", {}).get("message", ""))
+        for frame in _messages(out)
+    )
 
 
 def test_acp_fix_cannot_become_a_live_steer(tmp_path: pathlib.Path) -> None:

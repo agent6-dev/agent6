@@ -52,8 +52,8 @@ The advertised commands act on the conversation's recorded run:
 - `/findings [--all]` lists open findings, or also resolved findings with `--all`.
 - `/review-queue` lists the repository's sessions in [review queue](usage.md#the-review-queue) order under group headings, and needs no run in the thread.
 - `/answer <question-id> <text>...` answers a pending question, with options or without; a queued question's answer reaches the run at its next turn, and an ended run's is delivered by the next prompt, which resumes it.
-- `/fix ID --resume` confirms **Resume to fix** as a follow-up prompt when the session is idle.
-  It uses the stored report, leaves the finding open, and refuses a missing resume point rather than starting a new run.
+- `/fix ID [ID...] --resume` confirms **Resume to fix** as a follow-up prompt when the session is idle; `/fix --all --resume` takes every open finding without a queued Fix.
+  It uses the stored reports, leaves the findings open, and refuses a missing resume point rather than starting a new run.
 - `/resolve ID --as DISPOSITION --reason "TEXT" [--duplicate-of ID]` records the operator's conclusion.
 - `/reopen ID --reason "TEXT"` reopens a finding.
 

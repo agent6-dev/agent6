@@ -31,16 +31,20 @@ def _parse(command: str, text: str) -> argparse.Namespace:
         return parser.parse_args(shlex.split(text)[1:])
     if command == "/findings":
         parser.add_argument("--all", action="store_true")
+    elif command == "/fix":
+        parser.add_argument("finding_ids", nargs="*")
+        parser.add_argument("--all", action="store_true")
+        parser.add_argument("--resume", action="store_true")
     else:
         parser.add_argument("finding_id")
-        if command == "/fix":
-            parser.add_argument("--resume", action="store_true")
-        else:
-            parser.add_argument("--reason", required=True)
-            if command == "/resolve":
-                parser.add_argument("--as", dest="disposition", required=True)
-                parser.add_argument("--duplicate-of")
-    return parser.parse_args(shlex.split(text)[1:])
+        parser.add_argument("--reason", required=True)
+        if command == "/resolve":
+            parser.add_argument("--as", dest="disposition", required=True)
+            parser.add_argument("--duplicate-of")
+    args = parser.parse_args(shlex.split(text)[1:])
+    if command == "/fix" and bool(args.finding_ids) == args.all:
+        parser.error("name the finding IDs to fix, or --all for every open one without a Fix")
+    return args
 
 
 def _findings_text(view: review.ReviewView, *, include_resolved: bool) -> str:
@@ -177,6 +181,47 @@ def _queue_lines(row: listing.ListingRow, *, depth: int) -> list[str]:
     return out
 
 
+def _fix_targets(
+    current: session.Session,
+    session_dir: pathlib.Path,
+    view: review.ReviewView,
+    args: argparse.Namespace,
+) -> tuple[str, ...]:
+    """Return the findings a confirmed idle `/fix` takes, refusing anything else.
+
+    Args:
+        current: The current conversation.
+        session_dir: The session directory.
+        view: The session's review fold.
+        args: The parsed `/fix` arguments.
+
+    Returns:
+        The named finding ids, or every open one without a queued Fix under `--all`.
+
+    Raises:
+        RpcError: The session is busy, the resume is unconfirmed, the run has no resume
+            point, or no finding qualifies.
+    """
+    if current.is_running() or process.worker_is_alive(session_dir):
+        raise rpc.RpcError(
+            rpc.INVALID_PARAMS, "Fix requires an idle session; wait for its prompt to finish"
+        )
+    if not args.resume:
+        raise rpc.RpcError(
+            rpc.INVALID_PARAMS, "Resume to fix requires confirmation; use /fix ID --resume"
+        )
+    if not (session_dir / "loop_state.json").is_file():
+        raise rpc.RpcError(
+            rpc.INVALID_PARAMS, "this run has no resume point; Fix cannot start a new run"
+        )
+    finding_ids = (
+        review_actions.fixable_findings(session_dir, view) if args.all else tuple(args.finding_ids)
+    )
+    if not finding_ids:
+        raise rpc.RpcError(rpc.INVALID_PARAMS, "no open finding without a queued Fix")
+    return finding_ids
+
+
 def _recorded_updates(
     logs: pathlib.Path, before: int | None, request_id: str, acp_id: str
 ) -> Iterator[dict[str, Any]]:
@@ -229,20 +274,11 @@ def handle_command(
             raise rpc.RpcError(rpc.INVALID_PARAMS, "this conversation has no recorded run")
         saved = current.layout(sessions.state_dir_for(current.cwd))
         view = review_actions.read_review(saved.session_dir)
-        if command == "/fix":
-            if current.is_running() or process.worker_is_alive(saved.session_dir):
-                raise rpc.RpcError(
-                    rpc.INVALID_PARAMS,
-                    "Fix requires an idle session; wait for its prompt to finish",
-                )
-            if not args.resume:
-                raise rpc.RpcError(
-                    rpc.INVALID_PARAMS, "Resume to fix requires confirmation; use /fix ID --resume"
-                )
-            if not (saved.session_dir / "loop_state.json").is_file():
-                raise rpc.RpcError(
-                    rpc.INVALID_PARAMS, "this run has no resume point; Fix cannot start a new run"
-                )
+        finding_ids: tuple[str, ...] = (
+            _fix_targets(current, saved.session_dir, view, args)
+            if command == "/fix"
+            else (args.finding_id,)
+        )
         resolution = (
             review_records.FindingResolution.model_validate(
                 dict(
@@ -271,9 +307,9 @@ def handle_command(
             sessions.start_execution(current, steer, finish=finish, require_resume=True)
             return ""
 
-        result = review_actions.act(
+        (result, *_more) = review_actions.act_many(
             saved.session_dir,
-            args.finding_id,
+            finding_ids,
             action,
             source="acp",
             resume=resume,

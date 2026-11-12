@@ -174,6 +174,35 @@ def test_confirmed_resume_returns_shared_receipt(
     assert completed["merge_guard"]["open_block_ids"] == ["f1", "f2"]
 
 
+def test_the_batch_fix_route_resumes_once_for_every_open_finding(
+    api: int, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`findings/fix` with `all_open` launches one resume and answers a result per finding."""
+    saved = layout.SessionLayout(paths.state_dir(tmp_path), "review-run")
+    launches: list[str] = []
+
+    def resume(cwd: pathlib.Path, session_id: str, *, steer: str, **kwargs: object) -> str:
+        launches.append(steer)
+        return ""
+
+    monkeypatch.setattr(spawn, "spawn_detached_resume", resume)
+    code, result = _request(api, "/fix", dict(request_id="web-all", all_open=True, resume=True))
+    assert code == 202
+    assert result["request_id"] == "web-all" and result["version"] == 3
+    assert [(r["finding_id"], r["status"]) for r in result["results"]] == [
+        ("f1", "queued"),
+        ("f2", "queued"),
+    ]
+    assert len(launches) == 1 and launches[0].startswith("Review findings f1, f2:")
+    view = review_actions.read_review(saved.session_dir)
+    assert [a.request_id for f in view.findings for a in f.actions] == ["web-all", "web-all"]
+    code, result = _request(api, "/fix", dict(request_id="web-none", all_open=True, resume=True))
+    assert code == 409 and result["error"] == "no open finding without a queued Fix"
+    code, result = _request(api, "/fix", dict(request_id="web-dup", finding_ids=["f1", "f1"]))
+    assert code == 422 and "named twice" in result["error"]
+    assert _request(api, "/fix/extra", dict(request_id="x"))[0] == 404
+
+
 def test_findings_routes_distinguish_missing_invalid_and_conflicting(api: int) -> None:
     base = dict(request_id="fix", expected_version=1)
     assert _request(api, "/missing/fix", base)[0] == 404

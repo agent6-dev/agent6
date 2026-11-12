@@ -263,6 +263,22 @@ class PresetBody(_Body):
     repo: bool = False
 
 
+class FixManyBody(_Body):
+    """A Fix of several findings, or of every open one without a queued Fix.
+
+    Attributes:
+        finding_ids: The findings to fix, in order; empty with `all_open`.
+        all_open: Fix every open finding without a queued Fix.
+        request_id: The caller's retry identity.
+        resume: Whether the operator confirmed resuming an idle session to fix.
+    """
+
+    finding_ids: tuple[str, ...] = ()
+    all_open: bool = False
+    request_id: str
+    resume: bool = False
+
+
 class ConfigSetBody(_Body):
     """A config write; `unset` removes the key from the target layer instead.
 
@@ -626,15 +642,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             ok, msg = actions.spawn_machine_run(self.cwd, body.file, self.config_paths)
             self._ok_or_err(ok, {"message": msg}, msg)
             return
-        if len(parts) == 6 and parts[:2] == ["api", "session"] and parts[3] == "findings":
-            session_dir = model.session_dir_for(self.cwd, parts[2])
-            if session_dir is None:
-                self._post_not_found(f"no session {parts[2]!r}")
-                return
-            status, payload = review_routes.act(
-                self.cwd, session_dir, parts[4], parts[5], self._read_body(), self.config_paths
-            )
-            self._send_json(payload, status=status)
+        if len(parts) in (5, 6) and parts[:2] == ["api", "session"] and parts[3] == "findings":
+            self._route_findings_post(parts[2], parts[4:])
             return
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "session":
             self._route_session_post(parts[2], parts[3])
@@ -643,6 +652,32 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._route_machine_post(parts[2], parts[3])
             return
         self._post_not_found(f"not found: {path}")
+
+    def _route_findings_post(self, session_id: str, rest: list[str]) -> None:
+        """Dispatch a finding action: `<finding-id>/<action>`, or `fix` for several findings."""
+        session_dir = model.session_dir_for(self.cwd, session_id)
+        if session_dir is None:
+            self._post_not_found(f"no session {session_id!r}")
+            return
+        if rest == ["fix"]:
+            body = FixManyBody.model_validate(self._read_body())
+            status, payload = review_routes.fix_many(
+                self.cwd,
+                session_dir,
+                body.finding_ids,
+                all_open=body.all_open,
+                request_id=body.request_id,
+                resume=body.resume,
+                config_paths=self.config_paths,
+            )
+        elif len(rest) == 2:
+            status, payload = review_routes.act(
+                self.cwd, session_dir, rest[0], rest[1], self._read_body(), self.config_paths
+            )
+        else:
+            self._post_not_found(f"not found: /api/session/{session_id}/findings/{'/'.join(rest)}")
+            return
+        self._send_json(payload, status=status)
 
     def _route_config_post(self, path: str) -> None:
         """Dispatch config leaf, entry and roster writes."""

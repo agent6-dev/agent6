@@ -173,6 +173,22 @@ function paintFindings(cards, state) {
   const counts = review.open_counts || {};
   host.appendChild(el('div', 'finding-counts', ['block', 'warn', 'nit'].map(s => (counts[s] || 0) + ' ' + s).join(' · ')));
   host.appendChild(el('div', 'muted', 'Review: ' + (review.summary || 'unknown')));
+  if (!cards._readOnly && review.findings.some(f => f.status === 'open')) {
+    // One steer for every open finding without a queued Fix; the per-finding Fix stays below.
+    const dead = notLive(state), all = el('button', 'mini', dead ? 'Resume to fix all open' : 'Fix all open');
+    all.onclick = async () => {
+      if (dead && !confirm('Resume this session to reproduce and fix every open finding?')) return;
+      all.disabled = true;
+      try {
+        const result = await postJSON(cards._base + '/findings/fix', {all_open: true, request_id: findingRequestId(), resume: dead});
+        toast(result.results.map(r => r.finding_id + ': ' + r.message).join('; '));
+        const snap = await getJSON(cards._base);
+        if (cards.findings.isConnected) paintRun(cards, snap);
+      } catch (e) { toast(e.message, true); }
+      finally { all.disabled = false; }
+    };
+    host.appendChild(all);
+  }
   const guard = reviewMergeReason(review);
   host.appendChild(el('div', guard ? 'err' : 'muted', guard || 'Merge: no open block findings.'));
   if (review.legacy_notice) host.appendChild(el('div', 'muted', review.legacy_notice));

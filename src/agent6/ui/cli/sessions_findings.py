@@ -113,20 +113,81 @@ def cmd_findings(session_id: str, *, all_findings: bool, as_json: bool) -> int:
     return 0
 
 
+def cmd_fix(
+    session_id: str,
+    finding_ids: tuple[str, ...],
+    *,
+    all_open: bool = False,
+    resume: bool = False,
+    request_id: str = "",
+    config_paths: tuple[pathlib.Path, ...] = (),
+) -> int:
+    """Submit one Fix steer for the named findings, or for every open one that has none queued.
+
+    Args:
+        session_id: The session selector.
+        finding_ids: The findings to fix, in order.
+        all_open: Fix every open finding without a queued Fix instead of naming them.
+        resume: Whether the operator confirmed resuming to fix.
+        request_id: The retry identity, or "" to generate one.
+        config_paths: The config overlays for a detached resume, in order.
+
+    Returns:
+        Zero for a recorded or queued action, 2 for a refusal or a failed delivery.
+    """
+    try:
+        saved = common.resolve_session_layout(pathlib.Path.cwd(), session_id)
+        view = review_actions.read_review(saved.session_dir)
+        if all_open:
+            finding_ids = review_actions.fixable_findings(saved.session_dir, view)
+            if not finding_ids:
+                common.error("no open finding without a queued Fix")
+                return 2
+        request = review_records.FindingAction(
+            request_id=request_id or uuid.uuid4().hex,
+            expected_version=view.version,
+            action="fix",
+            resume=resume,
+        )
+        results = review_actions.act_many(
+            saved.session_dir,
+            finding_ids,
+            request,
+            source="cli",
+            resume=lambda text: spawn.spawn_detached_resume(
+                pathlib.Path.cwd(), saved.session_id, steer=text, config_paths=config_paths
+            ),
+        )
+    except (
+        review_actions.ReviewActionError,
+        id.SessionIdError,
+        pydantic.ValidationError,
+        OSError,
+        ValueError,
+    ) as exc:
+        common.error(str(exc))
+        return 2
+    for result in results:
+        who = f"{result.finding_id}: " if len(results) > 1 else ""
+        print(
+            f"{saved.session_id}: {who}{result.message} "
+            f"(request {result.request_id}, version {result.version})"
+        )
+    return 2 if any(result.status == "failed" for result in results) else 0
+
+
 def cmd_action(
     session_id: str,
     finding_id: str,
-    action: Literal["fix", "resolve", "reopen"],
+    action: Literal["resolve", "reopen"],
     *,
     reason: str | None = None,
     disposition: str = "",
     duplicate_of: str | None = None,
     request_id: str = "",
     expected_version: int | None = None,
-    resume: bool = False,
-    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
-    """Submit an action and print its delivery result, never an inferred fix.
+    """Record a Resolve or Reopen and print its delivery result.
 
     Args:
         session_id: The session selector.
@@ -137,8 +198,6 @@ def cmd_action(
         duplicate_of: The original finding ID for a duplicate resolution.
         request_id: The retry identity, or "" to generate one.
         expected_version: The required review version, or None to use the current version.
-        resume: Whether the operator confirmed resuming to fix.
-        config_paths: The config overlays for a detached resume, in order.
 
     Returns:
         Zero for a recorded or queued action, 2 for a refusal or failed delivery.
@@ -159,17 +218,8 @@ def cmd_action(
             action=action,
             resolution=resolution,
             reason=reason if action == "reopen" else None,
-            resume=resume,
         )
-        result = review_actions.act(
-            saved.session_dir,
-            finding_id,
-            request,
-            source="cli",
-            resume=lambda text: spawn.spawn_detached_resume(
-                pathlib.Path.cwd(), saved.session_id, steer=text, config_paths=config_paths
-            ),
-        )
+        result = review_actions.act(saved.session_dir, finding_id, request, source="cli")
     except (
         review_actions.ReviewActionError,
         id.SessionIdError,

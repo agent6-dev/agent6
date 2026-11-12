@@ -279,6 +279,8 @@ agent6 sessions findings <id>                    # open findings and review vers
 agent6 sessions findings <id> --all --json        # include resolved findings and action history
 agent6 steer <id> --finding <finding-id>          # submit Fix to a live worker
 agent6 steer <id> --finding <finding-id> --resume # confirm Resume to fix for a stopped run
+agent6 steer <id> --finding A --finding B         # one steer carrying several findings
+agent6 steer <id> --all-findings                  # every open finding without a queued Fix
 agent6 sessions resolve <id> <finding-id> --as fixed --reason "Reproduced and corrected"
 agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
 ```
@@ -289,6 +291,8 @@ agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
   `fixed` records the operator's conclusion, not a verification result.
 - Fix builds its instruction from the stored finding and reviewed target, and asks the worker to reproduce the report before changing code.
   It leaves the finding open, queues behind a steer in flight, and refuses a second Fix of a finding whose Fix is still queued or of unknown delivery.
+- Several findings share one steer: a block per finding under one heading, one result line per finding.
+  `--all-findings` takes every open finding without a queued Fix; the web and TUI Findings card has **Fix all open** for the same.
 - `--resume` confirms the background resume of the same session.
   - A successful launch reports `run resumed to fix finding <id>`.
   - `; submission acknowledgement pending` means the worker has not yet recorded taking the instruction.

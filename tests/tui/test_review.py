@@ -252,7 +252,7 @@ def test_live_fix_uses_the_single_writer_bridge(tmp_path: pathlib.Path) -> None:
             pending = list(ipc.review_requests(saved.session_dir))
             assert len(pending) == 1
             request = review_actions.ActionRequest.model_validate_json(pending[0][1])
-            assert request.source == "tui" and request.finding_id == "f1"
+            assert request.source == "tui" and request.finding_ids == ("f1",)
             assert review_actions.read_review(saved.session_dir).version == 1
             review_actions.drain(event_log.EventSink(saved.logs_path), execution_id="live")
             finding = review_actions.read_review(saved.session_dir).findings[0]
@@ -444,6 +444,18 @@ def test_denied_gate_story_is_not_running(tmp_path: pathlib.Path) -> None:
     text = pane._story(folded, None).plain
     assert "denied" in text and "running" not in text and "None" not in text
     assert "run_commands" in text
+
+
+def test_fix_all_is_a_keymap_menu_and_footer_action() -> None:
+    """Findings exposes Fix all open beside the per-finding Fix on every control surface."""
+    from agent6.ui import keymap
+    from agent6.ui.tui import review
+
+    assert keymap.SCREEN_KEYS["findings"]["fix_all"] != keymap.SCREEN_KEYS["findings"]["fix"]
+    assert ("fix_all", keymap.REVIEW_TEXT["fix_all"]) in review.FindingsScreen.FOOTER
+    assert any(
+        item.action == "fix_all" for menu in review.FindingsScreen.MENUS for item in menu.items
+    )
 
 
 def test_receipt_is_a_keymap_menu_and_footer_action(tmp_path: pathlib.Path) -> None:

@@ -83,6 +83,7 @@ ANSWER_QUESTION = "Answer a question…"
 REVIEW_TEXT = {
     "back": "Back",
     "fix": "Fix",
+    "fix_all": "Fix all open",
     "resolve": "Resolve",
     "reopen": "Reopen",
     "refresh": "Refresh",
@@ -97,6 +98,8 @@ REVIEW_TEXT = {
     "cancel": "Cancel",
     "resume": "Resume to fix",
     "confirm": "Resume this run to reproduce finding {finding_id}? The finding stays open.",
+    "confirm_all": "Resume this run to reproduce every open finding? They stay open.",
+    "nothing_to_fix": "No open finding without a queued Fix.",
     "empty": "No recorded findings.",
     "summary": "Open: {block} block, {warn} warn, {nit} nit. Review: {completion}.",
     "detail": (
@@ -188,6 +191,7 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
     "findings": {
         "close": "escape,q",
         "fix": "f",
+        "fix_all": "F",
         "resolve": "s",
         "reopen": "o",
         "receipt": "e",

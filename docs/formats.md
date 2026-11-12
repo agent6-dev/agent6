@@ -2809,6 +2809,19 @@ Source: [`agent6.ui.web.server.PresetBody`](https://github.com/agent6-dev/agent6
 | `name` | `str` | The preset name. |
 | `repo` | `bool` | Whether to create it in the repo config rather than the global one. |
 
+### FixManyBody
+
+**Support: public.** A Fix of several findings, or of every open one without a queued Fix.
+
+Source: [`agent6.ui.web.server.FixManyBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `finding_ids` | `tuple[str, ...]` | The findings to fix, in order; empty with `all_open`. |
+| `all_open` | `bool` | Fix every open finding without a queued Fix. |
+| `request_id` | `str` | The caller's retry identity. |
+| `resume` | `bool` | Whether the operator confirmed resuming an idle session to fix. |
+
 ### ConfigSetBody
 
 **Support: public.** A config write; `unset` removes the key from the target layer instead.
