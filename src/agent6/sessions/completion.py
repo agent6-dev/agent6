@@ -32,7 +32,7 @@ class CompletionRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         response_stop_reason: The last provider response's stop reason.
         response_output_tokens: The last response's output tokens.
         reasoning_chars: The last response's reasoning character count.
-        tool_uses: Whether the last response requested tools.
+        asked_for_tools: Whether the last response requested tools.
     """
 
     text: str
@@ -45,7 +45,7 @@ class CompletionRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     response_stop_reason: str = ""
     response_output_tokens: int = 0
     reasoning_chars: int = 0
-    tool_uses: bool = False
+    asked_for_tools: bool = False
 
 
 def write_completion(session_dir: pathlib.Path, record: CompletionRecord) -> pathlib.Path:

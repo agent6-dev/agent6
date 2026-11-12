@@ -2573,7 +2573,7 @@ Source: [`agent6.sessions.completion.CompletionRecord`](https://github.com/agent
 | `response_stop_reason` | `str` | The last provider response's stop reason. |
 | `response_output_tokens` | `int` | The last response's output tokens. |
 | `reasoning_chars` | `int` | The last response's reasoning character count. |
-| `tool_uses` | `bool` | Whether the last response requested tools. |
+| `asked_for_tools` | `bool` | Whether the last response requested tools. |
 
 ### DispatchRecord
 
@@ -3882,11 +3882,11 @@ Source: [`agent6.viewmodel.state_types.SessionUsage`](https://github.com/agent6-
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `unmetered_tokens` | `int` | Fallback tokens across every execution, including settled descendants. |
-| `settled_lanes` | `tuple[str, ...]` | Child sessions whose spend is durably included in the journal. |
 | `usd` | `float` | The spend across every execution. |
 | `usd_partial` | `bool` | Some execution's model had no price, so `usd` is a lower bound. |
 | `plan_observed_points` | `float` | The plan movement observed across every execution, in points. |
+| `unmetered_tokens` | `int` | Fallback tokens across every execution, including settled descendants. |
+| `settled_lanes` | `tuple[str, ...]` | Child sessions whose spend is durably included in the journal. |
 
 ### ExecutionUsage
 

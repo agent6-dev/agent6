@@ -182,11 +182,11 @@ def verdict_from_completion(
     assert record is not None
     obj = llm_json.extract_json(record.text, prefer=("verdict", "findings"))
     if obj is None or (
-        scope == "repo" and record.tool_uses and not ({"verdict", "findings"} & obj.keys())
+        scope == "repo" and record.asked_for_tools and not ({"verdict", "findings"} & obj.keys())
     ):
         error = (
             f"repo: no verdict within {max_calls} calls"
-            if scope == "repo" and record.tool_uses
+            if scope == "repo" and record.asked_for_tools
             else no_verdict_error(record)
         )
         return review_records.ReviewVerdict(

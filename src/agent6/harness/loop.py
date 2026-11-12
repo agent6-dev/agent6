@@ -1594,7 +1594,9 @@ class Harness:
                     )
                     if self._contract_response
                     else 0,
-                    tool_uses=bool(self._contract_response and self._contract_response.tool_uses),
+                    asked_for_tools=bool(
+                        self._contract_response and self._contract_response.tool_uses
+                    ),
                 ),
             )
         return loop_snapshot.SessionResult(
