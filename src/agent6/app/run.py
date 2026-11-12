@@ -23,7 +23,7 @@ from agent6.app import (
     fork_worktrees,
     preflight,
     review_directive,
-    session_runtime,
+    session_prepare,
     session_setup,
     stamps,
     workdirs,
@@ -32,12 +32,9 @@ from agent6.app import (
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
-from agent6.harness import repo_context
-from agent6.providers import TranscriptSink
-from agent6.sessions import event_log, id, ipc, lock, process
+from agent6.sessions import id, ipc, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.tools import operator_prompts
 from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import listing
 
@@ -162,27 +159,20 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             f" {top}. Run it from there, or run without --worktree."
         )
         return 2
-    # Refuse an unanswerable run before anything is created, so its id stays free.
-    tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
-    refusal = preflight.headless_approval_refusal(
-        cfg,
-        tui_enabled=tui_enabled,
-        # A fresh run has no dir yet, so the env is the only away answer.
-        away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
-        can_ask=frontend.capabilities.can_ask,
-        clamped=kinds.session_kind(mode).clamps_commands,
-    )
-    if refusal is not None:
-        reporter.refuse(refusal)
-        return 2
-    parking = preflight.headless_parking_note(
-        cfg,
-        tui_enabled=tui_enabled,
-        away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
-        can_ask=frontend.capabilities.can_ask,
-    )
-    if parking is not None:
-        reporter.note(parking)
+    # Refuse an unanswerable run before anything is created, so its id stays free. A fresh run
+    # has no dir yet, so the env is the only away answer.
+    try:
+        tui_enabled = session_prepare.headless_check(
+            cfg,
+            frontend,
+            tui=tui,
+            interactive=interactive,
+            mode=mode,
+            away=os.environ.get("AGENT6_DETACHED_AWAY", ""),
+            reporter=reporter,
+        )
+    except preflight.SessionRefusedError as refusal:
+        return refusal.rc
     # Before isolation: its budget preflight prices the model from the refreshed listing.
     if not preflight.route_preflight(
         cfg, role, reporter=reporter, model_flag=session_setup.route_text(model)
@@ -191,17 +181,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     # A worktree run selects below, once the worktree its commands run in exists.
     isolation: kinds.IsolationLevel | None = None
     if not worktree:
-        # The lease comes before the pack scan, so no pack can be written under a live run.
-        if not lock.hold_workspace(cwd):
-            reporter.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
-            return 2
         try:
-            isolation = session_runtime.select_isolation(
-                cfg,
-                cwd=cwd,
-                confirm_unconfined=frontend.confirm_unconfined_autorun,
-                reporter=reporter,
-                worktree_git_dir=worktree_git_dir,
+            isolation = session_prepare.hold_workspace_and_select_isolation(
+                cfg, cwd, frontend=frontend, reporter=reporter, worktree_git_dir=worktree_git_dir
             )
         except preflight.SessionRefusedError as refusal:
             return refusal.rc
@@ -317,15 +299,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     worker_lock_fd: int | None = None
     try:
         if checkout is not None:
-            if not lock.hold_workspace(cwd):
-                reporter.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
-                return 2
-            isolation = session_runtime.select_isolation(
-                cfg,
-                cwd=cwd,
-                confirm_unconfined=frontend.confirm_unconfined_autorun,
-                reporter=reporter,
-                worktree_git_dir=worktree_git_dir,
+            isolation = session_prepare.hold_workspace_and_select_isolation(
+                cfg, cwd, frontend=frontend, reporter=reporter, worktree_git_dir=worktree_git_dir
             )
             if cfg.git.control == "model" and isolation != "none":
                 # The repository git dir lies outside the worktree: read-only to jailed commands.
@@ -337,12 +312,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 )
                 return 2
         assert isolation is not None  # selected before the git preflight, or on the worktree
-        layout.ensure()
         # One writer per session dir, taken before any shared state is touched.
-        worker_lock_fd = lock.acquire_single_writer(layout.session_dir)
-        if worker_lock_fd is None:
-            reporter.err(lock.SINGLE_WRITER_BUSY.format(rid=effective_session_id))
-            return 2
+        worker_lock_fd = session_prepare.take_single_writer(layout, reporter=reporter)
     except preflight.SessionRefusedError as refusal:
         return refusal.rc
     finally:
@@ -361,12 +332,6 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     untracked_at_start: frozenset[str] = frozenset()
     run_branch: str | None = None
     detach_requested = False
-
-    def _undo_forker() -> tuple[str, str] | None:
-        # Lazy: app.fork imports app.resume, which imports this module.
-        from agent6.app import undo  # noqa: PLC0415
-
-        return undo.undo_fork(config_paths, effective_session_id, cwd=repo, reporter=reporter)
 
     try:
         # A reused dir carries the previous execution's bridge state.
@@ -405,19 +370,10 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             discard_husk_dir(layout.session_dir)
             return 2
 
-        transcript_sink = TranscriptSink(layout.transcripts_dir, objects_dir=layout.objects_dir)
-        events = event_log.EventSink(layout.logs_path)
-        # The execution's one gate to the operator, whichever front-end answers.
-        prompts = operator_prompts.OperatorPrompts(
-            approver=frontend.build_approver(layout.session_dir),
-            questioner=frontend.build_questioner(layout.session_dir),
-            journal=events.emit,
-            session_dir=layout.session_dir,
-        )
-
-        session_runtime.warn_install_inside_workspace(cwd, reporter=reporter)
-        for line in repo_context.agents_md_notices(cwd, cfg.sandbox.hide_paths):
-            reporter.note(line)
+        channels = session_prepare.operator_channels(layout, frontend)
+        events, prompts = channels.events, channels.prompts
+        transcript_sink = channels.transcript_sink
+        session_prepare.workspace_notices(cwd, cfg, reporter=reporter)
 
         # Written before the gates below, which park rather than refuse; the rewrite keeps
         # the park, which the execution's start clears.
@@ -569,22 +525,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 budget=budget,
                 reporter=reporter,
             )
-            gate_before = cfg.harness.verify_command
-            cfg = preflight.drop_gate_if_unrunnable(
-                cfg, session_dir=layout.session_dir, reporter=reporter
-            )
             source = lane_gate_source or ("configured" if configured_gate else "inferred")
-            stamps.pin_gate(
-                layout.session_dir,
-                sessions_manifest.GateStamp(
-                    command=gate_before,
-                    source=source if gate_before else "",
-                    availability="withheld"
-                    if gate_before and not cfg.harness.verify_command
-                    else "ready",
-                ),
-                events=events,
-                reporter=reporter,
+            cfg, _withheld = session_prepare.settle_gate(
+                cfg, layout, source=source, events=events, reporter=reporter
             )
             return cfg
 
@@ -612,7 +555,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 untracked_at_start=untracked_at_start,
                 # Written for every mode: `agent6 resume` reaches an ask too.
                 resume_state_path=layout.session_dir / "loop_state.json",
-                undo_forker=_undo_forker,
+                undo_forker=session_prepare.undo_forker(
+                    config_paths, effective_session_id, cwd=repo, reporter=reporter
+                ),
                 prompts=prompts,
                 # The REPL prints and saves each turn itself.
                 ask_transcript_task=None if interactive else task,

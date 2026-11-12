@@ -66,8 +66,9 @@ A commit lands on the session's chain after a turn that changed the tree.
 
 ## The run lifecycle
 
-`app/run.py`'s `run_task` composes the run's stages.
-The diagram draws them in call order: refusals and clamps, the route preflight, isolation, git preflight, the manifest, provider construction, target preparation, gate inference, tool assembly, the loop, then auto-merge and the end report.
+`app/run.py`'s `run_task` composes the run's stages; `app/resume.py`'s `resume_task` composes a resume's.
+The steps both share (the workspace lease and isolation, the session's writer lock, the headless check, the journal, transcript and operator channels, the gate pin) live in `app/session_prepare.py`, and each lifecycle calls them in its own order.
+The diagram draws the run's in call order: refusals and clamps, the route preflight, isolation, git preflight, the manifest, provider construction, target preparation, gate inference, tool assembly, the loop, then auto-merge and the end report.
 The stash finalize is last because it runs from `finally`, on every exit path, refusals included.
 
 <!-- diagram: run-lifecycle -->

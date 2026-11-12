@@ -78,23 +78,23 @@ A commit lands on the session's chain after a turn that changed the tree.
 
 ## The run lifecycle
 
-`app/run.py`'s `run_task` composes the run's stages.
-The diagram draws them in call order: refusals and clamps, the route preflight, isolation, git preflight, the manifest, provider construction, target preparation, gate inference, tool assembly, the loop, then auto-merge and the end report.
+`app/run.py`'s `run_task` composes the run's stages; `app/resume.py`'s `resume_task` composes a resume's.
+The steps both share (the workspace lease and isolation, the session's writer lock, the headless check, the journal, transcript and operator channels, the gate pin) live in `app/session_prepare.py`, and each lifecycle calls them in its own order.
+The diagram draws the run's in call order: refusals and clamps, the route preflight, isolation, git preflight, the manifest, provider construction, target preparation, gate inference, tool assembly, the loop, then auto-merge and the end report.
 The stash finalize is last because it runs from `finally`, on every exit path, refusals included.
 
 ```mermaid
 graph TD
     n_run_task["run_task"]
     n_session_config["session_config"]
-    n_headless_approval_refusal["headless_approval_refusal"]
+    n_headless_check["headless_check"]
     n_route_preflight["route_preflight"]
-    n_select_isolation["select_isolation"]
+    n_hold_workspace_and_select_isolation["hold_workspace_and_select_isolation"]
     n_git_preflight["git_preflight"]
     n_write_session_manifest["write_session_manifest"]
     n_build_session_providers["build_session_providers"]
     n_infer_verify_if_unset["infer_verify_if_unset"]
-    n_drop_gate_if_unrunnable["drop_gate_if_unrunnable"]
-    n_pin_gate["pin_gate"]
+    n_settle_gate["settle_gate"]
     n_build_session_tools["build_session_tools"]
     n_wf_resume["wf.resume"]
     n_wf_run["wf.run"]
@@ -104,16 +104,15 @@ graph TD
     n_fire_notify_hook["fire_notify_hook"]
     n_end_auto_stash["end_auto_stash"]
     n_run_task --> n_session_config
-    n_session_config --> n_headless_approval_refusal
-    n_headless_approval_refusal --> n_route_preflight
-    n_route_preflight --> n_select_isolation
-    n_select_isolation --> n_git_preflight
+    n_session_config --> n_headless_check
+    n_headless_check --> n_route_preflight
+    n_route_preflight --> n_hold_workspace_and_select_isolation
+    n_hold_workspace_and_select_isolation --> n_git_preflight
     n_git_preflight --> n_write_session_manifest
     n_write_session_manifest --> n_build_session_providers
     n_build_session_providers --> n_infer_verify_if_unset
-    n_infer_verify_if_unset --> n_drop_gate_if_unrunnable
-    n_drop_gate_if_unrunnable --> n_pin_gate
-    n_pin_gate --> n_build_session_tools
+    n_infer_verify_if_unset --> n_settle_gate
+    n_settle_gate --> n_build_session_tools
     n_build_session_tools --> n_wf_resume
     n_wf_resume --> n_wf_run
     n_wf_run --> n_finalize_auto_merge

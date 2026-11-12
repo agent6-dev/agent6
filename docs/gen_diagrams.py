@@ -182,13 +182,12 @@ def _calls_in_order(
 # The run lifecycle's stages worth drawing; the extractor reads their order from the source.
 _RUN_LIFECYCLE_TIER = (
     "session_config",
-    "headless_approval_refusal",
+    "headless_check",
     "route_preflight",
-    "select_isolation",
+    "hold_workspace_and_select_isolation",
     "git_preflight",
     "infer_verify_if_unset",
-    "drop_gate_if_unrunnable",
-    "pin_gate",
+    "settle_gate",
     "write_session_manifest",
     "build_session_providers",
     "build_session_tools",

@@ -90,3 +90,18 @@ def test_the_model_flag_survives_a_detach() -> None:
         "p/m",
     ]
     assert session_setup.override_flags(None, None, None) == []
+
+
+def test_both_lifecycles_share_the_preparation_steps() -> None:
+    """A preparation step wired into one lifecycle cannot be missing from the other."""
+    for step in (
+        "hold_workspace_and_select_isolation",
+        "take_single_writer",
+        "headless_check",
+        "operator_channels",
+        "workspace_notices",
+        "undo_forker",
+        "settle_gate",
+    ):
+        assert _calls(agent6.app.run, step) >= 1, step
+        assert _calls(agent6.app.resume, step) == 1, step

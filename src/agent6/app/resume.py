@@ -24,7 +24,7 @@ from agent6.app import (
     resume_questions,
     resume_tree,
     run,
-    session_runtime,
+    session_prepare,
     session_setup,
     stamps,
     workspace_setup,
@@ -36,13 +36,9 @@ from agent6.config import (
     ConfigError,
 )
 from agent6.harness import loop_snapshot, repo_context
-from agent6.providers import (
-    TranscriptSink,
-)
-from agent6.sessions import event_log, id, ipc, lock, process
+from agent6.sessions import id, ipc, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.tools import operator_prompts
 from agent6.vcs import git_read
 from agent6.viewmodel import listing, session_log
 
@@ -267,10 +263,10 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         )
         return 2
     # One writer per session dir, taken before any shared state is touched.
-    worker_lock_fd = lock.acquire_single_writer(layout.session_dir)
-    if worker_lock_fd is None:
-        reporter.err(lock.SINGLE_WRITER_BUSY.format(rid=session_id))
-        return 2
+    try:
+        worker_lock_fd: int | None = session_prepare.take_single_writer(layout, reporter=reporter)
+    except preflight.SessionRefusedError as refusal:
+        return refusal.rc
     # A finished run has nothing to continue without --steer; every other ending resumes.
     scan = session_log.scan_session_log(layout.logs_path)
     new_work = listing.needs_new_work(
@@ -488,14 +484,11 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
 
         if manifest.worktree is not None and manifest.worktree_git_dir is not None:
             cfg = cfg.with_hidden_in_checkout(manifest.worktree_git_dir.parent, cwd)
-        if not lock.hold_workspace(cwd):
-            reporter.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
-            return 2
         try:
-            isolation = session_runtime.select_isolation(
+            isolation = session_prepare.hold_workspace_and_select_isolation(
                 cfg,
-                cwd=cwd,
-                confirm_unconfined=frontend.confirm_unconfined_autorun,
+                cwd,
+                frontend=frontend,
                 reporter=reporter,
                 worktree_git_dir=manifest.worktree_git_dir,
             )
@@ -511,46 +504,28 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 reporter.error(str(exc))
                 return 2
 
-        transcript_sink = TranscriptSink(layout.transcripts_dir, objects_dir=layout.objects_dir)
-        events = event_log.EventSink(layout.logs_path)
-        # The execution's one gate to the operator, whichever front-end answers.
-        prompts = operator_prompts.OperatorPrompts(
-            approver=frontend.build_approver(layout.session_dir),
-            questioner=frontend.build_questioner(layout.session_dir),
-            journal=events.emit,
-            session_dir=layout.session_dir,
-            first_question=carried.next_number,
-            pending=carried.pending,
-            undelivered=tuple(
-                late for late in carried.late_answers if late.id not in snapshot.delivered_questions
-            ),
+        channels = session_prepare.operator_channels(
+            layout, frontend, carried=carried, delivered=snapshot.delivered_questions
         )
+        events, prompts = channels.events, channels.prompts
+        transcript_sink = channels.transcript_sink
+        session_prepare.workspace_notices(cwd, cfg, reporter=reporter)
 
-        session_runtime.warn_install_inside_workspace(cwd, reporter=reporter)
-        for line in repo_context.agents_md_notices(cwd, cfg.sandbox.hide_paths):
-            reporter.note(line)
-
-        tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
-        refusal = preflight.headless_approval_refusal(
-            cfg,
-            tui_enabled=tui_enabled,
-            # The raw env first, so a typo refuses here as on run; else the recorded choice.
-            away=os.environ.get("AGENT6_DETACHED_AWAY", "")
-            or ipc.effective_away(layout.session_dir),
-            can_ask=frontend.capabilities.can_ask,
-            clamped=kinds.session_kind(mode).clamps_commands,
-        )
-        if refusal is not None:
-            reporter.refuse(refusal)
-            return 2
-        parking = preflight.headless_parking_note(
-            cfg,
-            tui_enabled=tui_enabled,
-            away=ipc.effective_away(layout.session_dir),
-            can_ask=frontend.capabilities.can_ask,
-        )
-        if parking is not None:
-            reporter.note(parking)
+        try:
+            tui_enabled = session_prepare.headless_check(
+                cfg,
+                frontend,
+                tui=tui,
+                interactive=interactive,
+                mode=mode,
+                # The raw env first, so a typo refuses here as on run; else the recorded choice.
+                away=os.environ.get("AGENT6_DETACHED_AWAY", "")
+                or ipc.effective_away(layout.session_dir),
+                parking_away=ipc.effective_away(layout.session_dir),
+                reporter=reporter,
+            )
+        except preflight.SessionRefusedError as refusal:
+            return refusal.rc
 
         def _gate(
             cfg: Config, _budget: budget.BudgetTracker, _available: Callable[[str], bool]
@@ -567,12 +542,14 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             if reused:
                 cfg = cfg.with_verify_command(replay_gate)
             # Dropped last when commands are withheld, so nothing hands the gate back.
-            gate_before = cfg.harness.verify_command
-            cfg = preflight.drop_gate_if_unrunnable(
-                cfg, session_dir=layout.session_dir, reporter=reporter
+            cfg, withheld = session_prepare.settle_gate(
+                cfg,
+                layout,
+                source="configured" if execution_configured else pinned.source or "inferred",
+                events=events,
+                reporter=reporter,
             )
             # A withheld gate is neither a reuse nor a change.
-            withheld = bool(gate_before) and not cfg.harness.verify_command
             if reused and not withheld:
                 reporter.note(
                     f"reusing this run's verify command: {preflight.gate_text(replay_gate)}"
@@ -585,25 +562,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                     f" was {preflight.gate_text(pinned.command)},"
                     f" now {preflight.gate_text(cfg.harness.verify_command)}"
                 )
-            stamps.pin_gate(
-                layout.session_dir,
-                sessions_manifest.GateStamp(
-                    command=gate_before,
-                    source=("configured" if execution_configured else pinned.source or "inferred")
-                    if gate_before
-                    else "",
-                    availability="withheld" if withheld else "ready",
-                ),
-                events=events,
-                reporter=reporter,
-            )
             return cfg
-
-        def _undo_forker() -> tuple[str, str] | None:
-            # Lazy: app.fork imports this module.
-            from agent6.app import undo  # noqa: PLC0415
-
-            return undo.undo_fork(config_paths, session_id, cwd=repo, reporter=reporter)
 
         untracked_at_start = sessions_layout.read_untracked_at_start(layout.session_dir)
         hidden = git_read.hidden_in_repo(cwd, cfg.sandbox.hide_paths)
@@ -784,7 +743,9 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 base_sha=resume_base_sha,
                 untracked_at_start=untracked_at_start,
                 resume_state_path=snapshot_path,
-                undo_forker=_undo_forker,
+                undo_forker=session_prepare.undo_forker(
+                    config_paths, session_id, cwd=repo, reporter=reporter
+                ),
                 prompts=prompts,
                 # The follow-up this execution answered, not the original task.
                 ask_transcript_task=steer.strip() or manifest.user_task,
