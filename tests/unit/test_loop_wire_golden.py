@@ -20,7 +20,8 @@ import pathlib
 import types
 from typing import Any
 
-from agent6.harness import compaction_window, loop, loop_conversation, operator_bridge, run_chain
+from agent6.harness import loop, loop_conversation, operator_bridge, run_chain
+from agent6.harness.compaction import window as compaction_window
 from agent6.providers import ProviderResponse
 from agent6.tools import mcp_client, results
 

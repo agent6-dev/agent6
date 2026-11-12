@@ -11,7 +11,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agent6.harness import compaction_elision, compaction_rules, loop_conversation
+from agent6.harness import loop_conversation
+from agent6.harness.compaction import elision as compaction_elision
+from agent6.harness.compaction import rules as compaction_rules
 
 
 def _add_call(

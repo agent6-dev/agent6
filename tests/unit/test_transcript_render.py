@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.harness import compaction_elision
+from agent6.harness.compaction import elision as compaction_elision
 from agent6.sessions import process
 from agent6.viewmodel import transcript_render
 

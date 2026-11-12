@@ -22,13 +22,10 @@ import pydantic
 from agent6 import budget, kinds
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
-from agent6.harness import (
-    advice,
-    compaction_elision,
-    compaction_rules,
-    compaction_window,
-    loop_conversation,
-)
+from agent6.harness import advice, loop_conversation
+from agent6.harness.compaction import elision as compaction_elision
+from agent6.harness.compaction import rules as compaction_rules
+from agent6.harness.compaction import window as compaction_window
 from agent6.prompts import compaction
 from agent6.providers import Provider, ProviderError
 from agent6.sessions import journal

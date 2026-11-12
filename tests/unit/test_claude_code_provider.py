@@ -29,7 +29,7 @@ from agent6 import budget as agent6_budget
 from agent6 import portable
 from agent6.app import role_providers
 from agent6.config import Config
-from agent6.harness import compaction_elision
+from agent6.harness.compaction import elision as compaction_elision
 from agent6.providers import (
     ProviderAborted,
     ProviderError,

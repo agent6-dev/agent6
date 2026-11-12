@@ -26,7 +26,8 @@ import pytest
 from agent6 import kinds
 from agent6.config import Config, load_config
 from agent6.graph import curator, models
-from agent6.harness import compaction_elision, nudges, tool_effects
+from agent6.harness import nudges, tool_effects
+from agent6.harness.compaction import elision as compaction_elision
 from agent6.sandbox import jail_session
 from agent6.sessions import layout
 from agent6.tools import dispatch, operator_prompts, result_format, results, tool_errors

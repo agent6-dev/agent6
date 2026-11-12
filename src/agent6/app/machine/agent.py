@@ -35,7 +35,8 @@ from agent6 import errors, kinds, paths
 from agent6.app import confine, role_providers, session_runtime, session_setup, workspace_setup
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
-from agent6.harness import compaction_window, loop, operator_bridge, run_chain, subrun
+from agent6.harness import loop, operator_bridge, run_chain, subrun
+from agent6.harness.compaction import window as compaction_window
 from agent6.machine import AgentExecResult, AgentRequest, validate_record_payload
 from agent6.providers import Provider, TranscriptSink
 from agent6.sandbox import jail

@@ -12,13 +12,10 @@ import pydantic
 import pytest
 
 from agent6 import kinds
-from agent6.harness import (
-    compaction_elision,
-    compaction_rules,
-    compaction_window,
-    loop_conversation,
-    run_chain,
-)
+from agent6.harness import loop_conversation, run_chain
+from agent6.harness.compaction import elision as compaction_elision
+from agent6.harness.compaction import rules as compaction_rules
+from agent6.harness.compaction import window as compaction_window
 
 
 def _add_exchange(

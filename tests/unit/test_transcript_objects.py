@@ -8,7 +8,8 @@ from typing import Any
 import pytest
 
 from agent6 import paths, portable
-from agent6.harness import compaction_rules, loop_conversation, loop_snapshot
+from agent6.harness import loop_conversation, loop_snapshot
+from agent6.harness.compaction import rules as compaction_rules
 from agent6.providers import provider_types
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import history_transcripts, sessions_transcript

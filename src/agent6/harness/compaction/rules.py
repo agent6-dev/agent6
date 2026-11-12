@@ -19,7 +19,8 @@ import json
 import re
 
 from agent6 import media
-from agent6.harness import compaction_elision, loop_conversation
+from agent6.harness import loop_conversation
+from agent6.harness.compaction import elision as compaction_elision
 from agent6.tools import schema
 
 ASK_USER_TOOL = schema.AskUserInput.TOOL_NAME

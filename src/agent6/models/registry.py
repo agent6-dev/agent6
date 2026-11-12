@@ -57,7 +57,7 @@ BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
 _CHARS_PER_TOKEN = 4
 _DROP_FRACTION = 0.45
 _RESERVE_TOKENS = 16_384
-# Unknown-window fallback mirrors harness.compaction_window's drop and summarise thresholds.
+# Unknown-window fallback mirrors harness.compaction.window's drop and summarise thresholds.
 _FALLBACK_DROP_CHARS = 256_000
 _FALLBACK_SUMMARISE_CHARS = 768_000
 

@@ -41,9 +41,6 @@ from agent6.graph import curator as graph_curator
 from agent6.graph import models, order
 from agent6.harness import (
     advice,
-    compaction_driver,
-    compaction_elision,
-    compaction_window,
     dag_focus,
     finish_gates,
     guards,
@@ -69,6 +66,9 @@ from agent6.harness import (
     verify_gate,
     verify_verdict,
 )
+from agent6.harness.compaction import driver as compaction_driver
+from agent6.harness.compaction import elision as compaction_elision
+from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import history as review_history
 from agent6.harness.review import panel as review_panel

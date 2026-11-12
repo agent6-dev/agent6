@@ -20,8 +20,6 @@ import pytest
 
 from agent6.config import Config
 from agent6.harness import (
-    compaction_driver,
-    compaction_elision,
     loop,
     loop_conversation,
     loop_resume,
@@ -32,6 +30,8 @@ from agent6.harness import (
     provider_call,
     run_chain,
 )
+from agent6.harness.compaction import driver as compaction_driver
+from agent6.harness.compaction import elision as compaction_elision
 from agent6.sessions import journal
 from agent6.tools import dispatch, results, tool_errors
 

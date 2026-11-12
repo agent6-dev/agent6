@@ -10,7 +10,8 @@ import re
 from collections.abc import Sequence
 
 from agent6 import media
-from agent6.harness import compaction_elision, loop_conversation
+from agent6.harness import loop_conversation
+from agent6.harness.compaction import elision as compaction_elision
 from agent6.providers import Provider, provider_types
 
 # Chars, not tokens: tokens are roughly chars/4 for English-shaped content.

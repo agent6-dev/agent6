@@ -8,13 +8,13 @@ from typing import TYPE_CHECKING, Any
 
 from agent6 import errors, portable
 from agent6.harness import (
-    compaction_rules,
     loop_conversation,
     loop_snapshot,
     loop_state,
     metric_rules,
     operator_bridge,
 )
+from agent6.harness.compaction import rules as compaction_rules
 from agent6.prompts import compaction as prompts_compaction
 from agent6.sessions import journal
 

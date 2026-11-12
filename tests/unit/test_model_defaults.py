@@ -12,7 +12,9 @@ import pytest
 from agent6 import kinds, paths
 from agent6.app import preflight, role_providers, session_runtime, session_setup
 from agent6.config import layer, layer_data, model, validation
-from agent6.harness import compaction_driver, compaction_elision, compaction_window
+from agent6.harness.compaction import driver as compaction_driver
+from agent6.harness.compaction import elision as compaction_elision
+from agent6.harness.compaction import window as compaction_window
 from agent6.machine import schema, semantics
 from agent6.providers import provider_types
 from agent6.sessions import event_log

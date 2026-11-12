@@ -24,7 +24,6 @@ from agent6 import kinds, lane_records
 from agent6.config import Config
 from agent6.harness import (
     advice,
-    compaction_window,
     finish_gates,
     guards,
     loop,
@@ -41,6 +40,7 @@ from agent6.harness import (
     tool_effects,
     verify_verdict,
 )
+from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as review_gate
 from agent6.providers import ProviderError, ProviderResponse
 from agent6.sandbox import tool_paths

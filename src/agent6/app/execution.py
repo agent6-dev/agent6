@@ -40,14 +40,8 @@ from agent6.app import frontend as app_frontend
 from agent6.app import lanes as app_lanes
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, RoleName
-from agent6.harness import (
-    compaction_window,
-    loop,
-    loop_snapshot,
-    operator_bridge,
-    provider_call,
-    run_chain,
-)
+from agent6.harness import loop, loop_snapshot, operator_bridge, provider_call, run_chain
+from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as review_gate
 from agent6.providers import TranscriptSink
 from agent6.sandbox import jail

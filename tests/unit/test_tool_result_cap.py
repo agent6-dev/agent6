@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 
-from agent6.harness import compaction_elision
+from agent6.harness.compaction import elision as compaction_elision
 
 
 def test_small_payload_passes_through_unchanged() -> None:

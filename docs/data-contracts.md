@@ -141,7 +141,7 @@ The loop-owned conversation: typed messages over the provider wire.
 **Conversation** &mdash; The history as frozen messages plus the rolling cache-mark pair.
 
 - **Written by:** harness/loop
-- **Read by:** harness/{compaction_driver, compaction_rules, compaction_window, loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, provider_call, quiet_turns, standing_goal, verify_gate}
+- **Read by:** harness/{loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, provider_call, quiet_turns, standing_goal, verify_gate}, harness/compaction/{driver, rules, window}
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (35 test files exercise it)
 
 ## SessionManifest
@@ -295,7 +295,7 @@ The task-graph nodes and the intents that mutate them.
 | `graph_version` | `int` | `0` |
 
 - **Written by:** graph/{curator, storage}
-- **Read by:** app/merge, graph/{order, replay}, harness/{advice, compaction_driver, dag_focus, guards, loop, operator_tasks, parallel_join}, tools/{dag_tools, schema}, viewmodel/state
+- **Read by:** app/merge, graph/{order, replay}, harness/{advice, dag_focus, guards, loop, operator_tasks, parallel_join}, harness/compaction/driver, tools/{dag_tools, schema}, viewmodel/state
 - **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (22 test files exercise it)
 
 ## Run/machine wire snapshot
