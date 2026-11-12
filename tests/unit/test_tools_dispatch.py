@@ -10,6 +10,7 @@ import os
 import pathlib
 import socket
 import tempfile
+import time
 from collections.abc import Callable
 from unittest import mock
 
@@ -221,6 +222,21 @@ def test_a_queued_ask_user_returns_pending_on_the_wire(tmp_path: pathlib.Path) -
         "; queued: the answers arrive as a message at a later turn, or on resume"
     )
     assert d.operator_wait_s == 0.0
+
+
+def test_a_waiting_ask_user_counts_the_operators_time(tmp_path: pathlib.Path) -> None:
+    """The dispatcher's operator wait is its prompts' own count, which the loop subtracts."""
+
+    def questioner(
+        _request: operator_prompts.QuestionRequest, /
+    ) -> operator_prompts.QuestionAnswer:
+        time.sleep(0.05)
+        return operator_prompts.QuestionAnswer(("a",), "frontend")
+
+    prompts = operator_prompts.OperatorPrompts(questioner=questioner, session_dir=tmp_path)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path), prompts=prompts)
+    d.dispatch("ask_user", {"questions": [{"question": "which?", "options": ["a", "b"]}]})
+    assert d.operator_wait_s == prompts.waited_s >= 0.05
 
 
 def test_default_questioner_headless_returns_empty(tmp_path: pathlib.Path) -> None:

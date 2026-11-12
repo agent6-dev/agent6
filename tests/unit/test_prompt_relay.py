@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import time
 
 import pytest
 
@@ -55,6 +56,7 @@ class _Parent:
         self.rows: list[journal.Event] = []
         self._answer = answer
         self._answers = answers or operator_prompts.QuestionAnswer((), "frontend")
+        self.think_s = 0.0
         self.prompts = operator_prompts.OperatorPrompts(
             approver=self._approve,
             questioner=self._ask,
@@ -64,12 +66,14 @@ class _Parent:
 
     def _ask(self, request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         self.questions.append(request)
+        time.sleep(self.think_s)
         return self._answers
 
     def _approve(
         self, request: operator_prompts.ApprovalRequest, /
     ) -> operator_prompts.ApprovalAnswer:
         self.asked.append(request)
+        time.sleep(self.think_s)
         # A front-end's literal answer sets the standing choice as it is recorded.
         approved = ipc.record_answer(self.dir, self._answer, request.scope)
         return operator_prompts.ApprovalAnswer(approved=approved, source="frontend")
@@ -284,3 +288,20 @@ def test_a_relayed_question_keeps_within_the_length_a_question_may_have(
     text = asked.questions[0].question
     assert len(text) == schema.QUESTION_MAX_CHARS
     assert text.startswith("[lane 1 child] xxx") and text.endswith("x\u2026")
+
+
+def test_a_relayed_prompts_wait_counts_as_the_parents_operator_wait(tmp_path: pathlib.Path) -> None:
+    """The time the operator takes over a child's prompt is the parent's operator wait.
+
+    Only the parent's own tool calls counted it, so a parent waiting on a lane's approval
+    read eleven minutes of that as time with no edit and no verify.
+    """
+    parent = _Parent(tmp_path)
+    parent.think_s = 0.05
+    parent.relay()(_child(tmp_path, _prompt()), "lane 1 child")
+    after_approval = parent.prompts.waited_s
+    assert after_approval >= 0.05
+    other = tmp_path / "second"
+    other.mkdir()
+    parent.relay()(_child(other, _question()), "lane 2 child")
+    assert parent.prompts.waited_s >= after_approval + 0.05

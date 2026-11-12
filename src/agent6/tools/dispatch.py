@@ -171,8 +171,6 @@ class ToolDispatcher:
         )
         # The call being dispatched, per thread: concurrent review seats share one dispatcher.
         self._gating = threading.local()
-        # Seconds blocked on the operator; the loop subtracts them from its wall clock.
-        self.operator_wait_s = 0.0
         self._curator = curator
         # Read by the tool list: the DAG tools answer "no curator" for a run built without one.
         self.dag_available = curator is not None
@@ -667,12 +665,13 @@ class ToolDispatcher:
             )
 
     def _approve(self, prompt: str, *, scope: str | None = None) -> bool:
-        """Return the operator's answer to an approval, counting the wait as operator time."""
-        started = time.monotonic()
-        try:
-            return self._prompts.approve(prompt, scope=scope, call_id=self._gating_call_id())
-        finally:
-            self.operator_wait_s += time.monotonic() - started
+        """Return the operator's answer to an approval of the call being dispatched."""
+        return self._prompts.approve(prompt, scope=scope, call_id=self._gating_call_id())
+
+    @property
+    def operator_wait_s(self) -> float:
+        """Seconds this execution's prompts spent blocked on the operator."""
+        return self._prompts.waited_s
 
     def _not_approved(self, name: str) -> tool_errors.ToolDeniedError:
         """Return the refusal for an unapproved command.
@@ -1077,16 +1076,9 @@ class ToolDispatcher:
         return self.parallel_handler(request.model_dump(), origin)
 
     def _ask_user(self, raw: dict[str, Any]) -> results.ToolResult:
-        """Return the operator's answers to the model's questions, counting the wait as theirs."""
+        """Return the operator's answers to the model's questions."""
         args = schema.AskUserInput.model_validate(raw)
-        started = time.monotonic()
-        try:
-            answer = self._prompts.ask(
-                args.questions, call_id=self._gating_call_id(), wait=args.wait
-            )
-        finally:
-            if args.wait:
-                self.operator_wait_s += time.monotonic() - started
+        answer = self._prompts.ask(args.questions, call_id=self._gating_call_id(), wait=args.wait)
         return results.AnswersResult(
             id=answer.id,
             answers=None if answer.status == "pending" else answer.answers,

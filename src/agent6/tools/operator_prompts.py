@@ -14,6 +14,7 @@ import dataclasses
 import itertools
 import pathlib
 import sys
+import time
 from typing import Literal, Protocol
 
 from agent6 import portable
@@ -235,6 +236,9 @@ class OperatorPrompts:
         self._pending: dict[str, QuestionRequest] = {request.id: request for request in pending}
         # Answers an earlier execution journaled and never read: the first collection has them.
         self._undelivered = list(undelivered)
+        # Seconds spent blocked on the operator, a relayed child's prompts included; the loop
+        # subtracts them from its wall clock.
+        self.waited_s = 0.0
 
     def approve(self, prompt: str, *, scope: str | None = None, call_id: int | None = None) -> bool:
         """Ask, unless a standing grant for the scope already answers.
@@ -272,7 +276,11 @@ class OperatorPrompts:
                 call_id=call_id,
             )
         )
-        answer = self._approver(request)
+        started = time.monotonic()
+        try:
+            answer = self._approver(request)
+        finally:
+            self.waited_s += time.monotonic() - started
         self._journal(
             journal.ApprovalAnswer(id=request.id, approved=answer.approved, source=answer.source)
         )
@@ -330,7 +338,11 @@ class OperatorPrompts:
                 " or on resume",
                 id=request.id,
             )
-        answer = self._questioner(request)
+        started = time.monotonic()
+        try:
+            answer = self._questioner(request)
+        finally:
+            self.waited_s += time.monotonic() - started
         if len(answer.answers) > len(questions):
             raise ValueError(
                 f"{answer.source} answered {len(questions)} questions"
