@@ -86,6 +86,8 @@ class ExecutionInputs:
         pins: The pinned notes.
         resuming: Whether this is a resumed execution.
         resume_steer: The steer that started this resumed execution.
+        operator_edits: The paths the operator changed between executions and left in the
+            tree for the run; the model hears their names at its first turn.
         worktree_git_dir: The recorded repository git dir of a session in a linked worktree,
             granted to its jail beyond the workspace.
         worker_lock_fd: The lifecycle's held session writer lock, shared with auto-merge.
@@ -115,6 +117,7 @@ class ExecutionInputs:
     pins: tuple[str, ...] = ()
     resuming: bool = False
     resume_steer: str = ""
+    operator_edits: tuple[str, ...] = ()
     worktree_git_dir: pathlib.Path | None = None
     worker_lock_fd: int | None = None
     base_rules: str | None = None
@@ -551,6 +554,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             budget=budget,
             state_dir=state_dir,
             resume_state_path=inputs.resume_state_path,
+            operator_edits=inputs.operator_edits,
             mode=mode,
             plan_output_path=(layout.session_dir / "plan.md" if mode == "plan" else None),
             review=review_gate.ReviewSettings(

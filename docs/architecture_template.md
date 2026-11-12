@@ -611,6 +611,7 @@ An included tree that is exactly an unmerged run's tip is recorded (`includes` i
 
 Every end the loop reaches records the tree the run left (`session.stop.tree`), and a resume applies the same policy to the paths that differ from it: those changed outside the run.
 `stash` sets aside those tracked changes, including staged renames and deletions.
+`include` leaves them in place and names them to the model before its first call.
 It refuses when the run also changed one of those paths, since stashing it would take the run's work with the edit.
 A resume after a death, a detach or an older session has no recorded tree: the changes no commit has and no tool of the run wrote follow the same policy, and its note names what the next commit takes.
 

@@ -180,10 +180,13 @@ class Settled:
     Attributes:
         stashed: Whether it stashed them.
         pop: Whether the operator chose the stash at the question, so the end applies it back.
+        kept: The paths left in the tree for the run; the model hears their names at its
+            first turn, so it rereads them instead of writing over the operator's change.
     """
 
     stashed: bool = False
     pop: bool = False
+    kept: tuple[str, ...] = ()
 
 
 def settle(
@@ -215,7 +218,7 @@ def settle(
         What was done, or None when the resume is refused or cancelled (already reported).
     """
     if not outside or policy == "include":
-        return Settled()
+        return Settled(kept=tuple(outside))
     asked = policy == "ask"
     if asked:
         choice = preflight.dirty_tree_choice(
@@ -238,7 +241,7 @@ def settle(
             reporter.refuse("not resuming: the working tree is left as it is")
             return None
         if choice == "include":
-            return Settled()
+            return Settled(kept=tuple(outside))
         left = end_tree or seed or ""
         if shared := _also_the_runs(cwd, left, outside):
             reporter.refuse(_shared_refusal(cwd, shared, end_tree=left, run_branch=run_branch))

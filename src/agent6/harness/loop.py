@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, media, paths, task_text
+from agent6 import errors, media, paths, task_text, terminal
 from agent6.config import Config
 from agent6.context import memory as agent6_memory
 from agent6.context import skills
@@ -115,6 +115,8 @@ class Harness:
             fresh runs only, a resume restores pins from the snapshot.
         resume_state_path: Where the provider-agnostic resume snapshot is written before
             every model call; None writes none.
+        operator_edits: The paths the operator changed between executions and left in the
+            tree; a resumed execution names them to the model before its first call.
         standing_goal: The operator's `run --standing` goal, seeded under the root; "" is none.
         base_rules: A review session's base-tree AGENTS.md, which binds it in place of the
             checkout's; None outside a review.
@@ -158,6 +160,7 @@ class Harness:
     media_rejections: provider_call.MediaRejections = dataclasses.field(default_factory=dict)
     initial_pins: Sequence[str] = ()
     resume_state_path: pathlib.Path | None = None
+    operator_edits: Sequence[str] = ()
     standing_goal: str = ""
     base_rules: str | None = None
     # The gate a resumed execution carried from the last one, set before the state is built.
@@ -360,6 +363,17 @@ class Harness:
                 " Any earlier notice withholding the gate"
                 " applied only to that execution. This is not a verify verdict."
             )
+        if self.operator_edits:
+            # The model's last read of these files is stale; said before the steer that
+            # started this execution, so the steer stays the operator's last word.
+            shown = [terminal.printable_name(p) for p in self.operator_edits[:8]]
+            more = len(self.operator_edits) - len(shown)
+            names = ", ".join(shown) + (f", +{more} more" if more else "")
+            conversation.notice(
+                f"[harness] The operator changed {names} since the last execution and left the"
+                " edits uncommitted in the working tree. Read them before editing them."
+            )
+            self.log(f"LOOP: operator edits kept in the tree: {names}")
 
         return self._drive_loop(
             system=snapshot.system,

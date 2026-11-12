@@ -780,6 +780,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 # The follow-up this execution answered, not the original task.
                 ask_transcript_task=steer.strip() or manifest.user_task,
                 resume_steer=steer,
+                operator_edits=stashed.kept,
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,
                 resuming=True,

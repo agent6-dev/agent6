@@ -157,10 +157,12 @@ class GitConfig(pydantic.BaseModel):
             "answer, with cancellation parking the run for resume; stashes are restored per "
             "`git.auto_stash_pop`, otherwise a printed restore command names the stash by "
             "sha and the worktree directory without switching branches; included changes "
-            "mark an unmerged run merged on landing if its work matches exactly; untracked "
-            "files are never counted or committed; `--parallel` refuses asking; resume "
-            "applies the same policy to changes since the last execution, refusing stash if "
-            "the run also changed a file"
+            "mark an unmerged run merged on landing if its work matches exactly; files "
+            "already untracked at the start stay out of the run's commits, and files the run "
+            "creates are its own; `--parallel` refuses asking; a resume applies the same "
+            "policy to changes since the last execution, the run's own files included, "
+            "refuses stash if the run also changed a file, and names included files to the "
+            "model"
         ),
     )
     auto_stash_pop: bool = pydantic.Field(

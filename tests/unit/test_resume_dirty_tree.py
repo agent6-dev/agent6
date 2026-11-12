@@ -53,11 +53,13 @@ class _Scripted:
     def __init__(self, script: list[_Step], *, before_call: Any = None) -> None:
         self.script = script
         self.calls = 0
+        self.requests: list[list[dict[str, Any]]] = []  # the messages of each call
         self._before = before_call
 
-    def call(self, **_kw: Any) -> ProviderResponse:
+    def call(self, **kw: Any) -> ProviderResponse:
         if self._before is not None:
             self._before(self.calls)
+        self.requests.append(list(kw.get("messages", ())))
         text, tools = self.script[min(self.calls, len(self.script) - 1)]
         self.calls += 1
         return ProviderResponse(
@@ -149,9 +151,26 @@ def _stopped_run(
 
 
 def _resume(monkeypatch: pytest.MonkeyPatch, session_id: str, script: list[_Step]) -> int:
+    return _resume_recording(monkeypatch, session_id, script)[0]
+
+
+def _resume_recording(
+    monkeypatch: pytest.MonkeyPatch, session_id: str, script: list[_Step]
+) -> tuple[int, _Scripted]:
     prov = _Scripted(script)
     monkeypatch.setattr(role_providers, "build_role_provider", _use(prov))
-    return cli_main(["resume", session_id])
+    return cli_main(["resume", session_id]), prov
+
+
+def _user_texts(messages: list[dict[str, Any]]) -> list[str]:
+    """Return the text blocks of the user messages, in order."""
+    return [
+        block["text"]
+        for message in messages
+        if message["role"] == "user"
+        for block in message["content"]
+        if isinstance(block, dict) and block.get("type") == "text"
+    ]
 
 
 def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[schema.UserQuestion]:
@@ -635,3 +654,70 @@ def test_the_restore_recipe_names_the_file_as_it_is_not_as_it_prints(
     )
     assert ":(top,literal)" not in text and "typed as the listing spells it" in text
     assert not [line for line in text.splitlines() if line.startswith("[agent6]")]
+
+
+@pytest.mark.parametrize("policy", ['dirty_tree = "include"\n', ""])
+def test_resume_names_the_files_the_operator_kept_in_the_tree_to_the_model(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, policy: str
+) -> None:
+    """An outside edit kept for the run is named to the model before its first call.
+
+    Without the notice the model holds the file as it last read it and writes over the
+    operator's change. The run's own file, unchanged, is not named.
+    """
+    repo = _setup(tmp_path, monkeypatch, policy)
+    _stopped_run(repo, monkeypatch, "tree-TELL01", _edit("z.txt", "1\n"))
+    (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
+    _answering_frontend(monkeypatch, "include")
+
+    rc, prov = _resume_recording(monkeypatch, "tree-TELL01", [_finish()])
+
+    assert rc == 0
+    told = [t for t in _user_texts(prov.requests[0]) if "since the last execution" in t]
+    assert len(told) == 1
+    assert "a.py" in told[0] and "z.txt" not in told[0]
+    assert (repo / "a.py").read_text(encoding="utf-8") == "x = 2\n"
+
+
+def test_resume_says_nothing_to_the_model_about_a_stashed_outside_edit(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stashed edit is not in the tree the model works on, so the model does not hear of it."""
+    repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\n')
+    _stopped_run(repo, monkeypatch, "tree-TELL02", _edit("z.txt", "1\n"))
+    (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
+
+    rc, prov = _resume_recording(monkeypatch, "tree-TELL02", [_finish()])
+
+    assert rc == 0
+    assert not any("since the last execution" in t for t in _user_texts(prov.requests[0]))
+
+
+@pytest.mark.parametrize(("answer", "rc"), [("include", 0), ("stash", 2)])
+def test_resume_counts_a_file_the_run_created_and_someone_deleted(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    answer: str,
+    rc: int,
+) -> None:
+    """A file the run created and lost after it ended is a change from outside.
+
+    The resume asks about it; included, the model hears which file went; a stash is refused,
+    since the run also changed it. The docs once promised untracked files were never counted.
+    """
+    repo = _setup(tmp_path, monkeypatch, "")
+    _stopped_run(repo, monkeypatch, "tree-GONE01", _edit("z.txt", "1\n"))
+    (repo / "z.txt").unlink()
+    asked = _answering_frontend(monkeypatch, answer)
+    capsys.readouterr()
+
+    got, prov = _resume_recording(monkeypatch, "tree-GONE01", [_finish()])
+
+    assert got == rc
+    assert len(asked) == 1 and "z.txt" in asked[0].question
+    if rc == 0:
+        told = [t for t in _user_texts(prov.requests[0]) if "since the last execution" in t]
+        assert len(told) == 1 and "z.txt" in told[0]
+    else:
+        assert "the run also changed it" in capsys.readouterr().err
