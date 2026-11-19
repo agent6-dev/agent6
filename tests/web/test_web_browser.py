@@ -266,9 +266,7 @@ def test_config_model_editor_saves_one_qualified_leaf(
         "value": '"p/vendor/new"',
         "repo": False,
     }
-    expect(page.get_by_role("button", name="edit models.worker.model", exact=True)).to_contain_text(
-        "p/vendor/new"
-    )
+    expect(page.locator('[data-key="models.worker.model"]')).to_contain_text("p/vendor/new")
     expect(dialog).to_have_count(0)
     assert tomllib.loads(config.read_text())["models"]["worker"] == {
         "model": "p/vendor/new",
@@ -491,7 +489,9 @@ def test_config_save_keeps_filter_scroll_and_row_focus(
     ) as saved:
         dialog.get_by_role("button", name=action, exact=True).click()
     assert saved.value.ok, saved.value.text()
-    expect(row.locator(".val")).to_have_text('"deny"' if action == "Save" else '"ask"')
+    expect(page.locator('[data-key="sandbox.run_commands"] .val')).to_have_text(
+        '"deny"' if action == "Save" else '"ask"'
+    )
     expect(dialog).to_have_count(0)
     expect(search).to_have_value("sandbox.")
     assert rows.all_text_contents() == before
@@ -648,9 +648,7 @@ def test_the_model_editor_selects_qualified_suggestions_without_saving(
     ) as saved:
         dialog.get_by_role("button", name="Save", exact=True).click()
     assert saved.value.ok, saved.value.text()
-    expect(page.get_by_role("button", name="edit models.worker.model", exact=True)).to_contain_text(
-        "newer-than-catalog"
-    )
+    expect(page.locator('[data-key="models.worker.model"]')).to_contain_text("newer-than-catalog")
     expect(dialog).to_have_count(0)
     text = cfg.read_text()
     assert (

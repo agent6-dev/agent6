@@ -51,8 +51,15 @@ textarea.field.cfg-value {
    monospace; the source, the layer a value comes from, is smaller and muted. */
 .cfg .key, .cfg .val, .cfg .source { overflow-wrap: anywhere; font-family: var(--mono); }
 .cfg tr.mod .key { color: var(--accent); }
-/* A row opens its editor: the pointer lights it, as the other pages' rows. */
+/* A row opens its editor: the pointer lights it, as the other pages' rows. Its key is its edit
+   button, which reads as the key; the row draws the button's focus ring. */
 .cfg tr[data-key] { cursor: pointer; }
+.cfg .cfg-edit {
+  display: block; width: 100%; min-height: 0; min-width: 0; padding: 0; border: 0; border-radius: 0;
+  background: none; font: inherit; color: inherit; text-align: left; cursor: inherit;
+}
+.cfg .cfg-edit:focus-visible { outline: none; }
+.cfg tr:has(.cfg-edit:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
 @media (hover: hover) { .cfg tr[data-key]:hover { background: var(--surface2); } }
 .cfg .source { color: var(--muted); font-size: 12px; }
 @container (width >= 700px) {

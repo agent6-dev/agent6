@@ -290,7 +290,7 @@ def test_a_save_keeps_the_folded_sections_and_the_edited_row_in_view(
     folded = page.locator("details.cfg-section:not([open]) > summary").all_inner_texts()
     assert folded == ["git", "harness"]
     row = page.locator('[data-key="web.port"]')
-    assert row.evaluate("e => e === document.activeElement")
+    assert row.evaluate("e => e.contains(document.activeElement)")
     box = row.bounding_box()
     assert box is not None
     assert box["y"] >= 0
@@ -501,4 +501,89 @@ def test_every_config_remove_reads_as_destructive(
     page.locator('[data-key="review.reviewers"]').click()
     reviewer = page.get_by_role("dialog").get_by_role("button", name="Remove reviewer")
     assert reviewer.evaluate(STYLE, "color") == red
+    assert not errors
+
+
+def test_a_config_row_keeps_its_cells_for_a_screen_reader(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Each row was one button named `edit <key>`: its value and source cells read as nothing."""
+    page, errors = open_page(port)
+    _config(page, port)
+    cdp = page.context.new_cdp_session(page)
+    nodes = cdp.send("Accessibility.getFullAXTree")["nodes"]
+    named = {(n.get("role", {}).get("value"), n.get("name", {}).get("value")) for n in nodes}
+    assert ("button", "edit agent6.preset") in named
+    assert ("cell", '"none"') in named
+    assert not errors
+
+
+def test_a_config_rows_edit_button_carries_the_settings_description(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The row's edit button, which takes the focus, had no description: the row's title had it."""
+    page, errors = open_page(port)
+    _config(page, port)
+    title = page.locator('[data-key="budget.max_usd"]').get_attribute("title")
+    assert title
+    assert title.startswith("cap on the metered spend of one run")
+    cdp = page.context.new_cdp_session(page)
+    nodes = cdp.send("Accessibility.getFullAXTree")["nodes"]
+    described = {
+        n["name"]["value"]: n.get("description", {}).get("value")
+        for n in nodes
+        if n.get("role", {}).get("value") == "button" and "name" in n
+    }
+    assert described["edit budget.max_usd"] == " ".join(title.split())
+    assert not errors
+
+
+def test_a_config_value_reads_whole_to_a_screen_reader(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Chrome read each <wbr> in a value as a space: `"https:/ / openrouter.ai/ api/ v1"`."""
+    _global_config(
+        '[providers.openrouter]\nbackend = "openai"\nbase_url = "https://openrouter.ai/api/v1"\n'
+    )
+    page, errors = open_page(port)
+    _config(page, port)
+    cdp = page.context.new_cdp_session(page)
+    nodes = cdp.send("Accessibility.getFullAXTree")["nodes"]
+    cells = {n["name"]["value"] for n in nodes if n.get("role", {}).get("value") == "cell"}
+    assert '"https://openrouter.ai/api/v1"' in cells
+    assert not errors
+
+
+def test_a_drag_across_a_config_value_selects_it_without_opening_the_editor(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A row opened its editor on any click, so a drag never left the value selected to copy.
+
+    A plain click, and Enter on the row's key, still open the editor.
+    """
+    _global_config(
+        '[providers.openrouter]\nbackend = "openai"\nbase_url = "https://openrouter.ai/api/v1"\n'
+    )
+    page, errors = open_page(port)
+    _config(page, port)
+    row = page.locator('[data-key="providers.openrouter.base_url"]')
+    text = row.locator(".val").evaluate(
+        """e => { const r = document.createRange(); r.selectNodeContents(e);
+        const b = r.getBoundingClientRect(); return [b.left, b.right, b.top + b.height / 2]; }"""
+    )
+    left, right, middle = text
+    page.mouse.move(left + 1, middle)
+    page.mouse.down()
+    page.mouse.move(right - 1, middle, steps=8)
+    page.mouse.up()
+    page.wait_for_timeout(300)
+    assert page.locator("dialog[open]").count() == 0
+    assert "openrouter.ai/api/v1" in page.evaluate("String(getSelection())")
+    row.click()
+    dialog = page.get_by_role("dialog")
+    assert dialog.locator("h2").inner_text() == "providers.openrouter.base_url"
+    page.keyboard.press("Escape")
+    dialog.wait_for(state="detached")
+    row.get_by_role("button").press("Enter")
+    assert dialog.locator("h2").inner_text() == "providers.openrouter.base_url"
     assert not errors

@@ -33,7 +33,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     return renderConfig(gen, () => ({
       filter: filter.value, modified, x: window.scrollX, y: window.scrollY,
       folded: folds(),
-      key: document.activeElement?.getAttribute('data-key'),
+      key: rows.find(row => row.edit === document.activeElement)?.key,
       filtering: document.activeElement === filter,
     }));
   };
@@ -89,15 +89,30 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
       box.appendChild(tbl); card.appendChild(box); sections.set(section, box);
     }
     const tr = el('tr', s.modified ? 'mod' : '');
-    tr.appendChild(breakableCell('key', k, '.'));
-    tr.appendChild(breakableCell('val', s.display, '/')); // the one shared value column (viewmodel.display_value)
-    tr.appendChild(breakableCell('source', esc(s.source), '/'));
+    // The key is the row's edit button, so the row keeps its cells for a screen reader. A click
+    // anywhere on the row presses it, unless the pointer moved between press and release: that
+    // drag selects text to copy.
+    const edit = breakable(el('button', 'cfg-edit'), k, '.');
+    edit.type = 'button'; edit.setAttribute('aria-label', 'edit ' + k); edit.setAttribute('aria-haspopup', 'dialog');
+    tr.appendChild(el('td', 'key')).appendChild(edit);
+    tr.appendChild(breakable(el('td', 'val'), s.display, '/')); // the one shared value column (viewmodel.display_value)
+    tr.appendChild(breakable(el('td', 'source'), esc(s.source), '/'));
     // Hover text: the leaf's meaning (the docs table cell), from the same
-    // per-key payload the editor dialog shows it in.
+    // per-key payload the editor dialog shows it in. The edit button, which takes the focus,
+    // carries it as its description.
     tr.title = s.description ? (s.description_points || [s.description]).join('\n') : 'click to edit';
+    if (s.description) edit.setAttribute('aria-description', tr.title);
     tr.setAttribute('data-key', k);
-    actionable(tr, () => { tr.focus({preventScroll: true}); editConfig(k, s, registry.tables, refresh, data); }, 'edit ' + k);
-    tbl.appendChild(tr); rows.push([k.toLowerCase(), tr, s.modified, sections.get(section)]);
+    let press = null;
+    tr.onpointerdown = e => { press = [e.clientX, e.clientY]; };
+    tr.onclick = e => {
+      const dragged = press && e.detail && Math.hypot(e.clientX - press[0], e.clientY - press[1]) > 4;
+      press = null;
+      if (dragged) return;
+      edit.focus({preventScroll: true});
+      editConfig(k, s, registry.tables, refresh, data);
+    };
+    tbl.appendChild(tr); rows.push({key: k, tr, edit, box: sections.get(section), mod: s.modified});
   }
   // While the filter or Modified only narrows the rows, every section with a match shows open; the
   // folds come back when both clear. A line says when nothing matches.
@@ -110,8 +125,8 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     const narrowing = q !== '' || modified;
     if (narrowing && !narrowed) folded = folds();
     const shown = new Set();
-    for (const [key, tr, isModified, box] of rows) {
-      const show = key.includes(q) && (!modified || isModified);
+    for (const {key, tr, box, mod} of rows) {
+      const show = key.toLowerCase().includes(q) && (!modified || mod);
       tr.style.display = show ? '' : 'none';
       if (show) shown.add(box);
     }
@@ -127,20 +142,20 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
   filter.oninput();
   if (state.y !== undefined) window.scrollTo(state.x, state.y);
   // The focus goes back to the edited row, scrolled into view if the page moved it.
-  const focused = rows.find(([, tr]) => tr.getAttribute('data-key') === state.key && tr.style.display !== 'none');
+  const focused = rows.find(row => row.key === state.key && row.tr.style.display !== 'none');
   if (state.filtering || (state.key && !focused)) filter.focus({preventScroll: true});
-  else if (focused) { focused[1].focus({preventScroll: true}); focused[1].scrollIntoView({block: 'nearest'}); }
+  else if (focused) { focused.edit.focus({preventScroll: true}); focused.tr.scrollIntoView({block: 'nearest'}); }
 }
-// A table cell whose text may wrap after each `mark` (a key's dots, a value's or a path's
-// slashes): a <wbr> marks the place, so a copy of the text holds no extra character.
-function breakableCell(cls, text, mark) {
-  const cell = el('td', cls);
+// Fill `node` with text that may wrap after each `mark` (a key's dots, a value's or a path's
+// slashes): a <wbr> marks the place, so a copy of the text holds no extra character. The <wbr> is
+// hidden from screen readers, as Chrome reads it as a space.
+function breakable(node, text, mark) {
   const parts = String(text).split(mark);
   parts.forEach((part, i) => {
-    if (i) cell.appendChild(el('wbr'));
-    cell.appendChild(document.createTextNode(i < parts.length - 1 ? part + mark : part));
+    if (i) node.appendChild(el('wbr')).setAttribute('aria-hidden', 'true');
+    node.appendChild(document.createTextNode(i < parts.length - 1 ? part + mark : part));
   });
-  return cell;
+  return node;
 }
 // The preset the page edits, read off the payload's `agent6.preset` row; '' for none.
 function selectedPreset(data) {

@@ -71,7 +71,6 @@ const writes = [], confirmations = [], notices = [];
 function boot() {}
 function setCrumb() {}
 function esc(text) { return text; }
-function actionable(node, fn) { node.onclick = fn; }
 function composing(e) { return e.isComposing || e.keyCode === 229; }
 function toast(text, error) { notices.push({text, error}); }
 function confirm(text) { confirmations.push(text); return accept; }
@@ -102,6 +101,7 @@ const field = name => {
 const described = name => all(dialog()).find(e => e.id === field(name)['aria-describedby']);
 const checkbox = () => all(dialog()).find(e => e.type === 'checkbox');
 const row = key => all(view).find(e => e.tag === 'tr' && e.children[0]?.textContent === key);
+const edit = key => row(key).children[0].children[0];  // the key cell's button
 async function run() {
   token = (await request('/api/login', {secret})).token;
   await renderConfig();
@@ -231,13 +231,13 @@ async function run() {
   await button('Save', dialog()).onclick();
   assert.equal(row('sandbox.run_commands').children[1].textContent, '"allow"');
   assert.equal(search().value, 'sandbox.');
-  assert.equal(document.activeElement, row('sandbox.run_commands'));
+  assert.equal(document.activeElement, edit('sandbox.run_commands'));
   assert.equal(window.scrollY, 140);
   row('sandbox.run_commands').onclick();
   await button('Unset', dialog()).onclick();
   assert.equal(row('sandbox.run_commands').children[1].textContent, '"ask"');
   assert.equal(search().value, 'sandbox.');
-  assert.equal(document.activeElement, row('sandbox.run_commands'));
+  assert.equal(document.activeElement, edit('sandbox.run_commands'));
   await postJSON('/api/config/entry', {
     table: 'providers', name: 'b', fields: {backend: 'openai', base_url: 'http://localhost:2'},
   });
