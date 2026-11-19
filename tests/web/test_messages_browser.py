@@ -431,9 +431,10 @@ def test_a_timed_message_waits_while_the_pointer_rests_on_it(
     page.clock.run_for(10_000)
     expect(timed).to_be_visible()
     page.mouse.move(0, 0)
-    page.clock.run_for(3_900)
+    # The installed clock also runs in real time between steps: each check keeps a second of slack.
+    page.clock.run_for(3_000)
     expect(timed).to_be_visible()
-    page.clock.run_for(200)
+    page.clock.run_for(2_000)
     expect(timed).to_have_count(0)
     assert not errors
 
