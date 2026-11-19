@@ -1065,7 +1065,12 @@ function makeConv(url, box, body) {
       const div = el('div', 'ci' + (it.full ? ' exp' : ''));
       if (it.full) {
         div.title = expanded ? 'click to collapse' : 'click to expand';
-        div.onclick = () => { conv.open.set(i, !expanded); paintItems(); };
+        div.onclick = () => {
+          // A drag that selects text inside the item ends in a click: it keeps the selection.
+          const picked = getSelection();
+          if (!picked.isCollapsed && div.contains(picked.anchorNode)) return;
+          conv.open.set(i, !expanded); paintItems();
+        };
       }
       for (const line of lines) {
         const ln = el('div');
@@ -1087,6 +1092,10 @@ function makeConv(url, box, body) {
     if (conv.closed || !box.isConnected) return; // closed or navigated away: don't fetch or paint stale
     let data; try { data = await getJSON(url); } catch (_) { return; }
     if (!box.isConnected) return;
+    // A live run refreshes on every frame; a repaint of the same items would drop a selection.
+    const key = JSON.stringify(data.items || []);
+    if (key === conv.itemsKey) return;
+    conv.itemsKey = key;
     conv.items = data.items || [];
     paintItems();
   };

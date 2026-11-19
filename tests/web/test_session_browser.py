@@ -315,3 +315,58 @@ def test_a_fan_outs_children_table_leaves_the_conversation_its_share(
     assert box["height"] <= 900 * 0.3
     assert conversation["height"] > 300
     assert not errors
+
+
+def test_a_drag_inside_a_conversation_item_selects_its_text(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A drag across an expandable item leaves its text selected and the item as it was.
+
+    The drag ended in a click that toggled the item, and its repaint dropped the selection.
+    """
+    from playwright.sync_api import expect
+
+    argv = ["sh", "-c", "echo " + "word " * 400]
+    rows = [
+        {"type": "tool.call", "name": "run_command", "args_preview": {"argv": argv}},
+        {"type": "tool.result", "name": "run_command", "ok": True, "summary": "exit 0"},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
+    ]
+    _session(tmp_path, "drag-AAA111", rows)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/drag-AAA111")
+    item = page.locator(".card-conv .ci.exp").filter(has=page.locator(".s-call"))
+    expect(item).to_have_attribute("title", "click to expand")
+    box = item.bounding_box()
+    assert box
+    page.mouse.move(box["x"] + 4, box["y"] + 8)
+    page.mouse.down()
+    page.mouse.move(box["x"] + 240, box["y"] + 8, steps=8)
+    page.mouse.up()
+    assert page.evaluate("getSelection().toString()").startswith("→ run_command")
+    expect(item).to_have_attribute("title", "click to expand")
+    assert not errors
+
+
+def test_a_live_runs_conversation_keeps_a_selection_across_frames(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A frame that adds no conversation item leaves the conversation's nodes and selection.
+
+    Every frame refolded the conversation and repainted it, dropping a selection within a second.
+    """
+    from playwright.sync_api import expect
+
+    call = {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}}
+    session = _session(tmp_path, "live-AAA111", [call], live=True)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/live-AAA111")
+    item = page.locator(".card-conv .ci").filter(has=page.locator(".s-call"))
+    expect(item).to_be_visible()
+    item.evaluate("e => getSelection().selectAllChildren(e)")
+    refolded = page.expect_response(lambda response: response.url.endswith("/conversation"))
+    with refolded, (session / "logs.jsonl").open("a") as log:
+        log.write(json.dumps({"type": "budget.update", "usd_total": 0.5}) + "\n")
+    page.wait_for_timeout(200)  # the response's paint
+    assert page.evaluate("getSelection().toString()").startswith("→ read_file")
+    assert not errors
