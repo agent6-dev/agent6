@@ -388,6 +388,90 @@ def test_the_last_session_row_scrolls_clear_of_the_dock(
     assert not errors
 
 
+@pytest.mark.parametrize(("width", "height"), [(640, 400), (512, 384), (390, 500), (390, 600)])
+def test_a_short_screens_dock_fits_between_the_bars_and_covers_no_row(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    width: int,
+    height: int,
+) -> None:
+    """On a short screen the open dock slid under the header and hid the row the keyboard reached.
+
+    A window at 200% zoom or a phone under its keyboard: a message rose off the top with the dock.
+    At 600px the sticky dock filled the room; at the page's end a message covered Start.
+    """
+    from playwright.sync_api import expect
+
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs"
+    for i in range(24):
+        run = runs / f"row-{i:02d}-AAAAAA"
+        run.mkdir(parents=True)
+        start = {"type": "session.start", "mode": "run", "user_task": f"Task {i}"}
+        (run / "logs.jsonl").write_text(json.dumps(start) + "\n", encoding="utf-8")
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": height})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".item")).to_have_count(24)
+    page.evaluate("clearInterval(hubTimer)")  # a refresh must not repaint mid-walk
+    summary = page.locator(".dock .picker-summary")
+    summary.click()
+    page.locator(".dock .pickers").get_by_role("button", name="advanced", exact=True).click()
+    page.locator(".dock textarea").fill("\n".join(f"step {n}" for n in range(12)))  # 40dvh tall
+    # Scroll and hit-test in one task: what a click at each control's centre would reach.
+    reached = """() => {
+      window.scrollTo(0, document.scrollingElement.scrollHeight);
+      return ['.dock .picker-summary', '.dock button.primary'].map(s => {
+        const b = document.querySelector(s).getBoundingClientRect();
+        return !!document.elementFromPoint(b.x + 8, b.y + b.height / 2)?.closest(s);
+      });
+    }"""
+    assert page.evaluate(reached) == [True, True]
+    summary.focus()
+    clear = """() => {
+      const row = document.activeElement.closest('.item').getBoundingClientRect();
+      const dock = document.querySelector('.dock').getBoundingClientRect();
+      const tabs = document.querySelector('nav.tabs').getBoundingClientRect();
+      return row.top >= document.querySelector('header').getBoundingClientRect().bottom
+        && row.bottom <= Math.min(dock.top, tabs.top);
+    }"""
+    for _ in range(3):
+        page.keyboard.press("Shift+Tab")
+        assert page.evaluate(clear)
+    # A message raised at the page's end shows between the bars, off the dock's Start.
+    message = """() => {
+      window.scrollTo(0, document.scrollingElement.scrollHeight);
+      toast('probe', true);
+      const t = document.querySelector('.toast').getBoundingClientRect();
+      const go = document.querySelector('.dock button.primary').getBoundingClientRect();
+      return [t.top >= document.querySelector('header').getBoundingClientRect().bottom,
+        t.bottom <= document.querySelector('nav.tabs').getBoundingClientRect().top,
+        t.bottom <= go.top || t.top >= go.bottom];
+    }"""
+    assert page.evaluate(message) == [True, True, True]
+    assert not errors
+
+
+def test_a_dock_at_the_pages_end_covers_no_height(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A dock that stopped sticking on a short screen still read as covering its height."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".dock")).to_be_visible()
+    covers = "getComputedStyle(document.documentElement).getPropertyValue('--dock-h') === "
+    height = "document.querySelector('.dock').getBoundingClientRect().height + 'px'"
+    page.wait_for_function(covers + height)
+    page.set_viewport_size({"width": 390, "height": 500})  # the dock stays at the page's end
+    page.wait_for_function(covers + "'0px'")
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.wait_for_function(covers + height)
+    assert not errors
+
+
 @pytest.mark.parametrize(("width", "height"), [(390, 844), (820, 1000)])
 def test_a_narrow_commit_message_takes_the_whole_row(
     open_page: Callable[[int], tuple[Page, list[str]]],

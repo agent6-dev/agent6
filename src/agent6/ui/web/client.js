@@ -923,7 +923,9 @@ function listCard(title, empty, rows) {
   list.addEventListener('focusin', (e) => {
     const it = e.target.closest('.item');
     if (it && it.rowKey !== stopKey) { stopKey = it.rowKey; settle(); }
-    if (!refocusing && e.target.matches(':focus-visible')) it?.scrollIntoView({ block: 'nearest' });
+    if (refocusing || !e.target.matches(':focus-visible')) return;
+    it?.scrollIntoView({ block: 'nearest' });
+    e.target.scrollIntoView({ block: 'nearest' }); // a row taller than the room keeps its focused control in view
   });
   card.show = (entries, hold) => {
     patchRows(list, entries.length ? entries.flatMap(rows)
@@ -1136,16 +1138,22 @@ function machineFilesCard() {
   return card;
 }
 
-// The page's docked composer's height (--dock-h): a row scrolled into view and the messages stop clear of it.
+// --dock-h: the height the docked composer covers, which a row scrolled into view and the messages stop clear of; at the page's end it covers 0.
 const dockHeight = new ResizeObserver((entries) => {
   for (const e of entries) {
     const h = e.borderBoxSize[0].blockSize;
-    document.documentElement.style.setProperty('--dock-h', h + 'px');
+    const covers = getComputedStyle(e.target).position === 'sticky' ? h : 0;
+    document.documentElement.style.setProperty('--dock-h', covers + 'px');
     if (!h) dockHeight.unobserve(e.target); // a dock that left the page reports 0
   }
 });
 // The hub, a run and a machine each paint their own dock.
 new MutationObserver(() => { const dock = view.querySelector('.composer.dock'); if (dock) dockHeight.observe(dock); }).observe(view, { childList: true });
+// At styles.css's 36em the hub's dock starts or stops sticking, often at one size: remeasure it.
+matchMedia('(height < 36em)').addEventListener('change', () => {
+  const dock = view.querySelector(':scope > .composer.dock');
+  if (dock) { dockHeight.unobserve(dock); dockHeight.observe(dock); }
+});
 async function renderHub(focus, gen) {
   const machinesTab = focus === 'machines';
   let data;

@@ -922,6 +922,48 @@ def test_typing_in_the_dock_or_pressing_review_keeps_the_list_still(
     assert not errors
 
 
+def test_a_focused_button_in_a_tall_row_shows_above_an_open_dock(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Above a tall open dock, a tall row's focused Review button sat under the dock."""
+    from playwright.sync_api import expect
+
+    for args in (
+        ("init", "-q", "-b", "master"),
+        ("config", "user.name", "t"),
+        ("config", "user.email", "t@example.invalid"),
+        ("commit", "-q", "--allow-empty", "-m", "base"),
+        ("branch", "agent6/review-BBBBBB"),
+    ):
+        subprocess.run(["git", "-C", str(tmp_path), *args], check=True)
+    for i in range(4):
+        _run(tmp_path, f"older-{i}-AAAAAA", f"Older {i}", STOP)
+    _manifest(tmp_path, "review-BBBBBB", run_branch="agent6/review-BBBBBB")
+    _run(tmp_path, "review-BBBBBB", "Review me", STOP)  # the newest: the older rows sit under it
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 600})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    review = page.locator(".item", has_text="review-BBBBBB").get_by_role("button", name="Review")
+    expect(review).to_be_visible()
+    page.evaluate("clearInterval(hubTimer)")  # a refresh must not repaint mid-walk
+    summary = page.locator(".dock .picker-summary")
+    summary.click()
+    page.locator(".dock .pickers").get_by_role("button", name="advanced", exact=True).click()
+    page.locator(".dock textarea").fill("\n".join(f"step {n}" for n in range(12)))  # 40dvh tall
+    page.evaluate("window.scrollTo(0, document.scrollingElement.scrollHeight)")
+    summary.focus()
+    for _ in range(12):
+        page.keyboard.press("Shift+Tab")
+        if review.evaluate("e => e === document.activeElement"):
+            break
+    expect(review).to_be_focused()
+    shown = """e => { const b = e.getBoundingClientRect();
+      return [b.top >= document.querySelector('header').getBoundingClientRect().bottom,
+        b.bottom <= document.querySelector('.dock').getBoundingClientRect().top]; }"""
+    assert review.evaluate(shown) == [True, True]
+    assert not errors
+
+
 def test_a_row_the_keyboard_reaches_scrolls_clear_of_the_dock(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
