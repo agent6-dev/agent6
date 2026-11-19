@@ -18,6 +18,7 @@ pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
 open_page = test_web_browser.open_page
 git_port = test_web_browser.git_port
+dirty_git_port = test_web_browser.dirty_git_port
 
 OpenPage = Callable[[int], tuple["Page", list[str]]]
 
@@ -32,4 +33,50 @@ def test_a_graph_row_shows_its_first_ref_and_counts_the_rest(
     row.wait_for()
     assert row.locator(".gref").all_inner_texts() == ["main", "+2"]
     assert row.locator(".gref", has_text="+2").get_attribute("title") == "origin/main, v2"
+    assert errors == [], errors
+
+
+def test_arrow_keys_move_between_graph_rows_and_tab_stops_at_one(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """Arrow keys scrolled the graph under a focused row, and every row was a tab stop.
+
+    A row's name lists the refs, subject, author and date it shows; its lanes are hidden.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    rows = page.locator(".gc-row")
+    rows.first.wait_for()
+    expect(page.locator(".git-graph [tabindex='0']")).to_have_count(1)
+    rows.first.focus()
+    page.keyboard.press("ArrowDown")
+    expect(rows.nth(1)).to_be_focused()
+    page.keyboard.press("End")
+    expect(rows.last).to_be_focused()
+    page.keyboard.press("Home")
+    expect(rows.first).to_be_focused()
+    expect(page.locator(".git-graph [tabindex='0']")).to_have_count(1)
+    # HEAD is the merge, where main, origin/main and v2 point.
+    name = rows.first.get_attribute("aria-label") or ""
+    assert name.startswith("main, origin/main, v2, merge feature, "), name
+    assert rows.first.locator("svg").get_attribute("aria-hidden") == "true"
+    assert errors == [], errors
+
+
+def test_a_working_tree_rows_buttons_sit_beside_its_path_not_inside_a_button(
+    open_page: OpenPage, dirty_git_port: int
+) -> None:
+    """A working-tree row was a button holding Stage, Unstage and Discard: nested controls."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/worktree")
+    row = page.locator(".git-side .gf[data-path='b.txt']")
+    row.get_by_role("button", name="Stage", exact=True).wait_for()
+    expect(page.locator(".git-side [role=button] button")).to_have_count(0)
+    expect(row.get_by_role("button", name="M b.txt", exact=True)).to_have_count(1)
+    row.click(position={"x": 4, "y": 4})  # the row's corner, away from the path
+    page.wait_for_selector(".git-diff .diff")
     assert errors == [], errors

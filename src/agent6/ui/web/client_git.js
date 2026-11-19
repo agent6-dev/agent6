@@ -61,7 +61,7 @@ function gitLanesSvg(lay, cols, dot, isHead) {
   const color = i => 'l' + i % GIT_LANE_COLORS;
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('width', cols * W); svg.setAttribute('height', H);
-  svg.setAttribute('class', 'gc-lanes');
+  svg.setAttribute('class', 'gc-lanes'); svg.setAttribute('aria-hidden', 'true');
   const path = (d, lane, dashed) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); p.setAttribute('class', color(lane) + (dashed ? ' wt' : '')); svg.appendChild(p); };
   // A merge curves down out of the dot into its parent's slot; a join curves down into the dot.
   const curve = (from, to) => `M${x(from)} ${mid} C${x(from)} ${H} ${x(to)} ${mid} ${x(to)} ${H}`;
@@ -94,6 +94,26 @@ function statusBadge(status) {
   return s;
 }
 function shortLabel(c) { return c.short + ' ' + c.subject; }
+// Arrow keys move the focus between a list's rows (↑ ↓, Home, End, Page Up and Down), and Tab
+// stops at one row. `stop(row)` makes `row` that one; the focused row becomes it too.
+function rovingRows(list, selector) {
+  const stop = (row) => { for (const r of list.querySelectorAll(selector)) r.tabIndex = r === row ? 0 : -1; };
+  list.addEventListener('focusin', (e) => { if (e.target.matches(selector)) stop(e.target); });
+  list.addEventListener('keydown', (e) => {
+    if (!e.target.matches(selector) || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const rows = [...list.querySelectorAll(selector)].filter(r => r.checkVisibility());
+    const i = rows.indexOf(e.target);
+    const step = rows.length > 1 ? rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top : 0;
+    const page = step > 0 ? Math.max(1, Math.floor(Math.min(list.clientHeight, innerHeight) / step) - 1) : 1;
+    const to = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: rows.length - 1, PageDown: i + page, PageUp: i - page }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    const row = rows[Math.max(0, Math.min(rows.length - 1, to))];
+    row.focus({ preventScroll: true });
+    row.scrollIntoView({ block: 'nearest' });
+  });
+  return stop;
+}
 // A commit's ISO date as git log --date=iso prints it ('2026-11-12 01:38:25 -05:00'): it may
 // wrap before the zone, never inside the date or the time.
 function gitDate(iso) {
@@ -190,7 +210,10 @@ function fileList(files, truncated, open, actions) {
   if (truncated) root.appendChild(el('div', 'err gf-note', 'the list is cut: more files changed than are shown'));
   const body = el('div'); root.appendChild(body);
   let mode = recall(FILES_VIEW_KEY, 'list');
-  // A working-tree file reads U while untracked, and says when its changes are staged.
+  const stop = rovingRows(body, '.gf-open, .gtree-dir');
+  // A working-tree file reads U while untracked, and says when its changes are staged. The path
+  // is the row's one control, and a click anywhere on the row opens the diff; a working-tree
+  // row's buttons sit beside it.
   const fileRow = (f, short) => {
     const row = el('div', 'gf');
     row.dataset.path = f.path;
@@ -199,10 +222,13 @@ function fileList(files, truncated, open, actions) {
     row.appendChild(statusBadge(status));
     const path = filePath(f, short);
     if (index) { path.appendChild(document.createTextNode(' ')); path.appendChild(el('span', 'gf-index', index)); }
-    row.appendChild(path);
+    const button = el('button', 'gf-open');
+    button.setAttribute('aria-label', status + ' ' + f.path + (index ? ', ' + index : ''));
+    button.onclick = () => open(files.indexOf(f));
+    button.appendChild(path);
+    row.appendChild(button);
     row.appendChild(fileCounts(f));
     if (actions) { const acts = actions(f); if (acts) row.appendChild(acts); }
-    actionable(row, () => open(files.indexOf(f)), status + ' ' + f.path + (index ? ', ' + index : ''));
     return row;
   };
   const folderNote = (d) => {
@@ -217,6 +243,7 @@ function fileList(files, truncated, open, actions) {
     if (!files.length) { body.appendChild(el('div', 'muted gf-note', 'no files differ')); return; }
     if (mode === 'tree') body.appendChild(treeView(buildTree(files), (f) => fileRow(f, true), folderNote, false));
     else for (const f of files) body.appendChild(fileRow(f, false));
+    stop(body.querySelector('.gf-open, .gtree-dir'));
   };
   for (const m of ['list', 'tree']) {
     const b = el('button', 'mini', m); b.title = m === 'tree' ? 'the files under their folders' : 'every file on one row';
@@ -399,6 +426,14 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
 
   // -- the graph -------------------------------------------------------------------
   let commits = [], tips = null, hasMore = false, selected = null, loading = 0;
+  const settle = rovingRows(graph, '.gc-row');
+  // The selected row reads selected, and Tab enters the graph there.
+  const markRow = (sha) => {
+    let hit = null;
+    for (const r of graph.querySelectorAll('.gc-row')) { const on = r.dataset.sha === sha; r.classList.toggle('sel', on); if (on) hit = r; }
+    if (hit) settle(hit);
+    return hit;
+  };
   const graphUrl = (skip) => {
     const revs = tips === null ? selectedRefs().map(r => r.full).concat(head.sha ? ['HEAD'] : []) : tips;
     const params = (revs.length ? revs : ['']).map(r => 'refs=' + encodeURIComponent(r));
@@ -414,7 +449,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     for (const l of lays) cols = Math.max(cols, l.before.length, l.after.length, l.lane + 1);
     cols = Math.min(cols, GIT_LANES_MAX);
     if (dirty) {
-      const row = el('div', 'gc-row gc-wt' + (selected === GIT_WORKTREE ? ' sel' : ''));
+      const row = el('div', 'gc-row gc-wt');
       row.dataset.sha = GIT_WORKTREE;
       row.appendChild(gitLanesSvg(lays.shift(), cols, 'wt', false));
       const n = wt.files.length + (wt.truncated ? '+' : '');
@@ -425,12 +460,12 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       graph.appendChild(row);
     }
     commits.forEach((c, i) => {
-      const row = el('div', 'gc-row' + (c.sha === selected ? ' sel' : ''));
+      const row = el('div', 'gc-row');
       row.dataset.sha = c.sha;
       const isHead = c.sha === head.sha;
       row.appendChild(gitLanesSvg(lays[i], cols, c.is_merge ? 'merge' : '', isHead));
       const subj = el('div', 'gc-subj');
-      // The row shows its first ref and counts the rest; the chip's tooltip and the commit panel list them.
+      // The row shows its first ref and counts the rest; its name and the commit panel list them all.
       const named = (isHead && !c.refs.some(r => r.head) ? [{ name: 'HEAD', kind: 'head', head: true }] : []).concat(c.refs);
       if (named.length) subj.appendChild(refBadge(named[0]));
       if (named.length > 1) {
@@ -441,7 +476,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       row.appendChild(subj);
       row.appendChild(el('span', 'gc-author muted', c.author));
       row.appendChild(el('span', 'gc-when muted mono', c.when));
-      actionable(row, () => showCommit(c.sha), shortLabel(c));
+      actionable(row, () => showCommit(c.sha), named.map(r => r.name).concat(c.subject, c.author, c.when).join(', '));
       graph.appendChild(row);
     });
     if (!commits.length) graph.appendChild(el('div', 'empty', selectedRefs().length || head.sha ? 'no commits yet' : 'no refs selected'));
@@ -450,6 +485,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       more.onclick = () => loadGraph(false);
       graph.appendChild(more);
     }
+    if (!markRow(selected)) settle(graph.querySelector('.gc-row'));
     const n = selectedRefs().length;
     counts.textContent = commits.length + (hasMore ? '+' : '') + ' commits · ' + n + ' of ' + refs.length + ' refs';
   };
@@ -527,7 +563,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     closeDiff();
     selected = GIT_WORKTREE;
     setViewHash('#/git/worktree');
-    graph.querySelectorAll('.gc-row').forEach(r => r.classList.toggle('sel', r.dataset.sha === GIT_WORKTREE));
+    markRow(GIT_WORKTREE);
     side.innerHTML = '';
     side.appendChild(sideHead('Working tree'));
     const pad = el('div', 'gd page-pad'); side.appendChild(pad);
@@ -561,7 +597,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       const row = el('span', 'gf-acts');
       const add = (label, title, run) => {
         const b = el('button', 'mini', label); b.title = title; b.dataset.act = label.toLowerCase();
-        b.onclick = (e) => { e.stopPropagation(); run(); }; b.onkeydown = (e) => e.stopPropagation();
+        b.onclick = run;
         row.appendChild(b);
       };
       if (f.unstaged || f.untracked) add('Stage', 'add this file to the index (git add)', () => gitWrite('stage', { paths: [f.path] }));
@@ -580,7 +616,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     const gen = routeGen; // a response landing after a route change paints and publishes nothing
     const suffix = selection.size ? '?' + selection : '';
     setViewHash('#/git/commit/' + encodeURIComponent(sha) + suffix);
-    graph.querySelectorAll('.gc-row').forEach(r => r.classList.toggle('sel', r.dataset.sha === sha));
+    markRow(sha);
     side.innerHTML = ''; side.appendChild(sideHead('Commit')); side.appendChild(el('div', 'muted page-pad', 'loading…'));
     openSide();
     let c;
@@ -589,7 +625,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     if (selected !== sha || !app.isConnected || gen !== routeGen) return;
     selected = c.sha;
     setViewHash('#/git/commit/' + encodeURIComponent(c.sha) + suffix, true);
-    graph.querySelectorAll('.gc-row').forEach(r => { const match = r.dataset.sha === c.sha; r.classList.toggle('sel', match); if (match) r.scrollIntoView({ block: 'nearest' }); });
+    markRow(c.sha)?.scrollIntoView({ block: 'nearest' });
     side.innerHTML = '';
     side.appendChild(sideHead('Commit'));
     const pad = el('div', 'gd page-pad'); side.appendChild(pad);
@@ -637,7 +673,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   const showCompare = () => {
     closeDiff();
     selected = null;
-    graph.querySelectorAll('.gc-row.sel').forEach(r => r.classList.remove('sel'));
+    markRow(null);
     side.innerHTML = '';
     side.appendChild(sideHead('Compare'));
     const pad = el('div', 'gcmp page-pad'); side.appendChild(pad);
