@@ -8,6 +8,14 @@
    does, in the 4px each side that the body reaches past its text. */
 .machine-grid .card-body { padding-inline: 4px; margin-inline: -4px; }
 .machine-grid .card-body:focus-visible { outline-offset: -2px; }
+/* Every name and transition shows whole: a long one wraps, and a wrapped line continues under the
+   text after its lead, a state's mark or a transition's `[seq] ` (--hang: the lead's width). */
+.machine-grid .sub { overflow-wrap: anywhere; }
+.machine-grid .tree .node {
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  padding-left: var(--hang, 2ch); text-indent: calc(-1 * var(--hang, 2ch));
+}
+.machine-grid .tree .lead { white-space: pre; } /* kept whole, with no break before the first word */
 /* From 781px the view is one screen tall, as the run view is: the conversation takes the height
    States and Path leave, each card scrolls inside itself, and the conversation's newest lines sit
    just above the composer. States and Path stack up to 20% of the height each, and from 900px sit

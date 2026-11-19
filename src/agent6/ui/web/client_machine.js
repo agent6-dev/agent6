@@ -176,17 +176,25 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
     `${esc(m.machine)} v${esc(m.version)} · current: ${esc(m.current)}${cost}`));
   summary.appendChild(pill(m.status_level, m.status));
   structBody.appendChild(summary);
+  // Each line leads with its mark, or its `[seq] `; a wrapped line continues under the text
+  // after the lead (--hang: the lead's width).
   const tree = el('div', 'tree');
   for (const st of m.states || []) {
     const line = el('div', 'node' + (st.is_current ? ' cursor' : ''));
-    line.textContent = `${st.mark} ${st.name}  (${st.kind})`; // machine_state_mark, server-side
+    line.append(el('span', 'lead', st.mark + ' '), `${st.name}  (${st.kind})`); // machine_state_mark, server-side
     tree.appendChild(line);
   }
   structBody.appendChild(tree);
 
   pathBody.innerHTML = '';
   const path = el('div', 'tree');
-  for (const t of m.transitions || []) path.appendChild(el('div', 'node', t.line)); // format_transition, server-side
+  for (const t of m.transitions || []) {
+    const lead = `[${t.seq}] `; // format_transition's prefix; the line is rendered server-side
+    const line = el('div', 'node');
+    line.append(el('span', 'lead', lead), t.line.slice(lead.length));
+    line.style.setProperty('--hang', lead.length + 'ch');
+    path.appendChild(line);
+  }
   if (!(m.transitions||[]).length) path.appendChild(el('div', 'muted', 'no transitions yet'));
   pathBody.appendChild(path);
   if (m.ended) pathBody.appendChild(el('div', 'sub muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));

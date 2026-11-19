@@ -67,6 +67,28 @@ kind = "terminal"
 status = "ok"
 reason = "done"
 """
+COLLECT = "collect_merged_pull_requests_since_the_previous_release_tag_for_every_component"
+GIVEUP = "giveup_because_the_collector_could_not_reach_the_forge_after_three_attempts"
+# Two states whose names are longer than half a 1280px page.
+LONG = f"""
+machine = "long"
+version = 1
+initial = "{COLLECT}"
+
+[budget]
+max_transitions = 10
+
+[states.{COLLECT}]
+kind = "tool"
+command = ["true"]
+timeout_s = 60
+on = {{ ok = "{GIVEUP}", nonzero = "{GIVEUP}", timeout = "{GIVEUP}" }}
+
+[states.{GIVEUP}]
+kind = "terminal"
+status = "failed"
+reason = "the collector could not reach the forge"
+"""
 
 
 def _step(seq: int, state: str, label: str, goto: str, fact: dict[str, Any]) -> dict[str, Any]:
@@ -212,4 +234,52 @@ def test_a_machines_first_prompt_stands_under_the_top_bar(
     above, under = page.locator("header").bounding_box(), box.bounding_box()
     assert above is not None and under is not None
     assert under["y"] - (above["y"] + above["height"]) == 12
+    assert not errors
+
+
+def test_long_states_and_transitions_wrap_under_their_text(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """A long state or transition was cut with an ellipsis, and its end could not be read.
+
+    A wrapped line continues under the text after its mark or its `[seq] `.
+    """
+    failed = {
+        "kind": "tool",
+        "exit_code": 1,
+        "stdout": "",
+        "timed_out": False,
+        "stderr": (
+            "requests.exceptions.ConnectionError: HTTPSConnectionPool(host='forge.example',"
+            " port=443): Max retries exceeded with url: /api/v4/projects/platform%2Finfra"
+        ),
+    }
+    end = {
+        "type": "machine.end",
+        "ts": TS,
+        "status": "failed",
+        "reason": "no forge",
+        "state": GIVEUP,
+        "transitions": 1,
+    }
+    _machine(tmp_path, "long", LONG, [_step(0, COLLECT, "nonzero", GIVEUP, failed), end])
+    page, errors = _open(open_page, port, "long")
+    # Each line's start is its leftmost fragment: a line can end in a fragment of spaces.
+    lines = page.evaluate(
+        """() => [...document.querySelectorAll('.tree .node')].map(node => {
+          const range = document.createRange();
+          range.selectNodeContents(node.lastChild);
+          const starts = new Map();
+          for (const r of range.getClientRects()) {
+            const top = Math.round(r.top);
+            starts.set(top, Math.min(starts.get(top) ?? Infinity, Math.round(r.left)));
+          }
+          return {text: node.textContent.slice(0, 30), cut: node.scrollWidth > node.clientWidth + 1,
+                  lines: starts.size, lefts: [...new Set(starts.values())]};
+        })"""
+    )
+    assert [line for line in lines if line["cut"]] == [], lines
+    wrapped = [line for line in lines if line["lines"] > 1]
+    assert len(wrapped) >= 3, lines  # both long states and the transition
+    assert all(len(line["lefts"]) == 1 for line in wrapped), wrapped
     assert not errors
