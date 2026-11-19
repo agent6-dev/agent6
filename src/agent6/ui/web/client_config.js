@@ -44,7 +44,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
   const addPresetBtn = el('button', null, 'Add preset…');
   addPresetBtn.onclick = () => addPreset(refresh);
   bar.appendChild(addPresetBtn);
-  const removePresetBtn = el('button', null, 'Remove preset');
+  const removePresetBtn = el('button', 'danger', 'Remove preset');
   removePresetBtn.disabled = !selected;
   removePresetBtn.title = selected
     ? 'Remove [presets.' + selected + '] from the global and repo config and reset preset to none'
@@ -421,7 +421,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   repoCb.checked = (s.source === 'repo');
   repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
   dialog.appendChild(repoRow);
-  const row = el('div', 'form-row');
+  const row = el('div', 'form-row cfg-actions');
   const save = el('button', 'primary', 'Save'), cancel = el('button', null, 'Cancel');
   row.appendChild(save);
   // A value set from an editable layer gets an Unset: remove it from that layer
@@ -445,12 +445,11 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     const addBtn = el('button', null, 'Add ' + table.label + '…');
     addBtn.onclick = () => { close(); addEntry(table, refresh); };
     row.appendChild(addBtn);
-    removeBtn = el('button', null, 'Remove ' + table.label);
+    removeBtn = el('button', 'danger', 'Remove ' + table.label);
     removeBtn.disabled = !(['global', 'repo'].includes(entry.source) || (preset && entry.source === 'preset'));
     removeBtn.title = removeBtn.disabled
       ? 'This entry comes from ' + entry.source + '; Remove edits only global and repo config.'
       : 'Remove ' + table.label + " '" + entry.name + "' and all its values from " + entryWhere;
-    row.appendChild(removeBtn);
   }
   if (key === 'review.reviewers') {
     const addBtn = el('button', null, 'Add reviewer…');
@@ -458,6 +457,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     row.appendChild(addBtn);
   }
   row.appendChild(cancel);
+  if (removeBtn) row.appendChild(removeBtn); // last, at the row's end: it removes the whole entry
   const act = actionRow(dialog, row);
   cancel.onclick = close;
   if (key === 'review.reviewers') {
@@ -471,7 +471,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       const item = el('div', 'row');
       const label = `${index + 1}: ${reviewer.focus}`;
       item.appendChild(el('span', null, label));
-      const remove = el('button', null, 'Remove'); remove.disabled = !editable;
+      const remove = el('button', 'danger', 'Remove'); remove.disabled = !editable;
       remove.setAttribute('aria-label', 'Remove reviewer ' + label);
       remove.onclick = async () => {
         if (!confirm(`Remove reviewer ${label} from ${rosterWhere}?`)) return;

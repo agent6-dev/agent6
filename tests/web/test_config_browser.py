@@ -467,3 +467,38 @@ def test_a_selected_preset_says_where_saves_go(
     note = page.locator(".cfg-bar + .notif-banner")
     assert note.inner_text() == "preset fast: saves write [presets.fast]"
     assert not errors
+
+
+ERR = """() => {
+  const probe = document.body.appendChild(document.createElement('p')); probe.className = 'err';
+  const color = getComputedStyle(probe).color; probe.remove(); return color;
+}"""
+
+
+def test_every_config_remove_reads_as_destructive(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Remove preset, Remove provider and a reviewer's Remove looked like every other button.
+
+    The editor's Remove provider sat between Add provider… and Cancel.
+    """
+    _global_config(
+        '[providers.openrouter]\nbackend = "openai"\nbase_url = "https://openrouter.ai/api/v1"\n\n'
+        '[review]\nreviewers = [{ focus = "security" }]\n'
+    )
+    page, errors = open_page(port)
+    _config(page, port)
+    red = page.evaluate(ERR)
+    assert page.get_by_role("button", name="Remove preset").evaluate(STYLE, "color") == red
+    page.locator('[data-key="providers.openrouter.base_url"]').click()
+    row = page.get_by_role("dialog").locator(".form-row")
+    remove = row.locator("button").last
+    assert remove.inner_text() == "Remove provider"
+    assert remove.evaluate(STYLE, "color") == red
+    end = "e => e.parentElement.getBoundingClientRect().right - e.getBoundingClientRect().right"
+    assert remove.evaluate(end) == 0
+    page.keyboard.press("Escape")
+    page.locator('[data-key="review.reviewers"]').click()
+    reviewer = page.get_by_role("dialog").get_by_role("button", name="Remove reviewer")
+    assert reviewer.evaluate(STYLE, "color") == red
+    assert not errors
