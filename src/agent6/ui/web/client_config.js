@@ -450,7 +450,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     if (!s.value || !s.value.length) roster.appendChild(el('div', 'sub muted', 'The reviewer roster is empty.'));
     dialog.insertBefore(roster, field);
   }
-  field.focus();
+  if (!combo) field.focus(); // the model field's suggestions open on focus, over the buttons
   const submit = () => act(save, async () => {
     // A string-valued leaf travels as a TOML string, as the TUI sends it, so
     // `true`, `42` or `[a]` typed into a str field stays a string.

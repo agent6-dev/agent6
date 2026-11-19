@@ -690,6 +690,7 @@ def test_model_catalog_ignores_a_closed_editors_response(
     page.goto(f"http://127.0.0.1:{port}/#/config")
     page.get_by_role("button", name="edit models.worker.model", exact=True).click()
     dialog = page.get_by_role("dialog")
+    dialog.get_by_role("combobox", name="Model", exact=True).focus()
     expect(dialog.get_by_role("status")).to_contain_text("Loading models")
     dialog.get_by_role("button", name="Cancel", exact=True).click()
     page.get_by_role("button", name="edit models.worker.model", exact=True).click()
@@ -709,6 +710,30 @@ def test_model_catalog_ignores_a_closed_editors_response(
     assert saved.value.ok, saved.value.text()
     expect(dialog).to_have_count(0)
     assert 'model = "b/custom"' in cfg.read_text()
+    assert not errors
+
+
+def test_the_model_editor_opens_with_its_buttons_in_reach(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The editor focused the model field at open, and its suggestions covered Save and Cancel."""
+    from playwright.sync_api import expect
+
+    cfg = paths.global_config_path()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(
+        '[providers.a]\nbackend = "openai"\nbase_url = "http://localhost:1"\n'
+        '[models.worker]\nmodel = "a/old"\n'
+    )
+    page, errors = open_page(port)
+    values = [f"a/model-{n}" for n in range(20)]
+    page.route("**/api/config/suggest/**", lambda route: route.fulfill(json={"values": values}))
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    page.get_by_role("button", name="edit models.worker.model", exact=True).click()
+    dialog = page.get_by_role("dialog", name="Model: worker")
+    expect(dialog.get_by_role("listbox")).to_be_hidden()
+    dialog.get_by_role("button", name="Cancel", exact=True).click(timeout=2000)
+    expect(dialog).to_have_count(0)
     assert not errors
 
 
