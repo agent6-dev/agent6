@@ -871,6 +871,7 @@ def test_add_reviewers_fields_read_in_one_type(
     _config(page, port)
     page.get_by_role("button", name="Add reviewer…").click()
     fields = page.get_by_role("dialog").locator("input:not([type=checkbox]), select")
+    fields.nth(3).wait_for()
     fonts = fields.evaluate_all(f"fields => fields.map({FONT})")
     assert len(fonts) == 4
     assert fonts == [fonts[0]] * 4
