@@ -179,12 +179,20 @@ function descriptionNode(points) {
   return frag;
 }
 
-// A dialog's button row, then the line its own actions report a failure on. `act(button, run)`
-// holds the button while `run` waits: a failure shows on that line and frees the button while the
-// dialog is open, and toasts once the dialog has closed (the page's refresh after a write).
-function actionRow(dialog, row) {
+// A dialog's button row, then the line its own actions report a failure on. Enter in any field
+// presses `primary` (Add or Save); Shift+Enter breaks a long value's line. A held Enter's repeats
+// press nothing: the Enter that opened the dialog would save it unchanged.
+// `act(button, run)` holds the button while `run` waits: a failure shows on that line and frees the
+// button while the dialog is open, and toasts once the dialog has closed (the page's refresh
+// after a write).
+function actionRow(dialog, row, primary) {
   const err = el('p', 'err'); err.setAttribute('role', 'alert');
   dialog.appendChild(row); dialog.appendChild(err);
+  dialog.onkeydown = e => {
+    if (e.key !== 'Enter' || e.repeat || e.shiftKey || e.defaultPrevented || composing(e)) return;
+    if (!['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+    e.preventDefault(); primary.click();
+  };
   return async (button, run) => {
     if (button.disabled) return;
     button.disabled = true; err.textContent = '';
@@ -202,7 +210,7 @@ function addButtons(dialog) {
   const add = el('button', 'primary', 'Add'), cancel = el('button', null, 'Cancel');
   cancel.onclick = () => dialog.close();
   row.appendChild(add); row.appendChild(cancel);
-  return { add, act: actionRow(dialog, row) };
+  return { add, act: actionRow(dialog, row, add) };
 }
 
 // A blank field writes nothing, preserving an existing entry's value.
@@ -272,12 +280,10 @@ function addPreset(onAdded) {
   repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'create in this repo\'s config (not the global config)'));
   dialog.appendChild(repoRow);
   const { add, act } = addButtons(dialog);
-  const submit = () => act(add, async () => {
+  add.onclick = () => act(add, async () => {
     const d = await postJSON('/api/config/preset', {name: name.value.trim(), repo: repoCb.checked});
     toast(d.message || 'added'); dialog.close(); await onAdded();
   });
-  add.onclick = submit;
-  name.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); submit(); } };
   name.focus();
 }
 
@@ -313,8 +319,9 @@ async function addReviewer(refresh) {
 }
 
 // Suggestions guide text entry; catalog membership is not validation. The list stays open under
-// the field, so the editor's buttons stay in view. Enter picks the active suggestion, else saves.
-function configCombobox(current, submit) {
+// the field, so the dialog's buttons stay in view. Enter picks the active suggestion; with none
+// active it reaches the dialog, which saves.
+function configCombobox(current) {
   const element = el('div', 'cfg-combo'), field = el('input', 'field');
   field.value = current; field.autocomplete = 'off';
   field.setAttribute('role', 'combobox');
@@ -355,10 +362,8 @@ function configCombobox(current, submit) {
       const step = e.key === 'ArrowDown' ? 1 : -1;
       index = matches.length ? (index < 0 ? (step > 0 ? 0 : matches.length - 1) : (index + step + matches.length) % matches.length) : -1;
       paint();
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (index >= 0) choose(matches[index]);
-      else submit();
+    } else if (e.key === 'Enter' && index >= 0) {
+      e.preventDefault(); choose(matches[index]);
     }
   };
   const load = async url => {
@@ -398,7 +403,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   let field, combo;
   const choices = s.choices || (s.type === 'bool' ? ['true', 'false'] : null);
   if (role) {
-    combo = configCombobox(data[section + '.model']?.input || '', () => submit());
+    combo = configCombobox(data[section + '.model']?.input || '');
     field = combo.field; field.id = 'cfg-model';
     const modelLabel = el('label', 'sub muted', 'Model'); modelLabel.htmlFor = field.id;
     dialog.appendChild(modelLabel); dialog.appendChild(combo.element);
@@ -473,7 +478,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   }
   row.appendChild(cancel);
   if (removeBtn) row.appendChild(removeBtn); // last, at the row's end: it removes the whole entry
-  const act = actionRow(dialog, row);
+  const act = actionRow(dialog, row, save);
   cancel.onclick = close;
   if (key === 'review.reviewers') {
     const roster = el('div', 'cfg-roster');
@@ -501,14 +506,13 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     dialog.insertBefore(roster, field);
   }
   field.focus();
-  const submit = () => act(save, async () => {
+  save.onclick = () => act(save, async () => {
     // A string-valued leaf travels as a TOML string, as the TUI sends it, so
     // `true`, `42` or `[a]` typed into a str field stays a string.
     const value = role || s.type === 'str' ? JSON.stringify(field.value) : field.value;
     const d = await postJSON('/api/config', { key: role ? section + '.model' : key, value, repo: repoCb.checked });
     toast(d.message || 'set ' + key); close(); await refresh();
   });
-  save.onclick = submit;
   if (unsetBtn) unsetBtn.onclick = () => act(unsetBtn, async () => {
     // Under a preset the layer is the checkbox's: the row's source reads `preset`, not a file.
     const d = await postJSON('/api/config', { key, unset: true, repo: preset ? repoCb.checked : s.source === 'repo' });
@@ -521,6 +525,4 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       toast(d.message || 'removed'); close(); await refresh();
     });
   };
-  // Enter saves; Shift+Enter breaks a long value's line.
-  if (!combo) field.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !composing(e)) { e.preventDefault(); submit(); } };
 }

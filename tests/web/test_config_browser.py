@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import pathlib
 import threading
 from collections.abc import Callable, Iterator
@@ -14,7 +15,7 @@ from agent6.ui.web import server as web_server
 from tests.web import signin, test_web_browser
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Page
+    from playwright.sync_api import Page, Route
 
 pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
@@ -587,3 +588,93 @@ def test_a_drag_across_a_config_value_selects_it_without_opening_the_editor(
     row.get_by_role("button").press("Enter")
     assert dialog.locator("h2").inner_text() == "providers.openrouter.base_url"
     assert not errors
+
+
+def test_a_held_enter_on_a_config_row_saves_nothing(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A held Enter opened a row's editor, then its first repeat pressed Save.
+
+    The unchanged default became an explicit setting in the global config.
+    """
+    page, errors = open_page(port)
+    posts: list[str] = []
+
+    def refuse(route: Route) -> None:
+        if route.request.method != "POST":
+            route.fallback()
+            return
+        posts.append(route.request.post_data or "")
+        route.fulfill(status=400, json={"error": "refused by the test"})
+
+    page.route("**/api/config**", refuse)
+    _config(page, port)
+    page.locator('[data-key="web.port"]').get_by_role("button").focus()
+    page.keyboard.down("Enter")
+    dialog = page.get_by_role("dialog")
+    dialog.wait_for()
+    page.keyboard.down("Enter")  # the held key's first repeat
+    page.wait_for_timeout(300)
+    page.keyboard.up("Enter")
+    assert posts == []
+    page.keyboard.press("Enter")
+    dialog.get_by_role("alert").get_by_text("refused").wait_for()
+    assert len(posts) == 1
+    assert not [error for error in errors if "400 (Bad Request)" not in error]
+
+
+def test_enter_in_any_config_dialog_field_presses_its_add_or_save(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Enter in Add provider, Add MCP server, Add skill or Add reviewer did nothing.
+
+    Add preset and the editors took it; Enter on a model suggestion picks it and sends nothing.
+    """
+    from playwright.sync_api import TimeoutError as Unanswered
+
+    _global_config(
+        '[providers.a]\nbackend = "openai"\nbase_url = "http://localhost:1"\n'
+        '[models.worker]\nmodel = "a/old"\n'
+    )
+    page, errors = open_page(port)
+    posts: list[str] = []
+
+    def refuse(route: Route) -> None:
+        if route.request.method != "POST":
+            route.fallback()
+            return
+        posts.append(route.request.url)
+        route.fulfill(status=400, json={"error": "refused by the test"})
+
+    page.route("**/api/config**", refuse)
+    page.route("**/api/config/suggest/**", lambda route: route.fulfill(json={"values": ["a/m"]}))
+    _config(page, port)
+    sent = {}
+    opens = {name: page.get_by_role("button", name=name) for name in ADD_DIALOGS} | {
+        key: page.locator(f'[data-key="{key}"]') for key in EDITORS
+    }
+    for name, opener in opens.items():
+        opener.click()
+        dialog = page.get_by_role("dialog")
+        field = dialog.locator("input:not([type=checkbox]), select, textarea").first
+        if name in ADD_DIALOGS:
+            field.fill("x")
+        before = len(posts)
+        field.press("Enter")
+        with contextlib.suppress(Unanswered):
+            dialog.get_by_role("alert").get_by_text("refused").wait_for(timeout=3000)
+        sent[name] = len(posts) - before
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="detached")
+    assert sent == dict.fromkeys(opens, 1)
+    page.locator('[data-key="models.worker.model"]').click()
+    model = page.get_by_role("dialog").get_by_role("combobox")
+    model.press("ArrowDown")
+    model.press("Enter")
+    assert model.input_value() == "a/m"
+    assert len(posts) == len(opens)
+    assert not [error for error in errors if "400 (Bad Request)" not in error]
+
+
+ADD_DIALOGS = ("Add provider…", "Add MCP server…", "Add skill…", "Add reviewer…", "Add preset…")
+EDITORS = ("budget.max_usd", "sandbox.isolation", "harness.verify.command", "models.worker.model")
