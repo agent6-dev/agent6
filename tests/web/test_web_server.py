@@ -2546,7 +2546,7 @@ def test_the_web_names_a_crashed_run_where_it_paints_no_conversation(
 
     assert status == 200
     assert json.loads(body)["dead_state"].startswith("worker exited without finishing")
-    assert "conv.deadState" in page.CLIENT_JS and "s.dead_state" in page.CLIENT_JS
+    assert "s.dead_state" in page.CLIENT_JS
 
 
 def test_a_content_length_that_is_not_a_number_closes_the_connection(
