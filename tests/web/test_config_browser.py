@@ -1181,19 +1181,32 @@ def test_add_reviewer_suggests_catalog_models(
     assert not [error for error in errors if "400 (Bad Request)" not in error]
 
 
-def test_add_reviewers_fields_read_in_one_type(
+def test_an_add_dialog_reads_its_values_in_the_tables_type(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
-    """Add reviewer's model field read in the editor's monospace, its other fields in sans."""
+    """Add dialogs took values in the page's sans, though an editor shows one in the table's type.
+
+    Add reviewer's model field read in sans over its monospace suggestions. A new entry's name and
+    a reviewer's focus stay in sans.
+    """
     page, errors = open_page(port)
     page.route("**/api/config/suggest/**", lambda route: route.fulfill(json={"values": []}))
     _config(page, port)
-    page.get_by_role("button", name="Add reviewer…").click()
-    fields = page.get_by_role("dialog").locator("input:not([type=checkbox]), select")
-    fields.nth(3).wait_for()
-    fonts = fields.evaluate_all(f"fields => fields.map({FONT})")
-    assert len(fonts) == 4
-    assert fonts == [fonts[0]] * 4
+    table = page.locator('[data-key="budget.max_usd"] .val').evaluate(FONT)
+    typed: dict[str, bool] = {}
+    for opener in ("Add provider…", "Add reviewer…"):
+        page.get_by_role("button", name=opener).click()
+        dialog = page.get_by_role("dialog")
+        fields = dialog.locator("input:not([type=checkbox]), select")
+        fields.nth(3).wait_for()
+        for name, font in fields.evaluate_all(f"fs => fs.map(f => [f.name || f.id, ({FONT})(f)])"):
+            typed[name] = font == table
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="detached")
+    assert typed.pop("name") is False
+    assert typed.pop("reviewer-focus") is False
+    assert len(typed) >= 6
+    assert all(typed.values()), typed
     assert not errors
 
 

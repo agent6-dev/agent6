@@ -233,7 +233,7 @@ function addEntry(table, refresh) {
   const name = labelled('name', el('input', 'field'));
   const fields = {};
   for (const spec of table.fields) {
-    const field = el(spec.choices.length ? 'select' : 'input', 'field');
+    const field = el(spec.choices.length ? 'select' : 'input', 'field cfg-value'); // a value, as in an editor
     if (spec.choices.length) {
       const values = ['backend', 'state'].includes(spec.name) ? spec.choices : ['', ...spec.choices];
       for (const value of values) {
@@ -309,9 +309,10 @@ async function addReviewer(refresh) {
   const fields = {};
   for (const name of ['focus', 'model', 'effort', 'temperature']) {
     const label = el('label', 'muted cfg-label', name);
+    const cls = name === 'focus' ? 'field' : 'field cfg-value'; // the rest are values, as in an editor
     // The model suggests from the catalog, as the model editor does.
-    const combo = name === 'model' ? configCombobox('', 'models.reviewer.model', 'field') : null;
-    const field = combo ? combo.field : el(choices[name] ? 'select' : 'input', 'field');
+    const combo = name === 'model' ? configCombobox('', 'models.reviewer.model', cls) : null;
+    const field = combo ? combo.field : el(choices[name] ? 'select' : 'input', cls);
     field.id = 'reviewer-' + name; label.htmlFor = field.id;
     if (choices[name]) for (const value of ['', ...choices[name]]) {
       const option = el('option', null, value || 'blank = inherit'); option.value = value; field.appendChild(option);
