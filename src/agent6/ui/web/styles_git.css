@@ -66,7 +66,7 @@
 .gfilter-item.off { opacity: .5; }
 .gfilter-item .gref { margin-right: 0; }
 @media (min-width: 781px) {
-  .git-app { display: flex; flex-direction: column; height: calc(100vh - 42px); min-height: 0; }
+  .git-app { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
   .git-app > .git-bar { flex: none; }
   .git-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
   .git-graph { flex: 1 1 55%; min-width: 0; overflow: auto; }

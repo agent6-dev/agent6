@@ -32,7 +32,7 @@
 .md-view img { max-width: 100%; height: auto; }
 .md-view hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
 @media (min-width: 781px) {
-  .files-app { display: flex; flex-direction: column; height: calc(100vh - 42px); min-height: 0; }
+  .files-app { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
   .files-app > .files-bar, .files-app > .gpick-host { flex: none; }
   .files-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
   .files-tree { flex: none; width: var(--files-tree-w, 36%); min-width: 180px; max-width: calc(100% - 246px); overflow: auto; }

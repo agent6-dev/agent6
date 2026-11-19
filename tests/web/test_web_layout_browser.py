@@ -59,6 +59,71 @@ def test_navigation_icons_follow_bar_order_size_and_theme(
     assert not errors
 
 
+@pytest.mark.parametrize("route", ["#/session/pane-run-AAA111", "#/git", "#/files"])
+def test_a_desktop_pane_fills_the_screen_under_a_header_of_any_height(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    git_port: int,
+    tmp_path: pathlib.Path,
+    route: str,
+) -> None:
+    """The run, git and files panes end at the screen's bottom edge, whatever the header's height.
+
+    Each pane restated the header's height (100vh - 42px), so a taller header pushed the pane,
+    and the composer at its foot, below the screen.
+    """
+    from playwright.sync_api import expect
+
+    session = paths.state_dir(tmp_path) / "sessions" / "runs" / "pane-run-AAA111"
+    session.mkdir(parents=True)
+    start = {"type": "session.start", "mode": "run", "user_task": "Fill the pane"}
+    (session / "logs.jsonl").write_text(json.dumps(start) + "\n", encoding="utf-8")
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/{route}")
+    pane = page.locator(".run-app, .git-app, .files-app")
+    expect(pane).to_be_visible()
+    page.add_style_tag(content="header { padding-block: 30px; }")
+    header, box = page.locator("header").bounding_box(), pane.bounding_box()
+    assert header is not None and box is not None
+    assert box["y"] == pytest.approx(header["y"] + header["height"], abs=0.5)
+    assert box["y"] + box["height"] == pytest.approx(900, abs=0.5)
+    assert page.evaluate("document.scrollingElement.scrollHeight") == 900
+    assert not errors
+
+
+def test_a_long_line_in_a_phone_widget_never_widens_the_page(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A tool call's or a background command's long line stays inside its card on a phone.
+
+    The phone's cards flow at their natural size, so the line set the grid column's width, or
+    overflowed a card that does not clip: the page widened and pushed the header and the tab
+    bar off-screen.
+    """
+    from playwright.sync_api import expect
+
+    session = paths.state_dir(tmp_path) / "sessions" / "runs" / "wide-line-AAA111"
+    session.mkdir(parents=True)
+    rows = [
+        {"type": "session.start", "mode": "run", "user_task": "Read a deep file"},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "src/" + "a" * 400}},
+        {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
+    ]
+    (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    shell = session / "shells" / "bg1"
+    shell.mkdir(parents=True)
+    (shell / "meta.json").write_text(json.dumps({"command": "curl https://" + "a" * 400}))
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/{session.name}")
+    for widget, line in (("Tool calls", ".card-tools .args"), ("Background shells", ".shell")):
+        page.locator(".wmenu-btn").click()
+        page.locator(".wmenu").get_by_role("button", name=widget, exact=True).click()
+        expect(page.locator(line)).to_be_visible()
+        assert page.evaluate("document.scrollingElement.scrollWidth") == 390, widget
+    assert not errors
+
+
 def test_files_tree_width_survives_reload_and_keyboard_resize(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:
@@ -217,4 +282,68 @@ def test_run_drawer_keeps_drag_resize_reload_and_reset(
     page.reload()
     expect(drawer).to_be_visible()
     assert _width(drawer) == pytest.approx(before, abs=1)
+    assert not errors
+
+
+@pytest.mark.parametrize(
+    ("route", "box", "row", "gap"),
+    [
+        ("#/machine/asking-machine", ".prompt-box", "main .row.wrap.page-pad", 12),
+        ("#/machine/noting-machine", ".notif-banner", "main .row.wrap.page-pad", 12),
+        ("#/session/asking-AAA111", ".prompt-box", ".run-app .actions", 10),
+    ],
+    ids=["machine-prompt", "machine-banner", "run-prompt"],
+)
+def test_the_row_under_a_prompt_or_banner_sets_the_gap_above_it(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    route: str,
+    box: str,
+    row: str,
+    gap: int,
+) -> None:
+    """A pending prompt or a new banner stands the next row's top margin above that row.
+
+    The page and the run view are flex columns, where margins never collapse: the box's own
+    10px bottom margin added to the row's, so a machine's prompt or banner stood 22px above
+    its controls.
+    """
+    import os
+
+    from playwright.sync_api import expect
+
+    from agent6.sessions import process
+    from tests.web.test_web_actions import TINY
+
+    start = {"type": "session.start", "mode": "run", "user_task": "Ask first"}
+    ask = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"}
+    machines = paths.state_dir(tmp_path) / "machines"
+    run = paths.state_dir(tmp_path) / "sessions" / "runs" / "asking-AAA111"
+    run.mkdir(parents=True)
+    process.write_worker_pid(run, os.getpid())
+    (run / "logs.jsonl").write_text(f"{json.dumps(start)}\n{json.dumps(ask)}\n")
+    for name, rows in (("asking-machine", [start, ask]), ("noting-machine", [start])):
+        state = machines / name / "states" / "0001-work"
+        state.mkdir(parents=True)
+        (machines / name / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+        (machines / name / "journal.jsonl").write_text("", encoding="utf-8")
+        process.write_worker_pid(machines / name, os.getpid())
+        (state / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/{route}")
+    expect(page.locator(row)).to_be_visible()
+    # A banner shows a notification that lands while the page watches.
+    note = {
+        "type": "machine.notify",
+        "ts": "2026-11-13T10:00:00Z",
+        "state": "route",
+        "message": "Look",
+    }
+    with (machines / "noting-machine" / "journal.jsonl").open("a") as stream:
+        stream.write(json.dumps(note) + "\n")
+    expect(page.locator(box)).to_have_count(1)
+    above, under = page.locator(box).bounding_box(), page.locator(row).bounding_box()
+    assert above is not None and under is not None
+    assert under["y"] - (above["y"] + above["height"]) == gap
     assert not errors

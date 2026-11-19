@@ -7,18 +7,21 @@ async function renderMachine(name, gen) {
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint or open a stream
   setCrumb(name);
   view.innerHTML = '';
+  // Everything above the dock flows in one block, so the margins of the banners, the prompts
+  // and the controls collapse; main is a flex column, where margins add up.
+  const stack = el('div'); view.appendChild(stack);
   // Ephemeral notification banners live here; the prompts host holds pending
   // approval/question boxes; both are appended to, never wiped, so a repaint can
   // never clear a half-typed answer.
-  const notifs = el('div', 'page-pad'); view.appendChild(notifs);
-  const prompts = el('div', 'page-pad'); view.appendChild(prompts);
+  const notifs = el('div', 'page-pad'); stack.appendChild(notifs);
+  const prompts = el('div', 'page-pad'); stack.appendChild(prompts);
   const cards = { _prompts: prompts, _base: base };
 
   const controls = el('div', 'row wrap page-pad'); controls.style.marginBottom = '10px';
   const bell = el('button', null, '🔔 Notifications');
   bell.onclick = enableNotifications;
   controls.appendChild(bell);
-  view.appendChild(controls);
+  stack.appendChild(controls);
 
   const grid = el('div', 'grid cols2');
   const structCard = el('div', 'card scroll'); structCard.appendChild(el('h2', null, 'States')); const structBody = el('div'); structCard.appendChild(structBody);
@@ -28,7 +31,7 @@ async function renderMachine(name, gen) {
   const cc = convCard(base + '/conversation', 'Current state', 'span2');
   cards._conv = cc.conv;
   grid.appendChild(structCard); grid.appendChild(pathCard); grid.appendChild(cc.card);
-  view.appendChild(grid);
+  stack.appendChild(grid);
   cc.conv.refresh();
 
   // The machine composer, docked at the bottom: one text entry with the two

@@ -81,12 +81,19 @@ nav.tabs a {
 nav.tabs a.active { color: var(--accent); }
 .rail-nav .ic, nav.tabs .ic { width: 20px; height: 20px; flex: none; }
 
+/* The content column is at least the screen's dynamic height, which follows a phone browser's
+   bars: main fills what the header leaves. The run pane fills main, and on a desktop the git
+   and files panes do too. */
+.content { display: flex; flex-direction: column; min-height: 100dvh; }
+main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
+
 /* Flat layout everywhere: sections run edge to edge, split by single
    hairline borders; floating cards wasted width. Mobile and desktop keep
    their own layouts, only the skin is flat. The one boxed survivor is a
    dialog (dialog.card): a modal has to float. */
-main { padding: 0; }
 .grid { display: grid; gap: 0; }
+/* A grid child keeps its column's width, however long an unbroken line in it. */
+.grid > * { min-width: 0; }
 .grid > * + * { border-top: 1px solid var(--border); }
 /* Toolbar / prompt rows sit outside the section grid; align them with the
    section padding. */
@@ -304,7 +311,7 @@ aside.rail { display: none; }
 @media (min-width: 781px) {
   aside.rail {
     display: flex; flex-direction: column; gap: 4px; z-index: 30;
-    position: fixed; left: 0; top: 0; width: var(--rail-w); height: 100vh; overflow: auto;
+    position: fixed; left: 0; top: 0; width: var(--rail-w); height: 100dvh; overflow: auto;
     padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
     background: var(--surface); border-right: 1px solid var(--border);
   }
@@ -370,6 +377,9 @@ aside.rail { display: none; }
   /* No nested scrolling on a phone: an inner scroller traps the page scroll,
      so every card flows at natural height and the page is the one scroller. */
   .card.scroll, .conv-box { max-height: none !important; overflow: visible; }
+  /* Sideways a card wraps a long word and clips what is still wider (a clip makes no
+     scroller), so nothing in a card widens the page. */
+  .card.scroll { overflow-x: clip; overflow-wrap: break-word; }
   .composer .hint { display: none; } /* the keyboard's enter key says it; space is tight */
 }
 /* A pressed toggle: a class where a view tracks it, aria-pressed where the button says it. */

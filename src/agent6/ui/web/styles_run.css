@@ -60,7 +60,9 @@
    horizontal scrollbar; item text always wraps, so x never scrolls for real. */
 .conv-box { overflow: hidden auto; max-height: 62vh; }
 
-.prompt-box { background: var(--surface2); border-left: 3px solid var(--warn); padding: 12px; margin-bottom: 10px; }
+/* Boxes stand 10px apart; the row under their host sets the gap below the last one. */
+.prompt-box { background: var(--surface2); border-left: 3px solid var(--warn); padding: 12px; }
+.prompt-box + .prompt-box { margin-top: 10px; }
 .prompt-box .q { margin-bottom: 8px; white-space: pre-wrap; }
 .prompt-box .cmd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; background: var(--surface); border: 1px solid var(--surface2); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; white-space: pre; overflow-x: auto; }
 .prompt-box .cmd .tok-str { color: var(--warn); }
@@ -74,7 +76,7 @@
    drawer on the left. Below 781px everything stacks and the page scrolls
    (the mobile widget menu picks what is shown). --- */
 @media (min-width: 781px) {
-  .run-app { display: flex; flex-direction: column; height: calc(100vh - 42px); min-height: 0; }
+  .run-app { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
   /* prompts / controls / status keep their natural height; only the body pane
      flexes (without this the column shrinks them and clips the status kv) */
   .run-app > * { flex: none; }
