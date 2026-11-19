@@ -331,6 +331,7 @@ def test_the_phone_widget_menu_closes_on_esc_an_outside_tap_and_a_pick(
 
     The menu button was named "☰", and the menu stayed open over the page after Esc or a tap
     outside it. Then a menu left open while the window widened past 780px stayed in the page.
+    The button gave a pointer no title, as the theme button beside it does.
     """
     from playwright.sync_api import expect
 
@@ -340,6 +341,7 @@ def test_the_phone_widget_menu_closes_on_esc_an_outside_tap_and_a_pick(
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(f"http://127.0.0.1:{port}/#/session/menu-AAA111")
     button = page.get_by_role("button", name="Widgets", exact=True)
+    expect(button).to_have_attribute("title", "Widgets")
     menu = page.locator(".wmenu")
     for close in ("Escape", "tap"):
         button.click()

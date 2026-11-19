@@ -157,7 +157,7 @@ async function renderRun(id, opts, gen) {
                    ['tasks', 'Task graph'], ['budget', 'Budget'], ['tools', 'Tool calls'],
                    ['shells', 'Background shells'], ['diff', 'Latest commit'], ['log', 'Event log']];
   const wbtn = el('button', 'wmenu-btn', '☰');
-  wbtn.setAttribute('aria-label', 'Widgets');
+  wbtn.setAttribute('aria-label', 'Widgets'); wbtn.title = 'Widgets'; // as the theme button beside it
   const wmenu = el('div', 'wmenu');
   wmenu.popover = 'auto';
   wbtn.popoverTargetElement = wmenu;
