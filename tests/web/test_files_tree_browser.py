@@ -86,3 +86,19 @@ def test_tree_files_line_up_with_their_sibling_folders(
     parent_name = page.locator(_row(DEEP) + " .gtree-name").evaluate(left)
     assert page.locator(folder).evaluate(_CONTENT_LEFT) == pytest.approx(parent_name, abs=1)
     assert not errors
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_tree_rows_start_at_the_page_inset(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int, width: int
+) -> None:
+    """The tree's text sat 4px from its edge while the bar above kept the page inset."""
+    page, errors = open_page(big_tree)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    page.wait_for_selector(_row("deep"))
+    bar = page.locator(".files-bar").evaluate(
+        "b => [...b.children].find(c => c.offsetParent).getBoundingClientRect().left"
+    )
+    assert page.locator(_row("deep")).evaluate(_CONTENT_LEFT) == pytest.approx(bar, abs=1)
+    assert not errors

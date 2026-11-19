@@ -40,10 +40,10 @@
 /* A tree row: a folder's caret, mark, name and note, or a file's mark, name and size. A caret and
    its gap make one indent step, so a file's name lines up with its sibling folders' names and a
    folder's children start under its name. A name that does not fit ends in an ellipsis; the
-   row's title holds the whole path. */
+   row's title holds the whole path. `--tree-inset` sets the rows' side padding. */
 .gtree { --tree-step: 16px; }
-.gtree-dir, .gtree .gf { gap: 6px; padding: 6px 4px 6px calc(4px + var(--depth, 0) * var(--tree-step)); }
-.gtree .gf { padding-left: calc(4px + (var(--depth, 0) + 1) * var(--tree-step)); }
+.gtree-dir, .gtree .gf { gap: 6px; padding: 6px var(--tree-inset, 4px) 6px calc(var(--tree-inset, 4px) + var(--depth, 0) * var(--tree-step)); }
+.gtree .gf { padding-left: calc(var(--tree-inset, 4px) + (var(--depth, 0) + 1) * var(--tree-step)); }
 .gtree-dir { display: flex; align-items: center; border-top: 1px solid var(--border); cursor: pointer; font-size: 12.5px; }
 @media (hover: hover) { .gtree-dir:hover { background: var(--surface2); } }
 .gtree-caret { flex: none; width: 10px; text-align: center; color: var(--muted); }
