@@ -108,7 +108,7 @@ The Findings card's **Receipt** button opens Testing, Review, Children and How t
 - `#/git/commit/<sha>` opens a commit and scrolls to its graph row when loaded; `?path=<historical path>&line=<original line>` opens and scrolls to that file's diff
 - `#/git/compare/<base>..<head>` opens a comparison
 - `#/git/worktree` opens the working tree's uncommitted changes
-- `#/files/<rev>/<path>` opens a file, with `WORKTREE` for the working tree
+- `#/files/<rev>/<path>` opens a file, with `WORKTREE` for the working tree; the revision is the one picked, so a link to `HEAD` or a branch follows it
 - revisions and path components are URL-encoded; selecting a commit, a comparison, the working tree or a file updates the hash for copying, Back restores the selection, and a bare `#/git` shows the graph alone
 
 ## Highlighting

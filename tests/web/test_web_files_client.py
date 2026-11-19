@@ -161,7 +161,7 @@ assert.ok(!view.querySelector('.files-body').classList.contains('viewing'), 'old
 
 
 def test_file_links_decode_the_path_and_publish_selection() -> None:
-    """The hash opens an encoded file path and a click publishes the resolved revision."""
+    """The hash opens an encoded file path and a click publishes the revision picked."""
     _run("""
 location.hash = '#/files/HEAD/dir/a%20%23%25.txt';
 const opening = route();
@@ -174,10 +174,27 @@ await opening;
 assert.ok(view.querySelector('.files-view').textContent.includes('linked content'));
 const next = view.querySelector('.gf').onclick();
 await tick();
-assert.equal(location.hash, '#/files/old/a.txt');
+assert.equal(location.hash, '#/files/HEAD/a.txt');
 pending[1].reject(new Error('no file'));
 await next;
 assert.ok(view.querySelector('.files-view').textContent.includes('no file'));
+""")
+
+
+def test_a_link_to_the_revision_picked_keeps_the_pickers_label() -> None:
+    """A link naming the picked branch put its full ref name in the picker, in place of its name."""
+    _run("""
+let shown = null;
+gitPicker = (name, value, choose) => { shown = value; return picker(name, value, choose); };
+await renderFiles(1);
+chooseRevision({rev: 'refs/heads/topic', label: 'topic'});
+await tick();
+const opening = renderFiles(1, 'refs/heads/topic', 'a.txt');
+await tick();
+pending[pending.length - 1].resolve({text: 'a', lines: 1, spans: []});
+await opening;
+assert.equal(shown.label, 'topic');
+assert.equal(location.hash, '#/files/refs%2Fheads%2Ftopic/a.txt');
 """)
 
 
@@ -366,6 +383,7 @@ def test_markdown_mode_switches_content_and_blame_and_survives_reopening() -> No
 const answer = {text:'# Heading\n',lines:1,spans:[],digest:'same',
   rendered_html:'<h1 id="heading">Heading</h1>\n',binary:false,truncated:false};
 async function open() {
+  view.innerHTML = ''; // another page in between, so the file opens anew
   const opening = renderFiles(1, 'HEAD', 'README.md'); await tick();
   pending[pending.length - 1].resolve(answer); await opening;
 }
@@ -438,7 +456,7 @@ assert.equal(image.src, 'data:image/png;base64,cGl4ZWxz', 'image lacks an opaque
 
 
 def test_markdown_anchor_query_survives_the_resolved_file_selection() -> None:
-    """Resolving HEAD to a commit must not discard a table-of-contents destination."""
+    """Opening the linked file must not discard a table-of-contents destination."""
     _run(r"""
 remember(MARKDOWN_MODE_KEY, 'source');
 const opening = renderFiles(1, 'HEAD', 'README.md', new URLSearchParams('anchor=heading'));
@@ -446,7 +464,7 @@ await tick();
 pending[0].resolve({text:'# Heading\n',lines:1,spans:[],
   rendered_html:'<h1 id="heading">Heading</h1>\n',binary:false,truncated:false});
 await opening;
-assert.equal(location.hash, '#/files/old/README.md?anchor=heading');
+assert.equal(location.hash, '#/files/HEAD/README.md?anchor=heading');
 assert.equal(view.querySelector('.files-md-mode').children[1]['aria-pressed'], 'true',
   'an anchor discarded the remembered source choice');
 """)

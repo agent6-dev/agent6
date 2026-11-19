@@ -124,15 +124,15 @@ def test_markdown_opens_rendered_and_remembers_both_toggle_choices(
 def test_markdown_toc_and_relative_links_keep_the_files_route_and_revision(
     markdown_repo: tuple[int, str], open_page: Callable[[int], tuple[Page, list[str]]]
 ) -> None:
-    """TOC clicks scroll to headings, and linked documents stay at the committed revision."""
+    """TOC clicks scroll to headings, and linked documents keep the revision picked."""
     from playwright.sync_api import expect
 
-    port, sha = markdown_repo
+    port, _ = markdown_repo
     page, errors = open_page(port)
     page.goto(f"http://127.0.0.1:{port}/#/files/HEAD/docs/guide%20%23%25.md")
     page.get_by_role("link", name="details", exact=True).click()
     expect(page).to_have_url(
-        f"http://127.0.0.1:{port}/#/files/{sha}/docs/guide%20%23%25.md?anchor=details"
+        f"http://127.0.0.1:{port}/#/files/HEAD/docs/guide%20%23%25.md?anchor=details"
     )
     expect(page.locator(".md-view #details")).to_be_in_viewport()
     page.reload()
@@ -140,8 +140,11 @@ def test_markdown_toc_and_relative_links_keep_the_files_route_and_revision(
     page.get_by_role("link", name="next", exact=True).click()
     expect(page.locator(".md-view h1")).to_have_text("Next step")
     expect(page).to_have_url(
-        f"http://127.0.0.1:{port}/#/files/{sha}/docs/next.markdown?anchor=next-step"
+        f"http://127.0.0.1:{port}/#/files/HEAD/docs/next.markdown?anchor=next-step"
     )
+    page.reload()
+    expect(page.locator(".md-view h1")).to_have_text("Next step")
+    expect(page.get_by_role("textbox", name="revision")).to_have_value("HEAD")
     assert not errors
 
 
@@ -174,7 +177,7 @@ def test_a_heading_link_in_the_open_file_scrolls_in_place(
     """A link to a heading of the open file re-rendered the whole view and fetched it again."""
     from playwright.sync_api import expect
 
-    port, sha = markdown_repo
+    port, _ = markdown_repo
     page, errors = open_page(port)
     reads: list[str] = []
     page.on(
@@ -186,7 +189,7 @@ def test_a_heading_link_in_the_open_file_scrolls_in_place(
     before = len(reads)
     link = page.get_by_role("link", name="details", exact=True)
     link.click()
-    url = f"http://127.0.0.1:{port}/#/files/{sha}/docs/guide%20%23%25.md"
+    url = f"http://127.0.0.1:{port}/#/files/HEAD/docs/guide%20%23%25.md"
     expect(page).to_have_url(url + "?anchor=details")
     expect(page.locator(".md-view #details")).to_be_in_viewport()
     page.locator(".files-text").evaluate("e => e.scrollTo(0, 0)")

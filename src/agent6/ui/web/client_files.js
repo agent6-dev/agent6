@@ -18,13 +18,16 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';
   const app = el('div', 'files-app'); view.appendChild(app);
-  if (revision) filesState.rev = { rev: revision, label: revision === GIT_WORKTREE ? 'working tree' : revision };
+  if (revision && revision !== filesState.rev?.rev) filesState.rev = { rev: revision, label: revision === GIT_WORKTREE ? 'working tree' : revision };
   if (!filesState.rev) filesState.rev = refsData.head.sha ? { rev: 'HEAD', label: 'HEAD' } : GIT_WORKTREE_PICK;
+  // The hash names the revision picked, so a reload keeps HEAD or a branch; the reads use the
+  // commit its listing resolved to.
+  const filesHash = (file = '') => '#/files/' + encodeURIComponent(filesState.rev.rev) + (file && '/' + file.split('/').map(encodeURIComponent).join('/'));
 
   // -- toolbar: the revision picker, the filter, the count ---------------------------
   const bar = el('div', 'files-bar page-pad row wrap'); app.appendChild(bar);
   const listHost = el('div', 'gpick-host');
-  const pick = gitPicker('revision', filesState.rev, (v) => { filesState.rev = v; setViewHash('#/files/' + encodeURIComponent(v.rev)); loadTree(); }, listHost, [GIT_WORKTREE_PICK]);
+  const pick = gitPicker('revision', filesState.rev, (v) => { filesState.rev = v; setViewHash(filesHash()); loadTree(); }, listHost, [GIT_WORKTREE_PICK]);
   pick.root.appendChild(listHost); // the list opens under the field it searches
   const filter = el('input', 'filter'); filter.type = 'search'; filter.placeholder = 'filter files…'; filter.setAttribute('aria-label', 'filter files');
   const counts = el('span', 'muted files-counts');
@@ -35,7 +38,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   ignoredToggle.onclick = () => {
     showIgnored = !showIgnored; remember('a6-files-ignored', showIgnored ? 'on' : 'off');
     ignoredToggle.setAttribute('aria-pressed', String(showIgnored));
-    setViewHash('#/files/' + encodeURIComponent(filesState.rev.rev));
+    setViewHash(filesHash());
     return loadTree();
   };
   bar.appendChild(pick.root); bar.appendChild(filter); bar.appendChild(ignoredToggle); bar.appendChild(counts);
@@ -127,8 +130,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     const current = () => pane.dataset.key === key && pane.isConnected;
     shown = f.path;
     const anchor = linked ? query.get('anchor') : null;
-    const fileHash = '#/files/' + encodeURIComponent(rev) + '/' + f.path.split('/').map(encodeURIComponent).join('/');
-    setViewHash(fileHash + (anchor ? '?' + new URLSearchParams({ anchor }) : ''), linked);
+    setViewHash(filesHash(f.path) + (anchor ? '?' + new URLSearchParams({ anchor }) : ''), linked);
     reveal(f.path);
     for (const r of tree.querySelectorAll('.gf')) {
       r.setAttribute('aria-selected', String(r.dataset.path === f.path));
@@ -206,7 +208,13 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     };
     if (typeof t.rendered_html === 'string') {
       const md = el('div', 'md-view'); md.innerHTML = t.rendered_html; box.appendChild(md);
-      filesState.markdown = { rev, path: f.path, view: md, scroll: (id) => {
+      // The server's links to files name the commit listed; the page's name the revision picked.
+      const listed = '#/files/' + encodeURIComponent(rev) + '/';
+      for (const a of md.querySelectorAll('a[href^="#/files/"]')) {
+        const href = a.getAttribute('href');
+        if (href.startsWith(listed)) a.setAttribute('href', filesHash() + '/' + href.slice(listed.length));
+      }
+      filesState.markdown = { rev: filesState.rev.rev, path: f.path, view: md, scroll: (id) => {
         const heading = id && [...md.querySelectorAll('[id]')].find(h => h.id === id);
         if (heading) heading.scrollIntoView({ block: 'start' }); else box.scrollTo(0, 0);
       } };
