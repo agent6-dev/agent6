@@ -119,7 +119,7 @@ PAGE_HTML = (
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon.svg">
 <title>agent6</title>
-<script>try { const t = localStorage.getItem("a6-theme"); if (t === "light" || t === "dark") document.documentElement.classList.add(t); } catch (_) {}</script>
+<script>try { const c = document.documentElement.classList, t = localStorage.getItem("a6-theme"); if (t === "light" || t === "dark") c.add(t); if (localStorage.getItem("a6-rail") === "min") c.add("rail-min"); } catch (_) {}</script>
 <style>
 """
     + STYLES_CSS

@@ -56,8 +56,8 @@ systemDark.addEventListener('change', syncTheme);
 syncTheme();
 
 // --- nav rail collapse ---------------------------------------------------------
-// The collapse button is named by what a press does and says whether the rail is expanded.
-if (recall('a6-rail', '') === 'min') document.documentElement.classList.add('rail-min');
+// The collapse button is named by what a press does and says whether the rail is expanded;
+// <head> applies a stored collapse before the first paint.
 const railToggle = document.getElementById('rail-toggle');
 function syncRail() {
   const min = document.documentElement.classList.contains('rail-min');
