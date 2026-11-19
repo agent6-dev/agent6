@@ -432,7 +432,10 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     field = el('input', 'field');
     field.value = cur;
   }
-  if (!combo) dialog.appendChild(field);
+  if (!combo) {
+    field.setAttribute('aria-labelledby', dialog.getAttribute('aria-labelledby')); // named by the key
+    dialog.appendChild(field);
+  }
   const repoRow = el('label', 'row cfg-check');
   const repoCb = el('input'); repoCb.type = 'checkbox';
   // Default the target layer to the value's origin: editing a repo-sourced value

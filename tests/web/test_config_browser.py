@@ -678,3 +678,21 @@ def test_enter_in_any_config_dialog_field_presses_its_add_or_save(
 
 ADD_DIALOGS = ("Add provider…", "Add MCP server…", "Add skill…", "Add reviewer…", "Add preset…")
 EDITORS = ("budget.max_usd", "sandbox.isolation", "harness.verify.command", "models.worker.model")
+
+
+def test_a_config_editor_names_its_value_field_by_the_key(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The editor's value field had no name: a screen reader read a bare `10.0`."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    _config(page, port)
+    for key in ("budget.max_usd", "sandbox.isolation", "harness.verify.command"):
+        page.locator(f'[data-key="{key}"]').click()
+        dialog = page.get_by_role("dialog", name=key)
+        field = dialog.locator("input:not([type=checkbox]), select, textarea").first
+        expect(field).to_have_accessible_name(key)
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="detached")
+    assert not errors
