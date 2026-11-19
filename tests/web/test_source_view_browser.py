@@ -277,3 +277,27 @@ def test_the_source_container_leaves_the_config_source_column_alone(
     }).length""")
     assert cut == 0
     assert not errors
+
+
+def test_the_git_tree_keeps_its_names_whole_and_titles_every_row(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """The shared tree cut the Git tab's names at a tablet's width, and no title held them."""
+    folder = tmp_path / "alpha-folder-name" / "beta-folder-name"
+    folder.mkdir(parents=True)
+    (folder / "a-long-file-name-for-a-narrow-tree.txt").write_text("leaf\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-m", "a deep file")
+    sha = _git(tmp_path, "rev-parse", "HEAD")
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 820, "height": 1000})
+    page.add_init_script("localStorage.setItem('a6-files-view', 'tree')")
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/{sha}")
+    page.wait_for_selector(".gfiles .gtree .gf")
+    rows = page.locator(".gfiles .gtree [role=treeitem]").evaluate_all("""rows => rows.map(r => {
+      const name = r.querySelector('.gtree-name, .gf-path');
+      return {path: r.dataset.path, title: r.title, cut: name.scrollWidth > name.clientWidth + 1};
+    })""")
+    assert len(rows) == 3, rows
+    assert all(r["title"] == r["path"] and not r["cut"] for r in rows), rows
+    assert not errors

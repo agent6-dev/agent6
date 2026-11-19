@@ -32,21 +32,22 @@ const fileCount = (n) => n === 1 ? '1 file' : n + ' files';
 
 // Render a tree: a folder row (a caret, the name, what `folderNote(node)` says of its
 // contents) that folds and unfolds its children on a click, and `fileRow(entry)` for each
-// file; both carry `data-path` and a `--depth` the stylesheet indents by. `folded` starts
-// every folder closed; `opened`, a Map of folder path to open, overrides that per folder and
-// records each toggle, so a choice outlives a repaint. The tree is one Tab stop: ↑ and ↓ move
-// between the rows shown, → opens a folder or enters it, ← closes it or goes to its parent,
-// and Home and End go to the first and last row.
+// file; both carry `data-path`, the path as their title, and a `--depth` the stylesheet
+// indents by. `folded` starts every folder closed; `opened`, a Map of folder path to open,
+// overrides that per folder and records each toggle, so a choice outlives a repaint. The
+// tree is one Tab stop: ↑ and ↓ move between the rows shown, → opens a folder or enters it,
+// ← closes it or goes to its parent, and Home and End go to the first and last row.
 function treeView(root, fileRow, folderNote, folded, folderMark, opened) {
   const box = el('div', 'gtree');
   box.setAttribute('role', 'tree'); box.setAttribute('aria-label', 'Files');
   const item = (row, depth) => {
     row.setAttribute('role', 'treeitem'); row.setAttribute('aria-level', depth + 1); row.tabIndex = -1;
+    row.title ||= row.dataset.path;
     row.style.setProperty('--depth', depth);
   };
   const paint = (node, host, depth) => {
     for (const d of node.dirs.values()) {
-      const row = el('div', 'gtree-dir'); row.dataset.path = d.path; row.title = d.path;
+      const row = el('div', 'gtree-dir'); row.dataset.path = d.path;
       const caret = el('span', 'gtree-caret');
       row.appendChild(caret);
       if (folderMark) { const mark = folderMark(d); if (mark) row.appendChild(mark); }

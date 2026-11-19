@@ -82,7 +82,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   };
   const fileRow = (f) => {
     const row = el('div', 'gf');
-    row.dataset.path = f.path; row.title = f.path;
+    row.dataset.path = f.path;
     row.setAttribute('aria-selected', String(shown === f.path));
     const mark = stateMark([f]); if (mark) row.appendChild(mark);
     row.appendChild(el('span', 'gf-path', f.path.slice(f.path.lastIndexOf('/') + 1)));

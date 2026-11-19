@@ -12,8 +12,11 @@
    wrapped to a row of its own keeps to the right. */
 .files-counts { margin-left: auto; font-size: 12px; white-space: nowrap; min-width: 18ch; text-align: end; font-variant-numeric: tabular-nums; }
 .files-tree-toggle { min-width: 7em; }
-/* A narrow tree shows the names alone: the folder notes and the file sizes go first. */
+/* Each name keeps to one line, ending in an ellipsis where it does not fit; the row's title
+   holds the whole path. A narrow tree shows the names alone: the folder notes and the file
+   sizes go first. */
 .files-tree { container: files-tree / inline-size; --tree-inset: var(--files-inset); }
+.files-tree :is(.gtree-name, .gf-path) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @container files-tree (width < 320px) { .gtree-note, .gf-counts { display: none; } }
 /* The cut-list note keeps the rows' inset; loading and errors sit as the file pane's empty state. */
 .files-tree > .gf-note { margin: 0; padding: 8px var(--files-inset); }
