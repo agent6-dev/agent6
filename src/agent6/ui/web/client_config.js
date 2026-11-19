@@ -87,7 +87,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     const tr = el('tr', s.modified ? 'mod' : '');
     tr.appendChild(breakableCell('key', k, '.'));
     tr.appendChild(breakableCell('val', s.display, '/')); // the one shared value column (viewmodel.display_value)
-    tr.appendChild(breakableCell('src', esc(s.source), '/'));
+    tr.appendChild(breakableCell('source', esc(s.source), '/'));
     // Hover text: the leaf's meaning (the docs table cell), from the same
     // per-key payload the editor dialog shows it in.
     tr.title = s.description ? (s.description_points || [s.description]).join('\n') : 'click to edit';

@@ -97,7 +97,7 @@ def test_every_config_section_lines_its_columns_up(
     """
     page, errors = open_page(flag_port)
     _config(page, flag_port, width)
-    assert page.locator('[data-key="sandbox.network"] .src').inner_text().startswith("flag (")
+    assert page.locator('[data-key="sandbox.network"] .source').inner_text().startswith("flag (")
     rows = page.evaluate(COLUMNS)
     columns = {(value, source) for value, source, _ in rows}
     assert len(columns) == 1
@@ -386,4 +386,17 @@ def test_a_wrapped_value_keeps_its_key_and_source_on_its_first_line(
     assert lines >= 3
     assert abs(key - value) <= 2
     assert abs(source - value) <= 2
+    assert not errors
+
+
+def test_the_code_views_rules_never_reach_the_config_source_column(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The source cell carried the Files code view's `.src` class, and so its type."""
+    page, errors = open_page(port)
+    _config(page, port)
+    page.add_style_tag(content=".src { letter-spacing: 9px; }")
+    source = page.locator('[data-key="agent6.preset"] td').last
+    assert source.evaluate("e => getComputedStyle(e).letterSpacing") == "normal"
+    assert source.evaluate("e => getComputedStyle(e).fontSize") == "12px"
     assert not errors

@@ -33,14 +33,14 @@ textarea.field.cfg-value {
   text-align: left; vertical-align: baseline; padding: 6px 8px; border-bottom: 1px solid var(--border);
 }
 /* A long key wraps after a dot, a long value or source after a slash (the page marks each with a
-   <wbr>), and inside a part only when the part alone is wider than its column. */
-.cfg .key, .cfg .val, .cfg .src { overflow-wrap: anywhere; }
-.cfg .key, .cfg .val { font-family: var(--mono); }
+   <wbr>), and inside a part only when the part alone is wider than its column. Every cell is
+   monospace; the source, the layer a value comes from, is smaller and muted. */
+.cfg .key, .cfg .val, .cfg .source { overflow-wrap: anywhere; font-family: var(--mono); }
 .cfg tr.mod .key { color: var(--accent); }
 /* A row opens its editor: the pointer lights it, as the other pages' rows. */
 .cfg tr[data-key] { cursor: pointer; }
 @media (hover: hover) { .cfg tr[data-key]:hover { background: var(--surface2); } }
-.cfg .src { color: var(--muted); }
+.cfg .source { color: var(--muted); font-size: 12px; }
 @container (width >= 700px) {
   .cfg { table-layout: fixed; }
   .cfg th:first-child { width: 352px; } /* the longest built-in key, 40 characters */
