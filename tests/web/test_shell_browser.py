@@ -632,3 +632,32 @@ def test_a_dialog_closes_from_its_own_close_button(
     close.click()
     expect(page.get_by_role("dialog")).to_have_count(0)
     assert not errors
+
+
+def test_a_long_dialog_title_wraps_beside_its_close_button(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """On a phone a long config key pushed the Close button out of its dialog.
+
+    The dialog opened scrolled sideways, cutting off the key's start.
+    The key wraps, at a dot first.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    key = "review.min_remaining_budget_fraction"
+    page.get_by_text(key, exact=True).click()
+    dialog = page.get_by_role("dialog", name=key)
+    expect(dialog).to_be_visible()
+    wide, room, scrolled = dialog.evaluate("d => [d.scrollWidth, d.clientWidth, d.scrollLeft]")
+    assert wide <= room and scrolled == 0
+    close, box = dialog.get_by_role("button", name="Close").bounding_box(), dialog.bounding_box()
+    assert close is not None and box is not None
+    assert close["x"] + close["width"] <= box["x"] + box["width"]
+    first, rest = dialog.locator("h2").evaluate("""h => { const r = document.createRange();
+      r.selectNodeContents(h.firstChild);
+      return [r.getBoundingClientRect().top, h.lastChild.getBoundingClientRect().top]; }""")
+    assert rest > first  # "review." ends the first line
+    assert not errors

@@ -208,7 +208,10 @@ function closeButton(label, onclick) {
 function openDialog(title, cls) {
   if (document.querySelector('dialog[open]')) return null;
   const dialog = el('dialog', cls ? 'card ' + cls : 'card');
-  const heading = el('h2', null, title);
+  // A config key too long for its line breaks after a dot before it breaks inside a name.
+  const [first, ...rest] = title.split(/(?<=\.)/);
+  const heading = el('h2', null, first);
+  for (const part of rest) { heading.appendChild(el('wbr')); heading.appendChild(el('span', null, part)); }
   heading.id = 'dialog-title-' + ++dialogCount;
   dialog.setAttribute('aria-labelledby', heading.id);
   dialog.setAttribute('closedby', 'any');

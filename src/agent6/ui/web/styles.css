@@ -320,10 +320,14 @@ dialog.card {
   border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.35); overscroll-behavior: contain;
 }
 dialog.card.wide { width: 760px; }
-/* A dialog's head: its title, as written (a config key keeps its case), then its Close button.
-   The head rises by half the button's height past the title's 20px line, so the title stays put. */
-dialog .dialog-head { display: flex; align-items: center; gap: 8px; margin: calc(10px - var(--ctl-h) / 2) 0 8px; }
-dialog .dialog-head > h2 { flex: 1; margin: 0; font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--text); }
+/* A dialog's head: its title, as written (a config key keeps its case), then its Close button
+   beside the title's first 20px line. The head rises by half the button's height past that line,
+   so the title stays put. A long title wraps, so the Close button stays inside the dialog. */
+dialog .dialog-head { display: flex; align-items: flex-start; gap: 8px; margin: calc(10px - var(--ctl-h) / 2) 0 8px; }
+dialog .dialog-head > h2 {
+  flex: 1; min-width: 0; margin: 0; padding-block: calc(var(--ctl-h) / 2 - 10px); overflow-wrap: anywhere;
+  font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--text);
+}
 /* A list dialog sits high and still, so its field stays put while the list narrows. */
 dialog.card.picker { margin-top: 12vh; max-height: calc(88vh - 16px); }
 dialog::backdrop { background: rgba(0,0,0,.55); overflow: hidden; overscroll-behavior: contain; }
