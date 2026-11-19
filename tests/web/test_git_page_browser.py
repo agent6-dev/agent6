@@ -196,6 +196,23 @@ def test_a_phones_commit_panel_keeps_its_back_button_in_view(
     assert errors == [], errors
 
 
+def test_a_file_row_the_arrow_keys_reach_stays_below_the_panels_head(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """Home in a long file list scrolled the first row under the side panel's sticky head."""
+    sha = _long_history(tmp_path)
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/{sha}")
+    files = page.locator(".git-side .gf-open")
+    files.first.focus()
+    page.keyboard.press("End")
+    page.keyboard.press("Home")
+    head = page.locator(".git-side-head").evaluate("e => e.getBoundingClientRect().bottom")
+    top = files.first.evaluate("e => e.closest('.gf').getBoundingClientRect().top")
+    assert top >= head, (top, head)
+    assert errors == [], errors
+
+
 def test_the_focus_follows_a_file_into_its_diff_and_back(
     open_page: OpenPage, git_port: int
 ) -> None:
