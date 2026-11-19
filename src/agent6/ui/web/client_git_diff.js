@@ -31,12 +31,26 @@ function gitDiffViewer(body) {
     const generation = routeGen;
     const current = () => request === showing && generation === routeGen && diffView.isConnected;
     const key = JSON.stringify([ctx.panel || '', ctx.base, ctx.head, f.path, f.old_path, !!whole, fullContext]);
+    // The rebuild keeps the focus the tab held: on the same control of the new head, else (a file
+    // row, the patch, a control now disabled) on ‹ files.
+    const had = document.activeElement;
+    const at = had && body.contains(had) ? [...diffView.querySelectorAll('.git-diff-head button, .git-diff-head a')].indexOf(had) : null;
     diffView.dataset.key = key;
     diffView.innerHTML = '';
     body.classList.add('diffing');
     const head = el('div', 'git-diff-head row');
     const back = el('button', 'mini', '‹ files');
-    back.onclick = () => { closeDiff(); if (ctx.commit) setViewHash('#/git/commit/' + encodeURIComponent(ctx.head)); };
+    // Back in the list, the file's row reads selected and takes the focus ‹ files held.
+    back.onclick = () => {
+      const focused = document.activeElement === back;
+      closeDiff();
+      if (ctx.commit) setViewHash('#/git/commit/' + encodeURIComponent(ctx.head));
+      const row = [...body.querySelectorAll('.gf')].find(r => r.dataset.path === f.path);
+      if (!row) return;
+      for (const r of body.querySelectorAll('.gf.sel')) r.classList.remove('sel');
+      row.classList.add('sel');
+      if (focused) row.querySelector('.gf-open').focus();
+    };
     head.appendChild(back);
     head.appendChild(statusBadge(f.status));
     head.appendChild(filePath(f));
@@ -95,6 +109,7 @@ function gitDiffViewer(body) {
       tools.appendChild(absent); tools.appendChild(fileLink('base', 'Open base file in Files', 'diff-open-base'));
     } else tools.appendChild(fileLink('head', 'Open in Files', 'diff-open-file'));
     diffView.appendChild(head);
+    if (at !== null) { const same = head.querySelectorAll('button, a')[at]; (same && !same.disabled ? same : back).focus({ preventScroll: true }); }
     const box = el('div', 'git-diff-body'); diffView.appendChild(box);
     let d = diffs.get(key);
     if (!d) {

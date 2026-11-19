@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from agent6.ui.web import git_model
 from tests.web import test_web_browser
 
 if TYPE_CHECKING:
@@ -96,4 +97,58 @@ def test_a_phones_commit_panel_keeps_its_back_button_in_view(
     back = page.get_by_role("button", name="\u2039 graph", exact=True)
     panel, button = side.bounding_box(), back.bounding_box()
     assert panel and button and button["y"] >= panel["y"], (panel, button)
+    assert errors == [], errors
+
+
+def test_the_focus_follows_a_file_into_its_diff_and_back(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """Opening or closing a file's diff, or switching its mode, dropped the focus to the page."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.locator(".gc-row").first.click()  # the merge: b.txt and img.bin
+    page.locator(".git-side .gf[data-path='b.txt']").click()
+    page.wait_for_selector(".git-diff .diff")
+    head = page.locator(".git-diff-head")
+    expect(head.get_by_role("button", name="\u2039 files", exact=True)).to_be_focused()
+    head.get_by_role("button", name="split", exact=True).click()
+    page.wait_for_selector(".git-diff .ds-row")
+    expect(head.get_by_role("button", name="split", exact=True)).to_be_focused()
+    head.get_by_role("button", name="\u2039 files", exact=True).click()
+    focused = "document.activeElement.closest('.gf')?.dataset.path"
+    page.wait_for_function(f"{focused} === 'b.txt'")
+    expect(page.locator(".git-side .gf.sel")).to_have_attribute("data-path", "b.txt")
+    assert errors == [], errors
+
+
+def test_load_more_hands_the_focus_to_the_first_row_it_adds(
+    open_page: OpenPage, git_port: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Load more rebuilt itself when its page came in, and the focus it held dropped to the page."""
+    from playwright.sync_api import expect
+
+    monkeypatch.setattr(git_model, "GRAPH_PAGE", 2)
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.get_by_role("button", name="Load more", exact=True).focus()
+    page.keyboard.press("Enter")
+    expect(page.locator(".gc-row").nth(2)).to_be_focused()
+    assert errors == [], errors
+
+
+def test_closing_a_phones_panel_returns_the_focus_to_the_graph(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """Closing a phone's commit panel hid the focused back button and dropped the focus."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    rows = page.locator(".gc-row")
+    rows.nth(1).click()
+    page.get_by_role("button", name="\u2039 graph", exact=True).click()
+    expect(rows.nth(1)).to_be_focused()
     assert errors == [], errors

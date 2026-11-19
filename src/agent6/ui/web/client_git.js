@@ -481,8 +481,13 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     });
     if (!commits.length) graph.appendChild(el('div', 'empty', selectedRefs().length || head.sha ? 'no commits yet' : 'no refs selected'));
     if (hasMore) {
+      // The focus Load more held goes to the first row it adds.
       const more = el('button', 'git-more', 'Load more');
-      more.onclick = () => loadGraph(false);
+      more.onclick = async () => {
+        const had = document.activeElement === more, from = commits.length;
+        await loadGraph(false);
+        if (had) (commits[from] ? graph.querySelector('[data-sha="' + commits[from].sha + '"]') : graph.querySelector('.git-more'))?.focus();
+      };
       graph.appendChild(more);
     }
     if (!markRow(selected)) settle(graph.querySelector('.gc-row'));
@@ -549,10 +554,15 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   paintRemotes();
 
   // -- the side panel: a commit, or the compare --------------------------------------
+  // A phone's panel covers the graph; ‹ graph closes it, and the focus it held goes to the graph.
   const sideHead = (title) => {
     const h = el('div', 'git-side-head row');
     const back = el('button', 'mini git-back', '‹ graph');
-    back.onclick = () => side.classList.remove('open');
+    back.onclick = () => {
+      const had = document.activeElement === back;
+      side.classList.remove('open');
+      if (had) graph.querySelector('.gc-row[tabindex="0"]')?.focus();
+    };
     h.appendChild(back); h.appendChild(el('h3', null, title));
     return h;
   };
