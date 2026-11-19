@@ -301,3 +301,31 @@ def test_the_git_tree_keeps_its_names_whole_and_titles_every_row(
     assert len(rows) == 3, rows
     assert all(r["title"] == r["path"] and not r["cut"] for r in rows), rows
     assert not errors
+
+
+def test_a_size_container_wraps_the_lines_only_while_blame_is_on(
+    open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
+) -> None:
+    """Size containers wrapped every line of a file, so Firefox restyled them all on a resize."""
+    port, base, head = long_file
+    containers = """line => {
+      const out = [];
+      for (let n = line.parentElement; n; n = n.parentElement)
+        if (getComputedStyle(n).containerType !== 'normal') out.push(n.tagName);
+      return out;
+    }"""
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/files/HEAD/long.txt")
+    line = page.locator("[data-line='1']")
+    line.wait_for()
+    assert line.evaluate(containers) == []
+    page.locator(".files-blame").click()
+    page.wait_for_selector("[data-line='50'] .blame-commit")
+    assert line.evaluate(containers) == ["PRE"]
+    page.add_init_script("localStorage.setItem('a6-diff-mode', 'inline')")
+    page.goto(f"http://127.0.0.1:{port}/#/git/compare/{base}..{head}?path=long.txt")
+    page.reload()
+    diff_line = page.locator(".dl[data-new='3']")
+    diff_line.wait_for()
+    assert diff_line.evaluate(containers) == []
+    assert not errors
