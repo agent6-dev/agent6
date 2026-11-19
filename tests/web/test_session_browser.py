@@ -436,3 +436,33 @@ def test_the_phone_widget_menu_closes_on_esc_an_outside_tap_and_a_pick(
     page.set_viewport_size({"width": 1024, "height": 844})
     expect(menu).to_be_hidden()
     assert not errors
+
+
+def test_the_phone_widget_menu_offers_only_the_widgets_a_run_has(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A run with no plan, review or background shell offers none of those widgets.
+
+    The menu listed every widget, and picking one the run did not have showed an empty page.
+    """
+    from playwright.sync_api import expect
+
+    stop = {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+    _session(tmp_path, "menu-AAA111", [stop])
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/menu-AAA111")
+    page.get_by_role("button", name="Widgets", exact=True).click()
+    expect(page.locator(".wmenu button:visible")).to_have_text(
+        [
+            "Conversation",
+            "Overview",
+            "Findings",
+            "Task graph",
+            "Budget",
+            "Tool calls",
+            "Latest commit",
+            "Event log",
+        ]
+    )
+    assert not errors

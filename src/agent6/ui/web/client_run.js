@@ -171,6 +171,11 @@ async function renderRun(id, opts, gen) {
     mb.onclick = () => { setW(key); wmenu.hidePopover(); window.scrollTo(0, 0); };
     wmenu.appendChild(mb);
   }
+  // The menu offers only the widgets this run has: paintRun hides a card it has nothing for.
+  wmenu.addEventListener('beforetoggle', (e) => {
+    if (e.newState !== 'open') return;
+    for (const mb of wmenu.children) mb.hidden = app.querySelector('.card[data-w="' + mb.dataset.w + '"]').style.display === 'none';
+  });
   cards._setW = setW; // the Review run button activates its card on a phone
   setW('conv');
   // The button lives in the header (next to the theme toggle) so the two share
