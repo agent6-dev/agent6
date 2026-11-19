@@ -64,7 +64,8 @@
 .prompt-box { background: var(--surface2); border-left: 3px solid var(--warn); padding: 12px; }
 .prompt-box + .prompt-box { margin-top: 10px; }
 .prompt-box .q { margin-bottom: 8px; white-space: pre-wrap; }
-.prompt-box .cmd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; background: var(--surface); border: 1px solid var(--surface2); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; white-space: pre; overflow-x: auto; }
+/* The command under judgment wraps, so its whole tail shows before Allow. */
+.prompt-box .cmd { font-size: 0.92em; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 10px; margin: 0 0 10px; }
 .prompt-box .cmd .tok-str { color: var(--warn); }
 .prompt-box .cmd .tok-flag { color: var(--accent); }
 .prompt-box .cmd .tok-op { font-weight: 700; }
