@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "83e002509c29547d6ea517ab3a0eeee42d8b13b60c6e4a6ed0cc1daf51812bf9"
+PAGE_SHA256 = "bdb82a7d4bb1b410b53a42dae1a85cf1b94ff989b81fefba58000b8fae3e1896"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:

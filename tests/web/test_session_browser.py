@@ -143,3 +143,38 @@ def test_a_question_box_spaces_its_questions_and_wraps_a_narrow_field(
         assert first["y"] > option["y"] + option["height"]
         assert first["width"] == row["width"]
     assert not errors
+
+
+@pytest.mark.parametrize("asks", [False, True])
+def test_a_phone_opens_a_run_at_its_tail_unless_a_prompt_waits(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    *,
+    asks: bool,
+) -> None:
+    """A phone opens a long conversation at its end, and at the top when a prompt box waits.
+
+    The page always scrolled to the conversation's end, about 2,500px under the approval box.
+    """
+    from playwright.sync_api import expect
+
+    rows: list[dict[str, Any]] = []
+    for i in range(40):
+        rows.append(
+            {"type": "tool.call", "name": "read_file", "args_preview": {"path": f"f{i}.py"}}
+        )
+        rows.append({"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"})
+    if asks:
+        rows.append({"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"})
+    _session(tmp_path, "long-AAA111", rows, live=True)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/long-AAA111")
+    expect(page.locator(".card-conv .ci").filter(has_text="f39.py")).to_be_attached()
+    if asks:
+        assert page.evaluate("window.scrollY") == 0
+        expect(page.locator(".prompt-box")).to_be_in_viewport()
+    else:
+        page.wait_for_function("window.scrollY > 0")
+    assert not errors

@@ -189,8 +189,10 @@ async function renderRun(id, opts, gen) {
   }), cc.card);
   paintRun(cards, snap);
   cc.conv.refresh().then(() => {
-    // On a phone the page (not the box) scrolls the conversation: open at the tail.
-    if (window.innerWidth < 781) window.scrollTo(0, document.body.scrollHeight);
+    // On a phone the page (not the box) scrolls the conversation: it opens at the tail, unless a
+    // prompt box or the children table above the conversation waits for the operator.
+    const above = prompts.childElementCount || children.parentElement.style.display !== 'none';
+    if (window.innerWidth < 781 && !above) window.scrollTo(0, document.body.scrollHeight);
   });
 
   // The stream stays open across a finish: a resume from any surface logs into
