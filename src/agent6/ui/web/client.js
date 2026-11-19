@@ -1101,7 +1101,10 @@ function makeConv(url, box, body, empty = {}) {
   body.append(itemsHost, liveHost, conv.prompts);
   // While the reader stays at the tail, a resize of the box or of what it holds scrolls back to it.
   let atTail = true;
-  box.addEventListener('scroll', () => { atTail = box.scrollTop + box.clientHeight >= box.scrollHeight - 40; });
+  box.addEventListener('scroll', () => {
+    atTail = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
+    box.classList.toggle('scrolled', box.scrollTop > 0); // a rule marks the top edge while lines pass under it
+  });
   const follow = new ResizeObserver(() => { if (atTail) box.scrollTop = box.scrollHeight; });
   follow.observe(box); follow.observe(body);
   // A run/machine that produced no conversation: "yet ... as it streams" while it

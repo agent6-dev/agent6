@@ -86,6 +86,8 @@
 .cycle > :not(.on) { visibility: hidden; }
 /* The 4px side padding keeps an item's hover and focus ring whole; text wraps, so x stays hidden. */
 .conv-box { overflow: hidden auto; max-height: 62vh; padding-inline: 4px; margin-inline: -4px; }
+/* Scrolled from its top, the box rules the edge its lines are cut at, outside itself, so none moves. */
+.conv-box.scrolled { box-shadow: 0 -1px var(--border); }
 /* A focused control scrolls into view 12px clear of its pane's edge, so its ring shows whole. */
 .run-app .drawer, .conv-box { scroll-padding-block: 12px; }
 /* Firefox focuses a scroller itself: the drawer, flush with the bars, takes its ring inside. */

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import pathlib
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -159,6 +159,32 @@ def test_the_conversation_heading_lines_up_with_the_drawers_first_card(
     )
     assert tops[0] == tops[1]
     assert tops[2] == tops[3]
+    assert not errors
+
+
+def test_a_rule_marks_the_conversations_top_edge_while_it_is_scrolled(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A scrolled conversation draws a rule under its heading, where its lines are cut.
+
+    A line cut in half at the box's top edge read as a rendering fault. At the top no rule shows.
+    """
+    from playwright.sync_api import expect
+
+    rows: list[dict[str, Any]] = []
+    for i in range(60):
+        rows.append({"type": "tool.call", "name": "read_file", "args_preview": {"path": f"f{i}"}})
+        rows.append({"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"})
+    session_logs.write_run(tmp_path, "rule-AAA111", rows)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(f"http://127.0.0.1:{port}/#/session/rule-AAA111")
+    box = page.locator(".card-conv .conv-box")
+    expect(box.locator(".ci").filter(has_text="f59")).to_be_attached()
+    border = page.locator(".run-body").evaluate("e => getComputedStyle(e).borderTopColor")
+    expect(box).to_have_css("box-shadow", f"{border} 0px -1px 0px 0px")  # opened at its tail
+    box.evaluate("b => { b.scrollTop = 0; }")
+    expect(box).to_have_css("box-shadow", "none")
     assert not errors
 
 
