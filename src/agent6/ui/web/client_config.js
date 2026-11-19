@@ -1,7 +1,6 @@
 // --- config ------------------------------------------------------------------
 async function renderConfig(gen = routeGen, readState = () => ({})) {
   if (gen !== routeGen) return;
-  setCrumb('config');
   const state = readState();
   const [data, registry] = await Promise.all([
     getJSON('/api/config'),

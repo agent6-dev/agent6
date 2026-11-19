@@ -20,6 +20,7 @@ pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
 open_page = test_web_browser.open_page
 port = test_web_browser.port
+git_port = test_web_browser.git_port
 
 
 def test_a_stored_collapsed_rail_is_collapsed_when_the_rail_is_built(
@@ -81,6 +82,34 @@ def test_a_route_with_no_page_says_so_under_its_own_crumb(
     page.get_by_role("link", name="Back to Sessions").click()
     expect(page.locator(".dock textarea")).to_be_visible()
     expect(page).to_have_title(re.compile("^sessions · agent6$", re.I))
+    assert not errors
+
+
+@pytest.mark.parametrize(
+    ("route", "ready", "label"),
+    [
+        ("#/", ".dock textarea", "Sessions"),
+        ("#/machines", ".dock textarea", "State machines"),
+        ("#/config", ".cfg", "Config"),
+        ("#/git", ".gc-row", "Git"),
+        ("#/files", ".files-tree .gf", "Files"),
+    ],
+)
+def test_the_crumb_names_each_page_as_its_nav_link_does(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    git_port: int,
+    route: str,
+    ready: str,
+    label: str,
+) -> None:
+    """Each page renamed itself in lower case ("sessions", "config") beside the nav's "Sessions"."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/{route}")
+    expect(page.locator(ready).first).to_be_visible()
+    expect(page.locator("#crumb")).to_have_text(label)
+    expect(page).to_have_title(f"{label} · agent6")
     assert not errors
 
 

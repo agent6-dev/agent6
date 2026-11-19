@@ -372,7 +372,6 @@ function gitPicker(name, initial, onPick, listHost, fixed) {
 }
 
 async function renderGit(gen, link = [], query = new URLSearchParams()) {
-  setCrumb('git');
   const [refsData, wtData] = await Promise.all([getJSON('/api/git/refs'), getJSON('/api/git/worktree')]);
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';

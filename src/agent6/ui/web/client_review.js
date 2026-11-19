@@ -260,7 +260,7 @@ function paintFindings(cards, state) {
   status.onchange = severity.onchange = paint; paint();
 }
 async function renderReviewedFile(gen, path, query) {
-  setCrumb('files · reviewed version');
+  setCrumb('Files · reviewed version');
   const panel_id = query.get('panel'), side = query.get('side');
   const root = '/api/reviews/' + encodeURIComponent(panel_id);
   const panel = await getJSON(root);

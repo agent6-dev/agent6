@@ -13,7 +13,6 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   // Forward between them, scroll in place.
   const markdown = filesState.markdown;
   if (markdown?.view.isConnected && markdown.rev === revision && markdown.path === path) return markdown.scroll(query.get('anchor'));
-  setCrumb('files');
   const refsData = await getJSON('/api/git/refs');
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';

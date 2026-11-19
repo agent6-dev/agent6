@@ -957,7 +957,6 @@ const dockHeight = new ResizeObserver((entries) => {
 });
 async function renderHub(focus, gen) {
   const machinesTab = focus === 'machines';
-  setCrumb(machinesTab ? 'state machines' : 'sessions');
   let data;
   try { data = await getJSON('/api/hub'); }
   catch (e) {
