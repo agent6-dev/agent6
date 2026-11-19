@@ -324,3 +324,23 @@ def test_the_bar_holds_still_while_filtering_and_toggling(
     page.get_by_role("button", name="Hide tree", exact=True).click()
     assert page.evaluate(boxes) == pytest.approx(still, abs=0.5)
     assert not errors
+
+
+def test_the_empty_pane_says_how_to_open_a_file(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """With the tree hidden and no file open, the pane still said to click a file."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(big_tree)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    page.wait_for_selector(_row("deep"))
+    pane = page.locator(".files-view .empty")
+    expect(pane).to_have_text("click a file to read it")
+    page.get_by_role("button", name="Hide tree", exact=True).click()
+    expect(pane).to_have_text("show the tree to pick a file")
+    page.reload()
+    expect(pane).to_have_text("show the tree to pick a file")
+    page.get_by_role("button", name="Show tree", exact=True).click()
+    expect(pane).to_have_text("click a file to read it")
+    assert not errors

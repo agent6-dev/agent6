@@ -46,13 +46,15 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     min: 180, max: () => body.getBoundingClientRect().width - 246,
   }));
   const pane = el('div', 'files-view'); body.appendChild(pane);
-  pane.appendChild(el('div', 'empty', 'click a file to read it'));
+  // With no file open the pane says how to open one: from the tree, or by showing the tree first.
+  const unopened = el('div', 'empty'); pane.appendChild(unopened);
   const toggle = el('button', 'files-tree-toggle');
   toggle.setAttribute('aria-controls', tree.id);
   const setTreeOpen = open => {
     body.classList.toggle('tree-closed', !open);
     toggle.textContent = open ? 'Hide tree' : 'Show tree';
     toggle.setAttribute('aria-expanded', String(open));
+    unopened.textContent = open ? 'click a file to read it' : 'show the tree to pick a file';
   };
   setTreeOpen(recall('a6-files-tree', 'open') !== 'closed');
   toggle.onclick = () => {
@@ -98,7 +100,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     const n = ++loading;
     ignoredToggle.hidden = filesState.rev.rev !== GIT_WORKTREE;
     pane.dataset.key = ''; shown = null; rev = ''; ignored = false; entries = [];
-    pane.innerHTML = ''; pane.appendChild(el('div', 'empty', 'click a file to read it'));
+    pane.innerHTML = ''; pane.appendChild(unopened);
     body.classList.remove('viewing');
     tree.innerHTML = ''; tree.appendChild(el('div', 'empty', 'loading…'));
     try {
