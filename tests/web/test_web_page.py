@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "409acfcb283652544cc9ec0443666c877a97892c495a58325238a2f7cedabee5"
+PAGE_SHA256 = "180ca368e85547b9380235d54485bd5ea59db6b9b053d3c478aa627b243fea30"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -230,7 +230,7 @@ def test_new_work_route_refresh_clears_and_ignores_stale_models() -> None:
     cleared = refresh.index("model.value = '';")
     awaited = refresh.index("await getJSON('/api/routes")
     stale_guard = refresh.index("if (request !== routeRequest) return;")
-    populated = refresh.index("el('option', null, d.default_label)")
+    populated = refresh.index("resolved.textContent = d.default_label;")
     assert request < cleared < awaited < stale_guard < populated
 
 

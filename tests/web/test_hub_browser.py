@@ -437,3 +437,44 @@ def test_a_picker_is_as_wide_as_its_chosen_option(
     seed.select_option("plan-AAAAAA")
     assert resting < 100 < seed.evaluate(width), resting
     assert not errors
+
+
+def test_a_model_list_that_fails_to_load_leaves_the_config_default(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A failed /api/routes left the model dropdown reading "…", as if it were still resolving."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.route("**/api/routes*", lambda route: route.abort())
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    model = page.locator(".dock select[title^='the model']")
+    expect(model).to_be_enabled()
+    expect(model.locator("option")).to_have_text(["config default"])
+    expect(page.locator(".toast.bad")).to_contain_text("could not list the models: ")
+    errors[:] = [e for e in errors if "ERR_FAILED" not in e]  # the request the test aborted
+    assert not errors
+
+
+def test_the_model_picker_says_it_is_resolving_until_its_routes_arrive(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The model dropdown painted empty and 40px wide until /api/routes answered."""
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(port)
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    page.route("**/api/routes*", hold)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    model = page.locator(".dock select[title^='the model']")
+    expect(model.locator("option")).to_have_text(["…"])
+    expect(model).to_be_disabled()
+    for route in held:
+        route.continue_()
+    expect(model).to_be_enabled()
+    expect(model.locator("option").first).to_contain_text("(")
+    assert not errors

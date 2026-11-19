@@ -581,6 +581,9 @@ function newWorkDock(presets, presetDefault, sessions) {
   for (const p of (presets || [])) { const o = el('option', null, p); o.value = p; preset.appendChild(o); }
   const model = el('select', 'field');
   model.title = 'the model for this run, over every config layer; re-resolved whenever the mode or preset changes';
+  // The first option names the resolved route: '…' while the first answer is on its way, and
+  // 'config default' when none came.
+  const resolved = el('option', null, '…'); resolved.value = ''; model.appendChild(resolved);
   let routeRequest = 0;
   const fillRoutes = async () => {
     const request = ++routeRequest;
@@ -590,13 +593,15 @@ function newWorkDock(presets, presetDefault, sessions) {
     try {
       d = await getJSON('/api/routes?mode=' + encodeURIComponent(mode.value) + '&preset=' + encodeURIComponent(preset.value));
     } catch (e) {
-      if (request === routeRequest) { model.disabled = false; toast(e.message, true); }
+      if (request === routeRequest) {
+        resolved.textContent = 'config default'; model.disabled = false;
+        toast('could not list the models: ' + e.message, true);
+      }
       return;
     }
     if (request !== routeRequest) return;
-    model.textContent = '';
-    const none = el('option', null, d.default_label); none.value = ''; model.appendChild(none);
-    for (const r of (d.routes || [])) { const o = el('option', null, r); o.value = r; model.appendChild(o); }
+    resolved.textContent = d.default_label;
+    model.replaceChildren(resolved, ...(d.routes || []).map(r => new Option(r, r)));
     model.value = '';
     model.disabled = false;
   };
