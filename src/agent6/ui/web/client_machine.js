@@ -89,14 +89,16 @@ async function renderMachine(name, gen) {
   // opening a machine does not replay every past notification; toast + OS-notify
   // only genuinely new ones, named by the instance.
   const ctx = {
-    name, seen: null, lostNotified: false, endedNotified: false, shownCurrent: null, pathAtEnd: true,
+    name, seen: null, lostNotified: false, endedNotified: false, shownCurrent: null, pathAtEnd: true, pathTop: null,
     held: [], // the notifications' toasts that hold until dismissed
   };
   // Path follows its newest transition while the reader stays at its end, through a resize too (the entry growing below).
   pathBody.addEventListener('scroll', () => {
-    ctx.pathAtEnd = pathBody.scrollTop + pathBody.clientHeight >= pathBody.scrollHeight - 8;
+    const own = pathBody.scrollTop === ctx.pathTop; // the page's own: its event can land after a resize
+    ctx.pathTop = null;
+    if (!own) ctx.pathAtEnd = pathBody.scrollTop + pathBody.clientHeight >= pathBody.scrollHeight - 8;
   });
-  new ResizeObserver(() => { if (ctx.pathAtEnd) pathBody.scrollTop = pathBody.scrollHeight; }).observe(pathBody);
+  new ResizeObserver(() => { if (ctx.pathAtEnd) pathToEnd(pathBody, ctx); }).observe(pathBody);
   paintMachine(structBody, pathBody, cards, ctx, { machine: initial, reasoning: {} });
 
   let opened = false;
@@ -143,6 +145,12 @@ function machineNotify(ctx, m) {
     }
     osNotify('agent6: ' + ctx.name, n.message || '');
   }
+}
+
+// Path scrolls to its end and remembers where, so its own scroll event records nothing.
+function pathToEnd(pathBody, ctx) {
+  pathBody.scrollTop = pathBody.scrollHeight;
+  ctx.pathTop = pathBody.scrollTop;
 }
 
 function paintMachine(structBody, pathBody, cards, ctx, data) {
@@ -211,7 +219,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   if (m.ended) path.appendChild(el('div', 'sub muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));
   if (m.worker_lost) path.appendChild(el('div', 'sub muted', `stopped: ${esc(m.worker_lost.reason)} at ${esc(m.worker_lost.state)}; resumable`));
   pathBody.appendChild(path);
-  if (ctx.pathAtEnd) pathBody.scrollTop = pathBody.scrollHeight;
+  if (ctx.pathAtEnd) pathToEnd(pathBody, ctx);
   // States brings the current state into view when the machine moves; a phone's cards flow, so
   // nothing scrolls there.
   if (cursor && ctx.shownCurrent !== m.current) {

@@ -409,10 +409,15 @@ def test_the_current_state_and_the_newest_transition_open_in_view(
     assert not errors
 
 
+@pytest.mark.parametrize("font", [16, 20])
 def test_path_stays_at_its_end_when_a_prompt_or_the_entry_shrinks_it(
-    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path, font: int
 ) -> None:
-    """Path stopped short of its newest transition once a prompt or a growing entry shrank it."""
+    """Path stopped short of its newest transition once a prompt or a growing entry shrank it.
+
+    At a 20px browser font the dock grew after the first scroll to the end, and that scroll's
+    event read as the reader leaving the end.
+    """
     from playwright.sync_api import expect
 
     failed = {**TOOL, "exit_code": 1}
@@ -424,7 +429,12 @@ def test_path_stays_at_its_end_when_a_prompt_or_the_entry_shrinks_it(
     ]
     ask = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"}
     _machine(tmp_path, "asking", LOOP, rows, [*_talk(1), ask], alive=True)
-    page, errors = _open(open_page, port, "asking")
+    page, errors = open_page(port)
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("Page.setFontSizes", {"fontSizes": {"standard": font}})
+    page.goto(f"http://127.0.0.1:{port}/#/machine/asking")
+    page.locator(".tree .node").first.wait_for()
+    assert page.evaluate("getComputedStyle(document.documentElement).fontSize") == f"{font}px"
     at_end = """async () => {
       await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
       const pane = [...document.querySelectorAll('.tree')][1].parentElement;
