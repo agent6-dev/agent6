@@ -252,3 +252,31 @@ def test_a_live_frame_leaves_the_cards_a_reader_is_using(
     )
     assert kept == [0, "live-AAA111", 1]
     assert not errors
+
+
+def test_a_wrapped_event_log_row_hangs_under_its_event(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A wrapped row's later lines start under its event name, clear of the time column.
+
+    They started at the row's left edge, under the times, and read as rows of their own.
+    """
+    from playwright.sync_api import expect
+
+    argv = ["sh", "-c", "echo " + "word " * 40]
+    call = {"type": "tool.call", "ts": "2026-11-13T10:00:00.000000+00:00", "name": "run_command"}
+    _session(tmp_path, "wrap-AAA111", [{**call, "args_preview": {"argv": argv}}])
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/wrap-AAA111")
+    row = page.locator(".card-log .log > div").filter(has_text="run_command")
+    expect(row).to_be_visible()
+    # The event name starts at the row's 15th character, after the time and two spaces.
+    lines, last, event = row.evaluate(
+        """e => { const text = e.firstChild, r = document.createRange();
+        r.selectNodeContents(text); const lines = [...r.getClientRects()];
+        r.setStart(text, 14); r.setEnd(text, 15);
+        return [lines.length, lines.at(-1).left, r.getBoundingClientRect().left]; }"""
+    )
+    assert lines > 1
+    assert last == pytest.approx(event, abs=0.5)  # layout rounds to 1/64 px
+    assert not errors

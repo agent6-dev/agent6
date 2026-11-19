@@ -26,7 +26,9 @@
 .dot.ok { background: var(--ok); } .dot.bad { background: var(--err); }
 
 .log { font-family: var(--mono); font-size: 12px; line-height: 1.4; }
-.log div { white-space: pre-wrap; word-break: break-word; }
+/* A row is its time (12 characters and two spaces), its event and the event's detail: a wrapped
+   row hangs under the event, clear of the time column. */
+.log > div { white-space: pre-wrap; word-break: break-word; padding-left: 14ch; text-indent: -14ch; }
 
 .plan { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 0; }
 
