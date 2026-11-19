@@ -437,13 +437,18 @@ function handToNewWork(fields) {
 }
 
 // --- hub ---------------------------------------------------------------------
-// A button whose action sends a request runs it once at a time: the button stays disabled until
-// the action settles, so a double click or a repeated Enter sends one request.
-function runOnce(button, action) {
+// A button whose action sends a request runs it once at a time, and only when `ready()` says
+// there is something to send: it stays disabled while the action is in flight, so a double click
+// or a repeated Enter sends one request, and while ready() is false. button.sync() reads ready()
+// again; call it when what ready() reads changes.
+function runOnce(button, action, ready = () => true) {
+  let busy = false;
+  button.sync = () => { button.disabled = busy || !ready(); };
   button.onclick = async () => {
-    button.disabled = true;
-    try { await action(); } finally { button.disabled = false; }
+    busy = true; button.sync();
+    try { await action(); } finally { busy = false; button.sync(); }
   };
+  button.sync();
 }
 // /parallel model-id autocomplete for the new-work composer. When the task text
 // starts with `/parallel ` and the caret sits before `--`, offer the known
@@ -607,9 +612,9 @@ function newWorkDock(presets, presetDefault, sessions) {
   };
   mode.onchange = () => { followMode(); fillRoutes(); }; preset.onchange = fillRoutes; fillRoutes(); followMode();
   const go = el('button', 'primary', 'Start');
-  // The task stays as sent while the request is in flight: a session that starts takes its text.
+  // Start sends a task, or runs a picked plan as written. The task stays as sent while the request
+  // is in flight: a session that starts takes its text.
   runOnce(go, async () => {
-    if (!task.value.trim() && !(seed.value && mode.value === 'run')) return;
     task.readOnly = true;
     try {
       const d = await postJSON('/api/new', {
@@ -621,7 +626,8 @@ function newWorkDock(presets, presetDefault, sessions) {
       if (d.session_id) { forget('a6-draft-new'); location.hash = '#/session/' + encodeURIComponent(d.session_id); }
     } catch (e) { toast(e.message, true); }
     task.readOnly = false;
-  });
+  }, () => !!task.value.trim() || (!!seed.value && mode.value === 'run'));
+  task.addEventListener('input', go.sync); mode.addEventListener('change', go.sync); seed.onchange = go.sync;
   const ac = attachParallelSuggest(task, root);
   const commands = attachCommandSuggest(task, root, () => false, ['/parallel', '/review']);
   task.onkeydown = (e) => {
@@ -648,10 +654,10 @@ function createMachineDock() {
   const ct = el('textarea', 'field'); ct.placeholder = 'describe a machine to create…';
   const cbtn = el('button', 'primary', 'Create machine');
   runOnce(cbtn, async () => {
-    if (!ct.value.trim()) return;
     try { const d = await postJSON('/api/machine/create', { task: ct.value }); ct.value=''; if (d.draft) location.hash = '#/draft/' + encodeURIComponent(d.draft); }
     catch (e) { toast(e.message, true); }
-  });
+  }, () => !!ct.value.trim());
+  ct.oninput = cbtn.sync;
   ct.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !composing(e)) { e.preventDefault(); cbtn.click(); } };
   row.appendChild(ct); row.appendChild(cbtn);
   root.appendChild(row);

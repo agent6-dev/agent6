@@ -478,3 +478,32 @@ def test_the_model_picker_says_it_is_resolving_until_its_routes_arrive(
     expect(model).to_be_enabled()
     expect(model.locator("option").first).to_contain_text("(")
     assert not errors
+
+
+def test_start_and_create_machine_wait_for_something_to_send(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Start on an empty entry and Create machine with no description read enabled, did nothing."""
+    from playwright.sync_api import expect
+
+    _run(tmp_path, "plan-AAAAAA", "Plan it", STOP, mode="plan")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    start = page.get_by_role("button", name="Start", exact=True)
+    entry = page.locator(".dock textarea")
+    expect(start).to_be_disabled()
+    entry.fill("probe")
+    expect(start).to_be_enabled()
+    entry.fill("  ")
+    expect(start).to_be_disabled()
+    page.locator(".dock .pickers").get_by_role("button", name="advanced", exact=True).click()
+    page.locator(".dock select[title^='seed the run']").select_option("plan-AAAAAA")
+    expect(start).to_be_enabled()  # a run from a plan needs no task
+    page.locator(".dock select").first.select_option("plan")
+    expect(start).to_be_disabled()
+    page.goto(f"http://127.0.0.1:{port}/#/machines")
+    create = page.get_by_role("button", name="Create machine")
+    expect(create).to_be_disabled()
+    page.locator(".dock textarea").fill("watch CI")
+    expect(create).to_be_enabled()
+    assert not errors
