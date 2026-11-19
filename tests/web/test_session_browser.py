@@ -640,3 +640,34 @@ def test_a_stale_run_says_why_under_its_conversation(
     expect(note).to_have_text("the run has not started")
     assert note.evaluate("e => getComputedStyle(e).borderTopWidth") == "0px"
     assert not errors
+
+
+def test_the_latest_commit_card_shows_no_error_under_the_logs_diff(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """With no commit picked, a pruned commit leaves the log's diff and no error under it.
+
+    The card painted the diff the log recorded, then added "no diff for <sha>" under it.
+    """
+    from playwright.sync_api import expect
+
+    patch = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-old\n+new\n"
+    sha = "5" * 40
+    rows = [
+        {"type": "checkpoint.committed", "turn": 1, "sha": sha, "subject": "change"},
+        {"type": "diff.updated", "patch": patch, "sha": sha},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
+    ]
+    session = _session(tmp_path, "pruned-AAA111", rows)
+    (session / "manifest.json").write_text(json.dumps({"version": 3, "mode": "run"}))
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    with page.expect_response(lambda response: "/diff?sha=" in response.url) as answer:
+        page.goto(f"http://127.0.0.1:{port}/#/session/pruned-AAA111")
+    refusal = answer.value.json()["error"]
+    card = page.locator(".card-diff .card-body")
+    expect(card).to_contain_text("new")
+    page.wait_for_timeout(300)  # the refusal's paint
+    assert refusal.startswith("no diff for 5555")
+    assert refusal not in card.inner_text()
+    assert [error for error in errors if "Failed to load resource" not in error] == []

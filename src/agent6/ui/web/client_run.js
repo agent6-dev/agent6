@@ -718,7 +718,11 @@ function paintCommits(cards, s) {
         const st = await getJSON(cards._base + '?commit=' + encodeURIComponent(selected));
         if (!current()) return;
         cards._commitState = st; paintDetails(cards, st, st.as_of);
-      } catch (e) { if (current()) body.appendChild(el('div', 'muted', e.message)); }
+      } catch (e) {
+        // With no commit picked the log's diff already shows: only a picked commit's failure is
+        // news (a squash merge or a deleted branch prunes a run's commits).
+        if (current() && selected) body.appendChild(el('div', 'muted', e.message));
+      }
     };
     sel.onchange = show; cum.onchange = show;
     show();
