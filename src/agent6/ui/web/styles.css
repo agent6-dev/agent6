@@ -346,13 +346,14 @@ aside.rail { display: none; }
     margin: 0 -12px 4px; border-bottom: 1px solid var(--border);
   }
   aside.rail .rail-brand b { color: var(--accent); }
-  /* The nav links, and the theme and collapse rows at the rail's foot: one row shape. */
+  /* The nav links, and the theme and collapse rows at the rail's foot: one row shape, 40px tall
+     with its label or without it, so collapsing the rail moves no icon. */
   aside.rail .rail-nav, aside.rail .rail-foot { display: flex; flex-direction: column; gap: 2px; }
   aside.rail .rail-foot { margin-top: auto; }
   aside.rail .rail-nav a, aside.rail .rail-row {
-    display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; color: var(--muted);
+    display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 0 12px; border-radius: 8px; color: var(--muted);
   }
-  aside.rail .rail-row { min-height: 0; border: 0; background: none; font: inherit; }
+  aside.rail .rail-row { border: 0; background: none; font: inherit; }
   aside.rail .rail-nav a:hover, aside.rail .rail-row:hover { background: var(--surface2); color: var(--text); }
   aside.rail .rail-nav a[aria-current=page] { background: var(--surface2); color: var(--accent); }
   /* collapsed: an icon-only strip; labels and the brand name hide, icons centre */
@@ -361,7 +362,7 @@ aside.rail { display: none; }
   html.rail-min aside.rail .rail-brand b,
   html.rail-min aside.rail .rail-nav a span,
   html.rail-min aside.rail .rail-label { display: none; }
-  html.rail-min aside.rail .rail-nav a, html.rail-min aside.rail .rail-row { justify-content: center; padding: 10px 0; }
+  html.rail-min aside.rail .rail-nav a, html.rail-min aside.rail .rail-row { justify-content: center; padding: 0; }
   html.rail-min #rail-toggle .ic { transform: scaleX(-1); }
   .content { margin-left: var(--rail-w); }
   header { justify-content: flex-start; }

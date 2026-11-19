@@ -90,6 +90,26 @@ def test_the_rail_brand_sits_on_the_header_line(
     assert not errors
 
 
+def test_collapsing_the_rail_moves_no_icon(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A row was 41px with its label and 40px without, so collapsing lifted each icon 1px more."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator("aside.rail .rail-nav a[aria-current=page]")).to_be_visible()
+    tops = """() => [...document.querySelectorAll('aside.rail .rail-nav a, aside.rail .rail-row')]
+      .map(row => [row.getBoundingClientRect().height,
+                   row.querySelector('.ic').getBoundingClientRect().top])"""
+    expanded = page.evaluate(tops)
+    page.locator("#rail-toggle").click()
+    expect(page.locator("#rail-toggle")).to_have_attribute("aria-expanded", "false")
+    assert page.evaluate(tops) == expanded
+    assert {height for height, _ in expanded} == {40}
+    assert not errors
+
+
 def test_every_phone_tab_keeps_its_icon_on_one_line(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
