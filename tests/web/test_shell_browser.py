@@ -470,6 +470,28 @@ def test_the_arrows_keep_the_highlighted_session_in_view_and_named(
     assert not errors
 
 
+def test_the_pointer_and_the_arrows_share_one_highlighted_row(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A hovered row looked as picked as the arrows' row, and Enter opened the arrows' row."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    dialog = _open_switcher(page, port, _sessions(5))
+    options = dialog.get_by_role("option")
+    options.nth(2).hover()
+    expect(options.nth(2)).to_have_attribute("aria-selected", "true")
+    page.keyboard.press("ArrowDown")
+    expect(options.nth(3)).to_have_attribute("aria-selected", "true")
+    lit = dialog.locator(".ac-item").evaluate_all(
+        "rows => rows.map(r => getComputedStyle(r).backgroundColor !== 'rgba(0, 0, 0, 0)')"
+    )
+    assert lit == [False, False, False, True, False]  # the pointer still rests on the third
+    page.keyboard.press("Enter")
+    page.wait_for_function("location.hash === '#/session/run-3'")
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
 def test_enter_and_space_press_a_switcher_rows_own_button(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

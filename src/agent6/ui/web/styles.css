@@ -203,6 +203,8 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
    option ends in an ellipsis when it is too long, and a row's own buttons sit under its option.
    The note under the list says what the list leaves out. */
 .hs-list { margin-top: 8px; max-height: 45vh; overflow-y: auto; }
+/* The pointer moves a picker's highlight (openPicker), so a hovered row has no look of its own. */
+.hs-list .ac-item:hover:not(.on) { background: none; color: inherit; }
 .hs-list .ac-opt, .hs-list .ac-opt > .muted, .hs-list .ac-opt .grow { overflow: hidden; text-overflow: ellipsis; }
 /* A switcher row's text keeps 16em, room for its session id and mode, before its status sits
    beside it; on a narrower row the status drops under the text and still ends the line. */

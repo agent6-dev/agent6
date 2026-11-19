@@ -1130,10 +1130,11 @@ function openHistorySearch(entries, onPick) {
 // --- keyboard -----------------------------------------------------------------
 // One picker under the session switcher, the command palette and history search: a dialog with a
 // filter field (a combobox) over a list box. The arrows move the highlighted option, keep it in
-// view and make it the field's active descendant, which a screen reader reads; Enter picks it, or
-// with `typed` the typed text when nothing matches. `actions(row, close)` returns a row's own
-// buttons, kept outside its option: inside one, a screen reader would not find them. `prefix`
-// hands the field to another picker when typed first.
+// view and make it the field's active descendant, which a screen reader reads; the pointer moves
+// it too, so one row is ever highlighted. Enter picks it, or with `typed` the typed text when
+// nothing matches. `actions(row, close)` returns a row's own buttons, kept outside its option:
+// inside one, a screen reader would not find them. `prefix` hands the field to another picker
+// when typed first.
 function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '', initial = '', prefix = null, limit = 12, typed = false, actions = null }) {
   const dialog = openDialog(title, 'wide picker');
   if (!dialog) return;
@@ -1150,6 +1151,16 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '
   const close = () => dialog.close();
   const choose = (r) => { close(); pick(r); };
   let items = [], active = 0;
+  // Highlight the active option; the pointer is over it already, so only the arrows scroll.
+  const mark = (scroll) => {
+    [...list.children].forEach((row, i) => {
+      row.classList.toggle('on', i === active);
+      row.firstChild.setAttribute('aria-selected', String(i === active));
+    });
+    if (!items.length) { field.removeAttribute('aria-activedescendant'); return; }
+    field.setAttribute('aria-activedescendant', list.id + '-' + active);
+    if (scroll) list.children[active].scrollIntoView({ block: 'nearest' });
+  };
   const render = () => {
     const q = field.value.toLowerCase().trim();
     const all = rows.filter(r => !q || haystack(r).includes(q));
@@ -1157,9 +1168,9 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '
     if (active >= items.length) active = Math.max(0, items.length - 1);
     list.textContent = '';
     items.forEach((r, i) => {
-      const row = el('div', 'ac-item' + (i === active ? ' on' : ''));
+      const row = el('div', 'ac-item');
       const option = el('div', 'ac-opt');
-      aria(option, { id: list.id + '-' + i, role: 'option', 'aria-selected': String(i === active) });
+      aria(option, { id: list.id + '-' + i, role: 'option' });
       paint(r, option);
       row.appendChild(option);
       const own = actions && actions(r, close);
@@ -1168,20 +1179,19 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '
         row.appendChild(own);
       }
       row.onmousedown = (e) => { if (e.target.closest('button')) return; e.preventDefault(); choose(r); };
+      row.onpointermove = () => { if (active !== i) { active = i; mark(false); } };
       list.appendChild(row);
     });
-    if (items.length) {
-      field.setAttribute('aria-activedescendant', list.id + '-' + active);
-      list.children[active].scrollIntoView({ block: 'nearest' });
-    } else field.removeAttribute('aria-activedescendant');
+    mark(true);
     const more = all.length - items.length;
     note.textContent = !items.length ? (rows.length ? '(no match)' : empty) : more ? '… ' + more + ' more (type to narrow)' : '';
   };
+  const move = (step) => { if (items.length) { active = (active + step + items.length) % items.length; mark(true); } };
   // A row's own button keeps its keys: Enter or Space presses it.
   dialog.onkeydown = (e) => {
     if (composing(e) || e.target.closest('button')) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { active = (active + 1) % items.length; render(); } }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { active = (active - 1 + items.length) % items.length; render(); } }
+    if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
     else if (e.key === 'Enter') { e.preventDefault(); if (items.length || typed) choose(items.length ? items[active] : field.value); }
   };
   field.oninput = () => {
