@@ -432,6 +432,8 @@ aside.rail, #rail-show { display: none; }
     margin: 0 calc(-1 * var(--rail-pad)) 0.25rem; border-bottom: 1px solid var(--border);
   }
   aside.rail .rail-brand b { color: var(--accent); }
+  /* The brand fills the rail's width and height, so its ring goes inside it. */
+  aside.rail .rail-brand:focus-visible { outline-offset: -2px; }
   /* The nav links, and the theme and collapse rows at the rail's foot: one row shape, 40px tall
      with its label or without it, so collapsing the rail moves no icon. */
   aside.rail .rail-nav, aside.rail .rail-foot { display: flex; flex-direction: column; gap: 2px; }

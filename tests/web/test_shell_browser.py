@@ -564,6 +564,33 @@ def test_the_rail_brand_sits_on_the_header_line(
     assert not errors
 
 
+def test_the_rail_brands_focus_ring_stands_whole_inside_the_rail(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The brand fills the rail's scrollport, which cut its focus ring to the bottom edge."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".dock textarea")).to_be_visible()
+    ring = """() => { const b = document.querySelector('aside.rail .rail-brand');
+      const s = getComputedStyle(b), r = b.getBoundingClientRect();
+      const rail = document.querySelector('aside.rail');
+      const out = parseFloat(s.outlineOffset) + parseFloat(s.outlineWidth);
+      return [s.outlineStyle, r.top - out >= 0, r.left - out >= 0,
+              r.right + out <= rail.getBoundingClientRect().left + rail.clientWidth]; }"""
+    toggle = page.locator("#rail-toggle")
+    for expanded in ("true", "false"):
+        if expanded == "false":
+            toggle.click()
+        expect(toggle).to_have_attribute("aria-expanded", expanded)
+        page.locator("aside.rail .rail-nav a").first.focus()
+        page.keyboard.press("Shift+Tab")  # the brand, by the keyboard
+        expect(page.locator("aside.rail .rail-brand")).to_be_focused()
+        assert page.evaluate(ring) == ["solid", True, True, True]
+    assert not errors
+
+
 def test_collapsing_the_rail_moves_no_icon(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
