@@ -353,12 +353,13 @@ def test_only_the_page_shell_and_login_answer_without_a_token(port: int) -> None
 def test_the_page_meets_a_401_in_one_place() -> None:
     """Every fetch and stream of the page leads a signed-out browser to the sign-in form.
 
-    A call past the two helpers would paint an error instead, and a stream the browser gave
-    up on would stay frozen on its last frame.
+    A call past serverFetch would paint an error instead, and a stream the browser gave up on
+    would stay frozen on its last frame.
     """
     js = page.CLIENT_JS
-    assert js.count("fetch(") == js.count("signedOut(await fetch(") == 3
-    assert js.count("headers: authHeaders(") == 3, "every fetch carries the token"
+    assert js.count("fetch(") == 1, "one fetch, in serverFetch, which hands a 401 to the form"
+    assert js.count("await serverFetch(") == 3  # getResponse, postJSON and openStream
+    assert js.count("headers: authHeaders(") == 1, "every fetch carries the token"
     assert "EventSource" not in js, "a native stream could not carry the token"
     assert js.count("openStream(base + '/events'") == 2
     form = js[js.index("function showLogin") : js.index("async function boot")]

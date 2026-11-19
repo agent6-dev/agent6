@@ -151,10 +151,16 @@ function signedOut(r) {
   }
   return r;
 }
-// Every GET: the token on the request, a 401 to the sign-in form, the server's error text thrown
-// with the response's status.
+// Every request carries the token, and no answer reads as one sentence.
+async function serverFetch(url, init = {}) {
+  let r;
+  try { r = await fetch(url, { ...init, headers: authHeaders(init.headers) }); }
+  catch (e) { throw new Error(`no answer from the agent6 web server at ${location.host} (${e.message})`); }
+  return signedOut(r);
+}
+// Every GET: the server's error text thrown with the response's status.
 async function getResponse(url) {
-  const r = signedOut(await fetch(url, { headers: authHeaders() }));
+  const r = await serverFetch(url);
   if (r.ok) return r;
   const reason = (await r.json().catch(() => ({ error: r.statusText }))).error || r.statusText;
   throw Object.assign(new Error(reason), { status: r.status });
@@ -162,7 +168,7 @@ async function getResponse(url) {
 async function getJSON(url) { return (await getResponse(url)).json(); }
 async function getBlob(url) { return (await getResponse(url)).blob(); }
 async function postJSON(url, body) {
-  const r = signedOut(await fetch(url, { method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body || {}) }));
+  const r = await serverFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
   const data = await r.json().catch(() => ({}));
   if (!r.ok || data.ok === false) throw new Error(data.error || r.statusText);
   return data;
@@ -341,7 +347,7 @@ function openStream(url, onData) {
   const connect = async () => {
     stream.ctrl = new AbortController();
     let r = null;
-    try { r = signedOut(await fetch(url, { headers: authHeaders(), signal: stream.ctrl.signal })); } catch (_) {}
+    try { r = await serverFetch(url, { signal: stream.ctrl.signal }); } catch (_) {}
     if (stream.closed || (r && r.status === 401)) return;
     if (r && r.ok && r.body) {
       const reader = r.body.getReader();

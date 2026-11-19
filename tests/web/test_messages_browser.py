@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING
 
@@ -234,3 +235,22 @@ def test_a_message_raised_under_a_dialog_shows_above_it_and_takes_the_keyboard(
     expect(message).to_contain_text("merge refused (2)")
     assert message.evaluate(PRESSABLE)
     assert not errors
+
+
+@pytest.mark.parametrize("engine", ["browser", "firefox"])
+def test_a_request_with_no_answer_names_the_server_in_one_sentence(
+    engine: str, open_in: Callable[[str, int], Page], port: int
+) -> None:
+    """A stopped server read as the browser's own words, which differ between browsers."""
+    from playwright.sync_api import Route, expect
+
+    page = open_in(engine, port)
+
+    def refuse(route: Route) -> None:
+        route.abort("connectionrefused")
+
+    page.route("**/api/**", refuse)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    expect(page.locator(".problem .err")).to_have_text(
+        re.compile(rf"^no answer from the agent6 web server at 127\.0\.0\.1:{port} \(\w.+\)$")
+    )
