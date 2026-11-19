@@ -142,3 +142,16 @@ def test_a_long_config_key_or_value_wraps_between_its_parts(
     assert len(before) >= 12
     assert set(before) <= set("./- ")
     assert not errors
+
+
+def test_a_config_row_lights_under_the_pointer(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A row opens its editor on a click, yet only the cursor changed under the pointer."""
+    page, errors = open_page(port)
+    _config(page, port)
+    row = page.locator('[data-key="web.port"]')
+    rest = row.evaluate("e => getComputedStyle(e).backgroundColor")
+    row.hover()
+    assert row.evaluate("e => getComputedStyle(e).backgroundColor") != rest
+    assert not errors

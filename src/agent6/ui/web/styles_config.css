@@ -23,6 +23,9 @@
 .cfg .key, .cfg .val, .cfg .src { overflow-wrap: anywhere; }
 .cfg .key, .cfg .val { font-family: var(--mono); }
 .cfg tr.mod .key { color: var(--accent); }
+/* A row opens its editor: the pointer lights it, as the other pages' rows. */
+.cfg tr[data-key] { cursor: pointer; }
+@media (hover: hover) { .cfg tr[data-key]:hover { background: var(--surface2); } }
 .cfg .src { color: var(--muted); }
 @container (width >= 700px) {
   .cfg { table-layout: fixed; }

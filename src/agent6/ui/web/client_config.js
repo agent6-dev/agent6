@@ -90,7 +90,6 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     // Hover text: the leaf's meaning (the docs table cell), from the same
     // per-key payload the editor dialog shows it in.
     tr.title = s.description ? (s.description_points || [s.description]).join('\n') : 'click to edit';
-    tr.style.cursor = 'pointer';
     tr.setAttribute('data-key', k);
     actionable(tr, () => { tr.focus({preventScroll: true}); editConfig(k, s, registry.tables, refresh, data); }, 'edit ' + k);
     tbl.appendChild(tr); rows.push([k.toLowerCase(), tr, s.modified, sections.at(-1)]);
