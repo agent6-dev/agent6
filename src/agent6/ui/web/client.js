@@ -821,6 +821,7 @@ function listCard(title, empty, rows) {
   const card = el('div', 'card');
   if (title) card.appendChild(el('h2', null, title));
   const list = el('div', 'list');
+  list.setAttribute('role', 'list');
   card.appendChild(list);
   // A click anywhere on a row opens it, unless it hit a control or ended a drag: a drag selects
   // text for copying. A key press on the title link opens it too (detail 0: no pointer moved).
@@ -844,12 +845,13 @@ function listCard(title, empty, rows) {
     if (!refocusing && e.target.matches(':focus-visible')) e.target.closest('.item')?.scrollIntoView({ block: 'nearest' });
   });
   card.show = (entries, hold) => patchRows(list, entries.length ? entries.flatMap(rows)
-    : [{ key: '', data: empty, paint: () => el('div', 'empty', empty) }], hold);
+    : [{ key: '', data: empty, paint: () => { const row = el('div', 'empty', empty); row.setAttribute('role', 'listitem'); return row; } }], hold);
   return card;
 }
 // One row: `paint(it, g)` fills the row and its text column.
 function itemRow(paint) {
   const it = el('div', 'item');
+  it.setAttribute('role', 'listitem');
   const g = el('div', 'grow');
   it.appendChild(g);
   paint(it, g);

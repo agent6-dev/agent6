@@ -250,6 +250,22 @@ def test_space_opens_a_focused_row_as_enter_does(
     assert not errors
 
 
+def test_a_list_and_its_rows_read_as_a_list(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A list's rows were bare boxes: a screen reader heard no list, no count and no rows."""
+    from playwright.sync_api import expect
+
+    _run(tmp_path, "alpha-AAAAAA", "Alpha task", STOP)
+    _run(tmp_path, "beta-BBBBBB", "Beta task", STOP)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.get_by_role("list").get_by_role("listitem")).to_have_count(2)
+    page.goto(f"http://127.0.0.1:{port}/#/machines")
+    expect(page.get_by_role("list").get_by_role("listitem")).to_have_count(1)  # the empty line
+    assert not errors
+
+
 def test_a_pressed_button_keeps_the_focus_through_the_repaint_it_starts(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
