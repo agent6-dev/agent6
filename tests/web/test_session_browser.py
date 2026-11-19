@@ -764,7 +764,8 @@ def test_the_receipt_says_it_is_loading_and_its_button_hides_it_again(
     """Receipt shows a loading line while it fetches, and a second press hides the receipt.
 
     The card showed nothing until the receipt landed, seconds on a busy machine, and a second
-    press fetched and drew it again.
+    press fetched and drew it again. Disabling the button while it fetched dropped the keyboard
+    focus, so Enter could not hide the receipt.
     """
     from playwright.sync_api import Route, expect
 
@@ -778,15 +779,16 @@ def test_the_receipt_says_it_is_loading_and_its_button_hides_it_again(
 
     page.route("**/receipt", hold)
     button = page.get_by_role("button", name="Receipt", exact=True)
-    button.click()
+    button.focus()
+    page.keyboard.press("Enter")
     expect(page.locator(".receipt")).to_have_text("loading the receipt…")
-    expect(button).to_be_disabled()
+    expect(button).to_be_focused()
     while not held:
         page.wait_for_timeout(50)
     held[0].continue_()
     expect(page.locator(".receipt > pre")).to_contain_text("Receipt review-run")
     expect(button).to_have_attribute("aria-expanded", "true")
-    button.click()
+    page.keyboard.press("Enter")
     expect(page.locator(".receipt")).to_be_hidden()
     expect(button).to_have_attribute("aria-expanded", "false")
     assert not errors
