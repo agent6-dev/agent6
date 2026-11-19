@@ -685,6 +685,7 @@ function createMachineDock() {
 // later one, so the click lands and the selection stays.
 // `rows` is [{ key, data, paint }]: `data` decides whether the row changed, `paint()` builds it.
 const focusables = (row) => [row, ...row.querySelectorAll('a[href], button, input, select, textarea, summary, [tabindex]')];
+let refocusing = false; // a repainted row is taking the focus over, which scrolls nothing
 function patchRows(list, rows, hold = false) {
   const old = new Map([...list.children].map(n => [n.rowKey, n]));
   const kept = new Set();
@@ -698,7 +699,7 @@ function patchRows(list, rows, hold = false) {
       if (node) {
         const focused = focusables(node).indexOf(document.activeElement);
         node.replaceWith(fresh);
-        if (focused >= 0) focusables(fresh)[focused]?.focus({ preventScroll: true });
+        if (focused >= 0) { refocusing = true; focusables(fresh)[focused]?.focus({ preventScroll: true }); refocusing = false; }
       }
       node = fresh;
     }
@@ -740,6 +741,11 @@ function listCard(title, empty, rows) {
   list.onkeydown = (e) => {
     if (e.key === ' ' && e.target.matches('a.title')) { e.preventDefault(); e.target.click(); }
   };
+  // A row the keyboard reaches scrolls into view whole, clear of the dock (the row's
+  // scroll-margin-bottom); the browser alone shows only the focused title link.
+  list.addEventListener('focusin', (e) => {
+    if (!refocusing && e.target.matches(':focus-visible')) e.target.closest('.item')?.scrollIntoView({ block: 'nearest' });
+  });
   card.show = (entries, hold) => patchRows(list, entries.length ? entries.flatMap(rows)
     : [{ key: '', data: empty, paint: () => el('div', 'empty', empty) }], hold);
   return card;
@@ -906,6 +912,15 @@ function machineFilesCard() {
   return card;
 }
 
+// The docked composer's height, as --dock-h on the page for a row's scroll-margin-bottom, so a
+// row scrolled into view stops clear of the dock. A dock that leaves the page reports 0.
+const dockHeight = new ResizeObserver((entries) => {
+  for (const e of entries) {
+    const h = e.borderBoxSize[0].blockSize;
+    document.documentElement.style.setProperty('--dock-h', h + 'px');
+    if (!h) dockHeight.unobserve(e.target);
+  }
+});
 async function renderHub(focus, gen) {
   const machinesTab = focus === 'machines';
   setCrumb(machinesTab ? 'state machines' : 'sessions');
@@ -946,7 +961,9 @@ async function renderHub(focus, gen) {
   show(data);
   let statuses = seedStatuses(data.sessions);
   view.appendChild(lists);
-  view.appendChild(machinesTab ? createMachineDock() : newWorkDock(data.presets, data.preset_default_label, data.sessions));
+  const dock = machinesTab ? createMachineDock() : newWorkDock(data.presets, data.preset_default_label, data.sessions);
+  view.appendChild(dock);
+  dockHeight.observe(dock);
   // Without this the hub paints once, so a child that finished, failed or
   // crashed keeps its "running" pill until a manual reload; clicking the
   // already-active tab does not re-enter route(). Refresh the lists only: a

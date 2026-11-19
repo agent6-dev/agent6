@@ -450,6 +450,9 @@ aside.rail { display: none; }
   border-top: 1px solid var(--border); background: var(--surface);
   padding: 10px 22px calc(10px + env(safe-area-inset-bottom));
 }
+/* A hub row scrolled into view stops clear of the dock (--dock-h: its height). Not html's
+   scroll-padding: Chromium scrolls the page on each key typed in a dock entry inside it. */
+.item { scroll-margin-bottom: calc(var(--dock-h, 0px) + 8px); }
 .resize-handle { display: none; touch-action: none; user-select: none; }
 @media (min-width: 781px) {
   .resize-handle { display: block; flex: none; width: 6px; cursor: col-resize; }
@@ -459,6 +462,7 @@ aside.rail { display: none; }
 @media (max-width: 780px) {
   /* A dock rides above the tab bar, and a page with one ends where the tab bar begins. */
   .composer.dock { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding: 8px 16px; }
+  .item { scroll-margin-bottom: calc(var(--dock-h, 0px) + var(--nav-h) + env(safe-area-inset-bottom) + 8px); }
   main:has(.composer.dock) { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); }
   /* Give the input the full row so a long placeholder ("describe a machine to
      create…") can't clip mid-word in the sliver left beside the button on a

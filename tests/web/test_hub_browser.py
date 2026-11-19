@@ -590,3 +590,71 @@ def test_the_parallel_model_popup_is_a_listbox_the_entry_points_into(
     expect(popup).to_have_count(0)
     assert entry.get_attribute("aria-activedescendant") is None
     assert not errors
+
+
+def test_typing_in_the_dock_or_pressing_review_keeps_the_list_still(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Chromium scrolled the list on every key typed in the dock, and Review scrolled its row away.
+
+    Chromium scrolls a focused entry out of html's scroll-padding, and the dock's entry sat in it.
+    """
+    from playwright.sync_api import expect
+
+    for args in (
+        ("init", "-q", "-b", "master"),
+        ("config", "user.name", "t"),
+        ("config", "user.email", "t@example.invalid"),
+        ("commit", "-q", "--allow-empty", "-m", "base"),
+        ("branch", "agent6/review-BBBBBB"),
+    ):
+        subprocess.run(["git", "-C", str(tmp_path), *args], check=True)
+    for n in range(24):
+        _run(tmp_path, f"row{n:02d}-AAAAAA", f"Task {n}", STOP)
+    _manifest(tmp_path, "review-BBBBBB", run_branch="agent6/review-BBBBBB")
+    _run(tmp_path, "review-BBBBBB", "Review me", STOP)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".item")).to_have_count(25)
+    page.evaluate("clearInterval(hubTimer)")  # a refresh must not repaint mid-check
+    # A pointer's click on the middle of a box, with no scroll into view first.
+    middle = """e => { const b = e.getBoundingClientRect();
+      return [b.x + b.width / 2, b.y + b.height / 2]; }"""
+    entry = page.locator(".dock textarea")
+    page.mouse.click(*entry.evaluate(middle))
+    page.keyboard.type("hello")
+    assert page.evaluate("scrollY") == 0
+    review = page.get_by_role("button", name="Review")
+    review.evaluate("b => scrollBy(0, b.getBoundingClientRect().top - innerHeight / 3)")
+    resting = page.evaluate("scrollY")
+    page.mouse.click(*review.evaluate(middle))
+    expect(entry).to_have_value("/review agent6/review-BBBBBB")
+    assert page.evaluate("scrollY") == resting
+    assert not errors
+
+
+def test_a_row_the_keyboard_reaches_scrolls_clear_of_the_dock(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Tabbing down a long list left focused rows under the docked composer."""
+    from playwright.sync_api import expect
+
+    for n in range(24):
+        _run(tmp_path, f"row{n:02d}-AAAAAA", f"Task {n}", STOP)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".item")).to_have_count(24)
+    page.evaluate("clearInterval(hubTimer)")  # a refresh must not repaint mid-walk
+    page.locator(".item a.title").first.focus()
+    page.keyboard.press("Shift+Tab")
+    under = """() => {
+      const row = document.activeElement.closest('.item');
+      const dock = document.querySelector('.composer.dock').getBoundingClientRect();
+      return row ? row.getBoundingClientRect().bottom - dock.top : -1;
+    }"""
+    overlaps = []
+    for _ in range(24):
+        page.keyboard.press("Tab")
+        overlaps.append(page.evaluate(under))
+    assert max(overlaps) <= 0, overlaps
+    assert not errors
