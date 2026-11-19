@@ -103,15 +103,17 @@ function findingRequestId() {
 }
 function findingActions(card, entry, cards, state) {
   const base = cards._base + '/findings/' + encodeURIComponent(entry.finding.finding_id);
+  // A button busy with its request reads disabled (aria-disabled) but keeps the keyboard focus.
   const send = async (button, verb, body) => {
-    button.disabled = true;
+    if (button.hasAttribute('aria-disabled')) return;
+    button.setAttribute('aria-disabled', 'true');
     try {
       const result = await postJSON(base + '/' + verb, body);
       toast(result.message || result.status);
       const snap = await getJSON(cards._base);
       if (cards.findings.isConnected) paintRun(cards, snap);
     } catch (e) { toast(e.message, true); }
-    finally { button.disabled = false; }
+    finally { button.removeAttribute('aria-disabled'); }
   };
   const row = el('span', 'row wrap'); card.appendChild(row);
   if (entry.finding.status === 'open') {
@@ -119,7 +121,7 @@ function findingActions(card, entry, cards, state) {
     const request_id = findingRequestId();
     fix.disabled = entry.finding.fix_state === 'delivery_unknown';
     fix.onclick = () => {
-      if (dead && !confirm('Resume this session to reproduce and fix ' + entry.finding.finding_id + '?')) return;
+      if (fix.posting || (dead && !confirm('Resume this session to reproduce and fix ' + entry.finding.finding_id + '?'))) return;
       return send(fix, 'fix', {request_id, expected_version: entry.version, resume: dead});
     };
     row.appendChild(fix);
@@ -203,15 +205,15 @@ function paintFindings(cards, state) {
     // One steer for every open finding without a queued Fix; the per-finding Fix stays below.
     const dead = notLive(state), all = el('button', 'mini', dead ? 'Resume to fix all open' : 'Fix all open');
     all.onclick = async () => {
-      if (dead && !confirm('Resume this session to reproduce and fix every open finding?')) return;
-      all.disabled = true;
+      if (all.posting || (dead && !confirm('Resume this session to reproduce and fix every open finding?'))) return;
+      all.posting = true; // a press meanwhile does nothing, and the focus stays on the button
       try {
         const result = await postJSON(cards._base + '/findings/fix', {all_open: true, request_id: findingRequestId(), resume: dead});
         toast(result.results.map(r => r.finding_id + ': ' + r.message).join('; '));
         const snap = await getJSON(cards._base);
         if (cards.findings.isConnected) paintRun(cards, snap);
       } catch (e) { toast(e.message, true); }
-      finally { all.disabled = false; }
+      finally { all.posting = false; }
     };
     host.appendChild(all);
   }

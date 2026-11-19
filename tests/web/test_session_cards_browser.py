@@ -330,6 +330,47 @@ def test_the_receipt_says_it_is_loading_and_its_button_hides_it_again(
     assert not errors
 
 
+def test_a_button_keeps_the_keyboard_focus_while_its_request_is_in_flight(
+    open_page: Callable[[int], tuple[Page, list[str]]], evidence: tuple[int, dict[str, Any]]
+) -> None:
+    """Submit resolution and Review run dropped the keyboard focus to the page while they posted.
+
+    Each was disabled for its request, as Receipt was. Each still reads disabled while it posts.
+    """
+    from playwright.sync_api import Route, expect
+
+    port, _ = evidence
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)  # failed once the focus is checked
+
+    page.route("**/findings/*/resolve", hold)
+    page.route("**/review-run/review", hold)
+    card = page.locator(".card-findings .finding").first
+    card.get_by_role("button", name="Resolve", exact=True).click()
+    card.get_by_role("textbox", name="Reason").fill("the test fixture says so")
+    submit = card.get_by_role("button", name="Submit resolution", exact=True)
+    review = page.get_by_role("button", name="Review run", exact=True)
+    for button in (submit, review):
+        button.focus()
+        page.keyboard.press("Enter")
+        while not held:
+            page.wait_for_timeout(50)
+        expect(button).to_be_focused()
+        expect(button).to_be_disabled()
+        expect(button).to_have_css("opacity", "0.45")
+        page.keyboard.press("Enter")  # a press meanwhile sends nothing
+        page.wait_for_timeout(200)
+        assert len(held) == 1
+        held.pop().abort()
+        expect(page.locator(".toast.bad").last).to_be_visible()
+        expect(button).to_be_enabled()
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
 def test_a_picked_commit_says_its_diff_is_loading(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:

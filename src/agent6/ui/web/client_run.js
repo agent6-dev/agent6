@@ -102,7 +102,8 @@ async function renderRun(id, opts, gen) {
     // model call that can take minutes; the markdown lands in its own card.
     const reviewBtn = el('button', null, 'Review run');
     reviewBtn.onclick = async () => {
-      reviewBtn.disabled = true;
+      if (reviewBtn.hasAttribute('aria-disabled')) return;
+      reviewBtn.setAttribute('aria-disabled', 'true'); // reads disabled, and keeps the keyboard focus
       toast('reviewing the run (a model call; the review opens when it lands)');
       try {
         const d = await postJSON(base + '/review', {});
@@ -111,7 +112,7 @@ async function renderRun(id, opts, gen) {
         cards.review.parentElement.style.display = '';
         if (cards._setW) cards._setW('review'); // a phone shows one widget: this one, now
       } catch (e) { toast(e.message, true); }
-      finally { reviewBtn.disabled = false; }
+      finally { reviewBtn.removeAttribute('aria-disabled'); }
     };
     cards._review_btn = reviewBtn; // paintRun gates it: the CLI refuses a live run's review
     for (const b of [stopBtn, turnBtn, compactBtn, planBtn, forkBtn, reviewBtn, mergeBtn, rmBtn]) actions.appendChild(b);

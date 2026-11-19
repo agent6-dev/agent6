@@ -43,6 +43,8 @@ class Element {
     this.parent.children = this.parent.children.filter(c => c !== this); this.parent = null;
   }
   setAttribute(k, v) { this[k] = v; }
+  hasAttribute(k) { return Object.hasOwn(this, k); }
+  removeAttribute(k) { delete this[k]; }
   addEventListener(name, fn) { this['on' + name] = fn; }
   removeEventListener(name) { this['on' + name] = null; }
   getBoundingClientRect() { return {width: this.cls.has('files-body') ? 1000 : 360}; }
