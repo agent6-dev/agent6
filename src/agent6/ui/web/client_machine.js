@@ -54,7 +54,6 @@ async function renderMachine(name, gen) {
   const dock = el('div', 'composer dock');
   const drow = el('div', 'row');
   const din = el('textarea', 'field');
-  din.placeholder = 'steer or message the machine…';
   const steerBtn = el('button', null, 'Steer');
   steerBtn.onclick = async () => {
     // cards._state is set each frame to the agent state currently rendered, so
@@ -240,8 +239,10 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   }
   if (cards._input) {
     cards._input.disabled = !!refusals.steer && !!refusals.poke;
-    cards._input.title = cards._input.disabled
-      ? [refusals.steer, refusals.poke].filter(Boolean).join(' · ') : '';
+    // A box that takes no input says why in place of the invitation to type.
+    const why = cards._input.disabled ? refusals.steer + ' · ' + refusals.poke : '';
+    cards._input.title = why;
+    cards._input.placeholder = why || 'steer or message the machine…';
   }
 
   // The current state's conversation: live turn from this frame, completed

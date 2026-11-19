@@ -406,3 +406,19 @@ def test_the_filled_button_is_the_verb_enter_sends(
     expect(steer).to_contain_class("primary")
     expect(message).not_to_contain_class("primary")
     assert not errors
+
+
+def test_a_closed_entry_says_why_it_takes_no_input(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """An ended machine's disabled entry still invited "steer or message the machine…"."""
+    from playwright.sync_api import expect
+
+    _ended(tmp_path)
+    page, errors = _open(open_page, port, "ended")
+    entry = page.locator(".dock textarea")
+    expect(entry).to_be_disabled()
+    refusals = page.evaluate("getJSON('/api/machine/ended').then(m => m.refusals)")
+    assert "already ended" in refusals["steer"] and "already ended" in refusals["poke"]
+    expect(entry).to_have_attribute("placeholder", refusals["steer"] + " · " + refusals["poke"])
+    assert not errors
