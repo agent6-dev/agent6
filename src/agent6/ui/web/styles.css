@@ -11,6 +11,7 @@
   --ok: light-dark(#156b4f, #4ec9a5); --warn: light-dark(#7d5800, #e2c08d); --err: light-dark(#af2a36, #f07178);
   --on-accent: light-dark(#ffffff, #05121f); /* text on an accent fill */
   --border-strong: light-dark(#b9c0ca, #3a4354); /* field outlines, hovered buttons */
+  --scrollbar: light-dark(#7d8794, #626d80); /* the thumb: 3:1 on every surface */
   /* Controls: a button, a field and a select of one size are exactly this tall; a touch
      screen gets larger targets. */
   --ctl-h: 32px; --ctl-h-sm: 26px; --ctl-px: 12px; --ctl-px-sm: 8px;
@@ -29,11 +30,8 @@
 :root.light { color-scheme: light; }
 :root.dark { color-scheme: dark; }
 @media (pointer: coarse) { :root { --ctl-h: 40px; --ctl-h-sm: 32px; } }
-* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent; }
 input[type=checkbox] { accent-color: var(--accent); }
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
 html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif;
