@@ -102,3 +102,21 @@ def test_tree_rows_start_at_the_page_inset(
     )
     assert page.locator(_row("deep")).evaluate(_CONTENT_LEFT) == pytest.approx(bar, abs=1)
     assert not errors
+
+
+def test_the_revision_list_opens_under_its_field(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """The list spanned the whole bar on a desktop and opened under the filter on a phone."""
+    page, errors = open_page(big_tree)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    field = page.get_by_role("textbox", name="revision")
+    field.click()
+    listing = page.locator(".gpick-list")
+    listing.wait_for()
+    box, under = field.bounding_box(), listing.bounding_box()
+    assert box and under
+    assert under["x"] == pytest.approx(box["x"], abs=1)
+    assert under["width"] == pytest.approx(box["width"], abs=1)
+    assert 0 <= under["y"] - (box["y"] + box["height"]) <= 6
+    assert not errors

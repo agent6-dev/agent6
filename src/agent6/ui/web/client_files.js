@@ -17,8 +17,9 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
 
   // -- toolbar: the revision picker, the filter, the count ---------------------------
   const bar = el('div', 'files-bar page-pad row wrap'); app.appendChild(bar);
-  const listHost = el('div', 'gpick-host page-pad');
+  const listHost = el('div', 'gpick-host');
   const pick = gitPicker('revision', filesState.rev, (v) => { filesState.rev = v; setViewHash('#/files/' + encodeURIComponent(v.rev)); loadTree(); }, listHost, [GIT_WORKTREE_PICK]);
+  pick.root.appendChild(listHost); // the list opens under the field it searches
   const filter = el('input', 'filter'); filter.type = 'search'; filter.placeholder = 'filter files…'; filter.setAttribute('aria-label', 'filter files');
   const counts = el('span', 'muted files-counts');
   let showIgnored = recall('a6-files-ignored', 'off') === 'on';
@@ -32,7 +33,6 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     return loadTree();
   };
   bar.appendChild(pick.root); bar.appendChild(filter); bar.appendChild(ignoredToggle); bar.appendChild(counts);
-  app.appendChild(listHost);
   const body = el('div', 'files-body'); app.appendChild(body);
   const tree = el('div', 'files-tree'); tree.id = 'files-tree'; body.appendChild(tree);
   body.appendChild(resizeHandle(tree, {
