@@ -140,6 +140,52 @@ def test_an_ended_runs_bar_offers_only_what_it_can_do_and_ends_in_delete(
     assert not errors
 
 
+@pytest.mark.parametrize(
+    ("model", "line"), [("o/vendor/configured", "configured"), ("", "no model")]
+)
+def test_a_phones_resume_pickers_fold_behind_one_line_that_names_their_picks(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    model: str,
+    line: str,
+) -> None:
+    """On a phone the resume's preset and model fold behind one line that names both.
+
+    The model dropdown beside its label cut "openrouter/moonshotai/kimi-k2.6 (config de" mid-word.
+    With no model the line read "preset: none · none". A desktop keeps the row.
+    """
+    from playwright.sync_api import expect
+
+    if model:
+        config = tmp_path / "config" / "agent6"
+        config.mkdir(parents=True)
+        (config / "config.toml").write_text(
+            '[providers.o]\nbackend = "openai"\nbase_url = "https://x/v1"\n'
+            f'[models.worker]\nmodel = "{model}"\n',
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(config.parent))
+    stop = {"type": "session.stop", "reason": "finish_session"}
+    session_logs.write_run(tmp_path, "ended-AAA111", [stop])
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/ended-AAA111")
+    composer = page.locator(".composer")
+    summary = composer.get_by_role("button", name=re.compile("^preset: "))
+    row = composer.locator(".pickers")
+    expect(summary).to_have_text("preset: none · " + line)
+    expect(row).to_be_hidden()
+    summary.click()
+    expect(summary).to_have_attribute("aria-expanded", "true")
+    expect(row).to_be_visible()
+    page.set_viewport_size({"width": 1280, "height": 900})
+    expect(summary).to_be_hidden()
+    expect(row).to_be_visible()
+    assert not errors
+
+
 @pytest.mark.parametrize("width", [1280, 390])
 def test_a_question_box_spaces_its_questions_and_wraps_a_narrow_field(
     open_page: Callable[[int], tuple[Page, list[str]]],

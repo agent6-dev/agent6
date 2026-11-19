@@ -1630,7 +1630,9 @@ function makeComposer(id) {
   const model = el('select', 'field');
   const modelDefault = el('option', null, '…'); modelDefault.value = ''; model.appendChild(modelDefault);
   const presetRow = pickerRow([['continue under preset', preset], ['model', model]]);
-  presetRow.style.display = 'none';
+  // A phone's summary line names the preset and the model the resume runs under.
+  const summary = pickerSummary([presetRow], () => ['preset: ' + pickedName(preset), pickedModel(model)]);
+  presetRow.style.display = summary.style.display = 'none';
   let labelRequest = 0;
   const relabel = () => {
     const request = ++labelRequest;
@@ -1639,6 +1641,7 @@ function makeComposer(id) {
         if (request !== labelRequest) return;
         presetDefault.textContent = d.preset_label;
         modelDefault.textContent = d.model_label;
+        model.dispatchEvent(new Event('input', { bubbles: true })); // the summary line names them
       }).catch(() => {});
   };
   preset.onchange = relabel;
@@ -1665,7 +1668,7 @@ function makeComposer(id) {
   const models = attachParallelSuggest(ta, root); // the spec before `--`
   const apply = () => {
     ta.disabled = busy;
-    presetRow.style.display = finished ? '' : 'none';
+    presetRow.style.display = summary.style.display = finished ? '' : 'none';
     if (finished) fillPresets();
     if (finished && !rowShown) relabel();
     rowShown = !!finished;
@@ -1791,7 +1794,7 @@ function makeComposer(id) {
       resume(text);
     }
   };
-  root.appendChild(presetRow); root.appendChild(ta); root.appendChild(hint);
+  root.appendChild(summary); root.appendChild(presetRow); root.appendChild(ta); root.appendChild(hint);
   // A quoted diff line lands beneath what is typed, for the words that follow it.
   root.quote = (note) => {
     const typed = ta.value.replace(/\s+$/, '');
