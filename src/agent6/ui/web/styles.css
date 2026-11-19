@@ -224,6 +224,8 @@ button.fold[aria-expanded=true]::before { rotate: 45deg; }
 /* The spend cap holds a few digits and no spin buttons at rest (Firefox paints them by default). */
 .pickers input[type=number] { width: 7em; appearance: textfield; }
 .pickers[hidden] { display: none; }
+/* Only a phone folds a composer's pickers behind their summary line (pickerSummary, below). */
+.composer .picker-summary { display: none; }
 /* A composer's suggestion popup (the /parallel model ids, the directives: a textarea can't carry
    a native datalist) opens on its text entry's top edge, at most as wide as the entry. */
 .composer { anchor-scope: --entry; }
@@ -466,6 +468,10 @@ aside.rail, #rail-show { display: none; }
   .composer.dock .row { flex-wrap: wrap; }
   .composer.dock .row > textarea.field { flex-basis: 100%; }
   .composer.dock .row:not(.pickers) > button { flex: 1 1 auto; }
+  /* The summary line is a fold as wide as its words, which wrap at the dock's width. */
+  .composer .picker-summary { display: flex; width: fit-content; max-width: 100%; margin-bottom: 8px; text-align: start; }
+  .picker-summary > span { min-width: 0; overflow-wrap: anywhere; }
+  .picker-summary[aria-expanded=false] ~ .pickers { display: none; }
   /* No nested scrolling on a phone: an inner scroller traps the page scroll,
      so every card flows at natural height and the page is the one scroller. */
   .card.scroll, .conv-box { max-height: none !important; overflow: visible; }

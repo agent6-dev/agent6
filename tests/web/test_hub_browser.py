@@ -329,6 +329,70 @@ def test_a_disabled_picker_reads_disabled_with_its_label(
     assert not errors
 
 
+def test_a_phones_pickers_fold_behind_one_line_that_names_their_picks(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On a phone the new-work pickers fold behind one line: the mode, preset and model it runs.
+
+    The rows took four of the dock's lines over the entry, and the model was cut mid-word. A tap
+    opens them and a second closes them; each run option set joins the line, which wraps rather
+    than cutting one, and a desktop keeps the rows.
+    """
+    from playwright.sync_api import expect
+
+    _run(tmp_path, "plan-AAAAAA", "Plan it", STOP, mode="plan")
+    config = tmp_path / "config" / "agent6"
+    config.mkdir(parents=True)
+    (config / "config.toml").write_text(
+        '[providers.o]\nbackend = "openai"\nbase_url = "https://x/v1"\n'
+        '[models.worker]\nmodel = "o/vendor/configured"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config.parent))
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    summary = page.locator(".dock").get_by_role("button", name=re.compile("^run · "))
+    pickers = page.locator(".dock .pickers").first
+    expect(summary).to_have_text("run · preset: none · configured")
+    expect(summary).to_have_attribute("aria-expanded", "false")
+    expect(pickers).to_be_hidden()
+    summary.click()
+    expect(summary).to_have_attribute("aria-expanded", "true")
+    expect(pickers).to_be_visible()
+    page.locator(".dock input[type=checkbox]").check()
+    expect(summary).to_have_text("run · preset: none · configured · worktree")
+    page.locator(".dock .pickers").get_by_role("button", name="advanced", exact=True).click()
+    page.locator(".dock select[title^='seed the run']").select_option("plan-AAAAAA")
+    page.locator(".dock input[type=number]").fill("2.5")
+    expect(summary).to_have_text(
+        "run · preset: none · configured · worktree · from plan: plan-AAAAAA · max USD: 2.5"
+    )
+    summary.click()
+    expect(pickers).to_be_hidden()
+    assert summary.evaluate("e => e.firstChild.scrollWidth <= e.firstChild.clientWidth")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    expect(summary).to_be_hidden()
+    expect(pickers).to_be_visible()
+    assert not errors
+
+
+def test_a_phones_summary_line_says_when_no_model_resolves(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """With no model configured, a phone's folded line read "run · preset: none · none"."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".dock .picker-summary")).to_have_text("run · preset: none · no model")
+    assert not errors
+
+
 def test_a_suggestion_popup_opens_on_its_entry_at_the_entrys_width(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
@@ -399,7 +463,8 @@ def test_the_hubs_text_starts_at_one_left_edge(
       range.selectNodeContents(text);
       return Math.round(range.getBoundingClientRect().left);
     }"""
-    places = [".toolbar button", ".item a.title", ".dock .pick > span", ".dock textarea"]
+    pickers = ".dock .pick > span" if width > 780 else ".dock .picker-summary"  # a phone folds them
+    places = [".toolbar button", ".item a.title", pickers, ".dock textarea"]
     assert len({page.evaluate(left, sel) for sel in places}) == 1
     assert not errors
 

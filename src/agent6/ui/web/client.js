@@ -560,6 +560,21 @@ function pickerRow(pairs) {
   }
   return row;
 }
+// The line repaints on a row's input event: code that sets a picker dispatches one.
+function pickerSummary(rows, words) {
+  const fold = el('button', 'fold picker-summary');
+  const line = fold.appendChild(el('span'));
+  const paint = () => { line.textContent = words().filter(Boolean).join(' · '); };
+  fold.setAttribute('aria-expanded', 'false');
+  fold.onclick = () => fold.setAttribute('aria-expanded', String(fold.getAttribute('aria-expanded') !== 'true'));
+  for (const row of rows) row.addEventListener('input', paint);
+  paint();
+  return fold;
+}
+// A dropdown's pick as a summary line names it, without "(config default)" or "(as recorded)".
+const pickedName = (select) => (select.selectedOptions[0]?.text || '').replace(/ \((config default|as recorded)\)$/, '');
+// A model's pick names the model without its provider path, or "no model" where none resolves.
+const pickedModel = (select) => { const m = pickedName(select).split('/').pop(); return m === 'none' ? 'no model' : m; };
 
 // The new-work composer, docked at the bottom of the Sessions page: the mode,
 // worktree, preset and model row, whose advanced fold opens a row with the plan
@@ -623,6 +638,7 @@ function newWorkDock(presets, presetDefault, sessions) {
     } catch (e) {
       if (request === routeRequest) {
         resolved.textContent = 'config default'; model.disabled = false;
+        model.dispatchEvent(new Event('input', { bubbles: true }));
         toast('could not list the models: ' + e.message, true);
       }
       return;
@@ -632,6 +648,7 @@ function newWorkDock(presets, presetDefault, sessions) {
     model.replaceChildren(resolved, ...(d.routes || []).map(r => new Option(r, r)));
     model.value = '';
     model.disabled = false;
+    model.dispatchEvent(new Event('input', { bubbles: true })); // the summary line names the route
   };
   mode.onchange = () => { followMode(); fillRoutes(); }; preset.onchange = fillRoutes; fillRoutes(); followMode();
   const go = el('button', 'primary', 'Start');
@@ -662,6 +679,13 @@ function newWorkDock(presets, presetDefault, sessions) {
   row.appendChild(task); row.appendChild(go);
   const picks = pickerRow([['mode', mode], ['worktree', worktree], ['preset', preset], ['model', model]]);
   picks.appendChild(advanced);
+  // A phone's summary line names the mode, the preset, the model, and each run option set.
+  root.appendChild(pickerSummary([picks, more], () => {
+    const run = mode.value === 'run';
+    return [mode.value, 'preset: ' + pickedName(preset), pickedModel(model),
+      run && worktree.checked && 'worktree', run && seed.value && 'from plan: ' + seed.value,
+      cap.value.trim() && 'max USD: ' + cap.value.trim()];
+  }));
   root.appendChild(picks);
   root.appendChild(more);
   root.appendChild(row);
