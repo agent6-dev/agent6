@@ -790,6 +790,12 @@ function subLine(parts) {
   return sub;
 }
 
+// A row's status label without the mode the server folds in for a listing with no mode column
+// ('plan · running'): a session row names its mode beside the status, and the Drafts card names
+// its rows.
+function statusOnly(r) {
+  return r.status_label.startsWith(r.mode + ' · ') ? r.status_label.slice(r.mode.length + 3) : r.status_label;
+}
 // One session row, `depth` levels under its group's row. A group's row carries a `children: N`
 // toggle that `regroup` flips; its children (`r.children`, the server's nested rows) follow it
 // as rows of their own, each a level deeper.
@@ -798,13 +804,13 @@ function paintSession(r, depth, regroup) {
     if (depth) { it.classList.add('child'); it.style.setProperty('--depth', depth); }
     taskTitle(g, r.task_line || firstLine(r.task, 200) || '(no task)', '#/session/' + encodeURIComponent(r.session_id));
     // The status (the server's one shared label and level) leads the first sub line, so every
-    // row's dot sits in one column. id_cell is the id and the winner mark the CLI and TUI id cells
-    // carry, then a worktree mark in parentheses: a missing worktree's note, which wraps. usage is
-    // blank for a clean $0.
+    // row's dot sits in one column, and the mode follows it. id_cell is the id and the winner mark
+    // the CLI and TUI id cells carry, then a worktree mark in parentheses: a missing worktree's
+    // note, which wraps. usage is blank for a clean $0.
     const cell = esc(r.id_cell || r.session_id), cut = cell.indexOf(' (', r.session_id.length);
     let id = cell;
     if (cut >= 0) { id = el('span'); id.append(el('span', 'f', cell.slice(0, cut)), cell.slice(cut)); }
-    g.appendChild(subLine([pill(r.status_level, r.status_label), esc(r.mode), id, esc(r.when), esc(r.usage)]));
+    g.appendChild(subLine([pill(r.status_level, statusOnly(r)), esc(r.mode), id, esc(r.when), esc(r.usage)]));
     // Where the run works and the branch holding its commits, when it has them. A missing
     // worktree's path is in the id cell's note already.
     const where = r.worktree && !cell.includes(r.worktree);
@@ -894,8 +900,8 @@ function machinesCard() {
 function draftsCard() {
   return listCard('Drafts', '', d => [{ key: d.session_id, data: d, paint: () => itemRow('item', (it, g) => {
     taskTitle(g, d.task_line || firstLine(d.task, 200) || d.session_id, '#/draft/' + encodeURIComponent(d.session_id));
-    // The reason rides the status label (failed · provider_error).
-    g.appendChild(subLine([pill(d.status_level, d.status_label), 'draft', d.session_id, esc(d.when)]));
+    // The reason rides the status label (failed · provider error).
+    g.appendChild(subLine([pill(d.status_level, statusOnly(d)), d.session_id, esc(d.when)]));
   }) }]);
 }
 

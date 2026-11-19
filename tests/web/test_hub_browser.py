@@ -711,3 +711,24 @@ def test_an_instance_row_goes_by_the_instances_name(
     expect(rows.last.locator(".sub")).not_to_contain_text("machine")
     assert rows.first.locator("a.title").evaluate("e => e.scrollWidth <= e.clientWidth")
     assert not errors
+
+
+def test_a_row_names_its_mode_once(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A plan's row read "plan · stale · plan", and a draft's "machine · stale · draft"."""
+    from playwright.sync_api import expect
+
+    _run(tmp_path, "steady-AAAAAA", "Lay it out", mode="plan")
+    _run(tmp_path, "brisk-BBBBBB", "Author a watcher", mode="machine")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    sub = page.locator(".item .sub").first
+    expect(sub).to_contain_text("plan · ")
+    assert sub.inner_text().count("plan") == 1
+    page.goto(f"http://127.0.0.1:{port}/#/machines")
+    draft = page.locator(".card", has=page.get_by_role("heading", name="Drafts")).locator(".sub")
+    expect(draft).to_contain_text("brisk-BBBBBB")
+    expect(draft).not_to_contain_text("machine")
+    expect(draft).not_to_contain_text("draft")
+    assert not errors
