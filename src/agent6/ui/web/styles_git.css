@@ -15,7 +15,13 @@
 .git-commit { gap: 8px; align-items: flex-end; flex-wrap: wrap; margin: 8px 0; }
 .git-commit textarea { flex: 1 1 20em; min-width: 0; }
 .git-commit button { flex: none; margin-left: auto; }
-.gf-acts { display: inline-flex; gap: 4px; margin-left: auto; }
+/* A working-tree row is a grid: each verb has its own slot, so the counts and the buttons line up
+   down the list. A narrow side panel moves the buttons to a line under the path. */
+.gf:has(> .gf-acts) { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; row-gap: 4px; }
+.gf-acts { display: grid; grid-template-columns: repeat(3, minmax(5.4em, max-content)); gap: 4px; }
+.gf-acts > [data-act=stage] { grid-column: 1; }
+.gf-acts > [data-act=unstage] { grid-column: 2; }
+.gf-acts > [data-act=discard] { grid-column: 3; }
 .git-counts { font-size: 12px; }
 .gc-row { display: flex; align-items: center; gap: 10px; height: 30px; padding-right: 12px; cursor: pointer; }
 @media (hover: hover) { .gc-row:hover { background: var(--surface2); } }
@@ -116,4 +122,9 @@
 @container git-side (max-width: 519px) {
   .gcmp-pick { display: grid; grid-template-columns: 1fr auto; }
   .gcmp-pick .gpick:last-child { grid-column: 1 / -1; }
+  .gf:has(> .gf-acts) { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .gf-acts { grid-column: 2 / -1; justify-self: end; }
+}
+@container git-side (max-width: 319px) {
+  .gf-acts { grid-column: 1 / -1; justify-self: stretch; grid-template-columns: repeat(3, minmax(min-content, 1fr)); }
 }

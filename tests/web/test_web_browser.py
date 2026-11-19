@@ -905,9 +905,32 @@ def test_the_working_tree_row_opens_its_uncommitted_files(
     row.click()
     page.wait_for_selector(".git-side .gf")
     assert page.locator(".git-side .gf").count() == 5
-    page.locator(".git-side .gf", has_text="new.txt").click()
+    page.locator(".git-side .gf", has_text="new.txt").locator(".gf-path").click()
     page.wait_for_selector(".git-diff .diff")
     assert "+hello" in page.locator(".git-diff .diff").inner_text()
+    assert errors == [], errors
+
+
+def test_the_working_tree_rows_keep_one_slot_per_verb(
+    open_page: Callable[[int], tuple[Page, list[str]]], dirty_git_port: int
+) -> None:
+    """Each verb's button sits at one x down the list, and a narrow panel never squeezes a path."""
+    page, errors = open_page(dirty_git_port)
+    for width in (1280, 820):
+        page.set_viewport_size({"width": width, "height": 900})
+        page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/worktree")
+        page.wait_for_selector(".git-side .gf .gf-acts")
+        lefts = page.locator(".git-side .gf-acts button").evaluate_all(
+            "bs => bs.map(b => [b.textContent, Math.round(b.getBoundingClientRect().left)])"
+        )
+        slots: dict[str, set[int]] = {}
+        for verb, left in lefts:
+            slots.setdefault(verb, set()).add(left)
+        assert len(slots) == 3 and all(len(x) == 1 for x in slots.values()), (width, slots)
+        paths = page.locator(".git-side .gf-path").evaluate_all(
+            "ps => ps.map(p => Math.round(p.getBoundingClientRect().width))"
+        )
+        assert min(paths) > 100, (width, paths)
     assert errors == [], errors
 
 
@@ -918,7 +941,7 @@ def test_an_images_diff_shows_it_before_and_after(
     page, errors = open_page(dirty_git_port)
     page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git")
     page.locator(".gc-wt").click()
-    page.locator(".git-side .gf", has_text="logo.png").click()
+    page.locator(".git-side .gf", has_text="logo.png").locator(".gf-path").click()
     page.wait_for_function("() => document.querySelectorAll('.git-img img').length === 2")
     page.wait_for_function("() => document.body.innerText.includes('2\u00d72')")
     text = page.locator(".git-img").inner_text()
@@ -965,7 +988,7 @@ def test_the_diff_view_switches_between_inline_split_old_and_new(
     page, errors = open_page(dirty_git_port)
     page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git")
     page.locator(".gc-wt").click()
-    page.locator(".git-side [data-path='b.txt']").click()
+    page.locator(".git-side [data-path='b.txt'] .gf-path").click()
     page.wait_for_selector(".git-diff .diff")
     assert page.locator(".git-diff .diff .dl.add[data-new='4']").count() == 1
     assert page.locator(".git-diff .diff .dl[data-old='3'][data-new='3']").count() == 1

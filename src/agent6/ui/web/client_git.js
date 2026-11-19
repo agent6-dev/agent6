@@ -502,7 +502,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     const fileActions = (f) => {
       const row = el('span', 'gf-acts');
       const add = (label, title, run) => {
-        const b = el('button', 'mini', label); b.title = title;
+        const b = el('button', 'mini', label); b.title = title; b.dataset.act = label.toLowerCase();
         b.onclick = (e) => { e.stopPropagation(); run(); }; b.onkeydown = (e) => e.stopPropagation();
         row.appendChild(b);
       };
