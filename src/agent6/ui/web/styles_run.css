@@ -82,6 +82,11 @@
 /* x hidden: .ci's -4px hover-bleed margins otherwise leave a permanent
    horizontal scrollbar; item text always wraps, so x never scrolls for real. */
 .conv-box { overflow: hidden auto; max-height: 62vh; }
+/* The run view's scroll panes: a focused control scrolls into view 12px clear of the pane's edge,
+   so its ring shows whole. Firefox focuses a scroller itself: the drawer and the prompts, which
+   meet the bars and the rail edge to edge, draw that ring inside. */
+.run-app .drawer, .run-app > .prompts, .conv-box { scroll-padding-block: 12px; }
+.run-app .drawer:focus-visible, .run-app > .prompts:focus-visible { outline-offset: -2px; }
 
 /* The run view's prompts host stands its boxes 10px under the top bar, and the action bar's
    margin sets the gap under the last box. Boxes stand 10px apart. */

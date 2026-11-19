@@ -867,3 +867,36 @@ def test_an_answer_field_beside_short_options_shows_its_whole_placeholder(
     )
     assert need <= width
     assert not errors
+
+
+def test_a_control_tabbed_to_under_the_drawers_fold_shows_its_whole_ring(
+    open_page: Callable[[int], tuple[Page, list[str]]], evidence: tuple[int, dict[str, Any]]
+) -> None:
+    """Tab scrolls each drawer control into view with its focus ring clear of the drawer's edge.
+
+    The drawer scrolled a focused control flush with its bottom edge and cut the ring's outer 4px.
+    """
+    from playwright.sync_api import expect
+
+    port, _ = evidence
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1280, "height": 600})
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    expect(page.locator(".card-findings .finding").first).to_be_attached()
+    page.get_by_role("button", name="Details", exact=True).focus()
+    edges = []
+    for _ in range(40):
+        page.keyboard.press("Tab")
+        edge = page.evaluate(
+            """() => { const a = document.activeElement, d = a.closest('.drawer');
+            if (!d) return null;
+            const r = a.getBoundingClientRect(), s = getComputedStyle(a);
+            const ring = parseFloat(s.outlineOffset) + parseFloat(s.outlineWidth);
+            const top = d.getBoundingClientRect().top + d.clientTop;
+            return [r.top - ring - top, top + d.clientHeight - r.bottom - ring, d.scrollTop]; }"""
+        )
+        if edge:
+            edges.append(edge)
+    assert max(scrolled for _, _, scrolled in edges) > 0
+    assert min(min(above, below) for above, below, _ in edges) >= 0
+    assert not errors
