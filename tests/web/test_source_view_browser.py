@@ -83,6 +83,26 @@ def test_a_file_line_wraps_in_its_code_column_and_a_copy_keeps_blank_lines(
     assert not errors
 
 
+def test_blame_leads_each_line_and_the_code_wraps_beside_it(
+    open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
+) -> None:
+    """Blame sat after the longest line, past the right edge of the file pane."""
+    port, _, _ = long_file
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/files/HEAD/long.txt")
+    page.locator(".files-blame").click()
+    page.wait_for_selector("[data-line='50'] .blame-commit")
+    row = page.locator("[data-line='1']")
+    assert row.evaluate("r => r.firstElementChild.classList.contains('blame-cell')")
+    assert row.evaluate(
+        "r => r.querySelector('.blame-cell').getBoundingClientRect().right"
+        " <= r.querySelector('.g').getBoundingClientRect().left"
+    )
+    assert page.locator(".files-text").evaluate("e => e.scrollWidth <= e.clientWidth + 1")
+    _starts_in_code_column(page, "[data-line='3']")
+    assert not errors
+
+
 @pytest.mark.parametrize("mode", ["inline", "split"])
 def test_a_diff_line_wraps_in_its_code_column(
     open_page: Callable[[int], tuple[Page, list[str]]],
@@ -97,4 +117,33 @@ def test_a_diff_line_wraps_in_its_code_column(
     row = ".dl[data-new='3']" if mode == "inline" else ".ds-row[data-new='3'] > :nth-child(2)"
     page.wait_for_selector(row)
     _starts_in_code_column(page, row)
+    assert not errors
+
+
+def test_the_blame_card_opens_beside_its_line_near_the_bottom_edge(
+    open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
+) -> None:
+    """Near the bottom of the window the card slid up over the line it describes, squeezed."""
+    from playwright.sync_api import expect
+
+    port, _, _ = long_file
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1280, "height": 600})
+    page.goto(f"http://127.0.0.1:{port}/#/files/HEAD/long.txt")
+    page.locator(".files-blame").click()
+    link = page.locator("[data-line='50'] .blame-commit")
+    link.wait_for()
+    link.evaluate("""a => {
+      const pane = a.closest('.files-text');
+      pane.scrollTop += a.getBoundingClientRect().bottom - (innerHeight - 20);
+      a.focus({preventScroll: true});
+    }""")
+    card = page.locator(".blame-card:visible")
+    expect(card.locator(".blame-title")).to_have_text("change lines 3 and 50")
+    box = card.bounding_box()
+    line = link.bounding_box()
+    assert box and line
+    assert box["y"] + box["height"] <= line["y"] + 1 or box["y"] >= line["y"] + line["height"] - 1
+    assert box["y"] + box["height"] <= 600 and box["x"] + box["width"] <= 1280
+    assert card.locator(".mono").evaluate("e => e.getClientRects().length") == 1
     assert not errors

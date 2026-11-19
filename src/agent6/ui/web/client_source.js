@@ -239,11 +239,12 @@ function renderLines(lines, spans, marks) {
   });
   return box;
 }
-// Rows name their side, segment (hunk), displayed path, node and BlameLine.
+// Rows name their side, segment (hunk), displayed path, node and BlameLine. A blame cell
+// leads its line. A commit group's card opens over the page by the cell the pointer or the
+// focus is on: the card moves into that cell, which the stylesheet makes its anchor.
 const blameCommits = new Map();
 function clearBlame(host) {
   host.querySelectorAll('.blame-cell').forEach(c => c.remove());
-  host.querySelectorAll('.blamed-line').forEach(c => c.classList.remove('blamed-line'));
 }
 function renderBlame(rows) {
   let group = null, previous = null;
@@ -274,9 +275,10 @@ function renderBlame(rows) {
     }
     g.cells.push(cell);
     const hide = () => {
+      clearTimeout(g.timer); // leaving the card also leaves its cell: one hide stays pending
       g.timer = setTimeout(() => {
         g.cells.forEach(c => c.classList.remove('blame-hover'));
-        if (g.card) g.card.hidden = true;
+        if (g.card?.matches(':popover-open')) g.card.hidePopover();
       }, 150);
     };
     const show = async () => {
@@ -285,6 +287,7 @@ function renderBlame(rows) {
       if (!line.sha) return;
       if (!g.card) {
         g.card = el('span', 'blame-card');
+        g.card.popover = 'manual';
         g.card.appendChild(el('span', 'mono', line.sha));
         g.card.appendChild(el('span', null, line.author + ' · ' + line.date));
         if (line.filename !== row.path) g.card.appendChild(el('span', null, line.filename));
@@ -293,21 +296,17 @@ function renderBlame(rows) {
         g.card.appendChild(title);
         g.card.onmouseenter = () => clearTimeout(g.timer);
         g.card.onmouseleave = hide;
-        g.cells[0].appendChild(g.card);
         if (!blameCommits.has(line.sha)) blameCommits.set(line.sha, getJSON('/api/git/commit/' + encodeURIComponent(line.sha)));
         blameCommits.get(line.sha).then(c => { if (g.card.isConnected) title.textContent = c.subject; })
           .catch(e => { if (g.card.isConnected) title.textContent = 'Commit unavailable: ' + e.message; blameCommits.delete(line.sha); });
       }
-      g.card.hidden = false;
-      const r = cell.getBoundingClientRect();
-      g.card.style.left = Math.max(8, Math.min(r.left, window.innerWidth - g.card.offsetWidth - 8)) + 'px';
-      g.card.style.top = Math.max(8, Math.min(r.bottom, window.innerHeight - g.card.offsetHeight - 8)) + 'px';
+      if (g.card.parentNode !== cell) cell.appendChild(g.card); // a moved popover closes
+      if (!g.card.matches(':popover-open')) g.card.showPopover();
     };
     cell.onmouseenter = show; cell.onmouseleave = hide;
     // focusin bubbles from the link; Chromium has no onfocusin property handler.
     cell.addEventListener('focusin', show); cell.addEventListener('focusout', hide);
-    row.node.classList.add('blamed-line');
-    row.node.appendChild(cell);
+    row.node.prepend(cell);
     previous = row;
   }
 }

@@ -6,8 +6,8 @@
 /* Line numbers are drawn from `data-n`, never in the text, so copied code carries none. */
 .numbered .g { width: var(--gw, 3ch); margin-right: 1ch; text-align: right; color: var(--muted); font-style: normal; user-select: none; }
 .numbered .g::before { content: attr(data-n); }
-/* A numbered line is a row: the line numbers, then the code, which wraps in a column of its own;
-   a finding on the line takes the next row. */
+/* A numbered line is a row: blame when it is on, the line numbers, then the code, which wraps
+   in a column of its own; a finding on the line takes the next row. */
 .diff.numbered .dl, .src .sl, .ds-cell { display: flex; flex-wrap: wrap; }
 :is(.dl, .sl, .ds-cell) > .g { flex: none; }
 :is(.dl, .sl, .ds-cell) > .source-code { flex: 1 1 0; min-width: 0; }
@@ -72,24 +72,29 @@
 .gpick-list .ac-item > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gpick-list .ac-item > span:nth-child(2) { flex: 1; min-width: 0; }
 
-.src:has(.blame-cell), .diff:has(.blame-cell) { width: max-content; min-width: 100%; }
-.src .blamed-line, .diff.numbered .blamed-line, .ds-cell.blamed-line { display: flex; white-space: pre; }
-.blamed-line > .source-code { flex: 1; }
-.blamed-line > .g { flex: none; }
-.blamed-line { flex-wrap: wrap; }
-/* order: a finding attached before blame still leaves the gutter beside the code. */
-.blamed-line > .finding { flex-basis: 100%; order: 1; }
-.dsplit:has(.blame-cell) { display: grid; grid-template-columns: repeat(2, minmax(max-content, 1fr)); width: max-content; min-width: 100%; }
-.dsplit:has(.blame-cell) .ds-row { grid-column: 1 / -1; grid-template-columns: subgrid; }
-.dsplit:has(.blame-cell) .ds-head { grid-column: 1 / -1; }
-.blame-cell { display: inline-flex; flex: none; width: 28ch; margin-left: 3ch; padding: 0 1ch; border-left: 2px solid var(--muted); color: var(--muted); user-select: none; font-weight: normal; }
+/* Blame leads the line: a bar per commit group, labelled on the group's first line with the sha,
+   the author and the date. Where the code would keep under about 60 columns (split view, a
+   narrow pane) the label is the sha alone. */
+.src, .diff { container: source / inline-size; }
+.blame-cell { flex: none; display: flex; width: 35ch; margin-right: 1ch; padding: 0 1ch; border-left: 2px solid var(--muted); color: var(--muted); font-size: 11px; font-weight: normal; user-select: none; }
 .blame-start { border-top-left-radius: 3px; }
-.blame-label { display: inline-flex; width: 100%; gap: 1ch; font-size: 11px; align-items: baseline; }
+.blame-label { display: flex; width: 100%; min-width: 0; gap: 1ch; align-items: baseline; }
+.blame-label > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .blame-commit { flex: none; color: inherit; }
 .blame-date { flex: none; }
-.blame-author { flex: 1; min-width: 0; max-width: 14ch; overflow: hidden; text-overflow: ellipsis; }
+.blame-author { flex: 1; max-width: 14ch; }
+.ds-cell > .blame-cell { width: 9ch; }
+.ds-cell .blame-author, .ds-cell .blame-date { display: none; }
+@container source (width < 720px) { .blame-cell { width: 9ch; } .blame-author, .blame-date { display: none; } }
 .blame-hover { color: var(--text); border-color: var(--accent); background: var(--surface2); }
-.blame-card { position: fixed; z-index: 80; display: flex; flex-direction: column; gap: 6px; max-width: min(440px, calc(100vw - 16px)); padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); box-shadow: 0 4px 16px #0004; white-space: normal; overflow-wrap: anywhere; font: 12px/1.5 system-ui, sans-serif; }
-.blame-card[hidden] { display: none; }
-.files-blame.active, .diff-blame.active { color: var(--accent); border-color: var(--accent); }
-@media (max-width: 780px) { .blame-cell { margin-left: 1ch; } }
+/* A group's card opens over the page by the cell that holds it: below the line, or above it,
+   or leftward, wherever it fits. */
+.blame-cell:has(> .blame-card) { anchor-name: --blame; anchor-scope: --blame; }
+.blame-card {
+  position-anchor: --blame; position-area: block-end span-inline-end;
+  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  inset: auto; margin: 2px 0; width: max-content; max-width: min(440px, calc(100vw - 16px));
+  display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text); box-shadow: 0 4px 16px #0004; white-space: normal; overflow-wrap: anywhere; font: 12px/1.5 system-ui, sans-serif;
+}
+.blame-card:not(:popover-open) { display: none; }

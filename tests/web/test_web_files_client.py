@@ -30,6 +30,7 @@ class Element {
   set textContent(t) { this.innerHTML = ''; this.text = t; }
   get isConnected() { return this === view || !!this.parent?.isConnected; }
   appendChild(c) { this.children.push(c); c.parent = this; return c; }
+  prepend(c) { this.children.unshift(c); c.parent = this; }
   insertBefore(c, before) {
     this.children.splice(this.children.indexOf(before), 0, c); c.parent = this;
   }
@@ -266,7 +267,7 @@ await loading;
 assert.equal(source.querySelector('.sl'), first);
 assert.equal(source.querySelectorAll('.hl-keyword').length, 1);
 assert.equal(source.querySelectorAll('.blame-cell').length, 2);
-assert.ok(!first.firstChild.classList.contains('blame-cell'));
+assert.ok(first.firstChild.classList.contains('blame-cell'), 'blame does not lead the line');
 assert.equal(first.querySelectorAll('.blame-label').length, 1);
 assert.ok(first.textContent.includes('aaaaaaa'));
 assert.ok(first.textContent.includes('writer'));
