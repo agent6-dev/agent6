@@ -236,3 +236,37 @@ def test_a_long_list_value_shows_whole_in_its_editor(
     field.press("Enter")
     dialog.wait_for(state="hidden")
     assert not errors
+
+
+def test_the_reviewer_roster_lists_each_reviewer_with_its_remove_at_the_row_end(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The roster's rows touched, and each Remove followed its label.
+
+    The roster ran into the field under it.
+    """
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        '[review]\nreviewers = [{ focus = "security" }, { focus = "correctness" }]\n',
+        encoding="utf-8",
+    )
+    page, errors = open_page(port)
+    _config(page, port)
+    page.locator('[data-key="review.reviewers"]').click()
+    dialog = page.get_by_role("dialog")
+    rows = dialog.get_by_role("button", name="Remove reviewer").evaluate_all(
+        """buttons => buttons.map(b => {
+          const row = b.parentElement.getBoundingClientRect();
+          return [row.top, row.bottom, b.getBoundingClientRect().right];
+        })"""
+    )
+    assert len(rows) == 2
+    (first_top, first_bottom, first_right), (second_top, second_bottom, second_right) = rows
+    assert second_top - first_bottom >= 4
+    assert first_right == second_right
+    assert dialog.locator(".field").evaluate("e => e.getBoundingClientRect().top") >= (
+        second_bottom + 8
+    )
+    assert first_top < second_top
+    assert not errors

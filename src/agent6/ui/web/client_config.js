@@ -450,7 +450,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   const act = actionRow(dialog, row);
   cancel.onclick = close;
   if (key === 'review.reviewers') {
-    const roster = el('div');
+    const roster = el('div', 'cfg-roster');
     const editable = s.source === 'repo' || s.source === 'global' || (preset && s.source === 'preset');
     const rosterWhere = preset ? '[presets.' + preset + ']' : 'the ' + s.source + ' config';
     roster.appendChild(el('div', 'sub muted', editable

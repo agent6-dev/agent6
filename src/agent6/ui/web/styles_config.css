@@ -15,6 +15,9 @@ textarea.field.cfg-value {
   padding-block: calc((var(--ctl-h) - 1lh - 2px) / 2); font-family: var(--mono); font-size: 13px;
 }
 .cfg-check { margin-top: 8px; cursor: pointer; }
+/* The reviewer editor's roster: a list over the field, each Remove at its row's end. */
+.cfg-roster { display: grid; gap: 6px; margin: 4px 0 12px; }
+.cfg-roster > .row > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .cfg-section { margin-top: 10px; }
 .cfg-section > summary { cursor: pointer; font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 4px 0; }
 /* The settings grid: every section's table spans the card and takes the same column widths (a
