@@ -781,8 +781,10 @@ function paintSession(r, depth, regroup) {
     let id = cell;
     if (cut >= 0) { id = el('span'); id.append(el('span', 'f', cell.slice(0, cut)), cell.slice(cut)); }
     g.appendChild(subLine([pill(r.status_level, r.status_label), esc(r.mode), id, esc(r.when), esc(r.usage)]));
-    // Where the run works and the branch holding its commits, when it has them.
-    if (r.worktree || r.branch) g.appendChild(subLine([r.worktree && el('span', null, 'worktree ' + r.worktree), r.branch && el('span', null, 'branch ' + r.branch)]));
+    // Where the run works and the branch holding its commits, when it has them. A missing
+    // worktree's path is in the id cell's note already.
+    const where = r.worktree && !cell.includes(r.worktree);
+    if (where || r.branch) g.appendChild(subLine([where && el('span', null, 'worktree ' + r.worktree), r.branch && el('span', null, 'branch ' + r.branch)]));
     // The server's merge note, rendered once for every hub.
     if (r.merge_note) g.appendChild(el('div', 'sub', r.merge_note));
     // Review fills the new-work composer with `/review <branch>`; Merge lands the branch

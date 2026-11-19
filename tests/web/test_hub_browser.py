@@ -542,3 +542,20 @@ def test_review_fills_the_entry_on_screen_and_focuses_it(
     expect(entry).to_be_focused()
     assert not fetched
     assert not errors
+
+
+def test_a_missing_worktree_is_named_once_in_its_row(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A run whose worktree is gone printed the worktree's full path twice in its row."""
+    from playwright.sync_api import expect
+
+    gone = tmp_path / "worktrees" / "gone-AAAAAA"
+    _manifest(tmp_path, "gone-AAAAAA", worktree=str(gone))
+    _run(tmp_path, "gone-AAAAAA", "Gone task", STOP)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    row = page.locator(".item")
+    expect(row).to_contain_text("not found; resume needs it")
+    assert row.inner_text().count(str(gone)) == 1
+    assert not errors
