@@ -310,8 +310,8 @@ dialog .err:empty { display: none; }
 
 /* --- desktop: a persistent left nav rail (>=781px); phones keep the bottom
    tab bar and the plain single-column stack, untouched. --rail-w drives the
-   rail, the content margin, and any fixed bottom bar, so collapsing the rail
-   (html.rail-min, persisted) re-lays everything out together. --- */
+   rail and the content margin, so collapsing the rail (html.rail-min,
+   persisted) re-lays everything out together. --- */
 :root { --rail-w: 216px; }
 html.rail-min { --rail-w: 64px; }
 aside.rail { display: none; }
