@@ -23,5 +23,7 @@ def test_one_live_word_list_and_a_bell_on_both_hubs() -> None:
     js = page.CLIENT_JS
     assert "['running', 'starting', 'waiting'].includes" not in js
     assert js.count("LIVE_WORDS.includes(") >= 3
-    # The sessions toolbar and the machine view both offer the permission button.
-    assert "toolbar.appendChild(notificationsButton(" in js and "'🔔 Notifications'" in js
+    # The sessions toolbar and the machine view offer one permission button.
+    assert "toolbar.appendChild(notificationsButton(" in js
+    assert "actions.append(stopBtn, notificationsButton())" in js
+    assert "enableNotifications" not in js

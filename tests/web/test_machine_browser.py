@@ -532,7 +532,7 @@ def test_the_palette_offers_the_machine_views_actions(
     expect(page.locator("dialog[open] input")).to_be_focused()
     page.keyboard.type(">this page")
     expect(page.locator("dialog[open] .ac-item")).to_have_text(
-        ["Stop · this page", "🔔 Notifications · this page"]
+        ["Stop · this page", "Notifications blocked · this page"]
     )
     asked: list[str] = []
 

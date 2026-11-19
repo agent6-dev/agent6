@@ -80,13 +80,6 @@ syncRail();
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(()=>{}); });
 }
-// Ask for OS-notification permission on a user gesture (browsers block passive
-// requests). A granted permission lets machine.notify/end pop a desktop/PWA
-// notification even when the tab is backgrounded (on desktop).
-function enableNotifications() {
-  if (!('Notification' in window)) { toast('notifications not supported', true); return; }
-  Notification.requestPermission().then(p => toast(p === 'granted' ? 'notifications on' : 'notifications ' + p));
-}
 // Fire an OS notification when permitted; always safe (never throws into a repaint).
 function osNotifyOn() { return 'Notification' in window && Notification.permission === 'granted'; }
 function osNotify(title, body) {

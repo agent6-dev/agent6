@@ -27,9 +27,7 @@ async function renderMachine(name, gen) {
     try { const d = await postJSON(base + '/stop', {}); toast(d.message || 'stop requested'); }
     catch (e) { toast(e.message, true); }
   };
-  const bell = el('button', null, '🔔 Notifications');
-  bell.onclick = enableNotifications;
-  actions.append(stopBtn, bell);
+  actions.append(stopBtn, notificationsButton());
   top.appendChild(actions);
 
   // The States and Path cards, each a heading over a body that scrolls on a wide screen.
