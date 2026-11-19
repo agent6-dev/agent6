@@ -12,7 +12,9 @@ import hashlib
 import json
 import os
 import pathlib
+import shutil
 import stat
+import subprocess
 import threading
 from collections.abc import Iterator
 from http import client
@@ -941,6 +943,44 @@ def test_the_page_has_a_git_tab_in_both_navs() -> None:
     assert 'href="#/git"' in page.PAGE_HTML
     assert "async function renderGit(" in page.CLIENT_JS
     assert "parts[0] === 'git'" in page.CLIENT_JS
+
+
+def _client(*functions: str) -> str:
+    """Return the source of the named top-level functions of the page's script."""
+    parts = []
+    for name in functions:
+        start = page.CLIENT_JS.index(f"function {name}(")
+        parts.append(page.CLIENT_JS[start : page.CLIENT_JS.index("\n}\n", start) + 3])
+    return "".join(parts)
+
+
+def _node(script: str) -> Any:
+    """Run a script in node and return the JSON it prints."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is needed to run the web client")
+    done = subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+    return json.loads(done.stdout)
+
+
+def test_a_first_parent_keeps_its_lane_past_a_side_branchs_fork() -> None:
+    """Master keeps its lane when a branch forked from an older commit is drawn above the fork.
+
+    The layout ended master's lane at the fork's child and moved master into the branch's lane.
+    """
+    history = [
+        {"sha": "m2", "parents": ["m1"]},
+        {"sha": "s1", "parents": ["x"]},
+        {"sha": "m1", "parents": ["x"]},
+        {"sha": "x", "parents": ["w"]},
+        {"sha": "w", "parents": []},
+    ]
+    rows = _node(
+        _client("gitLayout")
+        + f"console.log(JSON.stringify(gitLayout({json.dumps(history)})"
+        + ".map(r => [r.lane, r.joins])));"
+    )
+    assert rows == [[0, []], [1, []], [0, []], [0, [1]], [0, []]]
 
 
 def test_text_and_blame_share_the_digest_of_the_bytes_read(

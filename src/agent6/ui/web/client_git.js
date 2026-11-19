@@ -19,10 +19,11 @@ const gitState = {
   compare: { base: null, head: null }, // each { rev, label } or null
 };
 
-// Lanes: each slot waits for one sha. A commit takes the slot waiting for it (or a free
-// one when nothing was), hands the slot on to its first parent, and curves to the slot
-// of every other parent (allocating one when that parent is new). A first parent some
-// other slot already waits for ends this lane with a curve into that slot.
+// Lanes, as git log --graph draws them: each slot waits for one sha, and several slots may
+// wait for the same one. A commit takes the lowest slot waiting for it (or a free one when
+// none was) and hands it on to its first parent, so a branch keeps its lane down to its
+// root; every other slot waiting for the commit curves into its dot. Each further parent
+// gets the slot waiting for it, or a new one.
 function gitLayout(commits) {
   const slots = [];
   const rows = [];
@@ -31,11 +32,9 @@ function gitLayout(commits) {
     const before = slots.slice();
     let lane = slots.indexOf(c.sha);
     if (lane < 0) lane = free();
-    const p0 = c.parents[0] || null;
-    let joinTo = null;
-    const k0 = p0 ? slots.indexOf(p0) : -1;
-    if (k0 >= 0 && k0 !== lane) { joinTo = k0; slots[lane] = null; }
-    else slots[lane] = p0;
+    const joins = [];
+    for (let i = lane + 1; i < slots.length; i++) if (slots[i] === c.sha) { joins.push(i); slots[i] = null; }
+    slots[lane] = c.parents[0] || null;
     const merges = [];
     for (const p of c.parents.slice(1)) {
       let k = slots.indexOf(p);
@@ -43,7 +42,7 @@ function gitLayout(commits) {
       merges.push(k);
     }
     while (slots.length && slots[slots.length - 1] === null) slots.pop();
-    rows.push({ lane, before, after: slots.slice(), joinTo, merges });
+    rows.push({ lane, before, after: slots.slice(), joins, merges });
   }
   return rows;
 }
@@ -57,7 +56,9 @@ function gitLanesSvg(lay, cols, isMerge, isHead) {
   svg.setAttribute('width', cols * W); svg.setAttribute('height', H);
   svg.setAttribute('class', 'gc-lanes');
   const path = (d, stroke) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); p.setAttribute('stroke', stroke); svg.appendChild(p); };
+  // A merge curves down out of the dot into its parent's slot; a join curves down into the dot.
   const curve = (from, to) => `M${x(from)} ${mid} C${x(from)} ${H} ${x(to)} ${mid} ${x(to)} ${H}`;
+  const join = (from, to) => `M${x(from)} 0 C${x(from)} ${mid} ${x(to)} 0 ${x(to)} ${mid}`;
   const n = Math.max(lay.before.length, lay.after.length);
   for (let i = 0; i < n && i < cols; i++) {
     if (i !== lay.lane && lay.before[i] && lay.after[i] === lay.before[i]) path(`M${x(i)} 0 V${H}`, color(i));
@@ -65,7 +66,7 @@ function gitLanesSvg(lay, cols, isMerge, isHead) {
   if (lay.lane < cols) {
     if (lay.before[lay.lane]) path(`M${x(lay.lane)} 0 V${mid}`, color(lay.lane));
     if (lay.after[lay.lane]) path(`M${x(lay.lane)} ${mid} V${H}`, color(lay.lane));
-    if (lay.joinTo !== null && lay.joinTo < cols) path(curve(lay.lane, lay.joinTo), color(lay.joinTo));
+    for (const j of lay.joins) if (j < cols) path(join(j, lay.lane), color(j));
     for (const k of lay.merges) if (k < cols) path(curve(lay.lane, k), color(k));
     const dot = document.createElementNS(NS, 'circle');
     dot.setAttribute('cx', x(lay.lane)); dot.setAttribute('cy', mid); dot.setAttribute('r', isHead ? 5 : 4);
