@@ -48,16 +48,12 @@ textarea.field.cfg-value {
   .cfg th:first-child, .cfg td.key { grid-column: 1 / -1; }
   .cfg td, .cfg th { border-bottom: 0; padding: 4px 8px; }
 }
-/* The model suggestions float over the dialog from the field's bottom edge, or above the field
-   when the viewport has no room below, so opening or closing the list moves nothing. */
-.cfg-combo > .field { anchor-name: --cfg-model; }
+/* The model suggestions: a list under the field at a fixed height, so the dialog keeps its size
+   while the catalog loads or the typing narrows it, and the buttons under it stay in view. */
 .cfg-options {
-  position: fixed; position-anchor: --cfg-model; position-try-fallbacks: flip-block;
-  top: anchor(bottom); left: anchor(left); width: anchor-size(width); margin: 2px 0;
-  max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px;
-  background: var(--surface2); box-shadow: 0 6px 24px rgba(0,0,0,.3);
+  height: 220px; overflow-y: auto; margin-top: 4px; border: 1px solid var(--border);
+  border-radius: var(--r); background: var(--surface2);
 }
-.cfg-options[hidden] { display: none; }
 .cfg-option, .cfg-catalog { padding: 6px 10px; overflow-wrap: anywhere; }
 .cfg-option { cursor: pointer; font-family: var(--mono); }
 .cfg-option:hover, .cfg-option[aria-selected=true] { background: var(--surface); color: var(--accent); }

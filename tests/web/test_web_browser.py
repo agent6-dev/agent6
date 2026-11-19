@@ -643,9 +643,6 @@ def test_the_model_editor_selects_qualified_suggestions_without_saving(
     assert 'model = "a/old"' in cfg.read_text()
     model.fill("b/newer-than-catalog")
     expect(dialog.get_by_role("status")).to_contain_text("No matches")
-    model.press("Escape")
-    expect(dialog.get_by_role("listbox")).to_be_hidden()
-    expect(dialog).to_be_visible()
     with page.expect_response(
         lambda response: response.request.method == "POST" and response.url.endswith("/api/config")
     ) as saved:
@@ -731,7 +728,7 @@ def test_the_model_editor_opens_with_its_buttons_in_reach(
     page.goto(f"http://127.0.0.1:{port}/#/config")
     page.get_by_role("button", name="edit models.worker.model", exact=True).click()
     dialog = page.get_by_role("dialog", name="Model: worker")
-    expect(dialog.get_by_role("listbox")).to_be_hidden()
+    expect(dialog.get_by_role("listbox")).to_be_visible()
     dialog.get_by_role("button", name="Cancel", exact=True).click(timeout=2000)
     expect(dialog).to_have_count(0)
     assert not errors

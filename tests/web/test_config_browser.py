@@ -325,3 +325,42 @@ def test_the_filter_opens_folded_matches_and_says_when_nothing_matches(
     folded = page.locator("details.cfg-section:not([open]) > summary").all_inner_texts()
     assert folded == ["sandbox"]
     assert not errors
+
+
+def test_the_model_suggestions_leave_every_button_in_reach(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The model suggestions floated over the editor's checkbox, Save and Cancel.
+
+    A press where Save sat picked a model, and Enter in the field only closed the list.
+    """
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        '[providers.a]\nbackend = "openai"\nbase_url = "http://localhost:1"\n'
+        '[models.worker]\nmodel = "a/old"\n',
+        encoding="utf-8",
+    )
+    page, errors = open_page(port)
+    values = [f"a/model-{n}" for n in range(20)]
+    page.route("**/api/config/suggest/**", lambda route: route.fulfill(json={"values": values}))
+    _config(page, port)
+    page.locator('[data-key="models.worker.model"]').click()
+    dialog = page.get_by_role("dialog")
+    field = dialog.get_by_role("combobox")
+    field.click()
+    field.fill("a/model-1")
+    dialog.get_by_role("option").first.wait_for()
+    reached = dialog.locator("button, input[type=checkbox]").evaluate_all(
+        """controls => controls.map(c => {
+          const r = c.getBoundingClientRect();
+          return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === c;
+        })"""
+    )
+    assert len(reached) >= 3
+    assert all(reached)
+    field.fill("a/custom")
+    field.press("Enter")
+    dialog.wait_for(state="hidden")
+    assert 'model = "a/custom"' in config.read_text(encoding="utf-8")
+    assert not errors

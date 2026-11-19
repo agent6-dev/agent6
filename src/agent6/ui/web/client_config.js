@@ -293,24 +293,21 @@ async function addReviewer(refresh) {
   });
 }
 
-// Suggestions guide text entry; catalog membership is not validation.
-function configCombobox(current) {
+// Suggestions guide text entry; catalog membership is not validation. The list stays open under
+// the field, so the editor's buttons stay in view. Enter picks the active suggestion, else saves.
+function configCombobox(current, submit) {
   const element = el('div', 'cfg-combo'), field = el('input', 'field');
   field.value = current; field.autocomplete = 'off';
   field.setAttribute('role', 'combobox');
   field.setAttribute('aria-autocomplete', 'list');
-  field.setAttribute('aria-expanded', 'false');
-  const list = el('div', 'cfg-options'); list.id = 'cfg-model-options'; list.hidden = true;
-  list.tabIndex = -1; // a scroller is a Tab stop, and this one hides when the field blurs
+  field.setAttribute('aria-expanded', 'true');
+  const list = el('div', 'cfg-options'); list.id = 'cfg-model-options';
+  list.tabIndex = -1; // a scroller is a Tab stop; the field's arrow keys move through the list
   list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', 'Model suggestions');
   field.setAttribute('aria-controls', list.id);
   element.appendChild(field); element.appendChild(list);
   let values = [], matches = [], query = '', index = -1, request = 0, message = 'Loading models…';
-  const close = () => {
-    list.hidden = true; field.setAttribute('aria-expanded', 'false');
-    field.removeAttribute('aria-activedescendant');
-  };
-  const choose = value => { field.value = value; query = value; index = -1; close(); };
+  const choose = value => { field.value = value; query = value; index = -1; paint(); };
   const paint = () => {
     list.innerHTML = '';
     matches = values.filter(value => value.toLowerCase().includes(query.toLowerCase()));
@@ -331,24 +328,18 @@ function configCombobox(current) {
       }
     });
   };
-  const open = () => { list.hidden = false; field.setAttribute('aria-expanded', 'true'); paint(); };
-  field.onfocus = () => { query = ''; index = -1; open(); };
-  field.oninput = () => { query = field.value; index = -1; open(); };
-  field.onblur = close;
+  field.oninput = () => { query = field.value; index = -1; paint(); };
   field.onkeydown = e => {
     if (composing(e)) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      if (list.hidden) open();
       const step = e.key === 'ArrowDown' ? 1 : -1;
       index = matches.length ? (index < 0 ? (step > 0 ? 0 : matches.length - 1) : (index + step + matches.length) % matches.length) : -1;
       paint();
     } else if (e.key === 'Enter') {
-      e.preventDefault(); e.stopPropagation();
-      if (!list.hidden && index >= 0) choose(matches[index]);
-      else close();
-    } else if (e.key === 'Escape' && !list.hidden) {
-      e.preventDefault(); e.stopPropagation(); close();
+      e.preventDefault();
+      if (index >= 0) choose(matches[index]);
+      else submit();
     }
   };
   const load = async url => {
@@ -388,7 +379,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   let field, combo;
   const choices = s.choices || (s.type === 'bool' ? ['true', 'false'] : null);
   if (role) {
-    combo = configCombobox(data[section + '.model']?.input || '');
+    combo = configCombobox(data[section + '.model']?.input || '', () => submit());
     field = combo.field; field.id = 'cfg-model';
     const modelLabel = el('label', 'sub muted', 'Model'); modelLabel.htmlFor = field.id;
     dialog.appendChild(modelLabel); dialog.appendChild(combo.element);
@@ -490,7 +481,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     if (!s.value || !s.value.length) roster.appendChild(el('div', 'sub muted', 'The reviewer roster is empty.'));
     dialog.insertBefore(roster, field);
   }
-  if (!combo) field.focus(); // the model field's suggestions open on focus, over the buttons
+  field.focus();
   const submit = () => act(save, async () => {
     // A string-valued leaf travels as a TOML string, as the TUI sends it, so
     // `true`, `42` or `[a]` typed into a str field stays a string.

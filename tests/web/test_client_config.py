@@ -264,7 +264,6 @@ async function run() {
   model.value = 'b/outside'; model.oninput();
   assert.equal(options().length, 0);
   assert.ok(all(dialog()).some(e => e.role === 'status' && e.textContent.includes('No matches')));
-  press('Escape'); assert.equal(model['aria-expanded'], 'false');
   await button('Save', dialog()).onclick();
   const updated = await getJSON('/api/config');
   assert.ok(!('models.worker.provider' in updated));
