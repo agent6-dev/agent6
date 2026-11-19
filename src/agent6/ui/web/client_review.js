@@ -227,7 +227,8 @@ function paintFindings(cards, state) {
   const list = el('div'); host.appendChild(list);
   const paint = () => {
     cards._finding_status = status.value; cards._finding_severity = severity.value; list.innerHTML = '';
-    for (const entry of reviewEntries(review, cards._id)) {
+    // No session id: a card on its own session's page links to no Session findings.
+    for (const entry of reviewEntries(review, '')) {
       if (status.value !== 'all' && entry.finding.status !== status.value) continue;
       if (severity.value !== 'all' && entry.observation.finding.severity !== severity.value) continue;
       const card = findingCard(entry); list.appendChild(card);

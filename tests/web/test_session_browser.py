@@ -671,3 +671,29 @@ def test_the_latest_commit_card_shows_no_error_under_the_logs_diff(
     assert refusal.startswith("no diff for 5555")
     assert refusal not in card.inner_text()
     assert [error for error in errors if "Failed to load resource" not in error] == []
+
+
+def test_a_finding_card_on_its_session_links_away_and_sizes_its_submit(
+    open_page: Callable[[int], tuple[Page, list[str]]], evidence: tuple[int, dict[str, Any]]
+) -> None:
+    """A finding on its own session's page has no link back to that page, and Submit fits its label.
+
+    Each card linked "Session findings" to the page it was on, and the Resolve form's submit
+    button stretched across the card.
+    """
+    from playwright.sync_api import expect
+
+    port, _ = evidence
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    finding = page.locator(".card-findings .finding").first
+    expect(finding.get_by_role("link", name="Reviewed comparison")).to_be_visible()
+    expect(finding.get_by_role("link", name="Session findings")).to_have_count(0)
+    finding.get_by_role("button", name="Resolve", exact=True).click()
+    form = finding.locator(".finding-form")
+    submit = form.get_by_role("button", name="Submit resolution")
+    expect(submit).to_be_visible()
+    widths = [form.bounding_box(), submit.bounding_box()]
+    assert widths[0] and widths[1]
+    assert widths[1]["width"] < widths[0]["width"] / 2
+    assert not errors

@@ -8,6 +8,7 @@
 .finding-form { display: grid; gap: 8px; margin-top: 10px; }
 .finding-form[hidden] { display: none; }
 .finding-form .field { min-width: 0; width: 100%; }
+.finding-form button { justify-self: start; } /* its label's width, as every mini button */
 /* The findings card: one 6px rhythm between its counts, facts, panels, filters and findings, and
    its buttons at their own width. */
 .card-findings .card-body { display: grid; gap: 6px; justify-items: start; }
