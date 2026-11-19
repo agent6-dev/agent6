@@ -808,3 +808,15 @@ def test_a_config_dialog_checkbox_sits_on_its_labels_first_line(
     assert label.locator("span").evaluate(LINES) >= 2
     assert label.evaluate(CHECK_OFFSET) <= 1.5
     assert not errors
+
+
+def test_an_empty_reviewer_roster_explains_no_remove(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """With no reviewer, the editor still explained a Remove button it did not show."""
+    page, errors = open_page(port)
+    _config(page, port)
+    page.locator('[data-key="review.reviewers"]').click()
+    roster = page.get_by_role("dialog").locator(".cfg-roster")
+    assert roster.inner_text() == "The reviewer roster is empty."
+    assert not errors

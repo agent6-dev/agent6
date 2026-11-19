@@ -494,10 +494,13 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     const roster = el('div', 'cfg-roster');
     const editable = s.source === 'repo' || s.source === 'global' || (preset && s.source === 'preset');
     const rosterWhere = preset ? '[presets.' + preset + ']' : 'the ' + s.source + ' config';
-    roster.appendChild(el('div', 'sub muted', editable
-      ? `Remove saves the remaining roster to ${rosterWhere}, including an empty list after the last reviewer.`
-      : `Remove edits only the global and repo config, not the ${s.source} layer.`));
-    (s.value || []).forEach((reviewer, index) => {
+    const reviewers = s.value || [];
+    // The roster's first line explains its Remove buttons, or says it has none.
+    const note = !reviewers.length ? 'The reviewer roster is empty.'
+      : editable ? `Remove saves the remaining roster to ${rosterWhere}, including an empty list after the last reviewer.`
+      : `Remove edits only the global and repo config, not the ${s.source} layer.`;
+    roster.appendChild(el('div', 'sub muted', note));
+    reviewers.forEach((reviewer, index) => {
       const item = el('div', 'row');
       const label = `${index + 1}: ${reviewer.focus}`;
       item.appendChild(el('span', null, label));
@@ -512,7 +515,6 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       };
       item.appendChild(remove); roster.appendChild(item);
     });
-    if (!s.value || !s.value.length) roster.appendChild(el('div', 'sub muted', 'The reviewer roster is empty.'));
     dialog.insertBefore(roster, field);
   }
   field.focus();
