@@ -16,8 +16,15 @@
 .cfg .val { font-family: var(--mono); word-break: break-word; }
 .cfg tr.mod .key { color: var(--accent); }
 .cfg .src { color: var(--muted); white-space: nowrap; }
-.cfg-combo { position: relative; }
-.cfg-options { max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); }
+/* The model suggestions float over the dialog from the field's bottom edge, or above the field
+   when the viewport has no room below, so opening or closing the list moves nothing. */
+.cfg-combo > .field { anchor-name: --cfg-model; }
+.cfg-options {
+  position: fixed; position-anchor: --cfg-model; position-try-fallbacks: flip-block;
+  top: anchor(bottom); left: anchor(left); width: anchor-size(width); margin: 2px 0;
+  max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface2); box-shadow: 0 6px 24px rgba(0,0,0,.3);
+}
 .cfg-options[hidden] { display: none; }
 .cfg-option, .cfg-catalog { padding: 6px 10px; overflow-wrap: anywhere; }
 .cfg-option { cursor: pointer; font-family: var(--mono); }
