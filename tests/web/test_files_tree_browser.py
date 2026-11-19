@@ -363,3 +363,32 @@ def test_a_file_open_on_a_phone_keeps_the_focus_out_of_the_tree_under_it(
     page.locator(".files-back").click()
     assert page.evaluate("document.activeElement.dataset.path") == "b.txt"
     assert not errors
+
+
+def test_a_long_file_path_wraps_after_a_slash(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """Chromium broke the head's path inside a name, or started a line with its slash."""
+    leaf = "alpha_folder/beta_folder/gamma_folder/delta_folder/a_long_file_name.txt"
+    (tmp_path / leaf).parent.mkdir(parents=True)
+    (tmp_path / leaf).write_text("leaf\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-m", "a long path")
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/{leaf}")
+    page.wait_for_selector(".files-view [data-line='1']")
+    lines = page.locator(".files-head .gf-path").evaluate("""p => {
+      const lines = [], range = document.createRange(), walker = document.createTreeWalker(p, 4);
+      let top = null;
+      for (let node; (node = walker.nextNode());) for (let i = 0; i < node.length; i++) {
+        range.setStart(node, i); range.setEnd(node, i + 1);
+        const y = Math.round(range.getBoundingClientRect().top);
+        if (y !== top) lines.push('');
+        top = y; lines[lines.length - 1] += node.data[i];
+      }
+      return lines;
+    }""")
+    assert len(lines) > 1 and "".join(lines) == leaf, lines
+    assert all(line.endswith("/") for line in lines[:-1]), lines
+    assert not errors

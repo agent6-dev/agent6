@@ -140,7 +140,9 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     const back = el('button', 'mini files-back', '‹ files');
     back.onclick = () => { body.classList.remove('viewing'); tree.querySelector('[aria-selected=true]')?.focus(); };
     head.appendChild(back);
-    head.appendChild(el('span', 'gf-path', f.path));
+    // A long path wraps after a slash, not inside a name.
+    const pathText = el('span', 'gf-path'); head.appendChild(pathText);
+    pathText.append(...f.path.split('/').flatMap((part, i) => i ? ['/', el('wbr'), part] : [part]));
     const facts = f.size === null ? [] : [f.kind === 'file' ? fmtBytes(f.size) : f.kind];
     const note = el('span', 'muted files-note', facts.join(' · '));
     head.appendChild(note);

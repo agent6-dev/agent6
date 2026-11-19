@@ -31,6 +31,9 @@ class Element {
   set textContent(t) { this.innerHTML = ''; this.text = t; }
   get isConnected() { return this === view || !!this.parent?.isConnected; }
   appendChild(c) { this.children.push(c); c.parent = this; return c; }
+  append(...cs) {
+    for (const c of cs) this.appendChild(typeof c === 'string' ? el('text', '', c) : c);
+  }
   prepend(c) { this.children.unshift(c); c.parent = this; }
   insertBefore(c, before) {
     this.children.splice(this.children.indexOf(before), 0, c); c.parent = this;
