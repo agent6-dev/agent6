@@ -263,3 +263,17 @@ def test_the_tree_and_the_file_meet_at_one_hairline(
     rail = page.locator("aside.rail").evaluate("e => e.getBoundingClientRect().right")
     assert page.locator(".files-head").evaluate(left) == pytest.approx(rail, abs=0.5)
     assert not errors
+
+
+@pytest.mark.parametrize(("width", "line"), [(1280, "0px"), (390, "1px")])
+def test_one_hairline_tops_the_tree(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int, width: int, line: str
+) -> None:
+    """The first row drew its own line under the body's edge, a 2px line over the tree."""
+    page, errors = open_page(big_tree)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    page.wait_for_selector(_row("deep"))
+    top = page.locator(_row("deep")).evaluate("e => getComputedStyle(e).borderTopWidth")
+    assert top == line
+    assert not errors

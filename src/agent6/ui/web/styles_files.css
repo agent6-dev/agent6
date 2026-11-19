@@ -58,6 +58,7 @@
   .files-app { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
   .files-app > .files-bar, .files-app > .gpick-host { flex: none; }
   .files-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
+  .files-tree > .gtree:first-child > :first-child { border-top: 0; } /* the body's edge is the line above it */
   /* The tree's edge is the divider, so a hidden tree leaves the rail's edge alone. The handle
      straddles it and takes no width: the tree's rows and the file's head both meet the line. */
   .files-tree { flex: none; width: var(--files-tree-w, 36%); min-width: 180px; max-width: calc(100% - 246px); overflow: auto; border-right: 1px solid var(--border); }
