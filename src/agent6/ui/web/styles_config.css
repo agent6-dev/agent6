@@ -3,6 +3,11 @@
 .cfg-bar button { flex: none; white-space: nowrap; }
 .cfg-bar button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
 .cfg-point + .cfg-point { margin-top: 4px; }
+/* Config dialogs: the editor's type and source line, each label over its field, and the layer
+   checkbox under them. */
+.cfg-meta { margin-bottom: 10px; }
+.cfg-label { display: block; margin-top: 8px; }
+.cfg-check { margin-top: 8px; cursor: pointer; }
 .cfg-section { margin-top: 10px; }
 .cfg-section > summary { cursor: pointer; font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 4px 0; }
 .cfg { width: 100%; border-collapse: collapse; font-size: 13px; }

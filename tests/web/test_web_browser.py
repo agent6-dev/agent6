@@ -457,7 +457,7 @@ def test_the_provider_form_writes_the_chosen_deployment(
     dialog.locator("select[name='backend']").select_option("openai")
     dialog.locator("select[name='deployment']").select_option("azure")
     dialog.get_by_role("button", name="Add", exact=True).click()
-    page.wait_for_function("() => !document.querySelector('[role=dialog]')")
+    page.wait_for_function("() => !document.querySelector('dialog[open]')")
     assert errors == [], errors
     cfg = cfg_path.read_text(encoding="utf-8")
     assert 'deployment = "azure"' in cfg and "api-version" in cfg, cfg
@@ -1184,6 +1184,38 @@ def test_child_details_read_the_parents_rationale(
     assert not errors
 
 
+def test_a_dialog_whose_fetch_lands_late_never_opens_over_another(
+    port: int, open_page: Callable[[int], tuple[Page, list[str]]]
+) -> None:
+    """A late fetch stacked its dialog over Ctrl-K's switcher, and navigation left it open."""
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(port)
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    page.route("**/api/config/reviewer_choices", hold)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    page.get_by_role("button", name="Add reviewer…", exact=True).click()
+    for _ in range(50):
+        if held:
+            break
+        page.wait_for_timeout(100)
+    page.keyboard.press("Control+K")
+    expect(page.get_by_role("dialog", name="Switch session")).to_be_visible()
+    with page.expect_response("**/api/config/reviewer_choices"):
+        held[0].continue_()
+    page.wait_for_timeout(300)
+    opened = page.locator("dialog[open]")
+    expect(opened).to_have_count(1)
+    page.evaluate("location.hash = '#/'")
+    expect(page.locator(".dock textarea")).to_be_visible()
+    expect(opened).to_have_count(0)
+    assert not errors
+
+
 def test_the_keyboard_overlay_and_the_palette_open_and_act(
     git_port: int, open_page: Callable[[int], tuple[Page, list[str]]]
 ) -> None:
@@ -1194,19 +1226,47 @@ def test_the_keyboard_overlay_and_the_palette_open_and_act(
     page.goto(f"http://127.0.0.1:{git_port}/#/")
     expect(page.get_by_role("heading", name="Sessions", exact=True)).to_have_count(0)
     page.keyboard.press("?")
-    keys = page.locator(".overlay table.keys")
+    keys = page.get_by_role("dialog").locator("table.keys")
     expect(keys).to_contain_text("Ctrl-K")
     expect(keys).to_contain_text("Ctrl-Shift-P")
     page.keyboard.press("Escape")
     expect(keys).to_have_count(0)
     page.keyboard.press("Control+Shift+P")
-    field = page.locator(".overlay input.field")
+    field = page.get_by_role("dialog").locator("input.field")
     field.fill("git")
     page.keyboard.press("Enter")
     page.wait_for_function("location.hash === '#/git'")
     page.keyboard.press("Control+K")
-    page.locator(".overlay input.field").fill(">keyboard")
-    expect(page.locator(".overlay h2")).to_have_text("commands")
+    page.get_by_role("dialog").locator("input.field").fill(">keyboard")
+    expect(page.get_by_role("dialog", name="Commands")).to_be_visible()
     page.keyboard.press("Enter")
-    expect(page.locator(".overlay table.keys")).to_contain_text("Ctrl-R")
+    keys = page.get_by_role("dialog", name="Keyboard shortcuts").locator("table.keys")
+    expect(keys).to_contain_text("Ctrl-R")
+    assert not errors
+
+
+def test_a_dialog_keeps_tab_inside_and_esc_returns_focus_to_its_opener(
+    port: int, open_page: Callable[[int], tuple[Page, list[str]]]
+) -> None:
+    """Tab walked into the page behind an open dialog, and Esc left the focus on the page body."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    task = page.locator(".dock textarea")
+    task.focus()
+    page.keyboard.press("Control+K")
+    title = page.get_by_role("heading", name="Switch session", exact=True)
+    expect(title).to_be_visible()
+    # Past the dialog's last control the browser may hand focus to its own UI (the body).
+    inside = """() => { const a = document.activeElement;
+      const title = [...document.querySelectorAll('h2')]
+        .find(h => h.textContent === 'Switch session');
+      return a === document.body || title.parentElement.contains(a); }"""
+    for _ in range(4):
+        page.keyboard.press("Tab")
+        assert page.evaluate(inside), page.evaluate("document.activeElement.outerHTML.slice(0, 99)")
+    page.keyboard.press("Escape")
+    expect(title).to_have_count(0)
+    expect(task).to_be_focused()
     assert not errors

@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "ead3b0c3fda970d1a5c519698fcbc29a180f00322d9b97580ce3cbdb70a82cdd"
+PAGE_SHA256 = "6a827081590131cf2958d190b4facaaa0c3b937ead5223adb3944acbe6eae262"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -354,14 +354,17 @@ def test_reviewer_controls_post_form_fields_and_position() -> None:
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is needed to exercise the web config editor")
-    source = (
-        resources.files("agent6.ui.web").joinpath("client_config.js").read_text(encoding="utf-8")
-    )
+    web = resources.files("agent6.ui.web")
+    core = web.joinpath("client.js").read_text(encoding="utf-8")
+    source = core[core.index("// --- dialogs") : core.index("// --- sign-in")] + web.joinpath(
+        "client_config.js"
+    ).read_text(encoding="utf-8")
     setup = r"""
 const assert = require('node:assert/strict');
 function el(tag, cls, text = '') {
   return {
     tag, cls, text, children: [], style: {}, value: '', checked: false, isConnected: true,
+    listeners: {},
     set textContent(value) { this.text = value; this.children = []; },
     set innerHTML(value) { this.children = []; },
     appendChild(child) { this.children.push(child); child.parent = this; return child; },
@@ -374,16 +377,28 @@ function el(tag, cls, text = '') {
       this.isConnected = false; this.parent.children = this.parent.children.filter(c => c !== this);
     },
     focus() { document.activeElement = this; },
+    addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); },
+    showModal() { this.open = true; this.opener = document.activeElement; },
+    close() {
+      if (!this.open) return;
+      this.open = false; this.opener?.focus();
+      (this.listeners.close || []).forEach(fn => fn());
+    },
   };
 }
 const document = {
-  body: el('body'), activeElement: null, addEventListener() {}, removeEventListener() {},
+  body: el('body'), activeElement: null,
+  // openDialog's one question: is a dialog open?
+  querySelector(selector) {
+    assert.equal(selector, 'dialog[open]');
+    return nodes().find(n => n.tag === 'dialog' && n.open) || null;
+  },
 };
 const window = {scrollX: 0, scrollY: 0, scrollTo() {}};
 const view = el('div'); document.body.appendChild(view);
 const boot = () => {}, setCrumb = () => {}, esc = String, toast = () => {};
 const actionable = (node, action) => { node.onclick = action; };
-let routeGen = 0, activeOverlayClose = null;
+let routeGen = 0;
 const setting = {
   type: 'list', source: 'repo', input: '[]', display: 'tests, tests',
   value: [{focus: 'tests'}, {focus: 'tests'}],
@@ -481,7 +496,7 @@ def test_the_phone_widget_menu_can_show_the_run_review() -> None:
 
 
 def test_every_global_key_is_listed_and_handled_from_one_table() -> None:
-    """The handler and the `?` overlay read one KEYS table; both pickers share one shape."""
+    """The handler and the `?` list read one KEYS table; both pickers share one shape."""
     client = page.CLIENT_JS
     keys = client[
         client.index("const KEYS = [") : client.index(

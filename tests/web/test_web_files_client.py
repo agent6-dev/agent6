@@ -56,6 +56,7 @@ const document = {
   createTextNode: text => el('text', '', text),
   createElementNS: (_, tag) => el(tag),
   querySelectorAll: s => view.querySelectorAll(s),
+  querySelector: s => view.querySelector(s),
 };
 const location = {hash: '#/'};
 const history = {
@@ -66,7 +67,6 @@ const window = {addEventListener() {}, matchMedia: () => ({matches:false})};
 let activeTab = '';
 const setTab = tab => activeTab = tab;
 const closeLive = () => {};
-const closeOverlay = () => {};
 const saved = new Map();
 const recall = (key, fallback) => saved.get(key) ?? fallback;
 const remember = (key, value) => saved.set(key, value);

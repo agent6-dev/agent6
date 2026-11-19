@@ -83,8 +83,8 @@ nav.tabs a.active { color: var(--accent); }
 
 /* Flat layout everywhere: sections run edge to edge, split by single
    hairline borders; floating cards wasted width. Mobile and desktop keep
-   their own layouts, only the skin is flat. The one boxed survivor is the
-   config-edit dialog (.overlay .card): a modal has to float. */
+   their own layouts, only the skin is flat. The one boxed survivor is a
+   dialog (dialog.card): a modal has to float. */
 main { padding: 0; }
 .grid { display: grid; gap: 0; }
 .grid > * + * { border-top: 1px solid var(--border); }
@@ -248,17 +248,24 @@ button.quiet.danger:hover { color: var(--err); border-color: transparent; backgr
 .notif-banner .nb-sub { font-size: 12px; color: var(--muted); }
 .notif-banner .nb-x { min-height: 0; padding: 0 4px; color: var(--muted); background: none; border: 0; font-size: 16px; }
 
-.overlay {
-  position: fixed; inset: 0; z-index: 60; padding: 16px;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(0,0,0,.55);
+/* A dialog (openDialog) floats over the dimmed page in one of two widths: a form, or a list or
+   text to read. A wheel or a swipe over it or its backdrop never scrolls the page behind:
+   overscroll-behavior holds only in a scroll container, so the backdrop takes overflow: hidden. */
+dialog.card {
+  width: 560px; max-width: calc(100% - 32px); max-height: calc(100% - 32px); overflow: auto;
+  color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.35); overscroll-behavior: contain;
 }
-.overlay .card {
-  max-height: 90vh; overflow: auto;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-}
+dialog.card.wide { width: 760px; }
 /* A dialog's title is a title, as written: a config key keeps its case. */
-.overlay .card > h2 { font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--text); }
+dialog.card > h2 { font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--text); }
+/* A list dialog sits high and still, so its field stays put while the list narrows. */
+dialog.card.picker { margin-top: 12vh; max-height: calc(88vh - 16px); }
+dialog::backdrop { background: rgba(0,0,0,.55); overflow: hidden; overscroll-behavior: contain; }
+/* A dialog with no field holds the focus itself; the ring is for the controls inside it. */
+dialog:focus-visible { outline: none; }
+/* /restate's text scrolls inside the dialog, so its Close button stays in view. */
+.restate { max-height: 60vh; overflow: auto; margin-bottom: 10px; }
 
 @media (max-width: 780px) {
   nav.tabs { display: flex; }

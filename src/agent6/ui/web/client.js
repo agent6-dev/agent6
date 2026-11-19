@@ -22,7 +22,6 @@ function hbTick() {
   const glyph = HB_FRAMES[hbState.spin % HB_FRAMES.length];
   line.textContent = `${glyph} ${hbState.role} working… ${secs}s`;
 }
-let activeOverlayClose = null; // an open modal dialog's dismisser, closed on navigation
 
 // --- theme -------------------------------------------------------------------
 // The page follows the system's scheme. The theme button flips it and stores the choice only
@@ -162,13 +161,35 @@ function toast(msg, bad) {
 }
 function setCrumb(t) { crumb.textContent = t || ''; }
 
+// --- dialogs -----------------------------------------------------------------
+// Every modal is a <dialog> in the card skin, named by its title. showModal() makes the page
+// behind it inert; Esc or a click outside closes it (closedby="any"), the browser hands the focus
+// back to the control that opened it, and the dialog leaves the page when it closes. The caller
+// fills the body and focuses its field. One dialog at a time: while one is open, openDialog
+// returns null and the caller drops its own (a fetch that lands after Ctrl-K opened the switcher).
+let dialogCount = 0;
+function openDialog(title, cls) {
+  if (document.querySelector('dialog[open]')) return null;
+  const dialog = el('dialog', cls ? 'card ' + cls : 'card');
+  const heading = el('h2', null, title);
+  heading.id = 'dialog-title-' + ++dialogCount;
+  dialog.setAttribute('aria-labelledby', heading.id);
+  dialog.setAttribute('closedby', 'any');
+  dialog.tabIndex = -1; // no Tab stop: Firefox stops on a scrolling dialog, which draws no ring
+  dialog.appendChild(heading);
+  dialog.addEventListener('close', () => dialog.remove());
+  document.body.appendChild(dialog);
+  dialog.showModal();
+  return dialog;
+}
+
 // --- sign-in -----------------------------------------------------------------
 // The form takes over the view; a sign-in restarts the route with the token.
 // A repeat call (a poll still in flight) keeps the form and what is typed in it.
 function showLogin(error) {
   routeGen++; // a render in flight must not paint over the form
   closeLive();
-  closeOverlay();
+  document.querySelector('dialog[open]')?.close();
   let form = document.getElementById('login');
   if (!form) {
     setCrumb('sign in');
@@ -255,7 +276,6 @@ function closeLive() {
   if (hbTimer) { clearInterval(hbTimer); hbTimer = null; }
   hbState.active = false;
 }
-function closeOverlay() { if (activeOverlayClose) activeOverlayClose(); }
 function pill(level, label) { return el('span', 'pill ' + esc(level || 'neutral'), esc(label)); }
 
 // One owner for anything clickable that is not a native control: a keyboard
@@ -290,7 +310,7 @@ function setViewHash(hash, replace = false) { if (location.hash !== hash) histor
 async function route() {
   const gen = ++routeGen;
   closeLive();
-  closeOverlay();
+  document.querySelector('dialog[open]')?.close();
   document.querySelectorAll('.wmenu-btn').forEach(b => b.remove()); // header-mounted by the run view
   const h = location.hash.replace(/^#/, '') || '/';
   // First load with no hash: honor the CLI's target (`agent6 web <run-id>`
@@ -1025,38 +1045,30 @@ function attachCommandSuggest(ta, root, liveNow, offered = null) {
   } };
 }
 
+// /restate: the conversation since the operator's last message, rendered from the journal.
+function openRestate(text) {
+  const dialog = openDialog('Since your last message', 'wide');
+  if (!dialog) return;
+  dialog.appendChild(el('pre', 'restate', text));
+  const close = el('button', null, 'Close');
+  close.onclick = () => dialog.close();
+  dialog.appendChild(close);
+}
+
 // Ctrl-R in a session composer: search this session's past messages (the task,
 // then every steer, journal-read via the conversation payload, so resumes and
 // steers typed on other surfaces appear). Newest first, one line
 // each, repeats collapsed: the same list the CLI and TUI searches show.
 // Picking fills the composer for editing (Enter keeps the highlighted match,
 // or the typed text itself when nothing matches); nothing is sent.
-function openRestate(text) {
-  const back = el('div', 'overlay');
-  const box = el('div', 'card'); box.style.width = 'min(720px, 92vw)';
-  box.appendChild(el('h2', null, 'Since your last message'));
-  const pre = el('pre');
-  pre.textContent = text;
-  pre.style.whiteSpace = 'pre-wrap'; pre.style.maxHeight = '60vh';
-  pre.style.overflow = 'auto'; pre.style.margin = '0 0 10px';
-  box.appendChild(pre);
-  const close = el('button', null, 'Close');
-  close.onclick = () => back.remove();
-  box.appendChild(close);
-  back.onclick = (e) => { if (e.target === back) back.remove(); };
-  back.appendChild(box); document.body.appendChild(back);
-}
-
 function openHistorySearch(entries, onPick) {
-  const back = el('div', 'overlay');
-  const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
-  box.appendChild(el('h2', null, 'Search past messages'));
+  const dialog = openDialog('Search past messages', 'wide picker');
+  if (!dialog) return;
   const field = el('input', 'field'); field.placeholder = 'type to narrow…';
-  box.appendChild(field);
+  dialog.appendChild(field);
   const list = el('div', 'hs-list');
-  box.appendChild(list);
-  const close = () => { activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey); };
-  const pick = (t) => { close(); onPick(t); };
+  dialog.appendChild(list);
+  const pick = (t) => { dialog.close(); onPick(t); };
   let items = [], active = 0;
   const render = () => {
     const q = field.value.toLowerCase();
@@ -1072,36 +1084,29 @@ function openHistorySearch(entries, onPick) {
     if (!items.length) list.appendChild(el('div', 'more-note', '(no match)'));
     else if (all.length > items.length) list.appendChild(el('div', 'more-note', '… ' + (all.length - items.length) + ' more (type to narrow)'));
   };
-  function onKey(e) {
+  dialog.onkeydown = (e) => {
     if (composing(e)) return;
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
-    else if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { active = (active + 1) % items.length; render(); } }
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { active = (active + 1) % items.length; render(); } }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { active = (active - 1 + items.length) % items.length; render(); } }
     else if (e.key === 'Enter') { e.preventDefault(); pick(items.length ? items[active] : field.value); }
-  }
-  activeOverlayClose = close; // navigating away dismisses it
-  document.addEventListener('keydown', onKey);
-  back.onclick = (e) => { if (e.target === back) close(); };
+  };
   field.oninput = () => { active = 0; render(); };
-  back.appendChild(box); document.body.appendChild(back);
   field.focus();
   render();
 }
 
 // --- keyboard -----------------------------------------------------------------
-// One picker shape under the session switcher and the command palette: a card over a
-// backdrop with a filter field and a list; arrows move, Enter picks, Esc, a click outside
-// or navigation closes. `prefix` hands the field to another picker when typed first.
+// One picker shape under the session switcher and the command palette: a dialog with a filter
+// field and a list; arrows move, Enter picks, Esc, a click outside or navigation closes.
+// `prefix` hands the field to another picker when typed first.
 function openPicker({ title, placeholder, rows, haystack, paint, pick, empty, initial = '', prefix = null, limit = 12 }) {
-  if (activeOverlayClose) return; // one dialog at a time
-  const back = el('div', 'overlay');
-  const box = el('div', 'card'); box.style.width = 'min(760px, 92vw)';
-  box.appendChild(el('h2', null, title));
+  const dialog = openDialog(title, 'wide picker');
+  if (!dialog) return;
   const field = el('input', 'field'); field.placeholder = placeholder; field.value = initial;
-  box.appendChild(field);
+  dialog.appendChild(field);
   const list = el('div', 'hs-list');
-  box.appendChild(list);
-  const close = () => { activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey); };
+  dialog.appendChild(list);
+  const close = () => dialog.close();
   const choose = (r) => { close(); pick(r); };
   let items = [], active = 0;
   const render = () => {
@@ -1119,21 +1124,16 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty, in
     if (!items.length) list.appendChild(el('div', 'more-note', rows.length ? '(no match)' : empty));
     else if (all.length > items.length) list.appendChild(el('div', 'more-note', '… ' + (all.length - items.length) + ' more (type to narrow)'));
   };
-  function onKey(e) {
+  dialog.onkeydown = (e) => {
     if (composing(e)) return;
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
-    else if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { active = (active + 1) % items.length; render(); } }
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { active = (active + 1) % items.length; render(); } }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { active = (active - 1 + items.length) % items.length; render(); } }
     else if (e.key === 'Enter') { e.preventDefault(); if (items.length) choose(items[active]); }
-  }
-  activeOverlayClose = close; // navigating away dismisses it
-  document.addEventListener('keydown', onKey);
-  back.onclick = (e) => { if (e.target === back) close(); };
+  };
   field.oninput = () => {
     if (prefix && field.value.startsWith(prefix.key)) { const rest = field.value.slice(prefix.key.length); close(); prefix.open(rest); return; }
     active = 0; render();
   };
-  back.appendChild(box); document.body.appendChild(back);
   field.focus();
   render();
 }
@@ -1145,7 +1145,7 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty, in
 // Sessions page's row buttons do. A draft typed in a composer waits for the way back.
 // A `>` typed first hands the box to the command palette.
 async function openSwitcher() {
-  if (activeOverlayClose) return; // one dialog at a time
+  if (document.querySelector('dialog[open]')) return; // one dialog at a time: skip the fetch
   let data;
   try { data = await getJSON('/api/hub'); } catch (e) { toast(e.message, true); return; }
   const rows = [];
@@ -1224,7 +1224,7 @@ function openPalette(initial = '') {
 }
 
 // Every binding the web answers, in one table: the global handler runs the rows that
-// carry `run`, and the Keyboard overlay (`?`) lists every row. The composer's keys are
+// carry `run`, and the keyboard list (`?`) shows every row. The composer's keys are
 // handled where the composer is built, and named here so the list is whole.
 // An Enter that confirms an input method's candidate (Japanese, Chinese, Korean) is part of
 // typing, not a send; keyCode 229 covers engines that report the composition only that way.
@@ -1247,23 +1247,17 @@ document.addEventListener('keydown', (e) => {
   for (const k of KEYS) if (k.run && k.match(e)) { e.preventDefault(); k.run(); return; }
 });
 function openKeys() {
-  if (activeOverlayClose) return; // one dialog at a time
-  const back = el('div', 'overlay');
-  const box = el('div', 'card'); box.style.width = 'min(640px, 92vw)';
-  box.appendChild(el('h2', null, 'Keyboard shortcuts'));
+  const dialog = openDialog('Keyboard shortcuts', 'wide');
+  if (!dialog) return;
   const table = el('table', 'keys');
   for (const k of KEYS) {
     const tr = el('tr');
     tr.appendChild(el('td', 'key', k.label)); tr.appendChild(el('td', 'muted', k.where)); tr.appendChild(el('td', null, k.does));
     table.appendChild(tr);
   }
-  box.appendChild(table);
-  const close = () => { activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey); };
-  function onKey(e) { if (e.key === 'Escape' || e.key === '?') { e.preventDefault(); close(); } }
-  activeOverlayClose = close;
-  document.addEventListener('keydown', onKey);
-  back.onclick = (e) => { if (e.target === back) close(); };
-  back.appendChild(box); document.body.appendChild(back);
+  dialog.appendChild(table);
+  // A second `?` closes the list, as Esc does; the page's own `?` binding must not reopen it.
+  dialog.onkeydown = (e) => { if (e.key === '?') { e.preventDefault(); e.stopPropagation(); dialog.close(); } };
 }
 
 // The composer bar under a run's conversation. On a live run Enter sends the

@@ -18,14 +18,25 @@ def test_entry_forms_and_removal_use_the_live_registry(tmp_path: pathlib.Path) -
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is needed to exercise the web config forms")
-    resource = resources.files("agent6.ui.web").joinpath("client_config.js")
-    client = resource.read_text(encoding="utf-8")
+    web = resources.files("agent6.ui.web")
+    core = web.joinpath("client.js").read_text(encoding="utf-8")
+    dialogs = core[core.index("// --- dialogs") : core.index("// --- sign-in")]
+    client = web.joinpath("client_config.js").read_text(encoding="utf-8")
     scenario = r"""
 const assert = require('node:assert/strict');
 class Element {
   constructor(tag, cls, text = '') {
     Object.assign(this, {tag, className: cls, textContent: text, children: [], style: {},
-                        value: '', checked: false, disabled: false, isConnected: true});
+                        value: '', checked: false, disabled: false, isConnected: true,
+                        listeners: {}});
+  }
+  addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); }
+  // A modal dialog hands the focus back to its opener when it closes.
+  showModal() { this.open = true; this.opener = document.activeElement; }
+  close() {
+    if (!this.open) return;
+    this.open = false; this.opener?.focus();
+    (this.listeners.close || []).forEach(fn => fn());
   }
   appendChild(child) {
     this.children.push(child); child.parent = this;
@@ -47,11 +58,12 @@ function el(tag, cls, text) { return new Element(tag, cls, text); }
 const document = {
   body: el('body'), activeElement: null,
   createDocumentFragment: () => el('fragment'), createTextNode: text => el('text', '', text),
-  addEventListener() {}, removeEventListener() {},
+  // openDialog's one question: is a dialog open?
+  querySelector(selector) { assert.equal(selector, 'dialog[open]'); return dialog() ?? null; },
 };
 const window = {scrollX: 0, scrollY: 0, scrollTo(x, y) { this.scrollX = x; this.scrollY = y; }};
 const view = document.body.appendChild(el('main'));
-let activeOverlayClose = null, routeGen = 0, token = '', accept = false;
+let routeGen = 0, token = '', accept = false;
 const writes = [], confirmations = [], notices = [];
 function boot() {}
 function setCrumb() {}
@@ -77,12 +89,12 @@ const button = (text, root = document.body) => {
   const found = all(root).find(e => e.tag === 'button' && e.textContent === text);
   assert.ok(found, 'missing button: ' + text); return found;
 };
-const overlay = () => all(document.body).find(e => e.className === 'overlay');
+const dialog = () => all(document.body).find(e => e.tag === 'dialog' && e.open);
 const field = name => {
-  const found = all(overlay()).find(e => e.name === name);
+  const found = all(dialog()).find(e => e.name === name);
   assert.ok(found, 'missing field: ' + name); return found;
 };
-const checkbox = () => all(overlay()).find(e => e.type === 'checkbox');
+const checkbox = () => all(dialog()).find(e => e.type === 'checkbox');
 const row = key => all(view).find(e => e.tag === 'tr' && e.children[0]?.textContent === key);
 async function run() {
   token = (await request('/api/login', {secret})).token;
@@ -103,11 +115,11 @@ async function run() {
   assert.equal(field('base_url').tag, 'input');
   assert.match(field('base_url').title, /endpoint/);
   field('name').value = 'bad.name';
-  await button('Add', overlay()).onclick();
+  await button('Add', dialog()).onclick();
   assert.equal(notices.at(-1).text,
     "provider name 'bad.name' is not a valid TOML bare key" +
     " (use only ASCII letters, digits, '-', '_').");
-  assert.equal(button('Add', overlay()).disabled, false);
+  assert.equal(button('Add', dialog()).disabled, false);
   field('name').value = 'openrouter'; field('name').oninput();
   assert.equal(field('backend').value, 'openai');
   assert.equal(field('base_url').value, 'https://openrouter.ai/api/v1');
@@ -117,7 +129,7 @@ async function run() {
   field('name').value = 'openrouter'; field('name').oninput();
   assert.equal(field('base_url').value, 'https://custom.example/v1');
   field('base_url').value = ''; field('name').oninput();
-  await button('Add', overlay()).onclick();
+  await button('Add', dialog()).onclick();
   assert.equal(writes.at(-1).path, '/api/config/entry');
   assert.equal(writes.at(-1).body.repo, false);
   assert.ok(row('providers.openrouter.base_url'));
@@ -131,12 +143,12 @@ async function run() {
   assert.match(field('command').title, /argv/);
   assert.deepEqual(field('enabled').children.map(e => e.value), ['', 'true', 'false']);
   assert.deepEqual(field('approve').children.map(e => e.value), ['', 'ask', 'allow']);
-  await button('Add', overlay()).onclick();
+  await button('Add', dialog()).onclick();
   assert.match(notices.at(-1).text, /name is required/);
-  assert.equal(button('Add', overlay()).disabled, false);
+  assert.equal(button('Add', dialog()).disabled, false);
   field('name').value = 'local'; field('command').value = 'server "two words"';
   field('enabled').value = 'false'; field('approve').value = 'ask'; checkbox().checked = true;
-  await button('Add', overlay()).onclick();
+  await button('Add', dialog()).onclick();
   assert.equal(writes.at(-1).body.table, 'mcp.servers');
   assert.equal(writes.at(-1).body.repo, true);
   const config = await getJSON('/api/config');
@@ -147,13 +159,13 @@ async function run() {
     await button('Add skill…').onclick();
     assert.deepEqual(field('state').children.map(e => e.value), ['enabled', 'disabled', 'always']);
     field('name').value = name; field('state').value = 'always';
-    await button('Add', overlay()).onclick();
+    await button('Add', dialog()).onclick();
     assert.ok(row('skills.state.' + (name === 'org.some.skill' ? '"org.some.skill"' : name)));
   }
   row('providers.openrouter.base_url').onclick();
-  await button('Add provider…', overlay()).onclick();
-  assert.equal(overlay().children[0]['aria-label'], 'add provider');  // handed to the add form
-  button('Cancel', overlay()).onclick();
+  await button('Add provider…', dialog()).onclick();
+  assert.equal(dialog().children[0].textContent, 'Add provider');  // handed to the add form
+  button('Cancel', dialog()).onclick();
   for (const [key, label, table, name, repo] of [
     ['mcp.servers.local.url', 'MCP server', 'mcp.servers', 'local', true],
     ['providers.openrouter.base_url', 'provider', 'providers', 'openrouter', false],
@@ -161,12 +173,12 @@ async function run() {
     ['skills.state."org.some.skill"', 'skill', 'skills.state', 'org.some.skill', false],
   ]) {
     row(key).onclick();
-    const remove = button('Remove ' + label, overlay());
+    const remove = button('Remove ' + label, dialog());
     accept = false;
     const before = writes.length;
     await remove.onclick();
     assert.equal(writes.length, before);
-    assert.ok(overlay());
+    assert.ok(dialog());
     assert.ok(confirmations.at(-1).includes(label + " '" + name + "'"));
     if (name === 'org.some.skill') {
       assert.ok(!confirmations.at(-1).includes('skills.state.org.some.skill'));
@@ -179,17 +191,17 @@ async function run() {
   }
   assert.ok(row('skills.state.beta'));
   row('sandbox.network').onclick();
-  const network = all(overlay()).find(e => e.tag === 'select');
+  const network = all(dialog()).find(e => e.tag === 'select');
   assert.deepEqual(network.children.map(e => e.value), ['auto', 'session', 'host']);
   assert.equal(network.children[1].textContent,
     'session: Run-private network without outside access');
-  assert.ok(!all(overlay()).some(e => e.tag === 'input' && e.type !== 'checkbox'));
-  assert.ok(!all(overlay()).some(e => e.tag === 'button' && e.textContent.startsWith('Remove ')));
-  await button('Cancel', overlay()).onclick();
+  assert.ok(!all(dialog()).some(e => e.tag === 'input' && e.type !== 'checkbox'));
+  assert.ok(!all(dialog()).some(e => e.tag === 'button' && e.textContent.startsWith('Remove ')));
+  await button('Cancel', dialog()).onclick();
   await button('Add provider…').onclick();
   field('name').value = 'masked'; field('backend').value = 'openai';
   field('base_url').value = 'https://written.test/v1';
-  await button('Add', overlay()).onclick();
+  await button('Add', dialog()).onclick();
   assert.ok(notices.at(-1).text.includes(
     'note: --config ' + flagPath + ' overrides providers.masked.base_url while that flag is used.'
   ));
@@ -205,14 +217,14 @@ async function run() {
   button('Modified only').onclick();
   window.scrollY = 140;
   row('sandbox.run_commands').onclick();
-  all(overlay()).find(e => e.tag === 'select').value = 'allow';
-  await button('Save', overlay()).onclick();
+  all(dialog()).find(e => e.tag === 'select').value = 'allow';
+  await button('Save', dialog()).onclick();
   assert.equal(row('sandbox.run_commands').children[1].textContent, '"allow"');
   assert.equal(search().value, 'sandbox.');
   assert.equal(document.activeElement, row('sandbox.run_commands'));
   assert.equal(window.scrollY, 140);
   row('sandbox.run_commands').onclick();
-  await button('Unset', overlay()).onclick();
+  await button('Unset', dialog()).onclick();
   assert.equal(row('sandbox.run_commands').children[1].textContent, '"ask"');
   assert.equal(search().value, 'sandbox.');
   assert.equal(document.activeElement, row('sandbox.run_commands'));
@@ -227,13 +239,13 @@ async function run() {
   getJSON = path => path.includes('/api/config/suggest/')
     ? Promise.resolve({values: ['b/alpha', 'b/beta']}) : request(path);
   row('models.worker.model').onclick();
-  assert.ok(!all(overlay()).some(e => e.id === 'cfg-provider'));
-  const model = all(overlay()).find(e => e.role === 'combobox');
-  assert.equal(all(overlay()).filter(e => e.tag === 'input' && e.type !== 'checkbox').length, 1);
+  assert.ok(!all(dialog()).some(e => e.id === 'cfg-provider'));
+  const model = all(dialog()).find(e => e.role === 'combobox');
+  assert.equal(all(dialog()).filter(e => e.tag === 'input' && e.type !== 'checkbox').length, 1);
   assert.equal(model.value, 'masked/old');
   model.focus();
   await Promise.resolve(); await Promise.resolve();
-  const options = () => all(overlay()).filter(e => e.role === 'option');
+  const options = () => all(dialog()).filter(e => e.role === 'option');
   assert.deepEqual(options().map(e => e.textContent), ['b/alpha', 'b/beta']);
   const press = key => model.onkeydown({key, preventDefault() {}, stopPropagation() {}});
   const count = writes.length;
@@ -241,9 +253,9 @@ async function run() {
   assert.equal(model.value, 'b/alpha'); assert.equal(writes.length, count);
   model.value = 'b/outside'; model.oninput();
   assert.equal(options().length, 0);
-  assert.ok(all(overlay()).some(e => e.role === 'status' && e.textContent.includes('No matches')));
+  assert.ok(all(dialog()).some(e => e.role === 'status' && e.textContent.includes('No matches')));
   press('Escape'); assert.equal(model['aria-expanded'], 'false');
-  await button('Save', overlay()).onclick();
+  await button('Save', dialog()).onclick();
   const updated = await getJSON('/api/config');
   assert.ok(!('models.worker.provider' in updated));
   assert.equal(updated['models.worker.model'].value, 'b/outside');
@@ -253,30 +265,30 @@ async function run() {
   getJSON = path => path.includes('/api/config/suggest/')
     ? Promise.resolve({values: []}) : request(path);
   row('models.worker.model').onclick();
-  all(overlay()).find(e => e.role === 'combobox').focus();
+  all(dialog()).find(e => e.role === 'combobox').focus();
   await Promise.resolve(); await Promise.resolve();
-  assert.ok(all(overlay()).some(e =>
+  assert.ok(all(dialog()).some(e =>
     e.role === 'status' && e.textContent.includes('Catalog empty or unavailable')));
-  await button('Cancel', overlay()).onclick();
+  await button('Cancel', dialog()).onclick();
   getJSON = path => path.includes('/api/config/suggest/')
     ? Promise.reject(new Error('offline')) : request(path);
   row('models.worker.model').onclick();
-  all(overlay()).find(e => e.role === 'combobox').focus();
+  all(dialog()).find(e => e.role === 'combobox').focus();
   await Promise.resolve(); await Promise.resolve();
-  assert.ok(all(overlay()).some(e =>
+  assert.ok(all(dialog()).some(e =>
     e.role === 'status' && e.textContent.includes('Catalog unavailable')));
-  await button('Cancel', overlay()).onclick();
+  await button('Cancel', dialog()).onclick();
   // Add preset selects the new preset; the page then edits it: a save lands in its table.
   await postJSON('/api/config/preset', {name: 'fast'});
   await renderConfig();
   assert.equal(button('Remove preset').disabled, false);
   assert.equal(button('Add provider…').disabled, false);
   button('Preset…').onclick();
-  assert.equal(all(overlay()).find(e => e.tag === 'select').value, 'fast');
-  await button('Cancel', overlay()).onclick();
+  assert.equal(all(dialog()).find(e => e.tag === 'select').value, 'fast');
+  await button('Cancel', dialog()).onclick();
   row('sandbox.network').onclick();
-  all(overlay()).find(e => e.tag === 'select').value = 'host';
-  await button('Save', overlay()).onclick();
+  all(dialog()).find(e => e.tag === 'select').value = 'host';
+  await button('Save', dialog()).onclick();
   assert.deepEqual(writes.at(-1), {path: '/api/config',
     body: {key: 'sandbox.network', value: 'host', repo: false}});
   const refetched = await getJSON('/api/config');
@@ -285,8 +297,8 @@ async function run() {
   await renderConfig();
   assert.equal(button('Remove preset').disabled, true);
   row('sandbox.run_commands').onclick();
-  const saving = button('Save', overlay()).onclick();
-  routeGen++; activeOverlayClose();
+  const saving = button('Save', dialog()).onclick();
+  routeGen++; dialog().close();
   view.innerHTML = ''; const other = view.appendChild(el('div', '', 'another page'));
   await saving;
   assert.equal(view.children[0], other);
@@ -304,7 +316,7 @@ run().catch(error => { console.error(error); process.exitCode = 1; });
             f"secret = {json.dumps(signin.SECRET)}, flagPath = {json.dumps(str(flag))};\n"
         )
         result = subprocess.run(
-            [node, "-e", setup + client + scenario],
+            [node, "-e", setup + dialogs + client + scenario],
             check=False,
             capture_output=True,
             text=True,

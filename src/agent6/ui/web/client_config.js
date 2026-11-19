@@ -88,7 +88,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     tr.appendChild(el('td', 'val', s.display)); // the one shared value column (viewmodel.display_value)
     tr.appendChild(el('td', 'src', esc(s.source)));
     // Hover text: the leaf's meaning (the docs table cell), from the same
-    // per-key payload the editor overlay shows it in.
+    // per-key payload the editor dialog shows it in.
     tr.title = s.description ? (s.description_points || [s.description]).join('\n') : 'click to edit';
     tr.style.cursor = 'pointer';
     tr.setAttribute('data-key', k);
@@ -134,37 +134,21 @@ function descriptionNode(points) {
   return frag;
 }
 
-// Mount an Add dialog: its Add and Cancel row, then the overlay. Escape, Cancel and a click on
-// the backdrop close it and hand the focus back to what opened it.
-function mountAddDialog(back, box, opener) {
+// An Add dialog's Add and Cancel row; Cancel closes the dialog.
+function addButtons(dialog) {
   const row = el('div', 'form-row');
   const add = el('button', 'primary', 'Add'), cancel = el('button', null, 'Cancel');
-  row.appendChild(add); row.appendChild(cancel); box.appendChild(row);
-  back.appendChild(box); document.body.appendChild(back);
-  const close = () => {
-    if (!back.isConnected) return;
-    activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey);
-    if (opener && opener.isConnected) opener.focus({preventScroll: true});
-  };
-  activeOverlayClose = close;
-  function onKey(e) { if (e.key === 'Escape') close(); }
-  document.addEventListener('keydown', onKey);
-  cancel.onclick = close;
-  back.onclick = (e) => { if (e.target === back) close(); };
-  return { add, close };
+  cancel.onclick = () => dialog.close();
+  row.appendChild(add); row.appendChild(cancel); dialog.appendChild(row);
+  return add;
 }
 
 // A blank field writes nothing, preserving an existing entry's value.
 function addEntry(table, refresh) {
-  const back = el('div', 'overlay');
-  const opener = document.activeElement;
-  const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
-  box.setAttribute('role', 'dialog');
-  box.setAttribute('aria-label', 'add ' + table.label);
-  const title = el('h2', null, 'Add ' + table.label);
-  box.appendChild(title);
-  box.appendChild(el('div', 'sub muted', table.path + '.<name>. A blank field keeps an existing value or uses the default.'));
-  const labelled = (text, field) => { const l = el('label', 'sub muted', text); l.style.display = 'block'; l.style.marginTop = '8px'; field.name = text; l.appendChild(field); box.appendChild(l); return field; };
+  const dialog = openDialog('Add ' + table.label);
+  if (!dialog) return;
+  dialog.appendChild(el('div', 'sub muted', table.path + '.<name>. A blank field keeps an existing value or uses the default.'));
+  const labelled = (text, field) => { const l = el('label', 'sub muted cfg-label', text); field.name = text; l.appendChild(field); dialog.appendChild(l); return field; };
   const name = labelled('name', el('input', 'field'));
   const fields = {};
   for (const spec of table.fields) {
@@ -195,11 +179,11 @@ function addEntry(table, refresh) {
       if (baseUrl.value === '' || baseUrl.value === autofilled) { autofilled = preset.base_url || ''; baseUrl.value = autofilled; }
     };
   }
-  const repoRow = el('label', 'row'); repoRow.style.marginTop = '8px'; repoRow.style.cursor = 'pointer';
+  const repoRow = el('label', 'row cfg-check');
   const repoCb = el('input'); repoCb.type = 'checkbox';
   repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
-  box.appendChild(repoRow);
-  const { add, close } = mountAddDialog(back, box, opener);
+  dialog.appendChild(repoRow);
+  const add = addButtons(dialog);
   name.focus();
   add.onclick = async () => {
     add.disabled = true;
@@ -209,7 +193,7 @@ function addEntry(table, refresh) {
         fields: Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.value])),
         repo: repoCb.checked,
       });
-      toast(d.message || 'added'); close(); await refresh();
+      toast(d.message || 'added'); dialog.close(); await refresh();
     } catch (e) { toast(e.message, true); add.disabled = false; }
   };
 }
@@ -217,24 +201,21 @@ function addEntry(table, refresh) {
 // Name and layer for a new preset table; the server selects it, so the page then shows and
 // edits it.
 function addPreset(onAdded) {
-  const opener = document.activeElement;
-  const back = el('div', 'overlay'), box = el('div', 'card');
-  box.style.width = 'min(560px, 92vw)';
-  box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', 'add preset');
-  box.appendChild(el('h2', null, 'Add preset'));
-  box.appendChild(el('div', 'sub muted', 'An empty [presets.<name>] table, selected as preset in the chosen layer; edit the rows to fill it.'));
-  const label = el('label', 'sub muted', 'name'); label.style.display = 'block'; label.style.marginTop = '8px';
-  const name = el('input', 'field'); name.name = 'name'; label.appendChild(name); box.appendChild(label);
-  const repoRow = el('label', 'row'); repoRow.style.marginTop = '8px'; repoRow.style.cursor = 'pointer';
+  const dialog = openDialog('Add preset');
+  if (!dialog) return;
+  dialog.appendChild(el('div', 'sub muted', 'An empty [presets.<name>] table, selected as preset in the chosen layer; edit the rows to fill it.'));
+  const label = el('label', 'sub muted cfg-label', 'name');
+  const name = el('input', 'field'); name.name = 'name'; label.appendChild(name); dialog.appendChild(label);
+  const repoRow = el('label', 'row cfg-check');
   const repoCb = el('input'); repoCb.type = 'checkbox';
   repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'create in this repo\'s config (not the global config)'));
-  box.appendChild(repoRow);
-  const { add, close } = mountAddDialog(back, box, opener);
+  dialog.appendChild(repoRow);
+  const add = addButtons(dialog);
   const submit = async () => {
     add.disabled = true;
     try {
       const d = await postJSON('/api/config/preset', {name: name.value.trim(), repo: repoCb.checked});
-      toast(d.message || 'added'); close(); await onAdded();
+      toast(d.message || 'added'); dialog.close(); await onAdded();
     } catch (e) { toast(e.message, true); add.disabled = false; }
   };
   add.onclick = submit;
@@ -247,34 +228,31 @@ async function addReviewer(refresh) {
   let choices;
   try { choices = await getJSON('/api/config/reviewer_choices'); } catch (e) { toast(e.message, true); return; }
   if (gen !== routeGen) return;
-  const opener = document.activeElement;
-  const back = el('div', 'overlay'), box = el('div', 'card');
-  box.style.width = 'min(560px, 92vw)';
-  box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', 'add reviewer');
-  box.appendChild(el('h2', null, 'Add reviewer'));
-  box.appendChild(el('div', 'sub muted', 'Focus is required. Set model to provider/model, or leave it blank. Blank optional fields inherit the route\'s settings.'));
+  const dialog = openDialog('Add reviewer');
+  if (!dialog) return;
+  dialog.appendChild(el('div', 'sub muted', 'Focus is required. Set model to provider/model, or leave it blank. Blank optional fields inherit the route\'s settings.'));
   const fields = {};
   for (const name of ['focus', 'model', 'effort', 'temperature']) {
-    const label = el('label', 'sub muted', name); label.style.display = 'block'; label.style.marginTop = '8px';
+    const label = el('label', 'sub muted cfg-label', name);
     const field = el(choices[name] ? 'select' : 'input', 'field');
     field.id = 'reviewer-' + name; label.htmlFor = field.id;
     if (choices[name]) for (const value of ['', ...choices[name]]) {
       const option = el('option', null, value || 'blank = inherit'); option.value = value; field.appendChild(option);
     }
-    fields[name] = field; box.appendChild(label); box.appendChild(field);
+    fields[name] = field; dialog.appendChild(label); dialog.appendChild(field);
   }
-  const repoRow = el('label', 'row'); repoRow.style.marginTop = '8px';
+  const repoRow = el('label', 'row cfg-check');
   const repo = el('input'); repo.type = 'checkbox'; repo.id = 'reviewer-repo';
   repoRow.appendChild(repo); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
-  box.appendChild(repoRow);
-  const { add, close } = mountAddDialog(back, box, opener);
+  dialog.appendChild(repoRow);
+  const add = addButtons(dialog);
   fields.focus.focus();
   add.onclick = async () => {
     add.disabled = true;
     try {
       const body = Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.value]));
       const result = await postJSON('/api/config/reviewer', {...body, repo: repo.checked});
-      toast(result.message); close(); await refresh();
+      toast(result.message); dialog.close(); await refresh();
     } catch (e) { toast(e.message, true); add.disabled = false; }
   };
 }
@@ -357,23 +335,18 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   const cur = s.input;
   // The [agent6] table, which holds the selector, is never nested under a preset.
   const preset = key.startsWith('agent6.') ? '' : selectedPreset(data);
-  const back = el('div', 'overlay');
-  const opener = document.activeElement;
-  const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
-  box.setAttribute('role', 'dialog');
-  box.setAttribute('aria-label', 'edit ' + key);
   const role = s.model_role || null; // the view's one rule for the model picker
   const section = role ? 'models.' + role : null;
-  const title = el('h2', null, (role ? 'Model: ' + role : key) + (preset ? ' under preset ' + preset : ''));
-  box.appendChild(title);
-  const meta = el('div', 'sub muted');
+  const dialog = openDialog((role ? 'Model: ' + role : key) + (preset ? ' under preset ' + preset : ''));
+  if (!dialog) return;
+  const close = () => dialog.close();
+  const meta = el('div', 'sub muted cfg-meta');
   meta.textContent = `${esc(s.type)} · default: ${s.default_display} · set from: ${esc(s.source)}` + (s.adaptive ? ' · adaptive' : '');
-  meta.style.marginBottom = '10px';
-  box.appendChild(meta);
+  dialog.appendChild(meta);
   if (s.description) {
     const desc = el('div', 'cfg-desc');
     desc.appendChild(descriptionNode(s.description_points || [s.description]));
-    box.appendChild(desc);
+    dialog.appendChild(desc);
   }
   let field, combo;
   const choices = s.choices || (s.type === 'bool' ? ['true', 'false'] : null);
@@ -381,7 +354,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     combo = configCombobox(data[section + '.model']?.input || '');
     field = combo.field; field.id = 'cfg-model';
     const modelLabel = el('label', 'sub muted', 'Model'); modelLabel.htmlFor = field.id;
-    box.appendChild(modelLabel); box.appendChild(combo.element);
+    dialog.appendChild(modelLabel); dialog.appendChild(combo.element);
     combo.load('/api/config/suggest/' + section + '.model');
   } else if (choices) {
     field = el('select', 'field');
@@ -396,15 +369,15 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     field.value = cur;
     if (s.type === 'list') field.placeholder = 'TOML list';
   }
-  if (!combo) box.appendChild(field);
-  const repoRow = el('label', 'row'); repoRow.style.marginTop = '8px'; repoRow.style.cursor = 'pointer';
+  if (!combo) dialog.appendChild(field);
+  const repoRow = el('label', 'row cfg-check');
   const repoCb = el('input'); repoCb.type = 'checkbox';
   // Default the target layer to the value's origin: editing a repo-sourced value
   // must write the repo config, or the repo overlay keeps masking the edit and it
   // looks like the save vanished.
   repoCb.checked = (s.source === 'repo');
   repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
-  box.appendChild(repoRow);
+  dialog.appendChild(repoRow);
   const row = el('div', 'form-row');
   const save = el('button', 'primary', 'Save'), cancel = el('button', null, 'Cancel');
   row.appendChild(save);
@@ -441,18 +414,8 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     addBtn.onclick = () => { close(); addReviewer(refresh); };
     row.appendChild(addBtn);
   }
-  row.appendChild(cancel); box.appendChild(row);
-  back.appendChild(box); document.body.appendChild(back);
-  const close = () => {
-    if (!back.isConnected) return;
-    activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey);
-    if (opener && opener.isConnected) opener.focus({preventScroll: true});
-  };
-  activeOverlayClose = close; // navigating away dismisses it
-  function onKey(e) { if (e.key === 'Escape') close(); }
-  document.addEventListener('keydown', onKey);
+  row.appendChild(cancel); dialog.appendChild(row);
   cancel.onclick = close;
-  back.onclick = (e) => { if (e.target === back) close(); };
   if (key === 'review.reviewers') {
     const roster = el('div');
     const editable = s.source === 'repo' || s.source === 'global' || (preset && s.source === 'preset');
@@ -477,7 +440,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       item.appendChild(remove); roster.appendChild(item);
     });
     if (!s.value || !s.value.length) roster.appendChild(el('div', 'sub muted', 'The reviewer roster is empty.'));
-    box.insertBefore(roster, field);
+    dialog.insertBefore(roster, field);
   }
   field.focus();
   const submit = async () => {
