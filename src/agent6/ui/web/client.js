@@ -751,8 +751,8 @@ function listCard(title, empty, rows) {
   return card;
 }
 // One row: `paint(it, g)` fills the row and its text column.
-function itemRow(cls, paint) {
-  const it = el('div', cls);
+function itemRow(paint) {
+  const it = el('div', 'item');
   const g = el('div', 'grow');
   it.appendChild(g);
   paint(it, g);
@@ -800,7 +800,7 @@ function statusOnly(r) {
 // toggle that `regroup` flips; its children (`r.children`, the server's nested rows) follow it
 // as rows of their own, each a level deeper.
 function paintSession(r, depth, regroup) {
-  return itemRow('item', (it, g) => {
+  return itemRow((it, g) => {
     if (depth) { it.classList.add('child'); it.style.setProperty('--depth', depth); }
     taskTitle(g, r.task_line || firstLine(r.task, 200) || '(no task)', '#/session/' + encodeURIComponent(r.session_id));
     // The status leads the first sub line, so every row's dot sits in one column: the server's
@@ -909,7 +909,7 @@ function sessionsCard() {
 }
 
 function machinesCard() {
-  return listCard('Instances', 'no machines yet (describe one below to create it)', m => [{ key: m.name, data: m, paint: () => itemRow('item', (it, g) => {
+  return listCard('Instances', 'no machines yet (describe one below to create it)', m => [{ key: m.name, data: m, paint: () => itemRow((it, g) => {
     // An instance goes by its own name, as `machine list` and the TUI list it; the sub line names
     // the machine it runs when the two differ. The reason rides the status label (failed · why).
     g.appendChild(titleLink('title name', m.name, '#/machine/' + encodeURIComponent(m.name)));
@@ -919,7 +919,7 @@ function machinesCard() {
 }
 
 function draftsCard() {
-  return listCard('Drafts', '', d => [{ key: d.session_id, data: d, paint: () => itemRow('item', (it, g) => {
+  return listCard('Drafts', '', d => [{ key: d.session_id, data: d, paint: () => itemRow((it, g) => {
     taskTitle(g, d.task_line || firstLine(d.task, 200) || d.session_id, '#/draft/' + encodeURIComponent(d.session_id));
     // The reason rides the status label (failed · provider error).
     g.appendChild(subLine([pill(d.status_level, statusOnly(d)), d.session_id, esc(d.when)]));
