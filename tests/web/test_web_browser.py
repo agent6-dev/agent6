@@ -1070,6 +1070,24 @@ def test_a_commit_body_wraps_a_hard_wrapped_item_once(
     assert errors == [], errors
 
 
+def test_a_phone_presses_inline_when_split_has_no_room(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """With split chosen, a phone shows inline pressed and split disabled; split read pressed."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.add_init_script("localStorage.setItem('a6-diff-mode', 'split')")
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/feature?path=b.txt")
+    expect(page.locator(".git-diff .diff")).to_be_visible()
+    expect(page.locator(".git-diff .gview button.active")).to_have_text("inline")
+    expect(page.locator(".git-diff .gview button", has_text="split")).to_be_disabled()
+    expect(page.locator(".git-diff")).to_contain_text("split needs a wider screen")
+    assert page.evaluate("localStorage.getItem('a6-diff-mode')") == "split"
+    assert errors == [], errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:

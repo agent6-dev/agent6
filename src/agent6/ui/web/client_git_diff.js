@@ -68,10 +68,16 @@ function gitDiffViewer(body) {
     } else head.appendChild(fileLink('head', 'Open in Files', 'diff-open-file'));
     let mode = recall(DIFF_MODE_KEY, 'inline');
     if (!DIFF_MODES.includes(mode)) mode = 'inline';
+    // A phone has no room for split: it shows inline, says so when split was the choice, and
+    // offers split disabled; the choice stays for a wider screen.
+    const narrow = window.matchMedia('(max-width: 780px)').matches;
+    const splitWanted = narrow && mode === 'split';
+    if (splitWanted) mode = 'inline';
     const modes = el('span', 'gview');
     for (const m of DIFF_MODES) {
       const b = el('button', 'mini' + (m === mode ? ' active' : ''), m);
       b.title = { inline: 'the unified patch', split: 'old and new side by side', old: 'the file at the base, deletions marked', new: 'the file at the head, additions marked' }[m];
+      if (m === 'split' && narrow) { b.disabled = true; b.title = 'split needs a wider screen'; }
       b.onclick = () => { remember(DIFF_MODE_KEY, m); showDiff(ctx, i, whole, fullContext); };
       modes.appendChild(b);
     }
@@ -120,10 +126,7 @@ function gitDiffViewer(body) {
       file.hunks = [{header: 'Full file', lines: splitLines(d.context).map((text, n) => ({kind: 'ctx', text, old: n + 1, new: n + 1}))}];
       if (!parsed.length) parsed.push(file);
     }
-    if (mode === 'split' && window.matchMedia('(max-width: 780px)').matches) {
-      patch.appendChild(el('div', 'muted gf-note', 'split needs a wider screen: showing inline'));
-      mode = 'inline';
-    }
+    if (splitWanted) patch.appendChild(el('div', 'muted gf-note', 'split needs a wider screen: showing inline'));
     let sideText = null;
     if (mode === 'inline') patch.appendChild(renderUnified(parsed, true, d.old_spans, d.new_spans));
     else if (mode === 'split') patch.appendChild(renderSplit(file, d.old_spans, d.new_spans));
