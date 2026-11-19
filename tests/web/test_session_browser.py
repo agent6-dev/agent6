@@ -178,3 +178,39 @@ def test_a_phone_opens_a_run_at_its_tail_unless_a_prompt_waits(
     else:
         page.wait_for_function("window.scrollY > 0")
     assert not errors
+
+
+def test_the_run_card_lines_up_the_judge_settings_and_last_call_with_its_rows(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """The judge's reason, the settings and the last model call are rows of the run card.
+
+    They were lines under the rows, starting at the card's edge in a larger size, and each
+    setting's separator lost the space after it ("gpt-4.1-mini ·isolation full").
+    """
+    from playwright.sync_api import expect
+
+    gate = {"command": ["pytest", "-q"], "source": "configured", "availability": "ready"}
+    manifests = {
+        "fan": {"comparison": {"group": "fan", "ranking": ["child"], "rationale": "covers it"}},
+        "child": {
+            "placement": {"group": "fan", "rank": 1, "of": 1, "winner": True},
+            "models": {"driver": {"provider": "openai", "model": "gpt-4.1-mini"}},
+            "policy": {"isolation": "full", "network": "session", "run_commands": "ask"},
+            "harness": {"gate": gate},
+        },
+    }
+    for sid, manifest in manifests.items():
+        session = _session(tmp_path, sid, [{"type": "model.call", "role": "worker", "model": "m1"}])
+        (session / "manifest.json").write_text(json.dumps({"mode": "run", **manifest}))
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/child")
+    keys = page.locator(".card-head .kv .k")
+    expect(keys).to_have_text(["task", "id", "status", "compare", "judge", "settings", "last call"])
+    values = page.locator(".card-head .kv .v")
+    expect(values.nth(4)).to_have_text("covers it")
+    expect(values.nth(6)).to_have_text("worker / m1")
+    settings = values.nth(5).evaluate("e => e.innerText")
+    assert settings.startswith("gpt-4.1-mini · isolation full · network session · run_commands ask")
+    assert len(set(values.evaluate_all("vs => vs.map(v => v.getBoundingClientRect().x)"))) == 1
+    assert not errors

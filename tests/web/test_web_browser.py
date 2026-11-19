@@ -1274,7 +1274,8 @@ def test_child_details_read_the_parents_rationale(
         )
     page, errors = open_page(port)
     page.goto(f"http://127.0.0.1:{port}/#/session/child")
-    expect(page.get_by_text("judge: covers the edge case", exact=True)).to_be_visible()
+    judge = page.locator(".kv .k").filter(has_text=re.compile(r"^judge$"))
+    expect(judge.locator("+ .v")).to_have_text("covers the edge case")
     expect(page.get_by_text("rank 1/1 · winner · judge ($0.01)", exact=True)).to_be_visible()
     assert not errors
 

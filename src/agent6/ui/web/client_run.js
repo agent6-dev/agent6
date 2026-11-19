@@ -516,27 +516,27 @@ function paintRun(cards, s) {
   // Compare outcome (stamped into a child's manifest by --parallel's
   // auto-compare): where this child placed and why. Absent for a non-child run.
   if (s.placement && s.placement.line) add('compare', s.placement.line); // format_compare, server-side
-  cards.head.appendChild(kv);
   // The judge's reason sits under its compare row (as sessions show prints it).
-  if (s.comparison && s.comparison.rationale) {
-    cards.head.appendChild(el('div', 'sub muted', 'judge: ' + s.comparison.rationale));
-  }
-  // The same one-line fold the CLI banner and the TUI composer read; each setting carries its
-  // separator as one inline block, so a narrow card breaks the line between settings, and a
+  if (s.comparison && s.comparison.rationale) add('judge', s.comparison.rationale);
+  // The same one-line fold the CLI banner and the TUI composer read. Each setting and its
+  // separator is one inline block, so a narrow card breaks the line between settings, and a
   // setting wider than the card wraps inside itself instead of clipping.
   if (s.policy) {
-    const pol = el('div', 'sub muted');
+    add('settings', '');
     const parts = s.policy.split(' · ');
-    parts.forEach((part, i) => pol.appendChild(el('span', 'setting', part + (i < parts.length - 1 ? ' · ' : ''))));
-    cards.head.appendChild(pol);
+    parts.forEach((part, i) => {
+      if (i) kv.lastElementChild.append(' ');
+      kv.lastElementChild.appendChild(el('span', 'setting', part + (i < parts.length - 1 ? ' ·' : '')));
+    });
   }
   if (s.last_model_call) {
     // The in-flight mark means a call is in flight. A killed worker leaves a
     // model.call with no model.result, so it would stay on beside "stale".
     const r = s.last_model_call;
     const inFlight = r.in_flight && s.live;
-    cards.head.appendChild(el('div', 'sub muted', `${esc(r.role)} / ${esc(r.model)}${inFlight ? ' …' : ''}`));
+    add('last call', `${esc(r.role)} / ${esc(r.model)}${inFlight ? ' …' : ''}`);
   }
+  cards.head.appendChild(kv);
 
   const commitState = (cards._diffPick && cards._diffPick.sha && cards._commitState) ? cards._commitState : null;
   paintDetails(cards, commitState || s, commitState ? commitState.as_of : null);
