@@ -273,6 +273,26 @@ def test_an_add_dialog_shows_each_field_description_whole_under_the_field(
     assert not errors
 
 
+@pytest.mark.parametrize("width", [1280, 390])
+def test_a_config_dialogs_head_fills_it_from_edge_to_edge(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, width: int
+) -> None:
+    """A dialog's sticky head was filled across its content only.
+
+    A focused field scrolled under it showed its ring on both sides of the title.
+    """
+    page, errors = open_page(port)
+    _config(page, port, width)
+    page.get_by_role("button", name="Add provider…").click()
+    gaps = page.locator("dialog").evaluate(
+        """d => { const head = d.querySelector('.dialog-head').getBoundingClientRect();
+        const left = d.getBoundingClientRect().left + d.clientLeft;
+        return [head.left - left, left + d.clientWidth - head.right]; }"""
+    )
+    assert gaps == [0, 0]
+    assert not errors
+
+
 def test_a_long_list_value_shows_whole_in_its_editor(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

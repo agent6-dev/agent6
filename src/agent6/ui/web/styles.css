@@ -132,7 +132,8 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 .page-pad { margin: 0 1rem; }
 .page-pad.row { margin-top: 0.75rem; }
 
-.card { padding: 0.875rem 1rem; overflow: hidden; }
+/* --pad: a card's side padding, which a dialog's sticky head reaches across. */
+.card { --pad: 1rem; padding: 0.875rem var(--pad); overflow: hidden; }
 /* A card's or panel's heading, and a group's in the keyboard list, is a label: small muted capitals,
    so it stays apart from the bold line under it (Commit over the commit subject, Findings over its
    counts). */
@@ -377,7 +378,8 @@ dialog.card.wide { width: 47.5rem; }
    the top while the dialog scrolls, over a fill that hides what scrolls under it. */
 dialog .dialog-head {
   position: sticky; top: 0; display: flex; align-items: flex-start; gap: 0.5rem;
-  margin-bottom: 0.5rem; padding-top: calc(1.5rem - var(--ctl-h) / 2); background: var(--surface);
+  margin: 0 calc(-1 * var(--pad)) 0.5rem; padding: calc(1.5rem - var(--ctl-h) / 2) var(--pad) 0;
+  background: var(--surface);
 }
 dialog .dialog-head > h2 {
   flex: 1; min-width: 0; margin: 0; padding-block: calc(var(--ctl-h) / 2 - 0.625rem); overflow-wrap: anywhere;
@@ -465,7 +467,7 @@ aside.rail, #rail-show { display: none; }
   :root.rail-hidden #rail-show { display: inline-flex; }
   :root.rail-hidden { --hdr-h: calc(var(--ctl-h) + 0.8125rem); }
   main { max-width: none; margin: 0; padding: 0; }
-  .card { padding: 0.875rem 1.375rem; }
+  .card { --pad: 1.375rem; }
   .page-pad { margin: 0 1.375rem; }
 }
 
