@@ -1133,20 +1133,22 @@ function openHistorySearch(entries, onPick) {
 // filter field (a combobox) over a list box. The arrows move the highlighted option, keep it in
 // view and make it the field's active descendant, which a screen reader reads; the pointer moves
 // it too, so one row is ever highlighted. Enter picks it, or with `typed` the typed text when
-// nothing matches. `actions(row, close)` returns a row's own buttons, kept outside its option:
-// inside one, a screen reader would not find them. `prefix` hands the field to another picker
+// nothing matches. `actions(row, close)` returns a row's own buttons: a list box may hold only
+// options, and a screen reader finds no button inside an option, so a picker with them is a grid,
+// each row its pick's cell and a cell of its buttons. `prefix` hands the field to another picker
 // when typed first.
 function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '', initial = '', prefix = null, limit = 12, typed = false, actions = null }) {
   const dialog = openDialog(title, 'wide picker');
   if (!dialog) return;
   const name = dialog.getAttribute('aria-labelledby');
   const aria = (e, attrs) => { for (const k in attrs) e.setAttribute(k, attrs[k]); };
+  const popup = actions ? 'grid' : 'listbox';
   const field = el('input', 'field'); field.placeholder = placeholder; field.value = initial;
   const list = el('div', 'hs-list');
   list.id = name + '-list';
   list.tabIndex = -1; // the arrows scroll it: no Tab stop
-  aria(list, { role: 'listbox', 'aria-labelledby': name });
-  aria(field, { role: 'combobox', 'aria-labelledby': name, 'aria-controls': list.id, 'aria-expanded': 'true', 'aria-autocomplete': 'list' });
+  aria(list, { role: popup, 'aria-labelledby': name });
+  aria(field, { role: 'combobox', 'aria-labelledby': name, 'aria-controls': list.id, 'aria-expanded': 'true', 'aria-autocomplete': 'list', 'aria-haspopup': popup });
   const note = el('div', 'more-note');
   dialog.append(field, list, note);
   const close = () => dialog.close();
@@ -1171,11 +1173,13 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '
     items.forEach((r, i) => {
       const row = el('div', 'ac-item');
       const option = el('div', 'ac-opt');
-      aria(option, { id: list.id + '-' + i, role: 'option' });
+      aria(option, { id: list.id + '-' + i, role: actions ? 'gridcell' : 'option' });
       paint(r, option);
       row.appendChild(option);
+      if (actions) row.setAttribute('role', 'row');
       const own = actions && actions(r, close);
       if (own) {
+        own.setAttribute('role', 'gridcell');
         for (const b of own.querySelectorAll('button')) b.setAttribute('aria-describedby', option.id);
         row.appendChild(own);
       }

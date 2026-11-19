@@ -520,8 +520,8 @@ def test_the_arrows_keep_the_highlighted_session_in_view_and_named(
 ) -> None:
     """Ten ArrowDown presses left the switcher's highlighted row below its list, out of sight.
 
-    The list is a list box and the field names the highlighted option as its active descendant,
-    so a screen reader reads each option the arrows reach.
+    The field names the highlighted session's cell as its active descendant, so a screen reader
+    reads each session the arrows reach.
     """
     from playwright.sync_api import expect
 
@@ -529,12 +529,12 @@ def test_the_arrows_keep_the_highlighted_session_in_view_and_named(
     dialog = _open_switcher(page, port, _sessions(20))
     for _ in range(10):
         page.keyboard.press("ArrowDown")
-    active = dialog.get_by_role("option", selected=True)
+    active = dialog.get_by_role("gridcell", selected=True)
     expect(active).to_contain_text("run-10 · run · task 10")
     expect(dialog.get_by_role("combobox")).to_have_attribute(
         "aria-activedescendant", str(active.get_attribute("id"))
     )
-    box, shown = active.bounding_box(), dialog.get_by_role("listbox").bounding_box()
+    box, shown = active.bounding_box(), dialog.get_by_role("grid").bounding_box()
     assert box is not None and shown is not None
     assert shown["y"] <= box["y"] and box["y"] + box["height"] <= shown["y"] + shown["height"]
     assert page.evaluate("document.scrollingElement.scrollTop") == 0
@@ -549,7 +549,7 @@ def test_the_pointer_and_the_arrows_share_one_highlighted_row(
 
     page, errors = open_page(port)
     dialog = _open_switcher(page, port, _sessions(5))
-    options = dialog.get_by_role("option")
+    options = dialog.get_by_role("gridcell")
     options.nth(2).hover()
     expect(options.nth(2)).to_have_attribute("aria-selected", "true")
     page.keyboard.press("ArrowDown")
@@ -561,6 +561,29 @@ def test_the_pointer_and_the_arrows_share_one_highlighted_row(
     page.keyboard.press("Enter")
     page.wait_for_function("location.hash === '#/session/run-3'")
     assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
+def test_a_switcher_rows_buttons_sit_in_a_grid_not_a_list_box(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The switcher's list box held its rows' Review code and Merge buttons.
+
+    A list box may hold only options, so the switcher is a grid: each row a cell for its session
+    and a cell for its buttons. The palette, whose rows have no buttons, stays a list box.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    dialog = _open_switcher(page, port, _sessions(2, branch="agent6/run", unmerged=True))
+    expect(dialog.get_by_role("combobox")).to_have_attribute("aria-haspopup", "grid")
+    rows = dialog.get_by_role("grid").get_by_role("row")
+    expect(rows).to_have_count(2)
+    buttons = rows.nth(1).get_by_role("gridcell").nth(1).get_by_role("button")
+    expect(buttons).to_have_text(["Review code", "Merge"])
+    expect(dialog.get_by_role("listbox")).to_have_count(0)
+    page.keyboard.type(">")
+    expect(page.get_by_role("dialog", name="Commands").get_by_role("listbox")).to_be_visible()
+    assert not errors
 
 
 def test_the_switchers_placeholder_fits_a_phones_field(
