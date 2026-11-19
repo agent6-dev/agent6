@@ -1,6 +1,8 @@
 /* The machine view: banners, prompts and controls on top, the States and Path cards, the newest
    agent state's conversation under them, and the composer docked at the foot. */
 .machine-app { display: flex; flex-direction: column; flex: 1 0 auto; }
+/* The first banner or prompt box stands 12px under the top bar, as the controls row does alone. */
+.machine-top:has(.notif-banner, .prompt-box) { padding-top: 12px; }
 .machine-top > .row { margin-bottom: 10px; }
 /* A body that scrolls is a Tab stop in both browsers; its ring goes inside, as a scroll pane's
    does, in the 4px each side that the body reaches past its text. */

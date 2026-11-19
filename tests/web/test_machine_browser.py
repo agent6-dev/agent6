@@ -196,3 +196,20 @@ def test_states_and_path_share_one_row_height(
     )
     assert len(heights) == 2 and heights[0] == heights[1], heights
     assert not errors
+
+
+def test_a_machines_first_prompt_stands_under_the_top_bar(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """A pending prompt sat flush against the top bar."""
+    from playwright.sync_api import expect
+
+    ask = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"}
+    _machine(tmp_path, "asking", LOOP, [], [*_talk(1), ask], alive=True)
+    page, errors = _open(open_page, port, "asking")
+    box = page.locator(".prompt-box")
+    expect(box).to_have_count(1)
+    above, under = page.locator("header").bounding_box(), box.bounding_box()
+    assert above is not None and under is not None
+    assert under["y"] - (above["y"] + above["height"]) == 12
+    assert not errors
