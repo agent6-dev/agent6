@@ -1026,6 +1026,61 @@ def test_the_palette_lists_every_command(
     assert not errors
 
 
+@pytest.mark.parametrize(("route", "ready"), [("#/config", ".cfg"), ("#/", ".dock textarea")])
+def test_the_palettes_new_session_focuses_the_composer_from_any_page(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, route: str, ready: str
+) -> None:
+    """New session left the focus on the page body unless the Sessions page was already open."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/{route}")
+    expect(page.locator(ready).first).to_be_visible()
+    page.keyboard.press("Control+K")
+    page.keyboard.type(">new session")
+    expect(page.get_by_role("dialog", name="Commands").get_by_role("option")).to_have_count(1)
+    page.keyboard.press("Enter")
+    expect(page.locator(".dock textarea")).to_be_focused()
+    assert page.evaluate("location.hash") == "#/"
+    assert not errors
+
+
+@pytest.mark.parametrize("pick", ["New session", "Review"])
+def test_a_task_handed_to_the_sessions_composer_keeps_its_picks(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, pick: str
+) -> None:
+    """The palette's New session and the switcher's Review painted the Sessions page afresh.
+
+    The mode went back to run, and where the browser keeps no draft, the typed task went too.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.add_init_script("""Storage.prototype.setItem = (set => function (key, value) {
+      if (key.startsWith('a6-draft')) throw new DOMException('full', 'QuotaExceededError');
+      return set.call(this, key, value);
+    })(Storage.prototype.setItem);""")
+    rows = _sessions(1, branch="agent6/run-0")
+    page.route("**/api/hub", lambda route: route.fulfill(json={"sessions": rows}))
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    entry = page.locator(".dock textarea")
+    mode = page.locator(".dock").get_by_role("combobox", name="mode", exact=True)
+    mode.select_option("plan")
+    entry.fill("half a task")
+    entry.blur()
+    page.keyboard.press("Control+K")
+    if pick == "Review":
+        page.get_by_role("dialog", name="Switch session").get_by_role("button", name=pick).click()
+    else:
+        page.keyboard.type(">new session")
+        expect(page.get_by_role("dialog", name="Commands").get_by_role("option")).to_have_count(1)
+        page.keyboard.press("Enter")
+    expect(entry).to_be_focused()
+    expect(entry).to_have_value("/review agent6/run-0" if pick == "Review" else "half a task")
+    expect(mode).to_have_value("plan")
+    assert not errors
+
+
 @pytest.mark.parametrize(
     ("key", "title"), [("Control+K", "Switch session"), ("?", "Keyboard shortcuts")]
 )

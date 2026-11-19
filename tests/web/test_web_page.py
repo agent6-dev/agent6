@@ -194,7 +194,7 @@ def test_ctrl_k_opens_the_session_switcher_and_drafts_wait_in_the_composer() -> 
     assert "getJSON('/api/hub')" in switcher
     assert "'worktree ' + r.worktree : 'this checkout'" in switcher
     assert "'ref ' + r.branch" in switcher
-    assert "handToNewWork({ task: '/review ' + r.branch })" in switcher
+    assert "toNewWork({ task: '/review ' + r.branch })" in switcher
     assert "if (!await confirmMerge(r)) return;" in switcher and "await postMerge(r);" in switcher
     assert "e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey)" in switcher
     composer = client[client.index("function makeComposer") :]

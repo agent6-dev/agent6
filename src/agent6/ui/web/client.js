@@ -493,11 +493,16 @@ async function route() {
 }
 window.addEventListener('hashchange', route);
 
-// Text and a plan handed to the new-work composer by another view (a diff
-// line's quote, a receipt's revert request, a plan's Run this plan): the dock
-// takes them once when it paints.
+// Fields another view hands the new-work composer (a quote, a revert request, a plan): the dock takes them, and the focus, when it paints.
 function handToNewWork(fields) {
   window.pendingNewWork = Object.assign({}, window.pendingNewWork || {}, fields);
+}
+// Hand the new-work composer `fields` and the focus: one the Sessions page shows takes them in place, its picks kept; else that page paints afresh to take them.
+function toNewWork(fields) {
+  const shown = !location.hash.replace(/^#\/?/, '') && view.querySelector('.dock textarea');
+  if (shown) { if (fields.task) fillAsEdit(shown, fields.task); else shown.focus(); return; }
+  handToNewWork(fields);
+  if (location.hash.replace(/^#\/?/, '')) location.hash = '#/'; else route(); // no hashchange on #/
 }
 
 // --- hub ---------------------------------------------------------------------
@@ -1083,8 +1088,10 @@ async function renderHub(focus, gen) {
   show(data);
   let statuses = seedStatuses(data.sessions);
   view.appendChild(lists);
+  const handed = !machinesTab && !!window.pendingNewWork;
   const dock = machinesTab ? createMachineDock() : newWorkDock(data.presets, data.preset_default_label, data.sessions);
   view.appendChild(dock);
+  if (handed) dock.querySelector('textarea').focus();
   dockHeight.observe(dock);
   // Without this the hub paints once, so a child that finished, failed or
   // crashed keeps its "running" pill until a manual reload; clicking the
@@ -1563,7 +1570,7 @@ function openSwitcher() {
       if (!r.branch || LIVE_WORDS.includes(r.status)) return null;
       const acts = el('div', 'row');
       const review = el('button', 'mini', 'Review');
-      review.onclick = () => { close(); handToNewWork({ task: '/review ' + r.branch }); location.hash = '#/'; route(); };
+      review.onclick = () => { close(); toNewWork({ task: '/review ' + r.branch }); };
       acts.appendChild(review);
       if (r.unmerged) {
         const merge = el('button', 'mini', 'Merge');
@@ -1592,7 +1599,7 @@ function paletteItems() {
     { label: 'Switch session', hint: 'Ctrl+K', run: () => openSwitcher() },
     { label: 'Keyboard shortcuts', hint: '?', run: () => openKeys() },
     { label: 'Toggle theme', hint: 'light or dark', run: () => toggleTheme() },
-    { label: 'New session', hint: 'the Sessions composer', run: () => { location.hash = '#/'; setTimeout(() => view.querySelector('.dock textarea')?.focus(), 50); } },
+    { label: 'New session', hint: 'the Sessions composer', run: () => toNewWork({}) },
   ];
   // The page's own controls, as the page labels them; a hidden or disabled one is not offered.
   for (const b of view.querySelectorAll('.toolbar button, .actions button')) {
