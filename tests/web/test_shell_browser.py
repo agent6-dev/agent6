@@ -103,16 +103,20 @@ def test_every_phone_tab_keeps_its_icon_on_one_line(
     page.set_viewport_size({"width": 360, "height": 800})
     page.goto(f"http://127.0.0.1:{port}/#/")
     expect(page.locator("nav.tabs")).to_be_visible()
+    # One box per line of each label, from a range over its text.
     tabs = page.evaluate("""() => [...document.querySelectorAll('nav.tabs a')].map(a => {
-      const i = a.querySelector('.ic').getBoundingClientRect();
-      const s = a.querySelector('span').getBoundingClientRect();
-      return { top: i.top, icon: i.left + i.width / 2, label: s.left + s.width / 2,
-               height: s.height, end: s.bottom, bar: a.getBoundingClientRect().bottom }; })""")
-    heights = [t["height"] for t in tabs]
-    assert max(heights) > 1.5 * min(heights)  # State machines wraps at this width
+      const icon = a.querySelector('.ic').getBoundingClientRect();
+      const text = document.createRange();
+      text.selectNodeContents(a.querySelector('span'));
+      const lines = [...text.getClientRects()].filter(r => r.width > 0);
+      return { top: icon.top, icon: icon.left + icon.width / 2,
+               lines: lines.map(r => r.left + r.width / 2),
+               end: Math.max(...lines.map(r => r.bottom)), bar: a.getBoundingClientRect().bottom };
+    })""")
+    assert max(len(t["lines"]) for t in tabs) == 2  # State machines wraps at this width
     assert {t["top"] for t in tabs} == {tabs[0]["top"]}
     for t in tabs:
-        assert t["label"] == pytest.approx(t["icon"], abs=0.5)
+        assert t["lines"] == pytest.approx([t["icon"]] * len(t["lines"]), abs=1)
         assert t["end"] < t["bar"]
     assert not errors
 
