@@ -235,10 +235,10 @@ function closeButton(label, onclick) {
 function openDialog(title, cls) {
   if (document.querySelector('dialog[open]')) return null;
   const dialog = el('dialog', cls ? 'card ' + cls : 'card');
-  // A config key too long for its line breaks after a dot before it breaks inside a name.
+  // A long config key breaks after a dot, at a <wbr> hidden from a screen reader (Chrome reads a space).
   const [first, ...rest] = title.split(/(?<=\.)/);
   const heading = el('h2', null, first);
-  for (const part of rest) { heading.appendChild(el('wbr')); heading.appendChild(el('span', null, part)); }
+  for (const part of rest) { heading.appendChild(el('wbr')).setAttribute('aria-hidden', 'true'); heading.appendChild(el('span', null, part)); }
   heading.id = 'dialog-title-' + ++dialogCount;
   dialog.setAttribute('aria-labelledby', heading.id);
   dialog.setAttribute('closedby', 'any');

@@ -659,6 +659,38 @@ def test_a_config_value_reads_whole_to_a_screen_reader(
     assert not errors
 
 
+def test_each_config_table_is_named_by_its_section(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A screen reader moving by table met sixteen unnamed tables; each section's name sat apart."""
+    page, errors = open_page(port)
+    _config(page, port)
+    sections = page.locator("details.cfg-section > summary").all_inner_texts()
+    cdp = page.context.new_cdp_session(page)
+    nodes = cdp.send("Accessibility.getFullAXTree")["nodes"]
+    tables = [n.get("name", {}).get("value") for n in nodes if n["role"]["value"] == "table"]
+    assert tables == sections
+    assert not errors
+
+
+def test_a_config_editor_reads_its_key_whole_to_a_screen_reader(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Chrome read the <wbr> after each dot of the dialog's title as a space: `budget. max_usd`.
+
+    The dialog and its value field, which the title names, both read so.
+    """
+    page, errors = open_page(port)
+    _config(page, port)
+    page.locator('[data-key="budget.max_usd"]').click()
+    page.get_by_role("dialog").locator(".field").wait_for()
+    cdp = page.context.new_cdp_session(page)
+    nodes = cdp.send("Accessibility.getFullAXTree")["nodes"]
+    named = {(n["role"]["value"], n.get("name", {}).get("value")) for n in nodes}
+    assert {("dialog", "budget.max_usd"), ("textbox", "budget.max_usd")} <= named
+    assert not errors
+
+
 def test_a_drag_across_a_config_value_selects_it_without_opening_the_editor(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
