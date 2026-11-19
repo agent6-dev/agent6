@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "39eb8ec33bfc25443bc3ad1eb22b412a87b7940d766c8e4e26ea5eaff56bd611"
+PAGE_SHA256 = "c3a19c25c9d33138af7fcfa72cd53f0e9aefd8256525c02cf03935cf09798eb2"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -72,6 +72,31 @@ def test_navigation_bars_share_order_labels_and_inline_svg_icons() -> None:
     assert drawings[0] == drawings[1]
 
 
+def _markup() -> str:
+    """Return the page without its script and style blocks."""
+    return re.sub(r"<(script|style)>.*?</\1>", "", page.PAGE_HTML, flags=re.DOTALL)
+
+
+def test_the_markup_carries_no_inline_handlers() -> None:
+    """client.js sets every listener; the theme and collapse buttons had inline onclick."""
+    assert not re.search(r"\son\w+\s*=", _markup())
+
+
+def test_the_shell_buttons_draw_the_navs_line_icons() -> None:
+    """The theme and collapse buttons draw an SVG like the nav links; they showed ◐, « and »."""
+    markup = _markup()
+    nav = re.search(r'<nav class="tabs">.*?</nav>', markup, re.DOTALL)
+    assert nav is not None
+    nav_icon = ElementTree.fromstring(nav.group()).find("a/svg")
+    assert nav_icon is not None
+    buttons = re.findall(r"<button .*?</button>", markup, re.DOTALL)
+    assert len(buttons) == 3
+    for button in buttons:
+        icon = ElementTree.fromstring(button).find("svg")
+        assert icon is not None and icon.attrib == nav_icon.attrib
+    assert not set("◐«»") & set(markup)
+
+
 @pytest.mark.parametrize("storage", ["blocked", "full"])
 def test_page_startup_and_layout_storage_survive_storage_failure(storage: str) -> None:
     """Unavailable storage cannot stop startup or discard a token needed to read Files."""
@@ -95,7 +120,7 @@ Object.defineProperty(globalThis, 'localStorage', {
 });
 const classes = new Set();
 const document = {
-  getElementById() { return null; },
+  getElementById() { return {setAttribute() {}}; },
   querySelectorAll() { return []; },
   documentElement: {classList: {
     add: c => classes.add(c), contains: c => classes.has(c),

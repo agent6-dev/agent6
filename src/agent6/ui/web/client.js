@@ -37,31 +37,42 @@ function toggleTheme() {
   document.documentElement.classList.remove('light', 'dark');
   if (next === (systemDark.matches ? 'dark' : 'light')) forget('a6-theme');
   else { document.documentElement.classList.add(next); remember('a6-theme', next); }
-  syncThemeColor();
+  syncTheme();
 }
 // The browser's own bar takes the page colour of the theme in force: a stored choice in both
-// theme-color metas, else each meta's own scheme.
-function syncThemeColor() {
+// theme-color metas, else each meta's own scheme. Each theme button is named by the theme it
+// switches to.
+function syncTheme() {
   const c = document.documentElement.classList;
   const forced = c.contains('dark') ? 'dark' : c.contains('light') ? 'light' : '';
   for (const m of document.querySelectorAll('meta[name=theme-color]')) {
     m.content = (forced || (m.media.includes('dark') ? 'dark' : 'light')) === 'dark' ? '#0e1116' : '#f6f8fa';
   }
+  const name = themeIsDark() ? 'Switch to light theme' : 'Switch to dark theme';
+  for (const b of document.querySelectorAll('.theme-toggle')) { b.setAttribute('aria-label', name); b.title = name; }
 }
-syncThemeColor();
+for (const b of document.querySelectorAll('.theme-toggle')) b.onclick = toggleTheme;
+systemDark.addEventListener('change', syncTheme);
+syncTheme();
 
 // --- nav rail collapse ---------------------------------------------------------
+// The collapse button is named by what a press does and says whether the rail is expanded.
 if (recall('a6-rail', '') === 'min') document.documentElement.classList.add('rail-min');
-function railArrow() {
-  const a = document.getElementById('rail-arrow');
-  if (a) a.textContent = document.documentElement.classList.contains('rail-min') ? '»' : '«';
+const railToggle = document.getElementById('rail-toggle');
+function syncRail() {
+  const min = document.documentElement.classList.contains('rail-min');
+  const name = min ? 'Expand the sidebar' : 'Collapse the sidebar';
+  railToggle.setAttribute('aria-expanded', String(!min));
+  railToggle.setAttribute('aria-label', name);
+  railToggle.title = name;
 }
 function toggleRail() {
   const on = document.documentElement.classList.toggle('rail-min');
   remember('a6-rail', on ? 'min' : '');
-  railArrow();
+  syncRail();
 }
-railArrow(); // reflect the persisted state on load
+railToggle.onclick = toggleRail;
+syncRail();
 
 // --- PWA + notifications -----------------------------------------------------
 // Install the service worker so the page is an installable PWA (manifest + SW).
@@ -292,8 +303,12 @@ function actionable(elem, activate, label) {
   };
 }
 
+// The open page's nav link in both bars carries aria-current, which also styles it.
 function setTab(name) {
-  document.querySelectorAll('nav.tabs a, aside.rail .rail-nav a').forEach(a => a.classList.toggle('active', a.dataset.tab === name));
+  for (const a of document.querySelectorAll('nav.tabs a, aside.rail .rail-nav a')) {
+    if (a.dataset.tab === name) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
+  }
 }
 
 // --- router ------------------------------------------------------------------

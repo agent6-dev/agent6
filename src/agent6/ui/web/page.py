@@ -83,13 +83,28 @@ _NAV_ITEMS = (
         '<circle cx="7" cy="17" r="1.8" fill="currentColor" stroke="none"/>',
     ),
 )
+
+
+def _icon(drawing: str) -> str:
+    """Return a 24-unit line icon drawn in the text colour, hidden from assistive technology."""
+    return (
+        '<svg class="ic" viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round" '
+        'stroke-linejoin="round" fill="none" stroke="currentColor" aria-hidden="true">'
+        f"{drawing}</svg>"
+    )
+
+
 _NAV_LINKS = "\n".join(
     f'<a href="{href}" data-tab="{tab}" title="{label}" aria-label="{label}">'
-    '<svg class="ic" viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round" '
-    'stroke-linejoin="round" fill="none" stroke="currentColor" aria-hidden="true">'
-    f"{drawing}</svg><span>{label}</span></a>"
+    f"{_icon(drawing)}<span>{label}</span></a>"
     for tab, href, label, drawing in _NAV_ITEMS
 )
+# A circle half filled; client.js names each button by the theme it switches to.
+_THEME_ICON = _icon(
+    '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/>'
+)
+# Two chevrons pointing left; the collapsed rail mirrors them.
+_COLLAPSE_ICON = _icon('<path d="M11.5 18l-6-6 6-6"/><path d="M18.5 18l-6-6 6-6"/>')
 
 # A hash-routed page: live views open an event stream, static views fetch a snapshot.
 PAGE_HTML = (
@@ -118,16 +133,23 @@ PAGE_HTML = (
     + _NAV_LINKS
     + r"""
   </nav>
-  <span class="rail-gap"></span>
-  <button onclick="toggleTheme()" title="theme">◐<span class="rail-label"> theme</span></button>
-  <button id="rail-toggle" onclick="toggleRail()" title="collapse the sidebar"><span id="rail-arrow">«</span><span class="rail-label"> collapse</span></button>
+  <div class="rail-foot">
+    <button type="button" class="rail-row theme-toggle">"""
+    + _THEME_ICON
+    + r"""<span class="rail-label">Theme</span></button>
+    <button type="button" class="rail-row" id="rail-toggle">"""
+    + _COLLAPSE_ICON
+    + r"""<span class="rail-label">Collapse</span></button>
+  </div>
 </aside>
 <div class="content">
 <header>
   <a class="brand" href="#/" aria-label="agent6 home"><img src="/favicon.svg" width="22" height="22" alt=""><b>agent6</b></a>
   <span class="crumb" id="crumb"></span>
   <span class="spacer"></span>
-  <button onclick="toggleTheme()" title="theme">◐</button>
+  <button type="button" class="theme-toggle">"""
+    + _THEME_ICON
+    + r"""</button>
 </header>
 
 <main id="view"><div class="empty">loading…</div></main>

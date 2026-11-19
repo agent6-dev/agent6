@@ -78,8 +78,8 @@ nav.tabs a {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
   color: var(--muted); font-size: 11px; gap: 2px; padding: 6px 0;
 }
-nav.tabs a.active { color: var(--accent); }
-.rail-nav .ic, nav.tabs .ic { width: 20px; height: 20px; flex: none; }
+nav.tabs a[aria-current=page] { color: var(--accent); }
+.ic { width: 20px; height: 20px; flex: none; }
 
 /* The content column is at least the screen's dynamic height, which follows a phone browser's
    bars: main fills what the header leaves. The run pane fills main, and on a desktop the git
@@ -298,7 +298,10 @@ dialog .err:empty { display: none; }
     position: fixed; top: 0; left: 0; right: 0;
     padding: 6px 12px; padding-top: calc(6px + env(safe-area-inset-top));
   }
-  header > button { min-width: var(--ctl-h); padding: 0 var(--ctl-px-sm); }
+  header > button {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: var(--ctl-h); padding: 0 var(--ctl-px-sm);
+  }
   main { padding: calc(var(--hdr-h) + env(safe-area-inset-top)) 0 calc(var(--nav-h) + 24px); }
   #toasts { left: anchor(left, 0px); bottom: anchor(--dock-top top, calc(var(--nav-h) + env(safe-area-inset-bottom))); }
   .card.scroll { max-height: 60vh; }
@@ -321,18 +324,23 @@ aside.rail { display: none; }
   }
   aside.rail .rail-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; padding: 6px 8px 16px 10px; color: inherit; }
   aside.rail .rail-brand b { color: var(--accent); }
-  aside.rail .rail-nav { display: flex; flex-direction: column; gap: 2px; }
-  aside.rail .rail-nav a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; color: var(--muted); }
-  aside.rail .rail-nav a:hover { background: var(--surface2); color: var(--text); }
-  aside.rail .rail-nav a.active { background: var(--surface2); color: var(--accent); }
-  aside.rail .rail-gap { flex: 1; }
+  /* The nav links, and the theme and collapse rows at the rail's foot: one row shape. */
+  aside.rail .rail-nav, aside.rail .rail-foot { display: flex; flex-direction: column; gap: 2px; }
+  aside.rail .rail-foot { margin-top: auto; }
+  aside.rail .rail-nav a, aside.rail .rail-row {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; color: var(--muted);
+  }
+  aside.rail .rail-row { min-height: 0; border: 0; background: none; font: inherit; }
+  aside.rail .rail-nav a:hover, aside.rail .rail-row:hover { background: var(--surface2); color: var(--text); }
+  aside.rail .rail-nav a[aria-current=page] { background: var(--surface2); color: var(--accent); }
   /* collapsed: an icon-only strip; labels and the brand name hide, icons centre */
   html.rail-min aside.rail { padding-left: 8px; padding-right: 8px; }
   html.rail-min aside.rail .rail-brand { justify-content: center; padding-left: 0; padding-right: 0; }
   html.rail-min aside.rail .rail-brand b,
   html.rail-min aside.rail .rail-nav a span,
   html.rail-min aside.rail .rail-label { display: none; }
-  html.rail-min aside.rail .rail-nav a { justify-content: center; padding: 10px 0; }
+  html.rail-min aside.rail .rail-nav a, html.rail-min aside.rail .rail-row { justify-content: center; padding: 10px 0; }
+  html.rail-min #rail-toggle .ic { transform: scaleX(-1); }
   .content { margin-left: var(--rail-w); }
   header { justify-content: flex-start; }
   header .brand, header > button { display: none; }  /* the rail owns brand + actions */

@@ -59,6 +59,74 @@ def test_navigation_icons_follow_bar_order_size_and_theme(
     assert not errors
 
 
+def test_the_theme_buttons_name_the_theme_they_switch_to(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Each theme button's name follows a press and a change of the system's scheme.
+
+    Both buttons were named "theme", whichever theme a press would bring.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.emulate_media(color_scheme="dark")
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    rail, header = page.locator("aside.rail .theme-toggle"), page.locator("header .theme-toggle")
+    expect(rail).to_have_accessible_name("Switch to light theme")
+    rail.click()
+    expect(rail).to_have_accessible_name("Switch to dark theme")
+    expect(header).to_have_attribute("aria-label", "Switch to dark theme")
+    rail.click()  # back to the system's scheme, which it follows from here
+    expect(rail).to_have_accessible_name("Switch to light theme")
+    page.emulate_media(color_scheme="light")
+    expect(rail).to_have_accessible_name("Switch to dark theme")
+    expect(header).to_have_attribute("aria-label", "Switch to dark theme")
+    assert not errors
+
+
+def test_the_collapse_button_says_whether_the_rail_is_expanded(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The collapse button carries aria-expanded and names what a press does.
+
+    Its row and the theme row keep their icons in the nav links' column, expanded and collapsed.
+    The button was a boxed « named "collapse the sidebar" in both states.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    toggle = page.locator("#rail-toggle")
+    icons = page.locator("aside.rail .ic")
+    lefts = "icons => icons.map(i => i.getBoundingClientRect().left)"
+    expect(toggle).to_have_attribute("aria-expanded", "true")
+    expect(toggle).to_have_accessible_name("Collapse the sidebar")
+    expect(icons).to_have_count(7)
+    assert len(set(icons.evaluate_all(lefts))) == 1
+    toggle.click()
+    expect(toggle).to_have_attribute("aria-expanded", "false")
+    expect(toggle).to_have_accessible_name("Expand the sidebar")
+    assert len(set(icons.evaluate_all(lefts))) == 1
+    page.reload()
+    expect(page.locator("#rail-toggle")).to_have_attribute("aria-expanded", "false")
+    assert not errors
+
+
+def test_the_open_pages_nav_link_is_the_current_page(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The open page's link in the rail and the tab bar carries aria-current="page"."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    current = page.locator("[aria-current=page]")
+    expect(current).to_have_text(["Sessions", "Sessions"])
+    page.locator("aside.rail a[data-tab='config']").click()
+    expect(current).to_have_text(["Config", "Config"])
+    assert not errors
+
+
 @pytest.mark.parametrize("route", ["#/session/pane-run-AAA111", "#/git", "#/files"])
 def test_a_desktop_pane_fills_the_screen_under_a_header_of_any_height(
     open_page: Callable[[int], tuple[Page, list[str]]],
