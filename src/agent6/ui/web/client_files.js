@@ -27,7 +27,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   // -- toolbar: the revision picker, the filter, the count ---------------------------
   const bar = el('div', 'files-bar page-pad row wrap'); app.appendChild(bar);
   const listHost = el('div', 'gpick-host');
-  const pick = gitPicker('revision', filesState.rev, (v) => { filesState.rev = v; setViewHash(filesHash()); loadTree(); }, listHost, [GIT_WORKTREE_PICK]);
+  const pick = gitPicker('revision', filesState.rev, (v) => { filesState.rev = v; setViewHash(filesHash()); relist(); }, listHost, [GIT_WORKTREE_PICK]);
   pick.root.appendChild(listHost); // the list opens under the field it searches
   const filter = el('input', 'filter'); filter.type = 'search'; filter.placeholder = 'filter files…'; filter.setAttribute('aria-label', 'filter files');
   const counts = el('span', 'muted files-counts');
@@ -38,8 +38,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   ignoredToggle.onclick = () => {
     showIgnored = !showIgnored; remember('a6-files-ignored', showIgnored ? 'on' : 'off');
     ignoredToggle.setAttribute('aria-pressed', String(showIgnored));
-    setViewHash(filesHash());
-    return loadTree();
+    return relist();
   };
   bar.appendChild(pick.root); bar.appendChild(filter); bar.appendChild(ignoredToggle); bar.appendChild(counts);
   const body = el('div', 'files-body'); app.appendChild(body);
@@ -99,21 +98,30 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     else tree.appendChild(treeView(buildTree(kept), fileRow, folderNote, !q && kept.length > 200, d => stateMark(treeFiles(d)), q ? null : filesState.folders));
     counts.textContent = (q ? kept.length + ' of ' : '') + fileCount(entries.length) + (truncated ? '+' : '');
   };
-  const loadTree = async (openPath = '') => {
+  const closeFile = () => { pane.innerHTML = ''; pane.appendChild(unopened); body.classList.remove('viewing'); };
+  // A new listing (another revision, ignored files shown or hidden) keeps the open file open
+  // when it still lists it; the file stays on screen until the listing answers, and the hash
+  // names it again only then.
+  const relist = () => {
+    query = new URLSearchParams(); setViewHash(filesHash(), true);
+    return loadTree(body.classList.contains('viewing') ? shown : '', true);
+  };
+  const loadTree = async (openPath = '', relisting = false) => {
     const n = ++loading;
     ignoredToggle.hidden = filesState.rev.rev !== GIT_WORKTREE;
     pane.dataset.key = ''; shown = null; rev = ''; ignored = false; entries = [];
-    pane.innerHTML = ''; pane.appendChild(unopened);
-    body.classList.remove('viewing');
+    if (!relisting) closeFile();
     tree.innerHTML = ''; tree.appendChild(el('div', 'empty', 'loading…'));
     try {
       const d = await getJSON('/api/git/tree?rev=' + encodeURIComponent(filesState.rev.rev) + (showIgnored && !ignoredToggle.hidden ? '&ignored=1' : ''));
       if (n !== loading || !app.isConnected) return;
       entries = d.files; truncated = d.truncated; rev = d.rev; ignored = !!d.ignored;
-    } catch (e) { if (n === loading && app.isConnected) { tree.innerHTML = ''; tree.appendChild(el('div', 'empty err', e.message)); } return; }
-    if (openPath) { reveal(openPath); shown = openPath; }
+    } catch (e) { if (n === loading && app.isConnected) { closeFile(); tree.innerHTML = ''; tree.appendChild(el('div', 'empty err', e.message)); } return; }
+    const file = entries.find(f => f.path === openPath) || (openPath && !relisting ? { path: openPath, kind: 'file', size: null } : null);
+    if (file) { reveal(file.path); shown = file.path; }
+    else if (relisting) closeFile();
     paintTree();
-    if (openPath) await showFile(entries.find(f => f.path === openPath) || { path: openPath, kind: 'file', size: null }, false, true);
+    if (file) await showFile(file, false, true);
   };
   filter.oninput = paintTree;
   // Open a file's folders, so its row shows in every later paint of the tree.

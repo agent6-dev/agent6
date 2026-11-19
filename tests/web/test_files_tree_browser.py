@@ -19,6 +19,7 @@ pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
 open_page = test_web_browser.open_page
 git_port = test_web_browser.git_port
+files_port = test_web_browser.files_port
 
 DEEP = "deep/alpha-folder-name/beta-folder-name/gamma"
 LEAF = DEEP + "/a-long-file-name-for-a-narrow-tree.txt"
@@ -391,4 +392,30 @@ def test_a_long_file_path_wraps_after_a_slash(
     }""")
     assert len(lines) > 1 and "".join(lines) == leaf, lines
     assert all(line.endswith("/") for line in lines[:-1]), lines
+    assert not errors
+
+
+def test_a_revision_change_keeps_the_open_file_where_it_is_listed(
+    open_page: Callable[[int], tuple[Page, list[str]]], files_port: int
+) -> None:
+    """Picking another revision closed the open file, though the new revision listed it."""
+    from playwright.sync_api import expect
+
+    def pick(label: str) -> None:
+        page.locator(".files-bar .gpick input").click()
+        page.locator(".gpick-list .ac-item", has_text=label).click()
+
+    base = f"http://127.0.0.1:{files_port}/#/files/"
+    page, errors = open_page(files_port)
+    page.goto(base + "HEAD/b.txt")
+    page.wait_for_selector(".files-view [data-line='3']")
+    pick("working tree")
+    expect(page).to_have_url(base + "WORKTREE/b.txt")
+    expect(page.locator(".files-view [data-line='4']")).to_contain_text("four")
+    expect(page.locator(_row("b.txt"))).to_have_attribute("aria-selected", "true")
+    page.goto(base + "HEAD/dir/f.txt")
+    expect(page.locator(".files-head .gf-path")).to_have_text("dir/f.txt")
+    pick("working tree")  # the rename to dir/g.txt is staged
+    expect(page).to_have_url(base + "WORKTREE")
+    expect(page.locator(".files-view .empty")).to_have_text("click a file to read it")
     assert not errors

@@ -136,7 +136,7 @@ def _run(scenario: str) -> None:
 
 @pytest.mark.parametrize("failed", [False, True])
 def test_revision_change_discards_pending_content_and_errors(failed: bool) -> None:
-    """A late response cannot restore the file cleared by a revision change."""
+    """A late response cannot paint over the file a revision change opened again."""
     reply = (
         "reject(new Error('stale error'))"
         if failed
@@ -149,15 +149,40 @@ const opening = view.querySelector('.gf').onclick();
 await tick();
 chooseRevision({rev: 'new', label: 'new'});
 await tick();
-assert.equal(pending.length, 1);
+assert.equal(pending.length, 2, 'the listed file did not open again');
+assert.ok(pending[1].url.includes('rev=new'));
 pending[0]."""
         + reply
         + """;
 await opening;
 assert.ok(!view.querySelector('.files-view').textContent.includes('stale'), 'old response painted');
-assert.ok(!view.querySelector('.files-body').classList.contains('viewing'), 'old file stayed open');
+pending[1].resolve({text: 'new content', lines: 1, spans: []});
+await tick();
+assert.ok(view.querySelector('.files-view').textContent.includes('new content'));
+assert.equal(location.hash, '#/files/new/a.txt');
 """
     )
+
+
+def test_a_revision_change_closes_a_file_the_new_listing_lacks() -> None:
+    """The open file stays open only where the new revision lists it."""
+    _run("""
+const listing = getJSON;
+getJSON = async url => url.startsWith('/api/git/tree?rev=new')
+  ? {rev: 'new', files: [{path: 'b.txt', kind: 'file', size: 5}], truncated: false}
+  : listing(url);
+await renderFiles(1);
+const opening = view.querySelector('.gf').onclick();
+await tick();
+pending[0].resolve({text: 'a', lines: 1, spans: []});
+await opening;
+assert.ok(view.querySelector('.files-body').classList.contains('viewing'));
+chooseRevision({rev: 'new', label: 'new'});
+await tick();
+assert.ok(!view.querySelector('.files-body').classList.contains('viewing'), 'a file stayed open');
+assert.equal(pending.length, 1);
+assert.equal(location.hash, '#/files/new');
+""")
 
 
 def test_file_links_decode_the_path_and_publish_selection() -> None:
