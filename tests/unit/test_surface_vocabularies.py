@@ -15,11 +15,11 @@ exemption is derived from the palettes rather than written down twice.
 from __future__ import annotations
 
 import re
-from importlib import resources
 from typing import get_args
 
 from agent6.ui.cli import console_render  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.tui import conversation  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.web import page
 from agent6.viewmodel import transcript_style
 
 NAMES = frozenset(get_args(transcript_style.StyleName))
@@ -35,7 +35,7 @@ def test_the_terminals_cover_the_vocabulary_exactly() -> None:
 
 def test_the_web_styles_every_name_the_terminals_colour() -> None:
     """The client builds the class name from the style, so a missing rule is silent plain text."""
-    css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
+    css = page.STYLES_CSS
     styled = frozenset(re.findall(r"\.s-([a-z-]+)", css))
 
     assert styled >= NAMES - UNSTYLED
@@ -63,7 +63,7 @@ def test_every_status_level_reaches_every_surface() -> None:
     assert frozenset(common._LEVEL_SGR) == levels
     assert frozenset(theme.STATUS_LEVEL_STYLE) == levels
 
-    css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
+    css = page.STYLES_CSS
     assert frozenset(re.findall(r"\.pill\.([a-z]+)", css)) >= levels - {"neutral"}
 
 

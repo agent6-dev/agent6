@@ -1,0 +1,35 @@
+.cfg-bar { margin-bottom: 8px; }
+.cfg-bar input.filter { flex: 1 1 auto; width: auto; min-width: 0; }
+.cfg-bar button { flex: none; white-space: nowrap; }
+.cfg-bar button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
+.cfg-point + .cfg-point { margin-top: 4px; }
+.cfg-section { margin-top: 10px; }
+.cfg-section > summary { cursor: pointer; font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 4px 0; }
+.cfg { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cfg td, .cfg th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.cfg .key { font-family: var(--mono); word-break: break-all; }
+.cfg .val { font-family: var(--mono); word-break: break-word; }
+.cfg tr.mod .key { color: var(--accent); }
+.cfg .src { color: var(--muted); white-space: nowrap; }
+.cfg-combo { position: relative; }
+.cfg-options { max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); }
+.cfg-options[hidden] { display: none; }
+.cfg-option, .cfg-catalog { padding: 6px 10px; overflow-wrap: anywhere; }
+.cfg-option { cursor: pointer; font-family: var(--mono); }
+.cfg-option:hover, .cfg-option[aria-selected=true] { background: var(--surface); color: var(--accent); }
+.cfg-option[aria-selected=true] { outline: 1px solid var(--accent); outline-offset: -1px; }
+/* The config editor's description: a readable measure, code spans as code. */
+.cfg-desc { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0 0 12px; max-width: 62ch; }
+.cfg-desc code {
+  font-family: var(--mono); font-size: 12px; color: var(--text);
+  background: var(--surface2); padding: 0 3px; border-radius: 3px;
+}
+
+@media (max-width: 780px) {
+  /* Config: the three columns stack, the setting over its value and source, so
+     a long key wraps at a dot instead of mid-word in a sliver of a column. */
+  .cfg tr { display: grid; grid-template-columns: 1fr auto; border-bottom: 1px solid var(--border); }
+  .cfg th:first-child, .cfg td.key { grid-column: 1 / -1; }
+  .cfg .key { word-break: normal; overflow-wrap: anywhere; }
+  .cfg td, .cfg th { border-bottom: 0; padding: 4px 8px; }
+}

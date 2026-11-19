@@ -3,7 +3,7 @@
 """Hold the web page: HTML, CSS and vanilla JS, served as one string at `GET /`.
 
 The page renders the wire form the JSON and SSE endpoints emit; the domain logic
-stays in the Python read side. The `client*.js` files and `styles.css` beside this
+stays in the Python read side. The `client*.js` and `styles*.css` files beside this
 module are read once at import time and spliced in, so `PAGE_HTML` is a constant
 the server serves from memory and tests assert against.
 """
@@ -28,7 +28,18 @@ _CLIENT_FILES = (
     "client_files.js",
 )
 CLIENT_JS = "".join(_ASSETS.joinpath(name).read_text(encoding="utf-8") for name in _CLIENT_FILES)
-STYLES_CSS = _ASSETS.joinpath("styles.css").read_text(encoding="utf-8")
+# One style block, concatenated in declaration order: the shared base (tokens, shell, controls,
+# composers), then each page's own rules, which may override the base.
+_STYLE_FILES = (
+    "styles.css",
+    "styles_run.css",
+    "styles_review.css",
+    "styles_config.css",
+    "styles_source.css",
+    "styles_git.css",
+    "styles_files.css",
+)
+STYLES_CSS = "".join(_ASSETS.joinpath(name).read_text(encoding="utf-8") for name in _STYLE_FILES)
 
 _NAV_ITEMS = (
     (

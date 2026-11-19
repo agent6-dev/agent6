@@ -24,17 +24,6 @@
 }
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 input[type=checkbox] { accent-color: var(--accent); }
-.finding { display: block; white-space: normal; overflow-wrap: anywhere; min-width: 0; margin: 10px 0; padding: 12px; border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: 6px; background: var(--surface); color: var(--text); font: 13px/1.5 system-ui, sans-serif; }
-.finding > span { display: block; }
-.finding .row { display: flex; gap: 10px; margin-top: 8px; }
-.finding-title { font-weight: 600; }
-.finding-detail, .finding-history { white-space: pre-wrap; margin: 6px 0; }
-.finding-selected { outline: 2px solid var(--accent); outline-offset: 2px; }
-.finding-form { display: grid; gap: 8px; margin-top: 10px; }
-.finding-form[hidden] { display: none; }
-.finding-form .field { min-width: 0; width: 100%; }
-.finding-form textarea { min-height: 70px; }
-.finding-counts { font-weight: 600; margin-bottom: 8px; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -146,86 +135,6 @@ main { padding: 0; }
 .kv .k { color: var(--muted); }
 .kv .v.task { white-space: pre-line; }
 
-.bar { height: 8px; background: var(--surface2); border-radius: 999px; overflow: hidden; }
-.bar > span { display: block; height: 100%; background: var(--accent); }
-.bar.warn > span { background: var(--warn); }
-
-.tree { font-family: var(--mono); font-size: 13px; }
-.tree .node { padding: 1px 0; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
-.tree .cursor { color: var(--accent); font-weight: 700; }
-.st-passed { color: var(--ok); } .st-failed { color: var(--err); }
-.st-in_progress { color: var(--warn); } .st-pending { color: var(--muted); }
-.st-skipped, .st-obsolete { color: var(--muted); text-decoration: line-through; }
-
-/* Tool calls: each call's name over one clipped line of its args and result
-   (the full text on hover), so the narrow details drawer never breaks a path
-   mid-word. */
-.calls .call { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-.calls .call-head { display: flex; align-items: center; gap: 8px; }
-.calls .name { font-family: var(--mono); }
-.calls .call-head .more-note { margin-left: auto; font-size: 12px; }
-.calls .args {
-  padding-left: 16px; color: var(--muted); font-family: var(--mono); font-size: 12px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.dot.ok { background: var(--ok); } .dot.bad { background: var(--err); }
-
-.log { font-family: var(--mono); font-size: 12px; line-height: 1.4; }
-.log div { white-space: pre-wrap; word-break: break-word; }
-
-.plan { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 0; }
-.diff { font-family: var(--mono); font-size: 12px; }
-.diff .add { color: var(--ok); } .diff .del { color: var(--err); } .diff .hunk { color: var(--accent2); }
-.diff .meta { color: var(--muted); }
-/* Line numbers are drawn from `data-n`, never in the text, so copied code carries none. */
-.numbered .g { display: inline-block; width: var(--gw, 3ch); margin-right: 1ch; text-align: right; color: var(--muted); font-style: normal; user-select: none; }
-.numbered .g::before { content: attr(data-n); }
-.diff.numbered .dl, .src .sl { display: block; }
-.quotable .g[data-n]:not([data-n=""]) { cursor: pointer; }
-.quotable .g[data-n]:not([data-n=""]):hover { color: var(--accent); text-decoration: underline; }
-.diff.numbered .dl.add { background: color-mix(in srgb, var(--ok) 12%, transparent); }
-.diff.numbered .dl.del { background: color-mix(in srgb, var(--err) 12%, transparent); }
-.src { font-family: var(--mono); font-size: 12px; }
-.src .sl.changed { background: color-mix(in srgb, var(--warn) 18%, transparent); }
-.src .sl.changed .g { color: var(--warn); }
-.dsplit { font-family: var(--mono); font-size: 12px; }
-.ds-row { display: grid; grid-template-columns: 1fr 1fr; }
-.ds-cell { min-width: 0; white-space: pre-wrap; word-break: break-word; padding-right: 6px; border-left: 1px solid var(--border); }
-.ds-cell.add { background: color-mix(in srgb, var(--ok) 12%, transparent); }
-.ds-cell.del { background: color-mix(in srgb, var(--err) 12%, transparent); }
-.ds-cell.ds-empty { background: var(--surface2); }
-.ds-head { color: var(--text); white-space: pre-wrap; word-break: break-word; }
-.ds-head.hunk { color: var(--accent2); } .ds-head.meta { color: var(--muted); }
-.hl-keyword { color: var(--hl-keyword); } .hl-function { color: var(--hl-function); } .hl-type { color: var(--hl-type); }
-.hl-string { color: var(--hl-string); } .hl-comment { color: var(--hl-comment); font-style: italic; }
-.hl-constant { color: var(--hl-constant); } .hl-number { color: var(--hl-number); } .hl-variable { color: var(--hl-variable); }
-.hl-property { color: var(--hl-property); } .hl-operator { color: var(--hl-operator); } .hl-punctuation { color: var(--hl-punctuation); }
-.hl-attribute { color: var(--hl-attribute); } .hl-tag { color: var(--hl-tag); }
-
-/* conversation: the folded transcript, the same items (and semantic span
-   styles) the CLI stream and the TUI conversation view render. */
-.conv { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
-.conv .ci { padding: 2px 4px; margin: 0 -4px 8px; white-space: pre-wrap; word-break: break-word; border-radius: 6px; }
-.conv .ci.exp { cursor: pointer; }
-/* hover-capable devices only: on touch, a tap leaves the hover background stuck */
-@media (hover: hover) { .conv .ci.exp:hover { background: var(--surface2); } }
-.conv .s-thinking { color: var(--muted); font-style: italic; }
-.conv .s-think-marker { color: var(--accent); }
-.conv .s-call { color: var(--accent); font-weight: 600; }
-.conv .s-verify { color: var(--warn); font-weight: 600; }
-.conv .s-arg, .conv .s-detail, .conv .s-tail, .conv .s-done-detail { color: var(--muted); }
-.conv .s-more, .conv .s-marker { color: var(--muted); font-style: italic; }
-.conv .s-ok { color: var(--ok); }
-.conv .s-fail { color: var(--err); }
-.conv .s-commit { color: var(--accent2); }
-.conv .s-done-ok { color: var(--ok); font-weight: 700; }
-.conv .s-done-fail { color: var(--warn); font-weight: 700; }
-.conv .s-done-neutral { font-weight: 700; }
-.conv .s-task { color: var(--accent); font-weight: 700; }
-.conv .s-operator { color: var(--ok); font-weight: 600; }
-.conv-live { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; }
-.conv-live .lt { color: var(--accent); font-weight: 600; }
 /* The composer: docked under the conversation, the web analogue of the TUI's
    steer bar (steer a live run; type the follow-up a finished run resumes with). */
 .composer { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px;
@@ -264,33 +173,7 @@ main { padding: 0; }
 .card-head-row { display: flex; align-items: baseline; gap: 8px; }
 .card-head-row h2 { flex: 1; }
 button.mini { min-height: 26px; padding: 2px 10px; font-size: 12px; border-radius: 6px; color: var(--muted); }
-/* The conversation card: header fixed, the body scrolls inside .conv-box (so
-   the detail toggle stays reachable while following the tail). */
-.conv-card { display: flex; flex-direction: column; }
-/* x hidden: .ci's -4px hover-bleed margins otherwise leave a permanent
-   horizontal scrollbar; item text always wraps, so x never scrolls for real. */
-.conv-box { overflow: hidden auto; max-height: 62vh; }
 
-.cfg-bar { margin-bottom: 8px; }
-.cfg-bar input.filter { flex: 1 1 auto; width: auto; min-width: 0; }
-.cfg-bar button { flex: none; white-space: nowrap; }
-.cfg-bar button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
-.cfg-point + .cfg-point { margin-top: 4px; }
-.cfg-section { margin-top: 10px; }
-.cfg-section > summary { cursor: pointer; font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 4px 0; }
-.cfg { width: 100%; border-collapse: collapse; font-size: 13px; }
-.cfg td, .cfg th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
-.cfg .key { font-family: var(--mono); word-break: break-all; }
-.cfg .val { font-family: var(--mono); word-break: break-word; }
-.cfg tr.mod .key { color: var(--accent); }
-.cfg .src { color: var(--muted); white-space: nowrap; }
-.cfg-combo { position: relative; }
-.cfg-options { max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); }
-.cfg-options[hidden] { display: none; }
-.cfg-option, .cfg-catalog { padding: 6px 10px; overflow-wrap: anywhere; }
-.cfg-option { cursor: pointer; font-family: var(--mono); }
-.cfg-option:hover, .cfg-option[aria-selected=true] { background: var(--surface); color: var(--accent); }
-.cfg-option[aria-selected=true] { outline: 1px solid var(--accent); outline-offset: -1px; }
 input.filter {
   width: 100%; font: inherit; color: var(--text); background: var(--surface2);
   border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-height: 42px;
@@ -321,12 +204,6 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 .advanced summary { cursor: pointer; list-style: none; width: max-content; font-size: 12px; color: var(--muted); }
 .advanced summary::-webkit-details-marker { display: none; }
 .advanced[open] summary { color: var(--text); }
-.prompt-box { background: var(--surface2); border-left: 3px solid var(--warn); padding: 12px; margin-bottom: 10px; }
-.prompt-box .q { margin-bottom: 8px; white-space: pre-wrap; }
-.prompt-box .cmd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; background: var(--surface); border: 1px solid var(--surface2); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; white-space: pre; overflow-x: auto; }
-.prompt-box .cmd .tok-str { color: var(--warn); }
-.prompt-box .cmd .tok-flag { color: var(--accent); }
-.prompt-box .cmd .tok-op { font-weight: 700; }
 /* One stack, so a second message never lands on top of the first. */
 #toasts {
   position: fixed; left: 50%; transform: translateX(-50%); z-index: 50;
@@ -358,12 +235,6 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
   max-height: 90vh; overflow: auto;
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
 }
-/* The config editor's description: a readable measure, code spans as code. */
-.cfg-desc { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0 0 12px; max-width: 62ch; }
-.cfg-desc code {
-  font-family: var(--mono); font-size: 12px; color: var(--text);
-  background: var(--surface2); padding: 0 3px; border-radius: 3px;
-}
 
 @media (max-width: 780px) {
   nav.tabs { display: flex; }
@@ -380,12 +251,6 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
   main { padding: calc(var(--hdr-h) + env(safe-area-inset-top)) 0 calc(var(--nav-h) + 24px); }
   .card.scroll { max-height: 60vh; }
   header .desktop-only { display: none; }
-  /* Config: the three columns stack, the setting over its value and source, so
-     a long key wraps at a dot instead of mid-word in a sliver of a column. */
-  .cfg tr { display: grid; grid-template-columns: 1fr auto; border-bottom: 1px solid var(--border); }
-  .cfg th:first-child, .cfg td.key { grid-column: 1 / -1; }
-  .cfg .key { word-break: normal; overflow-wrap: anywhere; }
-  .cfg td, .cfg th { border-bottom: 0; padding: 4px 8px; }
 }
 
 /* --- desktop: a persistent left nav rail (>=781px); phones keep the bottom
@@ -425,12 +290,8 @@ aside.rail { display: none; }
   .page-pad { margin: 0 22px; }
 }
 
-/* --- run dashboard: conversation-primary. The conversation is the page: it
-   fills the view and scrolls internally, the status/summary sits on top, and
-   the composer docks at the bottom. The task graph, budget, tool calls,
-   latest commit, and event log live in a collapsible, drag-resizable details
-   drawer on the left. Below 781px everything stacks and the page scrolls
-   (the mobile widget menu picks what is shown). --- */
+/* Docked composers: the new-work, create-machine and machine docks and the run
+   view's composer. */
 .composer.dock {
   border-top: 1px solid var(--border); margin: 0; background: var(--surface);
   padding: 6px 22px calc(10px + env(safe-area-inset-bottom));
@@ -451,30 +312,7 @@ aside.rail { display: none; }
   .resize-handle { display: block; flex: none; width: 6px; cursor: col-resize; }
   .resize-handle:hover, .resize-handle.dragging, .resize-handle:focus-visible { background: var(--accent); }
   .resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .run-app { display: flex; flex-direction: column; height: calc(100vh - 42px); min-height: 0; }
-  /* prompts / controls / status keep their natural height; only the body pane
-     flexes (without this the column shrinks them and clips the status kv) */
-  .run-app > * { flex: none; }
-  .run-app > .page-pad { max-height: 40vh; overflow: auto; } /* a prompt pile can't push the composer off-screen */
-  .run-app .run-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
-  .run-app .drawer {
-    /* block, not grid: a definite-height grid distributes its rows and
-       compresses the cards (overflow:hidden makes their minimum size 0);
-       block children keep natural heights and the drawer scrolls them */
-    display: block;
-    width: var(--drawer-w, 340px); min-width: 220px; max-width: 60vw;
-    overflow: auto; border-right: 1px solid var(--border); flex: none;
-  }
-  .run-app .drawer.closed { display: none; }
-  /* One scroll surface: the drawer itself; its cards lose their own caps
-     (except the event log, which keeps a follow-the-tail window). */
-  .run-app .drawer .card.scroll { max-height: none; overflow: visible; }
-  .run-app .drawer .card-log .card-body { max-height: 45vh; overflow: auto; }
-  .run-app .drawer.closed + .resize-handle { display: none; }
-  .run-app .card-conv { flex: 1 1 auto; min-width: 0; }
-  .run-app .card-conv .conv-box { flex: 1 1 auto; min-height: 0; max-height: none; }
 }
-.wmenu-btn, .wmenu { display: none; } /* desktop: the drawer holds the widgets */
 @media (max-width: 780px) {
   /* the composer rides above the tab bar; content padding keeps the page tail
      reachable under it */
@@ -492,228 +330,6 @@ aside.rail { display: none; }
   /* No nested scrolling on a phone: an inner scroller traps the page scroll,
      so every card flows at natural height and the page is the one scroller. */
   .card.scroll, .conv-box { max-height: none !important; overflow: visible; }
-  /* The run view shows one widget at a time (the widget menu picks it):
-     stacked, the transcripts and the event log make the page a mile long.
-     Scoped to .card: the menu's own buttons carry data-w as their choice id. */
-  .run-app.paged .card[data-w] { display: none; }
-  .run-app.paged .card[data-w].w-active { display: block; }
-  /* the widget menu button rides in the top bar, right of the theme toggle
-     (the run view mounts it there), so it shares the theme button's skin */
-  .wmenu-btn { display: block; }
-  .wmenu {
-    position: fixed; z-index: 21; right: 12px; min-width: 170px;
-    top: calc(var(--hdr-h) + env(safe-area-inset-top) + 4px); /* just under the fixed header */
-    display: flex; flex-direction: column; background: var(--surface);
-    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
-    box-shadow: 0 8px 24px rgba(0,0,0,.45);
-  }
-  .wmenu button { border: 0; border-radius: 0; text-align: left; background: none; }
-  .wmenu button.w-on { color: var(--accent); }
-  .details-btn { display: none; } /* the drawer is a desktop shape */
   .composer .hint { display: none; } /* the keyboard's enter key says it; space is tight */
 }
 button.active { border-color: var(--accent); color: var(--accent); }
-
-/* --- git: the commit graph on the left, a commit or the compare on the right. The
-   lane SVG is exactly one row tall and rows stack with no gap, so a lane's line runs
-   unbroken from row to row. Below 781px the side panel opens over the graph. --- */
-.git-bar { position: relative; margin-top: 10px; margin-bottom: 10px; }
-.git-branch { gap: 6px; flex-wrap: wrap; }
-.git-commit { gap: 8px; align-items: flex-start; margin: 8px 0; }
-.git-commit textarea { flex: 1 1 auto; min-height: 44px; }
-.gf-acts { display: inline-flex; gap: 4px; margin-left: auto; }
-.git-counts { font-size: 12px; }
-.gc-row { display: flex; align-items: center; gap: 10px; height: 30px; padding-right: 12px; cursor: pointer; }
-@media (hover: hover) { .gc-row:hover { background: var(--surface2); } }
-.gc-row.sel { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
-.gc-lanes { flex: none; display: block; margin-left: 6px; }
-.gc-lanes path { fill: none; stroke-width: 2; }
-.gc-dot { fill: currentColor; stroke-width: 2; }
-.gc-lanes .gc-dot { fill: var(--text); }
-.gc-lanes .gc-dot.merge { fill: var(--bg); }
-.gc-lanes .gc-dot.wt { fill: var(--bg); stroke-dasharray: 2 2; }
-.gc-wt .gc-text { font-weight: 600; }
-.gc-subj { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
-.gc-author { flex: none; width: 110px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
-.gc-when { flex: none; font-size: 12px; white-space: nowrap; }
-.git-more { display: block; margin: 12px auto; }
-.gref {
-  display: inline-block; font-size: 11px; line-height: 16px; padding: 0 7px; margin-right: 5px;
-  border-radius: 10px; border: 1px solid var(--accent); color: var(--accent); vertical-align: 1px;
-  max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
-}
-.gref.head { background: var(--accent); color: #05121f; font-weight: 600; }
-.gref.remote { border-color: var(--accent2); color: var(--accent2); }
-.gref.tag { border-color: var(--warn); color: var(--warn); }
-.gref.agent6 { border-color: var(--muted); color: var(--muted); }
-.gref.wt { border-style: dashed; }
-.git-side-head { gap: 8px; padding: 10px 16px 0; }
-.git-side-head h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
-.git-back { display: none; }
-.gd-subject { font-weight: 600; margin: 8px 0; overflow-wrap: anywhere; }
-.gd-meta { margin: 6px 0 10px; }
-.gd-meta .v { overflow-wrap: anywhere; }
-.gd-meta button.mini { margin-right: 4px; }
-.gd-actions { margin-bottom: 10px; }
-.gd-body { font: 13px/1.5 system-ui, sans-serif; white-space: pre-wrap; margin: 0 0 12px; padding: 8px 10px; border-left: 2px solid var(--border); color: var(--text); }
-.gf-head { align-items: center; gap: 8px; margin-bottom: 4px; }
-.gf-head .gf-count { flex: 1; margin: 0; }
-.gf-count { font-size: 12px; margin-bottom: 4px; }
-.gview { display: inline-flex; }
-.gview button.mini { border-radius: 0; }
-.gview button.mini:first-child { border-radius: 6px 0 0 6px; }
-.gview button.mini:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
-.gview button.mini.active { position: relative; z-index: 1; } /* its accent edge over the neighbour's border */
-.gtree-dir { display: flex; align-items: center; gap: 6px; padding: 6px 4px; border-top: 1px solid var(--border); cursor: pointer; font-size: 12.5px; }
-@media (hover: hover) { .gtree-dir:hover { background: var(--surface2); } }
-.gtree-caret { flex: none; width: 1em; text-align: center; color: var(--muted); }
-.gtree-caret.folded { transform: rotate(-90deg); }
-.gtree-name { font-family: var(--mono); font-weight: 600; overflow-wrap: anywhere; }
-.gtree-note { flex: none; margin-left: auto; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
-.gtree-dir, .gtree .gf { padding-left: calc(4px + var(--depth, 0) * 14px); }
-.gf-note { font-size: 12px; margin: 4px 0; }
-.gf { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-top: 1px solid var(--border); cursor: pointer; }
-@media (hover: hover) { .gf:hover { background: var(--surface2); } }
-.gf-st { flex: none; font-family: var(--mono); font-weight: 700; font-size: 12px; width: 1.6em; text-align: center; border-radius: 4px; border: 1px solid var(--border); }
-.gf-st.st-A { color: var(--ok); border-color: var(--ok); }
-.gf-st.st-M { color: var(--warn); border-color: var(--warn); }
-.gf-st.st-D { color: var(--err); border-color: var(--err); }
-.gf-st.st-R, .gf-st.st-T { color: var(--accent); border-color: var(--accent); }
-.gf-path { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
-.gf-counts { flex: none; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
-.gf-counts .add { color: var(--ok); } .gf-counts .del { color: var(--err); }
-.git-diff { display: none; }
-.git-body.diffing > .git-graph, .git-body.diffing > .git-side { display: none; }
-.git-body.diffing > .git-diff { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; }
-.git-diff-head { flex: none; flex-wrap: wrap; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
-.git-diff-head .gf-path { flex: 1 1 200px; }
-.git-diff-head a.mini { display: inline-block; padding: 3px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; text-decoration: none; }
-.git-diff-pos { font-size: 12px; white-space: nowrap; }
-.git-diff-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px; }
-.git-img { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 4px 0 12px; }
-.git-img figure { margin: 0; padding: 8px; min-width: 0; border: 1px solid var(--border); border-radius: 8px; }
-.git-img figcaption { font-size: 12px; margin-bottom: 6px; overflow-wrap: anywhere; }
-.git-img img { display: block; max-width: 100%; max-height: 60vh; margin: 0 auto; background: repeating-conic-gradient(var(--surface2) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
-.gcmp-pick { display: flex; gap: 8px; align-items: center; margin: 8px 0 4px; }
-.gcmp-pick button.mini { flex: none; min-height: 42px; }
-.gcmp-sum { font-size: 12px; margin: 10px 0 8px; overflow-wrap: anywhere; }
-.gpick { flex: 1 1 0; min-width: 0; }
-.gpick-host { position: relative; }
-.gpick-list {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 40; margin-top: 2px; padding: 4px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-  box-shadow: 0 6px 24px rgba(0,0,0,.3); max-height: 300px; overflow-y: auto;
-}
-.gpick-list .ac-item { display: flex; align-items: center; gap: 4px; }
-.gpick-list .ac-item > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gpick-list .ac-item > span:nth-child(2) { flex: 1; min-width: 0; }
-.gfilter {
-  position: absolute; top: 100%; left: 0; z-index: 40; margin-top: 6px; padding: 10px;
-  width: min(440px, calc(100vw - 32px)); background: var(--surface); border: 1px solid var(--border);
-  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.35);
-}
-.gfilter-groups { gap: 6px 14px; margin-bottom: 8px; font-size: 13px; }
-.gfilter-group, .gfilter-item { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-.gfilter-list { max-height: 40vh; overflow-y: auto; margin-top: 8px; }
-.gfilter-item { display: flex; padding: 3px 0; font-size: 13px; }
-.gfilter-item.off { opacity: .5; }
-.gfilter-item .gref { margin-right: 0; }
-/* --- files: the tree on the left, one file on the right; below 781px the file opens over
-   the tree. --- */
-.files-bar { margin-top: 10px; margin-bottom: 10px; gap: 8px; }
-.files-bar .gpick { flex: 1 1 220px; }
-.files-bar input.filter { flex: 1 1 160px; width: auto; min-width: 0; }
-.files-counts { font-size: 12px; white-space: nowrap; }
-.gf.sel { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
-.files-head { flex: none; flex-wrap: wrap; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
-.files-head .gf-path { flex: 1 1 200px; }
-.files-note { font-size: 12px; white-space: nowrap; }
-.files-text { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px; }
-.files-back, .files-tree-toggle { display: none; }
-.md-view { max-width: 80ch; margin: 0 auto; padding: 12px 0 32px; line-height: 1.65; overflow-wrap: anywhere; }
-.md-view h1, .md-view h2, .md-view h3, .md-view h4, .md-view h5, .md-view h6 { line-height: 1.3; margin: 1.4em 0 .6em; scroll-margin-top: 16px; }
-.md-view h1 { font-size: 2em; }
-.md-view h2 { font-size: 1.5em; }
-.md-view h1, .md-view h2 { border-bottom: 1px solid var(--border); padding-bottom: .3em; }
-.md-view > :first-child { margin-top: 0; }
-.md-view p, .md-view ul, .md-view ol, .md-view blockquote, .md-view pre, .md-view table { margin: 0 0 1em; }
-.md-view ul, .md-view ol { padding-left: 1.8em; }
-.md-view li + li { margin-top: .25em; }
-.md-view li > ul, .md-view li > ol { margin-bottom: 0; }
-.md-view a { text-decoration: underline; }
-.md-view blockquote { margin-left: 0; padding: .3em 1em; border-left: 3px solid var(--border); color: var(--muted); }
-.md-view blockquote > :last-child { margin-bottom: 0; }
-.md-view code { padding: .15em .3em; border-radius: 4px; background: var(--surface2); font-size: .9em; }
-.md-view pre { padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); white-space: pre; overflow-x: auto; word-break: normal; overflow-wrap: normal; }
-.md-view pre code { padding: 0; background: none; border-radius: 0; }
-.md-view table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
-.md-view th, .md-view td { border: 1px solid var(--border); padding: 6px 12px; }
-.md-view th, .md-view tr:nth-child(even) { background: var(--surface2); }
-.md-view img { max-width: 100%; height: auto; }
-.md-view hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
-.src:has(.blame-cell), .diff:has(.blame-cell) { width: max-content; min-width: 100%; }
-.src .blamed-line, .diff.numbered .blamed-line, .ds-cell.blamed-line { display: flex; white-space: pre; }
-.blamed-line > .source-code { flex: 1; }
-.blamed-line > .g { flex: none; }
-.blamed-line { flex-wrap: wrap; }
-/* order: a finding attached before blame still leaves the gutter beside the code. */
-.blamed-line > .finding { flex-basis: 100%; order: 1; }
-.dsplit:has(.blame-cell) { display: grid; grid-template-columns: repeat(2, minmax(max-content, 1fr)); width: max-content; min-width: 100%; }
-.dsplit:has(.blame-cell) .ds-row { grid-column: 1 / -1; grid-template-columns: subgrid; }
-.dsplit:has(.blame-cell) .ds-head { grid-column: 1 / -1; }
-.blame-cell { display: inline-flex; flex: none; width: 28ch; margin-left: 3ch; padding: 0 1ch; border-left: 2px solid var(--muted); color: var(--muted); user-select: none; font-weight: normal; }
-.blame-start { border-top-left-radius: 3px; }
-.blame-label { display: inline-flex; width: 100%; gap: 1ch; font-size: 11px; align-items: baseline; }
-.blame-commit { flex: none; color: inherit; }
-.blame-date { flex: none; }
-.blame-author { flex: 1; min-width: 0; max-width: 14ch; overflow: hidden; text-overflow: ellipsis; }
-.blame-hover { color: var(--text); border-color: var(--accent); background: var(--surface2); }
-.blame-card { position: fixed; z-index: 80; display: flex; flex-direction: column; gap: 6px; max-width: min(440px, calc(100vw - 16px)); padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); box-shadow: 0 4px 16px #0004; white-space: normal; overflow-wrap: anywhere; font: 12px/1.5 system-ui, sans-serif; }
-.blame-card[hidden] { display: none; }
-.files-blame.active, .diff-blame.active { color: var(--accent); border-color: var(--accent); }
-@media (max-width: 780px) { .blame-cell { margin-left: 1ch; } }
-.git-img.one { grid-template-columns: 1fr; }
-@media (min-width: 781px) {
-  .files-app { display: flex; flex-direction: column; height: calc(100vh - 42px); min-height: 0; }
-  .files-app > .files-bar, .files-app > .gpick-host { flex: none; }
-  .files-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
-  .files-tree { flex: none; width: var(--files-tree-w, 36%); min-width: 180px; max-width: calc(100% - 246px); overflow: auto; }
-  .files-tree-toggle { display: inline-block; }
-  .files-body.tree-closed > .files-tree, .files-body.tree-closed > .resize-handle { display: none; }
-  .files-view { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); }
-}
-@media (max-width: 780px) {
-  .files-view { display: none; }
-  .files-body.viewing > .files-view {
-    display: flex; flex-direction: column; position: fixed; left: 0; right: 0; z-index: 16; background: var(--bg);
-    top: calc(var(--hdr-h) + env(safe-area-inset-top)); bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
-  }
-  .files-back { display: inline-block; }
-}
-@media (min-width: 781px) {
-  .git-app { display: flex; flex-direction: column; height: calc(100vh - 42px); min-height: 0; }
-  .git-app > .git-bar { flex: none; }
-  .git-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
-  .git-graph { flex: 1 1 55%; min-width: 0; overflow: auto; }
-  .git-side { flex: 1 1 45%; min-width: 0; overflow: auto; border-left: 1px solid var(--border); }
-}
-@media (max-width: 780px) {
-  .gc-author { display: none; }
-  .gc-row { padding-right: 8px; gap: 8px; }
-  .git-side { display: none; }
-  .git-side.open {
-    display: block; position: fixed; left: 0; right: 0; z-index: 16; overflow: auto;
-    top: calc(var(--hdr-h) + env(safe-area-inset-top)); bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
-    background: var(--bg);
-  }
-  .git-back { display: inline-block; }
-  .git-body.diffing > .git-diff {
-    position: fixed; left: 0; right: 0; z-index: 16; background: var(--bg);
-    top: calc(var(--hdr-h) + env(safe-area-inset-top)); bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
-  }
-  .gref { max-width: 140px; }
-  .git-img { grid-template-columns: 1fr; }
-  /* base beside the swap button, head on its own row under them */
-  .gcmp-pick { display: grid; grid-template-columns: 1fr auto; }
-  .gcmp-pick .gpick:last-child { grid-column: 1 / -1; }
-}

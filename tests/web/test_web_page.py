@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Render snapshot: the composed web page is pinned byte-for-byte.
 
-`PAGE_HTML` splices the `client.js` / `styles.css` resources into the HTML
+`PAGE_HTML` splices the `client*.js` / `styles*.css` resources into the HTML
 template at import time; pinning its sha256 makes any byte drift in the page or
 its assets a deliberate, visible change reviewed alongside the edit that moved
 it.
@@ -21,8 +21,8 @@ import pytest
 
 from agent6.ui.web import page
 
-# sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "353a5fb38c7b7606d2361fd4dfc9954fb5c002e3262a6dfb21dfd271e8a7116d"
+# sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
+PAGE_SHA256 = "a3c590bac383605647ce1766c4b1068a217ce3f4c4b76c1f393ef2554595e8c3"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -130,7 +130,7 @@ def test_page_assets_load_non_empty() -> None:
     # An asset missing from the wheel would otherwise surface only at the release build.
 
     web = resources.files("agent6.ui.web")
-    for name in (*page._CLIENT_FILES, "styles.css"):
+    for name in (*page._CLIENT_FILES, *page._STYLE_FILES):
         assert web.joinpath(name).read_text(encoding="utf-8").strip(), f"{name} is empty"
 
 
@@ -232,7 +232,7 @@ def test_the_policy_line_breaks_only_between_its_settings() -> None:
     run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "const parts = s.policy.split(' · ');" in run
     assert "el('span', 'setting', part + (i < parts.length - 1 ? ' · ' : ''))" in run
-    css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
+    css = page.STYLES_CSS
     assert ".setting { display: inline-block; max-width: 100%; }" in css
 
 
@@ -250,7 +250,7 @@ def test_a_tool_call_clips_its_args_instead_of_breaking_words() -> None:
     """
     run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "const calls = el('div', 'calls');" in run and "const a = el('div', 'args');" in run
-    css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
+    css = page.STYLES_CSS
     rule = css[css.index(".calls .args {") :]
     rule = rule[: rule.index("}")]
     assert "white-space: nowrap" in rule and "text-overflow: ellipsis" in rule
@@ -259,7 +259,7 @@ def test_a_tool_call_clips_its_args_instead_of_breaking_words() -> None:
 
 def test_native_controls_take_the_page_theme() -> None:
     """The page declares its colour scheme per theme, so checkboxes and dropdowns follow it."""
-    css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
+    css = page.STYLES_CSS
     root, light = css.index(":root {"), css.index(":root.light {")
     assert "color-scheme: dark;" in css[root:light]
     assert "color-scheme: light;" in css[light : css.index("}", light)]

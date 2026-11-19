@@ -1,0 +1,120 @@
+/* The run view: task graph, budget, tool calls, event log, plan, conversation,
+   approval and question prompts, and the details drawer. */
+.bar { height: 8px; background: var(--surface2); border-radius: 999px; overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--accent); }
+.bar.warn > span { background: var(--warn); }
+
+.tree { font-family: var(--mono); font-size: 13px; }
+.tree .node { padding: 1px 0; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.tree .cursor { color: var(--accent); font-weight: 700; }
+.st-passed { color: var(--ok); } .st-failed { color: var(--err); }
+.st-in_progress { color: var(--warn); } .st-pending { color: var(--muted); }
+.st-skipped, .st-obsolete { color: var(--muted); text-decoration: line-through; }
+
+/* Tool calls: each call's name over one clipped line of its args and result
+   (the full text on hover), so the narrow details drawer never breaks a path
+   mid-word. */
+.calls .call { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.calls .call-head { display: flex; align-items: center; gap: 8px; }
+.calls .name { font-family: var(--mono); }
+.calls .call-head .more-note { margin-left: auto; font-size: 12px; }
+.calls .args {
+  padding-left: 16px; color: var(--muted); font-family: var(--mono); font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.dot.ok { background: var(--ok); } .dot.bad { background: var(--err); }
+
+.log { font-family: var(--mono); font-size: 12px; line-height: 1.4; }
+.log div { white-space: pre-wrap; word-break: break-word; }
+
+.plan { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 0; }
+
+/* conversation: the folded transcript, the same items (and semantic span
+   styles) the CLI stream and the TUI conversation view render. */
+.conv { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
+.conv .ci { padding: 2px 4px; margin: 0 -4px 8px; white-space: pre-wrap; word-break: break-word; border-radius: 6px; }
+.conv .ci.exp { cursor: pointer; }
+/* hover-capable devices only: on touch, a tap leaves the hover background stuck */
+@media (hover: hover) { .conv .ci.exp:hover { background: var(--surface2); } }
+.conv .s-thinking { color: var(--muted); font-style: italic; }
+.conv .s-think-marker { color: var(--accent); }
+.conv .s-call { color: var(--accent); font-weight: 600; }
+.conv .s-verify { color: var(--warn); font-weight: 600; }
+.conv .s-arg, .conv .s-detail, .conv .s-tail, .conv .s-done-detail { color: var(--muted); }
+.conv .s-more, .conv .s-marker { color: var(--muted); font-style: italic; }
+.conv .s-ok { color: var(--ok); }
+.conv .s-fail { color: var(--err); }
+.conv .s-commit { color: var(--accent2); }
+.conv .s-done-ok { color: var(--ok); font-weight: 700; }
+.conv .s-done-fail { color: var(--warn); font-weight: 700; }
+.conv .s-done-neutral { font-weight: 700; }
+.conv .s-task { color: var(--accent); font-weight: 700; }
+.conv .s-operator { color: var(--ok); font-weight: 600; }
+.conv-live { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; }
+.conv-live .lt { color: var(--accent); font-weight: 600; }
+/* The conversation card: header fixed, the body scrolls inside .conv-box (so
+   the detail toggle stays reachable while following the tail). */
+.conv-card { display: flex; flex-direction: column; }
+/* x hidden: .ci's -4px hover-bleed margins otherwise leave a permanent
+   horizontal scrollbar; item text always wraps, so x never scrolls for real. */
+.conv-box { overflow: hidden auto; max-height: 62vh; }
+
+.prompt-box { background: var(--surface2); border-left: 3px solid var(--warn); padding: 12px; margin-bottom: 10px; }
+.prompt-box .q { margin-bottom: 8px; white-space: pre-wrap; }
+.prompt-box .cmd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; background: var(--surface); border: 1px solid var(--surface2); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; white-space: pre; overflow-x: auto; }
+.prompt-box .cmd .tok-str { color: var(--warn); }
+.prompt-box .cmd .tok-flag { color: var(--accent); }
+.prompt-box .cmd .tok-op { font-weight: 700; }
+
+/* --- run dashboard: conversation-primary. The conversation is the page: it
+   fills the view and scrolls internally, the status/summary sits on top, and
+   the composer docks at the bottom. The task graph, budget, tool calls,
+   latest commit, and event log live in a collapsible, drag-resizable details
+   drawer on the left. Below 781px everything stacks and the page scrolls
+   (the mobile widget menu picks what is shown). --- */
+@media (min-width: 781px) {
+  .run-app { display: flex; flex-direction: column; height: calc(100vh - 42px); min-height: 0; }
+  /* prompts / controls / status keep their natural height; only the body pane
+     flexes (without this the column shrinks them and clips the status kv) */
+  .run-app > * { flex: none; }
+  .run-app > .page-pad { max-height: 40vh; overflow: auto; } /* a prompt pile can't push the composer off-screen */
+  .run-app .run-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
+  .run-app .drawer {
+    /* block, not grid: a definite-height grid distributes its rows and
+       compresses the cards (overflow:hidden makes their minimum size 0);
+       block children keep natural heights and the drawer scrolls them */
+    display: block;
+    width: var(--drawer-w, 340px); min-width: 220px; max-width: 60vw;
+    overflow: auto; border-right: 1px solid var(--border); flex: none;
+  }
+  .run-app .drawer.closed { display: none; }
+  /* One scroll surface: the drawer itself; its cards lose their own caps
+     (except the event log, which keeps a follow-the-tail window). */
+  .run-app .drawer .card.scroll { max-height: none; overflow: visible; }
+  .run-app .drawer .card-log .card-body { max-height: 45vh; overflow: auto; }
+  .run-app .drawer.closed + .resize-handle { display: none; }
+  .run-app .card-conv { flex: 1 1 auto; min-width: 0; }
+  .run-app .card-conv .conv-box { flex: 1 1 auto; min-height: 0; max-height: none; }
+}
+.wmenu-btn, .wmenu { display: none; } /* desktop: the drawer holds the widgets */
+@media (max-width: 780px) {
+  /* The run view shows one widget at a time (the widget menu picks it):
+     stacked, the transcripts and the event log make the page a mile long.
+     Scoped to .card: the menu's own buttons carry data-w as their choice id. */
+  .run-app.paged .card[data-w] { display: none; }
+  .run-app.paged .card[data-w].w-active { display: block; }
+  /* the widget menu button rides in the top bar, right of the theme toggle
+     (the run view mounts it there), so it shares the theme button's skin */
+  .wmenu-btn { display: block; }
+  .wmenu {
+    position: fixed; z-index: 21; right: 12px; min-width: 170px;
+    top: calc(var(--hdr-h) + env(safe-area-inset-top) + 4px); /* just under the fixed header */
+    display: flex; flex-direction: column; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  }
+  .wmenu button { border: 0; border-radius: 0; text-align: left; background: none; }
+  .wmenu button.w-on { color: var(--accent); }
+  .details-btn { display: none; } /* the drawer is a desktop shape */
+}
