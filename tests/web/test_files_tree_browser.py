@@ -149,3 +149,18 @@ def test_the_revision_list_opens_under_its_field(
     assert under["width"] == pytest.approx(box["width"], abs=1)
     assert 0 <= under["y"] - (box["y"] + box["height"]) <= 6
     assert not errors
+
+
+def test_the_file_head_keeps_one_height(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """The head was 7px shorter for an image, and for a text file until its text arrived."""
+    page, errors = open_page(big_tree)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/logo.png")
+    page.wait_for_selector(".files-view img")
+    head = page.locator(".files-head")
+    image = head.evaluate("e => e.getBoundingClientRect().height")
+    page.locator(_row("b.txt")).click()
+    page.wait_for_selector(".files-blame")
+    assert head.evaluate("e => e.getBoundingClientRect().height") == pytest.approx(image, abs=0.5)
+    assert not errors
