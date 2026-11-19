@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "5e2ba06ca5dd2238b6d0656cc49491c0c9c6ccf2e12341175a8ee5a74e419e64"
+PAGE_SHA256 = "3666ef03280677c49bb42c63437d4ba93ef3e7d3f07ee25bd54598c595ccf16a"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -174,13 +174,10 @@ def test_the_plan_bar_meters_this_executions_points() -> None:
 
 
 def test_the_sessions_card_folds_a_groups_children() -> None:
-    """The hub renders nested child rows under their group behind a `children: N` line."""
+    """The hub folds a group's child rows behind a `children: N` line."""
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
     assert "const children = r.children || [];" in client
     assert "children: ${children.length}" in client and "expandedGroups" in client
-    # Enter toggles the row (its key handler does not swallow it), and a child row is a button.
-    assert "toggle.onkeydown = (e) => e.stopPropagation();" in client
-    assert "actionable(li, " in client
 
 
 def test_a_session_row_shows_its_mode() -> None:

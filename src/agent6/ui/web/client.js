@@ -678,107 +678,108 @@ function selecting(node) {
   return !!s && !s.isCollapsed && s.containsNode(node, true);
 }
 
-// A list card: an h2 title over one clickable row per entry, keyed by `key(entry)` and painted by
-// `paint(entry, it, g)` into the row and its text column. card.show(entries) repaints the rows.
-function listCard(title, empty, key, paint) {
+// A list card: an h2 title over rows that open what their titles link to. card.show(entries)
+// repaints the rows in place; `rows(entry)` lists the row or rows an entry shows (patchRows).
+function listCard(title, empty, rows) {
   const card = el('div', 'card');
   if (title) card.appendChild(el('h2', null, title));
   const list = el('div', 'list');
   card.appendChild(list);
-  const row = (e) => {
-    const it = el('div', 'item');
-    const g = el('div', 'grow');
-    it.appendChild(g);
-    paint(e, it, g);
-    if (it.onclick) actionable(it, it.onclick,
-      [...g.children].map(c => c.textContent).join(' · ').slice(0, 120));
-    return it;
+  // A click anywhere on a row opens it, unless it hit a control or ended a drag: a drag selects
+  // text for copying. A key press on the title link opens it too (detail 0: no pointer moved).
+  let down = [0, 0];
+  list.onpointerdown = (e) => { down = [e.clientX, e.clientY]; };
+  list.onclick = (e) => {
+    const it = e.target.closest('.item');
+    if (!it) return;
+    if (e.detail && Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) { e.preventDefault(); return; }
+    if (e.target.closest('a, button, input, select, textarea, summary, label')) return;
+    const link = it.querySelector('a.title');
+    if (link) location.hash = link.hash;
   };
-  card.show = (entries) => patchRows(list, entries.length
-    ? entries.map(e => ({ key: key(e), data: e, paint: () => row(e) }))
+  card.show = (entries) => patchRows(list, entries.length ? entries.flatMap(rows)
     : [{ key: '', data: empty, paint: () => el('div', 'empty', empty) }]);
   return card;
+}
+// One row: `paint(it, g)` fills the row and its text column.
+function itemRow(cls, paint) {
+  const it = el('div', cls);
+  const g = el('div', 'grow');
+  it.appendChild(g);
+  paint(it, g);
+  return it;
 }
 
 // The groups whose children the operator expanded, kept across the hub's repaints.
 const expandedGroups = new Set();
 
-// One session row; a group's children (`r.children`, the server's nested rows)
-// fold under it behind a `children: N` line, and expand to the same rows indented.
-function taskTitle(parent, taskLine) {
+// A row's task: its first line is the link that opens the row, a resume's steer the line under it.
+function taskTitle(parent, taskLine, href) {
   const [task, continued] = taskLine.split('\n');
-  parent.appendChild(el('div', 'title', task));
+  const title = el('a', 'title', task);
+  title.href = href;
+  parent.appendChild(title);
   if (continued) parent.appendChild(el('div', 'continued', continued));
 }
 
-function paintSession(r, it, g) {
-  it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.session_id);
-  taskTitle(g, r.task_line || firstLine(r.task, 200) || '(no task)');
-  const usage = r.usage ? ' · ' + r.usage : ''; // the server's usage cell, blank for a clean $0
-  // id_cell carries the winner mark the CLI and TUI id cells carry.
-  g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id_cell || r.session_id)} · ${esc(r.when)}${usage}`));
-  // Where the run works and the branch holding its commits, when it has them.
-  const where = [r.worktree && 'worktree ' + r.worktree, r.branch && 'branch ' + r.branch].filter(Boolean).join(' · ');
-  if (where) g.appendChild(el('div', 'sub', where));
-  // The server's merge note, rendered once for every hub.
-  if (r.merge_note) g.appendChild(el('div', 'sub', r.merge_note));
-  it.appendChild(pill(r.status_level, r.status_label)); // the server's one shared label + level
-  // Review fills the new-work composer with `/review <branch>`; Merge lands the branch
-  // as `sessions merge` does. Both need a finished run whose branch exists; Merge also
-  // needs commits no merge stamped. A group has no branch of its own.
-  const live = LIVE_WORDS.includes(r.status);
-  if (r.branch && !live) {
-    const review = el('button', 'mini', 'Review');
-    review.onclick = (e) => { e.stopPropagation(); handToNewWork({ task: '/review ' + r.branch }); location.hash = '#/'; route(); };
-    review.onkeydown = (e) => e.stopPropagation();
-    it.appendChild(review);
-    if (r.unmerged) {
-      const merge = el('button', 'mini', 'Merge');
-      merge.onclick = async (e) => {
-        e.stopPropagation();
-        if (!await confirmMerge(r)) return;
-        merge.disabled = true;
-        if (!await postMerge(r)) merge.disabled = false;
-      };
-      merge.onkeydown = (e) => e.stopPropagation();
-      it.appendChild(merge);
+// One session row, `depth` levels under its group's row. A group's row carries a `children: N`
+// toggle that `regroup` flips; its children (`r.children`, the server's nested rows) follow it
+// as rows of their own, each a level deeper.
+function paintSession(r, depth, regroup) {
+  return itemRow('item', (it, g) => {
+    if (depth) { it.classList.add('child'); it.style.setProperty('--depth', depth); }
+    taskTitle(g, r.task_line || firstLine(r.task, 200) || '(no task)', '#/session/' + encodeURIComponent(r.session_id));
+    const usage = r.usage ? ' · ' + r.usage : ''; // the server's usage cell, blank for a clean $0
+    // id_cell carries the winner mark the CLI and TUI id cells carry.
+    g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id_cell || r.session_id)} · ${esc(r.when)}${usage}`));
+    // Where the run works and the branch holding its commits, when it has them.
+    const where = [r.worktree && 'worktree ' + r.worktree, r.branch && 'branch ' + r.branch].filter(Boolean).join(' · ');
+    if (where) g.appendChild(el('div', 'sub', where));
+    // The server's merge note, rendered once for every hub.
+    if (r.merge_note) g.appendChild(el('div', 'sub', r.merge_note));
+    it.appendChild(pill(r.status_level, r.status_label)); // the server's one shared label + level
+    // Review fills the new-work composer with `/review <branch>`; Merge lands the branch
+    // as `sessions merge` does. Both need a finished run whose branch exists; Merge also
+    // needs commits no merge stamped. A group has no branch of its own.
+    const live = LIVE_WORDS.includes(r.status);
+    if (r.branch && !live) {
+      const review = el('button', 'mini', 'Review');
+      review.onclick = () => { handToNewWork({ task: '/review ' + r.branch }); location.hash = '#/'; route(); };
+      it.appendChild(review);
+      if (r.unmerged) {
+        const merge = el('button', 'mini', 'Merge');
+        merge.onclick = async () => {
+          if (!await confirmMerge(r)) return;
+          merge.disabled = true;
+          if (!await postMerge(r)) merge.disabled = false;
+        };
+        it.appendChild(merge);
+      }
     }
-  }
-  const children = r.children || [];
-  if (!children.length) return;
-  const open = expandedGroups.has(r.session_id);
-  const toggle = el('button', 'children-toggle', `children: ${children.length} · ${open ? 'hide' : 'show'}`);
-  toggle.onclick = (e) => {
-    e.stopPropagation();
-    if (open) expandedGroups.delete(r.session_id); else expandedGroups.add(r.session_id);
-    for (const c of [...it.children]) if (c !== g) c.remove();
-    g.innerHTML = '';
-    paintSession(r, it, g);
-  };
-  // The row's key handler (actionable) would open the session on Enter; the
-  // toggle keeps its own keys, so Enter on it toggles.
-  toggle.onkeydown = (e) => e.stopPropagation();
-  g.appendChild(toggle);
-  if (!open) return;
-  const nested = el('div', 'list children');
-  for (const child of children) {
-    const li = el('div', 'item');
-    const lg = el('div', 'grow');
-    li.appendChild(lg);
-    paintSession(child, li, lg);
-    // A child row is a button like every other row: role, tab stop, name.
-    actionable(li, (e) => {
-      if (e && e.stopPropagation) e.stopPropagation();
-      location.hash = '#/session/' + encodeURIComponent(child.session_id);
-    }, [...lg.children].map(c => c.textContent).join(' · ').slice(0, 120));
-    nested.appendChild(li);
-  }
-  g.appendChild(nested);
+    const children = r.children || [];
+    if (!children.length) return;
+    const open = expandedGroups.has(r.session_id);
+    const toggle = el('button', 'children-toggle', `children: ${children.length} · ${open ? 'hide' : 'show'}`);
+    toggle.onclick = regroup;
+    g.appendChild(toggle);
+  });
 }
 
 function sessionsCard() {
   // The page names itself in the top bar; the card is the list and its toolbar.
-  const card = listCard('', 'no sessions yet', r => r.session_id, paintSession);
+  let shown = [];
+  const rows = (r, depth) => {
+    const open = expandedGroups.has(r.session_id);
+    const regroup = () => {
+      if (open) expandedGroups.delete(r.session_id); else expandedGroups.add(r.session_id);
+      card.show(shown);
+    };
+    return [{ key: r.session_id, data: [r, open], paint: () => paintSession(r, depth, regroup) },
+      ...(open ? (r.children || []).flatMap(c => rows(c, depth + 1)) : [])];
+  };
+  const card = listCard('', 'no sessions yet', r => rows(r, 0));
+  const show = card.show;
+  card.show = (sessions) => { shown = sessions; show(sessions); };
   // Maintenance, the actions the TUI's File menu holds, sits in one row above the list.
   const toolbar = el('div', 'toolbar');
   // OS notifications for a session that starts waiting or ends need a granted permission.
@@ -806,21 +807,19 @@ function sessionsCard() {
 }
 
 function machinesCard() {
-  return listCard('Instances', 'no machines yet', m => m.name, (m, it, g) => {
-    it.onclick = () => location.hash = '#/machine/' + encodeURIComponent(m.name);
-    g.appendChild(el('div', 'title', m.machine || m.name));
+  return listCard('Instances', 'no machines yet', m => [{ key: m.name, data: m, paint: () => itemRow('item', (it, g) => {
+    taskTitle(g, m.machine || m.name, '#/machine/' + encodeURIComponent(m.name));
     g.appendChild(el('div', 'sub', `${m.name} · at ${esc(m.current || '?')} · ${esc(m.when)}`));
     it.appendChild(pill(m.status_level, m.status_label)); // the reason rides the label (failed · why)
-  });
+  }) }]);
 }
 
 function draftsCard() {
-  return listCard('Drafts', '', d => d.session_id, (d, it, g) => {
-    it.onclick = () => location.hash = '#/draft/' + encodeURIComponent(d.session_id);
-    taskTitle(g, d.task_line || firstLine(d.task, 200) || d.session_id);
+  return listCard('Drafts', '', d => [{ key: d.session_id, data: d, paint: () => itemRow('item', (it, g) => {
+    taskTitle(g, d.task_line || firstLine(d.task, 200) || d.session_id, '#/draft/' + encodeURIComponent(d.session_id));
     g.appendChild(el('div', 'sub', `draft · ${esc(d.session_id)} · ${esc(d.when)}`));
     it.appendChild(pill(d.status_level, d.status_label)); // the reason rides the label (failed · provider_error)
-  });
+  }) }]);
 }
 
 function machineFilesCard() {
