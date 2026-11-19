@@ -277,8 +277,8 @@ button.mini { min-height: var(--ctl-h-sm); min-width: var(--ctl-h-sm); padding: 
 .err { color: var(--err); }
 /* A route that shows no page (showProblem): the reason keeps its lines and wraps a long word. */
 .problem p { margin: 0 0 0.75rem; white-space: pre-wrap; overflow-wrap: anywhere; }
-/* While a route loads, the page it replaces dims after a beat, so a quick hop never flickers. */
-#view > [aria-busy=true] { opacity: .55; transition: opacity .15s .2s; }
+/* While a route loads, the page it replaces dims as one after a beat, so a quick hop never flickers. */
+#view:has(> [aria-busy=true]) { opacity: .55; transition: opacity .15s .2s; }
 
 /* Fields sit on the page colour inside an outline, so a field never reads as a button; every
    select draws one chevron in both browsers. */

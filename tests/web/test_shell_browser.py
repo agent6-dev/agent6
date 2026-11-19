@@ -357,7 +357,10 @@ def test_a_problem_views_way_back_names_the_page_it_sits_under(
 def test_the_old_view_is_marked_busy_until_the_next_page_paints(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
-    """Config's tab and crumb showed over the Sessions list for a slow load, with no sign of it."""
+    """Config's tab and crumb showed over the Sessions list for a slow load, with no sign of it.
+
+    The list and the dock over it then dimmed apart, so the rows showed through the dock.
+    """
     from playwright.sync_api import Route, expect
 
     page, errors = open_page(port)
@@ -374,6 +377,9 @@ def test_the_old_view_is_marked_busy_until_the_next_page_paints(
     busy = page.locator("#view > [aria-busy=true]")
     expect(busy.first).to_be_visible()
     expect(page.locator("#view > :not([aria-busy=true])")).to_have_count(0)
+    page.wait_for_timeout(600)  # past the dim's 0.2 s delay and 0.15 s fade
+    dims = "ss => ss.map(s => getComputedStyle(document.querySelector(s)).opacity)"
+    assert page.evaluate(dims, ["#view", "#view > .grid", "#view > .dock"]) == ["0.55", "1", "1"]
     held[0].continue_()
     expect(page.locator(".cfg").first).to_be_visible()
     expect(busy).to_have_count(0)
@@ -398,7 +404,7 @@ def test_a_slow_first_load_leaves_its_placeholder_undimmed(
     expect(placeholder).to_have_text("loading…")
     page.wait_for_timeout(600)  # past the dim's 0.2 s delay and 0.15 s fade
     expect(placeholder).not_to_have_attribute("aria-busy", "true")
-    assert placeholder.evaluate("e => getComputedStyle(e).opacity") == "1"
+    assert page.evaluate("getComputedStyle(view).opacity") == "1"
     held[0].continue_()
     expect(page.locator(".dock textarea")).to_be_visible()
     assert not errors
