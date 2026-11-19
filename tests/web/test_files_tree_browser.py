@@ -171,21 +171,33 @@ def test_tree_rows_start_at_the_page_inset(
     assert not errors
 
 
+@pytest.mark.parametrize("width", [1280, 820, 390])
 def test_the_revision_list_opens_under_its_field(
-    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    big_tree: int,
+    tmp_path: pathlib.Path,
+    width: int,
 ) -> None:
-    """The list spanned the whole bar on a desktop and opened under the filter on a phone."""
+    """The list spanned the bar, opened under the filter on a phone, and cut names to its field."""
+    _git(tmp_path, "branch", "a-rather-long-branch-for-the-list")
     page, errors = open_page(big_tree)
+    page.set_viewport_size({"width": width, "height": 900})
     page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
     field = page.get_by_role("textbox", name="revision")
     field.click()
     listing = page.locator(".gpick-list")
     listing.wait_for()
     box, under = field.bounding_box(), listing.bounding_box()
-    assert box and under
+    bar = page.locator(".files-bar").bounding_box()
+    assert box and under and bar
     assert under["x"] == pytest.approx(box["x"], abs=1)
-    assert under["width"] == pytest.approx(box["width"], abs=1)
     assert 0 <= under["y"] - (box["y"] + box["height"]) <= 6
+    room = bar["x"] + bar["width"] - box["x"]
+    assert under["width"] == pytest.approx(min(max(box["width"], 480), room), abs=1)
+    cut = listing.locator(".gref, .gref + span").evaluate_all(
+        "refs => refs.filter(r => r.scrollWidth > r.clientWidth + 1).map(r => r.textContent)"
+    )
+    assert cut == []
     assert not errors
 
 

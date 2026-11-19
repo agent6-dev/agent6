@@ -3,9 +3,14 @@
    keeps the bar's. --- */
 .files-app { --files-inset: 16px; }
 @media (min-width: 781px) { .files-app { --files-inset: 22px; } }
-.files-bar { margin-bottom: 12px; gap: 8px; } /* .page-pad.row gives the 12px above */
-.files-bar .gpick { flex: 1 1 220px; position: relative; }
-.files-bar .gpick-host { position: absolute; top: 100%; left: 0; right: 0; z-index: 40; }
+.files-bar { position: relative; margin-bottom: 12px; gap: 8px; } /* .page-pad.row gives the 12px above */
+/* The revision list opens under its field, as wide as the field or up to 480px, and never past
+   the bar's end. */
+.files-bar .gpick { flex: 1 1 220px; anchor-name: --files-revision; }
+.files-bar .gpick-host {
+  position: absolute; z-index: 40; position-anchor: --files-revision;
+  top: anchor(bottom); left: anchor(left); right: 0; max-width: max(480px, anchor-size(width));
+}
 .files-bar input.filter { flex: 1 1 160px; width: auto; min-width: 0; }
 /* The count and the tree toggle hold the width of their longest text (the listing's own
    "N of N files", and "Show tree"), so typing in the filter or toggling the tree moves nothing on

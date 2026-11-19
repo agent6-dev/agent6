@@ -78,6 +78,9 @@
 .gpick-list .ac-item { display: flex; align-items: center; gap: 4px; }
 .gpick-list .ac-item > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gpick-list .ac-item > span:nth-child(2) { flex: 1; min-width: 0; }
+/* A ref's whole name shows where its row has room; its sha stays whole. */
+.gpick-list .gref { max-width: none; min-width: 0; }
+.gpick-list .ac-item > .gref + span { flex: none; }
 
 /* Blame leads the line: a bar per commit group, labelled on the group's first line with the sha,
    the author and the date. Where the code would keep under about 60 columns (split view, a
