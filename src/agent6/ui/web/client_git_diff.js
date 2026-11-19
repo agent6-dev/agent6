@@ -75,23 +75,26 @@ function gitDiffViewer(body) {
       }
       return link;
     };
-    let mode = recall(DIFF_MODE_KEY, 'inline');
+    // A binary file has no text to lay out, widen or blame: it shows inline, with none of those controls.
+    let mode = f.binary ? 'inline' : recall(DIFF_MODE_KEY, 'inline');
     if (!DIFF_MODES.includes(mode)) mode = 'inline';
     // A phone has no room for split: it shows inline, says so when split was the choice, and
     // offers split disabled; the choice stays for a wider screen.
     const narrow = window.matchMedia('(max-width: 780px)').matches;
     const splitWanted = narrow && mode === 'split';
     if (splitWanted) mode = 'inline';
-    const modes = el('span', 'gview');
-    for (const m of DIFF_MODES) {
-      const b = el('button', 'mini' + (m === mode ? ' active' : ''), m);
-      b.title = { inline: 'the unified patch', split: 'old and new side by side', old: 'the file at the base, deletions marked', new: 'the file at the head, additions marked' }[m];
-      if (m === 'split' && narrow) { b.disabled = true; b.title = 'split needs a wider screen'; }
-      b.onclick = () => { remember(DIFF_MODE_KEY, m); showDiff(ctx, i, whole, fullContext); };
-      modes.appendChild(b);
+    if (!f.binary) {
+      const modes = el('span', 'gview');
+      for (const m of DIFF_MODES) {
+        const b = el('button', 'mini' + (m === mode ? ' active' : ''), m);
+        b.title = { inline: 'the unified patch', split: 'old and new side by side', old: 'the file at the base, deletions marked', new: 'the file at the head, additions marked' }[m];
+        if (m === 'split' && narrow) { b.disabled = true; b.title = 'split needs a wider screen'; }
+        b.onclick = () => { remember(DIFF_MODE_KEY, m); showDiff(ctx, i, whole, fullContext); };
+        modes.appendChild(b);
+      }
+      tools.appendChild(modes);
     }
-    tools.appendChild(modes);
-    if (mode === 'inline' || mode === 'split') {
+    if (!f.binary && (mode === 'inline' || mode === 'split')) {
       const context = el('button', 'mini diff-context', fullContext ? 'Show hunks only' : 'Show full context');
       context.setAttribute('aria-pressed', String(fullContext));
       context.disabled = !!ctx.panel;
@@ -100,9 +103,8 @@ function gitDiffViewer(body) {
       tools.appendChild(context);
     }
     // Blame waits for the patch, which tells it the lines and their sides.
-    const blame = el('button', 'mini diff-blame', 'blame'); blame.disabled = true;
-    blame.setAttribute('aria-pressed', String(blameOn));
-    tools.appendChild(blame);
+    const blame = f.binary ? null : el('button', 'mini diff-blame', 'blame');
+    if (blame) { blame.disabled = true; blame.setAttribute('aria-pressed', String(blameOn)); tools.appendChild(blame); }
     if (f.status === 'D') {
       const absent = el('button', 'mini diff-open-file', 'Open in Files');
       absent.disabled = true; absent.title = 'Deleted: no file at the head revision';
@@ -163,7 +165,7 @@ function gitDiffViewer(body) {
       const n = (window.pendingNewWork.task.match(/^> /gm) || []).length;
       toast(n + (n === 1 ? ' line quoted' : ' lines quoted') + ' for the new-work composer on Sessions');
     });
-    await blameDiff(blame, box, patch, ctx, f, d, mode, current, sideText);
+    if (blame) await blameDiff(blame, box, patch, ctx, f, d, mode, current, sideText);
     if (ctx.query?.get('path') === f.path && /^\d+$/.test(ctx.query.get('line') || '')) {
       const line = ctx.query.get('line');
       patch.querySelector('[data-new="' + line + '"], [data-line="' + line + '"]')?.scrollIntoView({block: 'center'});

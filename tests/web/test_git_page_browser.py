@@ -264,3 +264,20 @@ def test_the_compare_pickers_reached_option_stays_in_view_and_is_named(
     expect(reached).to_have_attribute("aria-selected", "true")
     expect(page.get_by_role("button", name="swap base and head", exact=True)).to_be_visible()
     assert errors == [], errors
+
+
+def test_a_binary_files_diff_offers_no_text_controls(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """A PNG's diff offered the four modes, full context and blame, which do nothing for it."""
+    from playwright.sync_api import expect
+
+    sha = _git(tmp_path, "rev-parse", "main^1")  # the commit that adds logo.png
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/{sha}?path=logo.png")
+    page.wait_for_selector(".git-img img")
+    tools = page.locator(".git-diff-tools")
+    expect(tools.get_by_role("link", name="Open in Files", exact=True)).to_be_visible()
+    for name in ("inline", "split", "old", "new", "Show full context", "blame"):
+        expect(tools.get_by_role("button", name=name, exact=True)).to_have_count(0)
+    assert errors == [], errors
