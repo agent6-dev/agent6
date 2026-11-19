@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from agent6 import paths
+from tests import review_helpers
 from tests.unit import test_sessions_show_group
 from tests.web import test_web_actions, test_web_browser
 
@@ -731,4 +732,23 @@ def test_a_row_names_its_mode_once(
     expect(draft).to_contain_text("brisk-BBBBBB")
     expect(draft).not_to_contain_text("machine")
     expect(draft).not_to_contain_text("draft")
+    assert not errors
+
+
+def test_open_findings_read_as_part_of_the_status(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """The open findings sat on a muted line of their own, as quiet as the date line."""
+    from playwright.sync_api import expect
+
+    findings = review_helpers.panel_rows(block=1, warn=2)
+    _run(tmp_path, "blocked-AAAAAA", "Blocked task", *findings, review_helpers.END)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    status = page.locator(".item .sub .pill")
+    expect(status).to_contain_text("· open findings: 1 block, 2 warn")
+    sub = page.locator(".item .sub")
+    expect(sub).to_have_count(1)
+    color = "e => getComputedStyle(e).color"
+    assert status.evaluate(color) != sub.evaluate(color)  # the status's text colour, not muted
     assert not errors

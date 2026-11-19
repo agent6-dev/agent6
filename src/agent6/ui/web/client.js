@@ -803,20 +803,19 @@ function paintSession(r, depth, regroup) {
   return itemRow('item', (it, g) => {
     if (depth) { it.classList.add('child'); it.style.setProperty('--depth', depth); }
     taskTitle(g, r.task_line || firstLine(r.task, 200) || '(no task)', '#/session/' + encodeURIComponent(r.session_id));
-    // The status (the server's one shared label and level) leads the first sub line, so every
-    // row's dot sits in one column, and the mode follows it. id_cell is the id and the winner mark
-    // the CLI and TUI id cells carry, then a worktree mark in parentheses: a missing worktree's
-    // note, which wraps. usage is blank for a clean $0.
+    // The status leads the first sub line, so every row's dot sits in one column: the server's
+    // status and merge note, paired as the CLI and TUI status cells pair them, then the mode.
+    // id_cell is the id with the winner and worktree marks the CLI and TUI id cells carry; a
+    // missing worktree's note wraps. usage is blank for a clean $0.
+    const status = [statusOnly(r), r.merge_note].filter(Boolean).join(' · ');
     const cell = esc(r.id_cell || r.session_id), cut = cell.indexOf(' (', r.session_id.length);
     let id = cell;
     if (cut >= 0) { id = el('span'); id.append(el('span', 'f', cell.slice(0, cut)), cell.slice(cut)); }
-    g.appendChild(subLine([pill(r.status_level, statusOnly(r)), esc(r.mode), id, esc(r.when), esc(r.usage)]));
+    g.appendChild(subLine([pill(r.status_level, status), esc(r.mode), id, esc(r.when), esc(r.usage)]));
     // Where the run works and the branch holding its commits, when it has them. A missing
     // worktree's path is in the id cell's note already.
     const where = r.worktree && !cell.includes(r.worktree);
     if (where || r.branch) g.appendChild(subLine([where && el('span', null, 'worktree ' + r.worktree), r.branch && el('span', null, 'branch ' + r.branch)]));
-    // The server's merge note, rendered once for every hub.
-    if (r.merge_note) g.appendChild(el('div', 'sub', r.merge_note));
     // Review fills the new-work composer with `/review <branch>`; Merge lands the branch
     // as `sessions merge` does. Both need a finished run whose branch exists; Merge also
     // needs commits no merge stamped. A group has no branch of its own.
