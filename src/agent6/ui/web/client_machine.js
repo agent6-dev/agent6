@@ -23,7 +23,7 @@ async function renderMachine(name, gen) {
   const actions = el('div', 'row wrap page-pad actions');
   const stopBtn = el('button', 'danger', '■ Stop');
   stopBtn.onclick = async () => {
-    if (!confirm('Stop this machine at its next transition? `agent6 machine run` resumes it.')) return;
+    if (!confirm(`Stop ${name}? It parks at its next transition, and agent6 machine run ${name} resumes it.`)) return;
     try { const d = await postJSON(base + '/stop', {}); toast(d.message || 'stop requested'); }
     catch (e) { toast(e.message, true); }
   };

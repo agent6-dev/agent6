@@ -481,3 +481,26 @@ def test_the_palette_offers_the_machine_views_actions(
     expect(page.locator("dialog[open]")).to_have_count(0)
     assert len(asked) == 1, asked
     assert not errors
+
+
+def test_stop_asks_by_the_instance_name(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """Stop's confirm said "this machine" and showed a command in Markdown backticks."""
+    from playwright.sync_api import expect
+
+    _machine(tmp_path, "working", LOOP, [], _talk(2), alive=True)
+    page, errors = _open(open_page, port, "working")
+    asked: list[str] = []
+
+    def dismiss(dialog: Dialog) -> None:
+        asked.append(dialog.message)
+        dialog.dismiss()
+
+    page.once("dialog", dismiss)
+    page.get_by_role("button", name="Stop").click()
+    expect(page.get_by_role("button", name="Stop")).to_be_enabled()
+    assert asked == [
+        "Stop working? It parks at its next transition, and agent6 machine run working resumes it."
+    ]
+    assert not errors
