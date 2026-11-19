@@ -964,6 +964,26 @@ def test_the_side_and_diff_heads_line_up_with_the_page(
     assert errors == [], errors
 
 
+def test_a_commits_parent_label_sits_on_its_sha_buttons_baseline(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """The 'parents' label and its sha buttons share a baseline; the label sat 3px higher."""
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/main")
+    page.wait_for_selector(".gd-meta button")
+    baselines = page.evaluate(
+        """() => {
+          const label = [...document.querySelectorAll('.gd-meta .k')]
+            .find(k => k.textContent === 'parents');
+          const at = e => { const probe = el('span'); probe.style.display = 'inline-block';
+            e.appendChild(probe); return probe.getBoundingClientRect().top; };
+          return [at(label), at(label.nextElementSibling.querySelector('button'))];
+        }"""
+    )
+    assert abs(baselines[0] - baselines[1]) < 0.5, baselines
+    assert errors == [], errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:
