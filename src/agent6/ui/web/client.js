@@ -1606,6 +1606,7 @@ function openPalette(initial = '') {
     title: 'Commands',
     placeholder: 'type a command…',
     rows: paletteItems,
+    limit: Infinity, // every command: the list scrolls
     empty: '(no commands)',
     initial,
     haystack: (c) => (c.label + ' ' + c.hint).toLowerCase(),

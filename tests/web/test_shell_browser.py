@@ -1007,6 +1007,25 @@ def test_rows_that_come_after_the_switcher_closed_open_nothing(
     assert [e for e in errors if not e.startswith("Failed to load resource")] == []
 
 
+def test_the_palette_lists_every_command(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The palette hid its thirteenth command behind "… 1 more" with room to spare."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".dock textarea")).to_be_visible()
+    page.keyboard.press("Control+K")
+    page.keyboard.type(">")
+    palette = page.get_by_role("dialog", name="Commands")
+    commands = page.evaluate("paletteItems().length")
+    assert commands > 12
+    expect(palette.get_by_role("option")).to_have_count(commands)
+    expect(palette.locator(".more-note")).to_have_text("")
+    assert not errors
+
+
 @pytest.mark.parametrize(
     ("key", "title"), [("Control+K", "Switch session"), ("?", "Keyboard shortcuts")]
 )
