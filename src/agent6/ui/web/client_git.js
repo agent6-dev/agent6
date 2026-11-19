@@ -273,7 +273,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
 
   // -- toolbar: the ref filter, the compare toggle, the refresh, the counts -----------
   const bar = el('div', 'git-bar page-pad row wrap'); app.appendChild(bar);
-  const refsBtn = el('button', null, 'Refs ▾');
+  const refsBtn = el('button', 'git-refs', 'Refs ▾');
   const compareBtn = el('button', null, 'Compare');
   const reloadBtn = el('button', null, '↻'); reloadBtn.title = 'refresh: re-read the refs, the graph and the working tree';
   reloadBtn.setAttribute('aria-label', 'refresh');
@@ -627,14 +627,19 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   };
   compareBtn.onclick = showCompare;
 
-  // -- the ref filter: group toggles and one checkbox per ref ------------------------
-  let filter = null;
-  const closeFilter = () => { if (filter) { filter.remove(); filter = null; document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', onKey, true); } };
-  const outside = (e) => { if (filter && !filter.contains(e.target) && e.target !== refsBtn) closeFilter(); };
-  const onKey = (e) => { if (e.key === 'Escape') closeFilter(); };
-  const openFilter = () => {
-    if (filter) { closeFilter(); return; }
-    filter = el('div', 'gfilter');
+  // -- the ref filter: group toggles and one checkbox per ref, a popover under Refs ---
+  // The browser closes it on Escape (focus back on Refs) or a click outside.
+  const filter = el('div', 'gfilter'); filter.popover = 'auto';
+  refsBtn.popoverTargetElement = filter;
+  refsBtn.setAttribute('aria-expanded', 'false');
+  bar.appendChild(filter);
+  filter.addEventListener('beforetoggle', (e) => { if (e.newState === 'open') paintFilter(); });
+  filter.addEventListener('toggle', (e) => {
+    const open = e.newState === 'open';
+    refsBtn.classList.toggle('active', open); refsBtn.setAttribute('aria-expanded', String(open));
+  });
+  const paintFilter = () => {
+    filter.innerHTML = '';
     const groups = el('div', 'row wrap gfilter-groups');
     const kinds = [['branch', 'Branches'], ['remote', 'Remotes'], ['tag', 'Tags'], ['agent6', 'agent6 runs']];
     for (const [kind, label] of kinds) {
@@ -647,6 +652,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     }
     filter.appendChild(groups);
     const search = el('input', 'filter'); search.type = 'search'; search.placeholder = 'filter refs…';
+    search.autofocus = true;
     filter.appendChild(search);
     const list = el('div', 'gfilter-list'); filter.appendChild(list);
     const paintList = () => {
@@ -666,12 +672,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     };
     search.oninput = paintList;
     paintList();
-    bar.appendChild(filter);
-    document.addEventListener('pointerdown', outside, true);
-    document.addEventListener('keydown', onKey, true);
-    search.focus();
   };
-  refsBtn.onclick = openFilter;
 
   await loadGraph(true);
   if (!app.isConnected) return;

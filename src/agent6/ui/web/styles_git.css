@@ -1,7 +1,7 @@
 /* --- git: the commit graph on the left, a commit or the compare on the right. The
    lane SVG is exactly one row tall and rows stack with no gap, so a lane's line runs
    unbroken from row to row. Below 781px the side panel opens over the graph. --- */
-.git-bar { position: relative; margin-top: 10px; margin-bottom: 10px; }
+.git-bar { margin-top: 10px; margin-bottom: 10px; }
 /* The toolbar's controls share one height. A field fits its value between a floor and a cap, and
    a group (a field and the buttons acting on it) wraps whole; a long branch name shrinks first. */
 .git-branch { gap: 6px 12px; flex-wrap: wrap; min-width: 0; }
@@ -63,10 +63,14 @@
 .gcmp-pick { display: flex; gap: 8px; align-items: center; margin: 8px 0 4px; }
 .gcmp-pick button.mini { flex: none; min-height: var(--ctl-h); }
 .gcmp-sum { font-size: 12px; margin: 10px 0 8px; overflow-wrap: anywhere; }
+/* The Refs filter: a popover hung under its button, flipped above it or leftwards where the
+   screen ends. */
+.git-refs { anchor-name: --git-refs; }
 .gfilter {
-  position: absolute; top: 100%; left: 0; z-index: 40; margin-top: 6px; padding: 10px;
-  width: min(440px, calc(100vw - 32px)); background: var(--surface); border: 1px solid var(--border);
-  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  position-anchor: --git-refs; position-area: block-end span-inline-end;
+  position-try-fallbacks: flip-block, flip-inline; inset: auto; margin: 6px 0; padding: 10px;
+  width: min(440px, calc(100vw - 32px)); color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.35);
 }
 .gfilter-groups { gap: 6px 14px; margin-bottom: 8px; font-size: 13px; }
 .gfilter-group, .gfilter-item { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }

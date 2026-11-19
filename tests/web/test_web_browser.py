@@ -813,6 +813,30 @@ def test_the_git_toolbar_controls_share_one_height_and_fit_their_values(
     assert errors == [], errors
 
 
+def test_the_refs_filter_hangs_under_its_button_and_escape_refocuses_it(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """The Refs filter opens just under Refs, which reads open; Escape puts focus back on Refs."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    refs = page.get_by_role("button", name="Refs ▾")
+    refs.click()
+    expect(page.get_by_role("searchbox")).to_be_focused()
+    expect(refs).to_have_attribute("aria-expanded", "true")
+    button, popup = refs.bounding_box(), page.locator(".gfilter").bounding_box()
+    assert button and popup
+    assert 0 <= popup["y"] - (button["y"] + button["height"]) <= 8
+    assert abs(popup["x"] - button["x"]) <= 1
+    page.keyboard.press("Escape")
+    expect(page.locator(".gfilter")).to_be_hidden()
+    expect(refs).to_be_focused()
+    expect(refs).to_have_attribute("aria-expanded", "false")
+    assert errors == [], errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:
