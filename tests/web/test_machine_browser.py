@@ -436,3 +436,21 @@ def test_an_error_view_stands_under_the_name_it_is_about(
     expect(page.locator(".empty.err")).to_be_visible()
     expect(page.locator("#crumb")).to_have_text("missing")
     assert [e for e in errors if "404" not in e] == []
+
+
+def test_a_notification_shows_as_a_toast_named_by_the_instance(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """A notification stacked a banner over the cards, named by the spec, not the instance."""
+    from playwright.sync_api import expect
+
+    machine = _machine(tmp_path, "nightly", LOOP, [], _talk(2), alive=True)
+    page, errors = _open(open_page, port, "nightly")
+    grid = page.locator(".machine-grid")
+    before = grid.bounding_box()
+    note = {"type": "machine.notify", "ts": TS, "state": "work", "message": "checkpoint committed"}
+    with (machine / "journal.jsonl").open("a", encoding="utf-8") as journal:
+        journal.write(json.dumps({**note, "level": "info"}) + "\n")
+    expect(page.locator("#toasts .toast")).to_have_text("nightly · work: checkpoint committed")
+    assert grid.bounding_box() == before
+    assert not errors

@@ -9,13 +9,11 @@ async function renderMachine(name, gen) {
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint or open a stream
   view.innerHTML = '';
   const app = el('div', 'machine-app');
-  // The banners, the prompts and the controls flow in one block, so their margins collapse;
+  // The prompts and the controls flow in one block, so their margins collapse;
   // the view is a flex column, where margins add up.
   const top = el('div', 'machine-top'); app.appendChild(top);
-  // Ephemeral notification banners live here; the prompts host holds pending
-  // approval/question boxes; both are appended to, never wiped, so a repaint can
-  // never clear a half-typed answer.
-  const notifs = el('div', 'page-pad'); top.appendChild(notifs);
+  // The prompts host holds pending approval/question boxes; it is appended to, never wiped,
+  // so a repaint can never clear a half-typed answer.
   const prompts = el('div', 'page-pad'); top.appendChild(prompts);
   const cards = { _prompts: prompts, _base: base };
 
@@ -89,9 +87,9 @@ async function renderMachine(name, gen) {
   cards._input = din; cards._steer_btn = steerBtn; cards._msg_btn = msgBtn; cards._stop_btn = stopBtn;
 
   // Notification de-dup across repaints: seed with history on the first frame so
-  // opening a machine does not replay every past notification; banner + OS-notify
-  // only genuinely new ones.
-  const ctx = { notifsHost: notifs, seen: null, lostNotified: false, endedNotified: false, shownCurrent: null };
+  // opening a machine does not replay every past notification; toast + OS-notify
+  // only genuinely new ones, named by the instance.
+  const ctx = { name, seen: null, lostNotified: false, endedNotified: false, shownCurrent: null };
   paintMachine(structBody, pathBody, cards, ctx, { machine: initial, reasoning: {} });
 
   live = openStream(base + '/events', raw => {
@@ -105,13 +103,16 @@ async function renderMachine(name, gen) {
   if (!hbTimer) hbTimer = setInterval(() => { hbState.spin++; hbTick(); }, 1000);
 }
 
+// A notification, a stop or an end that lands while the page watches shows once as a toast, as
+// the hub announces a session and the TUI a machine; an error-level one or a failed end holds
+// until dismissed.
 function machineNotify(ctx, m) {
   const notes = m.notifications || [];
   const keyOf = n => (n.ts || '') + '|' + (n.state || '') + '|' + (n.message || '');
   if (ctx.seen === null) {
     // First frame: seed history (notifications and an already-ended machine)
     // silently, so opening a finished machine does not replay past notifications
-    // or fire a spurious "ended" banner/OS-notify. Only events that happen while
+    // or fire a spurious "ended" toast/OS-notify. Only events that happen while
     // watching fire.
     ctx.seen = new Set(notes.map(keyOf));
     ctx.endedNotified = !!m.ended;
@@ -122,14 +123,8 @@ function machineNotify(ctx, m) {
     const k = keyOf(n);
     if (ctx.seen.has(k)) continue;
     ctx.seen.add(k);
-    const banner = el('div', 'notif-banner ' + esc(n.level || 'info'));
-    const g = el('div', 'grow');
-    g.appendChild(el('div', 'nb-msg', n.message || ''));
-    g.appendChild(el('div', 'nb-sub', `${esc(m.machine || '')} · ${esc(n.state || '')}`));
-    const x = el('button', 'nb-x', '×'); x.onclick = () => banner.remove();
-    banner.appendChild(g); banner.appendChild(x);
-    ctx.notifsHost.appendChild(banner);
-    osNotify('agent6: ' + (m.machine || 'machine'), n.message || '');
+    toast(`${ctx.name} · ${esc(n.state)}: ${esc(n.message)}`, n.level === 'error');
+    osNotify('agent6: ' + ctx.name, n.message || '');
   }
 }
 
@@ -151,24 +146,17 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   const agentLive = !refusals.steer;
   paintPrompts(cards, canAnswer ? (data.reasoning || {}) : {});
   machineNotify(ctx, m);
-  if (!m.worker_lost) ctx.lostNotified = false; // a resume re-arms the stop banner
+  if (!m.worker_lost) ctx.lostNotified = false; // a resume re-arms the stop notice
   if (m.worker_lost && !ctx.lostNotified) {
     // Supervisor loss, not a journaled end: the instance is resumable.
     ctx.lostNotified = true;
-    const banner = el('div', 'notif-banner error');
-    banner.appendChild(el('div', 'grow',
-      `${esc(m.machine || '')} stopped: ${esc(m.worker_lost.reason)}; resumable with agent6 machine run`));
-    const x = el('button', 'nb-x', '×'); x.onclick = () => banner.remove();
-    banner.appendChild(x); ctx.notifsHost.appendChild(banner);
-    osNotify('agent6: ' + (m.machine || 'machine') + ' stopped', m.worker_lost.reason || '');
+    toast(`${ctx.name} stopped: ${esc(m.worker_lost.reason)}; resume it with agent6 machine run ${ctx.name}`);
+    osNotify('agent6: ' + ctx.name + ' stopped', m.worker_lost.reason || '');
   }
   if (m.ended && !ctx.endedNotified) {
     ctx.endedNotified = true;
-    const banner = el('div', 'notif-banner ' + (m.ended.status === 'ok' ? 'info' : 'error'));
-    banner.appendChild(el('div', 'grow', `${esc(m.machine || '')} ended: ${esc(m.ended.status)} (${esc(m.ended.reason)})`));
-    const x = el('button', 'nb-x', '×'); x.onclick = () => banner.remove();
-    banner.appendChild(x); ctx.notifsHost.appendChild(banner);
-    osNotify('agent6: ' + (m.machine || 'machine') + ' ' + m.ended.status, m.ended.reason || '');
+    toast(`${ctx.name} ended: ${esc(m.ended.status)} (${esc(m.ended.reason)})`, m.ended.status !== 'ok');
+    osNotify('agent6: ' + ctx.name + ' ' + m.ended.status, m.ended.reason || '');
   }
   // Path follows its newest transition while the reader stays at its end (read before the repaint).
   const pathFollows = pathBody.scrollTop + pathBody.clientHeight >= pathBody.scrollHeight - 8;

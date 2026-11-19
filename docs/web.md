@@ -122,7 +122,7 @@ A plain text file, a file over 512 KiB, or one whose parse runs past a second sh
 The page installs as an app (phone home-screen icon or desktop window).
 **Turn on notifications** on the Sessions page, or **🔔 Notifications** on a machine view, asks the browser for permission; a session that starts waiting on an answer or ends, `machine.notify` and a machine's end then pop OS notifications on desktop, and the hub keeps watching in a background tab.
 The Sessions page's button then reads **Notifications on**, or **Notifications blocked** when the browser refuses; the browser's site settings turn them off or allow them again.
-The hub shows the same notice as a toast either way.
+The hub and a machine view show the same notice as a toast either way.
 For a phone not open on the page, point [`[notify].on_event`](config.md#notify-optional) at a push service.
 
 ## The HTTP API

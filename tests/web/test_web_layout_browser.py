@@ -527,12 +527,11 @@ def test_run_drawer_keeps_drag_resize_reload_and_reset(
     ("route", "box", "row", "gap"),
     [
         ("#/machine/asking-machine", ".prompt-box", "main .row.wrap.page-pad", 12),
-        ("#/machine/noting-machine", ".notif-banner", "main .row.wrap.page-pad", 12),
         ("#/session/asking-AAA111", ".prompt-box", ".run-app .actions", 10),
     ],
-    ids=["machine-prompt", "machine-banner", "run-prompt"],
+    ids=["machine-prompt", "run-prompt"],
 )
-def test_the_row_under_a_prompt_or_banner_sets_the_gap_above_it(
+def test_the_row_under_a_prompt_sets_the_gap_above_it(
     open_page: Callable[[int], tuple[Page, list[str]]],
     port: int,
     tmp_path: pathlib.Path,
@@ -541,11 +540,10 @@ def test_the_row_under_a_prompt_or_banner_sets_the_gap_above_it(
     row: str,
     gap: int,
 ) -> None:
-    """A pending prompt or a new banner stands the next row's top margin above that row.
+    """A pending prompt stands the next row's top margin above that row.
 
     The page and the run view are flex columns, where margins never collapse: the box's own
-    10px bottom margin added to the row's, so a machine's prompt or banner stood 22px above
-    its controls.
+    10px bottom margin added to the row's, so a machine's prompt stood 22px above its controls.
     """
     import os
 
@@ -561,25 +559,15 @@ def test_the_row_under_a_prompt_or_banner_sets_the_gap_above_it(
     run.mkdir(parents=True)
     process.write_worker_pid(run, os.getpid())
     (run / "logs.jsonl").write_text(f"{json.dumps(start)}\n{json.dumps(ask)}\n")
-    for name, rows in (("asking-machine", [start, ask]), ("noting-machine", [start])):
-        state = machines / name / "states" / "0001-work"
-        state.mkdir(parents=True)
-        (machines / name / "machine.asm.toml").write_text(TINY, encoding="utf-8")
-        (machines / name / "journal.jsonl").write_text("", encoding="utf-8")
-        process.write_worker_pid(machines / name, os.getpid())
-        (state / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    state = machines / "asking-machine" / "states" / "0001-work"
+    state.mkdir(parents=True)
+    (machines / "asking-machine" / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    (machines / "asking-machine" / "journal.jsonl").write_text("", encoding="utf-8")
+    process.write_worker_pid(machines / "asking-machine", os.getpid())
+    (state / "logs.jsonl").write_text(f"{json.dumps(start)}\n{json.dumps(ask)}\n")
     page, errors = open_page(port)
     page.goto(f"http://127.0.0.1:{port}/{route}")
     expect(page.locator(row)).to_be_visible()
-    # A banner shows a notification that lands while the page watches.
-    note = {
-        "type": "machine.notify",
-        "ts": "2026-11-13T10:00:00Z",
-        "state": "route",
-        "message": "Look",
-    }
-    with (machines / "noting-machine" / "journal.jsonl").open("a") as stream:
-        stream.write(json.dumps(note) + "\n")
     expect(page.locator(box)).to_have_count(1)
     above, under = page.locator(box).bounding_box(), page.locator(row).bounding_box()
     assert above is not None and under is not None

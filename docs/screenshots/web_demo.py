@@ -333,8 +333,8 @@ def drive_machine(page: Page, base: str, t0: float) -> float:
     page.wait_for_timeout(2000)
     scroll_card(page, ".conv-box", 4000, wait=2200)
 
-    # The end banner names the terminal state; linger on the finished machine.
-    page.wait_for_selector(".notif-banner:has-text('ended')", timeout=180000)
+    # The status turns ok as the machine ends; linger on the finished machine.
+    page.wait_for_selector(".machine-grid .pill.ok", timeout=180000)
     toast(page, "Green: the check passes and the machine ends ok", ms=2400)
     page.wait_for_timeout(2400)
     scroll_to(page, 0, wait=1400)
