@@ -570,3 +570,26 @@ def test_every_transition_starts_in_one_column(
     )
     assert len(starts) == 12 and len(set(starts)) == 1, starts
     assert not errors
+
+
+def test_the_summary_and_the_end_note_take_their_neighbours_type(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """The summary stood in 14px beside its 13px status, the end note in 14px sans under mono."""
+    _ended(tmp_path)
+    page, errors = _open(open_page, port, "ended")
+    fonts = page.evaluate(
+        """() => {
+          const font = (e) => getComputedStyle(e).fontSize + ' ' + getComputedStyle(e).fontFamily;
+          const path = [...document.querySelectorAll('.tree')][1].closest('.card');
+          const note = [...path.querySelectorAll('div')]
+            .find(e => e.textContent.startsWith('ended:'));
+          return [font(document.querySelector('.machine-grid .row .sub')),
+                  font(document.querySelector('.machine-grid .pill')),
+                  font(note), font(path.querySelector('.node'))];
+        }"""
+    )
+    summary, status, note, line = fonts
+    assert summary.split()[0] == status.split()[0], fonts
+    assert note == line, fonts
+    assert not errors

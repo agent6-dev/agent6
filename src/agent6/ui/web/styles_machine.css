@@ -8,9 +8,11 @@
    does, in the 4px each side that the body reaches past its text. */
 .machine-grid .card-body { padding-inline: 4px; margin-inline: -4px; }
 .machine-grid .card-body:focus-visible { outline-offset: -2px; }
+/* The summary takes the size of the status beside it, and the Path's end note the size of its
+   list; both wrap a long word. */
+.machine-grid .sub { font-size: 13px; overflow-wrap: anywhere; }
 /* Every name and transition shows whole: a long one wraps, and a wrapped line continues under the
    text after its lead, a state's mark or a transition's `[seq] ` (--hang: the lead's width). */
-.machine-grid .sub { overflow-wrap: anywhere; }
 .machine-grid .tree .node {
   white-space: pre-wrap; overflow-wrap: anywhere;
   padding-left: var(--hang, 2ch); text-indent: calc(-1 * var(--hang, 2ch));

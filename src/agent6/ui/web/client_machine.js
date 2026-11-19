@@ -196,9 +196,10 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
     path.appendChild(line);
   }
   if (!transitions.length) path.appendChild(el('div', 'muted', 'no transitions yet'));
+  // How the path ends, in the list's own type: a journaled end, or a stop it resumes from.
+  if (m.ended) path.appendChild(el('div', 'sub muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));
+  if (m.worker_lost) path.appendChild(el('div', 'sub muted', `stopped: ${esc(m.worker_lost.reason)} at ${esc(m.worker_lost.state)}; resumable`));
   pathBody.appendChild(path);
-  if (m.ended) pathBody.appendChild(el('div', 'sub muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));
-  if (m.worker_lost) pathBody.appendChild(el('div', 'sub muted', `stopped: ${esc(m.worker_lost.reason)} at ${esc(m.worker_lost.state)}; resumable`));
   if (pathFollows) pathBody.scrollTop = pathBody.scrollHeight;
   // States brings the current state into view when the machine moves; a phone's cards flow, so
   // nothing scrolls there.
