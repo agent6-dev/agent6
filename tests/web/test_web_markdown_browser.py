@@ -229,3 +229,30 @@ def test_table_cells_keep_whole_words(
     )
     assert lines == 1
     assert not errors
+
+
+def test_tables_and_minor_headings_set_their_own_styles(
+    git_port: int, tmp_path: pathlib.Path, open_page: Callable[[int], tuple[Page, list[str]]]
+) -> None:
+    """A shaded row hid its code chips, header cells sat centred and an h6 shrank to 9px."""
+    (tmp_path / "minor.md").write_text(
+        "| Key | Meaning |\n| --- | --- |\n| `a` | one |\n| `b` | two |\n\n###### Sixth\n",
+        encoding="utf-8",
+    )
+    test_git_history._git(tmp_path, "add", "minor.md")
+    test_git_history._git(tmp_path, "commit", "-m", "minor elements")
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/minor.md")
+    page.wait_for_selector(".md-view h6")
+    style = page.evaluate("""() => {
+      const md = document.querySelector('.md-view'), css = e => getComputedStyle(e);
+      const shaded = md.querySelector('tbody tr:nth-child(2)');
+      return {chip: css(shaded.querySelector('code')).backgroundColor,
+        row: css(shaded).backgroundColor, th: css(md.querySelector('th')).textAlign,
+        td: css(md.querySelector('td')).verticalAlign,
+        h6: parseFloat(css(md.querySelector('h6')).fontSize), body: parseFloat(css(md).fontSize)};
+    }""")
+    assert style["chip"] != style["row"], style
+    assert style["th"] in ("start", "left") and style["td"] == "top", style
+    assert style["h6"] >= 0.8 * style["body"], style
+    assert not errors
