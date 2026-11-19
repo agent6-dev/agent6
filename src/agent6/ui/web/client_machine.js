@@ -44,7 +44,10 @@ async function renderMachine(name, gen) {
   cards._summary = el('div', 'row wrap'); structBody.before(cards._summary);
   // The newest agent state's conversation, the same folded view a run shows, under the pair;
   // paintMachine titles it by that state.
-  const cc = convCard(base + '/conversation', 'Conversation');
+  const cc = convCard(base + '/conversation', 'Conversation', '', {
+    live: 'no conversation yet; it appears as the agent state streams',
+    done: 'no agent state has run in this machine',
+  });
   cards._conv = cc.conv;
   cards._conv_title = cc.card.querySelector('h2');
   grid.appendChild(cc.card);

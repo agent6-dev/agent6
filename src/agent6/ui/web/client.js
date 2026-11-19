@@ -1021,8 +1021,8 @@ async function renderHub(focus, gen) {
 const DETAIL_CYCLE = { collapsed: 'expanded', expanded: 'hidden', hidden: 'collapsed' };
 function tailStr(s, n) { return s.length <= n ? s : '…' + s.slice(-n); }
 function firstLine(s, n) { const t = String(s == null ? '' : s).split('\n')[0]; return t.length > n ? t.slice(0, n - 1) + '…' : t; }
-// `box` is the scroll container, `body` the host the items render into.
-function makeConv(url, box, body) {
+// `box` scrolls and `body` holds the items; `empty` = { live, done } rewords the no-items note.
+function makeConv(url, box, body, empty = {}) {
   const conv = {
     items: [], open: new Map(),
     detail: recall('a6-detail', '') || 'collapsed',
@@ -1041,8 +1041,8 @@ function makeConv(url, box, body) {
   // A run/machine that produced no conversation: "yet ... as it streams" while it
   // can still stream, past tense once it has ended (a terminal tool-only machine).
   const emptyNote = () => conv.finished
-    ? 'this session made no conversation'
-    : 'no conversation yet; it appears as the session streams';
+    ? empty.done || 'this session made no conversation'
+    : empty.live || 'no conversation yet; it appears as the session streams';
 
   const paintItems = () => {
     // A repaint keeps the keyboard on the item it was on.
@@ -1190,14 +1190,14 @@ function makeConv(url, box, body) {
 // A titled conversation card, the detail toggle in its (non-scrolling) header
 // and the items scrolling in .conv-box below it; used by the run view (main
 // pane), the full-page view, and the machine view's current-state pane.
-function convCard(url, title, cls) {
+function convCard(url, title, cls, empty) {
   const card = el('div', 'card conv-card ' + (cls || ''));
   const hrow = el('div', 'card-head-row');
   hrow.appendChild(el('h2', null, title));
   const box = el('div', 'conv-box');
   const body = el('div');
   box.appendChild(body);
-  const conv = makeConv(url, box, body);
+  const conv = makeConv(url, box, body, empty);
   hrow.appendChild(conv.detailButton());
   card.appendChild(hrow); card.appendChild(box);
   return { card, conv, box };

@@ -520,6 +520,20 @@ def test_a_notification_shows_as_a_toast_named_by_the_instance(
     assert not errors
 
 
+def test_a_machine_whose_agent_state_never_ran_says_so(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """A tool-only machine's conversation read "this session made no conversation"."""
+    from playwright.sync_api import expect
+
+    _machine(tmp_path, "tools", LONG, [])
+    page, errors = _open(open_page, port, "tools")
+    expect(page.locator(".conv-card .conv-empty")).to_have_text(
+        "no agent state has run in this machine"
+    )
+    assert not errors
+
+
 def test_a_warning_holds_until_dismissed_in_the_warning_colour(
     open_page: OpenPage, port: int, tmp_path: pathlib.Path
 ) -> None:
