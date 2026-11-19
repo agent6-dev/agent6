@@ -217,3 +217,25 @@ def test_old_and_new_modes_tint_changed_lines_by_side(
     assert tints["old.sl.changed"] == tints["inline.dl.del"], tints
     assert tints["new.sl.changed"] == tints["inline.dl.add"], tints
     assert not errors
+
+
+def test_a_tinted_diff_line_keeps_its_code_in_the_text_colour(
+    open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
+) -> None:
+    """Inline coloured a changed line's code green or red on its tint, where split did not."""
+    port, base, head = long_file
+    page, errors = open_page(port)
+    page.add_init_script("localStorage.setItem('a6-diff-mode', 'inline')")
+    page.goto(f"http://127.0.0.1:{port}/#/git/compare/{base}..{head}?path=long.txt")
+    page.wait_for_selector(".dl.add")
+    colours = page.evaluate("""() => {
+      const of = s => getComputedStyle(document.querySelector(s)).color;
+      const probe = document.createElement('span'); document.body.appendChild(probe);
+      const token = v => { probe.style.color = v; return getComputedStyle(probe).color; };
+      return {code: of('.dl.add .source-code'), marker: of('.dl.add .diff-marker'),
+        deleted: of('.dl.del .diff-marker'), text: token('var(--text)'), ok: token('var(--ok)'),
+        err: token('var(--err)')};
+    }""")
+    assert colours["code"] == colours["text"], colours
+    assert colours["marker"] == colours["ok"] and colours["deleted"] == colours["err"], colours
+    assert not errors
