@@ -113,14 +113,16 @@ main { padding: 0; }
 .row { display: flex; gap: 10px; align-items: center; }
 .wrap { flex-wrap: wrap; }
 .muted { color: var(--muted); }
-.pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
-/* One class per `viewmodel.format.status_level`; the server stamps the level
-   beside the label on every hub row, so no status word is mapped here. */
-.pill.ok { color: var(--ok); border-color: var(--ok); }
-.pill.info { color: var(--accent2); border-color: var(--accent2); }
-.pill.active { color: var(--accent); border-color: var(--accent); }
-.pill.warn { color: var(--warn); border-color: var(--warn); }
-.pill.error { color: var(--err); border-color: var(--err); }
+/* The status label: a dot in the level's colour, then the word in the row's text, so the word
+   names the state without the colour. One class per `viewmodel.format.status_level`; the server
+   stamps the level beside the label on every hub row, so no status word is mapped here. */
+.pill { --lvl: var(--muted); display: inline-flex; align-items: center; gap: 7px; font-size: 13px; line-height: 20px; white-space: nowrap; }
+.pill::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--lvl); }
+.pill.ok { --lvl: var(--ok); }
+.pill.info { --lvl: var(--accent2); }
+.pill.active { --lvl: var(--accent); }
+.pill.warn { --lvl: var(--warn); }
+.pill.error { --lvl: var(--err); }
 
 .list { display: flex; flex-direction: column; }
 .item {
