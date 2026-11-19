@@ -16,11 +16,12 @@ function runState(s) { return s.status_label || ''; }
 async function renderRun(id, opts, gen) {
   opts = opts || {};
   const base = opts.base || ('/api/session/' + encodeURIComponent(id));
+  // The top bar names the session first, so an error view stands under the name it is about.
+  const crumbBase = opts.crumb || id;
+  setCrumb(crumbBase);
   const snap = await getJSON(base); // throws -> route() shows the error
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint or open a stream
   const readOnly = !!opts.readOnly;
-  const crumbBase = opts.crumb || id;
-  setCrumb(crumbBase);
   view.innerHTML = '';
   // "paged" only acts on phones: one widget shows at a time there, picked by
   // the floating menu; the desktop drawer ignores it.

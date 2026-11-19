@@ -346,8 +346,8 @@ function actionable(elem, activate, label) {
 }
 
 // The open page's nav link in both bars carries aria-current, which also styles it. The crumb
-// starts as that link's label, so it is right while the page loads; a page under it (a session,
-// a machine) names itself once it has loaded.
+// starts as that link's label; a page under it (a session, a machine) names itself before it
+// loads, so a failed load stands under the name it is about.
 function setTab(name) {
   let label = '';
   for (const a of document.querySelectorAll('nav.tabs a, aside.rail .rail-nav a')) {

@@ -118,7 +118,8 @@ def test_an_unknown_session_reads_not_found_under_its_section(
 ) -> None:
     """An unknown session opened from Config showed a bare error line under the crumb "config".
 
-    It reads Not found under the Sessions crumb, with no Try again: a retry cannot bring it back.
+    It reads Not found under its own id, as a missing machine does, with no Try again: a retry
+    cannot bring it back.
     """
     from playwright.sync_api import expect
 
@@ -129,7 +130,7 @@ def test_an_unknown_session_reads_not_found_under_its_section(
     problem = page.locator("#view .problem")
     expect(problem.get_by_role("heading")).to_have_text("Not found")
     expect(problem).to_contain_text("no session 'nobody'")
-    expect(page.locator("#crumb")).to_have_text("Sessions")
+    expect(page.locator("#crumb")).to_have_text("nobody")
     expect(page.locator("[aria-current=page]")).to_have_count(2)  # the rail and the phone tabs
     expect(problem.get_by_role("button", name="Try again")).to_have_count(0)
     expect(problem.get_by_role("link", name="Back to Sessions")).to_have_attribute("href", "#/")
