@@ -247,6 +247,23 @@ def test_refresh_fetch_and_load_more_wait_while_their_requests_run(
     assert errors == [], errors
 
 
+def test_typing_in_the_toolbars_fields_keeps_the_toolbar_still(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """The new-branch field grew with each key until it took the next row and moved the graph."""
+    _git(tmp_path, "remote", "add", "up", str(tmp_path))
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    name, pull = page.get_by_placeholder("new branch…"), page.get_by_placeholder("PR #")
+    graph = page.locator(".git-graph")
+    page.locator(".gc-row").first.wait_for()
+    before = name.bounding_box(), pull.bounding_box(), graph.bounding_box()
+    name.press_sequentially("feature/a-fairly-long-branch-name-typed-here")
+    pull.press_sequentially("1234567")
+    assert (name.bounding_box(), pull.bounding_box(), graph.bounding_box()) == before
+    assert errors == [], errors
+
+
 def test_create_fetch_pr_and_commit_wait_for_their_input(
     open_page: OpenPage, dirty_git_port: int, tmp_path: pathlib.Path
 ) -> None:
