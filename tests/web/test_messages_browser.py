@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import http.server
 import json
 import pathlib
 import re
+import threading
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.web import signin, test_web_browser
+from tests.web import signin, test_hub_browser, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, BrowserContext, Page, Playwright
@@ -79,6 +81,37 @@ def open_in(request: pytest.FixtureRequest) -> Iterator[Callable[[str, int], Pag
     finally:
         for context in contexts:
             context.close()
+
+
+class _NoReasonPhrase(http.server.BaseHTTPRequestHandler):
+    """Answer 502 with an HTML page and no reason phrase, as a proxy speaking HTTP/2 does."""
+
+    def do_GET(self) -> None:
+        body = b"<html><body>502 Bad Gateway</body></html>"
+        self.send_response(502, "")
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self) -> None:
+        self.rfile.read(int(self.headers["Content-Length"]))
+        self.do_GET()
+
+    def log_message(self, format: str, *args: object) -> None:
+        del format, args
+
+
+@pytest.fixture
+def no_phrase() -> Iterator[str]:
+    """Yield the address of a `_NoReasonPhrase` server on an ephemeral port."""
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _NoReasonPhrase)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{srv.server_address[1]}/"
+    finally:
+        srv.shutdown()
+        srv.server_close()
 
 
 def _floor(page: Page) -> float:
@@ -235,6 +268,84 @@ def test_a_message_raised_under_a_dialog_shows_above_it_and_takes_the_keyboard(
     expect(message).to_contain_text("merge refused (2)")
     assert message.evaluate(PRESSABLE)
     assert not errors
+
+
+def test_a_failed_refresh_keeps_the_rows_and_says_since_when(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """With the server gone the Sessions list kept its last rows, read as current, with no mark."""
+    from playwright.sync_api import Route, expect
+
+    test_hub_browser._run(tmp_path, "alpha-AAAAAA", "Alpha task")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    row = page.locator(".item").filter(has_text="alpha-AAAAAA")
+    expect(row).to_be_visible()
+    stale = page.locator("#view > .stale")
+    expect(stale).to_have_attribute("role", "status")
+    expect(stale).to_have_text("")
+
+    def refuse(route: Route) -> None:
+        route.abort("connectionrefused")
+
+    page.route("**/api/hub", refuse)
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    expect(stale).to_have_text(
+        re.compile(
+            rf"^no answer from the agent6 web server at 127\.0\.0\.1:{port} \(.+\)"
+            r" · not updated since \d\d:\d\d · retrying every 4 s$"
+        )
+    )
+    expect(row).to_be_visible()
+    page.unroute("**/api/hub", refuse)
+    test_hub_browser._refresh(page)
+    expect(stale).to_have_text("")
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
+def test_a_dropped_stream_keeps_the_run_and_says_since_when(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A run page whose stream could not reconnect kept its last paint without a word."""
+    from playwright.sync_api import Route, expect
+
+    test_hub_browser._run(tmp_path, "alpha-AAAAAA", "Alpha task")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/alpha-AAAAAA")
+    stale = page.locator("#view > .stale")
+    expect(stale).to_have_text("")
+
+    def refuse(route: Route) -> None:
+        route.abort("connectionrefused")
+
+    page.route("**/events", refuse)
+    page.evaluate("live.ctrl.abort()")  # the open connection drops
+    expect(stale).to_contain_text("· retrying every 1.5 s")
+    page.unroute("**/events", refuse)
+    expect(stale).to_have_text("", timeout=5000)
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
+def test_a_stream_refused_with_no_reason_phrase_names_its_status_code(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    no_phrase: str,
+) -> None:
+    """A stream refused with no reason phrase, as over HTTP/2, retried without a word."""
+    from playwright.sync_api import expect
+
+    test_hub_browser._run(tmp_path, "alpha-AAAAAA", "Alpha task")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/alpha-AAAAAA")
+    stale = page.locator("#view > .stale")
+    expect(stale).to_have_text("")
+    page.route("**/events", lambda route: route.continue_(url=no_phrase))
+    page.evaluate("live.ctrl.abort()")
+    expect(stale).to_have_text(
+        re.compile(r"^HTTP 502 · not updated since \d\d:\d\d · retrying every 1\.5 s$")
+    )
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
 
 
 @pytest.mark.parametrize("engine", ["browser", "firefox"])

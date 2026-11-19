@@ -331,10 +331,19 @@ async function boot() {
   }
   route();
 }
-// The live stream: a fetch carrying the token (the browser's own event-stream object
-// sends no header), read as
-// SSE frames. A 401 brings up the sign-in form; a dropped connection is reopened after
-// a pause, so the last paint stays up meanwhile; close() ends it for good.
+// A live page (the hub's poll, a run's or a machine's stream) keeps its last paint while the server gives no answer.
+const staleLine = el('div', 'muted card stale');
+staleLine.setAttribute('role', 'status'); // in the page while empty, so its text is read out when it comes
+let answeredAt = 0;
+function watchLive() { view.prepend(staleLine); answered(); }
+function answered() { answeredAt = Date.now(); if (staleLine.textContent) staleLine.textContent = ''; }
+function unanswered(reason, retryMs) {
+  const said = `${reason} · not updated since ${new Date(answeredAt).toTimeString().slice(0, 5)} · retrying every ${retryMs / 1000} s`;
+  if (staleLine.textContent !== said) staleLine.textContent = said; // a repeat is not read out again
+  hbState.active = false; // a heartbeat would count time the page cannot see
+}
+// The live stream: a fetch with the token (the browser's own event stream sends none) read as SSE frames, reopened after a drop.
+const STREAM_RETRY_MS = 1500;
 function openStream(url, onData) {
   const stream = {
     closed: false, ctrl: null, timer: null,
@@ -342,10 +351,11 @@ function openStream(url, onData) {
   };
   const connect = async () => {
     stream.ctrl = new AbortController();
-    let r = null;
-    try { r = await serverFetch(url, { signal: stream.ctrl.signal }); } catch (_) {}
+    let r = null, reason = '';
+    try { r = await serverFetch(url, { signal: stream.ctrl.signal }); } catch (e) { reason = e.message; }
     if (stream.closed) return;
     if (r && r.ok && r.body) {
+      answered();
       const reader = r.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
@@ -363,13 +373,20 @@ function openStream(url, onData) {
           }
         }
       } catch (_) { /* aborted, or the connection dropped */ }
+      if (!stream.closed) answered(); // the paint was current until the connection dropped
+    } else if (r) {
+      reason = (await r.json().catch(() => ({}))).error || r.statusText || 'HTTP ' + r.status; // HTTP/2 has no reason phrase
     }
-    if (!stream.closed) stream.timer = setTimeout(connect, 1500);
+    if (stream.closed) return;
+    if (reason) unanswered(reason, STREAM_RETRY_MS);
+    stream.timer = setTimeout(connect, STREAM_RETRY_MS);
   };
+  watchLive();
   connect();
   return stream;
 }
 function closeLive() {
+  staleLine.remove();
   if (live) { live.close(); live = null; }
   if (hubTimer) { clearInterval(hubTimer); hubTimer = null; }
   if (hubVisWake) { document.removeEventListener('visibilitychange', hubVisWake); hubVisWake = null; }
@@ -1152,6 +1169,7 @@ async function renderHub(focus, gen) {
   const dock = machinesTab ? createMachineDock() : newWorkDock(data.presets, data.preset_default_label, data.sessions);
   view.appendChild(dock);
   if (handed) dock.querySelector('textarea').focus();
+  watchLive();
   // Without this the hub paints once, so a child that finished, failed or
   // crashed keeps its "running" pill until a manual reload; clicking the
   // already-active tab does not re-enter route(). Refresh the lists only: a
@@ -1160,13 +1178,14 @@ async function renderHub(focus, gen) {
     // A background tab has nobody to mislead, unless it may notify: then it keeps watching.
     if (document.hidden && !osNotifyOn()) return;
     if (gen !== undefined && gen !== routeGen) return; // superseded; closeLive() clears us
-    try {
-      const next = await getJSON('/api/hub');
-      if (gen !== undefined && gen !== routeGen) return;
-      announceSessions(statuses, next.sessions);
-      statuses = seedStatuses(next.sessions);
-      show(next, true);
-    } catch (_) { /* transient: keep the last good paint */ }
+    let next;
+    try { next = await getJSON('/api/hub'); }
+    catch (e) { if (gen === undefined || gen === routeGen) unanswered(e.message, HUB_POLL_MS); return; }
+    if (gen !== undefined && gen !== routeGen) return;
+    answered();
+    announceSessions(statuses, next.sessions);
+    statuses = seedStatuses(next.sessions);
+    show(next, true);
   };
   hubTimer = setInterval(refreshLists, HUB_POLL_MS);
   // Re-focusing the tab otherwise shows the pre-blur pills (the interval
