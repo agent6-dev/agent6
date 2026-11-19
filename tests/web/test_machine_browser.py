@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -173,6 +174,14 @@ def _ended(root: pathlib.Path, lines: int = 3) -> None:
     }
     rows = [_step(0, "work", "budget_exhausted", "done", AGENT), end]
     _machine(root, "ended", LOOP, rows, _talk(lines))
+
+
+def _parked(root: pathlib.Path) -> None:
+    """Write `parked`: waiting in `rest` with no worker, so only a poke reaches it."""
+    rows = [_step(0, "work", "ok", "check", AGENT), _step(1, "check", "ok", "rest", TOOL)]
+    machine = _machine(root, "parked", LOOP, rows, _talk(2))
+    wait = {"state": "rest", "wake_epoch": time.time() + 86400, "seq": 2}
+    (machine / "wait.json").write_text(json.dumps(wait) + "\n", encoding="utf-8")
 
 
 def _open(open_page: OpenPage, port: int, name: str) -> tuple[Page, list[str]]:
@@ -348,4 +357,28 @@ def test_the_current_state_and_the_newest_transition_open_in_view(
     assert page.evaluate(at_end)
     expect(page.locator(".tree .cursor")).to_contain_text("stage_27")
     assert page.evaluate(in_view)
+    assert not errors
+
+
+def test_the_conversation_names_the_agent_state_it_shows(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """The card read "Current state" over a past agent state's conversation in a wait state.
+
+    A state entered again is current only once its new execution has a log.
+    """
+    from playwright.sync_api import expect
+
+    _parked(tmp_path)
+    _machine(tmp_path, "working", LOOP, [], _talk(2), alive=True)
+    failed = {**TOOL, "exit_code": 1}
+    rows = [_step(0, "work", "ok", "check", AGENT), _step(1, "check", "nonzero", "work", failed)]
+    _machine(tmp_path, "again", LOOP, rows, _talk(2))
+    page, errors = _open(open_page, port, "parked")
+    title = page.locator(".conv-card h2")
+    expect(title).to_have_text("Last agent state · work")
+    page.goto(f"http://127.0.0.1:{port}/#/machine/working")
+    expect(title).to_have_text("Current state · work")
+    page.goto(f"http://127.0.0.1:{port}/#/machine/again")
+    expect(title).to_have_text("Last agent state · work")
     assert not errors

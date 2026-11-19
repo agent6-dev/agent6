@@ -36,10 +36,11 @@ async function renderMachine(name, gen) {
   const pathBody = addCard('Path');
   // The machine's summary and status stay over the States list as it scrolls.
   cards._summary = el('div', 'row wrap'); structBody.before(cards._summary);
-  // The current agent state's conversation: the same folded view a run shows,
-  // full-width under the states/path pair.
-  const cc = convCard(base + '/conversation', 'Current state');
+  // The newest agent state's conversation, the same folded view a run shows, under the pair;
+  // paintMachine titles it by that state.
+  const cc = convCard(base + '/conversation', 'Conversation');
   cards._conv = cc.conv;
+  cards._conv_title = cc.card.querySelector('h2');
   grid.appendChild(cc.card);
   app.appendChild(grid);
   cc.conv.refresh();
@@ -211,6 +212,12 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
     const box = structBody.getBoundingClientRect(), at = cursor.getBoundingClientRect();
     if (at.top < box.top || at.bottom > box.bottom) structBody.scrollTop += (at.top + at.bottom - box.top - box.bottom) / 2;
   }
+  // The conversation is the newest agent state's. Its dir is `<seq>-<state>`, seq being the
+  // transition that execution makes, so the current state's own execution has the path's length.
+  const [, seq, ran] = /^(\d+)-(.+)$/.exec(cards._state) || [];
+  const current = ran === m.current && Number(seq) === (m.transitions || []).length;
+  if (!ran) cards._conv_title.textContent = 'Conversation';
+  else cards._conv_title.replaceChildren(current ? 'Current state · ' : 'Last agent state · ', el('span', 'name', ran));
 
   // Every control is gated and labelled from the wire refusals, the one
   // decision the CLI and the TUI run: a steer needs an open agent state, a
