@@ -1584,7 +1584,8 @@ function makeComposer(id) {
   const draftKey = 'a6-draft-' + id;
   ta.value = recall(draftKey, '');
   ta.oninput = () => { if (ta.value) remember(draftKey, ta.value); else forget(draftKey); };
-  const clearDraft = () => { ta.value = ''; forget(draftKey); };
+  // The emptied entry reaches every input listener: the draft is forgotten and the popups close.
+  const clearDraft = () => { ta.value = ''; ta.dispatchEvent(new Event('input')); };
   const hint = el('div', 'hint');
   // The preset and the model the next execution continues under (`agent6 resume
   // --preset`, `--model`): both change only between executions, so the row shows

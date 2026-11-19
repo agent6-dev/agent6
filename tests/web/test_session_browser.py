@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -235,6 +236,27 @@ def test_a_fan_outs_children_table_leaves_the_conversation_its_share(
     assert name == ["left", "400"]
     assert box["height"] <= 900 * 0.3
     assert conversation["height"] > 300
+    assert not errors
+
+
+def test_a_directive_the_composer_runs_closes_its_popup(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """/shells and Enter emptied the entry and left the directive popup open over it."""
+    from playwright.sync_api import expect
+
+    stop = {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+    session_logs.write_run(tmp_path, "shells-AAA111", [stop])
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/shells-AAA111")
+    entry = page.locator(".composer textarea")
+    expect(entry).to_have_attribute("placeholder", re.compile("continue|next"))
+    entry.fill("/shells")
+    expect(page.locator(".ac-pop .ac-item")).to_have_count(1)
+    entry.press("Enter")
+    expect(page.locator(".toast")).to_contain_text("no background commands this run")
+    expect(entry).to_have_value("")
+    expect(page.locator(".ac-pop")).to_have_count(0)
     assert not errors
 
 
