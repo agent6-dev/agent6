@@ -420,6 +420,49 @@ def test_a_write_from_the_config_bar_returns_the_focus_to_the_bar(
     assert not [error for error in errors if "400 (Bad Request)" not in error]
 
 
+def test_a_saved_config_row_scrolls_clear_of_the_save_message(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The save message covered the row just edited when that row sat at the screen's bottom.
+
+    On a phone the message runs to four lines when the repo config shadows the saved value.
+    """
+    message = (
+        "Set budget.max_usd = 12 in /home/user/.config/agent6/config.toml\n"
+        "note: the repo config overrides budget.max_usd; a run here reads its value."
+    )
+    page, errors = open_page(port)
+
+    def answer(route: Route) -> None:
+        if route.request.method != "POST":
+            route.fallback()
+            return
+        route.fulfill(json={"ok": True, "message": message})
+
+    page.route("**/api/config", answer)
+    # The message leaves after 4 s, which a loaded host's re-render can outlast: it stays here.
+    page.add_init_script(
+        """{ const set = setTimeout;
+        setTimeout = (f, ms, ...a) => set(f, ms === 4000 ? 1e6 : ms, ...a); }"""
+    )
+    _config(page, port, 390)
+    row = page.locator('[data-key="budget.max_usd"]')
+    row.evaluate(
+        """r => window.scrollBy(0, r.getBoundingClientRect().bottom
+        - (document.querySelector('nav.tabs').getBoundingClientRect().top - 20))"""
+    )
+    row.locator("td.val").click()
+    page.locator(".cfg-bar").evaluate("e => { e.dataset.stale = 1; }")
+    page.get_by_role("dialog").get_by_role("button", name="Save").click()
+    page.locator(".cfg-bar[data-stale]").wait_for(state="detached")  # the page has re-rendered
+    toast_box, row_box = page.locator("#toasts .toast").bounding_box(), row.bounding_box()
+    assert toast_box is not None
+    assert row_box is not None
+    assert toast_box["height"] > 90  # four lines
+    assert row_box["y"] + row_box["height"] <= toast_box["y"]
+    assert not errors
+
+
 def test_the_filter_opens_folded_matches_and_says_when_nothing_matches(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

@@ -148,8 +148,14 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
   // The focus goes back where the write started: the row (scrolled into view), the filter or the bar.
   const focused = rows.find(row => row.key === state.key && row.tr.style.display !== 'none');
   if (state.filtering || (state.key && !focused)) filter.focus({preventScroll: true});
-  else if (focused) { focused.edit.focus({preventScroll: true}); focused.tr.scrollIntoView({block: 'nearest'}); }
-  else if (state.action) [...bar.children].find(b => b.textContent === state.action)?.focus({preventScroll: true});
+  else if (focused) {
+    focused.edit.focus({preventScroll: true});
+    focused.tr.scrollIntoView({block: 'nearest'});
+    // The save's message stacks over the page's foot: the row stops 8px above the top message.
+    const top = Math.min(...[...document.querySelectorAll('#toasts .toast')].map(t => t.getBoundingClientRect().top));
+    const over = focused.tr.getBoundingClientRect().bottom + 8 - top;
+    if (over > 0) window.scrollBy(0, over);
+  } else if (state.action) [...bar.children].find(b => b.textContent === state.action)?.focus({preventScroll: true});
 }
 // Fill `node` with text that may wrap after each `mark` (a key's dots, a value's or a path's
 // slashes): a <wbr> marks the place, so a copy of the text holds no extra character. The <wbr> is

@@ -55,6 +55,7 @@ class Element {
   focus() { document.activeElement = this; this.onfocus?.(); }
   removeAttribute(name) { delete this[name]; }
   scrollIntoView() {}
+  getBoundingClientRect() { return {top: 0, bottom: 0}; }
   remove() {
     this.parent.children = this.parent.children.filter(child => child !== this);
     this.isConnected = false;
@@ -68,6 +69,8 @@ const document = {
   querySelector(selector) { assert.equal(selector, 'dialog[open]'); return dialog() ?? null; },
   getElementById: () => el('div'),  // the messages, which ride in an open dialog
   documentElement: {clientWidth: 0, classList: {toggle() {}}},
+  // renderConfig's one question: which messages show? None here.
+  querySelectorAll(selector) { assert.equal(selector, '#toasts .toast'); return []; },
 };
 const window = {scrollX: 0, scrollY: 0, scrollTo(x, y) { this.scrollX = x; this.scrollY = y; }};
 const innerWidth = 0;
