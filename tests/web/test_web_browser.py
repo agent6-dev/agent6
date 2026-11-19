@@ -796,6 +796,23 @@ def test_the_git_toolbar_fetches_a_pull_request_and_offers_it_for_review(
     assert errors == [], errors
 
 
+def test_the_git_toolbar_controls_share_one_height_and_fit_their_values(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """Every toolbar control is one height, and the branch select fits its branch, not the row."""
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    heights = page.locator(".git-bar").locator("button, select, input").evaluate_all(
+        "els => els.filter(e => e.offsetParent)"
+        ".map(e => Math.round(e.getBoundingClientRect().height))"
+    )
+    assert len(heights) >= 7 and len(set(heights)) == 1, heights
+    select = page.locator(".git-branch select").first
+    assert select.evaluate("e => e.getBoundingClientRect().width") < 200
+    assert errors == [], errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:

@@ -279,17 +279,19 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   reloadBtn.setAttribute('aria-label', 'refresh');
   const counts = el('span', 'muted git-counts');
   bar.appendChild(refsBtn); bar.appendChild(compareBtn); bar.appendChild(reloadBtn); bar.appendChild(counts);
+  // A field and the buttons that act on it wrap as one group.
+  const together = (...controls) => { const g = el('span', 'git-group'); for (const c of controls) g.appendChild(c); return g; };
 
   // -- your branch: switch to one, start one at HEAD, review one ----------------------
   // Every write goes to /api/git/<verb>, refused while a session is live in this checkout.
   const branchRow = el('span', 'row git-branch');
   const branchSel = el('select', 'field'); branchSel.title = 'the branch to switch to or review; a remote-tracking ref is for review';
-  const switchBtn = el('button', 'mini', 'Switch');
+  const switchBtn = el('button', null, 'Switch');
   switchBtn.title = 'check this branch out (git switch); refused while a session is live here or local changes would be lost';
-  const reviewBtn = el('button', 'mini', 'Review');
+  const reviewBtn = el('button', null, 'Review');
   reviewBtn.title = 'start a review session over this branch: /review <branch> in the new-work composer';
-  const newName = el('input', 'field'); newName.placeholder = 'new branch…'; newName.style.width = '10em';
-  const createBtn = el('button', 'mini', 'Create'); createBtn.title = 'create the branch at HEAD and check it out';
+  const newName = el('input', 'field'); newName.placeholder = 'new branch…';
+  const createBtn = el('button', null, 'Create'); createBtn.title = 'create the branch at HEAD and check it out';
   // Local branches switch and review; a remote-tracking ref (a fetched pull request among
   // them) reviews only. `keep` names the ref to leave selected after a re-read.
   const isLocal = () => branchSel.selectedOptions[0]?.dataset.kind === 'branch';
@@ -312,19 +314,20 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   };
   branchSel.onchange = gateSwitch;
   reviewBtn.onclick = () => { handToNewWork({ task: '/review ' + branchSel.value }); location.hash = '#/'; };
-  for (const x of [branchSel, switchBtn, reviewBtn, newName, createBtn]) branchRow.appendChild(x);
+  branchRow.appendChild(together(branchSel, switchBtn, reviewBtn));
+  branchRow.appendChild(together(newName, createBtn));
   bar.appendChild(branchRow);
 
   // -- your remotes: fetch one's branches, or one pull request, into its remote-tracking refs.
   // Nothing is merged and no branch of yours moves; the URL shown is where the fetch goes.
   const fetchRow = el('span', 'row git-branch git-fetch');
-  const remoteSel = el('select', 'field'); remoteSel.title = 'the remote to fetch from'; remoteSel.style.width = '12em';
+  const remoteSel = el('select', 'field'); remoteSel.title = 'the remote to fetch from';
   const remoteUrl = el('span', 'muted git-counts');
-  const fetchBtn = el('button', 'mini', 'Fetch');
+  const fetchBtn = el('button', null, 'Fetch');
   fetchBtn.title = "fetch this remote's branches into <remote>/<branch>; nothing is merged, no branch of yours moves, tags and submodules are left alone";
-  const pullNum = el('input', 'field'); pullNum.placeholder = 'PR #'; pullNum.inputMode = 'numeric'; pullNum.style.width = '5em';
+  const pullNum = el('input', 'field'); pullNum.placeholder = 'PR #'; pullNum.inputMode = 'numeric';
   pullNum.title = 'a pull request number on this remote';
-  const pullBtn = el('button', 'mini', 'Fetch PR');
+  const pullBtn = el('button', null, 'Fetch PR');
   pullBtn.title = "fetch that pull request (the remote's refs/pull/<number>/head) into <remote>/pr/<number>, then Review or Compare it";
   const paintRemotes = () => {
     const kept = remoteSel.value;
@@ -334,7 +337,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     remoteSel.onchange();
   };
   remoteSel.onchange = () => { remoteUrl.textContent = (remotes.find(r => r.name === remoteSel.value) || { url: '' }).url; };
-  for (const x of [remoteSel, fetchBtn, pullNum, pullBtn, remoteUrl]) fetchRow.appendChild(x);
+  for (const x of [together(remoteSel, fetchBtn), together(pullNum, pullBtn), remoteUrl]) fetchRow.appendChild(x);
   bar.appendChild(fetchRow);
 
   const body = el('div', 'git-body'); app.appendChild(body);
