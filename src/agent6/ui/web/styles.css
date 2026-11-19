@@ -325,24 +325,23 @@ kbd {
   display: inline-block; min-width: 1.375rem; padding: 1px 0.3125rem; font: var(--fs-s)/1.125rem var(--mono); text-align: center;
   color: var(--text); background: var(--surface2); border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: var(--r-sm);
 }
-/* The messages (#toasts) stack in one column over the content, 16px above the docked composer's
-   top edge (--dock), or above the completion list open over it (--dock-top: the last element
-   with a name is the anchor), so none covers the dock's controls. A page without a dock puts
-   them 16px above the bottom edge, on a phone above the tab bar. */
-.composer.dock { anchor-name: --dock, --dock-top; }
-.composer.dock .ac-pop { anchor-name: --dock-top; }
+/* The messages (#toasts): a column over the content from the header to 16px above the dock (--dock-h). */
 #toasts {
-  position: fixed; z-index: 50; position-anchor: --dock;
-  left: anchor(left, var(--rail-w)); right: anchor(right, 0px); bottom: anchor(--dock-top top, 0px);
-  margin-bottom: 1rem; padding: 0 1rem;
-  display: flex; flex-direction: column; align-items: center; gap: 0.5rem; pointer-events: none;
+  position: fixed; z-index: 50; left: var(--rail-w); right: 0;
+  top: calc(var(--hdr-h) + env(safe-area-inset-top)); bottom: var(--dock-h, 0px);
+  padding: 0.5rem 1rem 1rem; overflow-y: auto; scrollbar-width: none; /* its scrollbar would take no click */
+  display: flex; flex-direction: column-reverse; align-items: center; gap: 0.5rem; pointer-events: none;
 }
+/* An open completion list rises over the messages, which end at its dock's top edge. */
+.composer.dock:has(.ac-pop) { z-index: 51; }
+/* The newest message sits lowest; older ones scroll inside the full column, one at most its height. */
 .toast {
-  display: flex; align-items: flex-start; gap: 0.75rem; max-width: min(100%, 40rem);
+  display: flex; align-items: flex-start; gap: 0.75rem; max-width: min(100%, 40rem); flex: none; max-height: 100%;
   background: var(--surface); border: 1px solid var(--accent); border-radius: 10px;
   padding: 0.625rem 1rem; box-shadow: 0 4px 16px rgba(0,0,0,.4); pointer-events: auto;
   white-space: pre-wrap; overflow-wrap: anywhere; /* CLI-captured messages (merge, prune) keep their lines */
 }
+.toast > div { align-self: stretch; overflow-y: auto; } /* a long text scrolls beside its Dismiss button */
 .toast.bad { border-color: var(--err); color: var(--err); }
 .toast.warn { border-color: var(--warn); }
 /* The Config page's note under its bar, on where saves go: a tinted line 12px below the bar. */
@@ -406,7 +405,7 @@ dialog .err:empty { display: none; }
   header .crumb > .pill + span { font-size: var(--fs-s); }
   header .crumb > .pill + span::before { content: none; }
   main { padding: calc(var(--hdr-h) + env(safe-area-inset-top)) 0 calc(var(--nav-h) + 1.5rem); }
-  #toasts { left: anchor(left, 0px); bottom: anchor(--dock-top top, calc(var(--nav-h) + env(safe-area-inset-bottom))); }
+  #toasts { left: 0; bottom: calc(var(--dock-h, 0px) + var(--nav-h) + env(safe-area-inset-bottom)); }
   .card.scroll { max-height: 60vh; }
   header .desktop-only { display: none; }
 }

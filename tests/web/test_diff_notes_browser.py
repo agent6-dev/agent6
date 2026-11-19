@@ -82,9 +82,9 @@ def test_a_git_page_diff_line_is_quoted_for_the_new_work_composer(
     page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/{head}?path=code.py")
     page.locator(".git-diff .dl.add .g").nth(1).click()
     assert errors == [], errors
-    expect(page.locator(".toast").last).to_contain_text("1 line quoted")
+    expect(page.locator(".toast").first).to_contain_text("1 line quoted")
     page.locator(".git-diff .dl.del .g").first.click()
-    expect(page.locator(".toast").last).to_contain_text("2 lines quoted")
+    expect(page.locator(".toast").first).to_contain_text("2 lines quoted")
     page.evaluate("location.hash = '#/'")
     expect(page.locator(".composer.dock textarea")).to_have_value(
         f"code.py:1 (head side, commit {head[:12]}):\n> class New:\n\n"

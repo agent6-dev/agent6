@@ -1415,13 +1415,19 @@ def test_a_toast_never_covers_the_docked_composer(
     page.evaluate("toast('merge refused\\n  src/stats.py\\ncommit or stash them', true)")
     toast = page.locator(".toast")
     expect(toast).to_contain_text("src/stats.py")
+    # The dock's height reaches the messages by the next paint, once its model list has landed.
+    expect(page.locator(".dock select:disabled")).to_have_count(0)
+    page.evaluate("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
     above, under = toast.bounding_box(), dock.bounding_box()
     assert above and under
     assert above["y"] + above["height"] <= under["y"], (above, under)
     page.locator(".dock textarea").fill("/")
     completions = page.locator(".ac-pop")
     expect(completions).to_contain_text("/review")
-    above, under = toast.bounding_box(), completions.bounding_box()
-    assert above and under
-    assert above["y"] + above["height"] <= under["y"], (above, under)
+    covered = completions.evaluate("""p => { const r = p.getBoundingClientRect(), out = [];
+      for (let y = r.top + 2; y < r.bottom - 2; y += 4) {
+        if (!p.contains(document.elementFromPoint(r.left + 20, y))) out.push(y);
+      }
+      return out; }""")
+    assert covered == [], "a message paints over the completion list"
     assert not errors

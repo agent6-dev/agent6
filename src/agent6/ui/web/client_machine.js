@@ -140,7 +140,7 @@ function machineNotify(ctx, m) {
     ctx.seen.add(k);
     const t = toast(`${ctx.name} · ${esc(n.state)}: ${esc(n.message)}`, n.level);
     if (n.level === 'warn' || n.level === 'error') {
-      ctx.held = [...ctx.held.filter(h => h.isConnected), t];
+      ctx.held = [...ctx.held.filter(h => h.isConnected && h !== t), t]; // a repeat comes back as the message showing
       while (ctx.held.length > 3) ctx.held.shift().remove(); // a machine notifies without limit
     }
     osNotify('agent6: ' + ctx.name, n.message || '');

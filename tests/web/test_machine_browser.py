@@ -655,7 +655,25 @@ def test_only_the_three_newest_held_notifications_stay(
             note = {"type": "machine.notify", "ts": TS, "state": "work", "message": f"check {n}"}
             journal.write(json.dumps({**note, "level": level}) + "\n")
     expect(page.locator("#toasts .toast")).to_have_text(
-        [f"nightly · work: check {n}" for n in (2, 3, 4)]
+        [f"nightly · work: check {n}" for n in (4, 3, 2)]
+    )
+    assert not errors
+
+
+def test_a_warning_repeated_four_times_stays_showing(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """The cap counted a repeated warning's one message once per repeat and removed it."""
+    from playwright.sync_api import expect
+
+    machine = _machine(tmp_path, "nightly", LOOP, [], _talk(2), alive=True)
+    page, errors = _open(open_page, port, "nightly")
+    with (machine / "journal.jsonl").open("a", encoding="utf-8") as journal:
+        for n, message in enumerate(["disk low"] * 4 + ["budget nearly spent"]):
+            note = {"type": "machine.notify", "ts": f"2026-11-13T10:00:0{n}+00:00", "state": "work"}
+            journal.write(json.dumps({**note, "message": message, "level": "warn"}) + "\n")
+    expect(page.locator("#toasts .toast")).to_have_text(
+        ["nightly · work: budget nearly spent", "nightly · work: disk low"]
     )
     assert not errors
 

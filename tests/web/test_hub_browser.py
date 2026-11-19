@@ -434,7 +434,7 @@ def test_a_repeated_start_or_prune_sends_one_request(
     page.wait_for_timeout(500)
     assert [r.request.url.rsplit("/", 1)[1] for r in held] == ["new", "prune"]
     for route in held:
-        route.fulfill(json={"ok": False, "error": "held"})
+        route.fulfill(json={"ok": False, "error": "held " + route.request.url})
     expect(page.locator(".toast")).to_have_count(2)
     expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
     assert not errors

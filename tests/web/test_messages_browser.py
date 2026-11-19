@@ -18,6 +18,12 @@ pytestmark = pytest.mark.browser
 open_page = test_web_browser.open_page
 port = test_web_browser.port
 
+FAILURE = "merge refused ({}): the checkout has uncommitted changes in `src/stats.py`"
+# Whether the element at a box's centre is in the box: nothing covers it, so a click lands.
+PRESSABLE = """e => { const r = e.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+  return !!hit && e.contains(hit); }"""
+
 
 @pytest.fixture(scope="module")
 def pw() -> Iterator[Playwright]:
@@ -72,6 +78,75 @@ def open_in(request: pytest.FixtureRequest) -> Iterator[Callable[[str, int], Pag
     finally:
         for context in contexts:
             context.close()
+
+
+def _floor(page: Page) -> float:
+    """Return where the dock begins, once its model list and the next paint have landed.
+
+    The messages take the dock's height from a resize observation, which lands before a paint.
+    """
+    from playwright.sync_api import expect
+
+    expect(page.locator(".dock select:disabled")).to_have_count(0)
+    return page.evaluate("""() => new Promise(r => requestAnimationFrame(
+      () => requestAnimationFrame(
+        () => r(document.querySelector('.composer.dock').getBoundingClientRect().top))))""")
+
+
+def test_held_messages_stay_between_the_header_and_the_dock(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Seven held failures on a phone climbed past the screen's top edge and over the header.
+
+    The oldest could be reached only by dismissing the newer ones, and a repeat stacked again.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".dock textarea")).to_be_visible()
+    for i in [*range(7), 3]:
+        page.evaluate("text => toast(text, true)", FAILURE.format(i))
+    toasts = page.locator("#toasts .toast")
+    expect(toasts).to_have_count(7)
+    # The repeat moved to the newest place.
+    expect(toasts.first).to_contain_text("merge refused (3)")
+    floor = _floor(page)
+    top = page.locator("header").bounding_box()
+    column = page.locator("#toasts").bounding_box()
+    assert top and column
+    assert column["y"] >= top["y"] + top["height"] - 1
+    assert column["y"] + column["height"] <= floor + 1
+    assert toasts.first.get_by_role("button", name="Dismiss").evaluate(PRESSABLE)
+    oldest = toasts.last.get_by_role("button", name="Dismiss")
+    page.locator("#toasts").evaluate("c => { c.scrollTop = -c.scrollHeight; }")  # the oldest's end
+    assert oldest.evaluate(PRESSABLE)
+    assert not errors
+
+
+def test_a_failure_taller_than_the_screen_scrolls_inside_its_message(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A 61-line merge refusal pushed its first lines and its Dismiss above the screen's top."""
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.locator(".dock textarea").wait_for()
+    lines = "\n".join(f"src/file{i}.py" for i in range(60))
+    page.evaluate("text => toast(text, true)", "merge refused: conflicts in\n" + lines)
+    message = page.locator("#toasts .toast")
+    dismiss = message.get_by_role("button", name="Dismiss")
+    floor = _floor(page)
+    header = page.locator("header").bounding_box()
+    box = message.bounding_box()
+    assert header and box
+    assert header["y"] + header["height"] - 1 <= box["y"]
+    assert box["y"] + box["height"] <= floor + 1
+    text = message.locator(":scope > div")
+    assert text.evaluate("t => t.scrollHeight > t.clientHeight")
+    text.evaluate("t => { t.scrollTop = t.scrollHeight; }")
+    assert dismiss.evaluate(PRESSABLE)
+    assert not errors
 
 
 @pytest.mark.parametrize("engine", ["browser", "firefox"])

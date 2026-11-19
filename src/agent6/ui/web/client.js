@@ -182,13 +182,19 @@ async function postMerge(r) {
 // A failure or a warning holds until dismissed: its reason, often a CLI refusal, is worth reading.
 function toast(msg, level) {
   const kind = level === true || level === 'error' ? 'bad' : level === 'warn' ? 'warn' : '';
+  const host = document.getElementById('toasts');
+  // A held message that is showing already moves to the newest place instead of showing twice.
+  const said = kind && kind + '\n' + msg;
+  const same = said && [...host.children].find(t => t.said === said);
+  if (same) { host.prepend(same); return same; }
   const t = el('div', kind ? 'toast ' + kind : 'toast');
   t.appendChild(el('div')).append(withCode(msg)); // one flex item beside the Dismiss button
   if (kind) {
+    t.said = said;
     t.setAttribute('role', 'alert');
     t.appendChild(closeButton('Dismiss', () => t.remove()));
   } else { setTimeout(() => t.remove(), 4000); }
-  document.getElementById('toasts').appendChild(t);
+  host.prepend(t); // the newest first: the column stacks it lowest
   return t;
 }
 // The crumb names the page, a session's after its state pill; the tab title reads the same words.
@@ -1092,15 +1098,16 @@ function machineFilesCard() {
   return card;
 }
 
-// The docked composer's height, as --dock-h on the page for a row's scroll-margin-bottom, so a
-// row scrolled into view stops clear of the dock. A dock that leaves the page reports 0.
+// The page's docked composer's height (--dock-h): a row scrolled into view and the messages stop clear of it.
 const dockHeight = new ResizeObserver((entries) => {
   for (const e of entries) {
     const h = e.borderBoxSize[0].blockSize;
     document.documentElement.style.setProperty('--dock-h', h + 'px');
-    if (!h) dockHeight.unobserve(e.target);
+    if (!h) dockHeight.unobserve(e.target); // a dock that left the page reports 0
   }
 });
+// The hub, a run and a machine each paint their own dock.
+new MutationObserver(() => { const dock = view.querySelector('.composer.dock'); if (dock) dockHeight.observe(dock); }).observe(view, { childList: true });
 async function renderHub(focus, gen) {
   const machinesTab = focus === 'machines';
   let data;
@@ -1140,7 +1147,6 @@ async function renderHub(focus, gen) {
   const dock = machinesTab ? createMachineDock() : newWorkDock(data.presets, data.preset_default_label, data.sessions);
   view.appendChild(dock);
   if (handed) dock.querySelector('textarea').focus();
-  dockHeight.observe(dock);
   // Without this the hub paints once, so a child that finished, failed or
   // crashed keeps its "running" pill until a manual reload; clicking the
   // already-active tab does not re-enter route(). Refresh the lists only: a
