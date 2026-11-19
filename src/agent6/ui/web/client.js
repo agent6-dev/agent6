@@ -450,15 +450,18 @@ function runOnce(button, action, ready = () => true) {
   };
   button.sync();
 }
+// Two popups share an entry: one closing leaves the references the other set.
+let suggestLists = 0; // numbers each popup's id
+function unpointPopup(entry, box) {
+  if (entry.getAttribute('aria-controls') !== box.id) return;
+  entry.removeAttribute('aria-controls'); entry.removeAttribute('aria-activedescendant');
+}
 // /parallel model-id autocomplete for the new-work composer. When the task text
 // starts with `/parallel ` and the caret sits before `--`, offer the known
 // model ids (GET /api/config/suggest/parallel.models, exactly the set
 // run --parallel accepts) filtered by the comma-fragment under the caret; click,
 // Enter, or ↑/↓+Enter inserts it. The web analogue of the config editor's
 // datalist (a <textarea> can't carry a native datalist).
-// The popup is a listbox the entry controls, and the entry names the highlighted option
-// (aria-activedescendant), so a screen reader reads each model as the arrows reach it.
-let suggestLists = 0; // numbers each popup's id
 function attachParallelSuggest(task, root) {
   let models = null;           // null=unfetched, []=in-flight/empty, else the list
   let box = null, items = [], active = -1;
@@ -492,7 +495,7 @@ function attachParallelSuggest(task, root) {
     return { fragStart, fragEnd, text: v.slice(fragStart, Math.min(caret, fragEnd)) };
   };
   const close = () => {
-    if (box) { box.remove(); box = null; task.removeAttribute('aria-controls'); task.removeAttribute('aria-activedescendant'); }
+    if (box) { unpointPopup(task, box); box.remove(); box = null; }
     items = []; active = -1;
   };
   const insert = (model) => {
@@ -1268,11 +1271,15 @@ const STEER_COMMANDS = [
 // a highlighted row) completes the word plus a trailing space.
 function attachCommandSuggest(ta, root, liveNow, offered = null) {
   let box = null, items = [], active = -1;
+  ta.setAttribute('aria-autocomplete', 'list');
   const word = () => {
     const v = ta.value;
     return v.startsWith('/') && !/\s/.test(v) ? v : null;
   };
-  const close = () => { if (box) { box.remove(); box = null; } items = []; active = -1; };
+  const close = () => {
+    if (box) { unpointPopup(ta, box); box.remove(); box = null; }
+    items = []; active = -1;
+  };
   const insert = (cmd) => {
     fillAsEdit(ta, cmd + ' '); // an undoable edit; its input event hands the /parallel popup over
     close();
@@ -1283,15 +1290,21 @@ function attachCommandSuggest(ta, root, liveNow, offered = null) {
     items = STEER_COMMANDS.filter(([c]) => (liveNow() || (c !== '/compact' && c !== '/btw' && c !== '/now' && c !== '/stop' && c !== '/task' && c !== '/standing' && c !== '/retire')) && (!offered || offered.includes(c)) && c.startsWith(w));
     if (!items.length) { close(); return; }
     if (active >= items.length) active = -1;
-    if (!box) { box = el('div', 'ac-pop'); root.appendChild(box); }
+    if (!box) {
+      box = el('div', 'ac-pop'); box.id = 'suggest-' + ++suggestLists; box.setAttribute('role', 'listbox');
+      root.appendChild(box); ta.setAttribute('aria-controls', box.id);
+    }
     box.textContent = '';
     items.forEach(([c, help], i) => {
       const o = el('div', 'ac-item' + (i === active ? ' on' : ''));
+      o.id = box.id + '-' + i; o.setAttribute('role', 'option'); o.setAttribute('aria-selected', String(i === active));
       o.appendChild(el('span', null, c));
       o.appendChild(el('span', 'muted', ' · ' + help));
       o.onmousedown = (e) => { e.preventDefault(); insert(c); };
       box.appendChild(o);
     });
+    if (active >= 0) ta.setAttribute('aria-activedescendant', box.id + '-' + active);
+    else ta.removeAttribute('aria-activedescendant');
   };
   ta.addEventListener('input', () => { active = -1; render(); });
   ta.addEventListener('click', render);

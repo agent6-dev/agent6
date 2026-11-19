@@ -338,7 +338,7 @@ async function check(text, wanted, caret = text.length, replacement = null) {
     value: text, selectionStart: caret,
     addEventListener(name, fn) { listeners[name] = fn; },
     setSelectionRange(start) { this.selectionStart = start; },
-    focus() {}, setAttribute() {}, removeAttribute() {},
+    focus() {}, setAttribute() {}, getAttribute() {}, removeAttribute() {},
   };
   const root = el('div');
   attachParallelSuggest(task, root);
