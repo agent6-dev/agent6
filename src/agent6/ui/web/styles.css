@@ -125,9 +125,10 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 }
 
 .card { padding: 14px 16px; overflow: hidden; }
-/* A card's or panel's heading is a label: small muted capitals, so it stays apart from the bold
-   line under it (Commit over the commit subject, Findings over its counts). */
-.card h2 { margin: 0 0 8px; font-size: 12px; font-weight: 600; line-height: 20px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+/* A card's or panel's heading, and a group's in the keyboard list, is a label: small muted capitals,
+   so it stays apart from the bold line under it (Commit over the commit subject, Findings over its
+   counts). */
+.card h2, .keys th { margin: 0 0 8px; font-size: 12px; font-weight: 600; line-height: 20px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .card.scroll { max-height: 420px; overflow: auto; }
 
 .row { display: flex; gap: 10px; align-items: center; }
@@ -255,9 +256,17 @@ button.quiet.danger:hover { color: var(--err); border-color: transparent; backgr
 /* The sessions card's maintenance actions and the composer's advanced fold: one muted
    disclosure each, closed by default. */
 .toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
-.keys { border-collapse: collapse; margin-top: 8px; font-size: 13px; }
-.keys td { padding: 3px 12px 3px 0; vertical-align: top; }
-.keys .key { font-family: var(--mono); white-space: nowrap; }
+/* The keyboard list (openKeys): a heading per place, then each key's caps beside what it does. */
+.keys { border-collapse: collapse; width: 100%; font-size: 13px; }
+.keys th { padding: 12px 0 2px; text-align: start; }
+.keys tbody:first-child th { padding-top: 0; }
+.keys td { padding: 3px 0; vertical-align: baseline; }
+.keys td.key { width: 1%; padding-inline-end: 16px; white-space: nowrap; color: var(--muted); }
+/* A key is a keycap. */
+kbd {
+  display: inline-block; min-width: 22px; padding: 1px 5px; font: 12px/18px var(--mono); text-align: center;
+  color: var(--text); background: var(--surface2); border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: var(--r-sm);
+}
 .advanced { margin-top: 10px; }
 .advanced summary { cursor: pointer; list-style: none; width: max-content; font-size: 12px; color: var(--muted); }
 .advanced summary::-webkit-details-marker { display: none; }

@@ -265,6 +265,29 @@ def test_a_banner_sits_under_the_header_with_a_full_size_close_button(
     assert not errors
 
 
+def test_the_keyboard_list_spells_each_key_one_way_as_keycaps(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The list spelled Ctrl-K beside Ctrl+Enter, in plain text over three narrow columns.
+
+    Each key is a keycap, a chord joins its keys with +, and the rows group under where they work.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".dock textarea")).to_be_visible()
+    page.keyboard.press("?")
+    table = page.get_by_role("dialog", name="Keyboard shortcuts").locator("table.keys")
+    rows = table.evaluate("""t => [...t.querySelectorAll('tr')].map(tr => tr.querySelector('th')
+      ? tr.textContent : [...tr.querySelectorAll('td.key kbd')].map(k => k.textContent))""")
+    assert rows[:3] == ["Anywhere", ["Ctrl", "K"], "Outside a field"]
+    assert ["Ctrl", "Enter"] in rows and ["Ctrl", "R"] in rows and ["Enter", "Space"] in rows
+    labels = table.locator("td.key").all_text_contents()
+    assert labels and not [label for label in labels if re.search(r"\w-\w", label)]
+    assert not errors
+
+
 def test_every_phone_tab_keeps_its_icon_on_one_line(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

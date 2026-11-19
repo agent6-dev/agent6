@@ -1362,7 +1362,7 @@ def test_the_keyboard_list_and_the_palette_open_and_act(
     expect(page.get_by_role("heading", name="Sessions", exact=True)).to_have_count(0)
     page.keyboard.press("?")
     keys = page.get_by_role("dialog").locator("table.keys")
-    expect(keys).to_contain_text("Ctrl-K")
+    expect(keys).to_contain_text("Ctrl+K")
     expect(keys).not_to_contain_text("Ctrl-Shift-P")
     page.keyboard.press("Escape")
     expect(keys).to_have_count(0)
@@ -1378,7 +1378,7 @@ def test_the_keyboard_list_and_the_palette_open_and_act(
     expect(page.get_by_role("dialog", name="Commands")).to_be_visible()
     page.keyboard.press("Enter")
     keys = page.get_by_role("dialog", name="Keyboard shortcuts").locator("table.keys")
-    expect(keys).to_contain_text("Ctrl-R")
+    expect(keys).to_contain_text("Ctrl+R")
     assert not errors
 
 

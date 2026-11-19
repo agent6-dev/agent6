@@ -185,7 +185,7 @@ function setCrumb(t) { crumb.textContent = t || ''; document.title = t ? t + ' �
 // (closedby="any"), the browser hands the focus back to the control that opened it, and the
 // dialog leaves the page when it closes. The caller fills the body and focuses its field. One
 // dialog at a time: while one is open, openDialog returns null and the caller drops its own (a
-// fetch that lands after Ctrl-K opened the switcher).
+// fetch that lands after Ctrl+K opened the switcher).
 let dialogCount = 0;
 // A dialog's or a message's close button: the close icon in a quiet square, named by what it does
 // (Close for a dialog, Dismiss for a message).
@@ -1093,7 +1093,7 @@ function openRestate(text) {
   dialog.appendChild(el('pre', 'restate', text));
 }
 
-// Ctrl-R in a session composer: search this session's past messages (the task,
+// Ctrl+R in a session composer: search this session's past messages (the task,
 // then every steer, journal-read via the conversation payload, so resumes and
 // steers typed on other surfaces appear). Newest first, one line
 // each, repeats collapsed: the same list the CLI and TUI searches show.
@@ -1177,7 +1177,7 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '
   render();
 }
 
-// Ctrl-K anywhere: switch to another session. The hub's rows, newest activity first,
+// Ctrl+K anywhere: switch to another session. The hub's rows, newest activity first,
 // children included, narrowed by what is typed against the id, mode, status, task,
 // branch and worktree. A row names where the run works and the ref holding its
 // commits; Enter opens the highlighted one, and Review code and Merge act as the
@@ -1227,7 +1227,7 @@ async function openSwitcher() {
   });
 }
 
-// `>` typed into Ctrl-K's box: the pages, the dialogs, the theme, new work, and the controls
+// `>` typed into Ctrl+K's box: the pages, the dialogs, the theme, new work, and the controls
 // the current page offers, each by the name it shows.
 function paletteItems() {
   const go = (hash) => () => { location.hash = hash; };
@@ -1237,7 +1237,7 @@ function paletteItems() {
     { label: 'Files', hint: 'page', run: go('#/files') },
     { label: 'State machines', hint: 'page', run: go('#/machines') },
     { label: 'Config', hint: 'page', run: go('#/config') },
-    { label: 'Switch session', hint: 'Ctrl-K', run: () => openSwitcher() },
+    { label: 'Switch session', hint: 'Ctrl+K', run: () => openSwitcher() },
     { label: 'Keyboard shortcuts', hint: '?', run: () => openKeys() },
     { label: 'Toggle theme', hint: 'light or dark', run: () => toggleTheme() },
     { label: 'New session', hint: 'the Sessions composer', run: () => { location.hash = '#/'; setTimeout(() => view.querySelector('.dock textarea')?.focus(), 50); } },
@@ -1263,35 +1263,56 @@ function openPalette(initial = '') {
 }
 
 // Every binding the web answers, in one table: the global handler runs the rows that
-// carry `run`, and the keyboard list (`?`) shows every row. The composer's keys are
-// handled where the composer is built, and named here so the list is whole.
+// carry `run`, and the keyboard list (`?`) shows every row, grouped by where it works. The
+// composer's keys are handled where the composer is built, and named here so the list is whole.
+// A label spells a chord with + ('Ctrl+K') and names either key with 'or'.
 // An Enter that confirms an input method's candidate (Japanese, Chinese, Korean) is part of
 // typing, not a send; keyCode 229 covers engines that report the composition only that way.
 function composing(e) { return e.isComposing || e.keyCode === 229; }
 function inField(e) { const t = e.target; return !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)); }
 const KEYS = [
-  { label: 'Ctrl-K', where: 'anywhere', does: 'switch session (> for commands)', match: (e) => e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey, run: () => openSwitcher() },
-  { label: '?', where: 'outside a field', does: 'this list', match: (e) => e.key === '?' && !inField(e) && !e.ctrlKey && !e.metaKey && !e.altKey, run: () => openKeys() },
-  { label: 'Esc', where: 'a dialog or popup', does: 'close it' },
-  { label: 'Enter', where: 'the composer', does: 'send the instruction; resume an ended session' },
-  { label: 'Ctrl+Enter', where: 'the composer', does: 'send now, interrupting the call in flight (/now)' },
-  { label: 'Shift+Enter', where: 'the composer', does: 'newline' },
-  { label: 'Ctrl-R', where: 'the composer', does: "search this session's past messages" },
-  { label: '/', where: 'the composer', does: 'directive completion; Tab or Enter accepts' },
-  { label: '↑ ↓', where: 'a list', does: 'move' },
-  { label: 'Enter or Space', where: 'a focused row', does: 'open it' },
+  { label: 'Ctrl+K', where: 'Anywhere', does: 'switch session (> for commands)', match: (e) => e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey, run: () => openSwitcher() },
+  { label: '?', where: 'Outside a field', does: 'this list', match: (e) => e.key === '?' && !inField(e) && !e.ctrlKey && !e.metaKey && !e.altKey, run: () => openKeys() },
+  { label: 'Esc', where: 'In a dialog or popup', does: 'close it' },
+  { label: 'Enter', where: 'In the composer', does: 'send the instruction; resume an ended session' },
+  { label: 'Ctrl+Enter', where: 'In the composer', does: 'send now, interrupting the call in flight (/now)' },
+  { label: 'Shift+Enter', where: 'In the composer', does: 'newline' },
+  { label: 'Ctrl+R', where: 'In the composer', does: "search this session's past messages" },
+  { label: '/', where: 'In the composer', does: 'directive completion; Tab or Enter accepts' },
+  { label: '↑ ↓', where: 'In a list', does: 'move' },
+  { label: 'Enter or Space', where: 'On a focused row', does: 'open it' },
 ];
 document.addEventListener('keydown', (e) => {
   for (const k of KEYS) if (k.run && k.match(e)) { e.preventDefault(); k.run(); return; }
 });
+// A key label as keycaps: each key of a chord in its own <kbd>, joined by +.
+function keycaps(label) {
+  const caps = el('span', 'keycaps');
+  label.split(' ').forEach((word, i) => {
+    if (i) caps.append(' ');
+    if (word === 'or') { caps.append('or'); return; }
+    word.split('+').forEach((key, j) => { if (j) caps.append('+'); caps.appendChild(el('kbd', null, key)); });
+  });
+  return caps;
+}
 function openKeys() {
   const dialog = openDialog('Keyboard shortcuts', 'wide');
   if (!dialog) return;
   const table = el('table', 'keys');
+  let group = null;
   for (const k of KEYS) {
+    if (!group || group.dataset.where !== k.where) {
+      group = el('tbody');
+      group.dataset.where = k.where;
+      const th = el('th', null, k.where);
+      th.colSpan = 2; th.scope = 'rowgroup';
+      group.appendChild(el('tr')).appendChild(th);
+      table.appendChild(group);
+    }
     const tr = el('tr');
-    tr.appendChild(el('td', 'key', k.label)); tr.appendChild(el('td', 'muted', k.where)); tr.appendChild(el('td', null, k.does));
-    table.appendChild(tr);
+    tr.appendChild(el('td', 'key')).appendChild(keycaps(k.label));
+    tr.appendChild(el('td', null, k.does));
+    group.appendChild(tr);
   }
   dialog.appendChild(table);
   // A second `?` closes the list, as Esc does; the page's own `?` binding must not reopen it.

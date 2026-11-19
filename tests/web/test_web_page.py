@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "2199472e2342e72160bf1daebc5e7f46d2f976ebe56caf526ad5b918d00fc728"
+PAGE_SHA256 = "3122da0f546e56e8ed80382fe3bbafc4ef8bd965b0ec97132386f608bf61d791"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -528,7 +528,7 @@ def test_every_global_key_is_listed_and_handled_from_one_table() -> None:
             "document.addEventListener('keydown', (e) => {\n  for (const k of KEYS)"
         )
     ]
-    for label in ("Ctrl-K", "'?'", "Ctrl-R", "Ctrl+Enter", "Shift+Enter"):
+    for label in ("Ctrl+K", "'?'", "Ctrl+R", "Ctrl+Enter", "Shift+Enter"):
         assert label in keys
     # Firefox opens a private window on Ctrl-Shift-P; `>` in Ctrl-K's box opens the palette.
     assert "Shift-P" not in client
