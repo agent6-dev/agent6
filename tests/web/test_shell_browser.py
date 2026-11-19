@@ -110,6 +110,34 @@ def test_collapsing_the_rail_moves_no_icon(
     assert not errors
 
 
+@pytest.mark.parametrize(("width", "bar"), [(1280, "aside.rail .rail-nav"), (390, "nav.tabs")])
+def test_the_open_pages_link_is_marked_by_more_than_its_colour(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, width: int, bar: str
+) -> None:
+    """The phone tabs marked the open page by hue alone, and a hovered rail link took its fill.
+
+    The open page's link has an accent bar and a semibold label; a hovered link has neither.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": 800})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(f"{bar} a[aria-current=page]")).to_have_attribute("data-tab", "hub")
+    page.locator(f"{bar} a[data-tab=git]").hover()
+    cues = page.evaluate(f"""() => Object.fromEntries([...document.querySelectorAll('{bar} a')]
+      .map(a => [a.dataset.tab, [getComputedStyle(a, '::before').content !== 'none',
+                                 +getComputedStyle(a).fontWeight >= 600]]))""")
+    assert cues == {
+        "hub": [True, True],
+        "git": [False, False],
+        "files": [False, False],
+        "machines": [False, False],
+        "config": [False, False],
+    }
+    assert not errors
+
+
 def test_every_phone_tab_keeps_its_icon_on_one_line(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

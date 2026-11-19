@@ -82,7 +82,15 @@ nav.tabs a {
   flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center;
   color: var(--muted); font-size: 11px; line-height: 1.1; text-align: center; gap: 2px; padding: 7px 2px 0;
 }
-nav.tabs a[aria-current=page] { color: var(--accent); }
+/* The open page's link in either bar: the accent colour, a semibold label and an accent bar on
+   the bar's outer edge, so it reads as current without its colour and apart from a hovered rail
+   link, which takes only the fill. */
+nav.tabs a, aside.rail .rail-nav a { position: relative; }
+nav.tabs a[aria-current=page], aside.rail .rail-nav a[aria-current=page] { color: var(--accent); font-weight: 600; }
+nav.tabs a[aria-current=page]::before, aside.rail .rail-nav a[aria-current=page]::before {
+  content: ""; position: absolute; background: var(--accent);
+}
+nav.tabs a[aria-current=page]::before { top: 0; left: calc(50% - 16px); width: 32px; height: 3px; border-radius: 0 0 3px 3px; }
 .ic { width: 20px; height: 20px; flex: none; }
 
 /* The content column is at least the screen's dynamic height, which follows a phone browser's
@@ -328,14 +336,14 @@ dialog .err:empty { display: none; }
    tab bar and the plain single-column stack, untouched. --rail-w drives the
    rail and the content margin, so collapsing the rail (html.rail-min,
    persisted) re-lays everything out together. --- */
-:root { --rail-w: 216px; }
-html.rail-min { --rail-w: 64px; }
+:root { --rail-w: 216px; --rail-pad: 12px; }
+html.rail-min { --rail-w: 64px; --rail-pad: 8px; }
 aside.rail { display: none; }
 @media (min-width: 781px) {
   aside.rail {
     display: flex; flex-direction: column; gap: 4px; z-index: 30;
     position: fixed; left: 0; top: 0; width: var(--rail-w); height: 100dvh; overflow: auto;
-    padding: 0 12px calc(16px + env(safe-area-inset-bottom));
+    padding: 0 var(--rail-pad) calc(16px + env(safe-area-inset-bottom));
     background: var(--surface); border-right: 1px solid var(--border);
   }
   /* The brand row is the header's height, so its mark sits on the header's centre line and its
@@ -343,7 +351,7 @@ aside.rail { display: none; }
   aside.rail .rail-brand {
     display: flex; align-items: center; gap: 10px; flex: none; font-weight: 700; font-size: 17px; color: inherit;
     height: calc(var(--hdr-h) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 0 0 22px;
-    margin: 0 -12px 4px; border-bottom: 1px solid var(--border);
+    margin: 0 calc(-1 * var(--rail-pad)) 4px; border-bottom: 1px solid var(--border);
   }
   aside.rail .rail-brand b { color: var(--accent); }
   /* The nav links, and the theme and collapse rows at the rail's foot: one row shape, 40px tall
@@ -355,10 +363,10 @@ aside.rail { display: none; }
   }
   aside.rail .rail-row { border: 0; background: none; font: inherit; }
   aside.rail .rail-nav a:hover, aside.rail .rail-row:hover { background: var(--surface2); color: var(--text); }
-  aside.rail .rail-nav a[aria-current=page] { background: var(--surface2); color: var(--accent); }
+  aside.rail .rail-nav a[aria-current=page] { background: var(--surface2); color: var(--accent); } /* hovered too */
+  aside.rail .rail-nav a[aria-current=page]::before { left: calc(-1 * var(--rail-pad)); top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; }
   /* collapsed: an icon-only strip; labels and the brand name hide, icons centre */
-  html.rail-min aside.rail { padding-left: 8px; padding-right: 8px; }
-  html.rail-min aside.rail .rail-brand { justify-content: center; margin-inline: -8px; padding-left: 0; }
+  html.rail-min aside.rail .rail-brand { justify-content: center; padding-left: 0; }
   html.rail-min aside.rail .rail-brand b,
   html.rail-min aside.rail .rail-nav a span,
   html.rail-min aside.rail .rail-label { display: none; }
