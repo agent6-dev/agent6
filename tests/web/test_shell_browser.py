@@ -591,6 +591,25 @@ def test_the_rail_brands_focus_ring_stands_whole_inside_the_rail(
     assert not errors
 
 
+@pytest.mark.parametrize(("width", "rail"), [(1280, "hidden"), (390, "")])
+def test_the_top_bars_icon_buttons_are_squares(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, width: int, rail: str
+) -> None:
+    """The menu and theme buttons stood wider than they were tall, beside a square widget button."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.add_init_script(f"localStorage.setItem('a6-rail', '{rail}')")
+    page.set_viewport_size({"width": width, "height": 800})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".dock textarea")).to_be_visible()
+    sizes = page.locator("header > button").evaluate_all("""bs => bs
+      .filter(b => b.checkVisibility())
+      .map(b => [b.getBoundingClientRect().width, b.getBoundingClientRect().height])""")
+    assert sizes and all(w == h for w, h in sizes), sizes
+    assert not errors
+
+
 def test_collapsing_the_rail_moves_no_icon(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

@@ -70,7 +70,7 @@ header .crumb > .pill + span::before { content: "\a0· "; }
 /* The header's buttons are icons centred in a square. */
 header > button {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: var(--ctl-h); padding: 0 var(--ctl-px-sm);
+  width: var(--ctl-h); padding: 0;
 }
 /* Header controls cancel the root's scroll padding: Chromium scrolls the page to one that takes the focus. */
 header :is(a, button, .crumb) { scroll-margin-top: calc(-1 * (var(--hdr-h) + env(safe-area-inset-top) + 0.375rem)); }
