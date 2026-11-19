@@ -39,9 +39,6 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
   };
   // Preset… opens the `agent6.preset` row's editor; the rows are the config under the selected preset.
   const presetBtn = el('button', null, 'Preset…');
-  presetBtn.title = selected
-    ? 'preset: ' + selected + '; saves write [presets.' + selected + ']'
-    : 'preset: none; saves write the global and repo config';
   presetBtn.onclick = () => editConfig('agent6.preset', data['agent6.preset'], registry.tables, refresh, data);
   bar.appendChild(presetBtn);
   const addPresetBtn = el('button', null, 'Add preset…');
@@ -70,6 +67,11 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
   reviewerBtn.onclick = () => addReviewer(refresh);
   bar.appendChild(reviewerBtn);
   card.appendChild(bar);
+  // While a preset is selected, a line under the bar says where saves go, in the TUI's words.
+  if (selected) {
+    card.appendChild(el('div', 'notif-banner'))
+      .appendChild(el('div', 'grow nb-msg', `preset ${selected}: saves write [presets.${selected}]`));
+  }
   // The payload comes in the order every surface shares (`config_view`); one collapsible
   // section per table, as the TUI's page shows them; a render keeps the sections folded before it.
   const rows = [], sections = new Map();

@@ -441,3 +441,29 @@ def test_the_command_palette_offers_the_config_bar_actions(
     page.keyboard.press("Enter")
     assert page.get_by_role("dialog").locator("h2").inner_text() == "Add provider"
     assert not errors
+
+
+def test_a_long_preset_name_wraps_in_the_line_under_the_bar(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """On a phone a long preset name ran past the card's edge, cut off."""
+    name = "security_correctness_and_documentation_review_panel"
+    _global_config(f'[agent6]\npreset = "{name}"\n\n[presets.{name}]\n')
+    page, errors = open_page(port)
+    _config(page, port, 390)
+    note = page.locator(".cfg-bar + .notif-banner")
+    assert note.inner_text() == f"preset {name}: saves write [presets.{name}]"
+    assert note.evaluate("e => e.scrollWidth <= e.clientWidth")
+    assert not errors
+
+
+def test_a_selected_preset_says_where_saves_go(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Only the Preset… button's hover text said a selected preset takes every save."""
+    _global_config('[agent6]\npreset = "fast"\n\n[presets.fast]\n')
+    page, errors = open_page(port)
+    _config(page, port)
+    note = page.locator(".cfg-bar + .notif-banner")
+    assert note.inner_text() == "preset fast: saves write [presets.fast]"
+    assert not errors
