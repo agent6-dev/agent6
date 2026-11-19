@@ -196,15 +196,17 @@ function openDialog(title, cls) {
 }
 
 // --- sign-in -----------------------------------------------------------------
-// The form takes over the view; a sign-in restarts the route with the token.
-// A repeat call (a poll still in flight) keeps the form and what is typed in it.
+// The form takes over the view, under its own crumb and with no page current; a sign-in
+// restarts the route with the token. A repeat call (a poll still in flight) keeps the form and
+// what is typed in it.
 function showLogin(error) {
   routeGen++; // a render in flight must not paint over the form
   closeLive();
   document.querySelector('dialog[open]')?.close();
+  setCrumb('sign in');
+  setTab('');
   let form = document.getElementById('login');
   if (!form) {
-    setCrumb('sign in');
     view.innerHTML = '';
     form = el('form', 'card login');
     form.id = 'login';
@@ -341,7 +343,9 @@ async function route() {
           location.hash = '#/' + meta.target_kind + '/' + encodeURIComponent(meta.target);
           return; // the hashchange re-enters route()
         }
-      } catch (_) { /* no meta: fall through to the hub */ }
+      } catch (_) {
+        if (gen !== routeGen) return; // the sign-in form or a newer route took over; else the hub
+      }
     }
   }
   const [routePath, queryText = ''] = h.split('?');
