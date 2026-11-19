@@ -349,7 +349,7 @@ def test_the_model_suggestions_leave_every_button_in_reach(
     reached = dialog.locator("button, input[type=checkbox]").evaluate_all(
         """controls => controls.map(c => {
           const r = c.getBoundingClientRect();
-          return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === c;
+          return c.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
         })"""
     )
     assert len(reached) >= 3
