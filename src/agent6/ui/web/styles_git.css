@@ -96,7 +96,7 @@
 .gf-head .gf-count { flex: 1; margin: 0; }
 .gf-count { font-size: 12px; margin-bottom: 4px; }
 .git-diff { display: none; }
-.git-body.diffing > .git-graph, .git-body.diffing > .git-side { display: none; }
+.git-body.diffing > .git-graph, .git-body.diffing > .git-side, .git-body.diffing > .resize-handle { display: none; }
 .git-body.diffing > .git-diff { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; }
 .git-diff-head { flex: none; flex-wrap: wrap; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
 .git-diff-head .gf-path { flex: 1 1 200px; }
@@ -140,8 +140,9 @@
   .git-app { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
   .git-app > .git-bar { flex: none; }
   .git-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
-  .git-graph { flex: 1 1 55%; min-width: 0; overflow: auto; }
-  .git-side { flex: 1 1 45%; min-width: 0; overflow: auto; border-left: 1px solid var(--border); }
+  /* The handle between the graph and the side panel sets the graph's width. */
+  .git-graph { flex: none; width: var(--git-graph-w, 55%); min-width: 320px; max-width: calc(100% - 260px); overflow: auto; }
+  .git-side { flex: 1 1 0; min-width: 0; overflow: auto; border-left: 1px solid var(--border); }
   /* the page's gutter, as .page-pad sets it, so the heads line up with the content */
   .git-side-head, .git-diff-head, .git-diff-body { padding-inline: 22px; }
 }

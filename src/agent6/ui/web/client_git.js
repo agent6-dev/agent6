@@ -447,6 +447,10 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
 
   const body = el('div', 'git-body'); app.appendChild(body);
   const graph = el('div', 'git-graph'); body.appendChild(graph);
+  body.appendChild(resizeHandle(graph, {
+    label: 'Graph width', key: 'a6-git-graph-w', property: '--git-graph-w',
+    min: 320, max: () => body.getBoundingClientRect().width - 260,
+  }));
   const side = el('div', 'git-side'); body.appendChild(side);
 
   const {closeDiff, showDiff} = gitDiffViewer(body);

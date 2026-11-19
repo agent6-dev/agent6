@@ -24,7 +24,7 @@ def _run(scenario: str) -> None:
     scripts += web.joinpath("client_source.js").read_text()
     if review.is_file():
         scripts += review.read_text()
-    for name in ("client_git_diff.js", "client_git.js", "client_files.js"):
+    for name in ("client_layout.js", "client_git_diff.js", "client_git.js", "client_files.js"):
         scripts += web.joinpath(name).read_text()
     dom = (
         _DOM.replace(

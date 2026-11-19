@@ -328,3 +328,27 @@ def test_a_disabled_ref_in_the_filter_reads_not_allowed(open_page: OpenPage, git
     off.wait_for()
     assert off.evaluate("e => getComputedStyle(e).cursor") == "not-allowed"
     assert errors == [], errors
+
+
+def test_a_handle_between_the_graph_and_the_panel_resizes_the_graph(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """The graph and the side panel kept a fixed split, where the Files tab offers a handle."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    handle = page.get_by_role("separator", name="Graph width", exact=True)
+    expect(handle).to_have_count(1)
+    graph = page.locator(".git-graph")
+    before = graph.bounding_box()
+    handle.focus()
+    page.keyboard.press("ArrowRight")
+    page.keyboard.press("ArrowRight")
+    after = graph.bounding_box()
+    assert before and after and round(after["width"] - before["width"]) == 40, (before, after)
+    page.locator(".gc-row").first.click()
+    page.locator(".git-side .gf").first.click()
+    page.wait_for_selector(".git-diff .diff")
+    expect(handle).to_be_hidden()
+    assert errors == [], errors
