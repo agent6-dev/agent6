@@ -551,3 +551,22 @@ def test_a_dimmed_verb_says_why_on_a_phone(
     expect(page.get_by_role("button", name="Steer")).to_be_disabled()
     expect(page.get_by_text(refusals["steer"], exact=True)).to_be_visible()
     assert not errors
+
+
+def test_every_transition_starts_in_one_column(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """From [10] on, a transition started one character right of the ones before it."""
+    _machine(tmp_path, "chain", _chain(), [_chain_step(seq) for seq in range(12)])
+    page, errors = _open(open_page, port, "chain")
+    starts = page.evaluate(
+        """() => [...[...document.querySelectorAll('.tree')][1].querySelectorAll('.node')]
+          .map(node => {
+            const range = document.createRange();
+            range.setStart(node.lastChild, 0);
+            range.setEnd(node.lastChild, 1);
+            return Math.round(range.getBoundingClientRect().left);
+          })"""
+    )
+    assert len(starts) == 12 and len(set(starts)) == 1, starts
+    assert not errors
