@@ -208,22 +208,47 @@ function renderSplit(file, oldSpans = {}, newSpans = {}) {
 // and the text, with the operator's words to follow beneath. `where(side)` names a side's
 // revision; `deliver(note)` hands the text to a composer. The rows carry their paths
 // (`data-old-path`, `data-new-path`), or the host does; a one-sided view names its side.
+// The keyboard reaches the numbers through one Tab stop: ↑ and ↓ move between them, and
+// Enter or Space quotes. The host may be filled after this call, and again later.
 function quoteDiffLines(host, where, deliver) {
   host.classList.add('quotable');
-  host.addEventListener('click', (e) => {
-    const g = e.target.closest('.g');
-    if (!g || !g.dataset.n || !host.contains(g)) return;
-    const row = g.closest('.dl, .ds-cell, .sl');
-    if (!row) return;
-    let side = host.dataset.side || 'head';
-    if (row.classList.contains('dl')) side = g === row.querySelector('.g') ? 'base' : 'head';
-    else if (row.classList.contains('ds-cell')) side = row === row.parentElement.children[0] ? 'base' : 'head';
+  // A number's parent is its line: a diff line, a split cell or a file line.
+  const sideOf = (g) => {
+    const row = g.parentElement;
+    if (row.classList.contains('dl')) return g === row.querySelector('.g') ? 'base' : 'head';
+    if (row.classList.contains('ds-cell')) return row === row.parentElement.children[0] ? 'base' : 'head';
+    return host.dataset.side || 'head';
+  };
+  const quote = (g) => {
+    const row = g.parentElement, side = sideOf(g);
     const code = row.querySelector('.source-code');
     let text = code ? code.textContent.replace(/\n$/, '') : '';
     if (code && code.querySelector('.diff-marker')) text = text.slice(1);
     const scope = row.closest('[data-old-path], [data-new-path]') || host;
     const path = (side === 'base' ? scope.dataset.oldPath : scope.dataset.newPath) || scope.dataset.newPath || scope.dataset.oldPath || '';
     deliver(path + ':' + g.dataset.n + ' (' + side + ' side, ' + where(side) + '):\n> ' + text + '\n');
+  };
+  const numbers = () => [...host.querySelectorAll('.g')].filter(g => g.dataset.n);
+  const seat = () => numbers().forEach((g, i) => {
+    g.tabIndex = i ? -1 : 0;
+    g.setAttribute('role', 'button');
+    g.setAttribute('aria-label', 'Quote line ' + g.dataset.n + ', ' + sideOf(g) + ' side');
+  });
+  new MutationObserver(seat).observe(host, {childList: true});
+  seat();
+  host.addEventListener('click', (e) => {
+    const g = e.target.closest('.g');
+    if (g && g.dataset.n && host.contains(g)) quote(g);
+  });
+  host.addEventListener('keydown', (e) => {
+    const g = e.target;
+    if (!g.matches('.g[role=button]') || !host.contains(g)) return;
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); quote(g); return; }
+    const step = {ArrowDown: 1, ArrowUp: -1}[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const all = numbers(), next = all[all.indexOf(g) + step];
+    if (next) { g.tabIndex = -1; next.tabIndex = 0; next.focus(); }
   });
 }
 

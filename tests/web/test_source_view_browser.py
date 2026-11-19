@@ -168,3 +168,28 @@ def test_a_drag_in_the_split_view_selects_one_side(
     assert "value_50 = 'changed'" in copied
     assert "value_50 = 50" not in copied, copied
     assert not errors
+
+
+def test_line_numbers_quote_from_the_keyboard(
+    open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
+) -> None:
+    """A click on a line number quoted its line, but no key reached the numbers."""
+    from playwright.sync_api import expect
+
+    port, base, head = long_file
+    page, errors = open_page(port)
+    page.add_init_script("localStorage.setItem('a6-diff-mode', 'inline')")
+    page.goto(f"http://127.0.0.1:{port}/#/git/compare/{base}..{head}?path=long.txt")
+    page.wait_for_selector(".dl[data-new='50']")
+    page.locator(".diff-blame").focus()
+    page.keyboard.press("Tab")
+    focused = page.locator(":focus")
+    expect(focused).to_have_attribute("role", "button")
+    expect(focused).to_have_attribute("aria-label", "Quote line 1, base side")
+    page.keyboard.press("ArrowDown")
+    expect(focused).to_have_attribute("aria-label", "Quote line 1, head side")
+    page.keyboard.press("Enter")
+    task = page.evaluate("window.pendingNewWork.task")
+    assert task.startswith("long.txt:1 (head side, commit ") and "> value_1 = 1\n" in task
+    assert page.locator(".git-diff .g[tabindex='0']").count() == 1
+    assert not errors

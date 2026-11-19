@@ -26,6 +26,7 @@ class Element {
     this.children.forEach(c => c.parent = null); this.children = []; this.text = '';
   }
   get firstChild() { return this.children[0] || null; }
+  get parentElement() { return this.parent; }
   get textContent() { return this.text + this.children.map(c => c.textContent).join(''); }
   set textContent(t) { this.innerHTML = ''; this.text = t; }
   get isConnected() { return this === view || !!this.parent?.isConnected; }
@@ -65,6 +66,7 @@ const history = {
   replaceState: (_, title, hash) => location.hash = hash,
 };
 const window = {addEventListener() {}, matchMedia: () => ({matches:false})};
+const MutationObserver = class { observe() {} };
 let activeTab = '';
 const setTab = tab => activeTab = tab;
 const closeLive = () => {};
