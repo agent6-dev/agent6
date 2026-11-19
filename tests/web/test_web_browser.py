@@ -984,6 +984,21 @@ def test_a_commits_parent_label_sits_on_its_sha_buttons_baseline(
     assert errors == [], errors
 
 
+def test_the_compare_hint_reads_as_a_note(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """The line under the pickers is small muted text, as quiet as the line it explains."""
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    page.get_by_role("button", name="Compare", exact=True).click()
+    style = "e => [getComputedStyle(e).fontSize, getComputedStyle(e).color]"
+    hint = page.locator(".gcmp .hint").evaluate(style)
+    muted = page.locator(".gcmp-result .muted").evaluate(style)
+    assert hint == ["12px", muted[1]], (hint, muted)
+    assert errors == [], errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:
