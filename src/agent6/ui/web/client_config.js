@@ -203,7 +203,7 @@ function actionRow(dialog, row, primary) {
     button.disabled = true; err.textContent = '';
     try { await run(); } catch (e) {
       if (!dialog.open) { toast(e.message, true); return; }
-      err.textContent = e.message; button.disabled = false;
+      err.replaceChildren(withCode(e.message)); button.disabled = false;
       if (document.activeElement === document.body) button.focus(); // disabling it dropped the focus
     }
   };

@@ -49,6 +49,7 @@ class Element {
     return child;
   }
   set innerHTML(value) { this.text = ''; this.children = []; }
+  replaceChildren(...nodes) { this.textContent = ''; nodes.forEach(n => this.appendChild(n)); }
   setAttribute(name, value) { this[name] = value; }
   getAttribute(name) { return this[name]; }
   focus() { document.activeElement = this; this.onfocus?.(); }

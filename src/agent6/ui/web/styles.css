@@ -47,8 +47,8 @@ body {
 }
 a { color: var(--accent); text-decoration: none; }
 code, pre, .mono { font-family: var(--mono); }
-/* A command in a message, the sign-in form, a problem or a question (withCode): a tinted chip. */
-.toast code, .login code, .problem code, .confirm code { font-size: var(--fs-m); padding: 0 0.1875rem; border-radius: 3px; background: color-mix(in srgb, var(--text) 8%, transparent); }
+/* A command in a message, the sign-in form, a problem, a question or a dialog's refusal (withCode): a tinted chip. */
+.toast code, .login code, .problem code, .confirm code, dialog .err code { font-size: var(--fs-m); padding: 0 0.1875rem; border-radius: 3px; background: color-mix(in srgb, var(--text) 8%, transparent); }
 pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
 
 /* The top bar's ends line up with the page's text: 22px in, and 16px on a phone (below). */

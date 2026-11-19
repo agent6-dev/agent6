@@ -847,6 +847,40 @@ def test_a_held_enter_on_a_config_row_saves_nothing(
     assert not [error for error in errors if "400 (Bad Request)" not in error]
 
 
+CHIP = """() => {
+  const probe = document.body.appendChild(document.createElement('div')); probe.className = 'toast';
+  const color = getComputedStyle(probe.appendChild(document.createElement('code'))).backgroundColor;
+  probe.remove(); return color;
+}"""
+
+
+def test_a_refusal_in_a_config_dialog_shows_its_command_as_code(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A refusal under a dialog's buttons showed a command's backticks raw.
+
+    A message shows the same text with each command in a tinted code chip.
+    """
+    from playwright.sync_api import expect
+
+    reason = "set exactly one of `command` (spawn) or `url` (connect)"
+    page, errors = open_page(port)
+    page.route(
+        "**/api/config/entry", lambda route: route.fulfill(status=400, json={"error": reason})
+    )
+    _config(page, port)
+    page.get_by_role("button", name="Add MCP server…").click()
+    dialog = page.get_by_role("dialog")
+    dialog.locator('input[name="name"]').fill("local")
+    dialog.get_by_role("button", name="Add", exact=True).click()
+    alert = dialog.get_by_role("alert")
+    expect(alert).to_have_text("set exactly one of command (spawn) or url (connect)")
+    assert alert.locator("code").all_inner_texts() == ["command", "url"]
+    chip = alert.locator("code").first.evaluate(STYLE, "background-color")
+    assert chip == page.evaluate(CHIP)
+    assert not [error for error in errors if "400 (Bad Request)" not in error]
+
+
 def test_enter_in_any_config_dialog_field_presses_its_add_or_save(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
