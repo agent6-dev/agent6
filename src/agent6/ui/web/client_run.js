@@ -335,6 +335,7 @@ function paintPrompts(cards, s) {
 // Budget and task graph: the live state, or the state as of the commit picked
 // in the Latest commit card (the server folds the log up to that commit).
 function paintDetails(cards, s, asOf) {
+  if (!cardChanged(cards, 'details', [s.budget, s.context_used_percent, s.tasks, asOf])) return;
   // budget
   const b = s.budget || {};
   cards.budget.innerHTML = '';
@@ -412,9 +413,9 @@ function childOutcomes(dispatches) {
 }
 
 function paintRun(cards, s) {
-  if (cards.children) {
-    // Rows come from the session's children by lineage.
-    const children = s.children || [];
+  // Rows come from the session's children by lineage.
+  const children = s.children || [];
+  if (cards.children && cardChanged(cards, 'children', [children, s.dispatches])) {
     cards.children.parentElement.style.display = children.length ? "" : "none";
     cards.children.replaceChildren();
     if (children.length) {
@@ -492,7 +493,6 @@ function paintRun(cards, s) {
   // fixed header on every widget page; state leads it, since the crumb
   // ellipsises.
   if (cards._crumb) setCrumb(runState(s) + ' · ' + cards._crumb);
-  cards.head.innerHTML = '';
   const kv = el('div', 'kv');
   const add = (k, v) => { kv.appendChild(el('div', 'k', k)); kv.appendChild(el('div', 'v', v)); };
   add('task', s.task_line || '(none)');
@@ -536,7 +536,7 @@ function paintRun(cards, s) {
     const inFlight = r.in_flight && s.live;
     add('last call', `${esc(r.role)} / ${esc(r.model)}${inFlight ? ' …' : ''}`);
   }
-  cards.head.appendChild(kv);
+  if (cardChanged(cards, 'head', kv.innerHTML)) cards.head.replaceChildren(kv);
 
   const commitState = (cards._diffPick && cards._diffPick.sha && cards._commitState) ? cards._commitState : null;
   paintDetails(cards, commitState || s, commitState ? commitState.as_of : null);
@@ -561,54 +561,90 @@ function paintRun(cards, s) {
 
   // tools: one clipped line per call (hover shows the full args + result; the
   // conversation carries the whole story), so a long error dump can't flood it.
-  cards.tools.innerHTML = '';
-  const calls = el('div', 'calls');
-  for (const tc of (s.tool_calls||[]).slice(-30)) {
-    const call = el('div', 'call');
-    const head = el('div', 'call-head');
-    head.appendChild(el('span', 'dot ' + (tc.ok === null ? '' : tc.ok ? 'ok' : 'bad')));
-    head.appendChild(el('span', 'name', tc.name));
-    const extra = String(tc.args_preview || '').split('\n').length - 1 + String(tc.result_summary || '').split('\n').length - 1;
-    if (extra > 0) head.appendChild(el('span', 'more-note', `+${extra} more line${extra === 1 ? '' : 's'}`));
-    call.appendChild(head);
-    const a = el('div', 'args');
-    a.textContent = firstLine(tc.args_preview, 90) + (tc.result_summary ? '  → ' + firstLine(tc.result_summary, 90) : '');
-    a.title = tc.args_preview + (tc.result_summary ? '\n→ ' + tc.result_summary : '');
-    call.appendChild(a);
-    calls.appendChild(call);
+  const shownCalls = (s.tool_calls || []).slice(-30);
+  if (cardChanged(cards, 'tools', shownCalls)) {
+    cards.tools.innerHTML = '';
+    const calls = el('div', 'calls');
+    for (const tc of shownCalls) {
+      const call = el('div', 'call');
+      const head = el('div', 'call-head');
+      head.appendChild(el('span', 'dot ' + (tc.ok === null ? '' : tc.ok ? 'ok' : 'bad')));
+      head.appendChild(el('span', 'name', tc.name));
+      const extra = String(tc.args_preview || '').split('\n').length - 1 + String(tc.result_summary || '').split('\n').length - 1;
+      if (extra > 0) head.appendChild(el('span', 'more-note', `+${extra} more line${extra === 1 ? '' : 's'}`));
+      call.appendChild(head);
+      const a = el('div', 'args');
+      a.textContent = firstLine(tc.args_preview, 90) + (tc.result_summary ? '  → ' + firstLine(tc.result_summary, 90) : '');
+      a.title = tc.args_preview + (tc.result_summary ? '\n→ ' + tc.result_summary : '');
+      call.appendChild(a);
+      calls.appendChild(call);
+    }
+    if (!shownCalls.length) cards.tools.appendChild(el('div', 'muted', 'no tool calls yet'));
+    else cards.tools.appendChild(calls);
   }
-  if (!(s.tool_calls||[]).length) cards.tools.appendChild(el('div', 'muted', 'no tool calls yet'));
-  else cards.tools.appendChild(calls);
 
   // shells: the roster every surface reads off disk, one line per command
-  cards.shells.innerHTML = '';
-  const shellsCard = cards.shells.parentElement;
-  for (const line of (s.shells||[])) cards.shells.appendChild(el('div', 'shell', line));
-  shellsCard.style.display = (s.shells||[]).length ? '' : 'none';
+  const shells = s.shells || [];
+  if (cardChanged(cards, 'shells', shells)) {
+    cards.shells.innerHTML = '';
+    for (const line of shells) cards.shells.appendChild(el('div', 'shell', line));
+    cards.shells.parentElement.style.display = shells.length ? '' : 'none';
+  }
 
-  // log
-  cards.log.innerHTML = '';
-  const log = el('div', 'log');
-  for (const line of (s.log_tail||[]).slice(-200)) log.appendChild(el('div', null, line));
-  cards.log.appendChild(log);
-  cards.log.scrollTop = cards.log.scrollHeight;
+  paintLog(cards, s);
 
   if (cards._plan_btn) {
     cards._plan_btn.style.display = s.mode === 'plan' && s.plan_md ? '' : 'none';
   }
   // plan.md: the planning run's deliverable (the CLI prints it at the end).
-  cards.plan.innerHTML = '';
-  const planCard = cards.plan.parentElement;
-  if (s.plan_md) {
-    const pre = el('pre', 'plan'); pre.textContent = s.plan_md; cards.plan.appendChild(pre);
-    planCard.style.display = '';
-  } else {
-    planCard.style.display = 'none';
+  if (cardChanged(cards, 'plan', s.plan_md || '')) {
+    cards.plan.innerHTML = '';
+    const planCard = cards.plan.parentElement;
+    if (s.plan_md) {
+      const pre = el('pre', 'plan'); pre.textContent = s.plan_md; cards.plan.appendChild(pre);
+      planCard.style.display = '';
+    } else {
+      planCard.style.display = 'none';
+    }
   }
 
-  // diff: the latest commit by default; a commit selector over the run's
-  // chain (newest first) with a cumulative toggle, hidden truthfully when the
-  // model owns git (no chain) or nothing is committed yet.
+  paintCommits(cards, s);
+}
+
+// A frame rebuilds a card only when what the card shows changed: a rebuild drops the reader's
+// selection, an open dropdown, keyboard focus and the card's scroll position.
+function cardChanged(cards, name, shown) {
+  const key = JSON.stringify(shown);
+  if (cards['_shown_' + name] === key) return false;
+  cards['_shown_' + name] = key;
+  return true;
+}
+
+// The event log appends the lines a frame adds, as the TUI's does: log_tail is a sliding window
+// and log_count is monotonic. It follows its end only while the reader is there.
+function paintLog(cards, s) {
+  const box = cards.log, count = s.log_count || 0, tail = s.log_tail || [];
+  const fresh = cards._logCount === undefined ? -1 : count - cards._logCount;
+  const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
+  let log = box.querySelector('.log');
+  if (!log || fresh < 0 || fresh > tail.length) {
+    log = el('div', 'log');
+    box.replaceChildren(log);
+    for (const line of tail.slice(-200)) log.appendChild(el('div', null, line));
+  } else {
+    for (const line of tail.slice(tail.length - fresh)) log.appendChild(el('div', null, line));
+    while (log.childElementCount > 200) log.firstElementChild.remove();
+  }
+  cards._logCount = count;
+  if (atEnd) box.scrollTop = box.scrollHeight;
+}
+
+// diff: the latest commit by default; a commit selector over the run's
+// chain (newest first) with a cumulative toggle, hidden truthfully when the
+// model owns git (no chain) or nothing is committed yet.
+function paintCommits(cards, s) {
+  cards._frame = s; // "latest commit" paints the newest frame's details
+  if (!cardChanged(cards, 'diff', [s.mode, s.git_control, s.commits, s.latest_diff])) return;
   cards.diff.innerHTML = '';
   cards._diffGeneration = (cards._diffGeneration || 0) + 1;
   cards._diffCache ||= new Map();
@@ -653,7 +689,7 @@ function paintRun(cards, s) {
       const current = () => request === cards._diffGeneration && body.isConnected;
       const selected = sel.value, sha = selected || commits[0].sha;
       if (!selected) {
-        cards._commitState = null; paintDetails(cards, s, null);
+        cards._commitState = null; paintDetails(cards, cards._frame, null);
         body.appendChild(renderDiff({patch: s.latest_diff || ''}));
       }
       const url = cards._base + '/diff?sha=' + encodeURIComponent(sha) + '&cumulative=' + (cum.checked ? '1' : '0');

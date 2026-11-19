@@ -214,3 +214,41 @@ def test_the_run_card_lines_up_the_judge_settings_and_last_call_with_its_rows(
     assert settings.startswith("gpt-4.1-mini · isolation full · network session · run_commands ask")
     assert len(set(values.evaluate_all("vs => vs.map(v => v.getBoundingClientRect().x)"))) == 1
     assert not errors
+
+
+def test_a_live_frame_leaves_the_cards_a_reader_is_using(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A frame rebuilds only the cards it changes, and the event log keeps the reader's place.
+
+    Every frame rebuilt every card: the event log snapped to its end, and a selection in the
+    run card or a node in the tool calls went with the old nodes.
+    """
+    from playwright.sync_api import expect
+
+    rows: list[dict[str, Any]] = []
+    for i in range(60):
+        rows.append({"type": "tool.call", "name": "read_file", "args_preview": {"path": f"f{i}"}})
+        rows.append({"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"})
+    session = _session(tmp_path, "live-AAA111", rows, live=True)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/live-AAA111")
+    lines = page.locator(".card-log .log > div")
+    expect(lines).to_have_count(121)
+    page.evaluate(
+        """() => {
+        document.querySelector('.card-log .card-body').scrollTop = 0;
+        getSelection().selectAllChildren(document.querySelectorAll('.card-head .kv .v')[1]);
+        document.querySelector('.card-tools .call').dataset.kept = 'yes';
+    }"""
+    )
+    with (session / "logs.jsonl").open("a") as log:
+        log.write(json.dumps({"type": "budget.update", "usd_total": 0.5}) + "\n")
+    expect(lines).to_have_count(122)
+    kept = page.evaluate(
+        """() => [document.querySelector('.card-log .card-body').scrollTop,
+        getSelection().toString(),
+        document.querySelectorAll('.card-tools .call[data-kept]').length]"""
+    )
+    assert kept == [0, "live-AAA111", 1]
+    assert not errors

@@ -94,8 +94,7 @@ def test_latest_commit_fetches_highlighted_payload_once_per_commit() -> None:
         pytest.skip("node is needed to exercise the run diff")
     web = resources.files("agent6.ui.web")
     run = web.joinpath("client_run.js").read_text()
-    start = run.index("  cards.diff.innerHTML = '';")
-    block = "function paintDiff(cards, s) {\n" + run[start:]
+    block = run[run.index("function cardChanged(") :] + "const paintDiff = paintCommits;\n"
     script = (
         test_web_files_client._DOM
         + web.joinpath("client_source.js").read_text()
