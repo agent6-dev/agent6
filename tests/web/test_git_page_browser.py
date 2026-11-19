@@ -80,3 +80,20 @@ def test_a_working_tree_rows_buttons_sit_beside_its_path_not_inside_a_button(
     row.click(position={"x": 4, "y": 4})  # the row's corner, away from the path
     page.wait_for_selector(".git-diff .diff")
     assert errors == [], errors
+
+
+def test_a_phones_commit_panel_keeps_its_back_button_in_view(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """The back button scrolled away with a long commit panel on a phone."""
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 390, "height": 360})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.locator(".gc-row").first.click()
+    side = page.locator(".git-side.open")
+    page.wait_for_selector(".git-side .gf")
+    assert side.evaluate("s => { s.scrollTo(0, s.scrollHeight); return s.scrollTop > 0; }")
+    back = page.get_by_role("button", name="\u2039 graph", exact=True)
+    panel, button = side.bounding_box(), back.bounding_box()
+    assert panel and button and button["y"] >= panel["y"], (panel, button)
+    assert errors == [], errors

@@ -69,7 +69,8 @@
 .gref.wt { border-style: dashed; }
 /* The count of a row's other refs; their names are in its tooltip. */
 .gref.more { border-color: var(--border-strong); color: var(--muted); }
-.git-side-head { gap: 8px; padding: 10px 16px 0; }
+/* The panel's head stays at the top while the panel scrolls, a phone's ‹ graph with it. */
+.git-side-head { position: sticky; top: 0; z-index: 2; gap: 8px; padding: 10px 16px 8px; background: var(--bg); border-bottom: 1px solid var(--border); }
 .git-side-head h3 { margin: 0; font-size: 12px; font-weight: 600; line-height: 20px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .git-back { display: none; }
 .gd-subject { font-weight: 600; margin: 8px 0; overflow-wrap: anywhere; }
