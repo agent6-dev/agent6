@@ -217,3 +217,18 @@ def test_a_rows_status_leads_its_sub_line_and_its_text_keeps_the_width(
     })"""
     assert rows.evaluate_all(whole) == [1, 1, 1]
     assert not errors
+
+
+def test_space_opens_a_focused_row_as_enter_does(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Space on a row's title link scrolled the page, though `?` lists Space as opening a row."""
+    from playwright.sync_api import expect
+
+    _run(tmp_path, "alpha-AAAAAA", "Alpha task", STOP)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.locator(".item a.title").first.focus()
+    page.keyboard.press(" ")
+    expect(page).to_have_url(f"http://127.0.0.1:{port}/#/session/alpha-AAAAAA")
+    assert not errors

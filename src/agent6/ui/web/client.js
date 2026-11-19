@@ -697,6 +697,10 @@ function listCard(title, empty, rows) {
     const link = it.querySelector('a.title');
     if (link) location.hash = link.hash;
   };
+  // Space on a row's title link opens it as Enter does, as a focused row does on every page.
+  list.onkeydown = (e) => {
+    if (e.key === ' ' && e.target.matches('a.title')) { e.preventDefault(); e.target.click(); }
+  };
   card.show = (entries) => patchRows(list, entries.length ? entries.flatMap(rows)
     : [{ key: '', data: empty, paint: () => el('div', 'empty', empty) }]);
   return card;
