@@ -32,9 +32,9 @@ assert.ok(refs.some(r => r.side === 'head' && r.number === 7 && r.path === 'new.
 if (MODE === 'inline') {
   const del = box.querySelector('.del');
   assert.equal(del.querySelector('.diff-marker').textContent, '-');
-  assert.equal(del.querySelector('.source-code').textContent, '-def old():');
+  assert.equal(del.querySelector('.source-code').textContent, '-def old():\n');
 } else {
-  assert.equal(box.querySelector('.del').querySelector('.source-code').textContent, 'def old():');
+  assert.equal(box.querySelector('.del').querySelector('.source-code').textContent, 'def old():\n');
 }
 assert.equal(renderUnified(files, true).querySelectorAll('.hl-keyword').length, 0);
 """.replace("MODE", repr(mode))
@@ -51,7 +51,7 @@ const files = parseUnifiedDiff(patch);
 const box = renderUnified(files, true,
   {'é\t.py': [[[4, 8, 'string']]]}, {'é\t.py': [[[4, 11, 'string']]]});
 assert.deepEqual(box.querySelectorAll('.hl-string').map(n => n.textContent), ['"😀"', '"<img>"']);
-assert.equal(box.querySelector('.add').querySelector('.source-code').textContent, '+s = "<img>"');
+assert.equal(box.querySelector('.add').querySelector('.source-code').textContent, '+s = "<img>"\n');
 assert.ok(box.querySelectorAll('.hl-string').every(n => !n.children.length));
 """)
 

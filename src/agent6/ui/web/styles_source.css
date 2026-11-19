@@ -4,9 +4,14 @@
 .diff .add { color: var(--ok); } .diff .del { color: var(--err); } .diff .hunk { color: var(--accent2); }
 .diff .meta { color: var(--muted); }
 /* Line numbers are drawn from `data-n`, never in the text, so copied code carries none. */
-.numbered .g { display: inline-block; width: var(--gw, 3ch); margin-right: 1ch; text-align: right; color: var(--muted); font-style: normal; user-select: none; }
+.numbered .g { width: var(--gw, 3ch); margin-right: 1ch; text-align: right; color: var(--muted); font-style: normal; user-select: none; }
 .numbered .g::before { content: attr(data-n); }
-.diff.numbered .dl, .src .sl { display: block; }
+/* A numbered line is a row: the line numbers, then the code, which wraps in a column of its own;
+   a finding on the line takes the next row. */
+.diff.numbered .dl, .src .sl, .ds-cell { display: flex; flex-wrap: wrap; }
+:is(.dl, .sl, .ds-cell) > .g { flex: none; }
+:is(.dl, .sl, .ds-cell) > .source-code { flex: 1 1 0; min-width: 0; }
+:is(.dl, .sl, .ds-cell) > .finding { flex-basis: 100%; }
 .quotable .g[data-n]:not([data-n=""]) { cursor: pointer; }
 .quotable .g[data-n]:not([data-n=""]):hover { color: var(--accent); text-decoration: underline; }
 .diff.numbered .dl.add { background: color-mix(in srgb, var(--ok) 12%, transparent); }

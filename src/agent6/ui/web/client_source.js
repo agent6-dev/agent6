@@ -115,6 +115,15 @@ function splitLines(text) { const lines = text.split('\n'); if (lines.length && 
 // `data-n`, so copied text carries no numbers.
 function gutter(n) { const g = el('i', 'g'); g.dataset.n = n == null ? '' : String(n); return g; }
 const gutterWidth = (max) => String(Math.max(1, max)).length + 'ch';
+// A line's code: its text with highlight spans, then its newline. The newline sits inside the
+// code because a line is a flex row, which renders no bare text, and a copy then loses blank lines.
+function codeSpan(text, spans, marker = '') {
+  const code = el('span', 'source-code');
+  if (marker) code.appendChild(el('span', 'diff-marker', marker));
+  appendSpans(code, text, spans);
+  code.appendChild(document.createTextNode('\n'));
+  return code;
+}
 
 // Render parsed files as one unified patch: a <pre class="diff"> with one span per line
 // carrying `data-old` and `data-new`; `numbered` draws the two gutters.
@@ -129,11 +138,7 @@ function renderUnified(files, numbered, oldSpans = {}, newSpans = {}) {
     if (nw != null) s.dataset.new = nw;
     if (f) { if (f.oldPath) s.dataset.oldPath = f.oldPath; if (f.newPath) s.dataset.newPath = f.newPath; }
     if (numbered) { s.appendChild(gutter(old)); s.appendChild(gutter(nw)); }
-    const code = el('span', 'source-code');
-    if (marker) code.appendChild(el('span', 'diff-marker', marker));
-    appendSpans(code, text, spans);
-    s.appendChild(code);
-    s.appendChild(document.createTextNode('\n'));
+    s.appendChild(codeSpan(text, spans, marker));
     return s;
   };
   const mark = { add: '+', del: '-', ctx: ' ' };
@@ -166,11 +171,7 @@ function renderSplit(file, oldSpans = {}, newSpans = {}) {
     const kind = l ? (side === 'old' ? (l.kind === 'del' ? ' del' : '') : (l.kind === 'add' ? ' add' : '')) : ' ds-empty';
     const c = el('span', 'ds-cell' + kind);
     c.appendChild(gutter(l ? (side === 'old' ? l.old : l.new) : null));
-    if (l) {
-      const code = el('span', 'source-code');
-      appendSpans(code, l.text, side === 'old' ? old[l.old - 1] : news[l.new - 1]);
-      c.appendChild(code);
-    }
+    if (l) c.appendChild(codeSpan(l.text, side === 'old' ? old[l.old - 1] : news[l.new - 1]));
     return c;
   };
   let segment = 0;
@@ -213,7 +214,7 @@ function quoteDiffLines(host, where, deliver) {
     if (row.classList.contains('dl')) side = g === row.querySelector('.g') ? 'base' : 'head';
     else if (row.classList.contains('ds-cell')) side = row === row.parentElement.children[0] ? 'base' : 'head';
     const code = row.querySelector('.source-code');
-    let text = code ? code.textContent : '';
+    let text = code ? code.textContent.replace(/\n$/, '') : '';
     if (code && code.querySelector('.diff-marker')) text = text.slice(1);
     const scope = row.closest('[data-old-path], [data-new-path]') || host;
     const path = (side === 'base' ? scope.dataset.oldPath : scope.dataset.newPath) || scope.dataset.newPath || scope.dataset.oldPath || '';
@@ -233,10 +234,7 @@ function renderLines(lines, spans, marks) {
     const s = el('span', 'sl' + (marks && marks.has(n) ? ' changed' : ''));
     s.dataset.line = n;
     s.appendChild(gutter(n));
-    const code = el('span', 'source-code');
-    appendSpans(code, text, spans && spans[i]);
-    s.appendChild(code);
-    s.appendChild(document.createTextNode('\n'));
+    s.appendChild(codeSpan(text, spans && spans[i]));
     box.appendChild(s);
   });
   return box;
