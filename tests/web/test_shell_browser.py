@@ -113,6 +113,37 @@ def test_the_crumb_names_each_page_as_its_nav_link_does(
     assert not errors
 
 
+def test_a_disabled_button_keeps_its_look_under_the_pointer(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A disabled Start darkened and dropped its border under the pointer, as a live one does."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    start = page.get_by_role("button", name="Start", exact=True)
+    look = "e => { const s = getComputedStyle(e); return [s.backgroundColor, s.borderColor]; }"
+
+    def hovered() -> tuple[object, object]:
+        page.mouse.move(0, 0)
+        page.wait_for_timeout(300)  # past the button's colour transition
+        rest = start.evaluate(look)
+        box = start.bounding_box()
+        assert box
+        page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.wait_for_timeout(300)
+        return rest, start.evaluate(look)
+
+    expect(start).to_be_disabled()
+    rest, hover = hovered()
+    assert hover == rest
+    page.locator(".dock textarea").fill("a task")
+    expect(start).to_be_enabled()
+    rest, hover = hovered()
+    assert hover != rest
+    assert not errors
+
+
 def test_an_unknown_session_reads_not_found_under_its_section(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
