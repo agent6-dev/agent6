@@ -1170,9 +1170,9 @@ def test_files_marks_worktree_states_and_sums_folders(
     for path, mark in (
         ("b.txt", "M"),
         ("img.bin", ""),
-        ("new.txt", "A"),
-        ("src/tool.py", "A"),
-        ("src", "A"),
+        ("new.txt", "U"),
+        ("src/tool.py", "U"),
+        ("src", "U"),
         ("dir", "M"),
     ):
         assert page.locator(f".files-tree [data-path='{path}'] .gf-st").inner_text() == mark

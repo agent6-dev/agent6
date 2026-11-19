@@ -76,7 +76,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     const state = counts.modified ? 'modified' : counts.untracked ? 'untracked' : counts.tracked ? 'tracked' : counts.ignored ? 'ignored' : '';
     if (!state) return null;
     if (state === 'tracked') return el('span', 'gf-st');
-    const mark = statusBadge({ untracked: 'A', modified: 'M', ignored: 'I' }[state]);
+    const mark = statusBadge({ untracked: 'U', modified: 'M', ignored: 'I' }[state]);
     mark.title = Object.entries(counts).filter(([, n]) => n).map(([s, n]) => n + ' ' + s).join(', ');
     return mark;
   };
