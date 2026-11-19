@@ -351,6 +351,30 @@ def test_the_bar_holds_still_while_filtering_and_toggling(
     assert not errors
 
 
+def test_the_count_holds_only_its_listings_longest_text(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """The count held room for "19999 of 20000 files+", so the bar took two rows at rest."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(big_tree)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    page.wait_for_selector(_row("deep"))
+    counts = page.locator(".files-counts")
+    total = counts.text_content() or ""
+    width = "e => e.getBoundingClientRect().width"
+    rest = counts.evaluate(width)
+    page.locator(".files-bar input.filter").fill(".")  # every path in this tree has a dot
+    expect(counts).to_have_text(total.split()[0] + " of " + total)
+    assert counts.evaluate(width) == pytest.approx(rest, abs=0.5)
+    text = counts.evaluate(
+        "e => { const r = document.createRange(); r.selectNodeContents(e);"
+        " return r.getBoundingClientRect().width; }"
+    )
+    assert text == pytest.approx(rest, abs=1)
+    assert not errors
+
+
 def test_the_empty_pane_says_how_to_open_a_file(
     open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
 ) -> None:

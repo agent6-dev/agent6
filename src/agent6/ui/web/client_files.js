@@ -100,6 +100,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     if (!kept.length) tree.appendChild(el('div', 'empty', entries.length ? 'no file matches' : 'no files'));
     else tree.appendChild(treeView(buildTree(kept), fileRow, folderNote, !q && kept.length > 200, d => stateMark(treeFiles(d)), q ? null : filesState.folders));
     counts.textContent = (q ? kept.length + ' of ' : '') + fileCount(entries.length) + (truncated ? '+' : '');
+    counts.dataset.room = entries.length + ' of ' + fileCount(entries.length) + (truncated ? '+' : '');
   };
   const closeFile = () => { pane.innerHTML = ''; pane.appendChild(unopened); body.classList.remove('viewing'); };
   // A new listing (another revision, ignored files shown or hidden) keeps the open file open
