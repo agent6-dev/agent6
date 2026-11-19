@@ -1026,7 +1026,7 @@ async function renderHub(focus, gen) {
 // [text, style] spans from the shared renderer (viewmodel.transcript_style), so
 // the web shows exactly what the CLI stream and the TUI conversation view show.
 // The detail level cycles collapsed -> expanded -> hidden (persisted); an item
-// with a longer form (clipped tool output, folded thinking) expands on click.
+// with a longer form (clipped tool output, folded thinking) expands on a click or a key.
 const DETAIL_CYCLE = { collapsed: 'expanded', expanded: 'hidden', hidden: 'collapsed' };
 function tailStr(s, n) { return s.length <= n ? s : '…' + s.slice(-n); }
 function firstLine(s, n) { const t = String(s == null ? '' : s).split('\n')[0]; return t.length > n ? t.slice(0, n - 1) + '…' : t; }
@@ -1054,6 +1054,8 @@ function makeConv(url, box, body) {
     : 'no conversation yet; it appears as the session streams';
 
   const paintItems = () => {
+    // A repaint keeps the keyboard on the item it was on.
+    const refocus = itemsHost.contains(document.activeElement);
     itemsHost.innerHTML = '';
     let shown = 0;
     conv.items.forEach((it, i) => {
@@ -1061,15 +1063,7 @@ function makeConv(url, box, body) {
       const expanded = conv.open.get(i) ?? (conv.detail === 'expanded');
       const lines = expanded && it.full ? it.full : it.lines;
       const div = el('div', 'ci' + (it.full ? ' exp' : ''));
-      if (it.full) {
-        div.title = expanded ? 'click to collapse' : 'click to expand';
-        div.onclick = () => {
-          // A drag that selects text inside the item ends in a click: it keeps the selection.
-          const picked = getSelection();
-          if (!picked.isCollapsed && div.contains(picked.anchorNode)) return;
-          conv.open.set(i, !expanded); paintItems();
-        };
-      }
+      div.dataset.i = i;
       for (const line of lines) {
         const ln = el('div');
         for (const [text, style] of line) ln.appendChild(el('span', 's-' + style, text));
@@ -1079,6 +1073,31 @@ function makeConv(url, box, body) {
         if (hang) ln.style.setProperty('--hang', hang + 'ch');
         div.appendChild(ln);
       }
+      if (it.full) {
+        // A click on the item, or Enter or Space on its first line, opens or closes its longer form.
+        const toggle = () => { conv.open.set(i, !expanded); paintItems(); };
+        const head = div.firstElementChild;
+        head.setAttribute('role', 'button');
+        head.setAttribute('aria-expanded', String(expanded));
+        head.tabIndex = -1;
+        head.onfocus = () => {
+          conv.stop = i;
+          for (const other of itemsHost.querySelectorAll('[role=button]')) other.tabIndex = other === head ? 0 : -1;
+        };
+        head.onkeydown = (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); return; }
+          const heads = [...itemsHost.querySelectorAll('[role=button]')], at = heads.indexOf(head);
+          const next = { ArrowUp: heads[at - 1], ArrowDown: heads[at + 1], Home: heads[0], End: heads.at(-1) }[e.key];
+          if (next) { e.preventDefault(); next.focus(); }
+        };
+        div.title = expanded ? 'click to collapse' : 'click to expand';
+        div.onclick = () => {
+          // A drag that selects text inside the item ends in a click: it keeps the selection.
+          const picked = getSelection();
+          if (!picked.isCollapsed && div.contains(picked.anchorNode)) return;
+          toggle();
+        };
+      }
       itemsHost.appendChild(div); shown++;
     });
     // The empty note yields to the live pane: streamed text under a
@@ -1086,6 +1105,10 @@ function makeConv(url, box, body) {
     if (!shown && liveHost.style.display === 'none') {
       itemsHost.appendChild(el('div', 'muted conv-empty', emptyNote()));
     }
+    // The conversation is one Tab stop, the item last focused or else the newest; arrows move it.
+    const heads = itemsHost.querySelectorAll('[role=button]');
+    const stop = itemsHost.querySelector('.ci[data-i="' + conv.stop + '"] > [role=button]') || heads[heads.length - 1];
+    if (stop) { stop.tabIndex = 0; if (refocus) stop.focus({ preventScroll: true }); }
     if (atTail) box.scrollTop = box.scrollHeight;
   };
 

@@ -931,3 +931,52 @@ def test_details_and_resolve_say_whether_what_they_open_shows(
     expect(finding.locator(".finding-form")).to_be_hidden()
     expect(resolve).to_have_attribute("aria-expanded", "false")
     assert not errors
+
+
+def test_a_conversation_item_opens_and_closes_from_the_keyboard(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """The conversation is one Tab stop; arrows move between items, Enter opens, Space closes.
+
+    An item opened on a click alone: it took no focus and said nothing of its state. Then each
+    item was a Tab stop, so a run with 60 calls took 73 presses from Details to the composer.
+    """
+    from playwright.sync_api import expect
+
+    argv = ["sh", "-c", "echo " + "word " * 400]
+    call = {"type": "tool.call", "name": "run_command", "args_preview": {"argv": argv}}
+    result = {"type": "tool.result", "name": "run_command", "ok": True, "summary": "exit 0"}
+    stop = {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+    _session(tmp_path, "keys-AAA111", [call, result, call, result, call, result, stop])
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/keys-AAA111")
+    heads = page.locator(".card-conv .ci > [role=button]")
+    expect(heads).to_have_count(4)  # the task and three calls
+    page.get_by_role("button", name="detail: collapsed").focus()
+    page.keyboard.press("Tab")
+    expect(heads.last).to_be_focused()  # the newest item holds the stop
+    page.keyboard.press("Tab")
+    assert page.evaluate("() => !document.activeElement.closest('.card-conv')")
+    page.keyboard.press("Shift+Tab")
+    expect(heads.last).to_be_focused()
+    for key, at in (("ArrowUp", 2), ("Home", 0), ("ArrowDown", 1), ("End", 3)):
+        page.keyboard.press(key)
+        expect(heads.nth(at)).to_be_focused()
+    item = page.locator(".card-conv .ci.exp").last
+    head = item.get_by_role("button")
+    expect(head).to_have_attribute("aria-expanded", "false")
+    lines = item.locator("> div").count()
+    page.keyboard.press("Enter")
+    expect(head).to_have_attribute("aria-expanded", "true")
+    expect(head).to_be_focused()
+    assert item.locator("> div").count() > lines
+    ring = item.evaluate(
+        """e => [getComputedStyle(e).outlineStyle,
+        e.getBoundingClientRect().left - e.closest('.conv-box').getBoundingClientRect().left]"""
+    )
+    assert ring[0] == "solid"
+    assert ring[1] >= 0
+    page.keyboard.press(" ")
+    expect(head).to_have_attribute("aria-expanded", "false")
+    expect(head).to_be_focused()
+    assert not errors

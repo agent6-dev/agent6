@@ -47,6 +47,9 @@
 .conv { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
 .conv .ci { padding: 2px 4px; margin: 0 -4px 8px; white-space: pre-wrap; word-break: break-word; border-radius: 6px; }
 .conv .ci.exp { cursor: pointer; }
+/* An expandable item's first line takes the keyboard focus, and the whole item draws the ring. */
+.conv .ci > [role=button]:focus-visible { outline: none; }
+.conv .ci:has(> [role=button]:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* A line's indent and marker (paintItems sets --hang) hang its wrapped text under its first word. */
 .conv .ci > div { --indent: min(var(--hang, 0px), 40cqi); padding-left: var(--indent); text-indent: calc(-1 * var(--indent)); }
 /* The hang stops at 40% of the box's width, so a line indented past the column keeps its text in view. */
@@ -79,9 +82,9 @@
 .conv-card > .card-head-row > button { flex: none; }
 /* The detail button overhangs the heading's 20px line, so the row lines up with the drawer's first card. */
 .conv-card > .card-head-row > button { margin-block: calc((20px - var(--ctl-h-sm)) / 2); }
-/* x hidden: .ci's -4px hover-bleed margins otherwise leave a permanent
-   horizontal scrollbar; item text always wraps, so x never scrolls for real. */
-.conv-box { overflow: hidden auto; max-height: 62vh; }
+/* The box pads its sides by the 4px an item's hover background and focus ring reach past its text
+   (.ci's negative margins), so neither is cut; x stays hidden, as item text always wraps. */
+.conv-box { overflow: hidden auto; max-height: 62vh; padding-inline: 4px; margin-inline: -4px; }
 /* The run view's scroll panes: a focused control scrolls into view 12px clear of the pane's edge,
    so its ring shows whole. Firefox focuses a scroller itself: the drawer and the prompts, which
    meet the bars and the rail edge to edge, draw that ring inside. */
