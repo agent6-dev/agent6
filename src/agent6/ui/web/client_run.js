@@ -668,6 +668,7 @@ function paintCommits(cards, s) {
   } else {
     const nav = el('div', 'row pickers'); // the composers' picker-row style
     const sel = el('select', 'field');
+    sel.setAttribute('aria-label', 'Commit');
     sel.appendChild(new Option('latest commit', ''));
     for (const st of commits) sel.appendChild(new Option(st.label, st.sha)); // the server's RunCommit.label
     const cum = document.createElement('input'); cum.type = 'checkbox';

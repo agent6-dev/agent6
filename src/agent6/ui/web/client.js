@@ -600,6 +600,7 @@ function attachParallelSuggest(task, root) {
     if (active >= items.length) active = -1;
     if (!box) {
       box = el('div', 'ac-pop'); box.id = 'suggest-' + ++suggestLists; box.setAttribute('role', 'listbox');
+      box.setAttribute('aria-label', 'Model ids');
       root.appendChild(box); task.setAttribute('aria-controls', box.id);
     }
     box.textContent = '';
@@ -1442,6 +1443,7 @@ function attachCommandSuggest(ta, root, liveNow, offered = null) {
     if (active >= items.length) active = -1;
     if (!box) {
       box = el('div', 'ac-pop'); box.id = 'suggest-' + ++suggestLists; box.setAttribute('role', 'listbox');
+      box.setAttribute('aria-label', 'Directives');
       root.appendChild(box); ta.setAttribute('aria-controls', box.id);
     }
     box.textContent = '';

@@ -808,7 +808,10 @@ def test_a_missing_worktree_is_named_once_in_its_row(
 def test_the_parallel_model_popup_is_a_listbox_the_entry_points_into(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
-    """The /parallel model popup had no roles: a screen reader heard no list and no highlight."""
+    """The /parallel model popup had no roles: a screen reader heard no list and no highlight.
+
+    Its list box then had no name.
+    """
     from playwright.sync_api import Route, expect
 
     def models(route: Route) -> None:
@@ -823,6 +826,7 @@ def test_the_parallel_model_popup_is_a_listbox_the_entry_points_into(
     options = popup.get_by_role("option")
     expect(options).to_have_text(["prov/one", "prov/two"])
     expect(popup).to_have_attribute("role", "listbox")
+    expect(page.get_by_role("listbox", name="Model ids")).to_have_count(1)
     expect(entry).to_have_attribute("aria-controls", popup.get_attribute("id") or "")
     expect(entry).to_have_attribute("aria-autocomplete", "list")
     entry.press("ArrowDown")
@@ -842,6 +846,7 @@ def test_the_directive_popup_is_a_listbox_the_entry_points_into(
     """The directive popup had no roles: a screen reader heard no list and no highlight.
 
     The entry points at the /parallel popup that takes over once Tab completes the directive.
+    Each list box then had no name.
     """
     from playwright.sync_api import Route, expect
 
@@ -860,6 +865,7 @@ def test_the_directive_popup_is_a_listbox_the_entry_points_into(
         options = popup.get_by_role("option")
         expect(options).to_have_count(2)
         expect(popup).to_have_attribute("role", "listbox")
+        expect(page.get_by_role("listbox", name="Directives")).to_have_count(1)
         expect(entry).to_have_attribute("aria-controls", popup.get_attribute("id") or "")
         entry.press("ArrowDown")
         expect(options.first).to_have_attribute("aria-selected", "true")

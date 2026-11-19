@@ -25,7 +25,10 @@ def test_commit_picker_requests_the_selected_commit(
     tmp_path: pathlib.Path,
     open_page: Callable[[int], tuple[Page, list[str]]],
 ) -> None:
-    """The picker selects history through commit= and restores the live details."""
+    """The picker selects history through commit= and restores the live details.
+
+    It had no name: a screen reader heard an unnamed combo box.
+    """
     from playwright.sync_api import expect
 
     base = test_git_history._git(tmp_path, "rev-parse", "HEAD")
@@ -48,7 +51,7 @@ def test_commit_picker_requests_the_selected_commit(
     (session / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/session/commit-picker")
-    picker = page.locator(".card-diff select")
+    picker = page.locator(".card-diff").get_by_role("combobox", name="Commit")
     expect(picker.locator("option")).to_have_count(3)
     with page.expect_response(lambda response: response.url.endswith(f"?commit={first}")) as read:
         picker.select_option(first)
