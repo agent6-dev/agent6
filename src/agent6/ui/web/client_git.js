@@ -94,6 +94,15 @@ function statusBadge(status) {
   return s;
 }
 function shortLabel(c) { return c.short + ' ' + c.subject; }
+// A commit's ISO date as git log --date=iso prints it ('2026-11-12 01:38:25 -05:00'): it may
+// wrap before the zone, never inside the date or the time.
+function gitDate(iso) {
+  const m = /^(\d{4}-\d\d-\d\d)T(\d\d:\d\d:\d\d)(.*)$/.exec(iso);
+  if (!m) return el('span', null, iso);
+  const date = el('span', 'gd-date');
+  date.append(el('span', null, m[1] + ' ' + m[2]), ' ', el('span', null, m[3]));
+  return date;
+}
 function fmtBytes(n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KiB' : (n / 1048576).toFixed(1) + ' MiB'; }
 
 // An image's diff shows the file before and after, above git's "Binary files differ"
@@ -542,10 +551,12 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     pad.appendChild(title);
     const kv = el('div', 'kv gd-meta');
     const add = (k, v) => { kv.appendChild(el('span', 'k', k)); const node = typeof v === 'string' ? el('span', 'v', v) : v; node.classList.add('v'); kv.appendChild(node); };
-    add('commit', el('span', 'mono', c.sha));
-    add('author', c.author.name + ' <' + c.author.email + '> · ' + c.author.date);
+    const full = el('span', 'mono gd-sha', c.sha); full.title = c.sha;
+    add('commit', full);
+    const who = (p) => { const v = el('span'); v.append(p.name + ' <' + p.email + '> · ', gitDate(p.date)); return v; };
+    add('author', who(c.author));
     if (c.committer.name !== c.author.name || c.committer.email !== c.author.email || c.committer.date !== c.author.date) {
-      add('committer', c.committer.name + ' <' + c.committer.email + '> · ' + c.committer.date);
+      add('committer', who(c.committer));
     }
     const parents = el('span');
     if (!c.parents.length) parents.appendChild(el('span', 'muted', 'none (root commit)'));

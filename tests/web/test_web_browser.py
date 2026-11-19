@@ -1020,6 +1020,31 @@ def test_the_compare_pickers_placeholders_fit_their_fields(
     assert errors == [], errors
 
 
+def test_a_commits_sha_and_dates_never_break_mid_token_on_a_phone(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """The full sha keeps one line and a date wraps only before its zone; both broke mid-token."""
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/main")
+    page.wait_for_selector(".gd-meta button")
+    value = "xpath=following-sibling::*[1]"
+    sha = page.locator(".gd-meta .k", has_text="commit").locator(value)
+    assert sha.get_attribute("title") == sha.inner_text() and len(sha.inner_text()) == 40
+    assert sha.evaluate("e => e.scrollHeight <= parseFloat(getComputedStyle(e).lineHeight) + 1")
+    date_lines = page.locator(".gd-meta .k", has_text="author").locator(value).evaluate(
+        """e => {
+          const walk = document.createTreeWalker(e, NodeFilter.SHOW_TEXT), range = document.createRange();
+          for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+            const at = n.data.search(/\\d{4}-\\d\\d-\\d\\d/);
+            if (at >= 0) { range.setStart(n, at); range.setEnd(n, at + 19); return range.getClientRects().length; }
+          }
+        }"""
+    )
+    assert date_lines == 1
+    assert errors == [], errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:

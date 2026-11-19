@@ -60,6 +60,10 @@
 .gd-subject { font-weight: 600; margin: 8px 0; overflow-wrap: anywhere; }
 .gd-meta { margin: 6px 0 10px; align-items: baseline; }
 .gd-meta .v { overflow-wrap: anywhere; }
+/* The full sha stays one line, cut with an ellipsis where the panel is narrower (the tooltip and a
+   double-click select it whole); a date wraps only before its zone. */
+.gd-meta .gd-sha { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gd-date > span { white-space: nowrap; }
 .gd-meta button.mini { margin-right: 4px; }
 .gd-actions { margin-bottom: 10px; }
 .gd-body { font: 13px/1.5 system-ui, sans-serif; white-space: pre-wrap; margin: 0 0 12px; padding: 8px 10px; border-left: 2px solid var(--border); color: var(--text); }
