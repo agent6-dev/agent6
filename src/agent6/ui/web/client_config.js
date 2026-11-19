@@ -377,12 +377,19 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     combo.load('/api/config/suggest/' + section + '.model');
   } else if (choices) {
     field = el('select', 'field');
+    const current = cur || String(s.default ?? '');
+    if (!choices.includes(current)) {
+      // A leaf no layer sets and with no default (an adaptive effort) matches no choice: the first
+      // option reads what its row reads, so the select never opens blank.
+      const shown = el('option', null, s.display.replace(/\s+/g, ' '));
+      shown.value = ''; shown.disabled = true; shown.selected = true; field.appendChild(shown);
+    }
     for (const c of choices) {
       const meaning = s.choice_meanings?.[c];
       const option = el('option', null, meaning ? `${c}: ${meaning}` : c);
       option.value = c; field.appendChild(option);
     }
-    field.value = cur || String(s.default ?? '');
+    if (choices.includes(current)) field.value = current;
   } else {
     field = el('input', 'field');
     field.value = cur;

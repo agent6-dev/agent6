@@ -155,3 +155,31 @@ def test_a_config_row_lights_under_the_pointer(
     row.hover()
     assert row.evaluate("e => getComputedStyle(e).backgroundColor") != rest
     assert not errors
+
+
+def test_an_unset_effort_opens_its_editor_on_the_value_its_row_shows(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """An effort no layer sets matched none of its choices, so its editor opened on a blank select.
+
+    The row read `"off"  (adaptive)` meanwhile.
+    """
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        '[providers.anthropic]\nbackend = "anthropic"\n\n'
+        '[models.worker]\nmodel = "anthropic/claude-sonnet-4-6"\n',
+        encoding="utf-8",
+    )
+    page, errors = open_page(port)
+    _config(page, port)
+    row = page.locator('[data-key="models.worker.effort"]')
+    shown = " ".join(row.locator(".val").inner_text().split())
+    assert shown == '"off" (adaptive)'
+    row.click()
+    select = page.get_by_role("dialog").locator("select.field")
+    assert select.evaluate("e => e.selectedIndex") == 0
+    option = select.locator("option").first
+    assert option.inner_text() == shown
+    assert option.is_disabled()
+    assert not errors
