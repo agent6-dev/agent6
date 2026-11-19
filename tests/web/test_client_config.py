@@ -30,6 +30,9 @@ class Element {
                         value: '', checked: false, disabled: false, isConnected: true,
                         listeners: {}});
   }
+  // An element's text is its children's, as in the DOM: a cell holds text nodes and <wbr>s.
+  get textContent() { return this.children.map(child => child.textContent).join('') || this.text; }
+  set textContent(text) { this.text = text; this.children = []; }
   addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); }
   // A modal dialog hands the focus back to its opener when it closes.
   showModal() { this.open = true; this.opener = document.activeElement; }

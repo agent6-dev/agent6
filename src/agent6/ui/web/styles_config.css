@@ -18,10 +18,12 @@
 .cfg-card { container-type: inline-size; }
 .cfg { width: 100%; border-collapse: collapse; font-size: 13px; }
 .cfg td, .cfg th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
-.cfg .key { font-family: var(--mono); word-break: break-all; }
-.cfg .val { font-family: var(--mono); word-break: break-word; }
+/* A long key wraps after a dot, a long value or source after a slash (the page marks each with a
+   <wbr>), and inside a part only when the part alone is wider than its column. */
+.cfg .key, .cfg .val, .cfg .src { overflow-wrap: anywhere; }
+.cfg .key, .cfg .val { font-family: var(--mono); }
 .cfg tr.mod .key { color: var(--accent); }
-.cfg .src { color: var(--muted); overflow-wrap: anywhere; }
+.cfg .src { color: var(--muted); }
 @container (width >= 700px) {
   .cfg { table-layout: fixed; }
   .cfg th:first-child { width: 352px; } /* the longest built-in key, 40 characters */
@@ -30,7 +32,6 @@
 @container (width < 700px) {
   .cfg tr { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(40%); border-bottom: 1px solid var(--border); }
   .cfg th:first-child, .cfg td.key { grid-column: 1 / -1; }
-  .cfg .key { word-break: normal; overflow-wrap: anywhere; }
   .cfg td, .cfg th { border-bottom: 0; padding: 4px 8px; }
 }
 /* The model suggestions float over the dialog from the field's bottom edge, or above the field

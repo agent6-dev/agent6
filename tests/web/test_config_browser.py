@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from agent6 import paths
 from agent6.ui.web import server as web_server
 from tests.web import signin, test_web_browser
 
@@ -98,4 +99,46 @@ def test_every_config_section_lines_its_columns_up(
     assert 0 < len(modified) < len(rows)
     assert {(value, source) for value, source, _ in modified} == columns
     assert page.evaluate("document.scrollingElement.scrollWidth") == width
+    assert not errors
+
+
+# The character before each line break in every visible settings cell.
+BREAKS = r"""() => [...document.querySelectorAll('.cfg td')].filter(td => td.offsetParent)
+.flatMap(td => {
+  const walker = document.createTreeWalker(td, NodeFilter.SHOW_TEXT);
+  let text = '', top = null; const before = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    for (let i = 0; i < node.length; i++) {
+      const range = document.createRange(); range.setStart(node, i); range.setEnd(node, i + 1);
+      const box = [...range.getClientRects()].find(rect => rect.width > 0);
+      if (box && top !== null && box.top > top + 2) before.push(text.slice(-1));
+      if (box) top = box.top;
+      text += node.data[i];
+    }
+  }
+  return before;
+})"""
+
+
+def test_a_long_config_key_or_value_wraps_between_its_parts(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Keys broke anywhere (`providers.company-gateway-eu-west-produ` over `ction.base_url`).
+
+    Chromium also split a URL value inside a word; every break now falls after a dot, a slash,
+    a hyphen or a space.
+    """
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        "[providers.company-gateway-eu-west-production]\n"
+        'backend = "openai"\n'
+        'base_url = "https://llm-gateway.internal.example.com/openrouter/api/v1/chat/completions"\n',
+        encoding="utf-8",
+    )
+    page, errors = open_page(port)
+    _config(page, port, 1024)
+    before = page.evaluate(BREAKS)
+    assert len(before) >= 12
+    assert set(before) <= set("./- ")
     assert not errors

@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "1df153febcc878f50cf8850ec704961f21a8c7b89660266b38846f5572996168"
+PAGE_SHA256 = "29e5c10f904e34ec8c65ab487dbd6a1f917a81a74d0e8ec0115df6c25d3af339"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -408,7 +408,7 @@ function el(tag, cls, text = '') {
   };
 }
 const document = {
-  body: el('body'), activeElement: null,
+  body: el('body'), activeElement: null, createTextNode: text => el('text', null, text),
   // openDialog's one question: is a dialog open?
   querySelector(selector) {
     assert.equal(selector, 'dialog[open]');

@@ -84,9 +84,9 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
       box.appendChild(tbl); card.appendChild(box); sections.push(box);
     }
     const tr = el('tr', s.modified ? 'mod' : '');
-    tr.appendChild(el('td', 'key', k));
-    tr.appendChild(el('td', 'val', s.display)); // the one shared value column (viewmodel.display_value)
-    tr.appendChild(el('td', 'src', esc(s.source)));
+    tr.appendChild(breakableCell('key', k, '.'));
+    tr.appendChild(breakableCell('val', s.display, '/')); // the one shared value column (viewmodel.display_value)
+    tr.appendChild(breakableCell('src', esc(s.source), '/'));
     // Hover text: the leaf's meaning (the docs table cell), from the same
     // per-key payload the editor dialog shows it in.
     tr.title = s.description ? (s.description_points || [s.description]).join('\n') : 'click to edit';
@@ -111,6 +111,17 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
   if (state.filtering || (state.key && !focused)) filter.focus({preventScroll: true});
   else if (focused) focused[1].focus({preventScroll: true});
   if (state.y !== undefined) window.scrollTo(state.x, state.y);
+}
+// A table cell whose text may wrap after each `mark` (a key's dots, a value's or a path's
+// slashes): a <wbr> marks the place, so a copy of the text holds no extra character.
+function breakableCell(cls, text, mark) {
+  const cell = el('td', cls);
+  const parts = String(text).split(mark);
+  parts.forEach((part, i) => {
+    if (i) cell.appendChild(el('wbr'));
+    cell.appendChild(document.createTextNode(i < parts.length - 1 ? part + mark : part));
+  });
+  return cell;
 }
 // The preset the page edits, read off the payload's `agent6.preset` row; '' for none.
 function selectedPreset(data) {
