@@ -41,12 +41,13 @@ function gitDiffViewer(body) {
     head.appendChild(statusBadge(f.status));
     head.appendChild(filePath(f));
     head.appendChild(fileCounts(f));
-    head.appendChild(el('span', 'muted git-diff-pos', (i + 1) + ' / ' + ctx.files.length));
+    // The controls wrap under the path as one group; a phone keeps them on one line that scrolls.
+    const tools = el('div', 'git-diff-tools'); head.appendChild(tools);
     const prev = el('button', 'mini', '‹'); prev.title = 'previous file'; prev.disabled = i === 0;
     prev.onclick = () => showDiff(ctx, i - 1);
     const next = el('button', 'mini', '›'); next.title = 'next file'; next.disabled = i === ctx.files.length - 1;
     next.onclick = () => showDiff(ctx, i + 1);
-    head.appendChild(prev); head.appendChild(next);
+    tools.append(prev, el('span', 'muted git-diff-pos', (i + 1) + ' / ' + ctx.files.length), next);
     const fileLink = (side, label, cls) => {
       const rev = side === 'base' ? ctx.base : ctx.head;
       const path = side === 'base' ? f.old_path || f.path : f.path;
@@ -60,12 +61,6 @@ function gitDiffViewer(body) {
       }
       return link;
     };
-    if (f.status === 'D') {
-      const absent = el('button', 'mini diff-open-file', 'Open in Files');
-      absent.disabled = true; absent.title = 'Deleted: no file at the head revision';
-      head.appendChild(absent);
-      head.appendChild(fileLink('base', 'Open base file in Files', 'diff-open-base'));
-    } else head.appendChild(fileLink('head', 'Open in Files', 'diff-open-file'));
     let mode = recall(DIFF_MODE_KEY, 'inline');
     if (!DIFF_MODES.includes(mode)) mode = 'inline';
     // A phone has no room for split: it shows inline, says so when split was the choice, and
@@ -81,15 +76,24 @@ function gitDiffViewer(body) {
       b.onclick = () => { remember(DIFF_MODE_KEY, m); showDiff(ctx, i, whole, fullContext); };
       modes.appendChild(b);
     }
-    head.appendChild(modes);
+    tools.appendChild(modes);
     if (mode === 'inline' || mode === 'split') {
       const context = el('button', 'mini diff-context', fullContext ? 'Show hunks only' : 'Show full context');
       context.setAttribute('aria-pressed', String(fullContext));
       context.disabled = !!ctx.panel;
       if (ctx.panel) context.title = 'Full context is unavailable for recorded review comparisons';
       context.onclick = () => showDiff(ctx, i, whole, !fullContext);
-      head.appendChild(context);
+      tools.appendChild(context);
     }
+    // Blame waits for the patch, which tells it the lines and their sides.
+    const blame = el('button', 'mini diff-blame', 'blame'); blame.disabled = true;
+    blame.setAttribute('aria-pressed', String(blameOn));
+    tools.appendChild(blame);
+    if (f.status === 'D') {
+      const absent = el('button', 'mini diff-open-file', 'Open in Files');
+      absent.disabled = true; absent.title = 'Deleted: no file at the head revision';
+      tools.append(absent, fileLink('base', 'Open base file in Files', 'diff-open-base'));
+    } else tools.appendChild(fileLink('head', 'Open in Files', 'diff-open-file'));
     diffView.appendChild(head);
     const box = el('div', 'git-diff-body'); diffView.appendChild(box);
     let d = diffs.get(key);
@@ -144,7 +148,7 @@ function gitDiffViewer(body) {
       const n = (window.pendingNewWork.task.match(/^> /gm) || []).length;
       toast(n + (n === 1 ? ' line quoted' : ' lines quoted') + ' for the new-work composer on Sessions');
     });
-    await blameDiff(head, box, patch, ctx, f, d, mode, current, sideText);
+    await blameDiff(blame, box, patch, ctx, f, d, mode, current, sideText);
     if (ctx.query?.get('path') === f.path && /^\d+$/.test(ctx.query.get('line') || '')) {
       const line = ctx.query.get('line');
       patch.querySelector('[data-new="' + line + '"], [data-line="' + line + '"]')?.scrollIntoView({block: 'center'});
@@ -157,9 +161,8 @@ function gitDiffViewer(body) {
       if (ctx.query) focusFinding(patch, ctx.query.get('finding'));
     } catch (e) { if (current()) box.appendChild(el('div', 'err', 'Findings: ' + e.message)); }
   };
-  const blameDiff = async (head, box, patch, ctx, f, d, mode, current, sideText) => {
-    const button = el('button', 'mini diff-blame', 'blame');
-    head.appendChild(button);
+  const blameDiff = async (button, box, patch, ctx, f, d, mode, current, sideText) => {
+    button.disabled = false;
     let request = 0;
     const load = async () => {
       const n = ++request;

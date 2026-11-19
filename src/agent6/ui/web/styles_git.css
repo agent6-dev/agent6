@@ -81,6 +81,7 @@
 .git-body.diffing > .git-diff { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; }
 .git-diff-head { flex: none; flex-wrap: wrap; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
 .git-diff-head .gf-path { flex: 1 1 200px; }
+.git-diff-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .git-diff-head a.mini { display: inline-block; padding: 3px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; text-decoration: none; }
 .git-diff-pos { font-size: 12px; white-space: nowrap; }
 .git-diff-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px; }
@@ -138,6 +139,7 @@
    picker on its own row under the base and the swap button. */
 .git-graph { container: git-graph / inline-size; }
 .git-side { container: git-side / inline-size; }
+.git-diff { container: git-diff / inline-size; }
 @container git-graph (max-width: 559px) {
   .gc-author { display: none; }
   .gc-row { padding-right: 8px; gap: 8px; }
@@ -148,6 +150,12 @@
   .gcmp-pick .gpick:last-child { grid-column: 1 / -1; }
   .gf:has(> .gf-acts) { grid-template-columns: auto minmax(0, 1fr) auto; }
   .gf-acts { grid-column: 2 / -1; justify-self: end; }
+}
+/* A phone-wide diff keeps its controls on one line under the path, scrolled sideways; the padding
+   leaves room for a focus ring. */
+@container git-diff (max-width: 480px) {
+  .git-diff-tools { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; padding: 4px; margin: -4px; }
+  .git-diff-tools > * { flex: none; }
 }
 @container git-side (max-width: 319px) {
   .gf-acts { grid-column: 1 / -1; justify-self: stretch; grid-template-columns: repeat(3, minmax(min-content, 1fr)); }
