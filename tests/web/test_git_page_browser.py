@@ -24,6 +24,10 @@ git_port = test_web_browser.git_port
 dirty_git_port = test_web_browser.dirty_git_port
 
 OpenPage = Callable[[int], tuple["Page", list[str]]]
+# A computed style the Open in Files link shares with the mini buttons beside it.
+SKIN = """e => { const s = getComputedStyle(e);
+  return [s.color, s.backgroundColor, s.borderTopColor, s.borderTopLeftRadius, s.fontSize,
+    Math.round(e.getBoundingClientRect().height)]; }"""
 
 
 def _held(page: Page, pattern: str) -> list[Route]:
@@ -280,4 +284,19 @@ def test_a_binary_files_diff_offers_no_text_controls(
     expect(tools.get_by_role("link", name="Open in Files", exact=True)).to_be_visible()
     for name in ("inline", "split", "old", "new", "Show full context", "blame"):
         expect(tools.get_by_role("button", name=name, exact=True)).to_have_count(0)
+    assert errors == [], errors
+
+
+def test_open_in_files_wears_the_mini_buttons_skin(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """Open in Files drew accent text on no fill beside the filled mini buttons."""
+    sha = _git(tmp_path, "rev-parse", "main")
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/{sha}?path=b.txt")
+    page.wait_for_selector(".git-diff .diff")
+    tools = page.locator(".git-diff-tools")
+    link = tools.get_by_role("link", name="Open in Files", exact=True)
+    button = tools.get_by_role("button", name="blame", exact=True)
+    assert link.evaluate(SKIN) == button.evaluate(SKIN)
     assert errors == [], errors

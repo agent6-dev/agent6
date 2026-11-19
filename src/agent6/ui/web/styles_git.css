@@ -100,7 +100,13 @@
 .git-diff-head { flex: none; flex-wrap: wrap; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
 .git-diff-head .gf-path { flex: 1 1 200px; }
 .git-diff-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.git-diff-head a.mini { display: inline-block; padding: 3px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; text-decoration: none; }
+/* Open in Files is a link drawn as the mini buttons beside it. */
+.git-diff-head a.mini {
+  display: inline-flex; align-items: center; min-height: var(--ctl-h-sm); padding: 0 var(--ctl-px-sm);
+  font-size: 13px; line-height: 1.25; color: var(--text); background: var(--surface2);
+  border: 1px solid var(--border); border-radius: var(--r); transition: border-color .15s, background-color .15s;
+}
+.git-diff-head a.mini:hover { border-color: var(--border-strong); background-color: color-mix(in srgb, var(--text) 6%, var(--surface2)); }
 .git-diff-pos { font-size: 12px; white-space: nowrap; }
 .git-diff-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px; }
 .gcmp-pick { display: flex; gap: 8px; align-items: center; margin: 8px 0 4px; }
