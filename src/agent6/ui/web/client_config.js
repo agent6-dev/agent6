@@ -322,7 +322,7 @@ async function addReviewer(refresh) {
 // the field, so the dialog's buttons stay in view. Enter picks the active suggestion; with none
 // active it reaches the dialog, which saves.
 function configCombobox(current) {
-  const element = el('div', 'cfg-combo'), field = el('input', 'field');
+  const element = el('div', 'cfg-combo'), field = el('input', 'field cfg-value');
   field.value = current; field.autocomplete = 'off';
   field.setAttribute('role', 'combobox');
   field.setAttribute('aria-autocomplete', 'list');
@@ -409,7 +409,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     dialog.appendChild(modelLabel); dialog.appendChild(combo.element);
     combo.load('/api/config/suggest/' + section + '.model');
   } else if (choices) {
-    field = el('select', 'field');
+    field = el('select', 'field cfg-value');
     const current = cur || String(s.default ?? '');
     if (!choices.includes(current)) {
       // A leaf no layer sets and with no default (an adaptive effort) matches no choice: the first
@@ -435,7 +435,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     field.value = cur;
     if (s.type === 'list') field.placeholder = 'TOML list';
   } else {
-    field = el('input', 'field');
+    field = el('input', 'field cfg-value');
     field.value = cur;
   }
   if (!combo) {

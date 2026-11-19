@@ -7,11 +7,12 @@
    checkbox under them. */
 .cfg-meta { margin-bottom: 10px; }
 .cfg-label { display: block; margin-top: 8px; }
-/* A list, table or string value rests at a field's height and grows with the value to 40% of the
-   screen, then scrolls. */
+/* A value field and its suggestions read in the table's monospace. A list, table or string value
+   rests at a field's height and grows with the value to 40% of the screen, then scrolls. */
+.field.cfg-value { font-family: var(--mono); font-size: 13px; }
 textarea.field.cfg-value {
   field-sizing: content; resize: none; min-height: var(--ctl-h); max-height: 40dvh;
-  padding-block: calc((var(--ctl-h) - 1lh - 2px) / 2); font-family: var(--mono); font-size: 13px;
+  padding-block: calc((var(--ctl-h) - 1lh - 2px) / 2);
 }
 .cfg-check { margin-top: 8px; cursor: pointer; }
 /* An editor's Remove, which takes a whole entry, stands apart at the end of its buttons. */
@@ -86,7 +87,7 @@ textarea.field.cfg-value {
   border-radius: var(--r); background: var(--surface2);
 }
 .cfg-option, .cfg-catalog { padding: 6px 10px; overflow-wrap: anywhere; }
-.cfg-option { cursor: pointer; font-family: var(--mono); }
+.cfg-option { cursor: pointer; font-family: var(--mono); font-size: 13px; }
 .cfg-option:hover, .cfg-option[aria-selected=true] { background: var(--surface); color: var(--accent); }
 .cfg-option[aria-selected=true] { outline: 1px solid var(--accent); outline-offset: -1px; }
 /* The config editor's description: a readable measure, code spans as code. */

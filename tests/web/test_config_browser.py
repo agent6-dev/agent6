@@ -720,3 +720,35 @@ def test_a_choice_editor_shows_the_chosen_meaning_whole_on_a_phone(
     select.select_option("none")
     assert meaning.inner_text() == "Run commands without confinement"
     assert not errors
+
+
+FONT = "e => { const s = getComputedStyle(e); return [s.fontFamily, s.fontSize]; }"
+
+
+def test_a_config_editor_shows_its_value_in_the_tables_type(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A number, a choice or a model id switched from the table's monospace to the page's sans."""
+    _global_config(
+        '[providers.a]\nbackend = "openai"\nbase_url = "http://localhost:1"\n'
+        '[models.worker]\nmodel = "a/old"\n'
+    )
+    page, errors = open_page(port)
+    _config(page, port)
+    table = page.locator('[data-key="budget.max_usd"] .val').evaluate(FONT)
+    fonts = {}
+    for key in (
+        "budget.max_usd",
+        "sandbox.isolation",
+        "harness.verify.command",
+        "models.worker.model",
+    ):
+        page.locator(f'[data-key="{key}"]').click()
+        dialog = page.get_by_role("dialog")
+        fonts[key] = dialog.locator("input:not([type=checkbox]), select, textarea").first.evaluate(
+            FONT
+        )
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="detached")
+    assert fonts == dict.fromkeys(fonts, table)
+    assert not errors
