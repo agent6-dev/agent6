@@ -11,6 +11,7 @@ import pytest
 
 from agent6 import paths
 from agent6.sessions import event_log, journal, layout
+from tests import review_helpers
 from tests.web import session_logs, test_review_evidence, test_web_browser
 
 if TYPE_CHECKING:
@@ -115,6 +116,50 @@ def test_the_findings_card_spaces_its_parts_and_labels_its_filters(
     selects = body.locator("select:visible")
     expect(selects).to_have_count(3)
     assert selects.evaluate_all("all => all.map(s => s.className)") == ["field"] * 3
+    assert not errors
+
+
+@pytest.mark.parametrize("reviewed", [False, True])
+def test_a_drafts_findings_card_waits_for_a_review(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    *,
+    reviewed: bool,
+) -> None:
+    """A machine draft shows its Findings card once a review ran; a run shows its card always.
+
+    Every draft showed the card with no panel, no finding and no Receipt: nothing to read or do.
+    """
+    from playwright.sync_api import expect
+
+    start = {"type": "session.start", "mode": "machine", "user_task": "Author a triage machine"}
+    call = {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}}
+    review = review_helpers.panel_rows(warn=1) if reviewed else []
+    draft = paths.state_dir(tmp_path) / "sessions" / "machines" / "brave-otter"
+    draft.mkdir(parents=True)
+    (draft / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in [start, call, *review]))
+    session_logs.write_run(tmp_path, "plain-AAA111", [])
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"http://127.0.0.1:{port}/#/draft/brave-otter")
+    expect(page.locator(".card-conv .ci").first).to_be_visible()
+    card = page.locator(".card-findings")
+    if reviewed:
+        expect(card.locator(".finding")).to_have_count(1)
+        expect(card).to_be_visible()
+    else:
+        expect(card).to_be_hidden()
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.get_by_role("button", name="Widgets", exact=True).click()
+    entry = page.locator(".wmenu").get_by_role("button", name="Findings", exact=True)
+    if reviewed:
+        expect(entry).to_be_visible()
+    else:
+        expect(entry).to_be_hidden()
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"http://127.0.0.1:{port}/#/session/plain-AAA111")
+    expect(page.locator(".card-findings").get_by_role("button", name="Receipt")).to_be_visible()
     assert not errors
 
 

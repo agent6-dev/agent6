@@ -161,6 +161,8 @@ function paintFindings(cards, state) {
   const key = JSON.stringify([review, notLive(state)]);
   if (cards._findings_key === key) return;
   cards._findings_key = key;
+  // A draft has no Receipt, so its card waits for a review's first event (the version counts them).
+  if (cards._readOnly) cards.findings.parentElement.style.display = review.version ? '' : 'none';
   const host = cards.findings; host.innerHTML = '';
   // The counts lead the card with the Receipt button at their end; the receipt opens under them.
   const counts = review.open_counts || {};
