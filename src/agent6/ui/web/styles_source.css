@@ -41,7 +41,9 @@
 @media (hover: hover) { .gtree-dir:hover { background: var(--surface2); } }
 .gtree-caret { flex: none; width: 1em; text-align: center; color: var(--muted); }
 .gtree-caret.folded { transform: rotate(-90deg); }
-.gtree-name { font-family: var(--mono); font-weight: 600; overflow-wrap: anywhere; }
+/* A name that does not fit ends in an ellipsis; the row's title holds the whole path. */
+.gtree-name { min-width: 0; font-family: var(--mono); font-weight: 600; }
+.gtree-name, .gtree .gf-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gtree-note { flex: none; margin-left: auto; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
 .gtree-dir, .gtree .gf { padding-left: calc(4px + var(--depth, 0) * 14px); }
 .gf-note { font-size: 12px; margin: 4px 0; }

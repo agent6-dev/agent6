@@ -69,7 +69,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   };
   const fileRow = (f) => {
     const row = el('div', 'gf' + (shown === f.path ? ' sel' : ''));
-    row.dataset.path = f.path;
+    row.dataset.path = f.path; row.title = f.path;
     const mark = stateMark([f]); if (mark) row.appendChild(mark);
     row.appendChild(el('span', 'gf-path', f.path.slice(f.path.lastIndexOf('/') + 1)));
     row.appendChild(el('span', 'gf-counts muted', f.kind === 'file' ? fmtBytes(f.size) : f.kind));

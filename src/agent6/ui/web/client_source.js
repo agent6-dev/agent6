@@ -38,7 +38,7 @@ function treeView(root, fileRow, folderNote, folded, folderMark) {
   const box = el('div', 'gtree');
   const paint = (node, host, depth) => {
     for (const d of node.dirs.values()) {
-      const row = el('div', 'gtree-dir'); row.dataset.path = d.path; row.style.setProperty('--depth', depth);
+      const row = el('div', 'gtree-dir'); row.dataset.path = d.path; row.title = d.path; row.style.setProperty('--depth', depth);
       const caret = el('span', 'gtree-caret');
       row.appendChild(caret);
       if (folderMark) { const mark = folderMark(d); if (mark) row.appendChild(mark); }
