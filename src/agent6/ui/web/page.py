@@ -112,7 +112,7 @@ PAGE_HTML = (
 </head>
 <body>
 <aside class="rail">
-  <a class="rail-brand" href="#/" aria-label="agent6 home"><img src="/icon.svg" width="24" height="24" alt=""><b>agent6</b></a>
+  <a class="rail-brand" href="#/" aria-label="agent6 home"><img src="/favicon.svg" width="24" height="24" alt=""><b>agent6</b></a>
   <nav class="rail-nav">
 """
     + _NAV_LINKS
@@ -124,7 +124,7 @@ PAGE_HTML = (
 </aside>
 <div class="content">
 <header>
-  <span class="brand" onclick="location.hash='#/'"><b>agent6</b></span>
+  <a class="brand" href="#/" aria-label="agent6 home"><img src="/favicon.svg" width="22" height="22" alt=""><b>agent6</b></a>
   <span class="crumb" id="crumb"></span>
   <span class="spacer"></span>
   <button onclick="toggleTheme()" title="theme">◐</button>

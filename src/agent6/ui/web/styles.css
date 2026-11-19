@@ -48,7 +48,8 @@ header {
   padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
   padding-top: calc(10px + env(safe-area-inset-top));
 }
-header .brand { font-weight: 700; letter-spacing: .3px; }
+/* The brand: the transparent mark (favicon.svg) beside the name in the accent colour. */
+header .brand { display: inline-flex; align-items: center; gap: 8px; color: inherit; font-weight: 700; letter-spacing: .3px; }
 header .brand b { color: var(--accent); }
 header .spacer { flex: 1; }
 /* min-height keeps the header the same height whatever the crumb holds:
@@ -286,9 +287,8 @@ aside.rail { display: none; }
     padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
     background: var(--surface); border-right: 1px solid var(--border);
   }
-  aside.rail .rail-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; padding: 6px 8px 16px; cursor: pointer; color: inherit; text-decoration: none; }
+  aside.rail .rail-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; padding: 6px 8px 16px 10px; color: inherit; }
   aside.rail .rail-brand b { color: var(--accent); }
-  aside.rail .rail-brand img { border-radius: 6px; }
   aside.rail .rail-nav { display: flex; flex-direction: column; gap: 2px; }
   aside.rail .rail-nav a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; color: var(--muted); }
   aside.rail .rail-nav a:hover { background: var(--surface2); color: var(--text); }
