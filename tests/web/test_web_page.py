@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "e71ff9429b1b701a8741f05f825034d3b4c3271f7337554763a97acb5390b20e"
+PAGE_SHA256 = "60d2bebe85863976fc56bfcfef0af2ee46fe32c94421be97c5c3f9ffcb88f753"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -212,7 +212,7 @@ def test_a_run_row_names_its_checkout_and_offers_review_and_merge() -> None:
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
     paint = client[client.index("function paintSession") : client.index("function sessionsCard")]
     assert "'worktree ' + r.worktree" in paint and "'branch ' + r.branch" in paint
-    assert "handToNewWork({ task: '/review ' + r.branch })" in paint
+    assert "fillAsEdit(view.querySelector('.dock textarea'), '/review ' + r.branch)" in paint
     assert "if (r.branch && !live)" in paint and "if (r.unmerged)" in paint
     assert "if (!await confirmMerge(r)) return;" in paint and "await postMerge(r)" in paint
     steps = client[client.index("async function confirmMerge") : client.index("function toast")]

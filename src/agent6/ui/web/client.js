@@ -792,7 +792,7 @@ function paintSession(r, depth, regroup) {
     if (r.branch && !live) {
       const actions = el('div', 'item-actions'); // wraps under the text as one piece
       const review = el('button', 'mini', 'Review');
-      review.onclick = () => { handToNewWork({ task: '/review ' + r.branch }); location.hash = '#/'; route(); };
+      review.onclick = () => fillAsEdit(view.querySelector('.dock textarea'), '/review ' + r.branch);
       actions.appendChild(review);
       if (r.unmerged) {
         const merge = el('button', 'mini', 'Merge');

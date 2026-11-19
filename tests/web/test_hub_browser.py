@@ -507,3 +507,38 @@ def test_start_and_create_machine_wait_for_something_to_send(
     page.locator(".dock textarea").fill("watch CI")
     expect(create).to_be_enabled()
     assert not errors
+
+
+def test_review_fills_the_entry_on_screen_and_focuses_it(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Review fetched and repainted the whole hub to fill the entry, then left the focus nowhere."""
+    from playwright.sync_api import Request, expect
+
+    for args in (
+        ("init", "-q", "-b", "master"),
+        ("config", "user.name", "t"),
+        ("config", "user.email", "t@example.invalid"),
+        ("commit", "-q", "--allow-empty", "-m", "base"),
+        ("branch", "agent6/review-BBBBBB"),
+    ):
+        subprocess.run(["git", "-C", str(tmp_path), *args], check=True)
+    _manifest(tmp_path, "review-BBBBBB", run_branch="agent6/review-BBBBBB")
+    _run(tmp_path, "review-BBBBBB", "Review me", STOP)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    entry = page.locator(".dock textarea")
+    entry.fill("a draft")
+    page.evaluate("clearInterval(hubTimer)")  # only the click may fetch the hub
+    fetched: list[str] = []
+
+    def hub(request: Request) -> None:
+        if request.url.endswith("/api/hub"):
+            fetched.append(request.url)
+
+    page.on("request", hub)
+    page.get_by_role("button", name="Review").click()
+    expect(entry).to_have_value("/review agent6/review-BBBBBB")
+    expect(entry).to_be_focused()
+    assert not fetched
+    assert not errors
