@@ -102,5 +102,6 @@
   inset: auto; margin: 2px 0; width: max-content; max-width: min(440px, calc(100vw - 16px));
   display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--border); border-radius: 6px;
   background: var(--surface); color: var(--text); box-shadow: 0 4px 16px #0004; white-space: normal; overflow-wrap: anywhere; font: 12px/1.5 system-ui, sans-serif;
+  user-select: text; /* the cell under it is unselectable; the sha and subject are for copying */
 }
 .blame-card:not(:popover-open) { display: none; }

@@ -149,6 +149,26 @@ def test_the_blame_card_opens_beside_its_line_near_the_bottom_edge(
     assert not errors
 
 
+def test_the_blame_card_text_can_be_selected(
+    open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
+) -> None:
+    """The card took the blame cell's no-select, so a double-click on its sha selected nothing."""
+    from playwright.sync_api import expect
+
+    port, _, head = long_file
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/files/HEAD/long.txt")
+    page.locator(".files-blame").click()
+    link = page.locator("[data-line='50'] .blame-commit")
+    link.wait_for()
+    link.focus()
+    sha = page.locator(".blame-card:visible .mono")
+    expect(sha).to_have_text(head)
+    sha.dblclick()
+    assert page.evaluate("getSelection().toString()") == head
+    assert not errors
+
+
 def test_a_drag_in_the_split_view_selects_one_side(
     open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
 ) -> None:
