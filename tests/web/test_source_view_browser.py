@@ -18,6 +18,7 @@ pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
 open_page = test_web_browser.open_page
 git_port = test_web_browser.git_port
+port = test_web_browser.port
 
 # Each line box of a row's code starts at the code column: the leftmost fragment per line box.
 _LINE_STARTS = """row => {
@@ -258,4 +259,21 @@ def test_a_tinted_diff_line_keeps_its_code_in_the_text_colour(
     }""")
     assert colours["code"] == colours["text"], colours
     assert colours["marker"] == colours["ok"] and colours["deleted"] == colours["err"], colours
+    assert not errors
+
+
+def test_the_source_container_leaves_the_config_source_column_alone(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The source views' size container matched the Config page's source cells and cut them."""
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    cells = page.locator(".cfg td.src")
+    cells.first.wait_for()
+    cut = cells.evaluate_all("""cells => cells.filter(c => {
+      const text = document.createRange(); text.selectNodeContents(c);
+      return text.getBoundingClientRect().right > c.getBoundingClientRect().right + 1;
+    }).length""")
+    assert cut == 0
     assert not errors
