@@ -141,5 +141,5 @@ process.on('beforeExit', () => {
 });
 """
     )
-    result = subprocess.run([node, "-e", script], capture_output=True, text=True, check=False)
+    result = subprocess.run([node, "-"], input=script, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout + result.stderr

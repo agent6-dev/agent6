@@ -131,7 +131,7 @@ def _run(scenario: str) -> None:
         + "process.on('beforeExit', () => { if (!finished && !process.exitCode) {"
         + " console.error('the scenario did not finish'); process.exitCode = 1; } });"
     )
-    result = subprocess.run([node, "-e", script], check=False, capture_output=True, text=True)
+    result = subprocess.run([node, "-"], input=script, check=False, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
 
 

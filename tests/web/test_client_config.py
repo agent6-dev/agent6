@@ -320,7 +320,8 @@ run().catch(error => { console.error(error); process.exitCode = 1; });
             f"secret = {json.dumps(signin.SECRET)}, flagPath = {json.dumps(str(flag))};\n"
         )
         result = subprocess.run(
-            [node, "-e", setup + dialogs + client + scenario],
+            [node, "-"],
+            input=setup + dialogs + client + scenario,
             check=False,
             capture_output=True,
             text=True,

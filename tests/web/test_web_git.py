@@ -960,7 +960,7 @@ def _node(script: str) -> Any:
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is needed to run the web client")
-    done = subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+    done = subprocess.run([node, "-"], input=script, check=True, capture_output=True, text=True)
     return json.loads(done.stdout)
 
 

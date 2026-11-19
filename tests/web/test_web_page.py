@@ -149,7 +149,7 @@ assert.equal(authHeaders().Authorization, undefined);
 """
     client = page.CLIENT_JS[: page.CLIENT_JS.index("// --- sign-in")]
     result = subprocess.run(
-        [node, "-e", setup + client + scenario], check=False, capture_output=True, text=True
+        [node, "-"], input=setup + client + scenario, check=False, capture_output=True, text=True
     )
     assert result.returncode == 0, result.stdout + result.stderr
 
@@ -369,7 +369,7 @@ async function check(text, wanted, caret = text.length, replacement = null) {
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
     result = subprocess.run(
-        [node, "-e", suggest + scenario], check=False, capture_output=True, text=True
+        [node, "-"], input=suggest + scenario, check=False, capture_output=True, text=True
     )
     assert result.returncode == 0, result.stdout + result.stderr
 
@@ -474,7 +474,7 @@ function field(id) { return nodes().find(n => n.id === id); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
     result = subprocess.run(
-        [node, "-e", setup + source + scenario], check=False, capture_output=True, text=True
+        [node, "-"], input=setup + source + scenario, check=False, capture_output=True, text=True
     )
     assert result.returncode == 0, result.stdout + result.stderr
 
