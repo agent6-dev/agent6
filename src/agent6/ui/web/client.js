@@ -656,7 +656,7 @@ function newWorkDock(presets, presetDefault, sessions) {
   root.appendChild(more);
   root.appendChild(row);
   root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask (a run from a plan needs no task) · Shift+Enter newline · '
-    + '/parallel [SPEC --] TASK dispatches children (SPEC: count or models; repeat to queue more) · Ctrl-K switches sessions'));
+    + '/parallel [SPEC --] TASK dispatches children (SPEC: count or models; repeat to queue more) · Ctrl+K switches sessions'));
   return root;
 }
 
@@ -1589,13 +1589,13 @@ function makeComposer(id) {
     if (busy) { hint.textContent = 'resuming…'; return; }
     if (finished && needsWork) {
       ta.placeholder = 'what should it do next…';
-      hint.textContent = 'Enter resumes it with your instruction · Shift+Enter newline · Ctrl-R past messages · Ctrl-K switch session · ? keys';
+      hint.textContent = 'Enter resumes it with your instruction · Shift+Enter newline · Ctrl+R past messages · Ctrl+K switch session · ? keys';
     } else if (finished) {
       ta.placeholder = 'continue this session…';
-      hint.textContent = 'Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline · Ctrl-R past messages · Ctrl-K switch session · ? keys';
+      hint.textContent = 'Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline · Ctrl+R past messages · Ctrl+K switch session · ? keys';
     } else {
       ta.placeholder = 'steer this session… (type / for directives)';
-      hint.textContent = 'Enter sends the instruction at the session’s next safe boundary · Ctrl+Enter sends it now · Shift+Enter newline · Ctrl-R past messages · Ctrl-K switch session · ? keys';
+      hint.textContent = 'Enter sends the instruction at the session’s next safe boundary · Ctrl+Enter sends it now · Shift+Enter newline · Ctrl+R past messages · Ctrl+K switch session · ? keys';
     }
   };
   const resume = async (text) => {

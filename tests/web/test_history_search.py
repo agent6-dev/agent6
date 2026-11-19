@@ -23,7 +23,7 @@ def test_composer_intercepts_ctrl_r_only() -> None:
 def test_history_reads_the_payload_key_and_advertises_the_chord() -> None:
     assert "operator_inputs" in page.CLIENT_JS  # the conversation payload key
     # every composer hint advertises it: steer, resume, and resume-needs-work
-    assert page.CLIENT_JS.count("Ctrl-R past messages") == 3
+    assert page.CLIENT_JS.count("Ctrl+R past messages") == 3
 
 
 def test_enter_keeps_the_typed_text_when_nothing_matches() -> None:
