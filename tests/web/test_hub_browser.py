@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import subprocess
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING
@@ -754,6 +755,23 @@ def test_an_instance_row_goes_by_the_instances_name(
     expect(rows.nth(1).locator(".sub")).to_contain_text("machine tiny")
     expect(rows.last.locator(".sub")).not_to_contain_text("machine")
     assert rows.first.locator("a.title").evaluate("e => e.scrollWidth <= e.clientWidth")
+    assert not errors
+
+
+def test_an_unreadable_instance_names_no_state(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """An unreadable instance's row read "at ?" for the state its journal could not tell."""
+    from playwright.sync_api import expect
+
+    test_web_actions._ended_machine(tmp_path, "broken")  # pyright: ignore[reportPrivateUsage]
+    journal = paths.state_dir(tmp_path) / "machines" / "broken" / "journal.jsonl"
+    journal.write_text(journal.read_text(encoding="utf-8") + '{"type": "step"}\n')
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/machines")
+    sub = page.locator(".item .sub")
+    expect(sub).to_contain_text("unreadable")
+    expect(sub).not_to_contain_text(re.compile(r"· at\b"))
     assert not errors
 
 

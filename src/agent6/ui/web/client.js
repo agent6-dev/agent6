@@ -910,7 +910,8 @@ function machinesCard() {
     // the machine it runs when the two differ. The reason rides the status label (failed · why).
     g.appendChild(titleLink('title name', m.name, '#/machine/' + encodeURIComponent(m.name)));
     const machine = m.machine && m.machine !== m.name && el('span', null, 'machine ' + m.machine);
-    g.appendChild(subLine([pill(m.status_level, m.status_label), machine, el('span', null, 'at ' + esc(m.current || '?')), esc(m.when)]));
+    const at = m.current && el('span', null, 'at ' + m.current);
+    g.appendChild(subLine([pill(m.status_level, m.status_label), machine, at, esc(m.when)]));
   }) }]);
 }
 
