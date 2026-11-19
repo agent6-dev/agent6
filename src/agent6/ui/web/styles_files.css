@@ -60,6 +60,8 @@
 .md-view th, .md-view td { border: 1px solid var(--border); padding: 6px 12px; text-align: start; vertical-align: top; }
 .md-view th, .md-view tr:nth-child(even) { background: var(--surface2); }
 .md-view img { max-width: 100%; height: auto; }
+/* An image the page cannot show keeps its place as a dashed box: its alt text, then why. */
+.md-view .md-missing { display: inline-flex; flex-direction: column; max-width: 100%; padding: 8px 12px; border: 1px dashed var(--border-strong); border-radius: 6px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; vertical-align: top; }
 .md-view hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
 @media (min-width: 781px) {
   .files-app { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }

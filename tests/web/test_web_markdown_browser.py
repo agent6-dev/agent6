@@ -259,3 +259,21 @@ def test_tables_and_minor_headings_set_their_own_styles(
     assert style["th"] in ("start", "left") and style["td"] == "top", style
     assert style["h6"] >= 0.8 * style["body"], style
     assert not errors
+
+
+def test_a_missing_image_keeps_its_place_with_the_reason(
+    git_port: int, tmp_path: pathlib.Path, open_page: Callable[[int], tuple[Page, list[str]]]
+) -> None:
+    """An image not in the revision turned into a red error sentence run into the text."""
+    from playwright.sync_api import expect
+
+    (tmp_path / "pictures.md").write_text("Before\n\n![The hub](out/hub.png)\n", encoding="utf-8")
+    test_git_history._git(tmp_path, "add", "pictures.md")
+    test_git_history._git(tmp_path, "commit", "-m", "a missing picture")
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/pictures.md")
+    missing = page.locator(".md-view .md-missing")
+    expect(missing.locator(":scope > :first-child")).to_have_text("The hub")
+    expect(missing.locator(".muted")).to_contain_text("no file 'out/hub.png'")
+    expect(page.locator(".md-view .err")).to_have_count(0)
+    assert [e for e in errors if "422" not in e] == []  # the missing file's response

@@ -256,7 +256,11 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
         blobImageData(image.dataset.blobSrc).then(data => {
           if (current()) image.src = data.url;
         }).catch(e => {
-          if (current()) image.replaceWith(el('span', 'err', (image.alt || 'image') + ': ' + e.message));
+          if (!current()) return;
+          const missing = el('span', 'md-missing');
+          missing.appendChild(el('span', null, image.alt || 'image'));
+          missing.appendChild(el('span', 'muted', e.message));
+          image.replaceWith(missing);
         });
       }
       const modes = el('span', 'gview files-md-mode');
