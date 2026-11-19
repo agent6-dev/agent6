@@ -577,3 +577,34 @@ def test_a_budget_bar_stands_apart_from_its_label_and_the_next_line(
     )
     assert gaps == [4, 10]
     assert not errors
+
+
+@pytest.mark.parametrize("width", [1280, 820])
+def test_the_conversation_heading_lines_up_with_the_drawers_first_card(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    width: int,
+) -> None:
+    """The Conversation heading and its box start where the run card's heading and body start.
+
+    The detail button set the heading row's height, so the heading sat 3px and the box 6px
+    lower than the run card's beside them. At 820px with the drawer open the button wrapped.
+    """
+    from playwright.sync_api import expect
+
+    _session(tmp_path, "heads-AAA111", [{"type": "model.call", "role": "worker", "model": "m1"}])
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(f"http://127.0.0.1:{port}/#/session/heads-AAA111")
+    details = page.get_by_role("button", name="Details", exact=True)
+    if details.get_attribute("aria-expanded") == "false":
+        details.click()
+    expect(page.locator(".card-head .kv")).to_be_visible()
+    tops = page.evaluate(
+        """() => ['.card-head > h2', '.card-conv h2', '.card-head > .card-body',
+        '.card-conv .conv-box'].map(s => document.querySelector(s).getBoundingClientRect().top)"""
+    )
+    assert tops[0] == tops[1]
+    assert tops[2] == tops[3]
+    assert not errors

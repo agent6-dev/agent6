@@ -72,6 +72,11 @@
 /* The conversation card: header fixed, the body scrolls inside .conv-box (so
    the detail toggle stays reachable while following the tail). */
 .conv-card { display: flex; flex-direction: column; }
+/* A narrow card cuts the heading with an ellipsis and keeps the detail button whole on one line. */
+.conv-card > .card-head-row > h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-card > .card-head-row > button { flex: none; }
+/* The detail button overhangs the heading's 20px line, so the row lines up with the drawer's first card. */
+.conv-card > .card-head-row > button { margin-block: calc((20px - var(--ctl-h-sm)) / 2); }
 /* x hidden: .ci's -4px hover-bleed margins otherwise leave a permanent
    horizontal scrollbar; item text always wraps, so x never scrolls for real. */
 .conv-box { overflow: hidden auto; max-height: 62vh; }
