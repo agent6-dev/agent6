@@ -126,7 +126,7 @@ function findingActions(card, entry, cards, state) {
   }
   const verb = entry.finding.status === 'open' ? 'resolve' : 'reopen';
   const button = el('button', 'mini', verb === 'resolve' ? 'Resolve' : 'Reopen'); row.appendChild(button);
-  const form = el('form', 'finding-form'); form.hidden = true; card.appendChild(form);
+  const form = el('form', 'finding-form'); card.appendChild(form);
   const disposition = el('select', 'field'); disposition.setAttribute('aria-label', 'Disposition');
   for (const value of ['fixed', 'false_positive', 'intentional', 'wont_fix', 'duplicate', 'pre_existing']) {
     const option = el('option', null, value); option.value = value; disposition.appendChild(option);
@@ -148,7 +148,10 @@ function findingActions(card, entry, cards, state) {
     else body.reason = reason.value;
     return send(submit, verb, body);
   };
-  button.onclick = () => { form.hidden = !form.hidden; if (!form.hidden) reason.focus(); };
+  // The button shows and hides its form and says which, as Receipt does.
+  const show = open => { form.hidden = !open; button.setAttribute('aria-expanded', String(open)); button.classList.toggle('active', open); };
+  show(false);
+  button.onclick = () => { show(form.hidden); if (!form.hidden) reason.focus(); };
 }
 function paintFindings(cards, state) {
   if (!cards.findings) return;

@@ -900,3 +900,34 @@ def test_a_control_tabbed_to_under_the_drawers_fold_shows_its_whole_ring(
     assert max(scrolled for _, _, scrolled in edges) > 0
     assert min(min(above, below) for above, below, _ in edges) >= 0
     assert not errors
+
+
+def test_details_and_resolve_say_whether_what_they_open_shows(
+    open_page: Callable[[int], tuple[Page, list[str]]], evidence: tuple[int, dict[str, Any]]
+) -> None:
+    """Details and a finding's Resolve carry aria-expanded as the drawer or the form shows.
+
+    Details showed the drawer's state by its colour alone, and Resolve not at all.
+    """
+    from playwright.sync_api import expect
+
+    port, _ = evidence
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    details = page.get_by_role("button", name="Details", exact=True)
+    drawer = page.locator(".run-app .drawer")
+    expect(details).to_have_attribute("aria-expanded", "true")
+    details.click()
+    expect(drawer).to_be_hidden()
+    expect(details).to_have_attribute("aria-expanded", "false")
+    details.click()
+    finding = page.locator(".card-findings .finding").first
+    resolve = finding.get_by_role("button", name="Resolve", exact=True)
+    expect(resolve).to_have_attribute("aria-expanded", "false")
+    resolve.click()
+    expect(finding.locator(".finding-form")).to_be_visible()
+    expect(resolve).to_have_attribute("aria-expanded", "true")
+    resolve.click()
+    expect(finding.locator(".finding-form")).to_be_hidden()
+    expect(resolve).to_have_attribute("aria-expanded", "false")
+    assert not errors

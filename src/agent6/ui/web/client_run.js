@@ -31,12 +31,14 @@ async function renderRun(id, opts, gen) {
   const mk = (key, title, cls, parent) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.dataset.w = key; const h = el('h2', null, title); c.appendChild(h); if (key === 'head') cards._head_title = h; const body = el('div', 'card-body'); c.appendChild(body); cards[key] = body; (parent || drawer).appendChild(c); return body; };
 
   // Controls at the top so Stop stays reachable without scrolling; the Details
-  // toggle folds the drawer away (persisted; default open on wide screens).
+  // toggle folds the drawer away (persisted; default open on wide screens) and says
+  // whether the drawer shows.
   const actions = el('div', 'row wrap page-pad actions');
   const dBtn = el('button', 'details-btn', 'Details'); // desktop drawer toggle; phones page widgets instead
   const applyDrawer = (open) => {
     drawer.classList.toggle('closed', !open);
     dBtn.classList.toggle('active', open);
+    dBtn.setAttribute('aria-expanded', String(open));
     remember('a6-drawer', open ? 'open' : 'closed');
   };
   dBtn.onclick = () => applyDrawer(drawer.classList.contains('closed'));
