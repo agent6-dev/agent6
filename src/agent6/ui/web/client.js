@@ -1177,8 +1177,7 @@ function makeConv(url, box, body) {
     if (atTail) box.scrollTop = box.scrollHeight;
   };
   conv.detailButton = () => {
-    // The button holds every label and shows the current one (styles_run.css), so it is as wide
-    // as its longest label and holds still as it cycles.
+    // The button holds every label and shows the current one, so it holds still as it cycles.
     const b = el('button', 'mini');
     const cycle = b.appendChild(el('span', 'cycle'));
     const labels = {};

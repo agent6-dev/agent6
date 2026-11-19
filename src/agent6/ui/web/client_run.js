@@ -30,9 +30,7 @@ async function renderRun(id, opts, gen) {
   const drawer = el('div', 'grid drawer');
   const mk = (key, title, cls, parent) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.dataset.w = key; const h = el('h2', null, title); c.appendChild(h); if (key === 'head') cards._head_title = h; const body = el('div', 'card-body'); c.appendChild(body); cards[key] = body; (parent || drawer).appendChild(c); return body; };
 
-  // Controls at the top so Stop stays reachable without scrolling; the Details
-  // toggle folds the drawer away (persisted; default open on wide screens) and says
-  // whether the drawer shows.
+  // Controls at the top keep Stop in reach; Details folds the drawer, open by default on wide screens.
   const actions = el('div', 'row wrap page-pad actions');
   const dBtn = el('button', 'details-btn', 'Details'); // desktop drawer toggle; phones page widgets instead
   const applyDrawer = (open) => {
@@ -151,8 +149,7 @@ async function renderRun(id, opts, gen) {
   const saved = recall('a6-drawer', '');
   applyDrawer(saved ? saved === 'open' : window.innerWidth >= 1024);
 
-  // The phone widget menu: pick which single widget the page shows. It is a popover, so Esc or a
-  // tap outside closes it, and its button reports whether it is open.
+  // The phone widget menu picks the one widget shown; a popover, it closes on Esc or a tap outside.
   const entries = [['conv', 'Conversation'], ['head', 'Overview'], ['plan', 'plan.md'],
                    ['review', 'Run review'], ['findings', 'Findings'],
                    ['tasks', 'Task graph'], ['budget', 'Budget'], ['tools', 'Tool calls'],
@@ -200,8 +197,7 @@ async function renderRun(id, opts, gen) {
   }), cc.card);
   paintRun(cards, snap);
   cc.conv.refresh().then(() => {
-    // On a phone the page (not the box) scrolls the conversation: it opens at the tail, unless a
-    // prompt box or the children table above the conversation waits for the operator.
+    // A phone opens at the conversation's tail, unless a prompt or the children wait above it.
     const above = prompts.childElementCount || children.parentElement.style.display !== 'none';
     if (window.innerWidth < 781 && !above) window.scrollTo(0, document.body.scrollHeight);
   });
@@ -440,8 +436,7 @@ function paintRun(cards, s) {
         return { id: link, model: child.model || '', status: pill(child.status_level, child.status_label),
                  usage: child.usage || '', join: outcomes[child.session_id] || '' };
       });
-      // A child's model is '' unless a flag set it, its usage '' at $0 and its join '' until the
-      // dispatch records one: a column shows only when some child has a value for it.
+      // A column shows only when some child has a value: model, usage and join are often ''.
       const columns = ['id', 'model', 'status', 'usage', 'join'].filter(key => rows.some(row => row[key]));
       const table = el('table');
       const head = el('tr');
@@ -535,9 +530,7 @@ function paintRun(cards, s) {
   if (s.placement && s.placement.line) add('compare', s.placement.line); // format_compare, server-side
   // The judge's reason sits under its compare row (as sessions show prints it).
   if (s.comparison && s.comparison.rationale) add('judge', s.comparison.rationale);
-  // The same one-line fold the CLI banner and the TUI composer read. Each setting and its
-  // separator is one inline block, so a narrow card breaks the line between settings, and a
-  // setting wider than the card wraps inside itself instead of clipping.
+  // The CLI banner's fold, an inline block per setting, so a narrow card wraps between settings.
   if (s.policy) {
     add('settings', '');
     const parts = s.policy.split(' · ');
@@ -628,8 +621,7 @@ function paintRun(cards, s) {
   paintCommits(cards, s);
 }
 
-// A frame rebuilds a card only when what the card shows changed: a rebuild drops the reader's
-// selection, an open dropdown, keyboard focus and the card's scroll position.
+// A frame rebuilds a card only when its content changed: a rebuild drops selection, focus and scroll.
 function cardChanged(cards, name, shown) {
   const key = JSON.stringify(shown);
   if (cards['_shown_' + name] === key) return false;
@@ -637,8 +629,7 @@ function cardChanged(cards, name, shown) {
   return true;
 }
 
-// The event log appends the lines a frame adds, as the TUI's does: log_tail is a sliding window
-// and log_count is monotonic. It follows its end only while the reader is there.
+// The event log appends the lines log_count says are new and follows its end while the reader is there.
 function paintLog(cards, s) {
   const box = cards.log, count = s.log_count || 0, tail = s.log_tail || [];
   const fresh = cards._logCount === undefined ? -1 : count - cards._logCount;
@@ -656,9 +647,7 @@ function paintLog(cards, s) {
   if (atEnd) box.scrollTop = box.scrollHeight;
 }
 
-// diff: the latest commit by default; a commit selector over the run's
-// chain (newest first) with a cumulative toggle, hidden truthfully when the
-// model owns git (no chain) or nothing is committed yet.
+// The latest commit's diff and a commit picker, which hides when the model owns git or none exist.
 function paintCommits(cards, s) {
   cards._frame = s; // "latest commit" paints the newest frame's details
   if (!cardChanged(cards, 'diff', [s.mode, s.git_control, s.commits, s.latest_diff])) return;
@@ -724,8 +713,7 @@ function paintCommits(cards, s) {
         cards._commitState = st; paintDetails(cards, st, st.as_of);
       } catch (e) {
         loading.remove();
-        // With no commit picked the log's diff already shows: only a picked commit's failure is
-        // news (a squash merge or a deleted branch prunes a run's commits).
+        // With no commit picked the log's diff shows, so only a picked commit's failure is news.
         if (current() && selected) body.appendChild(el('div', 'muted', e.message));
       }
     };

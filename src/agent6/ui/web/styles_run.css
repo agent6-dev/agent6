@@ -1,7 +1,6 @@
 /* The run view: task graph, budget, tool calls, event log, plan, conversation,
    approval and question prompts, and the details drawer. */
-/* A budget bar stands 4px under its label and 10px over the next line; its track takes the
-   hairline colour, so an empty or nearly empty bar still shows its length. */
+/* A budget bar stands 4px under its label and 10px over the next line; its track shows when empty. */
 .bar { height: 8px; margin: 4px 0 10px; background: var(--border); border-radius: 999px; overflow: hidden; }
 .bar > span { display: block; height: 100%; background: var(--accent); }
 .bar.warn > span { background: var(--warn); }
@@ -31,8 +30,7 @@
 .dot.ok { background: var(--ok); } .dot.bad { background: var(--err); }
 
 .log { font-family: var(--mono); font-size: 12px; line-height: 1.4; }
-/* A row is its time (12 characters and two spaces), its event and the event's detail: a wrapped
-   row hangs under the event, clear of the time column. */
+/* A wrapped row hangs under its event, clear of its time (12 characters and two spaces). */
 .log > div { white-space: pre-wrap; word-break: break-word; padding-left: 14ch; text-indent: -14ch; }
 
 .plan { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 0; }
@@ -86,17 +84,14 @@
 .cycle { display: inline-grid; }
 .cycle > * { grid-area: 1 / 1; }
 .cycle > :not(.on) { visibility: hidden; }
-/* The box pads its sides by the 4px an item's hover background and focus ring reach past its text
-   (.ci's negative margins), so neither is cut; x stays hidden, as item text always wraps. */
+/* The 4px side padding keeps an item's hover and focus ring whole; text wraps, so x stays hidden. */
 .conv-box { overflow: hidden auto; max-height: 62vh; padding-inline: 4px; margin-inline: -4px; }
-/* The run view's scroll panes: a focused control scrolls into view 12px clear of the pane's edge,
-   so its ring shows whole. Firefox focuses a scroller itself: the drawer and the prompts, which
-   meet the bars and the rail edge to edge, draw that ring inside. */
+/* A focused control scrolls into view 12px clear of its pane's edge, so its ring shows whole. */
 .run-app .drawer, .run-app > .prompts, .conv-box { scroll-padding-block: 12px; }
+/* Firefox focuses a scroller itself: the drawer and the prompts, flush with the bars, ring inside. */
 .run-app .drawer:focus-visible, .run-app > .prompts:focus-visible { outline-offset: -2px; }
 
-/* The run view's prompts host stands its boxes 10px under the top bar, and the action bar's
-   margin sets the gap under the last box. Boxes stand 10px apart. */
+/* Prompt boxes stand 10px under the top bar, 10px apart and 10px over the action bar. */
 .run-app > .prompts:not(:empty) { padding-top: 10px; }
 .run-app > .actions { margin-block: 10px; }
 .prompt-box { background: var(--surface2); border-left: 3px solid var(--warn); padding: 12px; }

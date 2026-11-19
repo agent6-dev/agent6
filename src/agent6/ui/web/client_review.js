@@ -168,7 +168,6 @@ function paintFindings(cards, state) {
   if (!cards._readOnly) {
     // Keep the receipt's fetch target and output across streamed findings refreshes.
     if (!cards._receipt) {
-      // The button shows the receipt and hides it again; the fetch says it is loading meanwhile.
       // A press during the fetch does nothing: disabling the button would drop the keyboard focus.
       const inspect = el('button', 'mini', 'Receipt'), receipt = el('div', 'receipt');
       let open = false, loading = false;
