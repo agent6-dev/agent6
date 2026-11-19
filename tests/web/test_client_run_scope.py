@@ -145,7 +145,8 @@ def test_a_failure_toast_holds_until_it_is_dismissed() -> None:
     start = page.CLIENT_JS.index("function toast(")
     body = page.CLIENT_JS[start : page.CLIENT_JS.index("\nfunction ", start + 1)]
     assert "setTimeout" in body, "a confirmation still clears itself"
-    assert "if (bad)" in body and "t.remove()" in body, "a failure has no dismiss"
+    assert "level === true || level === 'error' ? 'bad'" in body, "a failure is not held"
+    assert "if (kind)" in body and "t.remove()" in body, "a failure has no dismiss"
     assert "#toasts" in page.PAGE_HTML, "the stack has no container style"
 
 
