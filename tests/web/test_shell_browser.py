@@ -151,6 +151,52 @@ def test_the_old_view_is_marked_busy_until_the_next_page_paints(
     assert not errors
 
 
+def test_a_refused_secret_is_read_out_and_marks_the_field(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The hint and the refusal showed literal backticks, and nothing announced the refusal.
+
+    A command in either is code; the refusal is an alert the field names as its description.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.add_init_script("localStorage.setItem('a6-token', 'expired')")
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    form = page.locator("#login")
+    field = form.get_by_role("textbox", name="secret")
+    expect(form.locator(".muted code")).to_have_text("agent6 web")
+    field.fill("wrong words")
+    form.get_by_role("button", name="Sign in").click()
+    refusal = form.get_by_role("alert")
+    expect(refusal).to_have_text("that is not the secret this agent6 web was started with")
+    expect(refusal.locator("code")).to_have_text("agent6 web")
+    expect(field).to_have_attribute("aria-invalid", "true")
+    expect(field).to_have_accessible_description(
+        "that is not the secret this agent6 web was started with"
+    )
+    field.press_sequentially("s")
+    expect(field).not_to_have_attribute("aria-invalid", "true")
+    assert "`" not in str(form.text_content())
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
+def test_a_message_shows_a_backticked_command_as_code(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A toast showed `agent6 sessions` with its backticks, as Markdown source."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".dock textarea")).to_be_visible()
+    page.evaluate("toast('the resume has not started yet; check `agent6 sessions`', true)")
+    message = page.get_by_role("alert")
+    expect(message).to_have_text("the resume has not started yet; check agent6 sessions")
+    expect(message.locator("code")).to_have_text("agent6 sessions")
+    assert not errors
+
+
 def test_the_rail_brand_sits_on_the_header_line(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

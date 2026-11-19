@@ -113,6 +113,13 @@ function announceSessions(prev, rows) {
 // --- helpers -----------------------------------------------------------------
 const el = (t, cls, txt) => { const e = document.createElement(t); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 const esc = s => (s == null ? '' : String(s));
+// Text whose `backticked` spans show as code, as a fragment: a refusal or a message names a
+// command that way (`agent6 sessions`). A backtick with no partner on its line stays as typed.
+function withCode(text) {
+  const frag = document.createDocumentFragment();
+  String(text).split(/`([^`\n]+)`/).forEach((part, i) => { if (part) frag.append(i % 2 ? el('code', null, part) : part); });
+  return frag;
+}
 // The sign-in token lives in storage scoped to this origin (host and port), so a page another
 // local server serves never receives it, as it would a cookie; every call sends it as a header.
 const TOKEN_KEY = 'a6-token';
@@ -169,7 +176,8 @@ async function postMerge(r) {
 // reading (a captured CLI refusal runs several lines), so it is announced at once and holds until
 // dismissed; a confirmation clears itself.
 function toast(msg, bad) {
-  const t = el('div', 'toast' + (bad ? ' bad' : ''), msg);
+  const t = el('div', 'toast' + (bad ? ' bad' : ''));
+  t.appendChild(el('div')).append(withCode(msg)); // one flex item beside the Dismiss button
   if (bad) {
     t.setAttribute('role', 'alert');
     t.appendChild(closeButton('Dismiss', () => t.remove()));
@@ -233,17 +241,21 @@ function showLogin(error) {
     form = el('form', 'card login');
     form.id = 'login';
     form.appendChild(el('h2', null, 'Sign in'));
-    form.appendChild(el('div', 'muted', 'Type the secret `agent6 web` printed in its terminal.'));
+    form.appendChild(el('div', 'muted')).append(withCode('Type the secret `agent6 web` printed in its terminal.'));
     const row = el('div', 'form-row');
     const input = el('input', 'field');
     input.type = 'text';
-    // A phone keyboard must not capitalize, correct or remember the words.
-    const attrs = { 'aria-label': 'secret', autocapitalize: 'none', autocorrect: 'off', spellcheck: 'false', autocomplete: 'off' };
+    // A phone keyboard must not capitalize, correct or remember the words. A refusal marks the
+    // field invalid and is read out at once; typing again clears the mark.
+    const attrs = { 'aria-label': 'secret', 'aria-describedby': 'login-err', autocapitalize: 'none', autocorrect: 'off', spellcheck: 'false', autocomplete: 'off' };
     for (const name in attrs) input.setAttribute(name, attrs[name]);
+    input.oninput = () => input.removeAttribute('aria-invalid');
     row.appendChild(input);
     row.appendChild(el('button', 'primary', 'Sign in'));
     form.appendChild(row);
-    form.appendChild(el('div', 'err'));
+    const refusal = form.appendChild(el('div', 'err'));
+    refusal.id = 'login-err';
+    refusal.setAttribute('role', 'alert');
     form.onsubmit = async (e) => {
       e.preventDefault();
       try { saveToken(await postJSON('/api/login', { secret: input.value })); route(); }
@@ -252,7 +264,10 @@ function showLogin(error) {
     view.appendChild(form);
     input.focus();
   }
-  if (error) form.querySelector('.err').textContent = error;
+  if (error) {
+    document.getElementById('login-err').replaceChildren(withCode(error));
+    form.querySelector('input').setAttribute('aria-invalid', 'true');
+  }
 }
 // `agent6 web` prints its URL with `#secret=<value>`: sign in with it on load and
 // drop it from the address bar.
@@ -357,7 +372,7 @@ function showProblem(heading, reason, failed) {
   view.innerHTML = '';
   const card = el('div', 'card problem');
   card.appendChild(el('h2', null, heading));
-  card.appendChild(el('p', failed ? 'err' : null, reason));
+  card.appendChild(el('p', failed ? 'err' : null)).append(withCode(reason));
   const ways = el('div', 'row');
   if (failed) { const again = el('button', null, 'Try again'); again.onclick = route; ways.appendChild(again); }
   if (location.hash.replace(/^#\/?/, '')) { const back = el('a', null, 'Back to Sessions'); back.href = '#/'; ways.appendChild(back); }

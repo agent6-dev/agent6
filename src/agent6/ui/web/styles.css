@@ -43,6 +43,8 @@ body {
 }
 a { color: var(--accent); text-decoration: none; }
 code, pre, .mono { font-family: var(--mono); }
+/* A command named in a message, the sign-in form or a problem (withCode): code on a faint tint. */
+.toast code, .login code, .problem code { font-size: .92em; padding: 0 3px; border-radius: 3px; background: color-mix(in srgb, var(--text) 8%, transparent); }
 pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
 
 header {
