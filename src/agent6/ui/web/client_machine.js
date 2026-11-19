@@ -7,31 +7,39 @@ async function renderMachine(name, gen) {
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint or open a stream
   setCrumb(name);
   view.innerHTML = '';
-  // Everything above the dock flows in one block, so the margins of the banners, the prompts
-  // and the controls collapse; main is a flex column, where margins add up.
-  const stack = el('div'); view.appendChild(stack);
+  const app = el('div', 'machine-app');
+  // The banners, the prompts and the controls flow in one block, so their margins collapse;
+  // the view is a flex column, where margins add up.
+  const top = el('div', 'machine-top'); app.appendChild(top);
   // Ephemeral notification banners live here; the prompts host holds pending
   // approval/question boxes; both are appended to, never wiped, so a repaint can
   // never clear a half-typed answer.
-  const notifs = el('div', 'page-pad'); stack.appendChild(notifs);
-  const prompts = el('div', 'page-pad'); stack.appendChild(prompts);
+  const notifs = el('div', 'page-pad'); top.appendChild(notifs);
+  const prompts = el('div', 'page-pad'); top.appendChild(prompts);
   const cards = { _prompts: prompts, _base: base };
 
-  const controls = el('div', 'row wrap page-pad'); controls.style.marginBottom = '10px';
+  const controls = el('div', 'row wrap page-pad');
   const bell = el('button', null, '🔔 Notifications');
   bell.onclick = enableNotifications;
   controls.appendChild(bell);
-  stack.appendChild(controls);
+  top.appendChild(controls);
 
-  const grid = el('div', 'grid cols2');
-  const structCard = el('div', 'card scroll'); structCard.appendChild(el('h2', null, 'States')); const structBody = el('div'); structCard.appendChild(structBody);
-  const pathCard = el('div', 'card scroll'); pathCard.appendChild(el('h2', null, 'Path')); const pathBody = el('div'); pathCard.appendChild(pathBody);
+  // The States and Path cards, each a heading over a body that scrolls on a wide screen.
+  const grid = el('div', 'grid machine-grid');
+  const addCard = (title) => {
+    const card = el('div', 'card'); card.appendChild(el('h2', null, title));
+    const body = el('div', 'card-body'); card.appendChild(body);
+    grid.appendChild(card);
+    return body;
+  };
+  const structBody = addCard('States');
+  const pathBody = addCard('Path');
   // The current agent state's conversation: the same folded view a run shows,
   // full-width under the states/path pair.
-  const cc = convCard(base + '/conversation', 'Current state', 'span2');
+  const cc = convCard(base + '/conversation', 'Current state');
   cards._conv = cc.conv;
-  grid.appendChild(structCard); grid.appendChild(pathCard); grid.appendChild(cc.card);
-  stack.appendChild(grid);
+  grid.appendChild(cc.card);
+  app.appendChild(grid);
   cc.conv.refresh();
 
   // The machine composer, docked at the bottom: one text entry with the two
@@ -73,7 +81,8 @@ async function renderMachine(name, gen) {
   drow.appendChild(din); drow.appendChild(steerBtn); drow.appendChild(msgBtn); drow.appendChild(stopBtn);
   dock.appendChild(drow);
   dock.appendChild(el('div', 'hint', 'Steer injects into the current agent state · Message wakes a waiting machine (its next tool reads it) · Enter sends, Shift+Enter newline'));
-  view.appendChild(dock);
+  app.appendChild(dock);
+  view.appendChild(app);
   cards._input = din; cards._steer_btn = steerBtn; cards._msg_btn = msgBtn; cards._stop_btn = stopBtn;
 
   // Notification de-dup across repaints: seed with history on the first frame so

@@ -1,0 +1,37 @@
+/* The machine view: banners, prompts and controls on top, the States and Path cards, the newest
+   agent state's conversation under them, and the composer docked at the foot. */
+.machine-app { display: flex; flex-direction: column; flex: 1 0 auto; }
+.machine-top > .row { margin-bottom: 10px; }
+/* A body that scrolls is a Tab stop in both browsers; its ring goes inside, as a scroll pane's
+   does, in the 4px each side that the body reaches past its text. */
+.machine-grid .card-body { padding-inline: 4px; margin-inline: -4px; }
+.machine-grid .card-body:focus-visible { outline-offset: -2px; }
+/* From 781px the view is one screen tall, as the run view is: the conversation takes the height
+   States and Path leave, each card scrolls inside itself, and the conversation's newest lines sit
+   just above the composer. States and Path stack up to 20% of the height each, and from 900px sit
+   side by side in up to 40%. A short screen scrolls the page: a card shrinks to no less than 120px,
+   and the cards and the conversation to no less than 380px. */
+@media (min-width: 781px) {
+  /* The column fills the screen and is no shorter than its controls, the grid's floor and the dock:
+     the grid's zero basis keeps its content out of that minimum. */
+  .machine-app { flex: 1 1 0; }
+  .machine-app > * { flex: none; }
+  /* A pile of prompts scrolls, so the controls and the cards keep their room. Only a host holding a
+     prompt scrolls: margins cannot collapse through an empty scroll container. */
+  .machine-top > .page-pad:has(> .prompt-box) { max-height: 40vh; overflow: auto; }
+  .machine-grid {
+    flex: 1 1 0; min-height: 380px;
+    grid-template-rows: fit-content(max(20%, 120px)) fit-content(max(20%, 120px)) minmax(0, 1fr);
+  }
+  .machine-grid > .card { display: flex; flex-direction: column; min-height: 0; }
+  .machine-grid .card-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
+  .machine-grid .conv-box { flex: 1 1 auto; min-height: 0; max-height: none; }
+}
+@media (min-width: 900px) {
+  .machine-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: fit-content(max(40%, 120px)) minmax(0, 1fr);
+  }
+  .machine-grid > :nth-child(2) { border-top: 0; border-left: 1px solid var(--border); }
+  .machine-grid > .conv-card { grid-column: 1 / -1; }
+}

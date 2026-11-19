@@ -38,6 +38,7 @@ _STYLE_FILES = (
     "styles_source.css",
     "styles_git.css",
     "styles_files.css",
+    "styles_machine.css",
 )
 STYLES_CSS = "".join(_ASSETS.joinpath(name).read_text(encoding="utf-8") for name in _STYLE_FILES)
 
