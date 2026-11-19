@@ -14,7 +14,9 @@ textarea.field.cfg-value {
   field-sizing: content; resize: none; min-height: var(--ctl-h); max-height: 40dvh;
   padding-block: calc((var(--ctl-h) - 1lh - 2px) / 2);
 }
-.cfg-check { margin-top: 8px; cursor: pointer; }
+/* The layer checkbox sits on its label's first line, however many lines the label takes. */
+.cfg-check { align-items: flex-start; margin-top: 8px; cursor: pointer; }
+.cfg-check > input { font: inherit; margin-top: calc((1lh - 16px) / 2); }
 /* An editor's Remove, which takes a whole entry, stands apart at the end of its buttons. */
 .cfg-actions > .danger { margin-left: auto; }
 /* The reviewer editor's roster: a list over the field, each Remove at its row's end. */

@@ -780,3 +780,31 @@ def test_only_the_arrow_keys_model_suggestion_reads_as_active(
     lit = options.evaluate_all("os => os.map(o => getComputedStyle(o).backgroundColor)")
     assert lit[4] == lit[1] != lit[0]
     assert not errors
+
+
+# How many lines an element's text takes.
+LINES = """e => {
+  const r = document.createRange(); r.selectNodeContents(e); return r.getClientRects().length;
+}"""
+
+# How far the layer checkbox's middle sits from the middle of its label's first line.
+CHECK_OFFSET = """label => {
+  const box = label.querySelector('input').getBoundingClientRect();
+  const first = document.createRange(); first.setStart(label.querySelector('span').firstChild, 0);
+  first.setEnd(label.querySelector('span').firstChild, 1);
+  const line = first.getBoundingClientRect();
+  return Math.abs((box.top + box.bottom) / 2 - (line.top + line.bottom) / 2);
+}"""
+
+
+def test_a_config_dialog_checkbox_sits_on_its_labels_first_line(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """On a phone the layer checkbox sat between the two lines its label wrapped to."""
+    page, errors = open_page(port)
+    _config(page, port, 390)
+    page.locator('[data-key="budget.max_usd"]').click()
+    label = page.get_by_role("dialog").locator("label.cfg-check")
+    assert label.locator("span").evaluate(LINES) >= 2
+    assert label.evaluate(CHECK_OFFSET) <= 1.5
+    assert not errors
