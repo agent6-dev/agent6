@@ -394,7 +394,7 @@ def test_the_findings_card_spaces_its_parts_and_labels_its_filters(
         return parts.slice(1).map((part, i) => Math.round(
             part.getBoundingClientRect().top - parts[i].getBoundingClientRect().bottom)); }"""
     )
-    assert set(gaps[:-1]) == {6}  # the last part is the list, whose cards keep their own margin
+    assert set(gaps) == {6}
     body.locator(".finding").first.get_by_role("button", name="Resolve", exact=True).click()
     selects = body.locator("select:visible")
     expect(selects).to_have_count(3)
