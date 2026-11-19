@@ -539,6 +539,24 @@ def test_a_warning_holds_until_dismissed_in_the_warning_colour(
     assert not errors
 
 
+def test_only_the_three_newest_held_notifications_stay(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """Every error-level notification held until dismissed, a stack without end."""
+    from playwright.sync_api import expect
+
+    machine = _machine(tmp_path, "nightly", LOOP, [], _talk(2), alive=True)
+    page, errors = _open(open_page, port, "nightly")
+    with (machine / "journal.jsonl").open("a", encoding="utf-8") as journal:
+        for n, level in enumerate(["error", "warn", "error", "warn", "error"]):
+            note = {"type": "machine.notify", "ts": TS, "state": "work", "message": f"check {n}"}
+            journal.write(json.dumps({**note, "level": level}) + "\n")
+    expect(page.locator("#toasts .toast")).to_have_text(
+        [f"nightly · work: check {n}" for n in (2, 3, 4)]
+    )
+    assert not errors
+
+
 def test_the_palette_offers_the_machine_views_actions(
     open_page: OpenPage, port: int, tmp_path: pathlib.Path
 ) -> None:

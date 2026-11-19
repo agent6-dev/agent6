@@ -93,6 +93,7 @@ async function renderMachine(name, gen) {
   // only genuinely new ones, named by the instance.
   const ctx = {
     name, seen: null, lostNotified: false, endedNotified: false, shownCurrent: null, pathAtEnd: true,
+    held: [], // the notifications' toasts that hold until dismissed
   };
   // Path follows its newest transition while the reader stays at its end: each scroll records
   // whether they do, and a resize (a prompt above it, the entry growing below) scrolls back to it.
@@ -133,7 +134,11 @@ function machineNotify(ctx, m) {
     const k = keyOf(n);
     if (ctx.seen.has(k)) continue;
     ctx.seen.add(k);
-    toast(`${ctx.name} · ${esc(n.state)}: ${esc(n.message)}`, n.level);
+    const t = toast(`${ctx.name} · ${esc(n.state)}: ${esc(n.message)}`, n.level);
+    if (n.level === 'warn' || n.level === 'error') {
+      ctx.held = [...ctx.held.filter(h => h.isConnected), t];
+      while (ctx.held.length > 3) ctx.held.shift().remove(); // a machine notifies without limit
+    }
     osNotify('agent6: ' + ctx.name, n.message || '');
   }
 }
