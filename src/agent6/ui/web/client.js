@@ -762,12 +762,17 @@ function itemRow(cls, paint) {
 // The groups whose children the operator expanded, kept across the hub's repaints.
 const expandedGroups = new Set();
 
+// A row's title is the link that opens it. A drag across it selects its text, as anywhere else in
+// the row: no link drag here, and user-select in styles.css.
+function titleLink(cls, text, href) {
+  const title = el('a', cls, text);
+  title.href = href; title.draggable = false;
+  return title;
+}
 // A row's task: its first line is the link that opens the row, a resume's steer the line under it.
 function taskTitle(parent, taskLine, href) {
   const [task, continued] = taskLine.split('\n');
-  const title = el('a', 'title', task);
-  title.href = href;
-  parent.appendChild(title);
+  parent.appendChild(titleLink('title', task, href));
   if (continued) parent.appendChild(el('div', 'continued', continued));
 }
 // A row's sub line: its parts joined by ' · ', each separator kept with the part before it. A text
@@ -878,9 +883,11 @@ function sessionsCard() {
 
 function machinesCard() {
   return listCard('Instances', 'no machines yet', m => [{ key: m.name, data: m, paint: () => itemRow('item', (it, g) => {
-    taskTitle(g, m.machine || m.name, '#/machine/' + encodeURIComponent(m.name));
-    // The reason rides the status label (failed · why).
-    g.appendChild(subLine([pill(m.status_level, m.status_label), el('span', null, m.name), el('span', null, 'at ' + esc(m.current || '?')), esc(m.when)]));
+    // An instance goes by its own name, as `machine list` and the TUI list it; the sub line names
+    // the machine it runs when the two differ. The reason rides the status label (failed · why).
+    g.appendChild(titleLink('title name', m.name, '#/machine/' + encodeURIComponent(m.name)));
+    const machine = m.machine && m.machine !== m.name && el('span', null, 'machine ' + m.machine);
+    g.appendChild(subLine([pill(m.status_level, m.status_label), machine, el('span', null, 'at ' + esc(m.current || '?')), esc(m.when)]));
   }) }]);
 }
 

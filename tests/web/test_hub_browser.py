@@ -12,10 +12,10 @@ import pytest
 
 from agent6 import paths
 from tests.unit import test_sessions_show_group
-from tests.web import test_web_browser
+from tests.web import test_web_actions, test_web_browser
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Page
+    from playwright.sync_api import Locator, Page
 
 pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
@@ -116,23 +116,35 @@ def fan_port(group: pathlib.Path) -> Iterator[int]:
 def test_a_drag_that_selects_text_in_a_row_keeps_the_page(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
-    """A drag that selected a row's id opened the session, so no id in the list could be copied."""
+    """A drag across a row's id or title opened the row, so no id, task or name could be copied."""
     from playwright.sync_api import expect
 
+    def drag(text: Locator) -> str:
+        """Drag across the start of `text`; return the selection."""
+        page.evaluate("getSelection().removeAllRanges()")
+        box = text.bounding_box()
+        assert box
+        page.mouse.move(box["x"] + 2, box["y"] + box["height"] / 2)
+        page.mouse.down()
+        page.mouse.move(box["x"] + 160, box["y"] + box["height"] / 2, steps=8)
+        page.mouse.up()
+        page.wait_for_timeout(300)
+        return page.evaluate("String(getSelection())")
+
     _run(tmp_path, "alpha-AAAAAA", "Alpha task", STOP)
+    test_web_actions._ended_machine(tmp_path, "tiny")  # pyright: ignore[reportPrivateUsage]
     page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/machines")
+    assert drag(page.locator(".item a.title")) == "tiny"
+    expect(page).to_have_url(f"http://127.0.0.1:{port}/#/machines")
     page.goto(f"http://127.0.0.1:{port}/#/")
     sub = page.locator(".item .sub").first
     expect(sub).to_contain_text("alpha-AAAAAA")
+    assert drag(sub)
+    assert drag(page.locator(".item a.title")).startswith("Alpha")
+    expect(page).to_have_url(f"http://127.0.0.1:{port}/#/")
     box = sub.bounding_box()
     assert box
-    page.mouse.move(box["x"] + 2, box["y"] + box["height"] / 2)
-    page.mouse.down()
-    page.mouse.move(box["x"] + 160, box["y"] + box["height"] / 2, steps=8)
-    page.mouse.up()
-    page.wait_for_timeout(300)
-    assert page.evaluate("String(getSelection())")
-    expect(page).to_have_url(f"http://127.0.0.1:{port}/#/")
     page.mouse.click(box["x"] + 40, box["y"] + box["height"] / 2)  # a plain click still opens it
     expect(page).to_have_url(f"http://127.0.0.1:{port}/#/session/alpha-AAAAAA")
     assert not errors
@@ -675,4 +687,27 @@ def test_a_long_machine_file_name_wraps_from_its_buttons_start(
         return [...r.getClientRects()].map(x => Math.round(x.left)); }"""
     )
     assert len(lines) > 1 and len(set(lines)) == 1, lines
+    assert not errors
+
+
+def test_an_instance_row_goes_by_the_instances_name(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Instance rows led with their machine's name, so two instances of one machine read alike.
+
+    The name is the instance's identity, so a long one wraps whole on a phone.
+    """
+    from playwright.sync_api import expect
+
+    long = "weekly-dependency-upgrade-and-security-advisory-sweep"
+    for name in ("tiny", "tiny-two", long):
+        test_web_actions._ended_machine(tmp_path, name)  # pyright: ignore[reportPrivateUsage]
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/machines")
+    rows = page.locator(".item")
+    expect(rows.locator("a.title")).to_have_text([long, "tiny-two", "tiny"])  # newest first
+    expect(rows.nth(1).locator(".sub")).to_contain_text("machine tiny")
+    expect(rows.last.locator(".sub")).not_to_contain_text("machine")
+    assert rows.first.locator("a.title").evaluate("e => e.scrollWidth <= e.clientWidth")
     assert not errors

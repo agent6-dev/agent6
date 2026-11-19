@@ -167,8 +167,10 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 /* A machine file's Run button: a name too long for the line wraps from the button's start. */
 .machine-files > button { text-align: start; }
 .item .title, .item .continued { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The title is the row's link, in the row's text; its keyboard ring goes round the whole row. */
-.item a.title { display: block; color: inherit; }
+/* The title is the row's link, in the row's text; its keyboard ring goes round the whole row.
+   Chromium starts a selection in a link only with user-select: text (titleLink drops the drag). */
+.item a.title { display: block; color: inherit; user-select: text; }
+.item a.title.name { white-space: normal; overflow-wrap: anywhere; } /* a name shows whole */
 .item a.title:focus-visible { outline: none; }
 .item:has(> .grow > a.title:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
 .item .sub { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
