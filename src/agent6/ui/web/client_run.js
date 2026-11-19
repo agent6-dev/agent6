@@ -309,7 +309,7 @@ function paintPrompts(cards, s) {
         box.appendChild(el('div', 'q', label));
         const row = el('div', 'form-row');
         const inp = el('input', 'field');
-        inp.placeholder = (sub.options || []).length ? 'pick an option or type an answer…' : 'type an answer…';
+        inp.placeholder = (sub.options || []).length ? 'pick or type an answer…' : 'type an answer…';
         for (const opt of (sub.options || [])) {
           const b = el('button', null, opt);
           b.onclick = () => { inp.value = opt; };

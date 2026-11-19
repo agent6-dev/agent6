@@ -128,7 +128,7 @@ def test_a_question_box_spaces_its_questions_and_wraps_a_narrow_field(
     box = page.locator(".prompt-box")
     fields = box.locator("input.field")
     expect(fields).to_have_count(2)
-    expect(fields.first).to_have_attribute("placeholder", "pick an option or type an answer…")
+    expect(fields.first).to_have_attribute("placeholder", "pick or type an answer…")
     expect(fields.last).to_have_attribute("placeholder", "type an answer…")
     first, last = fields.first.bounding_box(), fields.last.bounding_box()
     second = box.locator(".q").last.bounding_box()
@@ -828,3 +828,40 @@ def test_a_picked_commit_says_its_diff_is_loading(
     held[0].continue_()
     expect(body).to_have_text(f"no diff for {'1' * 12} (pruned, or not a commit of this run)")
     assert [error for error in errors if "Failed to load resource" not in error] == []
+
+
+@pytest.mark.parametrize("width", [390, 320])
+def test_an_answer_field_beside_short_options_shows_its_whole_placeholder(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    width: int,
+) -> None:
+    """On a phone, a field that would cut its placeholder beside yes and no takes its own row.
+
+    Beside two short options the field kept 221px and cut "pick an option or type an answer…",
+    and at 320px its own row was 10px short of it.
+    """
+    from playwright.sync_api import expect
+
+    ask = {
+        "type": "question.prompt",
+        "id": "question-1",
+        "wait": True,
+        "questions": [{"question": "Keep the flaky test quarantined?", "options": ["yes", "no"]}],
+    }
+    _session(tmp_path, "asking-AAA111", [ask], live=True)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/asking-AAA111")
+    field = page.locator(".prompt-box input.field")
+    expect(field).to_be_visible()
+    need, width = field.evaluate(
+        """i => { const s = getComputedStyle(i);
+        const c = document.createElement('canvas').getContext('2d');
+        c.font = s.fontSize + ' ' + s.fontFamily;
+        return [c.measureText(i.placeholder).width + parseFloat(s.paddingLeft)
+            + parseFloat(s.paddingRight) + 2 * parseFloat(s.borderLeftWidth), i.offsetWidth]; }"""
+    )
+    assert need <= width
+    assert not errors
