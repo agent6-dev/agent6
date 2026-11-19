@@ -25,14 +25,14 @@ async function renderRun(id, opts, gen) {
   // "paged" only acts on phones: one widget shows at a time there, picked by
   // the floating menu; the desktop drawer ignores it.
   const app = el('div', 'run-app paged');
-  const prompts = el('div', 'page-pad'); app.appendChild(prompts); // approval/question boxes surface here
+  const prompts = el('div', 'page-pad prompts'); app.appendChild(prompts); // approval/question boxes surface here
   const cards = { _id: id, _base: base, _prompts: prompts, _readOnly: readOnly, _crumb: crumbBase };
   const drawer = el('div', 'grid drawer');
   const mk = (key, title, cls, parent) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.dataset.w = key; const h = el('h2', null, title); c.appendChild(h); if (key === 'head') cards._head_title = h; const body = el('div', 'card-body'); c.appendChild(body); cards[key] = body; (parent || drawer).appendChild(c); return body; };
 
   // Controls at the top so Stop stays reachable without scrolling; the Details
   // toggle folds the drawer away (persisted; default open on wide screens).
-  const actions = el('div', 'row wrap page-pad actions'); actions.style.margin = '10px 22px';
+  const actions = el('div', 'row wrap page-pad actions');
   const dBtn = el('button', 'details-btn', 'Details'); // desktop drawer toggle; phones page widgets instead
   const applyDrawer = (open) => {
     drawer.classList.toggle('closed', !open);

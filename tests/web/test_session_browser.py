@@ -64,3 +64,34 @@ def test_an_approval_shows_its_whole_command(
     expect(command).to_contain_text("/tmp/LAST.log")
     assert command.evaluate("e => e.scrollWidth <= e.clientWidth")
     assert not errors
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_prompts_stand_under_the_top_bar_and_the_action_bar_clips_nothing(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    width: int,
+) -> None:
+    """A prompt box stands 10px under the top bar, over an action bar in the page's gutter.
+
+    The box touched the top bar. The action bar was a scroll container, which cut its buttons'
+    focus rings, and on a phone it sat 6px right of the boxes and cards.
+    """
+    from playwright.sync_api import expect
+
+    ask = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow run_command: ls"}
+    _session(tmp_path, "asking-AAA111", [ask], live=True)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/asking-AAA111")
+    box = page.locator(".prompt-box")
+    expect(box).to_be_visible()
+    actions = page.locator(".run-app .actions")
+    header, top = page.locator("header").bounding_box(), box.bounding_box()
+    first = actions.locator("button:visible").first.bounding_box()
+    assert header is not None and top is not None and first is not None
+    gap = top["y"] - (header["y"] + header["height"])
+    overflow = actions.evaluate("e => getComputedStyle(e).overflow")
+    assert (gap, overflow, first["x"]) == (10, "visible", top["x"])
+    assert not errors

@@ -60,7 +60,10 @@
    horizontal scrollbar; item text always wraps, so x never scrolls for real. */
 .conv-box { overflow: hidden auto; max-height: 62vh; }
 
-/* Boxes stand 10px apart; the row under their host sets the gap below the last one. */
+/* The run view's prompts host stands its boxes 10px under the top bar, and the action bar's
+   margin sets the gap under the last box. Boxes stand 10px apart. */
+.run-app > .prompts:not(:empty) { padding-top: 10px; }
+.run-app > .actions { margin-block: 10px; }
 .prompt-box { background: var(--surface2); border-left: 3px solid var(--warn); padding: 12px; }
 .prompt-box + .prompt-box { margin-top: 10px; }
 .prompt-box .q { margin-bottom: 8px; white-space: pre-wrap; }
@@ -83,7 +86,7 @@
   /* prompts / controls / status keep their natural height; only the body pane
      flexes (without this the column shrinks them and clips the status kv) */
   .run-app > * { flex: none; }
-  .run-app > .page-pad { max-height: 40vh; overflow: auto; } /* a prompt pile can't push the composer off-screen */
+  .run-app > .prompts { max-height: 40vh; overflow: auto; } /* a prompt pile can't push the composer off-screen */
   .run-app .run-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
   .run-app .drawer {
     /* block, not grid: a definite-height grid distributes its rows and
