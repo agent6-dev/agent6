@@ -506,7 +506,8 @@ def test_every_config_remove_reads_as_destructive(
 ) -> None:
     """Remove preset, Remove provider and a reviewer's Remove looked like every other button.
 
-    The editor's Remove provider sat between Add provider… and Cancel.
+    The editor's Remove provider sat between Add provider… and Cancel, and Remove preset in the
+    middle of the bar.
     """
     _global_config(
         '[providers.openrouter]\nbackend = "openai"\nbase_url = "https://openrouter.ai/api/v1"\n\n'
@@ -515,13 +516,15 @@ def test_every_config_remove_reads_as_destructive(
     page, errors = open_page(port)
     _config(page, port)
     red = page.evaluate(ERR)
-    assert page.get_by_role("button", name="Remove preset").evaluate(STYLE, "color") == red
+    end = "e => e.parentElement.getBoundingClientRect().right - e.getBoundingClientRect().right"
+    remove_preset = page.get_by_role("button", name="Remove preset")
+    assert remove_preset.evaluate(STYLE, "color") == red
+    assert remove_preset.evaluate(end) == 0
     page.locator('[data-key="providers.openrouter.base_url"]').click()
     row = page.get_by_role("dialog").locator(".form-row")
     remove = row.locator("button").last
     assert remove.inner_text() == "Remove provider"
     assert remove.evaluate(STYLE, "color") == red
-    end = "e => e.parentElement.getBoundingClientRect().right - e.getBoundingClientRect().right"
     assert remove.evaluate(end) == 0
     page.keyboard.press("Escape")
     page.locator('[data-key="review.reviewers"]').click()

@@ -2,6 +2,8 @@
    the card at any width. */
 .cfg-bar input.filter { flex: 1 1 100%; }
 .cfg-bar button { flex: none; white-space: nowrap; }
+/* Remove preset, which takes a whole table, stands apart at the end of its line. */
+.cfg-bar > .danger { margin-left: auto; }
 .cfg-point + .cfg-point { margin-top: 0.25rem; }
 /* Config dialogs: the editor's type and source line, each label over its field, and the layer
    checkbox under them. */

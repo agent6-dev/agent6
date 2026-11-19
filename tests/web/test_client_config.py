@@ -112,8 +112,8 @@ async function run() {
   await renderConfig();
   const bar = all(view).find(e => e.className === 'toolbar cfg-bar');
   assert.deepEqual(bar.children.map(e => e.textContent), [
-    '', 'Modified only', 'Preset…', 'Add preset…', 'Remove preset',
-    'Add provider…', 'Add MCP server…', 'Add skill…', 'Add reviewer…',
+    '', 'Modified only', 'Preset…', 'Add preset…',
+    'Add provider…', 'Add MCP server…', 'Add skill…', 'Add reviewer…', 'Remove preset',
   ]);
   assert.equal(button('Remove preset').disabled, true);  // preset = none
   assert.equal(bar.children[0].placeholder, 'filter settings…');

@@ -43,6 +43,14 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
   const addPresetBtn = el('button', null, 'Add preset…');
   addPresetBtn.onclick = () => addPreset(refresh);
   bar.appendChild(addPresetBtn);
+  for (const table of registry.tables) {
+    const addBtn = el('button', null, 'Add ' + table.label + '…');
+    addBtn.onclick = () => addEntry(table, refresh);
+    bar.appendChild(addBtn);
+  }
+  const reviewerBtn = el('button', null, 'Add reviewer…');
+  reviewerBtn.onclick = () => addReviewer(refresh);
+  bar.appendChild(reviewerBtn);
   const removePresetBtn = el('button', 'danger', 'Remove preset');
   removePresetBtn.disabled = !selected;
   removePresetBtn.title = selected
@@ -56,15 +64,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
       toast(d.message || 'removed'); await refresh();
     } catch (e) { toast(e.message, true); removePresetBtn.disabled = false; }
   };
-  bar.appendChild(removePresetBtn);
-  for (const table of registry.tables) {
-    const addBtn = el('button', null, 'Add ' + table.label + '…');
-    addBtn.onclick = () => addEntry(table, refresh);
-    bar.appendChild(addBtn);
-  }
-  const reviewerBtn = el('button', null, 'Add reviewer…');
-  reviewerBtn.onclick = () => addReviewer(refresh);
-  bar.appendChild(reviewerBtn);
+  bar.appendChild(removePresetBtn); // last, at its line's end: it removes a whole table
   card.appendChild(bar);
   // While a preset is selected, a line under the bar says where saves go, in the TUI's words.
   if (selected) {
