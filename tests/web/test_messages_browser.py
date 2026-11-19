@@ -254,3 +254,21 @@ def test_a_request_with_no_answer_names_the_server_in_one_sentence(
     expect(page.locator(".problem .err")).to_have_text(
         re.compile(rf"^no answer from the agent6 web server at 127\.0\.0\.1:{port} \(\w.+\)$")
     )
+
+
+def test_a_401_leaves_the_sign_in_form_alone(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Ctrl+K on the sign-in form toasted 'not signed in: …' over the form that already says so."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.add_init_script("localStorage.setItem('a6-token', 'expired')")
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible()
+    with page.expect_response(lambda r: r.url.endswith("/api/hub")):
+        page.keyboard.press("Control+K")
+    page.wait_for_timeout(300)
+    expect(page.locator("#toasts .toast")).to_have_count(0)
+    expect(page.locator("#login")).to_be_visible()
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []

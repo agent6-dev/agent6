@@ -142,21 +142,17 @@ function saveToken(login) { loginToken = login.token; remember(TOKEN_KEY, loginT
 function recall(key, fallback) { try { return localStorage.getItem(key) ?? fallback; } catch (_) { return fallback; } }
 function remember(key, value) { try { localStorage.setItem(key, value); } catch (_) {} }
 function forget(key) { try { localStorage.removeItem(key); } catch (_) {} }
-// A 401 is the server asking for its secret: every API call brings up the sign-in form.
-function signedOut(r) {
-  if (r.status === 401) {
-    loginToken = '';
-    try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
-    showLogin();
-  }
-  return r;
-}
-// Every request carries the token, and no answer reads as one sentence.
+// Every request carries the token; no answer reads as one sentence, and a 401 asks for the secret.
 async function serverFetch(url, init = {}) {
   let r;
   try { r = await fetch(url, { ...init, headers: authHeaders(init.headers) }); }
   catch (e) { throw new Error(`no answer from the agent6 web server at ${location.host} (${e.message})`); }
-  return signedOut(r);
+  if (r.status !== 401) return r;
+  r.body?.cancel(); // nothing reads it, and an unread body holds its request open
+  loginToken = '';
+  forget(TOKEN_KEY);
+  showLogin();
+  return new Promise(() => {}); // never settles: nothing paints an error over the form, and a sign-in reruns the route
 }
 // Every GET: the server's error text thrown with the response's status.
 async function getResponse(url) {
@@ -348,7 +344,7 @@ function openStream(url, onData) {
     stream.ctrl = new AbortController();
     let r = null;
     try { r = await serverFetch(url, { signal: stream.ctrl.signal }); } catch (_) {}
-    if (stream.closed || (r && r.status === 401)) return;
+    if (stream.closed) return;
     if (r && r.ok && r.body) {
       const reader = r.body.getReader();
       const dec = new TextDecoder();

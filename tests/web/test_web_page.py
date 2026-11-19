@@ -143,9 +143,12 @@ assert.ok(classes.has('light'));
 assert.ok(classes.has('rail-min'));
 saveToken({token: 'signed-in'});
 assert.equal(authHeaders().Authorization, 'Bearer signed-in');
-signedOut({status: 401});
-assert.equal(logins, 1);
-assert.equal(authHeaders().Authorization, undefined);
+globalThis.fetch = async () => ({status: 401});
+serverFetch('/api/hub');  // never settles: the sign-in form takes the page
+setTimeout(() => {
+  assert.equal(logins, 1);
+  assert.equal(authHeaders().Authorization, undefined);
+});
 """
     client = page.CLIENT_JS[: page.CLIENT_JS.index("// --- sign-in")]
     result = subprocess.run(
