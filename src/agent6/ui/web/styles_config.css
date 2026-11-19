@@ -38,6 +38,8 @@ textarea.field.cfg-value {
   border: solid var(--muted); border-width: 0 1.5px 1.5px 0;
 }
 .cfg-section[open] > summary::before { transform: translateY(-2px) rotate(45deg); }
+/* A section heading's focus ring lies on the table's edges, as a row's does. */
+.cfg-section > summary:focus-visible { outline-offset: -2px; }
 .cfg th {
   font-size: var(--fs-s); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
 }

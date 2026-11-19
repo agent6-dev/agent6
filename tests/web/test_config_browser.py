@@ -592,6 +592,26 @@ def test_a_config_section_name_heads_its_muted_column_labels(
     assert not errors
 
 
+def test_a_config_section_headings_focus_ring_lies_on_the_tables_edges(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A section heading's focus ring stood 4px past the table on each side, wider than a row's."""
+    page, errors = open_page(port)
+    _config(page, port)
+    page.get_by_role("button", name="Add reviewer…").focus()
+    page.keyboard.press("Tab")
+    ring = """e => { const s = getComputedStyle(e), r = e.getBoundingClientRect();
+      const out = parseFloat(s.outlineOffset) + parseFloat(s.outlineWidth);
+      return [e.matches(':focus-visible'), Math.round(r.left - out), Math.round(r.right + out)];
+    }"""
+    focused, left, right = page.evaluate(f"({ring})(document.activeElement)")
+    table = page.locator("table.cfg").first.bounding_box()
+    assert table is not None
+    assert focused
+    assert [left, right] == [round(table["x"]), round(table["x"] + table["width"])]
+    assert not errors
+
+
 def test_the_command_palette_offers_the_config_bar_actions(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
