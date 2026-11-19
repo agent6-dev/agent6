@@ -55,3 +55,36 @@ def test_the_sign_in_form_has_its_own_crumb_and_no_current_page(
     expect(page.locator("#crumb")).to_have_text("sign in")
     expect(page.locator("[aria-current=page]")).to_have_count(0)
     assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
+def test_the_rail_brand_sits_on_the_header_line(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The rail's brand straddled the header's bottom line, its mark 14px below the crumb.
+
+    Expanded and collapsed, the brand row spans the header's height and its mark shares the
+    header's centre line and the nav icons' centre.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator("#crumb")).to_have_text("sessions")
+    boxes = """() => Object.fromEntries(Object.entries({ header: 'header',
+      brand: 'aside.rail .rail-brand', mark: 'aside.rail .rail-brand img',
+      icon: 'aside.rail .rail-nav .ic' }).map(([k, s]) => {
+        const r = document.querySelector(s).getBoundingClientRect();
+        return [k, { top: r.top, bottom: r.bottom,
+                     cx: r.left + r.width / 2, cy: r.top + r.height / 2 }];
+      }))"""
+    toggle = page.locator("#rail-toggle")
+    for expanded in ("true", "false"):
+        if expanded == "false":
+            toggle.click()
+        expect(toggle).to_have_attribute("aria-expanded", expanded)
+        b = page.evaluate(boxes)
+        assert b["brand"]["top"] == b["header"]["top"]
+        assert b["brand"]["bottom"] == b["header"]["bottom"]
+        assert b["mark"]["cy"] == pytest.approx(b["header"]["cy"], abs=1)
+        assert b["mark"]["cx"] == pytest.approx(b["icon"]["cx"], abs=0.5)
+    assert not errors

@@ -17,6 +17,9 @@
   --ctl-h: 32px; --ctl-h-sm: 26px; --ctl-px: 12px; --ctl-px-sm: 8px;
   --r-sm: 4px; --r: 6px; --r-lg: 8px;
   --nav-h: 56px;
+  /* The header's height above any safe-area inset: a 21px line in 10px paddings and the 1px
+     border. A phone's header holds a control instead (below). */
+  --hdr-h: 42px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   /* the highlighter's dozen classes */
   --hl-keyword: light-dark(#a626a4, #c678dd); --hl-function: light-dark(#1f56c9, #61afef);
@@ -44,6 +47,7 @@ pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
 
 header {
   position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px;
+  height: calc(var(--hdr-h) + env(safe-area-inset-top));
   padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
   padding-top: calc(10px + env(safe-area-inset-top));
 }
@@ -51,9 +55,7 @@ header {
 header .brand { display: inline-flex; align-items: center; gap: 8px; color: inherit; font-weight: 700; letter-spacing: .3px; }
 header .brand b { color: var(--accent); }
 header .spacer { flex: 1; }
-/* min-height keeps the header the same height whatever the crumb holds:
-   without it the bar shrinks 21px and views jump on navigation. */
-header .crumb { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 21px; }
+header .crumb { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button {
   font: inherit; line-height: 1.25; color: var(--text); background: var(--surface2);
   border: 1px solid var(--border); border-radius: var(--r); padding: 0 var(--ctl-px);
@@ -319,10 +321,16 @@ aside.rail { display: none; }
   aside.rail {
     display: flex; flex-direction: column; gap: 4px; z-index: 30;
     position: fixed; left: 0; top: 0; width: var(--rail-w); height: 100dvh; overflow: auto;
-    padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
+    padding: 0 12px calc(16px + env(safe-area-inset-bottom));
     background: var(--surface); border-right: 1px solid var(--border);
   }
-  aside.rail .rail-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; padding: 6px 8px 16px 10px; color: inherit; }
+  /* The brand row is the header's height, so its mark sits on the header's centre line and its
+     bottom border carries the header's line across the rail. */
+  aside.rail .rail-brand {
+    display: flex; align-items: center; gap: 10px; flex: none; font-weight: 700; font-size: 17px; color: inherit;
+    height: calc(var(--hdr-h) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 0 0 22px;
+    margin: 0 -12px 4px; border-bottom: 1px solid var(--border);
+  }
   aside.rail .rail-brand b { color: var(--accent); }
   /* The nav links, and the theme and collapse rows at the rail's foot: one row shape. */
   aside.rail .rail-nav, aside.rail .rail-foot { display: flex; flex-direction: column; gap: 2px; }
@@ -335,7 +343,7 @@ aside.rail { display: none; }
   aside.rail .rail-nav a[aria-current=page] { background: var(--surface2); color: var(--accent); }
   /* collapsed: an icon-only strip; labels and the brand name hide, icons centre */
   html.rail-min aside.rail { padding-left: 8px; padding-right: 8px; }
-  html.rail-min aside.rail .rail-brand { justify-content: center; padding-left: 0; padding-right: 0; }
+  html.rail-min aside.rail .rail-brand { justify-content: center; margin-inline: -8px; padding-left: 0; }
   html.rail-min aside.rail .rail-brand b,
   html.rail-min aside.rail .rail-nav a span,
   html.rail-min aside.rail .rail-label { display: none; }
