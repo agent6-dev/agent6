@@ -288,6 +288,8 @@ button.danger { color: var(--err); }
 button.danger:hover { border-color: var(--err); }
 button.quiet.danger { color: var(--muted); }
 button.quiet.danger:hover { color: var(--err); border-color: transparent; background-color: color-mix(in srgb, var(--err) 10%, transparent); }
+/* The hub's failed first load: why, the retry cadence and a Retry button, centred. */
+.hub-error { display: grid; justify-items: center; gap: 12px; }
 /* The sessions card's maintenance actions, in one row above the list. */
 .toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
 /* The keyboard list (openKeys): a heading per place, then each key's caps beside what it does. */

@@ -881,7 +881,20 @@ function machineFilesCard() {
 async function renderHub(focus, gen) {
   const machinesTab = focus === 'machines';
   setCrumb(machinesTab ? 'state machines' : 'sessions');
-  const data = await getJSON('/api/hub');
+  let data;
+  try { data = await getJSON('/api/hub'); }
+  catch (e) {
+    if (gen !== undefined && gen !== routeGen) return; // superseded, or the sign-in form took over
+    // A failed first load says why, offers Retry, and paints the page once the server answers.
+    view.innerHTML = '';
+    const retry = el('button', null, 'Retry');
+    retry.onclick = route;
+    const failed = el('div', 'empty hub-error');
+    failed.append(el('div', 'err', 'error: ' + e.message), el('div', null, `retrying every ${HUB_POLL_MS / 1000} s`), retry);
+    view.appendChild(failed);
+    hubTimer = setInterval(() => getJSON('/api/hub').then(route, () => {}), HUB_POLL_MS);
+    return;
+  }
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';
   // Full-width listing stack; the tab's composer docks at the bottom of the
