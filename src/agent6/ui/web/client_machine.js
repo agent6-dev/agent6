@@ -81,11 +81,14 @@ async function renderMachine(name, gen) {
     }
   };
   drow.append(din, steerBtn, msgBtn);
-  dock.appendChild(drow);
-  dock.appendChild(el('div', 'hint', 'Steer injects into the current agent state · Message wakes a waiting machine (its next tool reads it) · Enter sends, Shift+Enter newline'));
+  // Why a dimmed verb is refused, on every screen: a hover title never reaches a phone.
+  const refusal = el('div', 'refusal');
+  const hint = el('div', 'hint', 'Steer injects into the current agent state · Message wakes a waiting machine (its next tool reads it) · Enter sends, Shift+Enter newline');
+  dock.append(drow, refusal, hint);
   app.appendChild(dock);
   view.appendChild(app);
   cards._input = din; cards._steer_btn = steerBtn; cards._msg_btn = msgBtn; cards._stop_btn = stopBtn;
+  cards._refusal = refusal; cards._hint = hint;
 
   // Notification de-dup across repaints: seed with history on the first frame so
   // opening a machine does not replay every past notification; toast + OS-notify
@@ -229,10 +232,15 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   }
   if (cards._input) {
     cards._input.disabled = !!refusals.steer && !!refusals.poke;
-    // A box that takes no input says why in place of the invitation to type.
-    const why = cards._input.disabled ? refusals.steer + ' · ' + refusals.poke : '';
-    cards._input.title = why;
-    cards._input.placeholder = why || 'steer or message the machine…';
+    // The line under the dock says why each dimmed verb is refused: a placeholder is one line and
+    // cuts a long reason. An end refuses both verbs for one cause, so it says that once. A closed
+    // box invites no typing and gives no keyboard tips.
+    const why = m.ended ? refusals.steer : [refusals.steer, refusals.poke].filter(Boolean).join(' · ');
+    cards._refusal.textContent = why;
+    cards._refusal.classList.toggle('ended', !!m.ended);
+    cards._input.title = cards._input.disabled ? why : '';
+    cards._input.placeholder = cards._input.disabled ? '' : 'steer or message the machine…';
+    cards._hint.hidden = cards._input.disabled;
   }
 
   // The current state's conversation: live turn from this frame, completed

@@ -420,7 +420,39 @@ def test_a_closed_entry_says_why_it_takes_no_input(
     expect(entry).to_be_disabled()
     refusals = page.evaluate("getJSON('/api/machine/ended').then(m => m.refusals)")
     assert "already ended" in refusals["steer"] and "already ended" in refusals["poke"]
-    expect(entry).to_have_attribute("placeholder", refusals["steer"] + " · " + refusals["poke"])
+    expect(entry).to_have_attribute("placeholder", "")
+    expect(page.get_by_text(refusals["steer"], exact=True)).to_be_visible()  # the end, said once
+    expect(page.locator(".dock .hint")).to_be_hidden()
+    assert not errors
+
+
+def test_an_ended_machines_dock_stays_short_on_a_phone(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """An ended machine's dock said a long end reason twice, in full, over half a phone's screen."""
+    from playwright.sync_api import expect
+
+    reason = (
+        "the collector exited nonzero three times: HTTPSConnectionPool(host='forge.example',"
+        " port=443): Max retries exceeded with url: /api/v4/projects/platform%2Finfra"
+        "/merge_requests?state=merged (Caused by NewConnectionError: Failed to establish a new"
+        " connection: [Errno 111] Connection refused)"
+    )
+    end = {
+        "type": "machine.end",
+        "ts": TS,
+        "status": "failed",
+        "reason": reason,
+        "state": "done",
+        "transitions": 1,
+    }
+    rows = [_step(0, "work", "budget_exhausted", "done", AGENT), end]
+    _machine(tmp_path, "ended", LOOP, rows, _talk(1))
+    page, errors = _open(open_page, port, "ended")
+    page.set_viewport_size({"width": 375, "height": 667})
+    expect(page.locator(".dock .refusal")).to_contain_text("already ended")
+    dock = page.locator(".composer.dock").bounding_box()
+    assert dock is not None and dock["height"] < 667 / 4, dock
     assert not errors
 
 
@@ -503,4 +535,19 @@ def test_stop_asks_by_the_instance_name(
     assert asked == [
         "Stop working? It parks at its next transition, and agent6 machine run working resumes it."
     ]
+    assert not errors
+
+
+def test_a_dimmed_verb_says_why_on_a_phone(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """A refused verb's reason was only a hover title, and a phone hid the hint line too."""
+    from playwright.sync_api import expect
+
+    _parked(tmp_path)
+    page, errors = _open(open_page, port, "parked")
+    page.set_viewport_size({"width": 390, "height": 844})
+    refusals = page.evaluate("getJSON('/api/machine/parked').then(m => m.refusals)")
+    expect(page.get_by_role("button", name="Steer")).to_be_disabled()
+    expect(page.get_by_text(refusals["steer"], exact=True)).to_be_visible()
     assert not errors
