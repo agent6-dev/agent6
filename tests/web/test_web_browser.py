@@ -925,6 +925,26 @@ def test_a_wrapped_file_path_breaks_after_a_slash(
     assert errors == [], errors
 
 
+def test_a_long_ref_name_shows_whole_in_the_refs_filter(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """A name past the graph badge's 180px shows whole in the filter, its sha in the shas' column."""
+    name = "topic/a-long-branch-name-the-row-has-room-for"
+    _git(tmp_path, "branch", name)
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    page.get_by_role("button", name="Refs ▾").click()
+    badge = page.locator(".gfilter-item .gref", has_text=name)
+    assert badge.get_attribute("title") == name + " · branch"
+    assert badge.evaluate("b => b.scrollWidth <= b.clientWidth")
+    shas = page.locator(".gfilter-item .gref + .mono").evaluate_all(
+        "ss => ss.map(s => Math.round(s.getBoundingClientRect().right))"
+    )
+    assert len(set(shas)) == 1, shas
+    assert errors == [], errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:

@@ -92,6 +92,10 @@
 .gfilter-item { display: flex; padding: 3px 0; font-size: 13px; }
 .gfilter-item.off { opacity: .5; }
 .gfilter-item .gref { margin-right: 0; }
+/* Where a ref's name is the row (the Refs filter, the picker's list, the commit's subject), the
+   row caps its badge, and the shas line up in a column. */
+.gfilter-item > .gref, .gpick-list .ac-item > .gref, .gd-subject .gref { min-width: 0; max-width: 100%; }
+.gfilter-item > .gref + .mono, .gpick-list .ac-item > .gref + .mono { flex: none; margin-left: auto; }
 @media (min-width: 781px) {
   .git-app { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
   .git-app > .git-bar { flex: none; }

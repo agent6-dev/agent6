@@ -85,7 +85,7 @@ function gitLanesSvg(lay, cols, dot, isHead) {
 
 function refBadge(r) {
   const b = el('span', 'gref ' + esc(r.kind) + (r.head ? ' head' : ''), r.name);
-  b.title = GIT_KIND_TITLE[r.kind] || r.kind;
+  b.title = r.name + ' · ' + (GIT_KIND_TITLE[r.kind] || r.kind);
   return b;
 }
 function statusBadge(status) {
