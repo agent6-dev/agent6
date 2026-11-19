@@ -55,23 +55,37 @@ for (const b of document.querySelectorAll('.theme-toggle')) b.onclick = toggleTh
 systemDark.addEventListener('change', syncTheme);
 syncTheme();
 
-// --- nav rail collapse ---------------------------------------------------------
-// The collapse button is named by what a press does and says whether the rail is expanded;
-// <head> applies a stored collapse before the first paint.
+// --- nav rail ------------------------------------------------------------------
+// <head> applies the stored state before the first paint.
 const railToggle = document.getElementById('rail-toggle');
+const railShow = document.getElementById('rail-show');
+const railRoom = matchMedia('(min-width: 1024px)'); // room for the labels
+const RAIL_PRESS = { labels: 'Collapse the sidebar', icons: 'Hide the sidebar', hidden: 'Show the sidebar' };
+function railState() {
+  const c = document.documentElement.classList;
+  return c.contains('rail-hidden') ? 'hidden' : c.contains('rail-min') || !railRoom.matches ? 'icons' : 'labels';
+}
 function syncRail() {
-  const min = document.documentElement.classList.contains('rail-min');
-  const name = min ? 'Expand the sidebar' : 'Collapse the sidebar';
-  railToggle.setAttribute('aria-expanded', String(!min));
-  railToggle.setAttribute('aria-label', name);
-  railToggle.title = name;
+  const state = railState();
+  for (const b of [railToggle, railShow]) {
+    b.setAttribute('aria-expanded', String(state === 'labels'));
+    b.setAttribute('aria-label', RAIL_PRESS[state]);
+    b.title = RAIL_PRESS[state];
+  }
 }
-function toggleRail() {
-  const on = document.documentElement.classList.toggle('rail-min');
-  remember('a6-rail', on ? 'min' : '');
+function cycleRail() {
+  const next = { labels: 'min', icons: 'hidden', hidden: '' }[railState()];
+  const pressed = document.activeElement;
+  document.documentElement.classList.remove('rail-min', 'rail-hidden');
+  if (next) document.documentElement.classList.add('rail-' + next);
+  remember('a6-rail', next);
   syncRail();
+  // A pressed button that left with the rail hands the focus to the one that took its place.
+  if (pressed === railToggle && next === 'hidden') railShow.focus();
+  else if (pressed === railShow) railToggle.focus();
 }
-railToggle.onclick = toggleRail;
+railToggle.onclick = railShow.onclick = cycleRail;
+railRoom.addEventListener('change', syncRail);
 syncRail();
 
 // --- PWA + notifications -----------------------------------------------------

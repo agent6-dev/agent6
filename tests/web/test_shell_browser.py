@@ -23,22 +23,28 @@ port = test_web_browser.port
 git_port = test_web_browser.git_port
 
 
-def test_a_stored_collapsed_rail_is_collapsed_when_the_rail_is_built(
-    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+@pytest.mark.parametrize(
+    ("stored", "name"), [("min", "Hide the sidebar"), ("hidden", "Show the sidebar")]
+)
+def test_a_stored_rail_state_is_applied_when_the_rail_is_built(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, stored: str, name: str
 ) -> None:
-    """A stored collapse was applied at the end of <body>: Chromium painted the rail wide first."""
+    """A stored collapse was applied at the end of <body>: Chromium painted the rail wide first.
+
+    A stored hidden rail was not applied at all.
+    """
     from playwright.sync_api import expect
 
     page, errors = open_page(port)
-    page.add_init_script("""localStorage.setItem('a6-rail', 'min');
-      new MutationObserver((records, observer) => {
+    page.add_init_script(f"""localStorage.setItem('a6-rail', '{stored}');
+      new MutationObserver((records, observer) => {{
         if (!document.querySelector('aside.rail')) return;
-        window.railBuiltCollapsed = document.documentElement.classList.contains('rail-min');
+        window.railBuiltAs = document.documentElement.classList.contains('rail-{stored}');
         observer.disconnect();
-      }).observe(document, { childList: true, subtree: true });""")
+      }}).observe(document, {{ childList: true, subtree: true }});""")
     page.goto(f"http://127.0.0.1:{port}/#/")
-    expect(page.locator("#rail-toggle")).to_have_attribute("aria-expanded", "false")
-    assert page.evaluate("window.railBuiltCollapsed") is True
+    expect(page.locator("#rail-toggle")).to_have_attribute("aria-label", name)
+    assert page.evaluate("window.railBuiltAs") is True
     assert not errors
 
 
@@ -139,6 +145,27 @@ def test_a_focused_row_stops_clear_of_the_header_and_the_tab_bar(
         page.keyboard.press(key)
         box = page.evaluate(row)
         assert top <= box["top"] and box["bottom"] <= bottom, (key, box, top, bottom)
+    assert not errors
+
+
+def test_a_top_bar_control_takes_the_focus_where_the_page_stands(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Beside a hidden rail, a top bar control taking the focus scrolled the page half a screen."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.add_init_script("localStorage.setItem('a6-rail', 'min')")
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    page.locator(".cfg .cfg-edit").nth(30).wait_for()
+    page.evaluate("scrollTo(0, 1500)")
+    page.evaluate("document.getElementById('rail-toggle').focus({ preventScroll: true })")
+    page.keyboard.press("Enter")  # the rail hides and hands the focus to the menu button
+    expect(page.locator("#rail-show")).to_be_focused()
+    assert page.evaluate("scrollY") == 1500
+    page.keyboard.press("Tab")
+    expect(page.locator("header .brand")).to_be_focused()
+    assert page.evaluate("scrollY") == 1500
     assert not errors
 
 

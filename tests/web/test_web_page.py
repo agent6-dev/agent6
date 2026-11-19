@@ -90,7 +90,7 @@ def test_the_shell_buttons_draw_the_navs_line_icons() -> None:
     nav_icon = ElementTree.fromstring(nav.group()).find("a/svg")
     assert nav_icon is not None
     buttons = re.findall(r"<button .*?</button>", markup, re.DOTALL)
-    assert len(buttons) == 3
+    assert len(buttons) == 4
     for button in buttons:
         icon = ElementTree.fromstring(button).find("svg")
         assert icon is not None and icon.attrib == nav_icon.attrib
@@ -138,7 +138,7 @@ function showLogin() { logins++; }
     scenario = r"""
 assert.equal(recall('width', 'default'), 'default');
 remember('width', '400px');
-toggleTheme(); toggleRail();
+toggleTheme(); cycleRail();
 assert.ok(classes.has('light'));
 assert.ok(classes.has('rail-min'));
 saveToken({token: 'signed-in'});

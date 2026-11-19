@@ -104,8 +104,10 @@ _NAV_LINKS = "\n".join(
 _THEME_ICON = _icon(
     '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/>'
 )
-# Two chevrons pointing left; the collapsed rail mirrors them.
+# Two chevrons pointing left: a press folds the rail to its icons, then hides it.
 _COLLAPSE_ICON = _icon('<path d="M11.5 18l-6-6 6-6"/><path d="M18.5 18l-6-6 6-6"/>')
+# Three lines: the header's button that brings a hidden rail back.
+_MENU_ICON = _icon('<path d="M4 6.5h16"/><path d="M4 12h16"/><path d="M4 17.5h16"/>')
 
 # A hash-routed page: live views open an event stream, static views fetch a snapshot.
 PAGE_HTML = (
@@ -120,7 +122,7 @@ PAGE_HTML = (
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon.svg">
 <title>agent6</title>
-<script>try { const c = document.documentElement.classList, t = localStorage.getItem("a6-theme"); if (t === "light" || t === "dark") c.add(t); if (localStorage.getItem("a6-rail") === "min") c.add("rail-min"); } catch (_) {}</script>
+<script>try { const c = document.documentElement.classList, t = localStorage.getItem("a6-theme"), r = localStorage.getItem("a6-rail"); if (t === "light" || t === "dark") c.add(t); if (r === "min" || r === "hidden") c.add("rail-" + r); } catch (_) {}</script>
 <style>
 """
     + STYLES_CSS
@@ -145,6 +147,9 @@ PAGE_HTML = (
 </aside>
 <div class="content">
 <header>
+  <button type="button" id="rail-show">"""
+    + _MENU_ICON
+    + r"""</button>
   <a class="brand" href="#/" aria-label="agent6 home"><img src="/favicon.svg" width="22" height="22" alt=""><b>agent6</b></a>
   <span class="crumb" id="crumb"></span>
   <span class="spacer"></span>

@@ -18,7 +18,7 @@
   --r-sm: 4px; --r: 6px; --r-lg: 8px;
   --nav-h: 56px;
   /* The header's height above any safe-area inset: a 21px line in 10px paddings and the 1px
-     border. A phone's header holds a control instead (below). */
+     border. A phone's header, or one beside a hidden rail, holds a control instead (below). */
   --hdr-h: 42px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   /* the highlighter's dozen classes */
@@ -61,6 +61,13 @@ header .brand { display: inline-flex; align-items: center; gap: 8px; color: inhe
 header .brand b { color: var(--accent); }
 header .spacer { flex: 1; }
 header .crumb { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The header's buttons are icons centred in a square. */
+header > button {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: var(--ctl-h); padding: 0 var(--ctl-px-sm);
+}
+/* Header controls cancel the root's scroll padding: Chromium scrolls the page to one that takes the focus. */
+header :is(a, button) { scroll-margin-top: calc(-1 * (var(--hdr-h) + env(safe-area-inset-top) + 6px)); }
 button {
   font: inherit; line-height: 1.25; color: var(--text); background: var(--surface2);
   border: 1px solid var(--border); border-radius: var(--r); padding: 0 var(--ctl-px);
@@ -375,30 +382,26 @@ dialog .err:empty { display: none; }
     position: fixed; top: 0; left: 0; right: 0;
     padding: 6px 16px; padding-top: calc(6px + env(safe-area-inset-top));
   }
-  header > button {
-    display: inline-flex; align-items: center; justify-content: center;
-    min-width: var(--ctl-h); padding: 0 var(--ctl-px-sm);
-  }
   main { padding: calc(var(--hdr-h) + env(safe-area-inset-top)) 0 calc(var(--nav-h) + 24px); }
   #toasts { left: anchor(left, 0px); bottom: anchor(--dock-top top, calc(var(--nav-h) + env(safe-area-inset-bottom))); }
   .card.scroll { max-height: 60vh; }
   header .desktop-only { display: none; }
 }
 
-/* --- desktop: a persistent left nav rail (>=781px); phones keep the bottom
-   tab bar and the plain single-column stack, untouched. --rail-w drives the
-   rail and the content margin, so collapsing the rail (html.rail-min,
-   persisted) re-lays everything out together. --- */
-:root { --rail-w: 216px; --rail-pad: 12px; }
-html.rail-min { --rail-w: 64px; --rail-pad: 8px; }
-aside.rail { display: none; }
+/* --- desktop: a left nav rail (>=781px), whose width --rail-w also sets the content's margin --- */
+:root { --rail-w: 64px; --rail-pad: 8px; }
+@media (min-width: 1024px) { :root:not(.rail-min) { --rail-w: 216px; --rail-pad: 12px; } }
+:root.rail-hidden { --rail-w: 0px; }
+aside.rail, #rail-show { display: none; }
 @media (min-width: 781px) {
   aside.rail {
     display: flex; flex-direction: column; gap: 4px; z-index: 30;
     position: fixed; left: 0; top: 0; width: var(--rail-w); height: 100dvh; overflow: auto;
     padding: 0 var(--rail-pad) calc(16px + env(safe-area-inset-bottom));
     background: var(--surface); border-right: 1px solid var(--border);
+    container: rail / inline-size;
   }
+  :root.rail-hidden aside.rail { display: none; }
   /* The brand row is the header's height, so its mark sits on the header's centre line and its
      bottom border carries the header's line across the rail. */
   aside.rail .rail-brand {
@@ -418,16 +421,18 @@ aside.rail { display: none; }
   aside.rail .rail-nav a:hover, aside.rail .rail-row:hover { background: var(--surface2); color: var(--text); }
   aside.rail .rail-nav a[aria-current=page] { background: var(--surface2); color: var(--accent); } /* hovered too */
   aside.rail .rail-nav a[aria-current=page]::before { left: calc(-1 * var(--rail-pad)); top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; }
-  /* collapsed: an icon-only strip; labels and the brand name hide, icons centre */
-  html.rail-min aside.rail .rail-brand { justify-content: center; padding-left: 0; }
-  html.rail-min aside.rail .rail-brand b,
-  html.rail-min aside.rail .rail-nav a span,
-  html.rail-min aside.rail .rail-label { display: none; }
-  html.rail-min aside.rail .rail-nav a, html.rail-min aside.rail .rail-row { justify-content: center; padding: 0; }
-  html.rail-min #rail-toggle .ic { transform: scaleX(-1); }
+  /* The 64px strip has no room for labels: they and the brand's name hide, and the icons centre. */
+  @container rail (width < 120px) {
+    aside.rail .rail-brand { justify-content: center; padding-left: 0; }
+    aside.rail .rail-brand b, aside.rail .rail-nav a span, aside.rail .rail-label { display: none; }
+    aside.rail .rail-nav a, aside.rail .rail-row { justify-content: center; padding: 0; }
+  }
   .content { margin-left: var(--rail-w); }
   header { justify-content: flex-start; }
-  header .brand, header > button { display: none; }  /* the rail owns brand + actions */
+  /* A hidden rail hands the brand and the theme button back to the header, at a phone's height. */
+  :root:not(.rail-hidden) header > :is(.brand, button) { display: none; }
+  :root.rail-hidden #rail-show { display: inline-flex; }
+  :root.rail-hidden { --hdr-h: calc(var(--ctl-h) + 13px); }
   main { max-width: none; margin: 0; padding: 0; }
   .card { padding: 14px 22px; }
   .page-pad { margin: 0 22px; }

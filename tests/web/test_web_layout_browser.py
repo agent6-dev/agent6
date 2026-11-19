@@ -85,31 +85,84 @@ def test_the_theme_buttons_name_the_theme_they_switch_to(
     assert not errors
 
 
-def test_the_collapse_button_says_whether_the_rail_is_expanded(
+def test_the_collapse_button_steps_the_rail_through_labels_icons_and_hidden(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
-    """The collapse button carries aria-expanded and names what a press does.
+    """The collapse button folds the rail to its icons, then hides it; the header's button shows it.
 
-    Its row and the theme row keep their icons in the nav links' column, expanded and collapsed.
-    The button was a boxed « named "collapse the sidebar" in both states.
+    Each button carries aria-expanded and is named by what a press does; the pressed button that
+    leaves with the rail hands the focus to the other one, and a reload keeps the state. The rail
+    and the theme row keep their icons in the nav links' column. The rail had two states and could
+    not leave the screen.
     """
     from playwright.sync_api import expect
 
     page, errors = open_page(port)
     page.goto(f"http://127.0.0.1:{port}/#/")
-    toggle = page.locator("#rail-toggle")
+    toggle, show = page.locator("#rail-toggle"), page.locator("#rail-show")
+    rail, labels = page.locator("aside.rail"), page.locator("aside.rail .rail-nav a span")
     icons = page.locator("aside.rail .ic")
     lefts = "icons => icons.map(i => i.getBoundingClientRect().left)"
     expect(toggle).to_have_attribute("aria-expanded", "true")
     expect(toggle).to_have_accessible_name("Collapse the sidebar")
+    expect(labels.first).to_be_visible()
+    expect(show).to_be_hidden()
     expect(icons).to_have_count(7)
     assert len(set(icons.evaluate_all(lefts))) == 1
     toggle.click()
     expect(toggle).to_have_attribute("aria-expanded", "false")
-    expect(toggle).to_have_accessible_name("Expand the sidebar")
+    expect(toggle).to_have_accessible_name("Hide the sidebar")
+    expect(labels.first).to_be_hidden()
     assert len(set(icons.evaluate_all(lefts))) == 1
     page.reload()
-    expect(page.locator("#rail-toggle")).to_have_attribute("aria-expanded", "false")
+    expect(toggle).to_have_accessible_name("Hide the sidebar")
+    toggle.focus()
+    page.keyboard.press("Enter")
+    expect(rail).to_be_hidden()
+    expect(show).to_be_focused()
+    expect(show).to_have_attribute("aria-expanded", "false")
+    expect(show).to_have_accessible_name("Show the sidebar")
+    expect(page.locator("header .brand")).to_be_visible()
+    page.reload()
+    expect(page.locator("#crumb")).to_have_text("Sessions")
+    expect(rail).to_be_hidden()
+    show.click()
+    expect(labels.first).to_be_visible()
+    expect(toggle).to_be_focused()
+    expect(toggle).to_have_accessible_name("Collapse the sidebar")
+    expect(show).to_be_hidden()
+    page.reload()
+    expect(toggle).to_have_attribute("aria-expanded", "true")
+    assert not errors
+
+
+def test_a_rail_under_1024px_wide_shows_its_icons_and_hides(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Under 1024px the rail is its icon strip, and a press hides it; its labels never show there.
+
+    Its 216px of labels left an 820px tablet's run 258px of conversation beside the details.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 820, "height": 900})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    toggle, show = page.locator("#rail-toggle"), page.locator("#rail-show")
+    content = page.locator(".content")
+    expect(toggle).to_have_accessible_name("Hide the sidebar")
+    expect(toggle).to_have_attribute("aria-expanded", "false")
+    expect(page.locator("aside.rail .rail-label").first).to_be_hidden()
+    assert content.evaluate("e => e.getBoundingClientRect().left") == 64
+    toggle.click()
+    expect(page.locator("aside.rail")).to_be_hidden()
+    assert content.evaluate("e => e.getBoundingClientRect().left") == 0
+    show.click()
+    expect(toggle).to_have_accessible_name("Hide the sidebar")
+    assert content.evaluate("e => e.getBoundingClientRect().left") == 64
+    page.set_viewport_size({"width": 1280, "height": 900})
+    expect(toggle).to_have_accessible_name("Collapse the sidebar")
+    expect(page.locator("aside.rail .rail-label").first).to_be_visible()
     assert not errors
 
 
