@@ -88,3 +88,30 @@ def test_the_rail_brand_sits_on_the_header_line(
         assert b["mark"]["cy"] == pytest.approx(b["header"]["cy"], abs=1)
         assert b["mark"]["cx"] == pytest.approx(b["icon"]["cx"], abs=0.5)
     assert not errors
+
+
+def test_every_phone_tab_keeps_its_icon_on_one_line(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """State machines wrapped to two left-aligned lines, lifted its icon 8px and met the edge.
+
+    Every tab's icon shares one top, and each label centres under its icon inside the bar.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 360, "height": 800})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator("nav.tabs")).to_be_visible()
+    tabs = page.evaluate("""() => [...document.querySelectorAll('nav.tabs a')].map(a => {
+      const i = a.querySelector('.ic').getBoundingClientRect();
+      const s = a.querySelector('span').getBoundingClientRect();
+      return { top: i.top, icon: i.left + i.width / 2, label: s.left + s.width / 2,
+               height: s.height, end: s.bottom, bar: a.getBoundingClientRect().bottom }; })""")
+    heights = [t["height"] for t in tabs]
+    assert max(heights) > 1.5 * min(heights)  # State machines wraps at this width
+    assert {t["top"] for t in tabs} == {tabs[0]["top"]}
+    for t in tabs:
+        assert t["label"] == pytest.approx(t["icon"], abs=0.5)
+        assert t["end"] < t["bar"]
+    assert not errors
