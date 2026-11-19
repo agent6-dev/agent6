@@ -87,7 +87,7 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
     - **blame** uses each line's own side: removed lines use the base, added and inline context lines use the head, split cells use their column, and old/new views use their selected side
     - recorded review comparisons preserve their tree identities and Files links; full context and commit blame are unavailable there
     - a click on a line number in a diff quotes that line, with its path, side and revision, for the new-work composer on the Sessions page; several lines queue up before you write and start the run
-- **Files page**: the files at one revision; a symlink shows its target; it reads the repository `agent6 web` was started in and writes nothing
+- **Files page**: the files at one revision; a symlink shows its target, a link when the revision lists it; it reads the repository `agent6 web` was started in and writes nothing
     - a markdown file opens rendered, with any raw HTML shown as its source; **Source** shows the text; **Show ignored** lists the files every exclude rule hides, badged `I`
     - the tree keeps the folders you open and opens the ones holding a linked file; ↑ and ↓ move through it, → and ← open and close a folder
 

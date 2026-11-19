@@ -433,3 +433,26 @@ def test_an_image_states_its_facts_once(
     expect(page.locator(".files-head .files-note")).to_have_text("69 B · 1\u00d71")
     expect(page.locator(".files-view figcaption")).to_have_count(0)
     assert not errors
+
+
+def test_a_symlink_links_its_target_when_the_revision_lists_it(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """A symlink's target was plain text, though the tree listed the file it names."""
+    from playwright.sync_api import expect
+
+    (tmp_path / "dir" / "guide.txt").symlink_to("../b.txt")
+    (tmp_path / "outside").symlink_to("../elsewhere.txt")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-m", "two symlinks")
+    base = f"http://127.0.0.1:{git_port}/#/files/HEAD/"
+    page, errors = open_page(git_port)
+    page.goto(base + "outside")
+    expect(page.locator(".files-text")).to_have_text("symlink to ../elsewhere.txt")
+    expect(page.locator(".files-text a")).to_have_count(0)
+    page.goto(base + "dir/guide.txt")
+    target = page.get_by_role("link", name="../b.txt", exact=True)
+    expect(target).to_have_attribute("href", "#/files/HEAD/b.txt")
+    target.click()
+    expect(page.locator(".files-head .gf-path")).to_have_text("b.txt")
+    assert not errors

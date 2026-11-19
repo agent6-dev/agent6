@@ -127,6 +127,16 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     if (file) await showFile(file, false, true);
   };
   filter.oninput = paintTree;
+  // The listed path a symlink names, or null: a target outside the repository or not listed.
+  const targetPath = (f) => {
+    if (f.target.startsWith('/')) return null;
+    const parts = [];
+    for (const part of (f.path.slice(0, f.path.lastIndexOf('/') + 1) + f.target).split('/')) {
+      if (part === '..') { if (!parts.pop()) return null; } else if (part && part !== '.') parts.push(part);
+    }
+    const path = parts.join('/');
+    return entries.some(e => e.path === path) ? path : null;
+  };
   // Open a file's folders, so its row shows in every later paint of the tree.
   const reveal = (path) => {
     const parts = path.split('/');
@@ -163,10 +173,14 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     // On a narrow screen the file covers the tree: a file opened from it takes the focus to Back.
     if (!linked && back.checkVisibility()) back.focus();
     const box = el('div', 'files-text'); pane.appendChild(box);
-    if (f.kind !== 'file') {
-      box.appendChild(el('div', 'muted gf-note', f.kind === 'symlink' ? 'symlink: ' + f.target : 'a submodule: its files are in another repository'));
+    if (f.kind === 'symlink') {
+      const symlink = el('div', 'muted gf-note', 'symlink to '), to = targetPath(f);
+      if (to === null) symlink.append(f.target);
+      else { const a = el('a', null, f.target); a.href = filesHash(to); symlink.appendChild(a); }
+      box.appendChild(symlink);
       return;
     }
+    if (f.kind !== 'file') { box.appendChild(el('div', 'muted gf-note', 'a submodule: its files are in another repository')); return; }
     if (isImagePath(f.path)) {
       // The head's note takes the image's size and dimensions, as it takes a text file's facts.
       const wrap = el('div', 'git-img one'), fig = el('figure', 'git-img-side');
