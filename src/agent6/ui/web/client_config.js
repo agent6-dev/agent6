@@ -375,7 +375,7 @@ function configCombobox(current, key, cls) {
       values = (await getJSON('/api/config/suggest/' + key)).values || [];
       message = values.length ? '' : 'Catalog empty or unavailable. You can type a model id.';
     } catch (e) {
-      message = 'Catalog unavailable: ' + e.message + '. You can type a model id.';
+      message = 'Catalog unavailable: ' + e.message.replace(/\.$/, '') + '. You can type a model id.';
     }
     if (element.isConnected) paint();
   };

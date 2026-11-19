@@ -874,3 +874,22 @@ def test_add_reviewers_fields_read_in_one_type(
     assert len(fonts) == 4
     assert fonts == [fonts[0]] * 4
     assert not errors
+
+
+def test_the_catalog_failure_line_ends_its_reason_with_one_period(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A reason that ended in a period read `resource.. You can type a model id.` (Firefox's)."""
+    from playwright.sync_api import expect
+
+    reason = "NetworkError when attempting to fetch resource."
+    page, errors = open_page(port)
+    page.route(
+        "**/api/config/suggest/**",
+        lambda route: route.fulfill(status=500, json={"error": reason}),
+    )
+    _config(page, port)
+    page.get_by_role("button", name="Add reviewer…").click()
+    status = page.get_by_role("dialog").get_by_role("listbox").get_by_role("status")
+    expect(status).to_have_text(f"Catalog unavailable: {reason} You can type a model id.")
+    assert not [error for error in errors if "500 (Internal Server Error)" not in error]
