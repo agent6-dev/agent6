@@ -316,6 +316,26 @@ def test_a_list_is_one_tab_stop_whose_arrows_move_between_its_rows(
     assert not errors
 
 
+def test_a_modifier_or_middle_click_on_a_row_opens_it_in_a_new_tab(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Ctrl+click on a row's sub line replaced the page, where one on its title opened a new tab."""
+    from playwright.sync_api import expect
+
+    _run(tmp_path, "alpha-AAAAAA", "Alpha task", STOP)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    sub = page.locator(".item .sub")
+    expect(sub).to_contain_text("alpha-AAAAAA")
+    for click in (lambda: sub.click(modifiers=["Control"]), lambda: sub.click(button="middle")):
+        with page.context.expect_page() as opened:
+            click()
+        opened.value.wait_for_url(f"http://127.0.0.1:{port}/#/session/alpha-AAAAAA")
+        opened.value.close()
+        expect(page).to_have_url(f"http://127.0.0.1:{port}/#/")
+    assert not errors
+
+
 def test_a_pressed_button_keeps_the_focus_through_the_repaint_it_starts(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

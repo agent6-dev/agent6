@@ -827,13 +827,18 @@ function listCard(title, empty, rows) {
   // text for copying. A key press on the title link opens it too (detail 0: no pointer moved).
   let down = [0, 0];
   list.onpointerdown = (e) => { down = [e.clientX, e.clientY]; };
-  list.onclick = (e) => {
+  list.onclick = list.onauxclick = (e) => {
     const it = e.target.closest('.item');
-    if (!it) return;
+    if (!it || e.button > 1) return;
     if (e.detail && Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) { e.preventDefault(); return; }
     if (e.target.closest('a, button, input, select, textarea, summary, label')) return;
     const link = it.querySelector('a.title');
-    if (link) location.hash = link.hash;
+    if (!link) return;
+    // A modifier or middle click opens it as on its link; Firefox follows only a primary click, so a middle one goes as Ctrl and Cmd.
+    const middle = e.button === 1;
+    if (middle || e.ctrlKey || e.metaKey || e.shiftKey) {
+      link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: e.ctrlKey || middle, metaKey: e.metaKey || middle, shiftKey: e.shiftKey }));
+    } else location.hash = link.hash;
   };
   // One Tab stop, the last focused row's title and buttons; ↑ ↓, Home and End move between titles, and Space opens a row as Enter does.
   let stopKey = null;
