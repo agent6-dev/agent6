@@ -32,6 +32,11 @@
 
 .plan { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 0; }
 
+/* A fan-out's children, one row each at the run card's text size, under muted column names. */
+.card-children table { border-collapse: collapse; font-size: 13px; }
+.card-children th, .card-children td { text-align: left; padding: 4px 24px 4px 0; border-bottom: 1px solid var(--border); }
+.card-children th { color: var(--muted); font-weight: 400; }
+
 /* conversation: the folded transcript, the same items (and semantic span
    styles) the CLI stream and the TUI conversation view render. */
 .conv { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
@@ -93,6 +98,11 @@
      flexes (without this the column shrinks them and clips the status kv) */
   .run-app > * { flex: none; }
   .run-app > .prompts { max-height: 40vh; overflow: auto; } /* a prompt pile can't push the composer off-screen */
+  /* The children stop at 30% of the view and scroll under their names: the conversation keeps its share. */
+  .run-app > .card-children { display: flex; flex-direction: column; max-height: 30vh; }
+  .run-app > .card-children > .card-body { min-height: 0; overflow: auto; }
+  /* A collapsed table's borders stay behind when a cell sticks; the shadow is the names' rule. */
+  .card-children th { position: sticky; top: 0; background: var(--bg); box-shadow: inset 0 -1px var(--border); }
   .run-app .run-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
   .run-app .drawer {
     /* block, not grid: a definite-height grid distributes its rows and

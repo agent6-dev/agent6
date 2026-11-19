@@ -421,19 +421,23 @@ function paintRun(cards, s) {
     if (children.length) {
       cards.children.previousSibling.textContent = `children: ${children.length}`;
       const outcomes = childOutcomes(s.dispatches || []);
-      const table = el('table');
-      const head = el('tr');
-      for (const label of ['id', 'model', 'status', 'usage', 'join']) head.appendChild(el('th', null, label));
-      table.appendChild(head);
-      for (const child of children) {
-        const row = el('tr');
-        const cell = el('td');
+      const rows = children.map(child => {
         const link = el('a', null, child.session_id);
         link.href = '#/session/' + encodeURIComponent(child.session_id);
-        cell.appendChild(link); row.appendChild(cell);
-        for (const key of ['model', 'status_label', 'usage']) row.appendChild(el('td', null, child[key]));
-        row.appendChild(el('td', null, outcomes[child.session_id] || ''));
-        table.appendChild(row);
+        return { id: link, model: child.model || '', status: pill(child.status_level, child.status_label),
+                 usage: child.usage || '', join: outcomes[child.session_id] || '' };
+      });
+      // A child's model is '' unless a flag set it, its usage '' at $0 and its join '' until the
+      // dispatch records one: a column shows only when some child has a value for it.
+      const columns = ['id', 'model', 'status', 'usage', 'join'].filter(key => rows.some(row => row[key]));
+      const table = el('table');
+      const head = el('tr');
+      for (const key of columns) head.appendChild(el('th', null, key));
+      table.appendChild(head);
+      for (const row of rows) {
+        const tr = el('tr');
+        for (const key of columns) tr.appendChild(el('td')).append(row[key]);
+        table.appendChild(tr);
       }
       cards.children.appendChild(table);
     }

@@ -280,3 +280,38 @@ def test_a_wrapped_event_log_row_hangs_under_its_event(
     assert lines > 1
     assert last == pytest.approx(event, abs=0.5)  # layout rounds to 1/64 px
     assert not errors
+
+
+def test_a_fan_outs_children_table_leaves_the_conversation_its_share(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Twenty children take at most 30% of the view, under left-aligned names, empty columns gone.
+
+    The browser-default table centred bold names over left-aligned cells, kept model, usage and
+    join columns no child filled, and grew until the conversation had no height left.
+    """
+    from playwright.sync_api import expect
+
+    stop = {"type": "session.stop", "verification": "passed", "reason": "finish_session"}
+    for number in range(21):
+        session = _session(tmp_path, f"fan-l{number}" if number else "fan", [stop])
+        manifest: dict[str, Any] = {"version": 3, "session_id": session.name, "mode": "run"}
+        if number:
+            manifest["parallel"] = {"group": "fan", "number": number, "parent": "fan"}
+        (session / "manifest.json").write_text(json.dumps(manifest))
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(f"http://127.0.0.1:{port}/#/session/fan")
+    card = page.locator(".card-children")
+    expect(card.locator("tr")).to_have_count(21)
+    expect(card.locator("th")).to_have_text(["id", "status"])
+    name = card.locator("th").first.evaluate(
+        "e => [getComputedStyle(e).textAlign, getComputedStyle(e).fontWeight]"
+    )
+    box = card.bounding_box()
+    conversation = page.locator(".card-conv .conv-box").bounding_box()
+    assert box and conversation
+    assert name == ["left", "400"]
+    assert box["height"] <= 900 * 0.3
+    assert conversation["height"] > 300
+    assert not errors
