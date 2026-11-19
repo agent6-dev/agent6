@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -299,4 +300,20 @@ def test_open_in_files_wears_the_mini_buttons_skin(
     link = tools.get_by_role("link", name="Open in Files", exact=True)
     button = tools.get_by_role("button", name="blame", exact=True)
     assert link.evaluate(SKIN) == button.evaluate(SKIN)
+    assert errors == [], errors
+
+
+def test_a_selected_merges_hollow_dot_takes_its_rows_colour(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """A merge's hollow dot kept the page colour: a dark disc on the selected row."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    row = page.locator(".gc-row").first  # the merge
+    row.click()
+    expect(row).to_have_class(re.compile(r"\bsel\b"))
+    fill = row.locator("circle.merge").evaluate("d => getComputedStyle(d).fill")
+    assert fill == row.evaluate("r => getComputedStyle(r).backgroundColor")
     assert errors == [], errors

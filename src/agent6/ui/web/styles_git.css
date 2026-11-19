@@ -36,9 +36,10 @@
 .gf-open:focus-visible::after { outline: 2px solid var(--accent); outline-offset: -2px; }
 .gf-acts > button { position: relative; }
 .git-counts { font-size: 12px; }
-.gc-row { display: flex; align-items: center; gap: 10px; height: 30px; padding-right: 12px; cursor: pointer; }
-@media (hover: hover) { .gc-row:hover { background: var(--surface2); } }
-.gc-row.sel { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
+/* --row-bg is the colour a row shows, which a hollow dot is filled with. */
+.gc-row { --row-bg: var(--bg); display: flex; align-items: center; gap: 10px; height: 30px; padding-right: 12px; cursor: pointer; background: var(--row-bg); }
+@media (hover: hover) { .gc-row:hover { --row-bg: var(--surface2); } }
+.gc-row.sel { --row-bg: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
 /* A graph loading for more than a moment dims; it reads busy (aria-busy) at once. */
 .git-graph[aria-busy=true] { opacity: .6; transition: opacity .2s .3s; }
 .gc-lanes { flex: none; display: block; margin-left: 6px; }
@@ -52,8 +53,8 @@
 .gc-lanes path.wt { stroke-dasharray: 3 2; }
 .gc-dot { fill: currentColor; stroke-width: 2; }
 .gc-lanes .gc-dot { fill: var(--text); }
-.gc-lanes .gc-dot.merge { fill: var(--bg); }
-.gc-lanes .gc-dot.wt { fill: var(--bg); stroke-dasharray: 2 2; }
+.gc-lanes .gc-dot.merge, .gc-lanes .gc-dot.wt { fill: var(--row-bg); }
+.gc-lanes .gc-dot.wt { stroke-dasharray: 2 2; }
 .gc-wt .gc-text { font-weight: 600; }
 .gc-subj { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
 .gc-author { flex: none; width: 110px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
