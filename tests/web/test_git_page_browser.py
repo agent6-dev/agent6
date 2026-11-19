@@ -287,6 +287,23 @@ def test_closing_a_phones_panel_returns_the_focus_to_the_graph(
     assert errors == [], errors
 
 
+def test_a_graph_that_fails_to_load_reads_as_an_error(open_page: OpenPage, git_port: int) -> None:
+    """A graph request that failed left 'no commits yet' and '0 commits', as an empty repository."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.locator(".gc-row").first.wait_for()
+    page.route(
+        "**/api/git/graph?*", lambda route: route.fulfill(status=500, json={"error": "it broke"})
+    )
+    page.get_by_role("button", name="refresh", exact=True).click()
+    expect(page.locator(".git-graph .err")).to_have_text("error: it broke")
+    expect(page.locator(".git-graph")).not_to_contain_text("no commits yet")
+    expect(page.locator(".git-bar .git-counts").first).to_have_text("5 of 7 refs")
+    assert [e for e in errors if "status of 500" not in e] == [], errors
+
+
 def test_refresh_fetch_and_load_more_wait_while_their_requests_run(
     open_page: OpenPage, git_port: int, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -465,7 +465,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   const {closeDiff, showDiff} = gitDiffViewer(body);
 
   // -- the graph -------------------------------------------------------------------
-  let commits = [], tips = null, hasMore = false, selected = null, loading = 0;
+  let commits = [], tips = null, hasMore = false, selected = null, loading = 0, loadError = '';
   const settle = rovingRows(graph, '.gc-row');
   // The selected row reads selected, and Tab enters the graph there.
   const markRow = (sha) => {
@@ -519,7 +519,8 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       actionable(row, () => showCommit(c.sha), named.map(r => r.name).concat(c.subject, c.author, c.when).join(', '));
       graph.appendChild(row);
     });
-    if (!commits.length) graph.appendChild(el('div', 'empty', selectedRefs().length || head.sha ? 'no commits yet' : 'no refs selected'));
+    if (loadError) graph.appendChild(el('div', 'empty err', 'error: ' + loadError));
+    else if (!commits.length) graph.appendChild(el('div', 'empty', selectedRefs().length || head.sha ? 'no commits yet' : 'no refs selected'));
     if (hasMore) {
       // The next page waits on a disabled button; the focus it held goes to the first row it adds.
       const more = el('button', 'git-more', 'Load more');
@@ -533,18 +534,19 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     }
     if (!markRow(selected)) settle(graph.querySelector('.gc-row'));
     const n = selectedRefs().length;
-    counts.textContent = commits.length + (hasMore ? '+' : '') + ' commits · ' + n + ' of ' + refs.length + ' refs';
+    counts.textContent = (loadError ? '' : commits.length + (hasMore ? '+' : '') + ' commits · ') + n + ' of ' + refs.length + ' refs';
   };
-  // While a page loads, the graph reads busy and, past a moment, dims.
+  // While a page loads, the graph reads busy and, past a moment, dims. A first page that fails
+  // reads as the error in the graph; a later one keeps the rows it has.
   const loadGraph = async (reset) => {
     const n = ++loading;
-    if (reset) { commits = []; tips = null; hasMore = false; }
+    if (reset) { commits = []; tips = null; hasMore = false; loadError = ''; }
     graph.setAttribute('aria-busy', 'true');
     try {
       const d = await getJSON(graphUrl(commits.length));
       if (n !== loading || !app.isConnected) return;
       commits = commits.concat(d.commits); tips = d.tips; hasMore = d.has_more;
-    } catch (e) { if (n === loading) toast(e.message, true); }
+    } catch (e) { if (n === loading) { toast(e.message, true); if (reset) loadError = e.message; } }
     if (n === loading) graph.setAttribute('aria-busy', 'false');
     paintGraph();
   };
