@@ -168,6 +168,32 @@ def test_truncated_markdown_keeps_the_source_note_until_opened_whole(
     assert not errors
 
 
+def test_a_heading_link_in_the_open_file_scrolls_in_place(
+    markdown_repo: tuple[int, str], open_page: Callable[[int], tuple[Page, list[str]]]
+) -> None:
+    """A link to a heading of the open file re-rendered the whole view and fetched it again."""
+    from playwright.sync_api import expect
+
+    port, sha = markdown_repo
+    page, errors = open_page(port)
+    reads: list[str] = []
+    page.on(
+        "request", lambda request: reads.append(request.url) if "/api/" in request.url else None
+    )
+    page.goto(f"http://127.0.0.1:{port}/#/files/HEAD/docs/guide%20%23%25.md")
+    expect(page.locator(".md-view h1")).to_have_text("Workspace guide")
+    page.wait_for_load_state("networkidle")
+    before = len(reads)
+    page.get_by_role("link", name="details", exact=True).click()
+    expect(page).to_have_url(
+        f"http://127.0.0.1:{port}/#/files/{sha}/docs/guide%20%23%25.md?anchor=details"
+    )
+    expect(page.locator(".md-view #details")).to_be_in_viewport()
+    assert reads[before:] == []
+    expect(page.get_by_role("textbox", name="revision")).to_have_value("HEAD")
+    assert not errors
+
+
 @pytest.mark.parametrize("width", [1280, 390])
 def test_table_cells_keep_whole_words(
     git_port: int,

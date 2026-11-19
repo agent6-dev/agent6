@@ -191,6 +191,18 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     };
     if (typeof t.rendered_html === 'string') {
       const md = el('div', 'md-view'); md.innerHTML = t.rendered_html; box.appendChild(md);
+      // A link to a heading of this file scrolls to it in place; the hash follows for copying.
+      md.addEventListener('click', (e) => {
+        const link = e.target.closest('a[href^="#/files/"]');
+        if (!link || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+        const [where, search = ''] = link.getAttribute('href').split('?');
+        const parts = where.split('/').slice(2).map(decodeURIComponent); // rev, then the path
+        if (parts[0] !== rev || parts.slice(1).join('/') !== f.path) return;
+        e.preventDefault();
+        const id = new URLSearchParams(search).get('anchor');
+        [...md.querySelectorAll('[id]')].find(h => h.id === id)?.scrollIntoView({ block: 'start' });
+        setViewHash(fileHash + (id ? '?' + new URLSearchParams({ anchor: id }) : ''), true);
+      });
       for (const image of md.querySelectorAll('img[data-blob-src]')) {
         blobImageData(image.dataset.blobSrc).then(data => {
           if (current()) image.src = data.url;
