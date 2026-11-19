@@ -845,6 +845,30 @@ function paintSession(r, depth, regroup) {
   });
 }
 
+// The OS-notification button names the permission the browser holds: on, blocked (only the
+// browser's site settings allow them again), or off until a click asks for it.
+function notificationsButton(cls) {
+  const b = el('button', cls);
+  const supported = 'Notification' in window;
+  const paint = () => {
+    const p = supported ? Notification.permission : '';
+    b.textContent = { granted: 'Notifications on', denied: 'Notifications blocked', default: 'Turn on notifications' }[p] || 'Notifications not supported';
+    b.title = p === 'denied' ? "allow notifications for this page in the browser's site settings" : '';
+    b.disabled = !supported;
+  };
+  // A page cannot turn notifications off, so a click while they are on says where to.
+  b.onclick = async () => {
+    await Notification.requestPermission();
+    paint();
+    // The state the label shows: headless Chromium resolves 'default' while this reads 'denied'.
+    const p = Notification.permission;
+    if (p === 'granted') toast("notifications are on: the browser's site settings turn them off");
+    else if (p === 'denied') toast("notifications are blocked: allow them for this page in the browser's site settings", true);
+  };
+  paint();
+  return b;
+}
+
 function sessionsCard() {
   // The page names itself in the top bar; the card is the list and its toolbar.
   let shown = [];
@@ -863,9 +887,7 @@ function sessionsCard() {
   // Maintenance, the actions the TUI's File menu holds, sits in one row above the list.
   const toolbar = el('div', 'toolbar');
   // OS notifications for a session that starts waiting or ends need a granted permission.
-  const bell = el('button', 'mini quiet', '🔔 Notifications');
-  bell.onclick = enableNotifications;
-  toolbar.appendChild(bell);
+  toolbar.appendChild(notificationsButton('mini quiet'));
   const action = (label, run) => { const b = el('button', 'mini quiet danger', label); runOnce(b, run); toolbar.appendChild(b); };
   // The CLI's --delete-squashed as its own entry: with the default squash
   // method every merged run's branch is unreachable, so a plain prune

@@ -774,3 +774,34 @@ def test_an_empty_list_says_how_to_start_where_a_rows_text_starts(
     expect(empty).to_have_text("no machines yet (describe one below to create it)")
     assert empty.evaluate(left) == page.locator(".card h2").first.evaluate(left)
     assert not errors
+
+
+def test_the_notifications_button_says_whether_they_are_on(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The bell read "🔔 Notifications" whether the browser had them on, blocked or never asked.
+
+    A click in either state says where its setting lives. Headless Chromium refuses
+    notifications, so a stub stands in for a browser that granted them.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    bell = page.locator(".toolbar").get_by_role("button", name="Notifications blocked")
+    expect(bell).to_have_attribute(
+        "title", "allow notifications for this page in the browser's site settings"
+    )
+    bell.click()
+    expect(page.locator(".toast.bad")).to_contain_text("notifications are blocked")
+    page, granted = open_page(port)
+    page.add_init_script(
+        "Object.defineProperty(Notification, 'permission', { get: () => 'granted' });"
+        " Notification.requestPermission = async () => 'granted';"
+    )
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.locator(".toolbar").get_by_role("button", name="Notifications on").click()
+    expect(page.locator(".toast")).to_contain_text(
+        "notifications are on: the browser's site settings turn them off"
+    )
+    assert not errors + granted
