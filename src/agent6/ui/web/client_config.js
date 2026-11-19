@@ -273,6 +273,7 @@ function configCombobox(current) {
   field.setAttribute('aria-autocomplete', 'list');
   field.setAttribute('aria-expanded', 'false');
   const list = el('div', 'cfg-options'); list.id = 'cfg-model-options'; list.hidden = true;
+  list.tabIndex = -1; // a scroller is a Tab stop, and this one hides when the field blurs
   list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', 'Model suggestions');
   field.setAttribute('aria-controls', list.id);
   element.appendChild(field); element.appendChild(list);
