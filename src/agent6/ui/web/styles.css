@@ -148,6 +148,9 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 .pill.error { --lvl: var(--err); }
 
 .list { display: flex; flex-direction: column; }
+/* A card's rows bleed into its padding by their own insets, so their text and buttons line up
+   with the headings, the toolbar and the composer. */
+.card > .list { margin-inline: -10px -8px; }
 /* A row: its text column beside its buttons, which wrap under the text as one piece when the
    column would get less than 320px (a phone, a nested child). */
 .item {
@@ -290,8 +293,9 @@ button.quiet.danger { color: var(--muted); }
 button.quiet.danger:hover { color: var(--err); border-color: transparent; background-color: color-mix(in srgb, var(--err) 10%, transparent); }
 /* The hub's failed first load: why, the retry cadence and a Retry button, centred. */
 .hub-error { display: grid; justify-items: center; gap: 12px; }
-/* The sessions card's maintenance actions, in one row above the list. */
-.toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+/* The sessions card's maintenance actions, in one row above the list; the first one's text
+   starts at the content edge. */
+.toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px calc(-1px - var(--ctl-px-sm)); }
 /* The keyboard list (openKeys): a heading per place, then each key's caps beside what it does. */
 .keys { border-collapse: collapse; width: 100%; font-size: 13px; }
 .keys th { padding: 12px 0 2px; text-align: start; }
@@ -453,7 +457,7 @@ aside.rail { display: none; }
 }
 @media (max-width: 780px) {
   /* A dock rides above the tab bar, and a page with one ends where the tab bar begins. */
-  .composer.dock { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding: 8px 12px; }
+  .composer.dock { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding: 8px 16px; }
   main:has(.composer.dock) { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); }
   /* Give the input the full row so a long placeholder ("describe a machine to
      create…") can't clip mid-word in the sliver left beside the button on a

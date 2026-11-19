@@ -354,3 +354,31 @@ def test_a_failed_first_load_offers_retry_and_recovers_on_its_own(
     expect(page.locator(".item")).to_contain_text("Alpha task", timeout=10000)
     errors[:] = [e for e in errors if "500" not in e]  # the failed loads the test answered
     assert not errors
+
+
+@pytest.mark.parametrize(("width", "height"), [(1280, 900), (390, 844)])
+def test_the_hubs_text_starts_at_one_left_edge(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    width: int,
+    height: int,
+) -> None:
+    """The toolbar's text, the rows' text and the composer started at three left edges."""
+    from playwright.sync_api import expect
+
+    _run(tmp_path, "alpha-AAAAAA", "Alpha task", STOP)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": height})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".item")).to_have_count(1)
+    left = """sel => {
+      const e = document.querySelector(sel), range = document.createRange();
+      const text = [...e.childNodes].find(n => n.nodeType === 3 && n.data.trim());
+      if (!text) return Math.round(e.getBoundingClientRect().left);
+      range.selectNodeContents(text);
+      return Math.round(range.getBoundingClientRect().left);
+    }"""
+    places = [".toolbar button", ".item a.title", ".dock .pick > span", ".dock textarea"]
+    assert len({page.evaluate(left, sel) for sel in places}) == 1
+    assert not errors
