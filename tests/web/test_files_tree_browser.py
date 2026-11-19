@@ -344,3 +344,22 @@ def test_the_empty_pane_says_how_to_open_a_file(
     page.get_by_role("button", name="Show tree", exact=True).click()
     expect(pane).to_have_text("click a file to read it")
     assert not errors
+
+
+def test_a_file_open_on_a_phone_keeps_the_focus_out_of_the_tree_under_it(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """On a phone the focus stayed on the tapped row under the file, and Tab walked the tree."""
+    page, errors = open_page(big_tree)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    page.locator(_row("b.txt")).click()
+    page.wait_for_selector(".files-view [data-line='1']")
+    assert page.evaluate("document.activeElement.classList.contains('files-back')")
+    covered = "!!document.activeElement.closest('.files-tree, .files-bar')"
+    for key in ("Shift+Tab", "Tab", "Tab", "Tab"):
+        page.keyboard.press(key)
+        assert not page.evaluate(covered), key
+    page.locator(".files-back").click()
+    assert page.evaluate("document.activeElement.dataset.path") == "b.txt"
+    assert not errors

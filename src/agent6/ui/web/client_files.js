@@ -137,13 +137,16 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     body.classList.add('viewing');
     pane.innerHTML = '';
     const head = el('div', 'files-head row');
-    const back = el('button', 'mini files-back', '‹ files'); back.onclick = () => body.classList.remove('viewing');
+    const back = el('button', 'mini files-back', '‹ files');
+    back.onclick = () => { body.classList.remove('viewing'); tree.querySelector('[aria-selected=true]')?.focus(); };
     head.appendChild(back);
     head.appendChild(el('span', 'gf-path', f.path));
     const facts = f.size === null ? [] : [f.kind === 'file' ? fmtBytes(f.size) : f.kind];
     const note = el('span', 'muted files-note', facts.join(' · '));
     head.appendChild(note);
     pane.appendChild(head);
+    // On a narrow screen the file covers the tree: a file opened from it takes the focus to Back.
+    if (!linked && back.checkVisibility()) back.focus();
     const box = el('div', 'files-text'); pane.appendChild(box);
     if (f.kind !== 'file') {
       box.appendChild(el('div', 'muted gf-note', f.kind === 'symlink' ? 'symlink: ' + f.target : 'a submodule: its files are in another repository'));

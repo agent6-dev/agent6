@@ -43,6 +43,7 @@ class Element {
   removeEventListener(name) { this['on' + name] = null; }
   getBoundingClientRect() { return {width: this.cls.has('files-body') ? 1000 : 360}; }
   scrollIntoView() { this.scrolled = true; }
+  checkVisibility() { return false; }
   querySelectorAll(selector) {
     const matches = n => selector.startsWith('.')
       ? selector.slice(1).split('.').every(c => n.cls.has(c))

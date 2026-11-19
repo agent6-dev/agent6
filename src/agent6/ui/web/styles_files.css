@@ -80,5 +80,7 @@
     display: flex; flex-direction: column; position: fixed; left: 0; right: 0; z-index: 16; background: var(--bg);
     top: calc(var(--hdr-h) + env(safe-area-inset-top)); bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
   }
+  /* The open file covers the bar and the tree, so they leave the focus order and the accessibility tree. */
+  .files-app:has(> .files-body.viewing) > .files-bar, .files-body.viewing > .files-tree { visibility: hidden; }
   .files-back { display: inline-block; }
 }
