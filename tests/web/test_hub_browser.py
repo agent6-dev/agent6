@@ -232,3 +232,32 @@ def test_space_opens_a_focused_row_as_enter_does(
     page.keyboard.press(" ")
     expect(page).to_have_url(f"http://127.0.0.1:{port}/#/session/alpha-AAAAAA")
     assert not errors
+
+
+def test_a_repeated_start_or_prune_sends_one_request(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Enter twice while a Start was in flight started two paid sessions; Prune sent twice too."""
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(port)
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    for url in ("**/api/new", "**/api/sessions/prune"):
+        page.route(url, hold)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    task = page.locator(".dock textarea")
+    task.fill("probe")
+    task.press("Enter")
+    task.press("Enter")
+    page.get_by_role("button", name="Prune merged runs", exact=True).dblclick()
+    page.wait_for_timeout(500)
+    assert [r.request.url.rsplit("/", 1)[1] for r in held] == ["new", "prune"]
+    for route in held:
+        route.fulfill(json={"ok": False, "error": "held"})
+    expect(page.locator(".toast")).to_have_count(2)
+    expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
+    assert not errors

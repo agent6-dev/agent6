@@ -437,6 +437,14 @@ function handToNewWork(fields) {
 }
 
 // --- hub ---------------------------------------------------------------------
+// A button whose action sends a request runs it once at a time: the button stays disabled until
+// the action settles, so a double click or a repeated Enter sends one request.
+function runOnce(button, action) {
+  button.onclick = async () => {
+    button.disabled = true;
+    try { await action(); } finally { button.disabled = false; }
+  };
+}
 // /parallel model-id autocomplete for the new-work composer. When the task text
 // starts with `/parallel ` and the caret sits before `--`, offer the known
 // model ids (GET /api/config/suggest/parallel.models, exactly the set
@@ -591,9 +599,10 @@ function newWorkDock(presets, presetDefault, sessions) {
   };
   mode.onchange = () => { followMode(); fillRoutes(); }; preset.onchange = fillRoutes; fillRoutes(); followMode();
   const go = el('button', 'primary', 'Start');
-  const start = async () => {
+  // The task stays as sent while the request is in flight: a session that starts takes its text.
+  runOnce(go, async () => {
     if (!task.value.trim() && !(seed.value && mode.value === 'run')) return;
-    go.disabled = true;
+    task.readOnly = true;
     try {
       const d = await postJSON('/api/new', {
         mode: mode.value, task: task.value, preset: preset.value, model: model.value,
@@ -602,16 +611,16 @@ function newWorkDock(presets, presetDefault, sessions) {
         max_usd: cap.value.trim() ? Number(cap.value) : null,
       });
       if (d.session_id) { forget('a6-draft-new'); location.hash = '#/session/' + encodeURIComponent(d.session_id); }
-    } catch (e) { toast(e.message, true); go.disabled = false; }
-  };
-  go.onclick = start;
+    } catch (e) { toast(e.message, true); }
+    task.readOnly = false;
+  });
   const ac = attachParallelSuggest(task, root);
   const commands = attachCommandSuggest(task, root, () => false, ['/parallel', '/review']);
   task.onkeydown = (e) => {
     if (composing(e)) return;
     if (commands.onKeyDown(e)) return;
     if (ac.onKeyDown(e)) return;   // the /parallel suggestion popup took the key
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go.click(); }
   };
   row.appendChild(task); row.appendChild(go);
   root.appendChild(pickerRow([['mode', mode], ['worktree', worktree], ['preset', preset], ['model', model]]));
@@ -628,13 +637,12 @@ function createMachineDock() {
   const row = el('div', 'row');
   const ct = el('textarea', 'field'); ct.placeholder = 'describe a machine to create…';
   const cbtn = el('button', 'primary', 'Create machine');
-  const create = async () => {
-    if (!ct.value.trim()) return; cbtn.disabled = true;
+  runOnce(cbtn, async () => {
+    if (!ct.value.trim()) return;
     try { const d = await postJSON('/api/machine/create', { task: ct.value }); ct.value=''; if (d.draft) location.hash = '#/draft/' + encodeURIComponent(d.draft); }
-    catch (e) { toast(e.message, true); cbtn.disabled = false; }
-  };
-  cbtn.onclick = create;
-  ct.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !composing(e)) { e.preventDefault(); create(); } };
+    catch (e) { toast(e.message, true); }
+  });
+  ct.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !composing(e)) { e.preventDefault(); cbtn.click(); } };
   row.appendChild(ct); row.appendChild(cbtn);
   root.appendChild(row);
   root.appendChild(el('div', 'hint', 'Enter creates a machine draft from the description · Shift+Enter newline'));
@@ -770,11 +778,10 @@ function paintSession(r, depth, regroup) {
       actions.appendChild(review);
       if (r.unmerged) {
         const merge = el('button', 'mini', 'Merge');
-        merge.onclick = async () => {
+        runOnce(merge, async () => {
           if (!await confirmMerge(r)) return;
-          merge.disabled = true;
-          if (!await postMerge(r)) merge.disabled = false;
-        };
+          await postMerge(r);
+        });
         actions.appendChild(merge);
       }
       it.appendChild(actions);
@@ -809,7 +816,7 @@ function sessionsCard() {
   const bell = el('button', 'mini quiet', '🔔 Notifications');
   bell.onclick = enableNotifications;
   toolbar.appendChild(bell);
-  const action = (label, run) => { const b = el('button', 'mini quiet danger', label); b.onclick = run; toolbar.appendChild(b); };
+  const action = (label, run) => { const b = el('button', 'mini quiet danger', label); runOnce(b, run); toolbar.appendChild(b); };
   // The CLI's --delete-squashed as its own entry: with the default squash
   // method every merged run's branch is unreachable, so a plain prune
   // reports them and deletes none.
@@ -851,13 +858,13 @@ function machineFilesCard() {
   const frow = el('div', 'form-row');
   const run = (mf) => {
     const b = el('button', null, '▶ ' + mf.name);
-    b.onclick = async () => {
+    runOnce(b, async () => {
       // A machine run spends against your provider from this one click, so
       // confirm the cost first (the deliberate-cost bar the composer's typed
       // Start and the stop dialog already hold).
       if (!confirm('Run ' + mf.name + '? It starts a paid machine run now and spends against your provider.')) return;
       try { await postJSON('/api/machine/run', { file: mf.path }); toast('started ' + mf.name); setTimeout(route, 800); } catch (e) { toast(e.message, true); }
-    };
+    });
     return b;
   };
   card.appendChild(frow);
