@@ -193,3 +193,27 @@ def test_line_numbers_quote_from_the_keyboard(
     assert task.startswith("long.txt:1 (head side, commit ") and "> value_1 = 1\n" in task
     assert page.locator(".git-diff .g[tabindex='0']").count() == 1
     assert not errors
+
+
+def test_old_and_new_modes_tint_changed_lines_by_side(
+    open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
+) -> None:
+    """Old and new marked their lines khaki while inline and split used red and green."""
+    port, base, head = long_file
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/git/compare/{base}..{head}?path=long.txt")
+    background = "e => getComputedStyle(e).backgroundColor"
+    tints: dict[str, str] = {}
+    for mode, selector in (
+        ("inline", ".dl.del"),
+        ("inline", ".dl.add"),
+        ("old", ".sl.changed"),
+        ("new", ".sl.changed"),
+    ):
+        page.evaluate(f"localStorage.setItem('a6-diff-mode', '{mode}')")
+        page.reload()
+        page.wait_for_selector(selector)
+        tints[mode + selector] = page.locator(selector).first.evaluate(background)
+    assert tints["old.sl.changed"] == tints["inline.dl.del"], tints
+    assert tints["new.sl.changed"] == tints["inline.dl.add"], tints
+    assert not errors
