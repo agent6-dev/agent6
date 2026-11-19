@@ -835,17 +835,33 @@ function listCard(title, empty, rows) {
     const link = it.querySelector('a.title');
     if (link) location.hash = link.hash;
   };
-  // Space on a row's title link opens it as Enter does, as a focused row does on every page.
+  // One Tab stop, the last focused row's title and buttons; ↑ ↓, Home and End move between titles, and Space opens a row as Enter does.
+  let stopKey = null;
+  const settle = () => {
+    const items = [...list.children].filter(n => n.matches('.item'));
+    const stop = items.find(n => n.rowKey === stopKey) || items[0];
+    for (const n of items) for (const c of n.querySelectorAll(FOCUSABLE)) c.tabIndex = n === stop ? 0 : -1;
+  };
   list.onkeydown = (e) => {
-    if (e.key === ' ' && e.target.matches('a.title')) { e.preventDefault(); e.target.click(); }
+    if (!e.target.matches('a.title')) return;
+    if (e.key === ' ') { e.preventDefault(); e.target.click(); return; }
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const titles = [...list.querySelectorAll('.item a.title')], at = titles.indexOf(e.target);
+    const to = { ArrowDown: titles[at + 1], ArrowUp: titles[at - 1], Home: titles[0], End: titles.at(-1) }[e.key];
+    if (to) { e.preventDefault(); to.focus(); }
   };
   // A row the keyboard reaches scrolls into view whole, clear of the dock (the row's
   // scroll-margin-bottom); the browser alone shows only the focused title link.
   list.addEventListener('focusin', (e) => {
-    if (!refocusing && e.target.matches(':focus-visible')) e.target.closest('.item')?.scrollIntoView({ block: 'nearest' });
+    const it = e.target.closest('.item');
+    if (it && it.rowKey !== stopKey) { stopKey = it.rowKey; settle(); }
+    if (!refocusing && e.target.matches(':focus-visible')) it?.scrollIntoView({ block: 'nearest' });
   });
-  card.show = (entries, hold) => patchRows(list, entries.length ? entries.flatMap(rows)
-    : [{ key: '', data: empty, paint: () => { const row = el('div', 'empty', empty); row.setAttribute('role', 'listitem'); return row; } }], hold);
+  card.show = (entries, hold) => {
+    patchRows(list, entries.length ? entries.flatMap(rows)
+      : [{ key: '', data: empty, paint: () => { const row = el('div', 'empty', empty); row.setAttribute('role', 'listitem'); return row; } }], hold);
+    settle();
+  };
   return card;
 }
 // One row: `paint(it, g)` fills the row and its text column.
@@ -1642,7 +1658,7 @@ const KEYS = [
   { label: 'Ctrl+Enter', where: "In a session's composer", does: 'send now, interrupting the call in flight (/now)' },
   { label: 'Ctrl+R', where: "In a session's composer", does: "search this session's past messages" },
   { label: '↑ ↓', where: 'In a list', does: 'move' },
-  { label: 'Home End', where: 'In a list', does: 'first, last' },
+  { label: 'Home End', where: 'In a list on the page', does: 'first, last' }, // a picker's field keeps them for its caret
   { label: 'Enter or Space', where: 'On a focused row', does: 'open it' },
 ];
 document.addEventListener('keydown', (e) => {

@@ -266,6 +266,56 @@ def test_a_list_and_its_rows_read_as_a_list(
     assert not errors
 
 
+def test_a_list_is_one_tab_stop_whose_arrows_move_between_its_rows(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """The Sessions list took none of the keys the keyboard list promises: ↑ ↓, Home and End.
+
+    Every row and each of its buttons was a Tab stop. The list is one Tab stop, the focused row's
+    title and buttons, through a refresh that repaints a row.
+    """
+    from playwright.sync_api import expect
+
+    for args in (
+        ("init", "-q", "-b", "master"),
+        ("config", "user.name", "t"),
+        ("config", "user.email", "t@example.invalid"),
+        ("commit", "-q", "--allow-empty", "-m", "base"),
+        ("branch", "agent6/review-BBBBBB"),
+    ):
+        subprocess.run(["git", "-C", str(tmp_path), *args], check=True)
+    _manifest(tmp_path, "review-BBBBBB", run_branch="agent6/review-BBBBBB")
+    _run(tmp_path, "review-BBBBBB", "Review me", STOP)
+    _run(tmp_path, "alpha-AAAAAA", "Alpha task", STOP)
+    gamma = _run(tmp_path, "gamma-CCCCCC", "Gamma task")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.get_by_role("list").get_by_role("listitem")).to_have_count(3)
+    titles = page.locator(".item a.title")
+    order = titles.all_text_contents()
+    titles.first.focus()
+    for key, at in (("ArrowDown", 1), ("End", 2), ("Home", 0), ("ArrowUp", 0)):
+        page.keyboard.press(key)
+        expect(titles.nth(at)).to_be_focused()
+    for _ in range(order.index("Review me")):
+        page.keyboard.press("ArrowDown")
+    buttons = page.locator(".item", has_text="Review me").get_by_role("button")
+    stop = ["Review me", *buttons.all_text_contents()]
+    stops = """() => [...document.querySelectorAll('.list a, .list button')]
+      .filter(c => c.tabIndex >= 0).map(c => c.textContent)"""
+    assert page.evaluate(stops) == stop
+    gamma.write_text(gamma.read_text() + json.dumps(STOP) + "\n", encoding="utf-8")
+    _refresh(page)
+    expect(page.locator(".item", has_text="gamma-CCCCCC")).to_contain_text("passed")
+    assert page.evaluate(stops) == stop
+    for at in range(buttons.count()):
+        page.keyboard.press("Tab")
+        expect(buttons.nth(at)).to_be_focused()
+    page.keyboard.press("Tab")
+    assert page.evaluate("!document.activeElement.closest('.list')")
+    assert not errors
+
+
 def test_a_pressed_button_keeps_the_focus_through_the_repaint_it_starts(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

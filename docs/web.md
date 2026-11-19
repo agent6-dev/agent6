@@ -72,10 +72,11 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
 
 - **Sessions page**: every session (mode, status, last activity, usage), newest activity first, a group's children folded under its row, each row carrying its [merge note](usage.md#a-rows-merge-note)
     - a run's row names its worktree and its branch while the branch exists; **Review** fills the composer with `/review <branch>`, and **Merge** lands the branch as `sessions merge` does when the run holds unmerged commits, after a confirm that names the unmerged runs that changed some of the same paths
+    - the list is one Tab stop: ↑ ↓, Home and End move between rows, and Tab reaches the focused row's buttons
     - the composer starts a run, plan or ask under a chosen preset and model (the model box shows what the config resolves; a pick overrides it); **worktree** starts the run in a new git worktree (`run --worktree`); **advanced** holds the plan to run from (`run --from`) and a spend cap (`--max-usd`)
     - on a phone the pickers fold behind one line that names the mode, the preset, the model and any run option set; a tap on it opens them
     - **Run this plan** on a plan's view opens this composer with the plan chosen; Enter on an empty task runs the plan as written
-- **State machines page**: instances, `machine create` drafts, and buttons that run an authored machine file; the composer creates a new one
+- **State machines page**: instances, `machine create` drafts, and buttons that run an authored machine file; the composer creates a new one; its lists take the same keys as the Sessions list
 - **Session view** (live over SSE): the conversation, the same folded transcript the CLI and TUI render, with the turn in flight streaming underneath; a detail toggle cycles collapsed, expanded, hidden, and a click on an item with more to show, or Enter on its first line, opens or closes it; the conversation is one Tab stop, and the arrow keys, Home and End move between those items
     - **Children**: every child the session dispatched (a `run --parallel` group's or a run's `/parallel` groups), each a link to its own view, with its status and, when some child has one, its model, usage and how it joined; the card follows children that appear while the run waits
     - the composer steers a live run or resumes an ended one under the preset and model picked above it (on a phone, behind one line that names them), and takes the [steer directives](usage.md#follow-and-steer-a-run); Ctrl+Enter sends a live steer as `/now`, Ctrl+R searches past messages

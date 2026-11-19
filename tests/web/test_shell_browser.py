@@ -635,6 +635,7 @@ def test_the_keyboard_list_puts_each_key_under_where_it_works(
     """Ctrl+R and Ctrl+Enter sat under "In the composer", and the list left out Home and End.
 
     On the Sessions page's composer Ctrl+R reloads the page and Ctrl+Enter starts the run.
+    Home and End then sat under "In a list", where a picker's field moves its caret on them.
     """
     from playwright.sync_api import expect
 
@@ -650,7 +651,8 @@ def test_the_keyboard_list_puts_each_key_under_where_it_works(
     keys = dict(groups)
     assert keys["In the composer"] == ["Enter", "Shift+Enter", "/"]
     assert keys["In a session's composer"] == ["Ctrl+Enter", "Ctrl+R"]
-    assert keys["In a list"] == ["↑ ↓", "Home End"]
+    assert keys["In a list"] == ["↑ ↓"]
+    assert keys["In a list on the page"] == ["Home End"]
     assert not errors
 
 
