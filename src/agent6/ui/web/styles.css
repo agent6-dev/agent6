@@ -113,18 +113,6 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
    section padding. */
 .page-pad { margin: 0 16px; }
 .page-pad.row { margin-top: 12px; }
-/* align-items:start: columns keep their natural heights (the left new-work +
-   machines stack was stretching to match the runs column, leaving dead space
-   inside its cards). */
-@media (min-width: 900px) {
-  .grid.cols2 { grid-template-columns: 1fr 1fr; align-items: start; }
-  .grid.cols2 > * { border-top: 0; }
-  .grid.cols2 > :nth-child(2n) { border-left: 1px solid var(--border); }
-  .grid.cols2 > :nth-child(n+3) { border-top: 1px solid var(--border); }
-  /* A full-width row inside a cols2 grid (the machine view's conversation:
-     half-width leaves an empty cell beside it). */
-  .grid.cols2 > .span2 { grid-column: 1 / -1; }
-}
 
 .card { padding: 14px 16px; overflow: hidden; }
 /* A card's or panel's heading, and a group's in the keyboard list, is a label: small muted capitals,
@@ -332,20 +320,15 @@ kbd {
 }
 .toast.bad { border-color: var(--err); color: var(--err); }
 .toast.warn { border-color: var(--warn); }
-/* The machine view's banners stack under the header, each 12px below what is above it. */
+/* The Config page's note under its bar, on where saves go: a tinted line 12px below the bar. */
 .notif-banner { display: flex; align-items: flex-start; gap: 10px; background: var(--surface2); border-left: 3px solid var(--accent); padding: 10px 12px; margin-top: 12px; }
-.notif-banner.warn { border-color: var(--warn); }
-.notif-banner.error { border-color: var(--err); }
 .notif-banner .grow { flex: 1; min-width: 0; }
 .notif-banner .nb-msg { word-break: break-word; }
-.notif-banner .nb-sub { font-size: 12px; color: var(--muted); }
-/* A close button (closeButton; a banner's × too): a quiet square with its glyph centred and a hover
-   tint that shows on any surface. In a message it hangs over the first line, so the message is no
-   taller for it. */
-button.x-btn, .notif-banner .nb-x { display: grid; place-items: center; flex: none; padding: 0; }
-.notif-banner .nb-x { background: transparent; border-color: transparent; color: var(--muted); }
-button.x-btn:hover, .notif-banner .nb-x:hover { background-color: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
-.toast .x-btn, .notif-banner .x-btn, .notif-banner .nb-x { line-height: inherit; margin-block: calc((1lh - var(--ctl-h)) / 2); }
+/* A close button (closeButton): a quiet square with its glyph centred and a hover tint that shows
+   on any surface. In a message it hangs over the first line, so the message is no taller for it. */
+button.x-btn { display: grid; place-items: center; flex: none; padding: 0; }
+button.x-btn:hover { background-color: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
+.toast .x-btn { line-height: inherit; margin-block: calc((1lh - var(--ctl-h)) / 2); }
 
 /* A dialog (openDialog) floats over the dimmed page in one of two widths: a form, or a list or
    text to read. A wheel or a swipe over it or its backdrop never scrolls the page behind:
