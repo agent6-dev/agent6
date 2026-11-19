@@ -752,3 +752,31 @@ def test_a_config_editor_shows_its_value_in_the_tables_type(
         dialog.wait_for(state="detached")
     assert fonts == dict.fromkeys(fonts, table)
     assert not errors
+
+
+def test_only_the_arrow_keys_model_suggestion_reads_as_active(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The option under the pointer wore the active option's accent, so two read as chosen."""
+    _global_config(
+        '[providers.a]\nbackend = "openai"\nbase_url = "http://localhost:1"\n'
+        '[models.worker]\nmodel = "a/old"\n'
+    )
+    page, errors = open_page(port)
+    values = [f"a/model-{n}" for n in range(6)]
+    page.route("**/api/config/suggest/**", lambda route: route.fulfill(json={"values": values}))
+    _config(page, port)
+    page.locator('[data-key="models.worker.model"]').click()
+    dialog = page.get_by_role("dialog")
+    field = dialog.get_by_role("combobox")
+    field.fill("")
+    field.press("ArrowDown")
+    field.press("ArrowDown")
+    options = dialog.get_by_role("option")
+    options.nth(4).hover()
+    colors = options.evaluate_all("os => os.map(o => getComputedStyle(o).color)")
+    accent = options.nth(1).evaluate(STYLE, "color")
+    assert [n for n, color in enumerate(colors) if color == accent] == [1]
+    lit = options.evaluate_all("os => os.map(o => getComputedStyle(o).backgroundColor)")
+    assert lit[4] == lit[1] != lit[0]
+    assert not errors

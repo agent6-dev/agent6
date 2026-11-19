@@ -88,8 +88,12 @@ textarea.field.cfg-value {
 }
 .cfg-option, .cfg-catalog { padding: 6px 10px; overflow-wrap: anywhere; }
 .cfg-option { cursor: pointer; font-family: var(--mono); font-size: 13px; }
-.cfg-option:hover, .cfg-option[aria-selected=true] { background: var(--surface); color: var(--accent); }
-.cfg-option[aria-selected=true] { outline: 1px solid var(--accent); outline-offset: -1px; }
+/* The pointer lights an option; the option the arrow keys moved to, which Enter picks, also takes
+   the accent and an outline. */
+.cfg-option:hover, .cfg-option[aria-selected=true] { background: var(--surface); }
+.cfg-option[aria-selected=true] {
+  color: var(--accent); outline: 1px solid var(--accent); outline-offset: -1px;
+}
 /* The config editor's description: a readable measure, code spans as code. */
 .cfg-desc { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0 0 12px; max-width: 62ch; }
 .cfg-desc code {
