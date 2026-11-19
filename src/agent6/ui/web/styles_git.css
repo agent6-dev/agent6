@@ -81,6 +81,8 @@
 .git-side-head { position: sticky; top: 0; z-index: 2; gap: 8px; padding: 10px 16px 8px; background: var(--bg); border-bottom: 1px solid var(--border); }
 .git-side { scroll-padding-top: calc(19px + max(20px, var(--ctl-h-sm))); }
 .git-side-head h3 { margin: 0; font-size: 12px; font-weight: 600; line-height: 20px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+/* The heading takes the focus a new panel replaces or covers; its ring sits outside it. */
+.git-side-head h3:focus-visible { outline-offset: 2px; border-radius: var(--r-sm); }
 .git-back { display: none; }
 .gd-subject { font-weight: 600; margin: 8px 0; overflow-wrap: anywhere; }
 .gd-meta { margin: 6px 0 10px; align-items: baseline; }

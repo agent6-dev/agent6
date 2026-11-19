@@ -405,6 +405,68 @@ def test_create_from_the_keyboard_hands_its_focus_to_the_name_field(
     assert errors == [], errors
 
 
+def test_a_write_from_the_keyboard_keeps_the_focus_on_the_page(
+    open_page: OpenPage, dirty_git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """Switch, Stage and Commit staged pressed from the keyboard dropped the focus to the page.
+
+    Switch disabled itself once its branch was checked out; a write repainted the working-tree
+    panel and the button that held the focus with it.
+    """
+    from playwright.sync_api import expect
+
+    _git(tmp_path, "branch", "twin")  # at HEAD, so the uncommitted files move with the switch
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/worktree")
+    side = page.locator(".git-side")
+    side.locator(".gf").first.wait_for()
+    branches = page.locator(".git-branch select").first
+    branches.select_option("twin")
+    page.get_by_role("button", name="Switch", exact=True).focus()
+    page.keyboard.press("Enter")
+    expect(page.locator("#toasts")).to_contain_text("on branch twin")
+    expect(page.get_by_role("button", name="Switch", exact=True)).to_be_disabled()
+    expect(branches).to_be_focused()
+    row = side.locator(".gf[data-path='new.txt']")
+    row.get_by_role("button", name="Stage", exact=True).focus()
+    page.keyboard.press("Enter")
+    expect(row.get_by_role("button", name="Unstage", exact=True)).to_be_visible()
+    expect(row.locator(".gf-open")).to_be_focused()
+    side.locator(".git-commit textarea").fill("add new.txt")
+    side.get_by_role("button", name="Commit staged", exact=True).focus()
+    page.keyboard.press("Enter")
+    expect(side.locator(".gf[data-path='new.txt']")).to_have_count(0)
+    expect(side.get_by_role("heading", name="Working tree")).to_be_focused()
+    assert errors == [], errors
+
+
+def test_a_new_side_panel_takes_the_focus_it_replaces_or_covers(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """On a phone, a row opened from the keyboard left the focus on the graph under the panel.
+
+    A parent sha opened from the keyboard rebuilt the panel and dropped the focus to the page.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    side, heading = page.locator(".git-side"), page.get_by_role("heading", name="Commit")
+    page.locator(".gc-row", has_text="root commit").focus()
+    page.keyboard.press("Enter")
+    expect(heading).to_be_focused()
+    expect(side.locator(".gd-subject")).to_contain_text("root commit")
+    expect(heading).to_be_focused()  # the head stays while the commit loads
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.locator(".gc-row", has_text="merge feature").click()
+    side.locator(".gd-meta button.mini").first.focus()  # the first parent
+    page.keyboard.press("Enter")
+    expect(side.locator(".gd-subject")).to_contain_text("main: drop d.txt")
+    expect(heading).to_be_focused()
+    assert errors == [], errors
+
+
 def test_the_compare_pickers_reached_option_stays_in_view_and_is_named(
     open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
 ) -> None:

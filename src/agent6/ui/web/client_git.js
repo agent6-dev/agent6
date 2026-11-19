@@ -597,7 +597,12 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   pullBtn.onclick = () => { const n = pullNumber(); pullNum.value = ''; gitFetch(n); };
   pullNum.oninput = gatePull;
   pullNum.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); pullBtn.click(); } };
-  switchBtn.onclick = () => gitWrite('switch', { name: branchSel.value });
+  // Switch disables itself once its branch is checked out; the focus it held goes to the branch list.
+  switchBtn.onclick = async () => {
+    const had = document.activeElement === switchBtn;
+    await gitWrite('switch', { name: branchSel.value });
+    if (had && document.activeElement === document.body) branchSel.focus();
+  };
   // The focus moves to the name field before Create disables itself to wait for the next name.
   createBtn.onclick = () => { const name = newName.value.trim(); newName.value = ''; newName.focus(); gateCreate(); gitWrite('branch', { name }); };
   newName.oninput = gateCreate;
@@ -616,17 +621,34 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       side.classList.remove('open');
       if (had) graph.querySelector('.gc-row[tabindex="0"]')?.focus();
     };
-    h.appendChild(back); h.appendChild(el('h3', null, title));
+    const heading = el('h3', null, title); heading.tabIndex = -1;
+    h.appendChild(back); h.appendChild(heading);
     return h;
   };
   const openSide = () => side.classList.add('open');
+  // The focused control when the side panel holds it, else null.
+  const focusInSide = () => { const a = document.activeElement; return a && side.contains(a) ? a : null; };
+  // A panel painted over one that held the focus, or a phone's panel opening over the focused
+  // control, takes the focus. Call keepFocus() before painting, then what it returns, given the
+  // control to focus; without one, or when it is disabled, the heading takes it.
+  const keepFocus = () => {
+    const held = !!focusInSide();
+    return (to) => {
+      const a = document.activeElement;
+      const covered = a && a !== document.body && !side.contains(a) && getComputedStyle(side).position === 'fixed';
+      if (held || covered) (to && !to.disabled ? to : side.querySelector('.git-side-head h3')).focus();
+    };
+  };
   const setCompare = (which, v) => { query = new URLSearchParams(); gitState.compare[which] = v; showCompare(); };
-  // The working tree's panel: no message; HEAD is the base every file diffs against.
+  // The working tree's panel: no message; HEAD is the base every file diffs against. A write
+  // repaints it, and the focus goes to the row of the file the write acted on.
   const showWorktree = () => {
     closeDiff();
     selected = GIT_WORKTREE;
     setViewHash('#/git/worktree');
     markRow(GIT_WORKTREE);
+    const path = focusInSide()?.closest('.gf')?.dataset.path;
+    const refocus = keepFocus();
     side.innerHTML = '';
     side.appendChild(sideHead('Working tree'));
     const pad = el('div', 'gd page-pad'); side.appendChild(pad);
@@ -675,6 +697,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     };
     pad.appendChild(fileList(wt.files, wt.truncated, (i) => showDiff({ base: wt.base, head: GIT_WORKTREE, files: wt.files }, i), fileActions));
     openSide();
+    refocus([...pad.querySelectorAll('.gf')].find(r => r.dataset.path === path)?.querySelector('.gf-open'));
   };
   const showCommit = async (sha, selection = new URLSearchParams()) => {
     closeDiff();
@@ -683,17 +706,20 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     const suffix = selection.size ? '?' + selection : '';
     setViewHash('#/git/commit/' + encodeURIComponent(sha) + suffix);
     markRow(sha);
-    side.innerHTML = ''; side.appendChild(sideHead('Commit')); side.appendChild(el('div', 'muted page-pad', 'loading…'));
+    // The head stays while the commit loads, so the focus its heading takes stays too.
+    const refocus = keepFocus();
+    side.innerHTML = ''; side.appendChild(sideHead('Commit'));
+    const wait = el('div', 'muted page-pad', 'loading…'); side.appendChild(wait);
     openSide();
+    refocus();
     let c;
     try { c = await getJSON('/api/git/commit/' + encodeURIComponent(sha)); }
-    catch (e) { if (selected === sha && app.isConnected && gen === routeGen) { side.innerHTML = ''; side.appendChild(sideHead('Commit')); side.appendChild(el('div', 'err page-pad', e.message)); } return; }
-    if (selected !== sha || !app.isConnected || gen !== routeGen) return;
+    catch (e) { if (selected === sha && wait.isConnected && gen === routeGen) { wait.remove(); side.appendChild(el('div', 'err page-pad', e.message)); } return; }
+    if (selected !== sha || !wait.isConnected || gen !== routeGen) return;
     selected = c.sha;
     setViewHash('#/git/commit/' + encodeURIComponent(c.sha) + suffix, true);
     markRow(c.sha)?.scrollIntoView({ block: 'nearest' });
-    side.innerHTML = '';
-    side.appendChild(sideHead('Commit'));
+    wait.remove();
     const pad = el('div', 'gd page-pad'); side.appendChild(pad);
     const title = el('div', 'gd-subject');
     for (const r of orderedRefs(c.refs)) title.appendChild(refBadge(r));
@@ -740,6 +766,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     closeDiff();
     selected = null;
     markRow(null);
+    const refocus = keepFocus();
     side.innerHTML = '';
     side.appendChild(sideHead('Compare'));
     const pad = el('div', 'gcmp page-pad'); side.appendChild(pad);
@@ -788,6 +815,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     pad.appendChild(el('div', 'hint', 'the files that differ between the two revisions, as git diff base head lists them'));
     pad.appendChild(result);
     openSide();
+    refocus();
     return run();
   };
   compareBtn.onclick = showCompare;
