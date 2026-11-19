@@ -94,6 +94,8 @@
 /* Prompt boxes stand 10px under the top bar, 10px apart and 10px over the action bar. */
 .run-app > .prompts:not(:empty) { padding-top: 10px; }
 .run-app > .actions { margin-block: 10px; }
+/* Delete stands apart at the bar's far end. */
+.run-app > .actions > .delete-btn { margin-inline-start: auto; }
 .prompt-box { background: var(--surface2); border-left: 3px solid var(--warn); padding: 12px; }
 .prompt-box + .prompt-box { margin-top: 10px; }
 .prompt-box .q { margin-bottom: 8px; white-space: pre-wrap; }

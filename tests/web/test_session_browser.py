@@ -100,6 +100,47 @@ def test_prompts_stand_under_the_top_bar_and_the_action_bar_clips_nothing(
 
 
 @pytest.mark.parametrize("width", [1280, 390])
+@pytest.mark.parametrize("live", [True, False])
+def test_an_ended_runs_bar_offers_only_what_it_can_do_and_ends_in_delete(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    live: bool,
+    width: int,
+) -> None:
+    """An ended run's bar has no Stop now, Stop after turn or Compact context; Delete ends the bar.
+
+    The three sat disabled on every ended run, and Delete stood between Merge and the free space.
+    """
+    from playwright.sync_api import expect
+
+    stop = {"type": "session.stop", "reason": "finish_session"}
+    session_logs.write_run(tmp_path, "bar-AAA111", [] if live else [stop], live=live)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/bar-AAA111")
+    bar = page.locator(".run-app .actions")
+    delete = bar.get_by_role("button", name="Delete", exact=True)
+    live_controls = [
+        bar.get_by_role("button", name=name, include_hidden=True)
+        for name in ("Stop now", "Stop after turn", "Compact context")
+    ]
+    if live:
+        expect(delete).to_be_disabled()
+        for button in live_controls:
+            expect(button).to_be_visible()
+            expect(button).to_be_enabled()
+    else:
+        expect(delete).to_be_enabled()
+        for button in live_controls:
+            expect(button).to_be_hidden()
+    end, room = delete.bounding_box(), bar.bounding_box()
+    assert end is not None and room is not None
+    assert end["x"] + end["width"] == pytest.approx(room["x"] + room["width"], abs=0.5)
+    assert not errors
+
+
+@pytest.mark.parametrize("width", [1280, 390])
 def test_a_question_box_spaces_its_questions_and_wraps_a_narrow_field(
     open_page: Callable[[int], tuple[Page, list[str]]],
     port: int,

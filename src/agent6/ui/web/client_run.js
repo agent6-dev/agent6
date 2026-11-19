@@ -64,7 +64,7 @@ async function renderRun(id, opts, gen) {
       await postMerge(r); // routes again, so the state and branch rows agree with the toast
     };
     cards._merge_btn = mergeBtn; // paintRun gates it on the run actually having a branch
-    const rmBtn = el('button', 'danger', 'Delete');
+    const rmBtn = el('button', 'danger delete-btn', 'Delete');
     rmBtn.onclick = async () => {
       // History only, and not undoable, so it asks. The CLI refuses a live run.
       // The branch is named only while it exists (the snapshot's run_branch); a fork's
@@ -116,7 +116,7 @@ async function renderRun(id, opts, gen) {
     };
     cards._review_btn = reviewBtn; // paintRun gates it: the CLI refuses a live run's review
     for (const b of [stopBtn, turnBtn, compactBtn, planBtn, forkBtn, reviewBtn, mergeBtn, rmBtn]) actions.appendChild(b);
-    cards._live_btns = [stopBtn, turnBtn, compactBtn]; // paintRun disables these once finished
+    cards._stop_btn = stopBtn; cards._turn_btn = turnBtn; // paintRun shows these only while the run is live
     cards._rm_btn = rmBtn; // paintRun gates it the other way: the server refuses a live run
     cards._plan_btn = planBtn;
   }
@@ -459,9 +459,13 @@ function paintRun(cards, s) {
   // view's: the server refuses the POST, so live-looking Allow/Deny beside
   // a "stale" header could only manufacture a red toast.
   const isDead = notLive(s);
-  for (const action of ['compact', 'fork', 'merge', 'review']) {
-    const button = cards['_' + action + '_btn'];
-    if (button) button.hidden = s.session_actions?.[action] === false;
+  // An ended run hides its live controls; a reviewer's record offers no compact, fork, merge or review.
+  const offered = (action) => s.session_actions?.[action] !== false;
+  const shown = { stop: !isDead, turn: !isDead, compact: !isDead && offered('compact'),
+                  fork: offered('fork'), merge: offered('merge'), review: offered('review') };
+  for (const name in shown) {
+    const button = cards['_' + name + '_btn'];
+    if (button) button.hidden = !shown[name];
   }
   const gitRefusal = s.git_control === 'model' ? 'the model owns git in this run: no agent6 commit chain' : '';
   if (cards._fork_btn) {
@@ -470,7 +474,6 @@ function paintRun(cards, s) {
   }
   // A dead run's approvals are gone with its execution; its questions stay answerable.
   if (!cards._readOnly) paintPrompts(cards, isDead ? { questions: s.questions, finished: true } : s);
-  if (cards._live_btns) for (const b of cards._live_btns) b.disabled = isDead;
   if (cards._rm_btn) {
     cards._rm_btn.disabled = !isDead;
     cards._rm_btn.title = isDead ? "delete this session's history" : 'the session is still live; stop or let it finish first';
