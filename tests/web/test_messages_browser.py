@@ -400,7 +400,9 @@ def test_a_timed_message_waits_while_the_pointer_rests_on_it(
     page, errors = open_page(port)
     page.clock.install()
     page.goto(f"http://127.0.0.1:{port}/#/")
-    page.locator(".dock textarea").wait_for()
+    # The dock settles first: a message the column moves from under the pointer starts to fade.
+    expect(page.locator(".dock select:disabled")).to_have_count(0)
+    page.wait_for_timeout(300)
     page.evaluate("toast('steer sent')")
     timed = page.locator("#toasts .toast")
     timed.hover()
