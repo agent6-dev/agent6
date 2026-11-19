@@ -33,6 +33,8 @@
 .gc-lanes .l2 { stroke: var(--warn); } .gc-lanes .l3 { stroke: var(--err); }
 .gc-lanes .l4 { stroke: var(--accent2); } .gc-lanes .l5 { stroke: var(--hl-operator); }
 .gc-lanes .l6 { stroke: var(--hl-constant); } .gc-lanes .l7 { stroke: var(--hl-string); }
+/* A dash period that divides the row height, so the working tree's line runs on unbroken. */
+.gc-lanes path.wt { stroke-dasharray: 3 2; }
 .gc-dot { fill: currentColor; stroke-width: 2; }
 .gc-lanes .gc-dot { fill: var(--text); }
 .gc-lanes .gc-dot.merge { fill: var(--bg); }

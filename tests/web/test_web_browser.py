@@ -935,6 +935,20 @@ def test_the_working_tree_row_opens_its_uncommitted_files(
     assert errors == [], errors
 
 
+def test_the_working_tree_row_joins_head_with_a_dashed_line(
+    open_page: Callable[[int], tuple[Page, list[str]]], dirty_git_port: int
+) -> None:
+    """A dashed line leaves the working tree's dot and enters HEAD's; the row floated, unjoined."""
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git")
+    page.wait_for_selector(".gc-wt")
+    head = page.locator(".gc-row:not(.gc-wt)").first  # HEAD is the newest commit here
+    assert head.locator("circle").get_attribute("r") == "5"
+    assert page.locator(".gc-wt path.wt").count() == 1
+    assert head.locator("path.wt").count() == 1
+    assert errors == [], errors
+
+
 def test_the_working_tree_rows_keep_one_slot_per_verb(
     open_page: Callable[[int], tuple[Page, list[str]]], dirty_git_port: int
 ) -> None:

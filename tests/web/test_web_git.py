@@ -946,8 +946,9 @@ def test_the_page_has_a_git_tab_in_both_navs() -> None:
 
 
 def _client(*functions: str) -> str:
-    """Return the source of the named top-level functions of the page's script."""
-    parts = []
+    """Return the page script's `GIT_WORKTREE` and the source of its named top-level functions."""
+    start = page.CLIENT_JS.index("const GIT_WORKTREE = ")
+    parts = [page.CLIENT_JS[start : page.CLIENT_JS.index("\n", start) + 1]]
     for name in functions:
         start = page.CLIENT_JS.index(f"function {name}(")
         parts.append(page.CLIENT_JS[start : page.CLIENT_JS.index("\n}\n", start) + 3])
@@ -981,6 +982,32 @@ def test_a_first_parent_keeps_its_lane_past_a_side_branchs_fork() -> None:
         + ".map(r => [r.lane, r.joins])));"
     )
     assert rows == [[0, []], [1, []], [0, []], [0, [1]], [0, []]]
+
+
+def test_the_working_tree_runs_a_lane_of_its_own_down_to_head() -> None:
+    """The working tree lays out as HEAD's child, its line in a slot no other edge shares.
+
+    The working-tree row sat in lane 0 with no line, above whatever commit was newest.
+    """
+    history = [
+        {"sha": "WORKTREE", "parents": ["h"]},
+        {"sha": "m", "parents": ["n", "h"]},
+        {"sha": "n", "parents": ["h"]},
+        {"sha": "h", "parents": ["r"]},
+        {"sha": "r", "parents": []},
+    ]
+    rows = _node(
+        _client("gitLayout")
+        + f"console.log(JSON.stringify(gitLayout({json.dumps(history)})"
+        + ".map(r => [r.lane, r.joins, r.merges, r.wt])));"
+    )
+    assert rows == [
+        [0, [], [], -1],
+        [1, [], [2], 0],
+        [1, [], [], 0],
+        [0, [1, 2], [], 0],
+        [0, [], [], -1],
+    ]
 
 
 def test_text_and_blame_share_the_digest_of_the_bytes_read(

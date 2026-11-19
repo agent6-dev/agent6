@@ -24,31 +24,37 @@ const gitState = {
 // wait for the same one. A commit takes the lowest slot waiting for it (or a free one when
 // none was) and hands it on to its first parent, so a branch keeps its lane down to its
 // root; every other slot waiting for the commit curves into its dot. Each further parent
-// gets the slot waiting for it, or a new one.
+// gets the slot waiting for it, or a new one. The working tree lays out as a commit whose
+// parent is HEAD; its line down to HEAD keeps a slot of its own, `wt` on each row it enters.
 function gitLayout(commits) {
   const slots = [];
   const rows = [];
+  let wt = -1;
   const free = () => { let i = slots.indexOf(null); if (i < 0) { slots.push(null); i = slots.length - 1; } return i; };
   for (const c of commits) {
-    const before = slots.slice();
+    const before = slots.slice(), wtAbove = wt;
     let lane = slots.indexOf(c.sha);
     if (lane < 0) lane = free();
     const joins = [];
     for (let i = lane + 1; i < slots.length; i++) if (slots[i] === c.sha) { joins.push(i); slots[i] = null; }
+    if (lane === wt || joins.includes(wt)) wt = -1;
     slots[lane] = c.parents[0] || null;
+    if (c.sha === GIT_WORKTREE && c.parents.length) wt = lane;
     const merges = [];
     for (const p of c.parents.slice(1)) {
-      let k = slots.indexOf(p);
+      let k = slots.findIndex((s, i) => s === p && i !== wt);
       if (k < 0) { k = free(); slots[k] = p; }
       merges.push(k);
     }
     while (slots.length && slots[slots.length - 1] === null) slots.pop();
-    rows.push({ lane, before, after: slots.slice(), joins, merges });
+    rows.push({ lane, before, after: slots.slice(), joins, merges, wt: wtAbove });
   }
   return rows;
 }
 
-function gitLanesSvg(lay, cols, isMerge, isHead) {
+// One row's lanes and its dot: `dot` is '', 'merge' (hollow) or 'wt' (the working tree,
+// dashed), and HEAD's is larger. The working tree's line down to HEAD is dashed.
+function gitLanesSvg(lay, cols, dot, isHead) {
   const NS = 'http://www.w3.org/2000/svg';
   const W = GIT_LANE_W, H = GIT_ROW_H, mid = H / 2;
   const x = i => W / 2 + i * W;
@@ -56,36 +62,24 @@ function gitLanesSvg(lay, cols, isMerge, isHead) {
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('width', cols * W); svg.setAttribute('height', H);
   svg.setAttribute('class', 'gc-lanes');
-  const path = (d, lane) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); p.setAttribute('class', color(lane)); svg.appendChild(p); };
+  const path = (d, lane, dashed) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); p.setAttribute('class', color(lane) + (dashed ? ' wt' : '')); svg.appendChild(p); };
   // A merge curves down out of the dot into its parent's slot; a join curves down into the dot.
   const curve = (from, to) => `M${x(from)} ${mid} C${x(from)} ${H} ${x(to)} ${mid} ${x(to)} ${H}`;
   const join = (from, to) => `M${x(from)} 0 C${x(from)} ${mid} ${x(to)} 0 ${x(to)} ${mid}`;
   const n = Math.max(lay.before.length, lay.after.length);
   for (let i = 0; i < n && i < cols; i++) {
-    if (i !== lay.lane && lay.before[i] && lay.after[i] === lay.before[i]) path(`M${x(i)} 0 V${H}`, i);
+    if (i !== lay.lane && lay.before[i] && lay.after[i] === lay.before[i]) path(`M${x(i)} 0 V${H}`, i, i === lay.wt);
   }
   if (lay.lane < cols) {
-    if (lay.before[lay.lane]) path(`M${x(lay.lane)} 0 V${mid}`, lay.lane);
-    if (lay.after[lay.lane]) path(`M${x(lay.lane)} ${mid} V${H}`, lay.lane);
-    for (const j of lay.joins) if (j < cols) path(join(j, lay.lane), j);
+    if (lay.before[lay.lane]) path(`M${x(lay.lane)} 0 V${mid}`, lay.lane, lay.lane === lay.wt);
+    if (lay.after[lay.lane]) path(`M${x(lay.lane)} ${mid} V${H}`, lay.lane, dot === 'wt');
+    for (const j of lay.joins) if (j < cols) path(join(j, lay.lane), j, j === lay.wt);
     for (const k of lay.merges) if (k < cols) path(curve(lay.lane, k), k);
-    const dot = document.createElementNS(NS, 'circle');
-    dot.setAttribute('cx', x(lay.lane)); dot.setAttribute('cy', mid); dot.setAttribute('r', isHead ? 5 : 4);
-    dot.setAttribute('class', 'gc-dot ' + color(lay.lane) + (isMerge ? ' merge' : ''));
-    svg.appendChild(dot);
+    const circle = document.createElementNS(NS, 'circle');
+    circle.setAttribute('cx', x(lay.lane)); circle.setAttribute('cy', mid); circle.setAttribute('r', isHead ? 5 : 4);
+    circle.setAttribute('class', 'gc-dot ' + color(lay.lane) + (dot ? ' ' + dot : ''));
+    svg.appendChild(circle);
   }
-  return svg;
-}
-
-function gitWorktreeSvg(cols) {
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('width', cols * GIT_LANE_W); svg.setAttribute('height', GIT_ROW_H);
-  svg.setAttribute('class', 'gc-lanes');
-  const dot = document.createElementNS(NS, 'circle');
-  dot.setAttribute('cx', GIT_LANE_W / 2); dot.setAttribute('cy', GIT_ROW_H / 2); dot.setAttribute('r', 4);
-  dot.setAttribute('class', 'gc-dot wt l0');
-  svg.appendChild(dot);
   return svg;
 }
 
@@ -356,14 +350,16 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   };
   const paintGraph = () => {
     graph.innerHTML = '';
-    const lays = gitLayout(commits);
+    // The working tree tops the graph as a commit whose parent is HEAD.
+    const dirty = wt.files.length > 0;
+    const lays = gitLayout(dirty ? [{ sha: GIT_WORKTREE, parents: head.sha ? [head.sha] : [] }, ...commits] : commits);
     let cols = 1;
     for (const l of lays) cols = Math.max(cols, l.before.length, l.after.length, l.lane + 1);
     cols = Math.min(cols, GIT_LANES_MAX);
-    if (wt.files.length) {
+    if (dirty) {
       const row = el('div', 'gc-row gc-wt' + (selected === GIT_WORKTREE ? ' sel' : ''));
       row.dataset.sha = GIT_WORKTREE;
-      row.appendChild(gitWorktreeSvg(cols));
+      row.appendChild(gitLanesSvg(lays.shift(), cols, 'wt', false));
       const n = wt.files.length + (wt.truncated ? '+' : '');
       const subj = el('div', 'gc-subj');
       subj.appendChild(el('span', 'gc-text', 'Working tree · ' + n + (wt.files.length === 1 && !wt.truncated ? ' uncommitted file' : ' uncommitted files')));
@@ -375,7 +371,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       const row = el('div', 'gc-row' + (c.sha === selected ? ' sel' : ''));
       row.dataset.sha = c.sha;
       const isHead = c.sha === head.sha;
-      row.appendChild(gitLanesSvg(lays[i], cols, c.is_merge, isHead));
+      row.appendChild(gitLanesSvg(lays[i], cols, c.is_merge ? 'merge' : '', isHead));
       const subj = el('div', 'gc-subj');
       if (isHead && !c.refs.some(r => r.head)) subj.appendChild(refBadge({ name: 'HEAD', kind: 'head', head: true }));
       for (const r of c.refs) subj.appendChild(refBadge(r));
