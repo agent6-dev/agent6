@@ -256,7 +256,9 @@ def test_the_policy_line_breaks_only_between_its_settings() -> None:
     """
     run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "const parts = s.policy.split(' · ');" in run
-    assert "el('span', 'setting', part + (i < parts.length - 1 ? ' · ' : ''))" in run
+    assert "el('span', 'setting', part + (i < parts.length - 1 ? ' ·' : ''))" in run
+    # A space at an inline block's end collapses, so it stands between the blocks.
+    assert "if (i) kv.lastElementChild.append(' ');" in run
     css = page.STYLES_CSS
     assert ".setting { display: inline-block; max-width: 100%; }" in css
 
