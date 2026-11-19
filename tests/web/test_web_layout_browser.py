@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
 open_page = test_web_browser.open_page
+dirty_git_port = test_web_browser.dirty_git_port
 git_port = test_web_browser.git_port
 port = test_web_browser.port
 
@@ -331,6 +332,33 @@ def test_the_last_session_row_scrolls_clear_of_the_dock(
     for text in ("", "\n".join(["line"] * 60)):
         page.locator(".dock textarea").fill(text)
         assert page.evaluate(gap_at_end) >= 0
+    assert not errors
+
+
+@pytest.mark.parametrize(("width", "height"), [(390, 844), (820, 1000)])
+def test_a_narrow_commit_message_takes_the_whole_row(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    dirty_git_port: int,
+    width: int,
+    height: int,
+) -> None:
+    """On a phone or in a narrow side panel the commit message spans its row, the button under it.
+
+    Beside Commit staged, the one-line message cut its placeholder short on a phone, and in an
+    820px window's side panel it shrank to a column a few characters wide.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(dirty_git_port)
+    page.set_viewport_size({"width": width, "height": height})
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/worktree")
+    message = page.locator(".git-commit textarea")
+    expect(message).to_have_attribute("placeholder", "commit message for 1 file staged…")
+    row, box = page.locator(".git-commit").bounding_box(), message.bounding_box()
+    commit = page.get_by_role("button", name="Commit staged", exact=True).bounding_box()
+    assert row is not None and box is not None and commit is not None
+    assert box["width"] == row["width"]
+    assert commit["y"] >= box["y"] + box["height"]
     assert not errors
 
 

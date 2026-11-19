@@ -3,9 +3,11 @@
    unbroken from row to row. Below 781px the side panel opens over the graph. --- */
 .git-bar { position: relative; margin-top: 10px; margin-bottom: 10px; }
 .git-branch { gap: 6px; flex-wrap: wrap; }
-.git-commit { gap: 8px; align-items: flex-end; margin: 8px 0; }
-.git-commit textarea { flex: 1 1 auto; }
-.git-commit button { flex: none; }
+/* The commit message sits beside Commit staged while it gets 20em, room for its placeholder.
+   In a narrower panel it takes the whole row, and the button drops under it. */
+.git-commit { gap: 8px; align-items: flex-end; flex-wrap: wrap; margin: 8px 0; }
+.git-commit textarea { flex: 1 1 20em; min-width: 0; }
+.git-commit button { flex: none; margin-left: auto; }
 .gf-acts { display: inline-flex; gap: 4px; margin-left: auto; }
 .git-counts { font-size: 12px; }
 .gc-row { display: flex; align-items: center; gap: 10px; height: 30px; padding-right: 12px; cursor: pointer; }
@@ -74,6 +76,9 @@
   .git-side { flex: 1 1 45%; min-width: 0; overflow: auto; border-left: 1px solid var(--border); }
 }
 @media (max-width: 780px) {
+  /* The commit message takes the whole row, as a docked composer's entry does; Commit drops under it. */
+  .git-commit textarea { flex-basis: 100%; }
+  .git-commit button { flex: 1 1 auto; }
   .gc-author { display: none; }
   .gc-row { padding-right: 8px; gap: 8px; }
   .git-side { display: none; }
