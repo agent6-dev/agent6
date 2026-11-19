@@ -422,3 +422,17 @@ def test_a_closed_entry_says_why_it_takes_no_input(
     assert "already ended" in refusals["steer"] and "already ended" in refusals["poke"]
     expect(entry).to_have_attribute("placeholder", refusals["steer"] + " · " + refusals["poke"])
     assert not errors
+
+
+def test_an_error_view_stands_under_the_name_it_is_about(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """A machine that failed to open kept the previous machine's name in the top bar."""
+    from playwright.sync_api import expect
+
+    _ended(tmp_path)
+    page, errors = _open(open_page, port, "ended")
+    page.evaluate("location.hash = '#/machine/missing'")
+    expect(page.locator(".empty.err")).to_be_visible()
+    expect(page.locator("#crumb")).to_have_text("missing")
+    assert [e for e in errors if "404" not in e] == []

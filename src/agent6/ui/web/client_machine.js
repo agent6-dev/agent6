@@ -1,11 +1,12 @@
 // --- machine watch -----------------------------------------------------------
 async function renderMachine(name, gen) {
   const base = '/api/machine/' + encodeURIComponent(name);
+  // The top bar names the instance first, so an error view stands under the name it is about.
+  setCrumb(name);
   // Existence + readability probe: a bad name or a corrupt machine throws here
   // and route() shows the error (the SSE error frame alone leaves a hollow view).
   const initial = await getJSON(base);
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint or open a stream
-  setCrumb(name);
   view.innerHTML = '';
   const app = el('div', 'machine-app');
   // The banners, the prompts and the controls flow in one block, so their margins collapse;
