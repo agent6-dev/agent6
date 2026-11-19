@@ -530,6 +530,56 @@ def test_a_late_config_save_does_not_repaint_another_page(
     assert not errors
 
 
+def test_a_refusal_with_a_long_token_wraps_inside_its_dialog(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A refusal holding a long unbroken path ran past the editor's edge, cut off unread."""
+    from playwright.sync_api import Route, expect
+
+    token = "apathsegmentwithnobreakopportunity" * 5
+
+    def refuse(route: Route) -> None:
+        if route.request.method == "POST":
+            route.fulfill(status=400, json={"error": "refused: " + token})
+        else:
+            route.continue_()
+
+    page, errors = open_page(port)
+    page.route("**/api/config", refuse)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    page.get_by_role("button", name="edit web.port", exact=True).click()
+    dialog = page.get_by_role("dialog")
+    dialog.get_by_role("button", name="Save", exact=True).click()
+    expect(dialog.get_by_role("alert")).to_contain_text(token)
+    assert dialog.evaluate("d => d.scrollWidth - d.clientWidth") == 0
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
+def test_a_failed_save_hands_the_focus_back_to_its_button(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A failed Save left the focus on the page body, so a keyboard retry took a Tab first."""
+    from playwright.sync_api import Route, expect
+
+    def refuse(route: Route) -> None:
+        if route.request.method == "POST":
+            route.fulfill(status=400, json={"error": "refused"})
+        else:
+            route.continue_()
+
+    page, errors = open_page(port)
+    page.route("**/api/config", refuse)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    page.get_by_role("button", name="edit web.port", exact=True).click()
+    dialog = page.get_by_role("dialog")
+    save = dialog.get_by_role("button", name="Save", exact=True)
+    save.focus()
+    page.keyboard.press("Enter")
+    expect(dialog.get_by_role("alert")).to_have_text("refused")
+    expect(save).to_be_focused()
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
 def test_modified_only_includes_explicit_defaults_and_combines_with_search(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
@@ -1214,6 +1264,41 @@ def test_a_dialog_whose_fetch_lands_late_never_opens_over_another(
     expect(page.locator(".dock textarea")).to_be_visible()
     expect(opened).to_have_count(0)
     assert not errors
+
+
+def test_the_switchers_merge_reports_a_failure_on_the_page(
+    port: int, open_page: Callable[[int], tuple[Page, list[str]]]
+) -> None:
+    """The switcher's failed merge preview toasted under its backdrop; Dismiss closed it instead."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    row = {
+        "session_id": "run-A",
+        "mode": "run",
+        "status": "passed",
+        "status_label": "passed",
+        "status_level": "ok",
+        "task": "add mode()",
+        "branch": "agent6/run-A",
+        "unmerged": True,
+    }
+    page.route("**/api/hub", lambda route: route.fulfill(json={"sessions": [row]}))
+    page.route(
+        "**/api/session/run-A/merge",
+        lambda route: route.fulfill(status=409, json={"error": "merge preview failed"}),
+    )
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    page.wait_for_selector(".cfg")
+    page.keyboard.press("Control+K")
+    switcher = page.get_by_role("dialog", name="Switch session")
+    switcher.get_by_role("button", name="Merge", exact=True).click()
+    toast = page.locator(".toast", has_text="merge preview failed")
+    expect(toast).to_be_visible()
+    expect(switcher).to_have_count(0)
+    toast.get_by_role("button", name="Dismiss").click()
+    expect(toast).to_have_count(0)
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
 
 
 def test_the_keyboard_overlay_and_the_palette_open_and_act(

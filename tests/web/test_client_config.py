@@ -90,6 +90,7 @@ const button = (text, root = document.body) => {
   assert.ok(found, 'missing button: ' + text); return found;
 };
 const dialog = () => all(document.body).find(e => e.tag === 'dialog' && e.open);
+const alert = () => all(dialog()).find(e => e.role === 'alert');
 const field = name => {
   const found = all(dialog()).find(e => e.name === name);
   assert.ok(found, 'missing field: ' + name); return found;
@@ -115,10 +116,13 @@ async function run() {
   assert.equal(field('base_url').tag, 'input');
   assert.match(field('base_url').title, /endpoint/);
   field('name').value = 'bad.name';
+  const toasted = notices.length;
   await button('Add', dialog()).onclick();
-  assert.equal(notices.at(-1).text,
+  // The refusal stays in its dialog: a toast would sit under the backdrop.
+  assert.equal(alert().textContent,
     "provider name 'bad.name' is not a valid TOML bare key" +
     " (use only ASCII letters, digits, '-', '_').");
+  assert.equal(notices.length, toasted);
   assert.equal(button('Add', dialog()).disabled, false);
   field('name').value = 'openrouter'; field('name').oninput();
   assert.equal(field('backend').value, 'openai');
@@ -144,7 +148,7 @@ async function run() {
   assert.deepEqual(field('enabled').children.map(e => e.value), ['', 'true', 'false']);
   assert.deepEqual(field('approve').children.map(e => e.value), ['', 'ask', 'allow']);
   await button('Add', dialog()).onclick();
-  assert.match(notices.at(-1).text, /name is required/);
+  assert.match(alert().textContent, /name is required/);
   assert.equal(button('Add', dialog()).disabled, false);
   field('name').value = 'local'; field('command').value = 'server "two words"';
   field('enabled').value = 'false'; field('approve').value = 'ask'; checkbox().checked = true;

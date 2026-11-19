@@ -264,6 +264,9 @@ dialog.card.picker { margin-top: 12vh; max-height: calc(88vh - 16px); }
 dialog::backdrop { background: rgba(0,0,0,.55); overflow: hidden; overscroll-behavior: contain; }
 /* A dialog with no field holds the focus itself; the ring is for the controls inside it. */
 dialog:focus-visible { outline: none; }
+/* A dialog's own failure: one line under its buttons, gone while empty. */
+dialog .err { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+dialog .err:empty { display: none; }
 /* /restate's text scrolls inside the dialog, so its Close button stays in view. */
 .restate { max-height: 60vh; overflow: auto; margin-bottom: 10px; }
 

@@ -1176,8 +1176,8 @@ async function openSwitcher() {
           const merge = el('button', 'mini', 'Merge');
           merge.onmousedown = async (e) => {
             e.preventDefault(); e.stopPropagation();
+            close(); // the confirm and a failure's toast meet the page, not the backdrop
             if (!await confirmMerge(r)) return;
-            close();
             await postMerge(r);
           };
           acts.appendChild(merge);

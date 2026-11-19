@@ -134,13 +134,30 @@ function descriptionNode(points) {
   return frag;
 }
 
+// A dialog's button row, then the line its own actions report a failure on. `act(button, run)`
+// holds the button while `run` waits: a failure shows on that line and frees the button while the
+// dialog is open, and toasts once the dialog has closed (the page's refresh after a write).
+function actionRow(dialog, row) {
+  const err = el('p', 'err'); err.setAttribute('role', 'alert');
+  dialog.appendChild(row); dialog.appendChild(err);
+  return async (button, run) => {
+    if (button.disabled) return;
+    button.disabled = true; err.textContent = '';
+    try { await run(); } catch (e) {
+      if (!dialog.open) { toast(e.message, true); return; }
+      err.textContent = e.message; button.disabled = false;
+      if (document.activeElement === document.body) button.focus(); // disabling it dropped the focus
+    }
+  };
+}
+
 // An Add dialog's Add and Cancel row; Cancel closes the dialog.
 function addButtons(dialog) {
   const row = el('div', 'form-row');
   const add = el('button', 'primary', 'Add'), cancel = el('button', null, 'Cancel');
   cancel.onclick = () => dialog.close();
-  row.appendChild(add); row.appendChild(cancel); dialog.appendChild(row);
-  return add;
+  row.appendChild(add); row.appendChild(cancel);
+  return { add, act: actionRow(dialog, row) };
 }
 
 // A blank field writes nothing, preserving an existing entry's value.
@@ -183,19 +200,16 @@ function addEntry(table, refresh) {
   const repoCb = el('input'); repoCb.type = 'checkbox';
   repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
   dialog.appendChild(repoRow);
-  const add = addButtons(dialog);
+  const { add, act } = addButtons(dialog);
   name.focus();
-  add.onclick = async () => {
-    add.disabled = true;
-    try {
-      const d = await postJSON('/api/config/entry', {
-        table: table.path, name: name.value,
-        fields: Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.value])),
-        repo: repoCb.checked,
-      });
-      toast(d.message || 'added'); dialog.close(); await refresh();
-    } catch (e) { toast(e.message, true); add.disabled = false; }
-  };
+  add.onclick = () => act(add, async () => {
+    const d = await postJSON('/api/config/entry', {
+      table: table.path, name: name.value,
+      fields: Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.value])),
+      repo: repoCb.checked,
+    });
+    toast(d.message || 'added'); dialog.close(); await refresh();
+  });
 }
 
 // Name and layer for a new preset table; the server selects it, so the page then shows and
@@ -210,14 +224,11 @@ function addPreset(onAdded) {
   const repoCb = el('input'); repoCb.type = 'checkbox';
   repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'create in this repo\'s config (not the global config)'));
   dialog.appendChild(repoRow);
-  const add = addButtons(dialog);
-  const submit = async () => {
-    add.disabled = true;
-    try {
-      const d = await postJSON('/api/config/preset', {name: name.value.trim(), repo: repoCb.checked});
-      toast(d.message || 'added'); dialog.close(); await onAdded();
-    } catch (e) { toast(e.message, true); add.disabled = false; }
-  };
+  const { add, act } = addButtons(dialog);
+  const submit = () => act(add, async () => {
+    const d = await postJSON('/api/config/preset', {name: name.value.trim(), repo: repoCb.checked});
+    toast(d.message || 'added'); dialog.close(); await onAdded();
+  });
   add.onclick = submit;
   name.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); submit(); } };
   name.focus();
@@ -245,16 +256,13 @@ async function addReviewer(refresh) {
   const repo = el('input'); repo.type = 'checkbox'; repo.id = 'reviewer-repo';
   repoRow.appendChild(repo); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
   dialog.appendChild(repoRow);
-  const add = addButtons(dialog);
+  const { add, act } = addButtons(dialog);
   fields.focus.focus();
-  add.onclick = async () => {
-    add.disabled = true;
-    try {
-      const body = Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.value]));
-      const result = await postJSON('/api/config/reviewer', {...body, repo: repo.checked});
-      toast(result.message); dialog.close(); await refresh();
-    } catch (e) { toast(e.message, true); add.disabled = false; }
-  };
+  add.onclick = () => act(add, async () => {
+    const body = Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.value]));
+    const result = await postJSON('/api/config/reviewer', {...body, repo: repo.checked});
+    toast(result.message); dialog.close(); await refresh();
+  });
 }
 
 // Suggestions guide text entry; catalog membership is not validation.
@@ -414,7 +422,8 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     addBtn.onclick = () => { close(); addReviewer(refresh); };
     row.appendChild(addBtn);
   }
-  row.appendChild(cancel); dialog.appendChild(row);
+  row.appendChild(cancel);
+  const act = actionRow(dialog, row);
   cancel.onclick = close;
   if (key === 'review.reviewers') {
     const roster = el('div');
@@ -431,11 +440,10 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       remove.setAttribute('aria-label', 'Remove reviewer ' + label);
       remove.onclick = async () => {
         if (!confirm(`Remove reviewer ${label} from ${rosterWhere}?`)) return;
-        remove.disabled = true;
-        try {
+        await act(remove, async () => {
           const result = await postJSON('/api/config/reviewer/remove', {index, repo: s.source === 'repo'});
           toast(result.message); close(); await refresh();
-        } catch (e) { toast(e.message, true); remove.disabled = false; }
+        });
       };
       item.appendChild(remove); roster.appendChild(item);
     });
@@ -443,32 +451,25 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     dialog.insertBefore(roster, field);
   }
   field.focus();
-  const submit = async () => {
-    save.disabled = true;
-    try {
-      // A string-valued leaf travels as a TOML string, as the TUI sends it, so
-      // `true`, `42` or `[a]` typed into a str field stays a string.
-      const value = role || s.type === 'str' ? JSON.stringify(field.value) : field.value;
-      const d = await postJSON('/api/config', { key: role ? section + '.model' : key, value, repo: repoCb.checked });
-      toast(d.message || 'set ' + key); close(); await refresh();
-    } catch (e) { toast(e.message, true); save.disabled = false; }
-  };
+  const submit = () => act(save, async () => {
+    // A string-valued leaf travels as a TOML string, as the TUI sends it, so
+    // `true`, `42` or `[a]` typed into a str field stays a string.
+    const value = role || s.type === 'str' ? JSON.stringify(field.value) : field.value;
+    const d = await postJSON('/api/config', { key: role ? section + '.model' : key, value, repo: repoCb.checked });
+    toast(d.message || 'set ' + key); close(); await refresh();
+  });
   save.onclick = submit;
-  if (unsetBtn) unsetBtn.onclick = async () => {
-    unsetBtn.disabled = true;
-    try {
-      // Under a preset the layer is the checkbox's: the row's source reads `preset`, not a file.
-      const d = await postJSON('/api/config', { key, unset: true, repo: preset ? repoCb.checked : s.source === 'repo' });
-      toast(d.message || 'unset ' + key); close(); await refresh();
-    } catch (e) { toast(e.message, true); unsetBtn.disabled = false; }
-  };
+  if (unsetBtn) unsetBtn.onclick = () => act(unsetBtn, async () => {
+    // Under a preset the layer is the checkbox's: the row's source reads `preset`, not a file.
+    const d = await postJSON('/api/config', { key, unset: true, repo: preset ? repoCb.checked : s.source === 'repo' });
+    toast(d.message || 'unset ' + key); close(); await refresh();
+  });
   if (removeBtn) removeBtn.onclick = async () => {
     if (!confirm('Remove ' + table.label + " '" + entry.name + "' and all its values from " + entryWhere + '? Values from lower layers may become visible.')) return;
-    removeBtn.disabled = true;
-    try {
+    await act(removeBtn, async () => {
       const d = await postJSON('/api/config/entry/remove', {table: entry.table, name: entry.name, repo: entry.source === 'repo'});
       toast(d.message || 'removed'); close(); await refresh();
-    } catch (e) { toast(e.message, true); removeBtn.disabled = false; }
+    });
   };
   if (!combo) field.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); submit(); } };
 }
