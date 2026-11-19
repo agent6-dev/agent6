@@ -190,9 +190,7 @@ def test_a_session_row_shows_its_mode() -> None:
 def test_ctrl_k_opens_the_session_switcher_and_drafts_wait_in_the_composer() -> None:
     """Ctrl+K lists the hub's rows with checkout and ref; a composer draft survives a switch."""
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
-    switcher = client[
-        client.index("async function openSwitcher") : client.index("function makeComposer")
-    ]
+    switcher = client[client.index("function openSwitcher") : client.index("function makeComposer")]
     assert "getJSON('/api/hub')" in switcher
     assert "'worktree ' + r.worktree : 'this checkout'" in switcher
     assert "'ref ' + r.branch" in switcher

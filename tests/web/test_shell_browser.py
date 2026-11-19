@@ -909,6 +909,104 @@ def test_enter_and_space_press_a_switcher_rows_own_button(
     assert [e for e in errors if not e.startswith("Failed to load resource")] == []
 
 
+def test_keys_typed_while_the_switchers_rows_load_land_in_its_field(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Ctrl+K opened the switcher only once /api/hub answered.
+
+    The keys typed meanwhile went into the composer behind it, and Enter started a run with them.
+    """
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(port)
+    posts: list[str] = []
+    page.route("**/api/new", lambda route: (posts.append(route.request.url), route.abort()))
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    entry = page.locator(".dock textarea")
+    expect(entry).to_be_visible()
+    page.evaluate("clearInterval(hubTimer)")  # only Ctrl+K may fetch the hub
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    page.route("**/api/hub", hold)
+    entry.focus()
+    page.keyboard.press("Control+K")
+    page.keyboard.type("run-1", delay=30)
+    page.keyboard.press("Enter")  # before the rows: picks nothing
+    switcher = page.get_by_role("dialog", name="Switch session")
+    expect(switcher.get_by_role("combobox")).to_have_value("run-1")
+    expect(switcher).to_contain_text("loading…")
+    assert posts == [] and entry.input_value() == ""
+    held[0].fulfill(json={"sessions": _sessions(3)})
+    expect(switcher.get_by_role("row")).to_have_count(1)
+    page.keyboard.press("Enter")
+    page.wait_for_function("location.hash === '#/session/run-1'")
+    assert posts == []
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
+def test_keys_typed_while_past_messages_load_land_in_the_search(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Ctrl+R opened the search only once the past messages came; the keys went to the composer."""
+    from playwright.sync_api import Route, expect
+
+    session_logs.write_run(tmp_path, "done-AAA111", [{"type": "session.stop"}])
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/done-AAA111")
+    entry = page.locator(".run-app .composer textarea")
+    expect(page.locator(".conv .ci").first).to_be_visible()  # the conversation's first fetch
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    page.route("**/conversation", hold)
+    entry.focus()
+    page.keyboard.press("Control+r")
+    page.keyboard.type("parse", delay=30)
+    search = page.get_by_role("dialog", name="Search past messages")
+    expect(search.get_by_role("combobox")).to_have_value("parse")
+    assert entry.input_value() == ""
+    for route in held:
+        route.continue_()
+    expect(search.get_by_role("option")).to_have_text(["Parse CSV rows"])
+    assert not errors
+
+
+def test_rows_that_come_after_the_switcher_closed_open_nothing(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Rows that answered after Esc opened the switcher; a failed load closes it and says why."""
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    page.wait_for_selector(".cfg")
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    page.route("**/api/hub", hold)
+    switcher = page.get_by_role("dialog", name="Switch session")
+    page.keyboard.press("Control+K")
+    expect(switcher).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(switcher).to_have_count(0)
+    held.pop().fulfill(json={"sessions": _sessions(2)})
+    page.wait_for_timeout(300)
+    expect(page.locator("dialog[open]")).to_have_count(0)
+    page.keyboard.press("Control+K")
+    expect(switcher).to_be_visible()
+    held.pop().abort()
+    expect(switcher).to_have_count(0)
+    expect(page.locator(".toast.bad")).to_be_visible()
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
 @pytest.mark.parametrize(
     ("key", "title"), [("Control+K", "Switch session"), ("?", "Keyboard shortcuts")]
 )

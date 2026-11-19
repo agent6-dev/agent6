@@ -1434,11 +1434,20 @@ function openRestate(text) {
 // each, repeats collapsed: the same list the CLI and TUI searches show.
 // Picking fills the composer for editing (Enter keeps the highlighted match,
 // or the typed text itself when nothing matches); nothing is sent.
-function openHistorySearch(entries, onPick) {
+function openHistorySearch(id, onPick) {
+  const entries = () => getJSON('/api/session/' + encodeURIComponent(id) + '/conversation').then(d => {
+    const seen = new Set(), lines = [];
+    for (const t of (d.operator_inputs || []).slice().reverse()) {
+      const line = t.split(/\s+/).join(' ').trim();
+      if (line && !seen.has(line)) { seen.add(line); lines.push(line); }
+    }
+    return lines;
+  });
   openPicker({
     title: 'Search past messages',
     placeholder: 'type to narrow…',
     rows: entries,
+    empty: '(no past messages yet)',
     limit: 8,
     typed: true,
     haystack: (t) => t.toLowerCase(),
@@ -1472,7 +1481,7 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '
   dialog.append(field, list, note);
   const close = () => dialog.close();
   const choose = (r) => { close(); pick(r); };
-  let items = [], active = 0;
+  let loaded = null, items = [], active = 0; // loaded: the rows, once they came
   // Highlight the active option; the pointer is over it already, so only the arrows scroll.
   const mark = (scroll) => {
     [...list.children].forEach((row, i) => {
@@ -1485,7 +1494,7 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '
   };
   const render = () => {
     const q = field.value.toLowerCase().trim();
-    const all = rows.filter(r => !q || haystack(r).includes(q));
+    const all = (loaded || []).filter(r => !q || haystack(r).includes(q));
     items = all.slice(0, limit);
     if (active >= items.length) active = Math.max(0, items.length - 1);
     list.textContent = '';
@@ -1508,7 +1517,7 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '
     });
     mark(true);
     const more = all.length - items.length;
-    note.textContent = !items.length ? (rows.length ? '(no match)' : empty) : more ? '… ' + more + ' more (type to narrow)' : '';
+    note.textContent = !loaded ? 'loading…' : !items.length ? (loaded.length ? '(no match)' : empty) : more ? '… ' + more + ' more (type to narrow)' : '';
   };
   const move = (step) => { if (items.length) { active = (active + step + items.length) % items.length; mark(true); } };
   // A row's own button keeps its keys: Enter or Space presses it.
@@ -1516,7 +1525,7 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '
     if (composing(e) || e.target.closest('button')) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
-    else if (e.key === 'Enter') { e.preventDefault(); if (items.length || typed) choose(items.length ? items[active] : field.value); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (loaded && (items.length || typed)) choose(items.length ? items[active] : field.value); }
   };
   field.oninput = () => {
     if (prefix && field.value.startsWith(prefix.key)) { const rest = field.value.slice(prefix.key.length); close(); prefix.open(rest); return; }
@@ -1524,20 +1533,19 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '
   };
   field.focus();
   render();
+  // rows() may answer late: keys typed meanwhile land in the open field, Enter waits, a failure closes the dialog.
+  Promise.resolve().then(rows).then(
+    (r) => { if (dialog.open) { loaded = r; render(); } },
+    (err) => { if (dialog.open) { close(); toast(err.message, true); } });
 }
 
 // Ctrl+K: the hub's rows, children too, narrowed by id, mode, status, task, branch or worktree; Review and Merge act as a row's do, `>` opens the palette.
-async function openSwitcher() {
-  if (document.querySelector('dialog[open]')) return; // one dialog at a time: skip the fetch
-  let data;
-  try { data = await getJSON('/api/hub'); } catch (e) { toast(e.message, true); return; }
-  const rows = [];
-  const flatten = (r) => { rows.push(r); for (const child of (r.children || [])) flatten(child); };
-  for (const r of (data.sessions || [])) flatten(r);
+function openSwitcher() {
+  const flatten = (r) => [r, ...(r.children || []).flatMap(flatten)];
   openPicker({
     title: 'Switch session',
     placeholder: 'narrow, or > for commands', // fits the field on a 320px phone
-    rows,
+    rows: () => getJSON('/api/hub').then(data => (data.sessions || []).flatMap(flatten)),
     empty: '(no sessions yet)',
     prefix: { key: '>', open: (rest) => openPalette(rest) },
     haystack: (r) => [r.session_id, r.mode, r.status_label, r.task_line || r.task || '', r.branch || '', r.worktree || ''].join(' ').toLowerCase(),
@@ -1597,7 +1605,7 @@ function openPalette(initial = '') {
   openPicker({
     title: 'Commands',
     placeholder: 'type a command…',
-    rows: paletteItems(),
+    rows: paletteItems,
     empty: '(no commands)',
     initial,
     haystack: (c) => (c.label + ' ' + c.hint).toLowerCase(),
@@ -1779,16 +1787,7 @@ function makeComposer(id) {
     if (suggest.onKeyDown(e) || models.onKeyDown(e)) return;
     if (e.key === 'r' && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       e.preventDefault(); // Ctrl+R here is history search, not a page reload
-      if (busy) return;
-      getJSON('/api/session/' + encodeURIComponent(id) + '/conversation').then(d => {
-        const seen = new Set(), entries = [];
-        for (const t of (d.operator_inputs || []).slice().reverse()) {
-          const line = t.split(/\s+/).join(' ').trim();
-          if (line && !seen.has(line)) { seen.add(line); entries.push(line); }
-        }
-        if (!entries.length) { toast('no past messages this session yet', true); return; }
-        openHistorySearch(entries, (text) => fillAsEdit(ta, text));
-      }).catch(err => toast(err.message, true));
+      if (!busy) openHistorySearch(id, (text) => fillAsEdit(ta, text));
       return;
     }
     if (e.key !== 'Enter' || e.shiftKey) return;
