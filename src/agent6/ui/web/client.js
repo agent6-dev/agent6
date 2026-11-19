@@ -456,9 +456,13 @@ function runOnce(button, action, ready = () => true) {
 // run --parallel accepts) filtered by the comma-fragment under the caret; click,
 // Enter, or ↑/↓+Enter inserts it. The web analogue of the config editor's
 // datalist (a <textarea> can't carry a native datalist).
+// The popup is a listbox the entry controls, and the entry names the highlighted option
+// (aria-activedescendant), so a screen reader reads each model as the arrows reach it.
+let suggestLists = 0; // numbers each popup's id
 function attachParallelSuggest(task, root) {
   let models = null;           // null=unfetched, []=in-flight/empty, else the list
   let box = null, items = [], active = -1;
+  task.setAttribute('aria-autocomplete', 'list');
   const ensureModels = () => {
     if (models !== null) return;
     models = [];                // sentinel: fetch at most once per composer
@@ -487,7 +491,10 @@ function attachParallelSuggest(task, root) {
     while (fragEnd > fragStart && /\s/.test(v[fragEnd - 1])) fragEnd--;
     return { fragStart, fragEnd, text: v.slice(fragStart, Math.min(caret, fragEnd)) };
   };
-  const close = () => { if (box) { box.remove(); box = null; } items = []; active = -1; };
+  const close = () => {
+    if (box) { box.remove(); box = null; task.removeAttribute('aria-controls'); task.removeAttribute('aria-activedescendant'); }
+    items = []; active = -1;
+  };
   const insert = (model) => {
     const f = frag(); if (!f) { close(); return; }
     const v = task.value;
@@ -504,13 +511,19 @@ function attachParallelSuggest(task, root) {
     items = models.filter(m => hit(m).startsWith(q)).concat(models.filter(m => hit(m).includes(q) && !hit(m).startsWith(q))).slice(0, 8);
     if (!items.length) { close(); return; }
     if (active >= items.length) active = -1;
-    if (!box) { box = el('div', 'ac-pop'); root.appendChild(box); }
+    if (!box) {
+      box = el('div', 'ac-pop'); box.id = 'suggest-' + ++suggestLists; box.setAttribute('role', 'listbox');
+      root.appendChild(box); task.setAttribute('aria-controls', box.id);
+    }
     box.textContent = '';
     items.forEach((m, i) => {
       const o = el('div', 'ac-item' + (i === active ? ' on' : ''), m);
+      o.id = box.id + '-' + i; o.setAttribute('role', 'option'); o.setAttribute('aria-selected', String(i === active));
       o.onmousedown = (e) => { e.preventDefault(); insert(m); };
       box.appendChild(o);
     });
+    if (active >= 0) task.setAttribute('aria-activedescendant', box.id + '-' + active);
+    else task.removeAttribute('aria-activedescendant');
   };
   task.addEventListener('input', () => { active = -1; render(); });
   task.addEventListener('click', render);

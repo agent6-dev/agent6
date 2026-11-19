@@ -559,3 +559,34 @@ def test_a_missing_worktree_is_named_once_in_its_row(
     expect(row).to_contain_text("not found; resume needs it")
     assert row.inner_text().count(str(gone)) == 1
     assert not errors
+
+
+def test_the_parallel_model_popup_is_a_listbox_the_entry_points_into(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The /parallel model popup had no roles: a screen reader heard no list and no highlight."""
+    from playwright.sync_api import Route, expect
+
+    def models(route: Route) -> None:
+        route.fulfill(json={"values": ["prov/one", "prov/two"]})
+
+    page, errors = open_page(port)
+    page.route("**/api/config/suggest/parallel.models", models)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    entry = page.locator(".dock textarea")
+    entry.fill("/parallel ")
+    popup = page.locator(".ac-pop")
+    options = popup.get_by_role("option")
+    expect(options).to_have_text(["prov/one", "prov/two"])
+    expect(popup).to_have_attribute("role", "listbox")
+    expect(entry).to_have_attribute("aria-controls", popup.get_attribute("id") or "")
+    expect(entry).to_have_attribute("aria-autocomplete", "list")
+    entry.press("ArrowDown")
+    expect(options.first).to_have_attribute("aria-selected", "true")
+    expect(entry).to_have_attribute(
+        "aria-activedescendant", options.first.get_attribute("id") or ""
+    )
+    entry.press("Escape")
+    expect(popup).to_have_count(0)
+    assert entry.get_attribute("aria-activedescendant") is None
+    assert not errors

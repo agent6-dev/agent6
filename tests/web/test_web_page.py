@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "5cc54169d37cf3552ab6d68b172c7b77b2f856b5557bea1b76db28395d28e9f8"
+PAGE_SHA256 = "a0ebb52f84a78912f9917b0fc79c8a482eecba2cb206cd4543f8ba56aa3be2d7"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -317,9 +317,7 @@ def test_parallel_model_completion_handles_each_whole_fragment() -> None:
     if node is None:
         pytest.skip("node is needed to exercise the web composer")
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
-    suggest = client[
-        client.index("function attachParallelSuggest") : client.index("// The new-work composer")
-    ]
+    suggest = client[client.index("let suggestLists") : client.index("// The new-work composer")]
     scenario = r"""
 const assert = require('node:assert/strict');
 const getJSON = async () => ({values: ['o/alpha', 'o/beta']});
@@ -329,6 +327,7 @@ function el(tag, cls, text = '') {
     set textContent(value) { this.text = value; this.children = []; },
     appendChild(child) { this.children.push(child); },
     remove() { this.removed = true; },
+    setAttribute() {},
   };
 }
 async function check(text, wanted, caret = text.length, replacement = null) {
@@ -337,7 +336,7 @@ async function check(text, wanted, caret = text.length, replacement = null) {
     value: text, selectionStart: caret,
     addEventListener(name, fn) { listeners[name] = fn; },
     setSelectionRange(start) { this.selectionStart = start; },
-    focus() {},
+    focus() {}, setAttribute() {}, removeAttribute() {},
   };
   const root = el('div');
   attachParallelSuggest(task, root);
