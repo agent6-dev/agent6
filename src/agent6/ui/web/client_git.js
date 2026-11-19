@@ -103,6 +103,36 @@ function gitDate(iso) {
   date.append(el('span', null, m[1] + ' ' + m[2]), ' ', el('span', null, m[3]));
   return date;
 }
+// A commit body's hard-wrapped lines rejoined into blocks, so the panel wraps each once: a line
+// joins the block before it unless either is blank or code (indented four columns past the text
+// above), or the line starts a list item or a trailer ('Signed-off-by: …'). Each block is
+// { lead, marker, text, code }; a blank line is a block with no text.
+function bodyBlocks(body) {
+  const blocks = [];
+  let open = null, col = 0; // the block the next line may join; the column of the last text
+  for (const line of body.split('\n')) {
+    const text = line.trim(), lead = line.length - line.trimStart().length;
+    const marker = /^(?:[-*+]|\d+[.)])\s+/.exec(text)?.[0] || '';
+    const code = !!text && lead >= col + 4;
+    if (open && text && !code && !marker && !/^[\w-]+: /.test(text)) { open.text += ' ' + text; continue; }
+    open = text && !code ? { lead, marker, text: text.slice(marker.length), code: false } : null;
+    blocks.push(open || { lead: 0, marker: '', text: code ? line : '', code });
+    if (open) col = lead + marker.length;
+  }
+  return blocks;
+}
+// The body as one element per block; a list item's later lines hang under its text.
+function commitBody(body) {
+  const box = el('div', 'gd-body');
+  for (const b of bodyBlocks(body.trimEnd())) {
+    const line = el('div', b.code ? 'gd-code' : 'gd-line');
+    if (b.marker) { line.appendChild(el('span', 'gd-marker', b.marker)); line.style.setProperty('--hang', b.marker.length); }
+    if (b.lead) line.style.setProperty('--lead', b.lead);
+    if (b.text) line.append(b.text);
+    box.appendChild(line);
+  }
+  return box;
+}
 function fmtBytes(n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KiB' : (n / 1048576).toFixed(1) + ' MiB'; }
 
 // An image's diff shows the file before and after, above git's "Binary files differ"
@@ -573,7 +603,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     const asHead = el('button', 'mini', 'Set as head'); asHead.onclick = () => setCompare('head', me);
     acts.appendChild(asBase); acts.appendChild(asHead);
     pad.appendChild(acts);
-    if (c.body) pad.appendChild(el('pre', 'gd-body', c.body));
+    if (c.body) pad.appendChild(commitBody(c.body));
     const ctx = {base: c.base, head: c.sha, files: c.files, commit: true, query: selection};
     pad.appendChild(fileList(c.files, c.truncated, (i) => showDiff(ctx, i)));
     const path = selection.get('path');

@@ -66,7 +66,13 @@
 .gd-date > span { white-space: nowrap; }
 .gd-meta button.mini { margin-right: 4px; }
 .gd-actions { margin-bottom: 10px; }
-.gd-body { font: 13px/1.5 system-ui, sans-serif; white-space: pre-wrap; margin: 0 0 12px; padding: 8px 10px; border-left: 2px solid var(--border); color: var(--text); }
+.gd-body { font-size: 13px; line-height: 1.5; margin: 0 0 12px; padding: 8px 10px; border-left: 2px solid var(--border); overflow-wrap: break-word; }
+/* A list item's marker sits in a box as wide as its text, so the item's later lines hang under
+   the text; a blank line keeps half a line between paragraphs. */
+.gd-line { padding-left: calc((var(--lead, 0) + var(--hang, 0)) * 1ch); text-indent: calc(var(--hang, 0) * -1ch); }
+.gd-line:empty { height: .75em; }
+.gd-marker { display: inline-block; width: calc(var(--hang) * 1ch); text-indent: 0; }
+.gd-code { font: 12px/1.5 var(--mono); white-space: pre-wrap; }
 .gf-head { align-items: center; gap: 8px; margin-bottom: 4px; }
 .gf-head .gf-count { flex: 1; margin: 0; }
 .gf-count { font-size: 12px; margin-bottom: 4px; }

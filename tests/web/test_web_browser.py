@@ -1045,6 +1045,31 @@ def test_a_commits_sha_and_dates_never_break_mid_token_on_a_phone(
     assert errors == [], errors
 
 
+def test_a_commit_body_wraps_a_hard_wrapped_item_once(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """An item git wrapped reads as one block whose lines hang under its text.
+
+    The panel kept git's hard wraps and wrapped each line again into ragged fragments.
+    """
+    item = (
+        "an item whose text the author wrapped at seventy-two columns, as the\n"
+        "  convention asks, and which then went on for a while longer"
+    )
+    _git(tmp_path, "commit", "-q", "--allow-empty", "-m", "subject\n\n- " + item)
+    sha = _git(tmp_path, "rev-parse", "HEAD")
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/{sha}")
+    page.wait_for_selector(".gd-body")
+    assert "as the convention asks" in page.locator(".gd-body").inner_text()
+    lefts = page.locator(".gd-body .gd-line").first.evaluate(
+        """line => { const range = document.createRange(); range.selectNodeContents(line.lastChild);
+          return [...range.getClientRects()].map(r => Math.round(r.left)); }"""
+    )
+    assert len(lefts) > 1 and len(set(lefts)) == 1, lefts
+    assert errors == [], errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:

@@ -1010,6 +1010,30 @@ def test_the_working_tree_runs_a_lane_of_its_own_down_to_head() -> None:
     ]
 
 
+def test_a_commit_body_rejoins_its_hard_wrapped_lines() -> None:
+    """Each paragraph, list item and trailer is one block, and indented code keeps its lines."""
+    body = (
+        "- an item git\n  wrapped here.\n  A second sentence.\n- two\n\n"
+        "A paragraph\nthat wraps.\n\n    code()\n    more()\n\n"
+        "Signed-off-by: A <a@example.invalid>\nCo-authored-by: B <b@example.invalid>"
+    )
+    blocks = _node(
+        _client("bodyBlocks") + f"console.log(JSON.stringify(bodyBlocks({json.dumps(body)})));"
+    )
+    assert [(b["marker"], b["text"], b["code"]) for b in blocks] == [
+        ("- ", "an item git wrapped here. A second sentence.", False),
+        ("- ", "two", False),
+        ("", "", False),
+        ("", "A paragraph that wraps.", False),
+        ("", "", False),
+        ("", "    code()", True),
+        ("", "    more()", True),
+        ("", "", False),
+        ("", "Signed-off-by: A <a@example.invalid>", False),
+        ("", "Co-authored-by: B <b@example.invalid>", False),
+    ]
+
+
 def test_text_and_blame_share_the_digest_of_the_bytes_read(
     repo: tuple[pathlib.Path, dict[str, str]], port: int
 ) -> None:
