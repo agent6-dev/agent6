@@ -360,6 +360,38 @@ def test_the_current_state_and_the_newest_transition_open_in_view(
     assert not errors
 
 
+def test_path_stays_at_its_end_when_a_prompt_or_the_entry_shrinks_it(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """Path stopped short of its newest transition once a prompt or a growing entry shrank it."""
+    from playwright.sync_api import expect
+
+    failed = {**TOOL, "exit_code": 1}
+    rows = [
+        _step(seq, "check", "nonzero", "work", failed)
+        if seq % 2
+        else _step(seq, "work", "ok", "check", AGENT)
+        for seq in range(16)
+    ]
+    ask = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"}
+    _machine(tmp_path, "asking", LOOP, rows, [*_talk(1), ask], alive=True)
+    page, errors = _open(open_page, port, "asking")
+    at_end = """async () => {
+      await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+      const pane = [...document.querySelectorAll('.tree')][1].parentElement;
+      return pane.scrollHeight > pane.clientHeight
+        && pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1;
+    }"""
+    expect(page.locator(".prompt-box")).to_have_count(1)
+    assert page.evaluate(at_end)
+    page.locator(".dock textarea").click()
+    for line in range(5):
+        page.keyboard.type(f"line {line}")
+        page.keyboard.press("Shift+Enter")
+    assert page.evaluate(at_end)
+    assert not errors
+
+
 def test_the_conversation_names_the_agent_state_it_shows(
     open_page: OpenPage, port: int, tmp_path: pathlib.Path
 ) -> None:
