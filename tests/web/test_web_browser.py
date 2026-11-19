@@ -999,6 +999,27 @@ def test_the_compare_hint_reads_as_a_note(
     assert errors == [], errors
 
 
+def test_the_compare_pickers_placeholders_fit_their_fields(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """Side by side at 1440px, each picker's placeholder fits; both were cut mid-word."""
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    page.get_by_role("button", name="Compare", exact=True).click()
+    fits = page.locator(".gcmp-pick input").evaluate_all(
+        """inputs => inputs.map(i => {
+          const s = getComputedStyle(i), text = document.createElement('canvas').getContext('2d');
+          text.font = s.font;
+          const room = i.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight);
+          return text.measureText(i.placeholder).width <= room;
+        })"""
+    )
+    assert fits == [True, True]
+    assert errors == [], errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:

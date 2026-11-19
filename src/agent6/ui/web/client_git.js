@@ -212,7 +212,7 @@ function fileCounts(f) {
 function gitPicker(name, initial, onPick, listHost, fixed) {
   const root = el('div', 'gpick');
   const input = el('input', 'field');
-  input.placeholder = name + ': branch, tag, sha, message…';
+  input.placeholder = name + ': branch, tag, sha…';
   input.setAttribute('aria-label', name);
   input.autocomplete = 'off';
   let value = initial || null;
