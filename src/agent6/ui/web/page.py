@@ -151,7 +151,7 @@ PAGE_HTML = (
     + _MENU_ICON
     + r"""</button>
   <a class="brand" href="#/" aria-label="agent6 home"><img src="/favicon.svg" width="22" height="22" alt=""><b>agent6</b></a>
-  <span class="crumb" id="crumb"></span>
+  <h1 class="crumb" id="crumb"></h1>
   <button type="button" class="theme-toggle">"""
     + _THEME_ICON
     + r"""</button>

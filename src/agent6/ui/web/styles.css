@@ -61,8 +61,8 @@ header {
 /* The brand: the transparent mark (favicon.svg) beside the name in the accent colour. */
 header .brand { display: inline-flex; align-items: center; gap: 0.5rem; color: inherit; font-weight: 700; letter-spacing: .3px; }
 header .brand b { color: var(--accent); }
-/* The crumb names the page; a session's leads with its state, the rows' status pill. */
-header .crumb { display: flex; min-width: 0; margin-right: auto; color: var(--muted); }
+/* The crumb is the page's h1, in the header's own text; a session's leads with its state, the rows' status pill. */
+header .crumb { display: flex; min-width: 0; margin: 0 auto 0 0; font: inherit; color: var(--muted); }
 header .crumb > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 header .crumb > .pill { display: block; line-height: inherit; color: var(--text); }
 header .crumb > .pill::before { display: inline-block; margin-right: 0.4375rem; vertical-align: 1px; }

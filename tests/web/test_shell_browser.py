@@ -108,13 +108,17 @@ def test_the_crumb_names_each_page_as_its_nav_link_does(
     ready: str,
     label: str,
 ) -> None:
-    """Each page renamed itself in lower case ("sessions", "config") beside the nav's "Sessions"."""
+    """Each page renamed itself in lower case ("sessions", "config") beside the nav's "Sessions".
+
+    No page had an h1, and Sessions, Git, Files and Config had no heading at all.
+    """
     from playwright.sync_api import expect
 
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/{route}")
     expect(page.locator(ready).first).to_be_visible()
     expect(page.locator("#crumb")).to_have_text(label)
+    expect(page.get_by_role("heading", level=1)).to_have_text([label])
     expect(page).to_have_title(f"{label} · agent6")
     assert not errors
 

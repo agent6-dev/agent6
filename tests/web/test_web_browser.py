@@ -1352,7 +1352,7 @@ def test_the_keyboard_list_and_the_palette_open_and_act(
 
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/")
-    expect(page.get_by_role("heading", name="Sessions", exact=True)).to_have_count(0)
+    expect(page.locator("#view").get_by_role("heading", name="Sessions")).to_have_count(0)
     page.keyboard.press("?")
     keys = page.get_by_role("dialog").locator("table.keys")
     expect(keys).to_contain_text("Ctrl+K")
