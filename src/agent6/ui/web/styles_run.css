@@ -156,7 +156,7 @@
   .wmenu-btn { display: block; }
   /* The open menu hangs just under the fixed header, at its right end. */
   .wmenu:popover-open {
-    inset: calc(var(--hdr-h) + env(safe-area-inset-top) + 4px) 12px auto auto; margin: 0; padding: 0;
+    inset: calc(var(--hdr-h) + env(safe-area-inset-top) + 4px) 16px auto auto; margin: 0; padding: 0;
     min-width: 170px; display: flex; flex-direction: column; background: var(--surface);
     border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
     box-shadow: 0 8px 24px rgba(0,0,0,.45);

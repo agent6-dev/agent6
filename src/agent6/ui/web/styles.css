@@ -49,10 +49,11 @@ code, pre, .mono { font-family: var(--mono); }
 .toast code, .login code, .problem code { font-size: .92em; padding: 0 3px; border-radius: 3px; background: color-mix(in srgb, var(--text) 8%, transparent); }
 pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
 
+/* The top bar's ends line up with the page's text: 22px in, and 16px on a phone (below). */
 header {
   position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px;
   height: calc(var(--hdr-h) + env(safe-area-inset-top));
-  padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 10px 22px; background: var(--surface); border-bottom: 1px solid var(--border);
   padding-top: calc(10px + env(safe-area-inset-top));
 }
 /* The brand: the transparent mark (favicon.svg) beside the name in the accent colour. */
@@ -372,7 +373,7 @@ dialog .err:empty { display: none; }
   :root { --hdr-h: calc(var(--ctl-h) + 13px); }
   header {
     position: fixed; top: 0; left: 0; right: 0;
-    padding: 6px 12px; padding-top: calc(6px + env(safe-area-inset-top));
+    padding: 6px 16px; padding-top: calc(6px + env(safe-area-inset-top));
   }
   header > button {
     display: inline-flex; align-items: center; justify-content: center;

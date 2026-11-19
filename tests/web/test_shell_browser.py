@@ -142,6 +142,26 @@ def test_a_focused_row_stops_clear_of_the_header_and_the_tab_bar(
     assert not errors
 
 
+@pytest.mark.parametrize(("width", "lead"), [(1280, "#crumb"), (390, "header .brand")])
+def test_the_top_bar_starts_and_ends_where_the_pages_text_does(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, width: int, lead: str
+) -> None:
+    """The crumb started 6px left of the page's text, a phone's brand and buttons 4px outside it."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": 800})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    entry = page.locator(".dock textarea")
+    expect(entry).to_be_visible()
+    edges = "e => { const r = e.getBoundingClientRect(); return [r.left, r.right]; }"
+    left, right = entry.evaluate(edges)
+    assert page.locator(lead).evaluate(edges)[0] == left
+    if width < 781:
+        assert page.locator("header > button").last.evaluate(edges)[1] == right
+    assert not errors
+
+
 def test_a_disabled_button_keeps_its_look_under_the_pointer(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
