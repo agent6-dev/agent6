@@ -400,3 +400,28 @@ def test_the_code_views_rules_never_reach_the_config_source_column(
     assert source.evaluate("e => getComputedStyle(e).letterSpacing") == "normal"
     assert source.evaluate("e => getComputedStyle(e).fontSize") == "12px"
     assert not errors
+
+
+STYLE = "(e, name) => getComputedStyle(e).getPropertyValue(name)"
+
+
+def test_a_config_section_name_heads_its_muted_column_labels(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A section's name was muted under each browser's own marker, its column labels bold.
+
+    A phone stacked those labels into two more bold lines per section.
+    """
+    page, errors = open_page(port)
+    _config(page, port)
+    summary = page.locator("details.cfg-section > summary").first
+    row = page.locator('[data-key="agent6.config_version"] td')
+    assert summary.evaluate(STYLE, "color") == row.first.evaluate(STYLE, "color")
+    assert int(summary.evaluate(STYLE, "font-weight")) >= 600
+    assert summary.evaluate(STYLE, "list-style-type") == "none"
+    assert page.locator(".cfg th").first.evaluate(STYLE, "color") == row.last.evaluate(
+        STYLE, "color"
+    )
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.locator(".cfg thead").first.evaluate("e => e.offsetHeight") <= 1
+    assert not errors

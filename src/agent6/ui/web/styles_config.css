@@ -21,7 +21,20 @@ textarea.field.cfg-value {
 .cfg-section { margin-top: 10px; }
 /* The line saying no setting matches the filter takes no room while it is empty. */
 .cfg-none:empty { padding: 0; }
-.cfg-section > summary { cursor: pointer; font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 4px 0; }
+/* A section's name heads its table, over column labels in small muted capitals like a card's
+   heading. One chevron in both browsers points right while the section is folded, down while open. */
+.cfg-section > summary {
+  display: flex; align-items: center; gap: 8px; min-height: var(--ctl-h);
+  list-style: none; cursor: pointer; font-weight: 600;
+}
+.cfg-section > summary::before {
+  content: ""; width: 6px; height: 6px; margin: 0 2px; transform: translateX(-2px) rotate(-45deg);
+  border: solid var(--muted); border-width: 0 1.5px 1.5px 0;
+}
+.cfg-section[open] > summary::before { transform: translateY(-2px) rotate(45deg); }
+.cfg th {
+  font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+}
 /* The settings grid: every section's table spans the card and takes the same column widths (a
    fixed layout reads them off the header row), so the setting, value and source columns line up
    down the page and stay put while the filter hides rows. Below 700px of card the cells stack:
@@ -51,8 +64,12 @@ textarea.field.cfg-value {
     display: grid; grid-template-columns: minmax(0, 1fr) fit-content(40%); align-items: baseline;
     border-bottom: 1px solid var(--border);
   }
-  .cfg th:first-child, .cfg td.key { grid-column: 1 / -1; }
-  .cfg td, .cfg th { border-bottom: 0; padding: 4px 8px; }
+  .cfg td.key { grid-column: 1 / -1; }
+  .cfg td { border-bottom: 0; padding: 4px 8px; }
+  /* Stacked, the cells sit under no column: the labels stay for a screen reader only. */
+  .cfg thead {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
 }
 /* The model suggestions: a list under the field at a fixed height, so the dialog keeps its size
    while the catalog loads or the typing narrows it, and the buttons under it stay in view. */

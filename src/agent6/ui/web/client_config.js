@@ -81,7 +81,8 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
       const box = el('details', 'cfg-section'); box.open = !state.folded?.includes(section);
       box.appendChild(el('summary', null, section));
       tbl = el('table', 'cfg');
-      const head = el('tr'); ['setting','value','source'].forEach(h => head.appendChild(el('th', null, h))); tbl.appendChild(head);
+      const head = el('tr'); ['setting', 'value', 'source'].forEach(h => head.appendChild(el('th', null, h)));
+      tbl.appendChild(el('thead')).appendChild(head);
       box.appendChild(tbl); card.appendChild(box); sections.set(section, box);
     }
     const tr = el('tr', s.modified ? 'mod' : '');
