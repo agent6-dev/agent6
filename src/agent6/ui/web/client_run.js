@@ -399,9 +399,11 @@ function paintDetails(cards, s, asOf) {
     // The id leads the line: it is what /retire takes.
     line.appendChild(el('span', 'muted', String(t.short_id || '').padStart(3) + ' '));
     line.appendChild(el('span', 'st-' + t.status, '  '.repeat(t.depth) + glyph + ' '));
-    line.appendChild(document.createTextNode(t.title));
+    const task = el('span', 'task');
+    task.appendChild(el('span', 'title', t.title));
     // The operator's mark beside a task they own (the server's owner_note).
-    if (t.note) line.appendChild(el('span', 'sub muted', ' ' + t.note));
+    if (t.note) task.appendChild(el('span', 'sub muted', ' ' + t.note));
+    line.appendChild(task);
     tree.appendChild(line);
   }
   cards.tasks.appendChild(tree);

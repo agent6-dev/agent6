@@ -5,11 +5,14 @@
 .bar.warn > span { background: var(--warn); }
 
 .tree { font-family: var(--mono); font-size: 13px; }
-.tree .node { padding: 1px 0; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+/* A task's line: its id, its glyph at its depth, then its title, which wraps under itself. */
+.tree .node { display: flex; padding: 1px 0; white-space: pre; }
+.tree .task { min-width: 0; white-space: normal; overflow-wrap: anywhere; } /* Firefox strikes a space pre-wrap keeps at a wrap */
 .tree .cursor { color: var(--accent); font-weight: 700; }
 .st-passed { color: var(--ok); } .st-failed { color: var(--err); }
-.st-in_progress { color: var(--warn); } .st-pending { color: var(--muted); }
-.st-skipped, .st-obsolete { color: var(--muted); text-decoration: line-through; }
+.st-in_progress { color: var(--warn); } .st-pending, .st-skipped, .st-obsolete { color: var(--muted); }
+/* A skipped or obsolete task's title is struck through. */
+.st-skipped + .task > .title, .st-obsolete + .task > .title { color: var(--muted); text-decoration: line-through; }
 
 /* Tool calls: each call's name over one clipped line of its args and result
    (the full text on hover), so the narrow details drawer never breaks a path

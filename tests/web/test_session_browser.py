@@ -519,3 +519,37 @@ def test_a_wrapped_conversation_line_hangs_under_its_text(
     )
     assert inside
     assert not errors
+
+
+def test_a_task_title_wraps_and_a_skipped_task_strikes_only_its_title(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A long task title wraps under itself, and a skipped task's title is struck, not its glyph.
+
+    A long title was cut at the drawer's edge with no way to read the rest, and the strike ran
+    through the indent and the glyph while the title stayed plain.
+    """
+    from playwright.sync_api import expect
+
+    title = "Handle a quoted field that spans a CRLF and keeps a doubled quote " * 2
+    nodes = {
+        "t1": {"title": title, "parent_id": None, "status": "skipped", "children": []},
+    }
+    _session(tmp_path, "tasks-AAA111", [{"type": "graph.update", "nodes": nodes, "cursor": None}])
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"http://127.0.0.1:{port}/#/session/tasks-AAA111")
+    node = page.locator(".card-tasks .tree > div").filter(has_text="Handle a quoted field")
+    expect(node).to_be_visible()
+    fits, lines = node.evaluate(
+        "n => [n.scrollWidth <= n.clientWidth, Math.round(n.offsetHeight / 19.5)]"
+    )
+    struck = node.evaluate(
+        """n => [...n.querySelectorAll('span')].map(s =>
+        [s.textContent.trim().slice(0, 8), getComputedStyle(s).textDecorationLine])"""
+    )
+    assert fits
+    assert lines > 1
+    assert ["\u2013", "none"] in struck  # the skipped glyph
+    assert ["Handle a", "line-through"] in struck
+    assert not errors
