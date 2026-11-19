@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import pathlib
+import threading
+from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.web import test_web_browser
+from agent6.ui.web import server as web_server
+from tests.web import signin, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -18,6 +21,22 @@ open_page = test_web_browser.open_page
 port = test_web_browser.port
 
 READY = '[data-key="agent6.config_version"]'
+
+
+@pytest.fixture
+def flag_port(tmp_path: pathlib.Path) -> Iterator[int]:
+    """A server started with `--config FILE`: the leaf that file sets reads `flag (FILE)`."""
+    flag = tmp_path / "operator-projects" / "a-monorepo-checkout" / "review-heavy-overrides.toml"
+    flag.parent.mkdir(parents=True)
+    flag.write_text('[sandbox]\nnetwork = "host"\n', encoding="utf-8")
+    srv = web_server.WebServer(("127.0.0.1", 0), tmp_path, "", (flag,), secret=signin.SECRET)
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield int(srv.server_address[1])
+    finally:
+        srv.shutdown()
+        srv.server_close()
 
 
 def _config(page: Page, port: int, width: int = 1280) -> None:
@@ -47,4 +66,36 @@ def test_the_config_bar_keeps_every_button_on_the_card(
     assert bar.locator("input.filter").evaluate("e => e.offsetWidth") == bar.evaluate(
         "e => e.clientWidth"
     )
+    assert not errors
+
+
+# Per visible row: where its value starts, where its source ends, and whether the source overflows.
+COLUMNS = """() => [...document.querySelectorAll('.cfg tr[data-key]')].filter(r => r.offsetParent)
+  .map(r => [Math.round(r.cells[1].getBoundingClientRect().left),
+             Math.round(r.cells[2].getBoundingClientRect().right),
+             r.cells[2].scrollWidth > r.cells[2].clientWidth])"""
+
+
+@pytest.mark.parametrize("width", [1440, 1024, 390])
+def test_every_config_section_lines_its_columns_up(
+    open_page: Callable[[int], tuple[Page, list[str]]], flag_port: int, width: int
+) -> None:
+    """Each section's table sized its columns from its own rows.
+
+    The value and source columns started at a different x in every section and moved again
+    when Modified only hid rows; a `--config FILE` source never wrapped, so it widened its
+    column on a desktop and pushed a phone's rows past the card.
+    """
+    page, errors = open_page(flag_port)
+    _config(page, flag_port, width)
+    assert page.locator('[data-key="sandbox.network"] .src').inner_text().startswith("flag (")
+    rows = page.evaluate(COLUMNS)
+    columns = {(value, source) for value, source, _ in rows}
+    assert len(columns) == 1
+    assert not any(overflow for *_, overflow in rows)
+    page.get_by_role("button", name="Modified only").click()
+    modified = page.evaluate(COLUMNS)
+    assert 0 < len(modified) < len(rows)
+    assert {(value, source) for value, source, _ in modified} == columns
+    assert page.evaluate("document.scrollingElement.scrollWidth") == width
     assert not errors

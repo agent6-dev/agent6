@@ -12,7 +12,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
   // [presets.<name>] table (the server's rule); none edits the global and repo config.
   const selected = selectedPreset(data);
   view.innerHTML = '';
-  const card = el('div', 'card');
+  const card = el('div', 'card cfg-card');
   // The filter and entry actions share a row, in the TUI config page's words.
   const bar = el('div', 'row cfg-bar');
   const filter = el('input', 'filter'); filter.placeholder = 'filter settings…'; filter.type = 'search';

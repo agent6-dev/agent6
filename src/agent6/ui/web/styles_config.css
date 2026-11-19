@@ -11,12 +11,28 @@
 .cfg-check { margin-top: 8px; cursor: pointer; }
 .cfg-section { margin-top: 10px; }
 .cfg-section > summary { cursor: pointer; font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 4px 0; }
+/* The settings grid: every section's table spans the card and takes the same column widths (a
+   fixed layout reads them off the header row), so the setting, value and source columns line up
+   down the page and stay put while the filter hides rows. Below 700px of card the cells stack:
+   the setting over its value, the source at the row's end. */
+.cfg-card { container-type: inline-size; }
 .cfg { width: 100%; border-collapse: collapse; font-size: 13px; }
 .cfg td, .cfg th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .cfg .key { font-family: var(--mono); word-break: break-all; }
 .cfg .val { font-family: var(--mono); word-break: break-word; }
 .cfg tr.mod .key { color: var(--accent); }
-.cfg .src { color: var(--muted); white-space: nowrap; }
+.cfg .src { color: var(--muted); overflow-wrap: anywhere; }
+@container (width >= 700px) {
+  .cfg { table-layout: fixed; }
+  .cfg th:first-child { width: 352px; } /* the longest built-in key, 40 characters */
+  .cfg th:last-child { width: 96px; }
+}
+@container (width < 700px) {
+  .cfg tr { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(40%); border-bottom: 1px solid var(--border); }
+  .cfg th:first-child, .cfg td.key { grid-column: 1 / -1; }
+  .cfg .key { word-break: normal; overflow-wrap: anywhere; }
+  .cfg td, .cfg th { border-bottom: 0; padding: 4px 8px; }
+}
 /* The model suggestions float over the dialog from the field's bottom edge, or above the field
    when the viewport has no room below, so opening or closing the list moves nothing. */
 .cfg-combo > .field { anchor-name: --cfg-model; }
@@ -36,13 +52,4 @@
 .cfg-desc code {
   font-family: var(--mono); font-size: 12px; color: var(--text);
   background: var(--surface2); padding: 0 3px; border-radius: 3px;
-}
-
-@media (max-width: 780px) {
-  /* Config: the three columns stack, the setting over its value and source, so
-     a long key wraps at a dot instead of mid-word in a sliver of a column. */
-  .cfg tr { display: grid; grid-template-columns: 1fr auto; border-bottom: 1px solid var(--border); }
-  .cfg th:first-child, .cfg td.key { grid-column: 1 / -1; }
-  .cfg .key { word-break: normal; overflow-wrap: anywhere; }
-  .cfg td, .cfg th { border-bottom: 0; padding: 4px 8px; }
 }
