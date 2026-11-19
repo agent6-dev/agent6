@@ -100,7 +100,9 @@ function gitDate(iso) {
   const m = /^(\d{4}-\d\d-\d\d)T(\d\d:\d\d:\d\d)(.*)$/.exec(iso);
   if (!m) return el('span', null, iso);
   const date = el('span', 'gd-date');
-  date.append(el('span', null, m[1] + ' ' + m[2]), ' ', el('span', null, m[3]));
+  date.appendChild(el('span', null, m[1] + ' ' + m[2]));
+  date.appendChild(document.createTextNode(' '));
+  date.appendChild(el('span', null, m[3]));
   return date;
 }
 // A commit body's hard-wrapped lines rejoined into blocks, so the panel wraps each once: a line
@@ -128,7 +130,7 @@ function commitBody(body) {
     const line = el('div', b.code ? 'gd-code' : 'gd-line');
     if (b.marker) { line.appendChild(el('span', 'gd-marker', b.marker)); line.style.setProperty('--hang', b.marker.length); }
     if (b.lead) line.style.setProperty('--lead', b.lead);
-    if (b.text) line.append(b.text);
+    if (b.text) line.appendChild(document.createTextNode(b.text));
     box.appendChild(line);
   }
   return box;
@@ -196,7 +198,7 @@ function fileList(files, truncated, open, actions) {
     const index = f.staged ? (f.unstaged ? 'partly staged' : 'staged') : '';
     row.appendChild(statusBadge(status));
     const path = filePath(f, short);
-    if (index) path.append(' ', el('span', 'gf-index', index));
+    if (index) { path.appendChild(document.createTextNode(' ')); path.appendChild(el('span', 'gf-index', index)); }
     row.appendChild(path);
     row.appendChild(fileCounts(f));
     if (actions) { const acts = actions(f); if (acts) row.appendChild(acts); }
@@ -229,13 +231,19 @@ function fileList(files, truncated, open, actions) {
 function filePath(f, short) {
   const p = el('span', 'gf-path');
   const dir = (s) => s.slice(0, s.lastIndexOf('/') + 1), base = (s) => s.slice(s.lastIndexOf('/') + 1);
-  const wrapping = (text) => text.split('/').flatMap((part, i) => i ? ['/', el('wbr'), part] : [part]);
+  const wrapping = (host, text) => {
+    text.split('/').forEach((part, i) => {
+      if (i) { host.appendChild(document.createTextNode('/')); host.appendChild(el('wbr')); }
+      host.appendChild(document.createTextNode(part));
+    });
+    return host;
+  };
   if (f.old_path) {
-    const old = el('span', 'muted');
-    old.append(...wrapping(short && dir(f.old_path) === dir(f.path) ? base(f.old_path) : f.old_path), ' → ');
+    const old = wrapping(el('span', 'muted'), short && dir(f.old_path) === dir(f.path) ? base(f.old_path) : f.old_path);
+    old.appendChild(document.createTextNode(' → '));
     p.appendChild(old);
   }
-  p.append(...wrapping(short ? base(f.path) : f.path));
+  wrapping(p, short ? base(f.path) : f.path);
   return p;
 }
 function fileCounts(f) {
@@ -588,7 +596,10 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     const add = (k, v) => { kv.appendChild(el('span', 'k', k)); const node = typeof v === 'string' ? el('span', 'v', v) : v; node.classList.add('v'); kv.appendChild(node); };
     const full = el('span', 'mono gd-sha', c.sha); full.title = c.sha;
     add('commit', full);
-    const who = (p) => { const v = el('span'); v.append(p.name + ' <' + p.email + '> · ', gitDate(p.date)); return v; };
+    const who = (p) => {
+      const v = el('span'); v.appendChild(document.createTextNode(p.name + ' <' + p.email + '> · '));
+      v.appendChild(gitDate(p.date)); return v;
+    };
     add('author', who(c.author));
     if (c.committer.name !== c.author.name || c.committer.email !== c.author.email || c.committer.date !== c.author.date) {
       add('committer', who(c.committer));

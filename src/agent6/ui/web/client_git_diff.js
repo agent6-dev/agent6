@@ -47,7 +47,7 @@ function gitDiffViewer(body) {
     prev.onclick = () => showDiff(ctx, i - 1);
     const next = el('button', 'mini', '›'); next.title = 'next file'; next.disabled = i === ctx.files.length - 1;
     next.onclick = () => showDiff(ctx, i + 1);
-    tools.append(prev, el('span', 'muted git-diff-pos', (i + 1) + ' / ' + ctx.files.length), next);
+    tools.appendChild(prev); tools.appendChild(el('span', 'muted git-diff-pos', (i + 1) + ' / ' + ctx.files.length)); tools.appendChild(next);
     const fileLink = (side, label, cls) => {
       const rev = side === 'base' ? ctx.base : ctx.head;
       const path = side === 'base' ? f.old_path || f.path : f.path;
@@ -92,7 +92,7 @@ function gitDiffViewer(body) {
     if (f.status === 'D') {
       const absent = el('button', 'mini diff-open-file', 'Open in Files');
       absent.disabled = true; absent.title = 'Deleted: no file at the head revision';
-      tools.append(absent, fileLink('base', 'Open base file in Files', 'diff-open-base'));
+      tools.appendChild(absent); tools.appendChild(fileLink('base', 'Open base file in Files', 'diff-open-base'));
     } else tools.appendChild(fileLink('head', 'Open in Files', 'diff-open-file'));
     diffView.appendChild(head);
     const box = el('div', 'git-diff-body'); diffView.appendChild(box);
