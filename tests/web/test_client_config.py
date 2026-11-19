@@ -212,7 +212,8 @@ async function run() {
   const network = all(dialog()).find(e => e.tag === 'select');
   assert.deepEqual(network.children.map(e => e.value), ['auto', 'session', 'host']);
   assert.equal(network.children[1].textContent, 'session');
-  const meaning = () => all(dialog()).find(e => e.id === network['aria-describedby']).textContent;
+  const meaning = () => all(dialog()).find(e => e.id === 'cfg-meaning').textContent;
+  assert.equal(network['aria-describedby'], 'cfg-desc cfg-meaning');
   network.value = 'session'; network.oninput();
   assert.equal(meaning(), 'Run-private network without outside access');
   assert.ok(!all(dialog()).some(e => e.tag === 'input' && e.type !== 'checkbox'));

@@ -400,12 +400,12 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   const meta = el('div', 'sub muted cfg-meta');
   meta.textContent = `${esc(s.type)} · default: ${s.default_display} · set from: ${esc(s.source)}` + (s.adaptive ? ' · adaptive' : '');
   dialog.appendChild(meta);
+  let desc, field, combo, meaning, unpicked = false;
   if (s.description) {
-    const desc = el('div', 'cfg-desc');
+    desc = el('div', 'cfg-desc'); desc.id = 'cfg-desc';
     desc.appendChild(descriptionNode(s.description_points || [s.description]));
     dialog.appendChild(desc);
   }
-  let field, combo, meaning, unpicked = false;
   const choices = s.choices || (s.type === 'bool' ? ['true', 'false'] : null);
   if (role) {
     combo = configCombobox(data[section + '.model']?.input || '', section + '.model', 'field cfg-value');
@@ -430,7 +430,6 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     // where a long meaning wraps instead of being cut at the select's edge.
     if (Object.keys(s.choice_meanings || {}).length) {
       meaning = el('div', 'cfg-desc cfg-help'); meaning.id = 'cfg-meaning';
-      field.setAttribute('aria-describedby', meaning.id);
       field.oninput = () => { meaning.textContent = s.choice_meanings[field.value || s.effective] || ''; };
       field.oninput();
     }
@@ -448,6 +447,9 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     dialog.appendChild(field);
     if (meaning) dialog.appendChild(meaning);
   }
+  // The field reads the setting's description, then the chosen value's meaning.
+  const described = [desc, meaning].filter(Boolean).map(node => node.id).join(' ');
+  if (described) field.setAttribute('aria-describedby', described);
   const repoRow = el('label', 'row cfg-check');
   const repoCb = el('input'); repoCb.type = 'checkbox';
   // Default the target layer to the value's origin: editing a repo-sourced value

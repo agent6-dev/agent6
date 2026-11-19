@@ -691,6 +691,38 @@ def test_a_config_editor_reads_its_key_whole_to_a_screen_reader(
     assert not errors
 
 
+def test_a_config_editor_describes_its_value_field(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """An editor's value field had no description, though the editor shows one over the field.
+
+    A choice's field read only the chosen value's meaning; an Add dialog's fields read theirs.
+    """
+    page, errors = open_page(port)
+    _config(page, port)
+    cdp = page.context.new_cdp_session(page)
+    described: dict[str, str] = {}
+    for key in ("budget.max_usd", "sandbox.isolation"):
+        page.locator(f'[data-key="{key}"]').click()
+        dialog = page.get_by_role("dialog")
+        dialog.locator(".field").wait_for()
+        nodes = cdp.send("Accessibility.getFullAXTree")["nodes"]
+        (field,) = [
+            n
+            for n in nodes
+            if n["role"]["value"] in ("textbox", "combobox")
+            and n.get("name", {}).get("value") == key
+        ]
+        described[key] = field.get("description", {}).get("value", "")
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="detached")
+    assert described["budget.max_usd"].startswith("cap on the metered spend of one run")
+    isolation = described["sandbox.isolation"]
+    assert isolation.endswith("Strongest supported isolation, warning below full")
+    assert len(isolation) > len("Strongest supported isolation, warning below full") + 20
+    assert not errors
+
+
 def test_a_drag_across_a_config_value_selects_it_without_opening_the_editor(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
@@ -906,7 +938,7 @@ def test_a_choice_editor_shows_the_chosen_meaning_whole_on_a_phone(
         "none",
         "container",
     ]
-    meaning = dialog.locator(f"#{select.get_attribute('aria-describedby')}")
+    meaning = dialog.locator("#cfg-meaning")
     assert meaning.inner_text() == "Strongest supported isolation, warning below full"
     assert meaning.evaluate("e => e.scrollWidth <= e.clientWidth")
     select.select_option("none")
