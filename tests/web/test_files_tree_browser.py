@@ -183,7 +183,7 @@ def test_the_revision_list_opens_under_its_field(
     page, errors = open_page(big_tree)
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
-    field = page.get_by_role("textbox", name="revision")
+    field = page.get_by_role("combobox", name="revision")
     field.click()
     listing = page.locator(".gpick-list")
     listing.wait_for()

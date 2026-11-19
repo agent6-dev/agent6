@@ -144,7 +144,7 @@ def test_markdown_toc_and_relative_links_keep_the_files_route_and_revision(
     )
     page.reload()
     expect(page.locator(".md-view h1")).to_have_text("Next step")
-    expect(page.get_by_role("textbox", name="revision")).to_have_value("HEAD")
+    expect(page.get_by_role("combobox", name="revision")).to_have_value("HEAD")
     assert not errors
 
 
@@ -199,7 +199,7 @@ def test_a_heading_link_in_the_open_file_scrolls_in_place(
     expect(page).to_have_url(url)
     expect(page.locator(".md-view h1")).to_be_in_viewport()
     assert reads[before:] == []
-    expect(page.get_by_role("textbox", name="revision")).to_have_value("HEAD")
+    expect(page.get_by_role("combobox", name="revision")).to_have_value("HEAD")
     assert not errors
 
 
