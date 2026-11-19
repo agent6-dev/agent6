@@ -142,13 +142,57 @@ def test_the_old_view_is_marked_busy_until_the_next_page_paints(
     page.goto(f"http://127.0.0.1:{port}/#/")
     expect(page.locator(".dock textarea")).to_be_visible()
     page.get_by_role("link", name="Config").first.click()
-    view = page.locator("#view")
-    expect(view).to_have_attribute("aria-busy", "true")
-    expect(view.locator(".dock textarea")).to_be_visible()
+    expect(page.locator("#crumb")).to_have_text(re.compile("config", re.I))
+    busy = page.locator("#view > [aria-busy=true]")
+    expect(busy.first).to_be_visible()
+    expect(page.locator("#view > :not([aria-busy=true])")).to_have_count(0)
     held[0].continue_()
     expect(page.locator(".cfg").first).to_be_visible()
-    expect(view).not_to_have_attribute("aria-busy", "true")
+    expect(busy).to_have_count(0)
     assert not errors
+
+
+def test_a_slow_first_load_leaves_its_placeholder_undimmed(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A slow first load dimmed "loading…" to 2.3:1 as if it were a page being replaced."""
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(port)
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    page.route("**/api/hub", hold)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    placeholder = page.locator("#view > .empty")
+    expect(placeholder).to_have_text("loading…")
+    page.wait_for_timeout(600)  # past the dim's 0.2 s delay and 0.15 s fade
+    expect(placeholder).not_to_have_attribute("aria-busy", "true")
+    assert placeholder.evaluate("e => getComputedStyle(e).opacity") == "1"
+    held[0].continue_()
+    expect(page.locator(".dock textarea")).to_be_visible()
+    assert not errors
+
+
+def test_a_route_under_the_sign_in_form_keeps_it_whole(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A route that met a 401 behind the sign-in form left the kept form dimmed as busy."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.add_init_script("localStorage.setItem('a6-token', 'expired')")
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    field = page.locator("#login").get_by_role("textbox", name="secret")
+    field.fill("half typed")
+    page.wait_for_load_state("networkidle")
+    page.evaluate("location.hash = '#/config'")
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#login")).not_to_have_attribute("aria-busy", "true")
+    expect(field).to_have_value("half typed")
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
 
 
 def test_a_refused_secret_is_read_out_and_marks_the_field(

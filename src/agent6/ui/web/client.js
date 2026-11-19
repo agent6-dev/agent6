@@ -234,7 +234,6 @@ function showLogin(error) {
   document.querySelector('dialog[open]')?.close();
   setTab('');
   setCrumb('Sign in');
-  view.removeAttribute('aria-busy'); // a form kept from a repeat call changes no child of the view
   let form = document.getElementById('login');
   if (!form) {
     view.innerHTML = '';
@@ -264,6 +263,7 @@ function showLogin(error) {
     view.appendChild(form);
     input.focus();
   }
+  form.removeAttribute('aria-busy'); // a route in flight marked the kept form as the page it replaces
   if (error) {
     document.getElementById('login-err').replaceChildren(withCode(error));
     form.querySelector('input').setAttribute('aria-invalid', 'true');
@@ -364,9 +364,6 @@ let booted = false; // the one-shot deep-link to `agent6 web <target>` ran
 // stream (whose stale handler could later closeLive() the visible view when
 // the old run finishes).
 let routeGen = 0;
-// While a route loads, its old view dims after a beat (styles.css), so a quick hop never flickers;
-// the first change to the view's children, the new page or a problem, ends it.
-const viewPainted = new MutationObserver(() => { viewPainted.disconnect(); view.removeAttribute('aria-busy'); });
 // A route that shows no page: what went wrong, a retry for a failure, and the way back.
 function showProblem(heading, reason, failed) {
   view.innerHTML = '';
@@ -386,8 +383,9 @@ async function route() {
   closeLive();
   document.querySelector('dialog[open]')?.close();
   document.querySelectorAll('.wmenu-btn').forEach(b => b.remove()); // header-mounted by the run view
-  view.setAttribute('aria-busy', 'true');
-  viewPainted.observe(view, { childList: true });
+  // The page this route replaces is busy, and dims after a beat (styles.css) so a quick hop never
+  // flickers; the next page's first paint removes it. The first load's "loading…" is no page.
+  for (const old of view.children) if (!old.classList.contains('empty')) old.setAttribute('aria-busy', 'true');
   const h = location.hash.replace(/^#/, '') || '/';
   // First load with no hash: honor the CLI's target (`agent6 web <run-id>`
   // opens that run; a machine name its machine). Explicit hashes win.
