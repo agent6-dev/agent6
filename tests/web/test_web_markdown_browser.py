@@ -72,8 +72,8 @@ def test_markdown_opens_rendered_and_remembers_both_toggle_choices(
     heading = page.locator(".md-view h1")
     expect(heading).to_have_text("Workspace guide")
     expect(heading).to_be_visible()
-    source = page.get_by_role("button", name="source", exact=True)
-    rendered = page.get_by_role("button", name="rendered", exact=True)
+    source = page.get_by_role("button", name="Source", exact=True)
+    rendered = page.get_by_role("button", name="Rendered", exact=True)
     expect(rendered).to_have_attribute("aria-pressed", "true")
     expect(page.locator(".files-view .src")).to_be_hidden()
     expect(page.locator(".files-blame")).to_be_hidden()
@@ -159,10 +159,10 @@ def test_truncated_markdown_keeps_the_source_note_until_opened_whole(
     page.goto(f"http://127.0.0.1:{port}/#/files/HEAD/docs/guide%20%23%25.md")
     expect(page.locator(".files-view .src")).to_be_visible()
     expect(page.locator(".files-text")).to_contain_text("the file is cut at")
-    expect(page.get_by_role("button", name="rendered", exact=True)).to_have_count(0)
+    expect(page.get_by_role("button", name="Rendered", exact=True)).to_have_count(0)
     page.get_by_role("button", name="Show the whole file", exact=True).click()
     expect(page.locator(".md-view h1")).to_have_text("Workspace guide")
-    expect(page.get_by_role("button", name="rendered", exact=True)).to_have_attribute(
+    expect(page.get_by_role("button", name="Rendered", exact=True)).to_have_attribute(
         "aria-pressed", "true"
     )
     assert not errors

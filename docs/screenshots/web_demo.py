@@ -197,12 +197,12 @@ def drive_repo(page: Page, mode: str) -> None:
     page.wait_for_selector(".md-view")
     click(
         page,
-        ".files-md-mode button:text-is('source')",
+        ".files-md-mode button[data-mode=source]",
         label="Its source, highlighted",
         settle=1200,
     )
     page.wait_for_selector("pre.src")
-    click(page, "button.files-blame", label="blame: each line's last commit", settle=1600)
+    click(page, "button.files-blame", label="Blame: each line's last commit", settle=1600)
     page.wait_for_selector(".blame-cell")
     page.wait_for_timeout(1200)
 

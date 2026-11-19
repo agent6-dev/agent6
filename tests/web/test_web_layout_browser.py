@@ -422,7 +422,7 @@ def test_files_collapse_is_remembered_but_does_not_hide_the_phone_tree(
     expect(show).to_be_hidden()
     expect(page.get_by_role("separator", name="File tree width")).to_be_hidden()
     assert _width(pane) == pytest.approx(390, abs=1)
-    pane.get_by_role("button", name="\u2039 files", exact=True).click()
+    pane.get_by_role("button", name="\u2039 Files", exact=True).click()
     expect(pane).to_be_hidden()
     expect(tree.locator("[data-path='b.txt']")).to_be_visible()
     tree.locator("[data-path='b.txt']").click()

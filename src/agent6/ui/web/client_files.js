@@ -29,7 +29,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   const filter = el('input', 'filter'); filter.type = 'search'; filter.placeholder = 'filter files…'; filter.setAttribute('aria-label', 'filter files');
   const counts = el('span', 'muted files-counts');
   let showIgnored = recall('a6-files-ignored', 'off') === 'on';
-  const ignoredToggle = el('button', 'files-ignored', 'show ignored');
+  const ignoredToggle = el('button', 'files-ignored', 'Show ignored');
   ignoredToggle.title = 'Include files excluded by any Git ignore source';
   ignoredToggle.setAttribute('aria-pressed', String(showIgnored));
   ignoredToggle.onclick = () => {
@@ -137,7 +137,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     body.classList.add('viewing');
     pane.innerHTML = '';
     const head = el('div', 'files-head row');
-    const back = el('button', 'mini files-back', '‹ files');
+    const back = el('button', 'mini files-back', '‹ Files');
     back.onclick = () => { body.classList.remove('viewing'); tree.querySelector('[aria-selected=true]')?.focus(); };
     head.appendChild(back);
     // A long path wraps after a slash, not inside a name.
@@ -163,7 +163,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     }
     box.appendChild(el('div', 'muted', 'loading…'));
     // The blame button holds its place in the head while the text loads.
-    const blame = el('button', 'mini files-blame', 'blame');
+    const blame = el('button', 'mini files-blame', 'Blame');
     blame.setAttribute('aria-pressed', 'false'); blame.disabled = true; head.insertBefore(blame, note);
     let t;
     const readQuery = 'rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(f.path) + (whole ? '&whole=1' : '') + (ignored ? '&ignored=1' : '');
@@ -226,13 +226,13 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
         const rendered = mode !== 'source';
         md.hidden = !rendered; sourceBox.hidden = rendered; blame.hidden = rendered;
         for (const button of modes.children) {
-          const active = button.textContent === (rendered ? 'rendered' : 'source');
+          const active = button.dataset.mode === (rendered ? 'rendered' : 'source');
           button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
         }
         if (rendered && anchor) [...md.querySelectorAll('[id]')].find(h => h.id === anchor)?.scrollIntoView({ block: 'start' });
       };
-      for (const mode of ['rendered', 'source']) {
-        const button = el('button', 'mini', mode);
+      for (const [mode, label] of [['rendered', 'Rendered'], ['source', 'Source']]) {
+        const button = el('button', 'mini', label); button.dataset.mode = mode;
         button.onclick = () => { remember(MARKDOWN_MODE_KEY, mode); selectMode(mode); };
         modes.appendChild(button);
       }

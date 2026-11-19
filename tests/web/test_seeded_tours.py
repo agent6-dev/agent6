@@ -97,7 +97,7 @@ def test_git_and_files_tour(tour_page: Page, tmp_path: pathlib.Path) -> None:
     expect(page.locator(".md-view")).to_be_visible()
     expect(page.locator(".md-view h1")).to_have_text(re.compile("stats", re.IGNORECASE))
     _stop(page, tmp_path, "05-readme-rendered")
-    page.locator(".files-md-mode").get_by_role("button", name="source", exact=True).click()
+    page.locator(".files-md-mode").get_by_role("button", name="Source", exact=True).click()
     expect(page.locator("pre.src")).to_be_visible()
     expect(page.locator('pre.src [data-line="1"]')).to_contain_text("# stats")
     gutters = page.locator("pre.src .g")

@@ -29,7 +29,7 @@ def test_show_ignored_is_remembered_and_opens_ignored_markdown(
     (tmp_path / "WORK_QUEUE.md").write_text("# Work queue\n", encoding="utf-8")
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/files/WORKTREE")
-    toggle = page.get_by_role("button", name="show ignored", exact=True)
+    toggle = page.get_by_role("button", name="Show ignored", exact=True)
     row = page.locator(".files-tree [data-path='WORK_QUEUE.md']")
     expect(toggle).to_have_attribute("aria-pressed", "false")
     expect(row).to_have_count(0)
