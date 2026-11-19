@@ -206,3 +206,33 @@ def test_an_add_dialog_shows_each_field_description_whole_under_the_field(
     assert "`" not in described.inner_text()
     assert described.evaluate("e => e.scrollWidth <= e.clientWidth")
     assert not errors
+
+
+def test_a_long_list_value_shows_whole_in_its_editor(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A list, table or string was edited in a one-line input that showed only a long value's tail.
+
+    Enter still saves; Shift+Enter breaks the line.
+    """
+    command = (
+        '["sh", "-c", "uv run ruff check && uv run ruff format --check && uv run pyright'
+        ' && uv run tach check && uv run pytest"]'
+    )
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(f"[harness.verify]\ncommand = {command}\n", encoding="utf-8")
+    page, errors = open_page(port)
+    _config(page, port)
+    page.locator('[data-key="harness.verify.command"]').click()
+    dialog = page.get_by_role("dialog")
+    field = dialog.locator(".field")
+    assert field.input_value() == command
+    hidden = "e => [e.scrollWidth - e.clientWidth, e.scrollHeight - e.clientHeight, e.scrollLeft]"
+    assert field.evaluate(hidden) == [0, 0, 0]
+    field.press("Shift+Enter")
+    assert field.input_value() == command + "\n"
+    assert dialog.is_visible()
+    field.press("Enter")
+    dialog.wait_for(state="hidden")
+    assert not errors

@@ -8,6 +8,12 @@
    checkbox under them. */
 .cfg-meta { margin-bottom: 10px; }
 .cfg-label { display: block; margin-top: 8px; }
+/* A list, table or string value rests at a field's height and grows with the value to 40% of the
+   screen, then scrolls. */
+textarea.field.cfg-value {
+  field-sizing: content; resize: none; min-height: var(--ctl-h); max-height: 40dvh;
+  padding-block: calc((var(--ctl-h) - 1lh - 2px) / 2); font-family: var(--mono); font-size: 13px;
+}
 .cfg-check { margin-top: 8px; cursor: pointer; }
 .cfg-section { margin-top: 10px; }
 .cfg-section > summary { cursor: pointer; font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 4px 0; }

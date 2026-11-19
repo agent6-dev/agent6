@@ -392,10 +392,14 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       option.value = c; field.appendChild(option);
     }
     if (choices.includes(current)) field.value = current;
+  } else if (['list', 'table', 'str'].includes(s.type)) {
+    // A list, table or string shows whole: the field grows with the value.
+    field = el('textarea', 'field cfg-value');
+    field.value = cur;
+    if (s.type === 'list') field.placeholder = 'TOML list';
   } else {
     field = el('input', 'field');
     field.value = cur;
-    if (s.type === 'list') field.placeholder = 'TOML list';
   }
   if (!combo) dialog.appendChild(field);
   const repoRow = el('label', 'row cfg-check');
@@ -491,5 +495,6 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       toast(d.message || 'removed'); close(); await refresh();
     });
   };
-  if (!combo) field.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); submit(); } };
+  // Enter saves; Shift+Enter breaks a long value's line.
+  if (!combo) field.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !composing(e)) { e.preventDefault(); submit(); } };
 }
