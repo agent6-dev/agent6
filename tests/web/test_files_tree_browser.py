@@ -247,3 +247,19 @@ def test_the_file_pane_draws_its_focus_ring_inside(
     )
     assert ring is not False and ring <= 0, ring
     assert not errors
+
+
+def test_the_tree_and_the_file_meet_at_one_hairline(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """Tree rows stopped 6px short of the divider, and a hidden tree left a doubled line."""
+    page, errors = open_page(big_tree)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/b.txt")
+    page.wait_for_selector(".files-blame:enabled")
+    left = "e => e.getBoundingClientRect().left"
+    row = page.locator(_row("deep")).evaluate("e => e.getBoundingClientRect().right")
+    assert page.locator(".files-head").evaluate(left) - row == pytest.approx(1, abs=0.5)
+    page.get_by_role("button", name="Hide tree", exact=True).click()
+    rail = page.locator("aside.rail").evaluate("e => e.getBoundingClientRect().right")
+    assert page.locator(".files-head").evaluate(left) == pytest.approx(rail, abs=0.5)
+    assert not errors

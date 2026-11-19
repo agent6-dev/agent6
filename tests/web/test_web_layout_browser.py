@@ -451,7 +451,7 @@ def test_files_restored_width_fits_the_current_container(
     page.set_viewport_size({"width": 800, "height": 900})
     assert _width(tree) >= 180
     assert _width(pane) >= 240
-    assert _width(tree) + _width(pane) < _width(page.locator(".files-body"))
+    assert _width(tree) + _width(pane) <= _width(page.locator(".files-body")) + 0.5
     assert not errors
 
 
