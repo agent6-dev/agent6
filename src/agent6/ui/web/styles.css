@@ -281,14 +281,20 @@ button.quiet.danger:hover { color: var(--err); border-color: transparent; backgr
   white-space: pre-wrap; overflow-wrap: anywhere; /* CLI-captured messages (merge, prune) keep their lines */
 }
 .toast.bad { border-color: var(--err); color: var(--err); }
-.toast .t-x { flex: none; min-height: 0; padding: 0 4px; line-height: inherit; background: none; border: 0; color: inherit; }
-.notif-banner { display: flex; align-items: flex-start; gap: 10px; background: var(--surface2); border-left: 3px solid var(--accent); padding: 10px 12px; margin-bottom: 10px; }
+/* The machine view's banners stack under the header, each 12px below what is above it. */
+.notif-banner { display: flex; align-items: flex-start; gap: 10px; background: var(--surface2); border-left: 3px solid var(--accent); padding: 10px 12px; margin-top: 12px; }
 .notif-banner.warn { border-color: var(--warn); }
 .notif-banner.error { border-color: var(--err); }
 .notif-banner .grow { flex: 1; min-width: 0; }
 .notif-banner .nb-msg { word-break: break-word; }
 .notif-banner .nb-sub { font-size: 12px; color: var(--muted); }
-.notif-banner .nb-x { min-height: 0; padding: 0 4px; color: var(--muted); background: none; border: 0; font-size: 16px; }
+/* A close button (closeButton; a banner's × too): a quiet square with its glyph centred and a hover
+   tint that shows on any surface. In a message it hangs over the first line, so the message is no
+   taller for it. */
+button.x-btn, .notif-banner .nb-x { display: grid; place-items: center; flex: none; padding: 0; }
+.notif-banner .nb-x { background: transparent; border-color: transparent; color: var(--muted); }
+button.x-btn:hover, .notif-banner .nb-x:hover { background-color: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
+.toast .x-btn, .notif-banner .x-btn, .notif-banner .nb-x { line-height: inherit; margin-block: calc((1lh - var(--ctl-h)) / 2); }
 
 /* A dialog (openDialog) floats over the dimmed page in one of two widths: a form, or a list or
    text to read. A wheel or a swipe over it or its backdrop never scrolls the page behind:
@@ -303,7 +309,6 @@ dialog.card.wide { width: 760px; }
    The head rises by half the button's height past the title's 20px line, so the title stays put. */
 dialog .dialog-head { display: flex; align-items: center; gap: 8px; margin: calc(10px - var(--ctl-h) / 2) 0 8px; }
 dialog .dialog-head > h2 { flex: 1; margin: 0; font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--text); }
-dialog .dialog-x { display: grid; place-items: center; padding: 0; }
 /* A list dialog sits high and still, so its field stays put while the list narrows. */
 dialog.card.picker { margin-top: 12vh; max-height: calc(88vh - 16px); }
 dialog::backdrop { background: rgba(0,0,0,.55); overflow: hidden; overscroll-behavior: contain; }

@@ -172,8 +172,7 @@ function toast(msg, bad) {
   const t = el('div', 'toast' + (bad ? ' bad' : ''), msg);
   if (bad) {
     t.setAttribute('role', 'alert');
-    const x = el('button', 't-x', '\u00d7'); x.setAttribute('aria-label', 'Dismiss');
-    x.onclick = () => t.remove(); t.appendChild(x);
+    t.appendChild(closeButton('Dismiss', () => t.remove()));
   } else { setTimeout(() => t.remove(), 4000); }
   document.getElementById('toasts').appendChild(t);
 }
@@ -187,8 +186,17 @@ function setCrumb(t) { crumb.textContent = t || ''; document.title = t ? t + ' Â
 // dialog leaves the page when it closes. The caller fills the body and focuses its field. One
 // dialog at a time: while one is open, openDialog returns null and the caller drops its own (a
 // fetch that lands after Ctrl-K opened the switcher).
-const CLOSE_ICON = '<svg class="ic" viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round" fill="none" stroke="currentColor" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
 let dialogCount = 0;
+// A dialog's or a message's close button: the close icon in a quiet square, named by what it does
+// (Close for a dialog, Dismiss for a message).
+const CLOSE_ICON = '<svg class="ic" viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round" fill="none" stroke="currentColor" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+function closeButton(label, onclick) {
+  const b = el('button', 'quiet x-btn');
+  b.setAttribute('aria-label', label); b.title = label;
+  b.innerHTML = CLOSE_ICON;
+  b.onclick = onclick;
+  return b;
+}
 function openDialog(title, cls) {
   if (document.querySelector('dialog[open]')) return null;
   const dialog = el('dialog', cls ? 'card ' + cls : 'card');
@@ -198,12 +206,8 @@ function openDialog(title, cls) {
   dialog.setAttribute('closedby', 'any');
   dialog.tabIndex = -1; // no Tab stop: Firefox stops on a scrolling dialog, which draws no ring
   // A touch screen has no Esc, and nothing shows that a tap outside closes the dialog.
-  const close = el('button', 'quiet dialog-x');
-  close.setAttribute('aria-label', 'Close'); close.title = 'Close';
-  close.innerHTML = CLOSE_ICON;
-  close.onclick = () => dialog.close();
   const head = el('div', 'dialog-head');
-  head.appendChild(heading); head.appendChild(close);
+  head.appendChild(heading); head.appendChild(closeButton('Close', () => dialog.close()));
   dialog.appendChild(head);
   dialog.addEventListener('close', () => dialog.remove());
   document.body.appendChild(dialog);
