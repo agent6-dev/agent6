@@ -127,7 +127,8 @@
 .gfilter-group, .gfilter-item { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .gfilter-list { max-height: 40vh; overflow-y: auto; margin-top: 8px; }
 .gfilter-item { display: flex; padding: 3px 0; font-size: 13px; }
-.gfilter-item.off { opacity: .5; }
+.gfilter-item.off { opacity: .5; cursor: not-allowed; }
+.gfilter-item.off input { cursor: inherit; }
 .gfilter-item .gref { margin-right: 0; }
 /* Where a ref's name is the row (the Refs filter, the picker's list, the commit's subject), the
    row caps its badge, and the shas line up in a column. */

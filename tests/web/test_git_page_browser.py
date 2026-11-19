@@ -317,3 +317,14 @@ def test_a_selected_merges_hollow_dot_takes_its_rows_colour(
     fill = row.locator("circle.merge").evaluate("d => getComputedStyle(d).fill")
     assert fill == row.evaluate("r => getComputedStyle(r).backgroundColor")
     assert errors == [], errors
+
+
+def test_a_disabled_ref_in_the_filter_reads_not_allowed(open_page: OpenPage, git_port: int) -> None:
+    """A ref of an unticked group kept the pointer cursor while its checkbox was disabled."""
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.get_by_role("button", name="Refs ▾").click()
+    off = page.locator(".gfilter-item.off").first  # the agent6 run refs' group starts unticked
+    off.wait_for()
+    assert off.evaluate("e => getComputedStyle(e).cursor") == "not-allowed"
+    assert errors == [], errors
