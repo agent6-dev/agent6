@@ -10,6 +10,11 @@
   --accent: light-dark(#2160d6, #6ea8fe); --accent2: light-dark(#7036da, #b48ead);
   --ok: light-dark(#156b4f, #4ec9a5); --warn: light-dark(#7d5800, #e2c08d); --err: light-dark(#af2a36, #f07178);
   --on-accent: light-dark(#ffffff, #05121f); /* text on an accent fill */
+  --border-strong: light-dark(#b9c0ca, #3a4354); /* field outlines, hovered buttons */
+  /* Controls: a button, a field and a select of one size are exactly this tall; a touch
+     screen gets larger targets. */
+  --ctl-h: 32px; --ctl-h-sm: 26px; --ctl-px: 12px; --ctl-px-sm: 8px;
+  --r-sm: 4px; --r: 6px; --r-lg: 8px;
   --nav-h: 56px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   /* the highlighter's dozen classes */
@@ -23,6 +28,7 @@
 }
 :root.light { color-scheme: light; }
 :root.dark { color-scheme: dark; }
+@media (pointer: coarse) { :root { --ctl-h: 40px; --ctl-h-sm: 32px; } }
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 input[type=checkbox] { accent-color: var(--accent); }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -48,18 +54,19 @@ header .spacer { flex: 1; }
 /* min-height keeps the header the same height whatever the crumb holds:
    without it the bar shrinks 21px and views jump on navigation. */
 header .crumb { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 21px; }
-button, .btn {
-  font: inherit; color: var(--text); background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 8px; padding: 8px 12px; cursor: pointer; min-height: 40px;
-  transition: border-color .15s, background .15s;
+button {
+  font: inherit; line-height: 1.25; color: var(--text); background: var(--surface2);
+  border: 1px solid var(--border); border-radius: var(--r); padding: 0 var(--ctl-px);
+  min-height: var(--ctl-h); cursor: pointer; transition: border-color .15s, background-color .15s, color .15s;
 }
-button:focus-visible, .field:focus-visible, input.filter:focus-visible {
-  outline: 2px solid var(--accent); outline-offset: 1px;
-}
-button:hover, .btn:hover { border-color: var(--accent); }
-button:active { transform: translateY(1px); }
+/* One focus ring for every control, row and link; a field's ring sits on its border. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.field:focus-visible, input.filter:focus-visible, select:focus-visible { outline-offset: -1px; }
+/* rows and scroll panes run edge to edge inside a scroller: their ring goes inside them */
+[role=button]:focus-visible, [tabindex]:not(button, a, input, select, textarea):focus-visible { outline-offset: -2px; }
+button:hover { border-color: var(--border-strong); background-color: color-mix(in srgb, var(--text) 6%, var(--surface2)); }
 button:disabled { opacity: .45; cursor: not-allowed; }
-button:disabled:hover { border-color: var(--border); }
+button:disabled:hover { border-color: var(--border); background-color: var(--surface2); }
 
 nav.tabs {
   display: none; position: fixed; bottom: 0; left: 0; right: 0; z-index: 20;
@@ -152,10 +159,7 @@ main { padding: 0; }
    screen the pairs wrap whole. */
 .pickers { flex-wrap: wrap; gap: 6px 16px; margin-bottom: 8px; font-size: 13px; }
 .pickers .pick { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
-.pickers select.field {
-  width: auto; min-width: 0; max-width: 100%; min-height: 30px; padding: 4px 8px;
-  border-radius: 6px; font-size: 13px;
-}
+.pickers select.field { width: auto; min-width: 0; max-width: 100%; min-height: var(--ctl-h-sm); font-size: 13px; }
 .pickers input[type=checkbox] { width: 16px; height: 16px; margin: 0; }
 /* /parallel model-id autocomplete popup (a textarea can't carry a native
    datalist, so this is the composer analogue of the config editor's list). */
@@ -173,27 +177,42 @@ main { padding: 0; }
 .more-note { color: var(--muted); font-style: italic; }
 .card-head-row { display: flex; align-items: baseline; gap: 8px; }
 .card-head-row h2 { flex: 1; }
-button.mini { min-height: 26px; padding: 2px 10px; font-size: 12px; border-radius: 6px; color: var(--muted); }
+button.mini { min-height: var(--ctl-h-sm); padding: 0 var(--ctl-px-sm); font-size: 13px; }
 
-input.filter {
-  width: 100%; font: inherit; color: var(--text); background: var(--surface2);
-  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-height: 42px;
-}
 .empty { color: var(--muted); padding: 24px; text-align: center; }
 .err { color: var(--err); }
 
-textarea.field, select.field, input.field {
-  width: 100%; font: inherit; color: var(--text); background: var(--surface2);
-  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-height: 42px;
+/* Fields sit on the page colour inside an outline, so a field never reads as a button; every
+   select draws one chevron in both browsers. */
+textarea.field, select.field, input.field, input.filter {
+  width: 100%; font: inherit; color: var(--text); background-color: var(--bg);
+  border: 1px solid var(--border-strong); border-radius: var(--r); padding: 0 var(--ctl-px);
+  min-height: var(--ctl-h);
 }
-textarea.field { min-height: 72px; resize: vertical; }
+textarea.field { min-height: 72px; padding-block: 6px; line-height: 1.5; resize: vertical; }
+.field:disabled, input.filter:disabled { opacity: .55; cursor: not-allowed; }
+select, select.field {
+  appearance: none; font: inherit; color: var(--text); background-color: var(--bg);
+  border: 1px solid var(--border-strong); border-radius: var(--r);
+  padding: 0 calc(var(--ctl-px) + 14px) 0 var(--ctl-px); min-height: var(--ctl-h);
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: right 15px center, right 10px center; background-size: 5px 5px; background-repeat: no-repeat;
+}
+select:disabled { opacity: .55; cursor: not-allowed; }
 .form-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 /* The sign-in form: one field beside its button, the server's refusal under them. */
 .login { max-width: 480px; }
 .login input.field { flex: 1 1 200px; width: auto; }
 .login .err { margin-top: 8px; }
 button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
-button.danger:hover { border-color: var(--err); color: var(--err); }
+button.primary:hover { background-color: color-mix(in srgb, var(--accent) 86%, var(--text)); border-color: transparent; }
+/* A quiet button is a toolbar action with no box until hovered. */
+button.quiet { background: transparent; border-color: transparent; color: var(--muted); padding: 0 var(--ctl-px-sm); }
+button.quiet:hover { background-color: var(--surface2); color: var(--text); }
+button.danger { color: var(--err); }
+button.danger:hover { border-color: var(--err); }
+button.quiet.danger { color: var(--muted); }
+button.quiet.danger:hover { color: var(--err); border-color: transparent; background-color: color-mix(in srgb, var(--err) 10%, transparent); }
 /* The sessions card's maintenance actions and the composer's advanced fold: one muted
    disclosure each, closed by default. */
 .toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
@@ -217,14 +236,14 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
   white-space: pre-line; /* CLI-captured messages (merge, prune) are line-shaped */
 }
 .toast.bad { border-color: var(--err); color: var(--err); }
-.toast .t-x { background: none; border: none; color: inherit; cursor: pointer; margin-left: 10px; }
+.toast .t-x { min-height: 0; padding: 0 4px; background: none; border: 0; color: inherit; margin-left: 10px; }
 .notif-banner { display: flex; align-items: flex-start; gap: 10px; background: var(--surface2); border-left: 3px solid var(--accent); padding: 10px 12px; margin-bottom: 10px; }
 .notif-banner.warn { border-color: var(--warn); }
 .notif-banner.error { border-color: var(--err); }
 .notif-banner .grow { flex: 1; min-width: 0; }
 .notif-banner .nb-msg { word-break: break-word; }
 .notif-banner .nb-sub { font-size: 12px; color: var(--muted); }
-.notif-banner .nb-x { cursor: pointer; color: var(--muted); background: none; border: none; min-height: auto; padding: 0 4px; font-size: 16px; }
+.notif-banner .nb-x { min-height: 0; padding: 0 4px; color: var(--muted); background: none; border: 0; font-size: 16px; }
 
 .overlay {
   position: fixed; inset: 0; z-index: 60; padding: 16px;
@@ -247,7 +266,7 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
     position: fixed; top: 0; left: 0; right: 0;
     padding: 6px 12px; padding-top: calc(6px + env(safe-area-inset-top));
   }
-  header > button { min-height: 34px; padding: 4px 10px; }
+  header > button { min-width: var(--ctl-h); padding: 0 var(--ctl-px-sm); }
   main { padding: calc(var(--hdr-h) + env(safe-area-inset-top)) 0 calc(var(--nav-h) + 24px); }
   .card.scroll { max-height: 60vh; }
   header .desktop-only { display: none; }
@@ -332,4 +351,7 @@ aside.rail { display: none; }
   .card.scroll, .conv-box { max-height: none !important; overflow: visible; }
   .composer .hint { display: none; } /* the keyboard's enter key says it; space is tight */
 }
-button.active { border-color: var(--accent); color: var(--accent); }
+/* A pressed toggle: a class where a view tracks it, aria-pressed where the button says it. */
+button.active, button[aria-pressed=true] {
+  border-color: var(--accent); color: var(--accent); background-color: color-mix(in srgb, var(--accent) 12%, var(--surface2));
+}

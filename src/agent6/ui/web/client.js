@@ -644,10 +644,10 @@ function sessionsCard(sessions) {
   // Maintenance, the actions the TUI's File menu holds, sits in one row above the list.
   const toolbar = el('div', 'toolbar');
   // OS notifications for a session that starts waiting or ends need a granted permission.
-  const bell = el('button', 'mini', '🔔 Notifications');
+  const bell = el('button', 'mini quiet', '🔔 Notifications');
   bell.onclick = enableNotifications;
   toolbar.appendChild(bell);
-  const action = (label, run) => { const b = el('button', 'mini danger', label); b.onclick = run; toolbar.appendChild(b); };
+  const action = (label, run) => { const b = el('button', 'mini quiet danger', label); b.onclick = run; toolbar.appendChild(b); };
   // The CLI's --delete-squashed as its own entry: with the default squash
   // method every merged run's branch is unreachable, so a plain prune
   // reports them and deletes none.

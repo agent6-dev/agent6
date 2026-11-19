@@ -52,7 +52,7 @@
 .git-diff-pos { font-size: 12px; white-space: nowrap; }
 .git-diff-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px; }
 .gcmp-pick { display: flex; gap: 8px; align-items: center; margin: 8px 0 4px; }
-.gcmp-pick button.mini { flex: none; min-height: 42px; }
+.gcmp-pick button.mini { flex: none; min-height: var(--ctl-h); }
 .gcmp-sum { font-size: 12px; margin: 10px 0 8px; overflow-wrap: anywhere; }
 .gfilter {
   position: absolute; top: 100%; left: 0; z-index: 40; margin-top: 6px; padding: 10px;
