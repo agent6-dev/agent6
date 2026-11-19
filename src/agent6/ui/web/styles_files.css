@@ -12,10 +12,13 @@
 .files-tree { container: files-tree / inline-size; --tree-inset: var(--files-inset); }
 @container files-tree (width < 320px) { .gtree-note, .gf-counts { display: none; } }
 .gf[aria-selected=true] { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
-/* The head is one row of mini buttons tall whatever the file shows, and before its text loads. */
+/* The head is one row of mini buttons tall whatever the file shows, and before its text loads. In
+   a narrow pane the note takes a row of its own, so its language and line count arrive in place. */
 .files-head { flex: none; flex-wrap: wrap; gap: 8px; min-height: calc(var(--ctl-h-sm) + 17px); padding: 8px var(--files-inset); border-bottom: 1px solid var(--border); }
 .files-head .gf-path { flex: 1 1 200px; }
 .files-note { font-size: 12px; white-space: nowrap; }
+.files-view { container: files-pane / inline-size; }
+@container files-pane (width < 560px) { .files-note { flex-basis: 100%; } }
 .files-text { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px var(--files-inset); }
 .files-back, .files-tree-toggle { display: none; }
 .md-view { max-width: 80ch; margin: 0 auto; padding: 12px 0 32px; line-height: 1.65; overflow-wrap: break-word; }

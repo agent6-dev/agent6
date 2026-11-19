@@ -200,3 +200,28 @@ def test_the_file_head_keeps_one_height(
     page.wait_for_selector(".files-blame")
     assert head.evaluate("e => e.getBoundingClientRect().height") == pytest.approx(image, abs=0.5)
     assert not errors
+
+
+def test_a_narrow_file_head_keeps_its_height_while_the_text_loads(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """On a phone the head grew a row when the blame button and the note's language arrived."""
+    page, errors = open_page(big_tree)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.add_init_script("""
+      window.__heads = [];
+      new MutationObserver(() => {
+        const head = document.querySelector('.files-head');
+        if (head) window.__heads.push(head.getBoundingClientRect().height);
+      }).observe(document, {subtree: true, childList: true, characterData: true});
+    """)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/b.txt")
+    page.wait_for_selector(".files-blame:enabled")
+    heights = page.evaluate("window.__heads")
+    assert heights and len(set(heights)) == 1, heights
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/logo.png")
+    page.wait_for_selector(".files-view img")
+    assert page.locator(".files-head").evaluate(
+        "e => e.getBoundingClientRect().height"
+    ) == pytest.approx(heights[0], abs=0.5)
+    assert not errors

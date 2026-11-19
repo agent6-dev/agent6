@@ -150,14 +150,17 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
       return;
     }
     box.appendChild(el('div', 'muted', 'loading…'));
+    // The blame button holds its place in the head while the text loads.
+    const blame = el('button', 'mini files-blame', 'blame');
+    blame.setAttribute('aria-pressed', 'false'); blame.disabled = true; head.insertBefore(blame, note);
     let t;
     const readQuery = 'rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(f.path) + (whole ? '&whole=1' : '') + (ignored ? '&ignored=1' : '');
     try { t = await getJSON('/api/git/text?' + readQuery); }
-    catch (e) { if (current()) { box.innerHTML = ''; box.appendChild(el('div', 'err', e.message)); } return; }
+    catch (e) { if (current()) { blame.remove(); box.innerHTML = ''; box.appendChild(el('div', 'err', e.message)); } return; }
     if (!current()) return;
     box.innerHTML = '';
     if (t.language) facts.push(t.language);
-    if (t.binary) { note.textContent = facts.join(' · '); box.appendChild(el('div', 'muted gf-note', 'binary file: no text')); return; }
+    if (t.binary) { blame.remove(); note.textContent = facts.join(' · '); box.appendChild(el('div', 'muted gf-note', 'binary file: no text')); return; }
     facts.push(t.lines === 1 ? '1 line' : t.lines + ' lines');
     note.textContent = facts.join(' · ');
     if (t.truncated) {
@@ -168,8 +171,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     const sourceBox = el('div', 'files-source'); box.appendChild(sourceBox);
     const source = renderLines(splitLines(t.text), t.spans, null);
     sourceBox.appendChild(source);
-    const blame = el('button', 'mini files-blame', 'blame');
-    blame.setAttribute('aria-pressed', 'false'); head.insertBefore(blame, note);
+    blame.disabled = false;
     let blaming = false, blameRequest = 0;
     blame.onclick = async () => {
       const request = ++blameRequest;
