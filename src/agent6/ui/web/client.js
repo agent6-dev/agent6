@@ -1217,7 +1217,7 @@ async function openSwitcher() {
   for (const r of (data.sessions || [])) flatten(r);
   openPicker({
     title: 'Switch session',
-    placeholder: 'type to narrow: id, task, branch, worktree… (> for commands)',
+    placeholder: 'narrow, or > for commands', // fits the field on a 320px phone
     rows,
     empty: '(no sessions yet)',
     prefix: { key: '>', open: (rest) => openPalette(rest) },

@@ -492,6 +492,27 @@ def test_the_pointer_and_the_arrows_share_one_highlighted_row(
     assert [e for e in errors if not e.startswith("Failed to load resource")] == []
 
 
+def test_the_switchers_placeholder_fits_a_phones_field(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """On a phone the placeholder stopped after "worktree…", so "> for commands" never showed.
+
+    A 320px screen is the narrowest phone.
+    """
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 320, "height": 640})
+    dialog = _open_switcher(page, port, _sessions(1))
+    field = dialog.get_by_role("combobox")
+    need, room = field.evaluate("""f => { const s = getComputedStyle(f);
+      const text = document.createElement('canvas').getContext('2d');
+      text.font = s.fontSize + ' ' + s.fontFamily;
+      return [text.measureText(f.placeholder).width,
+              f.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)]; }""")
+    assert "> for commands" in str(field.get_attribute("placeholder"))
+    assert need <= room
+    assert not errors
+
+
 def test_enter_and_space_press_a_switcher_rows_own_button(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
