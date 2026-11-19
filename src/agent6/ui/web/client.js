@@ -1716,17 +1716,12 @@ function makeComposer(id) {
     }
     if (text === '/shells') {
       // The view is the Background shells card: bring it up (the phone menu
-      // picks it; the desktop page opens the drawer and scrolls to it), and
-      // say so when there is nothing to show, as the CLI and TUI do.
+      // picks it; the desktop page opens the drawer through Details and scrolls
+      // to it), and say so when there is nothing to show, as the CLI and TUI do.
       clearDraft();
       const card = document.querySelector('[data-w="shells"]');
       if (!card || card.style.display === 'none') { toast('no background commands this run'); return; }
-      const drawer = document.querySelector('.drawer');
-      if (drawer && drawer.classList.contains('closed')) {
-        drawer.classList.remove('closed');
-        document.querySelector('.details-btn')?.classList.add('active');
-        remember('a6-drawer', 'open');
-      }
+      if (document.querySelector('.drawer.closed')) document.querySelector('.details-btn').click();
       const pick = document.querySelector('.wmenu button[data-w="shells"]');
       if (pick) pick.click();
       card.scrollIntoView({ behavior: 'smooth', block: 'start' });

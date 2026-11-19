@@ -260,6 +260,33 @@ def test_a_directive_the_composer_runs_closes_its_popup(
     assert not errors
 
 
+def test_shells_opens_the_drawer_as_details_does(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """/shells opened a closed drawer behind Details' back: Details still read collapsed."""
+    from playwright.sync_api import expect
+
+    stop = {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+    session = session_logs.write_run(tmp_path, "shells-AAA111", [stop])
+    shell = session / "shells" / "bg1"
+    shell.mkdir(parents=True)
+    (shell / "meta.json").write_text(json.dumps({"command": "python -m http.server"}))
+    page, errors = open_page(port)
+    page.add_init_script("localStorage.setItem('a6-drawer', 'closed')")
+    page.goto(f"http://127.0.0.1:{port}/#/session/shells-AAA111")
+    details = page.get_by_role("button", name="Details", exact=True)
+    expect(details).to_have_attribute("aria-expanded", "false")
+    entry = page.locator(".composer textarea")
+    expect(entry).to_have_attribute("placeholder", re.compile("continue|next"))
+    entry.fill("/shells")
+    entry.press("Escape")
+    entry.press("Enter")
+    expect(page.locator(".card-shells")).to_be_visible()
+    expect(details).to_have_attribute("aria-expanded", "true")
+    assert page.evaluate("localStorage.getItem('a6-drawer')") == "open"
+    assert not errors
+
+
 def test_the_phone_widget_menu_closes_on_esc_an_outside_tap_and_a_pick(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
