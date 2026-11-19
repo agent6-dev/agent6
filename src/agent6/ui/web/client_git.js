@@ -481,10 +481,11 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     });
     if (!commits.length) graph.appendChild(el('div', 'empty', selectedRefs().length || head.sha ? 'no commits yet' : 'no refs selected'));
     if (hasMore) {
-      // The focus Load more held goes to the first row it adds.
+      // The next page waits on a disabled button; the focus it held goes to the first row it adds.
       const more = el('button', 'git-more', 'Load more');
       more.onclick = async () => {
         const had = document.activeElement === more, from = commits.length;
+        more.disabled = true; more.textContent = 'Loading…';
         await loadGraph(false);
         if (had) (commits[from] ? graph.querySelector('[data-sha="' + commits[from].sha + '"]') : graph.querySelector('.git-more'))?.focus();
       };
@@ -494,28 +495,37 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     const n = selectedRefs().length;
     counts.textContent = commits.length + (hasMore ? '+' : '') + ' commits · ' + n + ' of ' + refs.length + ' refs';
   };
+  // While a page loads, the graph reads busy and, past a moment, dims.
   const loadGraph = async (reset) => {
     const n = ++loading;
     if (reset) { commits = []; tips = null; hasMore = false; }
+    graph.setAttribute('aria-busy', 'true');
     try {
       const d = await getJSON(graphUrl(commits.length));
       if (n !== loading || !app.isConnected) return;
       commits = commits.concat(d.commits); tips = d.tips; hasMore = d.has_more;
     } catch (e) { if (n === loading) toast(e.message, true); }
+    if (n === loading) graph.setAttribute('aria-busy', 'false');
     paintGraph();
   };
   // ↻: the refs, the working tree and the graph again; an open commit panel stays, an
-  // open working-tree panel is painted afresh.
+  // open working-tree panel is painted afresh. ↻ waits until they are in, keeping its focus.
   const reload = async (keep) => {
-    let r, w;
-    try { [r, w] = await Promise.all([getJSON('/api/git/refs'), getJSON('/api/git/worktree')]); }
-    catch (e) { toast(e.message, true); return; }
-    if (!app.isConnected) return;
-    refs = r.refs; head = r.head; wt = w; remotes = r.remotes;
-    paintBranches(typeof keep === 'string' ? keep : '');
-    paintRemotes();
-    if (selected === GIT_WORKTREE) showWorktree();
-    await loadGraph(true);
+    const had = document.activeElement === reloadBtn;
+    reloadBtn.disabled = true;
+    try {
+      const [r, w] = await Promise.all([getJSON('/api/git/refs'), getJSON('/api/git/worktree')]);
+      if (!app.isConnected) return;
+      refs = r.refs; head = r.head; wt = w; remotes = r.remotes;
+      paintBranches(typeof keep === 'string' ? keep : '');
+      paintRemotes();
+      if (selected === GIT_WORKTREE) showWorktree();
+      await loadGraph(true);
+    } catch (e) { toast(e.message, true); }
+    finally {
+      reloadBtn.disabled = false;
+      if (had && document.activeElement === document.body) reloadBtn.focus();
+    }
   };
   reloadBtn.onclick = reload;
   // One write, then the page re-reads what git now holds.
@@ -527,17 +537,19 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     try { const d = await postJSON(GIT_WRITES[verb], body); toast(d.message || verb); await reload(); }
     catch (e) { toast(e.message, true); }
   };
-  // A fetch can take a network's time: its two buttons wait. A fetched pull request is left
-  // selected, so Review is the next click.
+  // A fetch can take a network's time: its two buttons wait, the pressed one saying so. A
+  // fetched pull request is left selected, so Review is the next click.
   const gitFetch = async (pull) => {
-    const remote = remoteSel.value;
-    fetchBtn.disabled = pullBtn.disabled = true;
+    const remote = remoteSel.value, button = pull ? pullBtn : fetchBtn, label = button.textContent;
+    const had = document.activeElement === button;
+    fetchBtn.disabled = pullBtn.disabled = true; button.textContent = 'Fetching…';
     try {
       const d = await postJSON('/api/git/fetch', pull ? { remote, pull } : { remote });
       toast(d.message || 'fetched');
       await reload(pull ? remote + '/pr/' + pull : '');
     } catch (e) { toast(e.message, true); }
-    fetchBtn.disabled = pullBtn.disabled = false;
+    button.textContent = label; fetchBtn.disabled = pullBtn.disabled = false;
+    if (had && document.activeElement === document.body) button.focus();
   };
   fetchBtn.onclick = () => gitFetch(0);
   pullBtn.onclick = () => {

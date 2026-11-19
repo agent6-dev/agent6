@@ -4,16 +4,18 @@
 
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import pytest
 
 from agent6.ui.web import git_model
+from tests.unit.test_git_history import _git
 from tests.web import test_web_browser
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Page
+    from playwright.sync_api import Page, Route
 
 pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
@@ -22,6 +24,24 @@ git_port = test_web_browser.git_port
 dirty_git_port = test_web_browser.dirty_git_port
 
 OpenPage = Callable[[int], tuple["Page", list[str]]]
+
+
+def _held(page: Page, pattern: str) -> list[Route]:
+    """Hold every request matching `pattern` until the test continues it."""
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    page.route(pattern, hold)
+    return held
+
+
+def _first(page: Page, held: list[Route]) -> Route:
+    """Wait for the first held request to arrive."""
+    while not held:
+        page.wait_for_timeout(50)
+    return held[0]
 
 
 def test_a_graph_row_shows_its_first_ref_and_counts_the_rest(
@@ -151,4 +171,44 @@ def test_closing_a_phones_panel_returns_the_focus_to_the_graph(
     rows.nth(1).click()
     page.get_by_role("button", name="\u2039 graph", exact=True).click()
     expect(rows.nth(1)).to_be_focused()
+    assert errors == [], errors
+
+
+def test_refresh_fetch_and_load_more_wait_while_their_requests_run(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Refresh and Load more stayed live and the graph read idle while it loaded; Fetch dimmed."""
+    from playwright.sync_api import expect
+
+    monkeypatch.setattr(git_model, "GRAPH_PAGE", 2)
+    _git(tmp_path, "remote", "add", "up", str(tmp_path))
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    graph, more = page.locator(".git-graph"), page.locator(".git-more")
+    more.wait_for()
+    held = _held(page, "**/api/git/graph*")
+    more.click()
+    request = _first(page, held)
+    expect(more).to_have_text("Loading…")
+    expect(more).to_be_disabled()
+    expect(graph).to_have_attribute("aria-busy", "true")
+    request.continue_()
+    expect(graph).to_have_attribute("aria-busy", "false")
+    held.clear()
+    refresh = page.get_by_role("button", name="refresh", exact=True)
+    refresh.click()
+    request = _first(page, held)
+    expect(refresh).to_be_disabled()
+    expect(graph).to_have_attribute("aria-busy", "true")
+    request.continue_()
+    page.unroute("**/api/git/graph*")
+    expect(refresh).to_be_enabled()
+    expect(graph).to_have_attribute("aria-busy", "false")
+    fetching = _held(page, "**/api/git/fetch")
+    page.get_by_role("button", name="Fetch", exact=True).click()
+    fetch = _first(page, fetching)
+    expect(page.get_by_role("button", name="Fetching…", exact=True)).to_be_disabled()
+    expect(page.get_by_role("button", name="Fetch PR", exact=True)).to_be_disabled()
+    fetch.fulfill(json={"ok": True, "message": "fetched up"})
+    expect(page.get_by_role("button", name="Fetch", exact=True)).to_be_enabled()
     assert errors == [], errors

@@ -39,6 +39,8 @@
 .gc-row { display: flex; align-items: center; gap: 10px; height: 30px; padding-right: 12px; cursor: pointer; }
 @media (hover: hover) { .gc-row:hover { background: var(--surface2); } }
 .gc-row.sel { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
+/* A graph loading for more than a moment dims; it reads busy (aria-busy) at once. */
+.git-graph[aria-busy=true] { opacity: .6; transition: opacity .2s .3s; }
 .gc-lanes { flex: none; display: block; margin-left: 6px; }
 .gc-lanes path { fill: none; stroke-width: 2; }
 /* The lanes take the theme's colours, which read at 3:1 or more on a row in either theme. */
