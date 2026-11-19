@@ -288,7 +288,10 @@ function focusFinding(host, finding_id) {
 // the retained output bodies as collapsibles and the new-work button.
 function drawReceipt(host, receipt) {
   host.innerHTML = '';
-  host.appendChild(el('pre', null, receipt.text));
+  // One block per line, so a wrapped line (a long hash) hangs under its own start.
+  const text = el('pre', 'receipt-text');
+  for (const line of receipt.text.split('\n')) text.appendChild(el('div', null, line || '\u00a0'));
+  host.appendChild(text);
   // Each child the receipt names opens through the session navigation.
   for (const child of receipt.children || []) {
     const line = el('div', 'sub');
@@ -302,8 +305,10 @@ function drawReceipt(host, receipt) {
   }
   for (const v of receipt.verifications) {
     for (const stream of ['stdout', 'stderr']) {
+      if (!v[stream + '_tail']) continue; // a stream that wrote nothing has no fold to open
       const output = el('details'); host.appendChild(output);
-      output.appendChild(el('summary', null, (v.verify_id || 'unrecorded id') + ' ' + stream));
+      // The check's id at the twelve characters the panel lines use, then its stream.
+      output.appendChild(el('summary', null, (v.verify_id ? v.verify_id.slice(0, 12) : 'unrecorded id') + ' ' + stream));
       output.appendChild(el('pre', null, v[stream + '_tail']));
     }
   }

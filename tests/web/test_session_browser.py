@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from agent6 import paths
-from agent6.sessions import process
+from agent6.sessions import event_log, journal, layout, process
 from tests.web import test_review_evidence, test_web_browser
 
 if TYPE_CHECKING:
@@ -696,4 +696,63 @@ def test_a_finding_card_on_its_session_links_away_and_sizes_its_submit(
     widths = [form.bounding_box(), submit.bounding_box()]
     assert widths[0] and widths[1]
     assert widths[1]["width"] < widths[0]["width"] / 2
+    assert not errors
+
+
+def test_the_receipt_hangs_its_wrapped_lines_in_a_box_and_folds_only_output(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    evidence: tuple[int, dict[str, Any]],
+    tmp_path: pathlib.Path,
+) -> None:
+    """The receipt's lines sit in a bordered 12px box, a wrapped line hanging under its start.
+
+    The receipt was 14px text with no box, its wrapped lines restarting at column 0, and a
+    check's empty stream still had a fold that opened onto nothing.
+    """
+    from playwright.sync_api import expect
+
+    sink = event_log.EventSink(
+        layout.SessionLayout(paths.state_dir(tmp_path), "review-run").logs_path
+    )
+    sink.emit(
+        journal.VerifyEnd(
+            command=["pytest"],
+            exit_code=1,
+            stdout_tail="",
+            stderr_tail="1 failed",
+            stdout_truncated=False,
+            stderr_truncated=False,
+            scoped=False,
+            selected_paths=[],
+            outcome="failed",
+            duration_s=0.2,
+            timeout_s=60.0,
+            baseline=False,
+            reason="",
+        )
+    )
+    port, _ = evidence
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    page.get_by_role("button", name="Receipt", exact=True).click()
+    text = page.locator(".receipt > pre")
+    expect(text).to_contain_text("Receipt review-run")
+    size, border = text.evaluate(
+        "e => [getComputedStyle(e).fontSize, getComputedStyle(e).borderTopWidth]"
+    )
+    hangs = text.evaluate(
+        """e => [...e.children].map(line => { const r = document.createRange();
+        r.selectNodeContents(line); const rects = [...r.getClientRects()];
+        const tops = [...new Set(rects.map(x => Math.round(x.top)))];
+        const left = top => Math.min(...rects.filter(x => Math.round(x.top) === top)
+            .map(x => x.left));
+        return tops.length > 1 ? left(tops[1]) - left(tops[0]) : null; })
+        .filter(gap => gap !== null)"""
+    )
+    expect(page.locator(".receipt summary")).to_have_count(1)
+    assert (size, border) == ("12px", "1px")
+    assert hangs
+    assert all(gap == pytest.approx(2 * 7.2, abs=1.5) for gap in hangs)  # 2ch of 12px mono
+    assert page.locator(".receipt summary").inner_text().endswith("stderr")
     assert not errors

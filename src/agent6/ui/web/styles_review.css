@@ -14,6 +14,16 @@
 .card-findings .card-body { display: grid; gap: 6px; justify-items: start; }
 .card-findings .card-body > div { justify-self: stretch; }
 .card-findings .receipt:empty { display: none; }
+/* The receipt and each check's output: 12px boxes, a wrapped receipt line hanging under its start. */
+.receipt { display: grid; gap: 6px; }
+.receipt > button { justify-self: start; }
+.receipt pre {
+  font-size: 12px; line-height: 1.45; padding: 8px 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+}
+.receipt-text > div { padding-left: 2ch; text-indent: -2ch; }
+.receipt summary { cursor: pointer; font: 12px/1.45 var(--mono); }
+.receipt details > pre { margin-top: 6px; }
 .card-findings .pickers { margin-bottom: 0; }
 .finding-head { justify-content: space-between; }
 .finding-counts { font-weight: 600; }
