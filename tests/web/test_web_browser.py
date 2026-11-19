@@ -803,9 +803,13 @@ def test_the_git_toolbar_controls_share_one_height_and_fit_their_values(
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
     page.wait_for_selector(".gc-row")
-    heights = page.locator(".git-bar").locator("button, select, input").evaluate_all(
-        "els => els.filter(e => e.offsetParent)"
-        ".map(e => Math.round(e.getBoundingClientRect().height))"
+    heights = (
+        page.locator(".git-bar")
+        .locator("button, select, input")
+        .evaluate_all(
+            "els => els.filter(e => e.offsetParent)"
+            ".map(e => Math.round(e.getBoundingClientRect().height))"
+        )
     )
     assert len(heights) >= 7 and len(set(heights)) == 1, heights
     select = page.locator(".git-branch select").first
@@ -872,7 +876,7 @@ def test_the_git_panes_lay_out_by_their_own_width(
 def test_graph_lanes_read_at_three_to_one_in_the_light_theme(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:
-    """Every lane line and dot reads at 3:1 on the light page; the dark pastels read 1.9 to 2.3:1."""
+    """Every lane reads at 3:1 on the light page; the dark theme's pastels read 1.9 to 2.3:1."""
     page, errors = open_page(git_port)
     page.emulate_media(color_scheme="light")
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
@@ -928,7 +932,7 @@ def test_a_wrapped_file_path_breaks_after_a_slash(
 def test_a_long_ref_name_shows_whole_in_the_refs_filter(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
 ) -> None:
-    """A name past the graph badge's 180px shows whole in the filter, its sha in the shas' column."""
+    """A name past the graph badge's cap shows whole in the filter, its sha in the shas' column."""
     name = "topic/a-long-branch-name-the-row-has-room-for"
     _git(tmp_path, "branch", name)
     page, errors = open_page(git_port)
@@ -1032,14 +1036,21 @@ def test_a_commits_sha_and_dates_never_break_mid_token_on_a_phone(
     sha = page.locator(".gd-meta .k", has_text="commit").locator(value)
     assert sha.get_attribute("title") == sha.inner_text() and len(sha.inner_text()) == 40
     assert sha.evaluate("e => e.scrollHeight <= parseFloat(getComputedStyle(e).lineHeight) + 1")
-    date_lines = page.locator(".gd-meta .k", has_text="author").locator(value).evaluate(
-        """e => {
-          const walk = document.createTreeWalker(e, NodeFilter.SHOW_TEXT), range = document.createRange();
+    date_lines = (
+        page.locator(".gd-meta .k", has_text="author")
+        .locator(value)
+        .evaluate(
+            """e => {
+          const walk = document.createTreeWalker(e, NodeFilter.SHOW_TEXT);
           for (let n = walk.nextNode(); n; n = walk.nextNode()) {
             const at = n.data.search(/\\d{4}-\\d\\d-\\d\\d/);
-            if (at >= 0) { range.setStart(n, at); range.setEnd(n, at + 19); return range.getClientRects().length; }
+            if (at < 0) continue;
+            const range = document.createRange();
+            range.setStart(n, at); range.setEnd(n, at + 19);
+            return range.getClientRects().length;
           }
         }"""
+        )
     )
     assert date_lines == 1
     assert errors == [], errors
@@ -1098,10 +1109,9 @@ def test_a_phones_diff_head_keeps_its_controls_on_one_line(
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/feature?path=b.txt")
     expect(page.locator(".git-diff .diff-blame")).to_be_enabled()
-    tops = page.locator(".git-diff-head").locator("button, a").evaluate_all(
-        "es => es.slice(1).map(e => Math.round(e.getBoundingClientRect().top))"  # past '‹ files'
-    )
-    assert len(tops) == 9 and len(set(tops)) == 1, tops
+    controls = page.locator(".git-diff-head").locator("button, a")
+    tops = controls.evaluate_all("es => es.map(e => Math.round(e.getBoundingClientRect().top))")
+    assert len(tops) == 10 and len(set(tops[1:])) == 1, tops  # past the back button
     assert errors == [], errors
 
 
