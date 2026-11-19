@@ -347,17 +347,17 @@ function configCombobox(current, key, cls) {
   list.tabIndex = -1; // a scroller is a Tab stop; the field's arrow keys move through the list
   list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', 'Model suggestions');
   field.setAttribute('aria-controls', list.id);
-  element.appendChild(field); element.appendChild(list);
+  // The list's state (loading, no match, no catalog): one live line over the empty list.
+  const status = el('div', 'cfg-catalog sub muted'); status.setAttribute('role', 'status');
+  element.appendChild(field); element.appendChild(list); element.appendChild(status);
   let values = [], matches = [], query = '', index = -1, message = 'Loading models…';
   const choose = value => { field.value = value; query = value; index = -1; paint(); };
   const paint = () => {
     list.innerHTML = '';
     matches = values.filter(value => value.toLowerCase().includes(query.toLowerCase()));
     field.removeAttribute('aria-activedescendant');
-    if (!matches.length) {
-      const status = el('div', 'cfg-catalog sub muted', message || 'No matches. You can save the typed model id.');
-      status.setAttribute('role', 'status'); list.appendChild(status);
-    }
+    const said = matches.length ? '' : message || 'No matches. You can save the typed model id.';
+    if (status.textContent !== said) status.textContent = said; // the same text set again is announced again
     matches.forEach((value, i) => {
       const option = el('div', 'cfg-option', value); option.id = list.id + '-' + i;
       option.setAttribute('role', 'option'); option.setAttribute('aria-selected', String(i === index));

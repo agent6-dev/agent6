@@ -1287,6 +1287,37 @@ def test_the_catalog_failure_line_ends_its_reason_with_one_period(
     )
     _config(page, port)
     page.get_by_role("button", name="Add reviewer…").click()
-    status = page.get_by_role("dialog").get_by_role("listbox").get_by_role("status")
+    status = page.get_by_role("dialog").get_by_role("status")
     expect(status).to_have_text(f"Catalog unavailable: {reason} You can type a model id.")
     assert not [error for error in errors if "500 (Internal Server Error)" not in error]
+
+
+def test_the_model_lists_status_line_stays_outside_the_listbox(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The model list's `No matches` line sat in its listbox, which may hold only options.
+
+    The line was made anew on each key typed, so a screen reader never heard it change.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    values = ["a/fast", "b/deep"]
+    page.route("**/api/config/suggest/**", lambda route: route.fulfill(json={"values": values}))
+    _config(page, port)
+    page.get_by_role("button", name="Add reviewer…").click()
+    dialog = page.get_by_role("dialog")
+    model = dialog.get_by_role("combobox", name="model")
+    listbox = dialog.get_by_role("listbox")
+    expect(listbox.get_by_role("option")).to_have_count(2)
+    model.fill("zzz")
+    status = dialog.get_by_role("status")
+    expect(status).to_have_text("No matches. You can save the typed model id.")
+    assert listbox.evaluate("e => e.children.length") == 0
+    status.evaluate("e => { e.dataset.kept = 1; }")
+    model.press("q")
+    assert status.evaluate("e => e.dataset.kept") == "1"
+    model.fill("")
+    expect(listbox.get_by_role("option")).to_have_count(2)
+    expect(status).to_have_text("")
+    assert not errors

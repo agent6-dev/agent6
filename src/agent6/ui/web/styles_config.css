@@ -93,10 +93,14 @@ textarea.field.cfg-value {
 /* The model suggestions: a list under the field at a fixed height, so the dialog keeps its size
    while the catalog loads or the typing narrows it, and the buttons under it stay in view. */
 .cfg-options {
-  height: 13.75rem; overflow-y: auto; margin-top: 0.25rem; border: 1px solid var(--border);
+  height: 13.75rem; overflow-y: auto; border: 1px solid var(--border);
   border-radius: var(--r); background: var(--surface2);
 }
 .cfg-option, .cfg-catalog { padding: 0.375rem 0.625rem; overflow-wrap: anywhere; }
+/* The list's status line lies over the empty list, inside its border, where an option would. */
+.cfg-combo { display: grid; row-gap: 0.25rem; }
+.cfg-combo > :is(.cfg-options, .cfg-catalog) { grid-area: 2 / 1; }
+.cfg-catalog { align-self: start; margin: 1px; pointer-events: none; }
 .cfg-option { cursor: pointer; font-family: var(--mono); font-size: var(--fs-m); }
 /* The pointer lights an option; the option the arrow keys moved to, which Enter picks, also takes
    the accent and an outline. */
