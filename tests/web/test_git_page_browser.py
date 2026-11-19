@@ -212,3 +212,29 @@ def test_refresh_fetch_and_load_more_wait_while_their_requests_run(
     fetch.fulfill(json={"ok": True, "message": "fetched up"})
     expect(page.get_by_role("button", name="Fetch", exact=True)).to_be_enabled()
     assert errors == [], errors
+
+
+def test_create_fetch_pr_and_commit_wait_for_their_input(
+    open_page: OpenPage, dirty_git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """Create ignored an empty name; Fetch PR and Commit staged answered it with an error toast."""
+    from playwright.sync_api import expect
+
+    _git(tmp_path, "remote", "add", "up", str(tmp_path))
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/worktree")
+    create = page.get_by_role("button", name="Create", exact=True)
+    expect(create).to_be_disabled()
+    page.get_by_placeholder("new branch…").fill("topic")
+    expect(create).to_be_enabled()
+    pull = page.get_by_role("button", name="Fetch PR", exact=True)
+    expect(pull).to_be_disabled()
+    page.get_by_placeholder("PR #").fill("#0")
+    expect(pull).to_be_disabled()
+    page.get_by_placeholder("PR #").fill("#12")
+    expect(pull).to_be_enabled()
+    commit = page.get_by_role("button", name="Commit staged", exact=True)
+    expect(commit).to_be_disabled()  # the rename is staged; the message is empty
+    page.locator(".git-commit textarea").fill("rename f to g")
+    expect(commit).to_be_enabled()
+    assert errors == [], errors

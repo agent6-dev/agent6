@@ -370,8 +370,10 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   reviewBtn.title = 'start a review session over this branch: /review <branch> in the new-work composer';
   const newName = el('input', 'field'); newName.placeholder = 'new branch…';
   const createBtn = el('button', null, 'Create'); createBtn.title = 'create the branch at HEAD and check it out';
+  // A button waits for what it acts on: Create for a name, Switch for another local branch.
   // Local branches switch and review; a remote-tracking ref (a fetched pull request among
   // them) reviews only. `keep` names the ref to leave selected after a re-read.
+  const gateCreate = () => { createBtn.disabled = !newName.value.trim(); };
   const isLocal = () => branchSel.selectedOptions[0]?.dataset.kind === 'branch';
   const gateSwitch = () => { switchBtn.disabled = !branchSel.value || !isLocal() || branchSel.value === head.branch; };
   const paintBranches = (keep) => {
@@ -407,6 +409,9 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   pullNum.title = 'a pull request number on this remote';
   const pullBtn = el('button', null, 'Fetch PR');
   pullBtn.title = "fetch that pull request (the remote's refs/pull/<number>/head) into <remote>/pr/<number>, then Review or Compare it";
+  // The number typed, '#' allowed before it; 0, and Fetch PR waits, until it is a whole number above zero.
+  const pullNumber = () => { const t = pullNum.value.trim().replace(/^#/, ''); return /^\d+$/.test(t) ? Number(t) : 0; };
+  const gatePull = () => { pullBtn.disabled = !pullNumber(); };
   const paintRemotes = () => {
     const kept = remoteSel.value;
     remoteSel.textContent = '';
@@ -548,22 +553,20 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       toast(d.message || 'fetched');
       await reload(pull ? remote + '/pr/' + pull : '');
     } catch (e) { toast(e.message, true); }
-    button.textContent = label; fetchBtn.disabled = pullBtn.disabled = false;
-    if (had && document.activeElement === document.body) button.focus();
+    button.textContent = label; fetchBtn.disabled = false; gatePull();
+    if (had && document.activeElement === document.body) (button.disabled ? pullNum : button).focus();
   };
   fetchBtn.onclick = () => gitFetch(0);
-  pullBtn.onclick = () => {
-    const n = Number(pullNum.value.trim().replace(/^#/, ''));
-    if (!Number.isInteger(n) || n < 1) { toast('a pull request number is a whole number above zero', true); return; }
-    pullNum.value = '';
-    gitFetch(n);
-  };
-  pullNum.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); pullBtn.onclick(); } };
+  pullBtn.onclick = () => { const n = pullNumber(); pullNum.value = ''; gitFetch(n); };
+  pullNum.oninput = gatePull;
+  pullNum.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); pullBtn.click(); } };
   switchBtn.onclick = () => gitWrite('switch', { name: branchSel.value });
-  createBtn.onclick = () => { const name = newName.value.trim(); if (!name) return; newName.value = ''; gitWrite('branch', { name }); };
-  newName.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); createBtn.onclick(); } };
+  createBtn.onclick = () => { const name = newName.value.trim(); newName.value = ''; gateCreate(); gitWrite('branch', { name }); };
+  newName.oninput = gateCreate;
+  newName.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); createBtn.click(); } };
   paintBranches();
   paintRemotes();
+  gateCreate(); gatePull();
 
   // -- the side panel: a commit, or the compare --------------------------------------
   // A phone's panel covers the graph; ‹ graph closes it, and the focus it held goes to the graph.
@@ -611,8 +614,11 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     const msg = el('textarea', 'field');
     msg.placeholder = staged.length ? 'commit message for ' + fileCount(staged.length) + ' staged…' : 'stage files to commit';
     msg.disabled = !staged.length;
-    const commitBtn = el('button', 'primary mini', 'Commit staged'); commitBtn.disabled = !staged.length;
-    commitBtn.onclick = () => { if (!msg.value.trim()) { toast('a commit needs a message', true); return; } gitWrite('commit', { message: msg.value }); };
+    // Commit staged waits for staged files and a message.
+    const commitBtn = el('button', 'primary mini', 'Commit staged');
+    const gateCommit = () => { commitBtn.disabled = !staged.length || !msg.value.trim(); };
+    msg.oninput = gateCommit; gateCommit();
+    commitBtn.onclick = () => gitWrite('commit', { message: msg.value });
     commitBox.appendChild(msg); commitBox.appendChild(commitBtn);
     pad.appendChild(commitBox);
     const fileActions = (f) => {
