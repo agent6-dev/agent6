@@ -9,6 +9,7 @@
 .git-group > button { flex: none; }
 .git-bar .field { width: auto; min-width: 6em; max-width: 20em; field-sizing: content; text-overflow: ellipsis; }
 .git-fetch > .git-counts { min-width: 0; overflow-wrap: anywhere; }
+.git-fetch[hidden] { display: none; }
 /* The commit message sits beside Commit staged while it gets 20em, room for its placeholder.
    In a narrower panel it takes the whole row, and the button drops under it. */
 .git-commit { gap: 8px; align-items: flex-end; flex-wrap: wrap; margin: 8px 0; }

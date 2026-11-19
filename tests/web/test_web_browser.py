@@ -813,6 +813,20 @@ def test_the_git_toolbar_controls_share_one_height_and_fit_their_values(
     assert errors == [], errors
 
 
+def test_the_fetch_row_hides_in_a_repository_without_a_remote(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """With no remote to fetch from, the toolbar shows no Fetch or Fetch PR."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    expect(page.locator(".git-fetch")).to_be_hidden()
+    expect(page.get_by_role("button", name="Fetch PR")).to_be_hidden()
+    assert errors == [], errors
+
+
 def test_the_refs_filter_hangs_under_its_button_and_escape_refocuses_it(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:
