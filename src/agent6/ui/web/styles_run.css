@@ -1,11 +1,11 @@
 /* The run view: task graph, budget, tool calls, event log, plan, conversation,
    approval and question prompts, and the details drawer. */
 /* A budget bar stands 4px under its label and 10px over the next line; its track shows when empty. */
-.bar { height: 8px; margin: 4px 0 10px; background: var(--border); border-radius: 999px; overflow: hidden; }
+.bar { height: 0.5rem; margin: 0.25rem 0 0.625rem; background: var(--border); border-radius: 999px; overflow: hidden; }
 .bar > span { display: block; height: 100%; background: var(--accent); }
 .bar.warn > span { background: var(--warn); }
 
-.tree { font-family: var(--mono); font-size: 13px; }
+.tree { font-family: var(--mono); font-size: 0.8125rem; }
 /* A task's line: its id, its glyph at its depth, then its title, which wraps under itself. */
 .tree .node { display: flex; padding: 1px 0; white-space: pre; }
 .tree .task { min-width: 0; white-space: normal; overflow-wrap: anywhere; } /* Firefox strikes a space pre-wrap keeps at a wrap */
@@ -18,32 +18,32 @@
 /* Tool calls: each call's name over one clipped line of its args and result
    (the full text on hover), so the narrow details drawer never breaks a path
    mid-word. */
-.calls .call { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-.calls .call-head { display: flex; align-items: center; gap: 8px; }
+.calls .call { padding: 0.375rem 0; border-bottom: 1px solid var(--border); font-size: 0.8125rem; }
+.calls .call-head { display: flex; align-items: center; gap: 0.5rem; }
 .calls .name { font-family: var(--mono); }
-.calls .call-head .more-note { margin-left: auto; font-size: 12px; }
+.calls .call-head .more-note { margin-left: auto; font-size: 0.75rem; }
 .calls .args {
-  padding-left: 16px; color: var(--muted); font-family: var(--mono); font-size: 12px;
+  padding-left: 1rem; color: var(--muted); font-family: var(--mono); font-size: 0.75rem;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--muted); }
 .dot.ok { background: var(--ok); } .dot.bad { background: var(--err); }
 
-.log { font-family: var(--mono); font-size: 12px; line-height: 1.4; }
+.log { font-family: var(--mono); font-size: 0.75rem; line-height: 1.4; }
 /* A wrapped row hangs under its event, clear of its time (12 characters and two spaces). */
 .log > div { white-space: pre-wrap; word-break: break-word; padding-left: 14ch; text-indent: -14ch; }
 
-.plan { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 0; }
+.plan { font-family: var(--mono); font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; margin: 0; }
 
 /* A fan-out's children, one row each at the run card's text size, under muted column names. */
-.card-children table { border-collapse: collapse; font-size: 13px; }
-.card-children th, .card-children td { text-align: left; padding: 4px 24px 4px 0; border-bottom: 1px solid var(--border); }
+.card-children table { border-collapse: collapse; font-size: 0.8125rem; }
+.card-children th, .card-children td { text-align: left; padding: 0.25rem 1.5rem 0.25rem 0; border-bottom: 1px solid var(--border); }
 .card-children th { color: var(--muted); font-weight: 400; }
 
 /* conversation: the folded transcript, the same items (and semantic span
    styles) the CLI stream and the TUI conversation view render. */
-.conv { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
-.conv .ci { padding: 2px 4px; margin: 0 -4px 8px; white-space: pre-wrap; word-break: break-word; border-radius: 6px; }
+.conv { font-family: var(--mono); font-size: 0.78125rem; line-height: 1.5; }
+.conv .ci { padding: 2px 0.25rem; margin: 0 -0.25rem 0.5rem; white-space: pre-wrap; word-break: break-word; border-radius: 6px; }
 .conv .ci.exp { cursor: pointer; }
 /* An expandable item's first line takes the keyboard focus, and the whole item draws the ring. */
 .conv .ci > [role=button]:focus-visible { outline: none; }
@@ -68,7 +68,7 @@
 .conv .s-done-neutral { font-weight: 700; }
 .conv .s-task { color: var(--accent); font-weight: 700; }
 .conv .s-operator { color: var(--ok); font-weight: 600; }
-.conv-live { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; }
+.conv-live { border-top: 1px solid var(--border); margin-top: 0.625rem; padding-top: 0.5rem; }
 /* The live pane's rule parts it from the items above it, so under no items it has none. */
 .conv:not(:has(.ci)) + .conv-live { border-top: 0; margin-top: 0; padding-top: 0; }
 .conv-live .lt { color: var(--accent); font-weight: 600; }
@@ -79,36 +79,36 @@
 .conv-card > .card-head-row > h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conv-card > .card-head-row > button { flex: none; }
 /* The detail button overhangs the heading's 20px line, so the row lines up with the drawer's first card. */
-.conv-card > .card-head-row > button { margin-block: calc((20px - var(--ctl-h-sm)) / 2); }
+.conv-card > .card-head-row > button { margin-block: calc((1.25rem - var(--ctl-h-sm)) / 2); }
 /* The detail button's labels share one grid cell and only the current one shows. */
 .cycle { display: inline-grid; }
 .cycle > * { grid-area: 1 / 1; }
 .cycle > :not(.on) { visibility: hidden; }
 /* The 4px side padding keeps an item's hover and focus ring whole; text wraps, so x stays hidden. */
-.conv-box { overflow: hidden auto; max-height: 62vh; padding-inline: 4px; margin-inline: -4px; }
+.conv-box { overflow: hidden auto; max-height: 62vh; padding-inline: 0.25rem; margin-inline: -0.25rem; }
 /* Scrolled from its top, the box rules the edge its lines are cut at, outside itself, so none moves. */
 .conv-box.scrolled { box-shadow: 0 -1px var(--border); }
 /* A scrolling box at its tail anchors no line: a reflow would hold the line and push the tail out of view. */
-@media (min-width: 781px) { .conv-box.tail { overflow-anchor: none; } }
+@media (width > 48.75em) { .conv-box.tail { overflow-anchor: none; } }
 /* A focused control scrolls into view 12px clear of its pane's edge, so its ring shows whole. */
-.run-app .drawer, .conv-box { scroll-padding-block: 12px; }
+.run-app .drawer, .conv-box { scroll-padding-block: 0.75rem; }
 /* Firefox focuses a scroller itself: the drawer, flush with the bars, takes its ring inside. */
 .run-app .drawer:focus-visible { outline-offset: -2px; }
 
-.run-app > .actions { margin-block: 10px; }
+.run-app > .actions { margin-block: 0.625rem; }
 /* Delete stands apart at the bar's far end. */
 .run-app > .actions > .delete-btn { margin-inline-start: auto; }
 /* A run's prompt boxes follow its conversation's last line, 10px under it and 10px apart. */
-.conv-box .prompts:not(:empty) { margin-top: 10px; }
-.prompt-box { background: var(--surface2); border-left: 3px solid var(--warn); padding: 12px; }
-.prompt-box + .prompt-box { margin-top: 10px; }
-.prompt-box .q { margin-bottom: 8px; white-space: pre-wrap; }
+.conv-box .prompts:not(:empty) { margin-top: 0.625rem; }
+.prompt-box { background: var(--surface2); border-left: 3px solid var(--warn); padding: 0.75rem; }
+.prompt-box + .prompt-box { margin-top: 0.625rem; }
+.prompt-box .q { margin-bottom: 0.5rem; white-space: pre-wrap; }
 /* An answer field shares its options' row while it keeps 210px, room for its whole placeholder. */
-.prompt-box .form-row > input.field { flex: 1 1 210px; min-width: 0; }
+.prompt-box .form-row > input.field { flex: 1 1 13.125rem; min-width: 0; }
 /* The next question, or the row that sends the answers, stands 14px under a field. */
-.prompt-box .form-row + .q, .prompt-box .form-row + .form-row { margin-top: 14px; }
+.prompt-box .form-row + .q, .prompt-box .form-row + .form-row { margin-top: 0.875rem; }
 /* The command under judgment wraps, so its whole tail shows before Allow. */
-.prompt-box .cmd { font-size: 0.92em; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 10px; margin: 0 0 10px; }
+.prompt-box .cmd { font-size: 0.92em; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 0.5rem 0.625rem; margin: 0 0 0.625rem; }
 .prompt-box .cmd .tok-str { color: var(--warn); }
 .prompt-box .cmd .tok-flag { color: var(--accent); }
 .prompt-box .cmd .tok-op { font-weight: 700; }
@@ -121,7 +121,7 @@
    (the mobile widget menu picks what is shown); the column still fills the
    screen, so the composer sits at its foot under a short widget. --- */
 .run-app { display: flex; flex-direction: column; flex: 1 0 auto; }
-@media (min-width: 781px) {
+@media (width > 48.75em) {
   .run-app { flex: 1 1 0; min-height: 0; }
   /* controls / status keep their natural height; only the body pane
      flexes (without this the column shrinks them and clips the status kv) */
@@ -137,7 +137,7 @@
        compresses the cards (overflow:hidden makes their minimum size 0);
        block children keep natural heights and the drawer scrolls them */
     display: block;
-    width: var(--drawer-w, 340px); min-width: 220px; max-width: 60vw;
+    width: var(--drawer-w, 21.25rem); min-width: 13.75rem; max-width: 60vw;
     overflow: auto; border-right: 1px solid var(--border); flex: none;
   }
   .run-app .drawer.closed { display: none; }
@@ -150,7 +150,7 @@
   .run-app .card-conv .conv-box { flex: 1 1 auto; min-height: 0; max-height: none; }
 }
 .wmenu-btn, .wmenu { display: none; } /* desktop: the drawer holds the widgets */
-@media (max-width: 780px) {
+@media (width <= 48.75em) {
   /* The run view shows one widget at a time (the widget menu picks it):
      stacked, the transcripts and the event log make the page a mile long.
      Scoped to .card: the menu's own buttons carry data-w as their choice id. */
@@ -161,8 +161,8 @@
   .wmenu-btn { display: block; }
   /* The open menu hangs just under the fixed header, at its right end. */
   .wmenu:popover-open {
-    inset: calc(var(--hdr-h) + env(safe-area-inset-top) + 4px) 16px auto auto; margin: 0; padding: 0;
-    min-width: 170px; display: flex; flex-direction: column; background: var(--surface);
+    inset: calc(var(--hdr-h) + env(safe-area-inset-top) + 0.25rem) 1rem auto auto; margin: 0; padding: 0;
+    min-width: 10.625rem; display: flex; flex-direction: column; background: var(--surface);
     border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
     box-shadow: 0 8px 24px rgba(0,0,0,.45);
   }

@@ -59,7 +59,7 @@ syncTheme();
 // <head> applies the stored state before the first paint.
 const railToggle = document.getElementById('rail-toggle');
 const railShow = document.getElementById('rail-show');
-const railRoom = matchMedia('(min-width: 1024px)'); // room for the labels
+const railRoom = matchMedia('(width >= 64em)'); // room for the labels
 const RAIL_PRESS = { labels: 'Collapse the sidebar', icons: 'Hide the sidebar', hidden: 'Show the sidebar' };
 function railState() {
   const c = document.documentElement.classList;

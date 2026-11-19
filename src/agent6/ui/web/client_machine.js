@@ -107,7 +107,7 @@ async function renderMachine(name, gen) {
     // A phone opens at the conversation's end while the first frame's prompt waits there, else on States.
     if (!opened) {
       opened = true;
-      fetched.then(() => { if (window.innerWidth < 781 && cc.conv.prompts.childElementCount) window.scrollTo(0, document.body.scrollHeight); });
+      fetched.then(() => { if (matchMedia('(width <= 48.75em)').matches && cc.conv.prompts.childElementCount) window.scrollTo(0, document.body.scrollHeight); });
     }
     hbState.spin++;
     // A stopped machine is resumable and its stream stays open; a journaled end closes it.

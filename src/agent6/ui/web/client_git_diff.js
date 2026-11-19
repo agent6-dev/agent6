@@ -80,7 +80,7 @@ function gitDiffViewer(body) {
     if (!DIFF_MODES.includes(mode)) mode = 'inline';
     // A phone has no room for split: it shows inline, says so when split was the choice, and
     // offers split disabled; the choice stays for a wider screen.
-    const narrow = window.matchMedia('(max-width: 780px)').matches;
+    const narrow = window.matchMedia('(width <= 48.75em)').matches;
     const splitWanted = narrow && mode === 'split';
     if (splitWanted) mode = 'inline';
     if (!f.binary) {

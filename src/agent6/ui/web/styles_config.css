@@ -2,52 +2,52 @@
    the card at any width. */
 .cfg-bar input.filter { flex: 1 1 100%; }
 .cfg-bar button { flex: none; white-space: nowrap; }
-.cfg-point + .cfg-point { margin-top: 4px; }
+.cfg-point + .cfg-point { margin-top: 0.25rem; }
 /* Config dialogs: the editor's type and source line, each label over its field, and the layer
    checkbox under them. */
-.cfg-meta { margin-bottom: 10px; }
-.cfg-label { display: block; margin-top: 8px; }
+.cfg-meta { margin-bottom: 0.625rem; }
+.cfg-label { display: block; margin-top: 0.5rem; }
 /* A value field and its suggestions read in the table's monospace. A list, table or string value
    rests at a field's height and grows with the value to 40% of the screen, then scrolls. */
-.field.cfg-value { font-family: var(--mono); font-size: 13px; }
+.field.cfg-value { font-family: var(--mono); font-size: 0.8125rem; }
 textarea.field.cfg-value {
   field-sizing: content; resize: none; min-height: var(--ctl-h); max-height: 40dvh;
   padding-block: calc((var(--ctl-h) - 1lh - 2px) / 2);
 }
 /* The layer checkbox sits on its label's first line, however many lines the label takes. */
-.cfg-check { align-items: flex-start; margin-top: 8px; cursor: pointer; }
-.cfg-check > input { font: inherit; margin-top: calc((1lh - 16px) / 2); }
+.cfg-check { align-items: flex-start; margin-top: 0.5rem; cursor: pointer; }
+.cfg-check > input { font: inherit; margin-top: calc((1lh - 1rem) / 2); }
 /* An editor's Remove, which takes a whole entry, stands apart at the end of its buttons. */
 .cfg-actions > .danger { margin-left: auto; }
 /* The reviewer editor's roster: a list over the field, each Remove at its row's end. */
-.cfg-roster { display: grid; gap: 6px; margin: 4px 0 12px; }
+.cfg-roster { display: grid; gap: 0.375rem; margin: 0.25rem 0 0.75rem; }
 .cfg-roster > .row > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.cfg-section { margin-top: 10px; }
+.cfg-section { margin-top: 0.625rem; }
 /* The line saying no setting matches the filter takes no room while it is empty. */
 .cfg-none:empty { padding: 0; }
 /* A section's name heads its table, over column labels in small muted capitals like a card's
    heading. One chevron in both browsers points right while the section is folded, down while open. */
 .cfg-section > summary {
-  display: flex; align-items: center; gap: 8px; min-height: var(--ctl-h);
+  display: flex; align-items: center; gap: 0.5rem; min-height: var(--ctl-h);
   list-style: none; cursor: pointer; font-weight: 600;
 }
 .cfg-section > summary::before {
-  content: ""; width: 6px; height: 6px; margin: 0 2px; transform: translateX(-2px) rotate(-45deg);
+  content: ""; width: 0.375rem; height: 0.375rem; margin: 0 2px; transform: translateX(-2px) rotate(-45deg);
   border: solid var(--muted); border-width: 0 1.5px 1.5px 0;
 }
 .cfg-section[open] > summary::before { transform: translateY(-2px) rotate(45deg); }
 .cfg th {
-  font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+  font-size: 0.75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
 }
 /* The settings grid: every section's table spans the card and takes the same column widths (a
    fixed layout reads them off the header row), so the setting, value and source columns line up
    down the page and stay put while the filter hides rows. Below 700px of card the cells stack:
    the setting over its value, the source at the row's end. */
 .cfg-card { container-type: inline-size; }
-.cfg { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cfg { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
 /* A row's cells share their first line's baseline, however far a long value wraps. */
 .cfg td, .cfg th {
-  text-align: left; vertical-align: baseline; padding: 6px 8px; border-bottom: 1px solid var(--border);
+  text-align: left; vertical-align: baseline; padding: 0.375rem 0.5rem; border-bottom: 1px solid var(--border);
 }
 /* A long key wraps after a dot, a long value after a slash (the page marks each with a <wbr>),
    and inside a part only when the part alone is wider than its column. Every cell is monospace;
@@ -67,20 +67,20 @@ textarea.field.cfg-value {
 /* A source takes one line: a long one, a `--config FILE` path, ends in an ellipsis at the
    column's edge, and the editor's `set from:` line shows it whole. */
 .cfg .source {
-  color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--muted); font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-@container (width >= 700px) {
+@container (width >= 43.75rem) {
   .cfg { table-layout: fixed; }
-  .cfg th:first-child { width: 352px; } /* the longest built-in key, 40 characters */
-  .cfg th:last-child { width: 96px; }
+  .cfg th:first-child { width: 22rem; } /* the longest built-in key, 40 characters */
+  .cfg th:last-child { width: 6rem; }
 }
-@container (width < 700px) {
+@container (width < 43.75rem) {
   .cfg tr {
     display: grid; grid-template-columns: minmax(0, 1fr) fit-content(40%); align-items: baseline;
     border-bottom: 1px solid var(--border);
   }
   .cfg td.key { grid-column: 1 / -1; }
-  .cfg td { border-bottom: 0; padding: 4px 8px; }
+  .cfg td { border-bottom: 0; padding: 0.25rem 0.5rem; }
   /* Stacked, the cells sit under no column: the labels stay for a screen reader only. */
   .cfg thead {
     position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
@@ -89,11 +89,11 @@ textarea.field.cfg-value {
 /* The model suggestions: a list under the field at a fixed height, so the dialog keeps its size
    while the catalog loads or the typing narrows it, and the buttons under it stay in view. */
 .cfg-options {
-  height: 220px; overflow-y: auto; margin-top: 4px; border: 1px solid var(--border);
+  height: 13.75rem; overflow-y: auto; margin-top: 0.25rem; border: 1px solid var(--border);
   border-radius: var(--r); background: var(--surface2);
 }
-.cfg-option, .cfg-catalog { padding: 6px 10px; overflow-wrap: anywhere; }
-.cfg-option { cursor: pointer; font-family: var(--mono); font-size: 13px; }
+.cfg-option, .cfg-catalog { padding: 0.375rem 0.625rem; overflow-wrap: anywhere; }
+.cfg-option { cursor: pointer; font-family: var(--mono); font-size: 0.8125rem; }
 /* The pointer lights an option; the option the arrow keys moved to, which Enter picks, also takes
    the accent and an outline. */
 .cfg-option:hover, .cfg-option[aria-selected=true] { background: var(--surface); }
@@ -101,10 +101,10 @@ textarea.field.cfg-value {
   color: var(--accent); outline: 1px solid var(--accent); outline-offset: -1px;
 }
 /* The config editor's description: a readable measure, code spans as code. */
-.cfg-desc { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0 0 12px; max-width: 62ch; }
+.cfg-desc { color: var(--muted); font-size: 0.8125rem; line-height: 1.5; margin: 0 0 0.75rem; max-width: 62ch; }
 .cfg-desc code {
-  font-family: var(--mono); font-size: 12px; color: var(--text);
-  background: var(--surface2); padding: 0 3px; border-radius: 3px;
+  font-family: var(--mono); font-size: 0.75rem; color: var(--text);
+  background: var(--surface2); padding: 0 0.1875rem; border-radius: 3px;
 }
 /* An Add dialog's field description sits right under its field. */
-.cfg-help { margin: 4px 0 0; }
+.cfg-help { margin: 0.25rem 0 0; }

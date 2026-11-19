@@ -62,6 +62,7 @@ agent6 web --secret 'a phrase of your own'        # the flag wins over the varia
 ## Pages
 
 Above 780px wide a left rail lists the pages: by name from 1024px wide, as icons below that.
+The page follows the browser's font size and zoom: text, controls, spacing and these widths (given at the default 16px) scale together.
 The rail's last button folds it to its icons, then hides it; the menu button at the top bar's left brings it back, and the browser remembers the choice.
 
 Buttons do what the matching CLI command does, and prompts are answered inline on every page that shows a run.

@@ -1,21 +1,21 @@
 /* --- files: the tree on the left, one file on the right; below 781px the file opens over
    the tree. The tree's rows and the file's head and text keep the page inset, as .page-pad
    keeps the bar's. --- */
-.files-app { --files-inset: 16px; }
-@media (min-width: 781px) { .files-app { --files-inset: 22px; } }
-.files-bar { position: relative; margin-bottom: 12px; gap: 8px; } /* .page-pad.row gives the 12px above */
+.files-app { --files-inset: 1rem; }
+@media (width > 48.75em) { .files-app { --files-inset: 1.375rem; } }
+.files-bar { position: relative; margin-bottom: 0.75rem; gap: 0.5rem; } /* .page-pad.row gives the 12px above */
 /* The revision list opens under its field, as wide as the field or up to 480px, and never past
    the bar's end. */
-.files-bar .gpick { flex: 1 1 220px; anchor-name: --files-revision; }
+.files-bar .gpick { flex: 1 1 13.75rem; anchor-name: --files-revision; }
 .files-bar .gpick-host {
   position: absolute; z-index: 40; position-anchor: --files-revision;
-  top: anchor(bottom); left: anchor(left); right: 0; max-width: max(480px, anchor-size(width));
+  top: anchor(bottom); left: anchor(left); right: 0; max-width: max(30rem, anchor-size(width));
 }
-.files-bar input.filter { flex: 1 1 160px; width: auto; min-width: 0; }
+.files-bar input.filter { flex: 1 1 10rem; width: auto; min-width: 0; }
 /* The count and the tree toggle hold the width of their longest text (the listing's own
    "N of N files", and "Show tree"), so typing in the filter or toggling the tree moves nothing on
    the bar. A count wrapped to a row of its own keeps to the right. */
-.files-counts { margin-left: auto; font-size: 12px; white-space: nowrap; text-align: end; font-variant-numeric: tabular-nums; }
+.files-counts { margin-left: auto; font-size: 0.75rem; white-space: nowrap; text-align: end; font-variant-numeric: tabular-nums; }
 .files-counts::after { content: attr(data-room); display: block; height: 0; visibility: hidden; }
 .files-tree-toggle { min-width: 7em; }
 /* Each name keeps to one line, ending in an ellipsis where it does not fit; the row's title
@@ -23,9 +23,9 @@
    sizes go first. */
 .files-tree { container: files-tree / inline-size; --tree-inset: var(--files-inset); }
 .files-tree :is(.gtree-name, .gf-path) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@container files-tree (width < 320px) { .gtree-note, .gf-counts { display: none; } }
+@container files-tree (width < 20rem) { .gtree-note, .gf-counts { display: none; } }
 /* The cut-list note keeps the rows' inset; loading and errors sit as the file pane's empty state. */
-.files-tree > .gf-note { margin: 0; padding: 8px var(--files-inset); }
+.files-tree > .gf-note { margin: 0; padding: 0.5rem var(--files-inset); }
 .files-tree > :is(.gf-note, .empty) { overflow-wrap: anywhere; }
 .gf[aria-selected=true] { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
 /* The path is a mini button tall, so the head keeps one height whatever the file shows and while
@@ -33,15 +33,15 @@
    row before it wraps. The note keeps to the right and holds the width of a full note, such as
    "7.5 KiB · markdown · 137 lines", from the start, so its language and line count arrive in
    place. */
-.files-head { flex: none; flex-wrap: wrap; gap: 8px; padding: 8px var(--files-inset); border-bottom: 1px solid var(--border); }
+.files-head { flex: none; flex-wrap: wrap; gap: 0.5rem; padding: 0.5rem var(--files-inset); border-bottom: 1px solid var(--border); }
 .files-head .gf-path { flex: 1 1 auto; min-height: var(--ctl-h-sm); align-content: center; }
-.files-note { margin-left: auto; min-width: 24ch; font-size: 12px; text-align: end; white-space: nowrap; }
-.files-text { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px var(--files-inset); }
+.files-note { margin-left: auto; min-width: 24ch; font-size: 0.75rem; text-align: end; white-space: nowrap; }
+.files-text { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0.5rem var(--files-inset); }
 /* The browser makes the scrolling pane a Tab stop: its ring goes inside, where nothing clips it. */
 .files-text:focus-visible { outline-offset: -2px; }
 .files-back, .files-tree-toggle { display: none; }
-.md-view { max-width: 80ch; margin: 0 auto; padding: 12px 0 32px; line-height: 1.65; overflow-wrap: break-word; }
-.md-view h1, .md-view h2, .md-view h3, .md-view h4, .md-view h5, .md-view h6 { line-height: 1.3; margin: 1.4em 0 .6em; scroll-margin-top: 16px; }
+.md-view { max-width: 80ch; margin: 0 auto; padding: 0.75rem 0 2rem; line-height: 1.65; overflow-wrap: break-word; }
+.md-view h1, .md-view h2, .md-view h3, .md-view h4, .md-view h5, .md-view h6 { line-height: 1.3; margin: 1.4em 0 .6em; scroll-margin-top: 1rem; }
 .md-view h1 { font-size: 2em; }
 .md-view h2 { font-size: 1.5em; }
 .md-view h3 { font-size: 1.25em; }
@@ -59,33 +59,33 @@
 .md-view blockquote > :last-child { margin-bottom: 0; }
 /* A code chip is a tint, so it shows on a table's shaded rows as on the page. */
 .md-view code { padding: .15em .3em; border-radius: 4px; background: color-mix(in srgb, var(--muted) 18%, transparent); font-size: .9em; }
-.md-view pre { padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); white-space: pre; overflow-x: auto; word-break: normal; overflow-wrap: normal; }
+.md-view pre { padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); white-space: pre; overflow-x: auto; word-break: normal; overflow-wrap: normal; }
 .md-view pre code { padding: 0; background: none; border-radius: 0; }
 /* Raw HTML shows as its muted source: a block in a dashed box, a tag inline. */
 .md-view .md-raw { color: var(--muted); }
 .md-view pre.md-raw { border-style: dashed; background: none; }
 .md-view code.md-raw { padding: 0; background: none; }
 .md-view table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
-.md-view th, .md-view td { border: 1px solid var(--border); padding: 6px 12px; text-align: start; vertical-align: top; }
+.md-view th, .md-view td { border: 1px solid var(--border); padding: 0.375rem 0.75rem; text-align: start; vertical-align: top; }
 .md-view th, .md-view tr:nth-child(even) { background: var(--surface2); }
 .md-view img { max-width: 100%; height: auto; }
 /* An image the page cannot show keeps its place as a dashed box: its alt text, then why. */
-.md-view .md-missing { display: inline-flex; flex-direction: column; max-width: 100%; padding: 8px 12px; border: 1px dashed var(--border-strong); border-radius: 6px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; vertical-align: top; }
+.md-view .md-missing { display: inline-flex; flex-direction: column; max-width: 100%; padding: 0.5rem 0.75rem; border: 1px dashed var(--border-strong); border-radius: 6px; font-size: 0.75rem; line-height: 1.5; overflow-wrap: anywhere; vertical-align: top; }
 .md-view hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
-@media (min-width: 781px) {
+@media (width > 48.75em) {
   .files-app { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
   .files-app > .files-bar { flex: none; }
   .files-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
   .files-tree > .gtree:first-child > :first-child { border-top: 0; } /* the body's edge is the line above it */
   /* The tree's edge is the divider, so a hidden tree leaves the rail's edge alone. The handle
      straddles it and takes no width: the tree's rows and the file's head both meet the line. */
-  .files-tree { flex: none; width: var(--files-tree-w, 36%); min-width: 180px; max-width: calc(100% - 246px); overflow: auto; border-right: 1px solid var(--border); }
-  .files-body > .resize-handle { margin-inline: -3px; position: relative; z-index: 1; }
+  .files-tree { flex: none; width: var(--files-tree-w, 36%); min-width: 11.25rem; max-width: calc(100% - 15.375rem); overflow: auto; border-right: 1px solid var(--border); }
+  .files-body > .resize-handle { margin-inline: -0.1875rem; position: relative; z-index: 1; }
   .files-tree-toggle { display: inline-block; }
   .files-body.tree-closed > .files-tree, .files-body.tree-closed > .resize-handle { display: none; }
   .files-view { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 }
-@media (max-width: 780px) {
+@media (width <= 48.75em) {
   .files-view { display: none; }
   .files-body.viewing > .files-view {
     display: flex; flex-direction: column; position: fixed; left: 0; right: 0; z-index: 16; background: var(--bg);
@@ -94,5 +94,5 @@
   /* The open file covers the bar and the tree, so they leave the focus order and the accessibility tree. */
   .files-app:has(> .files-body.viewing) > .files-bar, .files-body.viewing > .files-tree { visibility: hidden; }
   .files-back { display: inline-block; }
-  .files-head .gf-path { flex-basis: 200px; } /* beside the back button, however long */
+  .files-head .gf-path { flex-basis: 12.5rem; } /* beside the back button, however long */
 }

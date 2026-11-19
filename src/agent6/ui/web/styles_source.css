@@ -1,6 +1,6 @@
 /* The source views the Git and Files pages share: diffs, source, syntax highlight,
    the changed-file tree, the revision picker, images and blame. */
-.diff, .src, .dsplit { font-family: var(--mono); font-size: 12px; }
+.diff, .src, .dsplit { font-family: var(--mono); font-size: 0.75rem; }
 .diff .hunk { color: var(--accent2); } .diff .meta { color: var(--muted); }
 /* Line numbers are drawn from `data-n`, never in the text, so copied code carries none. */
 .numbered .g { width: var(--gw, 3ch); margin-right: 1ch; text-align: right; color: var(--muted); font-style: normal; user-select: none; }
@@ -20,7 +20,7 @@
 .dl.add .diff-marker, [data-side=head] .sl.changed .g { color: var(--ok); }
 .dl.del .diff-marker, [data-side=base] .sl.changed .g { color: var(--err); }
 .ds-row { display: grid; grid-template-columns: 1fr 1fr; }
-.ds-cell { min-width: 0; white-space: pre-wrap; word-break: break-word; padding-right: 6px; border-left: 1px solid var(--border); }
+.ds-cell { min-width: 0; white-space: pre-wrap; word-break: break-word; padding-right: 0.375rem; border-left: 1px solid var(--border); }
 .ds-cell.ds-empty { background: var(--surface2); }
 /* A drag selects within the side it starts in: the other column and the headers take no part. */
 .dsplit[data-select=old] .ds-cell:nth-child(2), .dsplit[data-select=new] .ds-cell:first-child, .dsplit[data-select] .ds-head { user-select: none; }
@@ -40,19 +40,19 @@
 /* A tree row: a folder's caret, mark, name and note, or a file's mark, name and size. A caret and
    its gap make one indent step, so a file's name lines up with its sibling folders' names and a
    folder's children start under its name. `--tree-inset` sets the rows' side padding. */
-.gtree { --tree-step: 16px; }
-.gtree-dir, .gtree .gf { gap: 6px; padding: 6px var(--tree-inset, 4px) 6px calc(var(--tree-inset, 4px) + var(--depth, 0) * var(--tree-step)); }
-.gtree .gf { padding-left: calc(var(--tree-inset, 4px) + (var(--depth, 0) + 1) * var(--tree-step)); }
-.gtree-dir { display: flex; align-items: center; border-top: 1px solid var(--border); cursor: pointer; font-size: 12.5px; }
+.gtree { --tree-step: 1rem; }
+.gtree-dir, .gtree .gf { gap: 0.375rem; padding: 0.375rem var(--tree-inset, 0.25rem) 0.375rem calc(var(--tree-inset, 0.25rem) + var(--depth, 0) * var(--tree-step)); }
+.gtree .gf { padding-left: calc(var(--tree-inset, 0.25rem) + (var(--depth, 0) + 1) * var(--tree-step)); }
+.gtree-dir { display: flex; align-items: center; border-top: 1px solid var(--border); cursor: pointer; font-size: 0.78125rem; }
 @media (hover: hover) { .gtree-dir:hover { background: var(--surface2); } }
-.gtree-caret { flex: none; width: 10px; text-align: center; color: var(--muted); }
+.gtree-caret { flex: none; width: 0.625rem; text-align: center; color: var(--muted); }
 .gtree-caret.folded { transform: rotate(-90deg); }
 .gtree-name { font-family: var(--mono); font-weight: 600; overflow-wrap: anywhere; }
-.gtree-note { flex: none; margin-left: auto; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
-.gf-note { font-size: 12px; margin: 4px 0; }
-.gf { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-top: 1px solid var(--border); cursor: pointer; }
+.gtree-note { flex: none; margin-left: auto; font-family: var(--mono); font-size: 0.75rem; white-space: nowrap; }
+.gf-note { font-size: 0.75rem; margin: 0.25rem 0; }
+.gf { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0.25rem; border-top: 1px solid var(--border); cursor: pointer; }
 @media (hover: hover) { .gf:hover { background: var(--surface2); } }
-.gf-st { flex: none; font-family: var(--mono); font-weight: 700; font-size: 12px; width: 1.6em; text-align: center; border-radius: 4px; border: 1px solid var(--border); }
+.gf-st { flex: none; font-family: var(--mono); font-weight: 700; font-size: 0.75rem; width: 1.6em; text-align: center; border-radius: 4px; border: 1px solid var(--border); }
 .gf-st.st-A { color: var(--ok); border-color: var(--ok); }
 .gf-st.st-M { color: var(--warn); border-color: var(--warn); }
 .gf-st.st-D { color: var(--err); border-color: var(--err); }
@@ -60,22 +60,22 @@
 .gf-st:empty { border-color: transparent; } /* a clean working-tree row */
 /* An ignored file or folder reads muted, its mark and its name. */
 .gf-st.st-I, .gf:has(> .st-I) .gf-path, .gtree-dir:has(> .st-I) .gtree-name { color: var(--muted); }
-.gf-path { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
-.gf-counts { flex: none; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+.gf-path { flex: 1; min-width: 0; font-family: var(--mono); font-size: 0.78125rem; overflow-wrap: anywhere; }
+.gf-counts { flex: none; font-family: var(--mono); font-size: 0.75rem; white-space: nowrap; }
 .gf-counts .add { color: var(--ok); } .gf-counts .del { color: var(--err); }
-.git-img { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 4px 0 12px; }
-.git-img figure { margin: 0; padding: 8px; min-width: 0; border: 1px solid var(--border); border-radius: 8px; }
-.git-img figcaption { font-size: 12px; margin-bottom: 6px; overflow-wrap: anywhere; }
+.git-img { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin: 0.25rem 0 0.75rem; }
+.git-img figure { margin: 0; padding: 0.5rem; min-width: 0; border: 1px solid var(--border); border-radius: 8px; }
+.git-img figcaption { font-size: 0.75rem; margin-bottom: 0.375rem; overflow-wrap: anywhere; }
 .git-img img { display: block; max-width: 100%; max-height: 60vh; margin: 0 auto; background: repeating-conic-gradient(var(--surface2) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
 .git-img.one { grid-template-columns: 1fr; }
 .gpick { flex: 1 1 0; min-width: 0; }
 .gpick-host { position: relative; }
 .gpick-list {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 40; margin-top: 2px; padding: 4px;
+  position: absolute; top: 0; left: 0; right: 0; z-index: 40; margin-top: 2px; padding: 0.25rem;
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-  box-shadow: 0 6px 24px rgba(0,0,0,.3); max-height: 300px; overflow-y: auto;
+  box-shadow: 0 6px 24px rgba(0,0,0,.3); max-height: 18.75rem; overflow-y: auto;
 }
-.gpick-list .ac-item { display: flex; align-items: center; gap: 4px; }
+.gpick-list .ac-item { display: flex; align-items: center; gap: 0.25rem; }
 .gpick-list .ac-item > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gpick-list .ac-item > span:nth-child(2) { flex: 1; min-width: 0; }
 /* A ref's whole name shows where its row has room; its sha stays whole. */
@@ -87,7 +87,7 @@
    narrow pane) the label is the sha alone. Only a blamed view is a size container: one around
    every line made each resize of a 3,200-line file about three times slower in Firefox. */
 pre:is(.src, .diff):has(.blame-cell) { container: source / inline-size; }
-.blame-cell { flex: none; display: flex; width: 35ch; margin-right: 1ch; padding: 0 1ch; border-left: 2px solid var(--muted); color: var(--muted); font-size: 11px; font-weight: normal; user-select: none; }
+.blame-cell { flex: none; display: flex; width: 35ch; margin-right: 1ch; padding: 0 1ch; border-left: 2px solid var(--muted); color: var(--muted); font-size: 0.6875rem; font-weight: normal; user-select: none; }
 .blame-start { border-top-left-radius: 3px; }
 .blame-label { display: flex; width: 100%; min-width: 0; gap: 1ch; align-items: baseline; }
 .blame-label > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -96,7 +96,7 @@ pre:is(.src, .diff):has(.blame-cell) { container: source / inline-size; }
 .blame-author { flex: 1; max-width: 14ch; }
 .ds-cell > .blame-cell { width: 9ch; }
 .ds-cell .blame-author, .ds-cell .blame-date { display: none; }
-@container source (width < 720px) { .blame-cell { width: 9ch; } .blame-author, .blame-date { display: none; } }
+@container source (width < 45rem) { .blame-cell { width: 9ch; } .blame-author, .blame-date { display: none; } }
 .blame-hover { color: var(--text); border-color: var(--accent); background: var(--surface2); }
 /* A group's card opens over the page by the cell that holds it: below the line, or above it,
    or leftward, wherever it fits. */
@@ -104,9 +104,9 @@ pre:is(.src, .diff):has(.blame-cell) { container: source / inline-size; }
 .blame-card {
   position-anchor: --blame; position-area: block-end span-inline-end;
   position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
-  inset: auto; margin: 2px 0; width: max-content; max-width: min(440px, calc(100vw - 16px));
-  display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--border); border-radius: 6px;
-  background: var(--surface); color: var(--text); box-shadow: 0 4px 16px #0004; white-space: normal; overflow-wrap: anywhere; font: 12px/1.5 system-ui, sans-serif;
+  inset: auto; margin: 2px 0; width: max-content; max-width: min(27.5rem, calc(100vw - 1rem));
+  display: flex; flex-direction: column; gap: 0.375rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text); box-shadow: 0 4px 16px #0004; white-space: normal; overflow-wrap: anywhere; font: 0.75rem/1.5 system-ui, sans-serif;
   user-select: text; /* the cell under it is unselectable; the sha and subject are for copying */
 }
 .blame-card:not(:popover-open) { display: none; }

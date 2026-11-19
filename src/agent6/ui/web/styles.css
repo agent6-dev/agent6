@@ -14,12 +14,12 @@
   --scrollbar: light-dark(#7d8794, #626d80); /* the thumb: 3:1 on every surface */
   /* Controls: a button, a field and a select of one size are exactly this tall; a touch
      screen gets larger targets. */
-  --ctl-h: 32px; --ctl-h-sm: 26px; --ctl-px: 12px; --ctl-px-sm: 8px;
+  --ctl-h: 2rem; --ctl-h-sm: 1.625rem; --ctl-px: 0.75rem; --ctl-px-sm: 0.5rem;
   --r-sm: 4px; --r: 6px; --r-lg: 8px;
-  --nav-h: 56px;
+  --nav-h: 3.5rem;
   /* The header's height above any safe-area inset: a 21px line in 10px paddings and the 1px
      border. A phone's header, or one beside a hidden rail, holds a control instead (below). */
-  --hdr-h: 42px;
+  --hdr-h: 2.625rem;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   /* the highlighter's dozen classes */
   --hl-keyword: light-dark(#a626a4, #c678dd); --hl-function: light-dark(#1f56c9, #61afef);
@@ -32,32 +32,32 @@
 }
 :root.light { color-scheme: light; }
 :root.dark { color-scheme: dark; }
-@media (pointer: coarse) { :root { --ctl-h: 40px; --ctl-h-sm: 32px; } }
+@media (pointer: coarse) { :root { --ctl-h: 2.5rem; --ctl-h-sm: 2rem; } }
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent; }
 input[type=checkbox] { accent-color: var(--accent); }
-input[type=checkbox] { width: 16px; height: 16px; margin: 0; flex: none; }
+input[type=checkbox] { width: 1rem; height: 1rem; margin: 0; flex: none; }
 html, body { margin: 0; height: 100%; }
 /* An element focused or scrolled to stops 6px clear of the header, and of a phone's tab bar (below). */
-html { scroll-padding-top: calc(var(--hdr-h) + env(safe-area-inset-top) + 6px); }
+html { scroll-padding-top: calc(var(--hdr-h) + env(safe-area-inset-top) + 0.375rem); }
 body {
-  background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif;
+  background: var(--bg); color: var(--text); font: 0.875rem/1.5 system-ui, sans-serif;
   -webkit-text-size-adjust: 100%;
 }
 a { color: var(--accent); text-decoration: none; }
 code, pre, .mono { font-family: var(--mono); }
 /* A command in a message, the sign-in form, a problem or a question (withCode): a tinted chip. */
-.toast code, .login code, .problem code, .confirm code { font-size: .92em; padding: 0 3px; border-radius: 3px; background: color-mix(in srgb, var(--text) 8%, transparent); }
+.toast code, .login code, .problem code, .confirm code { font-size: .92em; padding: 0 0.1875rem; border-radius: 3px; background: color-mix(in srgb, var(--text) 8%, transparent); }
 pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
 
 /* The top bar's ends line up with the page's text: 22px in, and 16px on a phone (below). */
 header {
-  position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px;
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 0.75rem;
   height: calc(var(--hdr-h) + env(safe-area-inset-top));
-  padding: 10px 22px; background: var(--surface); border-bottom: 1px solid var(--border);
-  padding-top: calc(10px + env(safe-area-inset-top));
+  padding: 0.625rem 1.375rem; background: var(--surface); border-bottom: 1px solid var(--border);
+  padding-top: calc(0.625rem + env(safe-area-inset-top));
 }
 /* The brand: the transparent mark (favicon.svg) beside the name in the accent colour. */
-header .brand { display: inline-flex; align-items: center; gap: 8px; color: inherit; font-weight: 700; letter-spacing: .3px; }
+header .brand { display: inline-flex; align-items: center; gap: 0.5rem; color: inherit; font-weight: 700; letter-spacing: .3px; }
 header .brand b { color: var(--accent); }
 header .spacer { flex: 1; }
 header .crumb { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -67,7 +67,7 @@ header > button {
   min-width: var(--ctl-h); padding: 0 var(--ctl-px-sm);
 }
 /* Header controls cancel the root's scroll padding: Chromium scrolls the page to one that takes the focus. */
-header :is(a, button) { scroll-margin-top: calc(-1 * (var(--hdr-h) + env(safe-area-inset-top) + 6px)); }
+header :is(a, button) { scroll-margin-top: calc(-1 * (var(--hdr-h) + env(safe-area-inset-top) + 0.375rem)); }
 button {
   font: inherit; line-height: 1.25; color: var(--text); background: var(--surface2);
   border: 1px solid var(--border); border-radius: var(--r); padding: 0 var(--ctl-px);
@@ -92,7 +92,7 @@ nav.tabs {
    under its icon and still ends inside the bar. */
 nav.tabs a {
   flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center;
-  color: var(--muted); font-size: 11px; line-height: 1.1; text-align: center; gap: 2px; padding: 7px 2px 0;
+  color: var(--muted); font-size: 0.6875rem; line-height: 1.1; text-align: center; gap: 2px; padding: 0.4375rem 2px 0;
 }
 /* The open page's link in either bar: the accent colour, a semibold label and an accent bar on
    the bar's outer edge, so it reads as current without its colour and apart from a hovered rail
@@ -102,8 +102,8 @@ nav.tabs a[aria-current=page], aside.rail .rail-nav a[aria-current=page] { color
 nav.tabs a[aria-current=page]::before, aside.rail .rail-nav a[aria-current=page]::before {
   content: ""; position: absolute; background: var(--accent);
 }
-nav.tabs a[aria-current=page]::before { top: 0; left: calc(50% - 16px); width: 32px; height: 3px; border-radius: 0 0 3px 3px; }
-.ic { width: 20px; height: 20px; flex: none; }
+nav.tabs a[aria-current=page]::before { top: 0; left: calc(50% - 1rem); width: 2rem; height: 0.1875rem; border-radius: 0 0 3px 3px; }
+.ic { width: 1.25rem; height: 1.25rem; flex: none; }
 
 /* The content column is at least the screen's dynamic height, which follows a phone browser's
    bars: main fills what the header leaves. The run pane fills main, and on a desktop the git
@@ -121,24 +121,24 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 .grid > * + * { border-top: 1px solid var(--border); }
 /* Toolbar / prompt rows sit outside the section grid; align them with the
    section padding. */
-.page-pad { margin: 0 16px; }
-.page-pad.row { margin-top: 12px; }
+.page-pad { margin: 0 1rem; }
+.page-pad.row { margin-top: 0.75rem; }
 
-.card { padding: 14px 16px; overflow: hidden; }
+.card { padding: 0.875rem 1rem; overflow: hidden; }
 /* A card's or panel's heading, and a group's in the keyboard list, is a label: small muted capitals,
    so it stays apart from the bold line under it (Commit over the commit subject, Findings over its
    counts). */
-.card h2, .keys th { margin: 0 0 8px; font-size: 12px; font-weight: 600; line-height: 20px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.card.scroll { max-height: 420px; overflow: auto; }
+.card h2, .keys th { margin: 0 0 0.5rem; font-size: 0.75rem; font-weight: 600; line-height: 1.25rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.card.scroll { max-height: 26.25rem; overflow: auto; }
 
-.row { display: flex; gap: 10px; align-items: center; }
+.row { display: flex; gap: 0.625rem; align-items: center; }
 .wrap { flex-wrap: wrap; }
 .muted { color: var(--muted); }
 /* The status label: a dot in the level's colour, then the word in the row's text, so the word
    names the state without the colour. One class per `viewmodel.format.status_level`; the server
    stamps the level beside the label on every hub row, so no status word is mapped here. */
-.pill { --lvl: var(--muted); display: inline-flex; align-items: center; gap: 7px; font-size: 13px; line-height: 20px; white-space: nowrap; }
-.pill::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--lvl); }
+.pill { --lvl: var(--muted); display: inline-flex; align-items: center; gap: 0.4375rem; font-size: 0.8125rem; line-height: 1.25rem; white-space: nowrap; }
+.pill::before { content: ""; flex: none; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--lvl); }
 .pill.ok { --lvl: var(--ok); }
 .pill.info { --lvl: var(--accent2); }
 .pill.active { --lvl: var(--accent); }
@@ -148,22 +148,22 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 .list { display: flex; flex-direction: column; }
 /* A card's rows bleed into its padding by their own insets, so their text and buttons line up
    with the headings, the toolbar and the composer. */
-.card > .list { margin-inline: -10px -8px; }
+.card > .list { margin-inline: -0.625rem -0.5rem; }
 /* A row: its text column beside its buttons, which wrap under the text as one piece when the
    column would get less than 320px (a phone, a nested child). */
 .item {
-  display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 12px 8px;
+  display: flex; flex-wrap: wrap; gap: 0.375rem 0.625rem; align-items: center; padding: 0.75rem 0.5rem;
   border-top: 1px solid var(--border); border-left: 2px solid transparent;
   cursor: pointer; transition: background .15s, border-color .15s;
 }
 /* A group's children follow its row, a step in per level (--depth), on a guide line that lights
    with the hovered row. */
-.item.child { margin-left: calc(var(--depth) * 14px); padding-block: 8px; border-left-color: var(--border); }
+.item.child { margin-left: calc(var(--depth) * 0.875rem); padding-block: 0.5rem; border-left-color: var(--border); }
 @media (hover: hover) { .item:hover { background: var(--surface2); border-left-color: var(--accent); } }
-.item .grow { flex: 1 1 320px; min-width: 0; }
-.item-actions { display: flex; gap: 6px; }
+.item .grow { flex: 1 1 20rem; min-width: 0; }
+.item-actions { display: flex; gap: 0.375rem; }
 /* An empty list says so, and how to start one, where a row's text would start. */
-.list > .empty { padding: 12px 10px; border-top: 1px solid var(--border); text-align: start; }
+.list > .empty { padding: 0.75rem 0.625rem; border-top: 1px solid var(--border); text-align: start; }
 /* A machine file's Run button: a name too long for the line wraps from the button's start. */
 .machine-files > button { text-align: start; }
 .item .title, .item .continued { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -173,27 +173,27 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 .item a.title.name { white-space: normal; overflow-wrap: anywhere; } /* a name shows whole */
 .item a.title:focus-visible { outline: none; }
 .item:has(> .grow > a.title:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
-.item .sub { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.item .sub { font-size: 0.75rem; color: var(--muted); overflow-wrap: anywhere; }
 .item .sub .f { white-space: nowrap; }
 /* The status leads a row's first sub line: the dot and the word in the text colour, wrapping as
    text when a reason is long. */
 .item .sub .pill { display: inline; font-size: inherit; line-height: inherit; color: var(--text); white-space: normal; }
-.item .sub .pill::before { display: inline-block; margin-right: 6px; vertical-align: 1px; }
+.item .sub .pill::before { display: inline-block; margin-right: 0.375rem; vertical-align: 1px; }
 .setting { display: inline-block; max-width: 100%; }
 /* A fold: a muted disclosure (a group's children, the new-work composer's advanced options)
    whose chevron turns down while it is open. */
 button.fold {
-  display: inline-flex; align-items: center; gap: 6px; min-height: var(--ctl-h-sm); min-width: 0;
-  padding: 0 4px 0 0; border: 0; background: none; font-size: 12px; color: var(--muted);
+  display: inline-flex; align-items: center; gap: 0.375rem; min-height: var(--ctl-h-sm); min-width: 0;
+  padding: 0 0.25rem 0 0; border: 0; background: none; font-size: 0.75rem; color: var(--muted);
 }
 button.fold:hover { background: none; color: var(--text); }
 button.fold::before {
-  content: ""; width: 5px; height: 5px; margin: 0 3px; border: solid currentColor;
+  content: ""; width: 0.3125rem; height: 0.3125rem; margin: 0 0.1875rem; border: solid currentColor;
   border-width: 0 1.5px 1.5px 0; rotate: -45deg; transition: rotate .15s;
 }
 button.fold[aria-expanded=true]::before { rotate: 45deg; }
 
-.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 0.75rem; font-size: 0.8125rem; }
 .kv .k { color: var(--muted); }
 .kv .v.task { white-space: pre-line; }
 
@@ -211,15 +211,15 @@ button.fold[aria-expanded=true]::before { rotate: 45deg; }
    buttons in a .row: the entry takes the width and the buttons sit on its bottom edge. */
 .composer .row > textarea.field { flex: 1 1 0; min-width: 0; }
 .composer .row:not(.pickers) > button { align-self: flex-end; }
-.composer .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.composer .hint { font-size: 0.6875rem; color: var(--muted); margin-top: 0.25rem; }
 /* Picker rows (pickerRow above a composer, the Latest commit card's picker row):
    compact dropdowns sized to their value, each beside its label; on a narrow
    screen the pairs wrap whole. */
-.pickers { flex-wrap: wrap; gap: 6px 16px; margin-bottom: 8px; font-size: 13px; }
-.pickers .pick { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.pickers { flex-wrap: wrap; gap: 0.375rem 1rem; margin-bottom: 0.5rem; font-size: 0.8125rem; }
+.pickers .pick { display: inline-flex; align-items: center; gap: 0.375rem; min-width: 0; max-width: 100%; }
 .pickers .pick > span { flex: none; } /* the dropdown narrows, never its label */
 .pickers .pick:has(:disabled) > span { opacity: .55; } /* a label dims with its control */
-.pickers .field { width: auto; min-width: 0; max-width: 100%; min-height: var(--ctl-h-sm); font-size: 13px; }
+.pickers .field { width: auto; min-width: 0; max-width: 100%; min-height: var(--ctl-h-sm); font-size: 0.8125rem; }
 .pickers select.field { field-sizing: content; } /* as wide as the chosen option, not the longest */
 /* The spend cap holds a few digits and no spin buttons at rest (Firefox paints them by default). */
 .pickers input[type=number] { width: 7em; appearance: textfield; }
@@ -231,17 +231,17 @@ button.fold[aria-expanded=true]::before { rotate: 45deg; }
 .composer { anchor-scope: --entry; }
 .composer textarea.field { anchor-name: --entry; }
 .ac-pop { position: absolute; position-anchor: --entry; left: anchor(left); bottom: anchor(top);
-  margin-bottom: 4px; z-index: 40;
+  margin-bottom: 0.25rem; z-index: 40;
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-  box-shadow: 0 6px 24px rgba(0,0,0,.3); max-height: 240px; overflow-y: auto;
-  min-width: 260px; max-width: anchor-size(width); padding: 4px; }
-.ac-item { padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.3); max-height: 15rem; overflow-y: auto;
+  min-width: 16.25rem; max-width: anchor-size(width); padding: 0.25rem; }
+.ac-item { padding: 0.3125rem 0.625rem; border-radius: 6px; cursor: pointer; font-size: 0.8125rem;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ac-item.on, .ac-item:hover { background: var(--surface2); color: var(--accent); }
 /* A picker's list box (openPicker): the autocomplete popup's rows in a dialog. Each line of an
    option ends in an ellipsis when it is too long, and a row's own buttons sit under its option.
    The note under the list says what the list leaves out. */
-.hs-list { margin-top: 8px; max-height: 45vh; overflow-y: auto; }
+.hs-list { margin-top: 0.5rem; max-height: 45vh; overflow-y: auto; }
 /* The pointer moves a picker's highlight (openPicker), so a hovered row has no look of its own. */
 .hs-list .ac-item:hover:not(.on) { background: none; color: inherit; }
 .hs-list .ac-opt, .hs-list .ac-opt > .muted, .hs-list .ac-opt .grow { overflow: hidden; text-overflow: ellipsis; }
@@ -250,20 +250,20 @@ button.fold[aria-expanded=true]::before { rotate: 45deg; }
 .hs-list .ac-opt .row { flex-wrap: wrap; row-gap: 0; }
 .hs-list .ac-opt .grow { flex: 1 1 16em; min-width: 0; }
 .hs-list .ac-opt .row > .pill { margin-left: auto; }
-.hs-list .ac-item > .row { margin-top: 4px; }
-.hs-list + .more-note { padding: 5px 10px; font-size: 13px; }
+.hs-list .ac-item > .row { margin-top: 0.25rem; }
+.hs-list + .more-note { padding: 0.3125rem 0.625rem; font-size: 0.8125rem; }
 .hs-list + .more-note:empty { display: none; }
 .more-note { color: var(--muted); font-style: italic; }
-.card-head-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.card-head-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
 .card-head-row h2 { flex: 1; margin: 0; }
 /* A small button keeps its label whole on one line: its min-width would let a flex row squeeze it
    below the label's width, so it does not shrink, and the row wraps or its neighbours give way. */
-button.mini { min-height: var(--ctl-h-sm); min-width: var(--ctl-h-sm); padding: 0 var(--ctl-px-sm); font-size: 13px; white-space: nowrap; flex-shrink: 0; }
+button.mini { min-height: var(--ctl-h-sm); min-width: var(--ctl-h-sm); padding: 0 var(--ctl-px-sm); font-size: 0.8125rem; white-space: nowrap; flex-shrink: 0; }
 
-.empty { color: var(--muted); padding: 24px; text-align: center; }
+.empty { color: var(--muted); padding: 1.5rem; text-align: center; }
 .err { color: var(--err); }
 /* A route that shows no page (showProblem): the reason keeps its lines and wraps a long word. */
-.problem p { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.problem p { margin: 0 0 0.75rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 /* While a route loads, the page it replaces dims after a beat, so a quick hop never flickers. */
 #view > [aria-busy=true] { opacity: .55; transition: opacity .15s .2s; }
 
@@ -274,21 +274,21 @@ textarea.field, select.field, input.field, input.filter {
   border: 1px solid var(--border-strong); border-radius: var(--r); padding: 0 var(--ctl-px);
   min-height: var(--ctl-h);
 }
-textarea.field { min-height: 72px; padding-block: 6px; line-height: 1.5; resize: vertical; }
+textarea.field { min-height: 4.5rem; padding-block: 0.375rem; line-height: 1.5; resize: vertical; }
 .field:disabled, input.filter:disabled, input[type=checkbox]:disabled { opacity: .55; cursor: not-allowed; }
 select, select.field {
   appearance: none; font: inherit; color: var(--text); background-color: var(--bg);
   border: 1px solid var(--border-strong); border-radius: var(--r);
-  padding: 0 calc(var(--ctl-px) + 14px) 0 var(--ctl-px); min-height: var(--ctl-h);
+  padding: 0 calc(var(--ctl-px) + 0.875rem) 0 var(--ctl-px); min-height: var(--ctl-h);
   background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
-  background-position: right 15px center, right 10px center; background-size: 5px 5px; background-repeat: no-repeat;
+  background-position: right 0.9375rem center, right 0.625rem center; background-size: 0.3125rem 0.3125rem; background-repeat: no-repeat;
 }
 select:disabled { opacity: .55; cursor: not-allowed; }
-.form-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.form-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; }
 /* The sign-in form: one field beside its button, the server's refusal under them. */
-.login { max-width: 480px; }
-.login input.field { flex: 1 1 200px; width: auto; }
-.login .err { margin-top: 8px; }
+.login { max-width: 30rem; }
+.login input.field { flex: 1 1 12.5rem; width: auto; }
+.login .err { margin-top: 0.5rem; }
 button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
 button.primary:where(:enabled:not([aria-disabled=true])):hover { background-color: color-mix(in srgb, var(--accent) 86%, var(--text)); border-color: transparent; }
 /* A quiet button is a toolbar action with no box until hovered. */
@@ -300,16 +300,16 @@ button.quiet.danger { color: var(--muted); }
 button.quiet.danger:where(:enabled:not([aria-disabled=true])):hover { color: var(--err); border-color: transparent; background-color: color-mix(in srgb, var(--err) 10%, transparent); }
 /* The sessions card's maintenance actions, in one row above the list; the first one's text
    starts at the content edge. */
-.toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px calc(-1px - var(--ctl-px-sm)); }
+.toolbar { display: flex; flex-wrap: wrap; gap: 0.375rem; margin: 0 0 0.5rem calc(-1px - var(--ctl-px-sm)); }
 /* The keyboard list (openKeys): a heading per place, then each key's caps beside what it does. */
-.keys { border-collapse: collapse; width: 100%; font-size: 13px; }
-.keys th { padding: 12px 0 2px; text-align: start; }
+.keys { border-collapse: collapse; width: 100%; font-size: 0.8125rem; }
+.keys th { padding: 0.75rem 0 2px; text-align: start; }
 .keys tbody:first-child th { padding-top: 0; }
-.keys td { padding: 3px 0; vertical-align: baseline; }
-.keys td.key { width: 1%; padding-inline-end: 16px; white-space: nowrap; color: var(--muted); }
+.keys td { padding: 0.1875rem 0; vertical-align: baseline; }
+.keys td.key { width: 1%; padding-inline-end: 1rem; white-space: nowrap; color: var(--muted); }
 /* A key is a keycap. */
 kbd {
-  display: inline-block; min-width: 22px; padding: 1px 5px; font: 12px/18px var(--mono); text-align: center;
+  display: inline-block; min-width: 1.375rem; padding: 1px 0.3125rem; font: 0.75rem/1.125rem var(--mono); text-align: center;
   color: var(--text); background: var(--surface2); border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: var(--r-sm);
 }
 /* The messages (#toasts) stack in one column over the content, 16px above the docked composer's
@@ -321,19 +321,19 @@ kbd {
 #toasts {
   position: fixed; z-index: 50; position-anchor: --dock;
   left: anchor(left, var(--rail-w)); right: anchor(right, 0px); bottom: anchor(--dock-top top, 0px);
-  margin-bottom: 16px; padding: 0 16px;
-  display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none;
+  margin-bottom: 1rem; padding: 0 1rem;
+  display: flex; flex-direction: column; align-items: center; gap: 0.5rem; pointer-events: none;
 }
 .toast {
-  display: flex; align-items: flex-start; gap: 12px; max-width: min(100%, 640px);
+  display: flex; align-items: flex-start; gap: 0.75rem; max-width: min(100%, 40rem);
   background: var(--surface); border: 1px solid var(--accent); border-radius: 10px;
-  padding: 10px 16px; box-shadow: 0 4px 16px rgba(0,0,0,.4); pointer-events: auto;
+  padding: 0.625rem 1rem; box-shadow: 0 4px 16px rgba(0,0,0,.4); pointer-events: auto;
   white-space: pre-wrap; overflow-wrap: anywhere; /* CLI-captured messages (merge, prune) keep their lines */
 }
 .toast.bad { border-color: var(--err); color: var(--err); }
 .toast.warn { border-color: var(--warn); }
 /* The Config page's note under its bar, on where saves go: a tinted line 12px below the bar. */
-.notif-banner { display: flex; align-items: flex-start; gap: 10px; background: var(--surface2); border-left: 3px solid var(--accent); padding: 10px 12px; margin-top: 12px; }
+.notif-banner { display: flex; align-items: flex-start; gap: 0.625rem; background: var(--surface2); border-left: 3px solid var(--accent); padding: 0.625rem 0.75rem; margin-top: 0.75rem; }
 .notif-banner .grow { flex: 1; min-width: 0; }
 .notif-banner .nb-msg { word-break: break-word; }
 /* A close button (closeButton): a quiet square with its glyph centred and a hover tint that shows
@@ -346,62 +346,62 @@ button.x-btn:hover { background-color: color-mix(in srgb, var(--text) 10%, trans
    text to read. A wheel or a swipe over it or its backdrop never scrolls the page behind:
    overscroll-behavior holds only in a scroll container, so the backdrop takes overflow: hidden. */
 dialog.card {
-  width: 560px; max-width: calc(100% - 32px); max-height: calc(100% - 32px); overflow: auto; padding-top: 0;
+  width: 35rem; max-width: calc(100% - 2rem); max-height: calc(100% - 2rem); overflow: auto; padding-top: 0;
   color: var(--text); background: var(--surface); border: 1px solid var(--border);
   border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.35); overscroll-behavior: contain;
 }
-dialog.card.wide { width: 760px; }
+dialog.card.wide { width: 47.5rem; }
 /* A dialog's head: its title, as written (a config key keeps its case), then its Close button
    beside the title's first 20px line, which starts 14px down as in a card. A long title wraps, so
    the Close button stays inside the dialog. The head holds the dialog's top padding and stays at
    the top while the dialog scrolls, over a fill that hides what scrolls under it. */
 dialog .dialog-head {
-  position: sticky; top: 0; display: flex; align-items: flex-start; gap: 8px;
-  margin-bottom: 8px; padding-top: calc(24px - var(--ctl-h) / 2); background: var(--surface);
+  position: sticky; top: 0; display: flex; align-items: flex-start; gap: 0.5rem;
+  margin-bottom: 0.5rem; padding-top: calc(1.5rem - var(--ctl-h) / 2); background: var(--surface);
 }
 dialog .dialog-head > h2 {
-  flex: 1; min-width: 0; margin: 0; padding-block: calc(var(--ctl-h) / 2 - 10px); overflow-wrap: anywhere;
-  font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--text);
+  flex: 1; min-width: 0; margin: 0; padding-block: calc(var(--ctl-h) / 2 - 0.625rem); overflow-wrap: anywhere;
+  font-size: 0.875rem; letter-spacing: 0; text-transform: none; color: var(--text);
 }
 /* A list dialog sits high and still, so its field stays put while the list narrows. */
-dialog.card.picker { margin-top: 12vh; max-height: calc(88vh - 16px); }
+dialog.card.picker { margin-top: 12vh; max-height: calc(88vh - 1rem); }
 dialog::backdrop { background: rgba(0,0,0,.55); overflow: hidden; overscroll-behavior: contain; }
 /* A dialog with no field holds the focus itself; the ring is for the controls inside it. */
 dialog:focus-visible { outline: none; }
 /* A question before an action (confirmDialog): its text keeps the line breaks it was given. */
 dialog.confirm p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
 /* A dialog's own failure: one line under its buttons, gone while empty. */
-dialog .err { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+dialog .err { margin: 0.5rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 dialog .err:empty { display: none; }
 
-@media (max-width: 780px) {
+@media (width <= 48.75em) {
   nav.tabs { display: flex; }
-  html { scroll-padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 6px); }
+  html { scroll-padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 0.375rem); }
   /* The top bar is a compact fixed strip, the mirror of the bottom tab bar:
      sticky slides away with horizontal overflow, fixed never moves. It takes no
      flow space, so main pads down to clear it (--hdr-h: its 6px paddings, a
      control's height and the 1px border). */
-  :root { --hdr-h: calc(var(--ctl-h) + 13px); }
+  :root { --hdr-h: calc(var(--ctl-h) + 0.8125rem); }
   header {
     position: fixed; top: 0; left: 0; right: 0;
-    padding: 6px 16px; padding-top: calc(6px + env(safe-area-inset-top));
+    padding: 0.375rem 1rem; padding-top: calc(0.375rem + env(safe-area-inset-top));
   }
-  main { padding: calc(var(--hdr-h) + env(safe-area-inset-top)) 0 calc(var(--nav-h) + 24px); }
+  main { padding: calc(var(--hdr-h) + env(safe-area-inset-top)) 0 calc(var(--nav-h) + 1.5rem); }
   #toasts { left: anchor(left, 0px); bottom: anchor(--dock-top top, calc(var(--nav-h) + env(safe-area-inset-bottom))); }
   .card.scroll { max-height: 60vh; }
   header .desktop-only { display: none; }
 }
 
 /* --- desktop: a left nav rail (>=781px), whose width --rail-w also sets the content's margin --- */
-:root { --rail-w: 64px; --rail-pad: 8px; }
-@media (min-width: 1024px) { :root:not(.rail-min) { --rail-w: 216px; --rail-pad: 12px; } }
+:root { --rail-w: 4rem; --rail-pad: 0.5rem; }
+@media (width >= 64em) { :root:not(.rail-min) { --rail-w: 13.5rem; --rail-pad: 0.75rem; } }
 :root.rail-hidden { --rail-w: 0px; }
 aside.rail, #rail-show { display: none; }
-@media (min-width: 781px) {
+@media (width > 48.75em) {
   aside.rail {
-    display: flex; flex-direction: column; gap: 4px; z-index: 30;
+    display: flex; flex-direction: column; gap: 0.25rem; z-index: 30;
     position: fixed; left: 0; top: 0; width: var(--rail-w); height: 100dvh; overflow: auto;
-    padding: 0 var(--rail-pad) calc(16px + env(safe-area-inset-bottom));
+    padding: 0 var(--rail-pad) calc(1rem + env(safe-area-inset-bottom));
     background: var(--surface); border-right: 1px solid var(--border);
     container: rail / inline-size;
   }
@@ -409,9 +409,9 @@ aside.rail, #rail-show { display: none; }
   /* The brand row is the header's height, so its mark sits on the header's centre line and its
      bottom border carries the header's line across the rail. */
   aside.rail .rail-brand {
-    display: flex; align-items: center; gap: 10px; flex: none; font-weight: 700; font-size: 17px; color: inherit;
-    height: calc(var(--hdr-h) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 0 0 22px;
-    margin: 0 calc(-1 * var(--rail-pad)) 4px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 0.625rem; flex: none; font-weight: 700; font-size: 1.0625rem; color: inherit;
+    height: calc(var(--hdr-h) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 0 0 1.375rem;
+    margin: 0 calc(-1 * var(--rail-pad)) 0.25rem; border-bottom: 1px solid var(--border);
   }
   aside.rail .rail-brand b { color: var(--accent); }
   /* The nav links, and the theme and collapse rows at the rail's foot: one row shape, 40px tall
@@ -419,14 +419,14 @@ aside.rail, #rail-show { display: none; }
   aside.rail .rail-nav, aside.rail .rail-foot { display: flex; flex-direction: column; gap: 2px; }
   aside.rail .rail-foot { margin-top: auto; }
   aside.rail .rail-nav a, aside.rail .rail-row {
-    display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 0 12px; border-radius: 8px; color: var(--muted);
+    display: flex; align-items: center; gap: 0.75rem; min-height: 2.5rem; padding: 0 0.75rem; border-radius: 8px; color: var(--muted);
   }
   aside.rail .rail-row { border: 0; background: none; font: inherit; }
   aside.rail .rail-nav a:hover, aside.rail .rail-row:hover { background: var(--surface2); color: var(--text); }
   aside.rail .rail-nav a[aria-current=page] { background: var(--surface2); color: var(--accent); } /* hovered too */
-  aside.rail .rail-nav a[aria-current=page]::before { left: calc(-1 * var(--rail-pad)); top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; }
+  aside.rail .rail-nav a[aria-current=page]::before { left: calc(-1 * var(--rail-pad)); top: 0.625rem; bottom: 0.625rem; width: 0.1875rem; border-radius: 0 3px 3px 0; }
   /* The 64px strip has no room for labels: they and the brand's name hide, and the icons centre. */
-  @container rail (width < 120px) {
+  @container rail (width < 7.5rem) {
     aside.rail .rail-brand { justify-content: center; padding-left: 0; }
     aside.rail .rail-brand b, aside.rail .rail-nav a span, aside.rail .rail-label { display: none; }
     aside.rail .rail-nav a, aside.rail .rail-row { justify-content: center; padding: 0; }
@@ -436,10 +436,10 @@ aside.rail, #rail-show { display: none; }
   /* A hidden rail hands the brand and the theme button back to the header, at a phone's height. */
   :root:not(.rail-hidden) header > :is(.brand, button) { display: none; }
   :root.rail-hidden #rail-show { display: inline-flex; }
-  :root.rail-hidden { --hdr-h: calc(var(--ctl-h) + 13px); }
+  :root.rail-hidden { --hdr-h: calc(var(--ctl-h) + 0.8125rem); }
   main { max-width: none; margin: 0; padding: 0; }
-  .card { padding: 14px 22px; }
-  .page-pad { margin: 0 22px; }
+  .card { padding: 0.875rem 1.375rem; }
+  .page-pad { margin: 0 1.375rem; }
 }
 
 /* Docked composers: the new-work, create-machine and machine docks and the run view's composer.
@@ -449,20 +449,20 @@ aside.rail, #rail-show { display: none; }
 .composer.dock {
   position: sticky; bottom: 0; z-index: 15; margin: auto 0 0;
   border-top: 1px solid var(--border); background: var(--surface);
-  padding: 10px 22px calc(10px + env(safe-area-inset-bottom));
+  padding: 0.625rem 1.375rem calc(0.625rem + env(safe-area-inset-bottom));
 }
 /* A hub row scrolled into view stops clear of the dock (--dock-h: its height). Not html's
    scroll-padding: Chromium scrolls the page on each key typed in a dock entry inside it. */
-.item { scroll-margin-bottom: calc(var(--dock-h, 0px) + 8px); }
+.item { scroll-margin-bottom: calc(var(--dock-h, 0px) + 0.5rem); }
 .resize-handle { display: none; touch-action: none; user-select: none; }
-@media (min-width: 781px) {
-  .resize-handle { display: block; flex: none; width: 6px; cursor: col-resize; }
+@media (width > 48.75em) {
+  .resize-handle { display: block; flex: none; width: 0.375rem; cursor: col-resize; }
   .resize-handle:hover, .resize-handle.dragging, .resize-handle:focus-visible { background: var(--accent); }
   .resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 }
-@media (max-width: 780px) {
+@media (width <= 48.75em) {
   /* A dock rides above the tab bar, and a page with one ends where the tab bar begins. */
-  .composer.dock { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding: 8px 16px; }
+  .composer.dock { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding: 0.5rem 1rem; }
   main:has(.composer.dock) { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); }
   /* Give the input the full row so a long placeholder ("describe a machine to
      create…") can't clip mid-word in the sliver left beside the button on a
@@ -471,7 +471,7 @@ aside.rail, #rail-show { display: none; }
   .composer.dock .row > textarea.field { flex-basis: 100%; }
   .composer.dock .row:not(.pickers) > button { flex: 1 1 auto; }
   /* The summary line is a fold as wide as its words, which wrap at the dock's width. */
-  .composer .picker-summary { display: flex; width: fit-content; max-width: 100%; margin-bottom: 8px; text-align: start; }
+  .composer .picker-summary { display: flex; width: fit-content; max-width: 100%; margin-bottom: 0.5rem; text-align: start; }
   .picker-summary > span { min-width: 0; overflow-wrap: anywhere; }
   .picker-summary[aria-expanded=false] ~ .pickers { display: none; }
   /* No nested scrolling on a phone: an inner scroller traps the page scroll,

@@ -148,7 +148,7 @@ async function renderRun(id, opts, gen) {
   body.appendChild(cc.card);
   app.appendChild(body);
   const saved = recall('a6-drawer', '');
-  applyDrawer(saved ? saved === 'open' : window.innerWidth >= 1024);
+  applyDrawer(saved ? saved === 'open' : matchMedia('(width >= 64em)').matches);
 
   // The phone widget menu picks the one widget shown; a popover, it closes on Esc or a tap outside.
   const entries = [['conv', 'Conversation'], ['head', 'Overview'], ['plan', 'plan.md'],
@@ -199,7 +199,7 @@ async function renderRun(id, opts, gen) {
   paintRun(cards, snap);
   cc.conv.refresh().then(() => {
     // A phone opens at the conversation's tail, where its prompts wait; a fan-out with none waiting opens on its children.
-    if (window.innerWidth < 781 && (cc.conv.prompts.childElementCount || children.parentElement.style.display === 'none')) window.scrollTo(0, document.body.scrollHeight);
+    if (matchMedia('(width <= 48.75em)').matches && (cc.conv.prompts.childElementCount || children.parentElement.style.display === 'none')) window.scrollTo(0, document.body.scrollHeight);
   });
 
   // The stream stays open across a finish: a resume from any surface logs into
