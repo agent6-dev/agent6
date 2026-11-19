@@ -721,6 +721,20 @@ function taskTitle(parent, taskLine, href) {
   parent.appendChild(title);
   if (continued) parent.appendChild(el('div', 'continued', continued));
 }
+// A row's sub line: its parts joined by ' · ', each separator kept with the part before it. A text
+// part (a mode, an id, a date, a cost) stays whole on one line; a node part (the status, a name, a
+// path) wraps as text.
+function subLine(parts) {
+  const sub = el('div', 'sub');
+  parts = parts.filter(Boolean);
+  parts.forEach((part, i) => {
+    const f = typeof part === 'string' ? el('span', 'f', part) : el('span');
+    if (typeof part !== 'string') f.append(part);
+    if (i < parts.length - 1) f.append('\u00a0·');
+    sub.append(...(i ? [' ', f] : [f]));
+  });
+  return sub;
+}
 
 // One session row, `depth` levels under its group's row. A group's row carries a `children: N`
 // toggle that `regroup` flips; its children (`r.children`, the server's nested rows) follow it
@@ -729,23 +743,27 @@ function paintSession(r, depth, regroup) {
   return itemRow('item', (it, g) => {
     if (depth) { it.classList.add('child'); it.style.setProperty('--depth', depth); }
     taskTitle(g, r.task_line || firstLine(r.task, 200) || '(no task)', '#/session/' + encodeURIComponent(r.session_id));
-    const usage = r.usage ? ' · ' + r.usage : ''; // the server's usage cell, blank for a clean $0
-    // id_cell carries the winner mark the CLI and TUI id cells carry.
-    g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id_cell || r.session_id)} · ${esc(r.when)}${usage}`));
+    // The status (the server's one shared label and level) leads the first sub line, so every
+    // row's dot sits in one column. id_cell is the id and the winner mark the CLI and TUI id cells
+    // carry, then a worktree mark in parentheses: a missing worktree's note, which wraps. usage is
+    // blank for a clean $0.
+    const cell = esc(r.id_cell || r.session_id), cut = cell.indexOf(' (', r.session_id.length);
+    let id = cell;
+    if (cut >= 0) { id = el('span'); id.append(el('span', 'f', cell.slice(0, cut)), cell.slice(cut)); }
+    g.appendChild(subLine([pill(r.status_level, r.status_label), esc(r.mode), id, esc(r.when), esc(r.usage)]));
     // Where the run works and the branch holding its commits, when it has them.
-    const where = [r.worktree && 'worktree ' + r.worktree, r.branch && 'branch ' + r.branch].filter(Boolean).join(' · ');
-    if (where) g.appendChild(el('div', 'sub', where));
+    if (r.worktree || r.branch) g.appendChild(subLine([r.worktree && el('span', null, 'worktree ' + r.worktree), r.branch && el('span', null, 'branch ' + r.branch)]));
     // The server's merge note, rendered once for every hub.
     if (r.merge_note) g.appendChild(el('div', 'sub', r.merge_note));
-    it.appendChild(pill(r.status_level, r.status_label)); // the server's one shared label + level
     // Review fills the new-work composer with `/review <branch>`; Merge lands the branch
     // as `sessions merge` does. Both need a finished run whose branch exists; Merge also
     // needs commits no merge stamped. A group has no branch of its own.
     const live = LIVE_WORDS.includes(r.status);
     if (r.branch && !live) {
+      const actions = el('div', 'item-actions'); // wraps under the text as one piece
       const review = el('button', 'mini', 'Review');
       review.onclick = () => { handToNewWork({ task: '/review ' + r.branch }); location.hash = '#/'; route(); };
-      it.appendChild(review);
+      actions.appendChild(review);
       if (r.unmerged) {
         const merge = el('button', 'mini', 'Merge');
         merge.onclick = async () => {
@@ -753,8 +771,9 @@ function paintSession(r, depth, regroup) {
           merge.disabled = true;
           if (!await postMerge(r)) merge.disabled = false;
         };
-        it.appendChild(merge);
+        actions.appendChild(merge);
       }
+      it.appendChild(actions);
     }
     const children = r.children || [];
     if (!children.length) return;
@@ -809,16 +828,16 @@ function sessionsCard() {
 function machinesCard() {
   return listCard('Instances', 'no machines yet', m => [{ key: m.name, data: m, paint: () => itemRow('item', (it, g) => {
     taskTitle(g, m.machine || m.name, '#/machine/' + encodeURIComponent(m.name));
-    g.appendChild(el('div', 'sub', `${m.name} · at ${esc(m.current || '?')} · ${esc(m.when)}`));
-    it.appendChild(pill(m.status_level, m.status_label)); // the reason rides the label (failed · why)
+    // The reason rides the status label (failed · why).
+    g.appendChild(subLine([pill(m.status_level, m.status_label), el('span', null, m.name), el('span', null, 'at ' + esc(m.current || '?')), esc(m.when)]));
   }) }]);
 }
 
 function draftsCard() {
   return listCard('Drafts', '', d => [{ key: d.session_id, data: d, paint: () => itemRow('item', (it, g) => {
     taskTitle(g, d.task_line || firstLine(d.task, 200) || d.session_id, '#/draft/' + encodeURIComponent(d.session_id));
-    g.appendChild(el('div', 'sub', `draft · ${esc(d.session_id)} · ${esc(d.when)}`));
-    it.appendChild(pill(d.status_level, d.status_label)); // the reason rides the label (failed · provider_error)
+    // The reason rides the status label (failed · provider_error).
+    g.appendChild(subLine([pill(d.status_level, d.status_label), 'draft', d.session_id, esc(d.when)]));
   }) }]);
 }
 

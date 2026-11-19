@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING
 
@@ -39,6 +40,14 @@ def _run(repo: pathlib.Path, sid: str, task: str, *events: dict[str, object]) ->
     start = {"type": "session.start", "mode": "run", "user_task": task}
     log.write_text("".join(json.dumps(e) + "\n" for e in (start, *events)), encoding="utf-8")
     return log
+
+
+def _manifest(repo: pathlib.Path, sid: str, **fields: object) -> None:
+    """Write a run's manifest with `fields`."""
+    run = paths.state_dir(repo) / "sessions" / "runs" / sid
+    run.mkdir(parents=True, exist_ok=True)
+    manifest = {"version": 3, "session_id": sid, "mode": "run", **fields}
+    (run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
 
 def _refresh(page: Page) -> None:
@@ -156,4 +165,55 @@ def test_a_groups_children_are_rows_of_their_own(
     child.get_by_role("link").focus()
     page.keyboard.press("Enter")
     expect(page).to_have_url(f"http://127.0.0.1:{fan_port}/#/session/fan-l1")
+    assert not errors
+
+
+def test_a_rows_status_leads_its_sub_line_and_its_text_keeps_the_width(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A row's status and buttons sat beside its text, so a phone left the text a sliver.
+
+    The dots stood wherever each label's length put them, and a squeezed sub line broke inside
+    an id. The status now leads the first sub line and the buttons wrap under the text.
+    """
+    from playwright.sync_api import expect
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True)
+
+    git("init", "-q", "-b", "master")
+    git("config", "user.name", "t")
+    git("config", "user.email", "t@example.invalid")
+    git("commit", "-q", "--allow-empty", "-m", "base")
+    git("branch", "agent6/review-BBBBBB")
+    reason = "the checkout has uncommitted changes"
+    _manifest(tmp_path, "parked-AAAAAA", parked_task="Bump textual", parked_reason=reason)
+    _manifest(tmp_path, "review-BBBBBB", run_branch="agent6/review-BBBBBB")
+    _run(tmp_path, "review-BBBBBB", "Review me", STOP)
+    _run(tmp_path, "short-CCCCCC", "Short", STOP)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    rows = page.locator(".item")
+    expect(rows).to_have_count(3)
+    expect(rows.filter(has_text="parked-AAAAAA")).to_contain_text(reason)
+    expect(rows.get_by_role("button", name="Review")).to_have_count(1)
+    lefts = "ps => ps.map(p => Math.round(p.getBoundingClientRect().left))"
+    assert len(set(page.locator(".item .pill").evaluate_all(lefts))) == 1
+    page.set_viewport_size({"width": 390, "height": 844})
+    text = "rows => rows.map(r => r.querySelector('.grow').getBoundingClientRect().width)"
+    assert min(rows.evaluate_all(text)) >= 300
+    # Each id sits on one line: the range over it draws a single box.
+    whole = """rows => rows.map(r => {
+      const sub = r.querySelector('.sub'), id = r.querySelector('a.title').hash.split('/').pop();
+      const walk = document.createTreeWalker(sub, NodeFilter.SHOW_TEXT);
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        const at = n.data.indexOf(id);
+        if (at < 0) continue;
+        const range = document.createRange();
+        range.setStart(n, at); range.setEnd(n, at + id.length);
+        return [...range.getClientRects()].filter(b => b.width).length;
+      }
+      return 0;
+    })"""
+    assert rows.evaluate_all(whole) == [1, 1, 1]
     assert not errors
