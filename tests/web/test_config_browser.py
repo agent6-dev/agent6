@@ -301,3 +301,27 @@ def test_a_save_keeps_the_folded_sections_and_the_edited_row_in_view(
     assert box["y"] >= 0
     assert box["y"] + box["height"] <= 900
     assert not errors
+
+
+def test_the_filter_opens_folded_matches_and_says_when_nothing_matches(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A match inside a folded section stayed hidden, and no match at all left a blank page.
+
+    Clearing the filter brings the folds back.
+    """
+    page, errors = open_page(port)
+    _config(page, port)
+    page.locator("details.cfg-section > summary").get_by_text("sandbox", exact=True).click()
+    search = page.locator("input.filter")
+    search.fill("extra_read")
+    assert page.locator('[data-key="sandbox.extra_read_paths"]').is_visible()
+    none = page.locator(".cfg-none")
+    assert none.inner_text() == ""
+    search.fill("zzzz")
+    assert none.inner_text() == "no setting matches"
+    assert none.get_attribute("role") == "status"
+    search.fill("")
+    folded = page.locator("details.cfg-section:not([open]) > summary").all_inner_texts()
+    assert folded == ["sandbox"]
+    assert not errors

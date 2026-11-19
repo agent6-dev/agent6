@@ -31,7 +31,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     if (gen !== routeGen || !card.isConnected) return;
     return renderConfig(gen, () => ({
       filter: filter.value, modified, x: window.scrollX, y: window.scrollY,
-      folded: [...sections].filter(([, box]) => !box.open).map(([name]) => name),
+      folded: folds(),
       key: document.activeElement?.getAttribute('data-key'),
       filtering: document.activeElement === filter,
     }));
@@ -95,15 +95,29 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     actionable(tr, () => { tr.focus({preventScroll: true}); editConfig(k, s, registry.tables, refresh, data); }, 'edit ' + k);
     tbl.appendChild(tr); rows.push([k.toLowerCase(), tr, s.modified, sections.get(section)]);
   }
+  // While the filter or Modified only narrows the rows, every section with a match shows open; the
+  // folds come back when both clear. A line says when nothing matches.
+  const none = el('div', 'empty cfg-none'); none.setAttribute('role', 'status');
+  card.appendChild(none);
+  let narrowed = false, folded = [];
+  const folds = () => narrowed ? folded : [...sections].filter(([, box]) => !box.open).map(([name]) => name);
   filter.oninput = () => {
     const q = filter.value.toLowerCase();
+    const narrowing = q !== '' || modified;
+    if (narrowing && !narrowed) folded = folds();
     const shown = new Set();
     for (const [key, tr, isModified, box] of rows) {
       const show = key.includes(q) && (!modified || isModified);
       tr.style.display = show ? '' : 'none';
       if (show) shown.add(box);
     }
-    for (const box of sections.values()) box.style.display = shown.has(box) ? '' : 'none';
+    for (const [name, box] of sections) {
+      box.style.display = shown.has(box) ? '' : 'none';
+      if (narrowing) box.open = true;
+      else if (narrowed) box.open = !folded.includes(name);
+    }
+    narrowed = narrowing;
+    none.textContent = shown.size ? '' : q ? `no ${modified ? 'modified ' : ''}setting matches` : 'no modified settings';
   };
   view.appendChild(card);
   filter.oninput();

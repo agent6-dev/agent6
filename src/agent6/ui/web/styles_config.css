@@ -19,6 +19,8 @@ textarea.field.cfg-value {
 .cfg-roster { display: grid; gap: 6px; margin: 4px 0 12px; }
 .cfg-roster > .row > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .cfg-section { margin-top: 10px; }
+/* The line saying no setting matches the filter takes no room while it is empty. */
+.cfg-none:empty { padding: 0; }
 .cfg-section > summary { cursor: pointer; font-family: var(--mono); font-size: 13px; color: var(--muted); padding: 4px 0; }
 /* The settings grid: every section's table spans the card and takes the same column widths (a
    fixed layout reads them off the header row), so the setting, value and source columns line up
