@@ -782,7 +782,7 @@ def test_the_git_toolbar_fetches_a_pull_request_and_offers_it_for_review(
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
     page.wait_for_selector(".gc-row")
     row = page.locator(".git-fetch")
-    expect(row).to_contain_text(str(upstream))  # where the fetch goes
+    expect(row).to_contain_text("from " + str(upstream))  # where the fetch goes
     row.get_by_role("button", name="Fetch", exact=True).click()
     expect(page.locator("#toasts")).to_contain_text("fetched up: main")
     row.get_by_placeholder("PR #").fill("#3")

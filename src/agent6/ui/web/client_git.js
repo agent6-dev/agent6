@@ -441,7 +441,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     fetchRow.hidden = !remotes.length;
     remoteSel.onchange();
   };
-  remoteSel.onchange = () => { remoteUrl.textContent = (remotes.find(r => r.name === remoteSel.value) || { url: '' }).url; };
+  remoteSel.onchange = () => { const url = (remotes.find(r => r.name === remoteSel.value) || { url: '' }).url; remoteUrl.textContent = url && 'from ' + url; };
   for (const x of [together(remoteSel, fetchBtn), together(pullNum, pullBtn), remoteUrl]) fetchRow.appendChild(x);
   bar.appendChild(fetchRow);
 
