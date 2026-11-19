@@ -1177,11 +1177,18 @@ function makeConv(url, box, body) {
     if (atTail) box.scrollTop = box.scrollHeight;
   };
   conv.detailButton = () => {
-    const b = el('button', 'mini', 'detail: ' + conv.detail);
+    // The button holds every label and shows the current one (styles_run.css), so it is as wide
+    // as its longest label and holds still as it cycles.
+    const b = el('button', 'mini');
+    const cycle = b.appendChild(el('span', 'cycle'));
+    const labels = {};
+    for (const level in DETAIL_CYCLE) labels[level] = cycle.appendChild(el('span', null, 'detail: ' + level));
+    const show = () => { for (const level in labels) labels[level].classList.toggle('on', level === conv.detail); };
+    show();
     b.onclick = () => {
       conv.detail = DETAIL_CYCLE[conv.detail];
       remember('a6-detail', conv.detail);
-      b.textContent = 'detail: ' + conv.detail;
+      show();
       conv.open.clear();
       paintItems();
     };

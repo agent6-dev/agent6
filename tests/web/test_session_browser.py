@@ -980,3 +980,32 @@ def test_a_conversation_item_opens_and_closes_from_the_keyboard(
     expect(head).to_have_attribute("aria-expanded", "false")
     expect(head).to_be_focused()
     assert not errors
+
+
+def test_the_detail_toggle_holds_still_as_it_cycles(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """The detail button keeps one place and width through collapsed, expanded and hidden.
+
+    Its width followed its label, so its left edge moved 18px between clicks.
+    """
+    from playwright.sync_api import expect
+
+    rows = [
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
+        {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
+    ]
+    _session(tmp_path, "detail-AAA111", rows)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/detail-AAA111")
+    button = page.locator(".card-conv .card-head-row > button")
+    places = set()
+    for level in ("collapsed", "expanded", "hidden"):
+        expect(button).to_have_accessible_name(f"detail: {level}")
+        box = button.bounding_box()
+        assert box
+        places.add((box["x"], box["width"]))
+        button.click()
+    expect(button).to_have_accessible_name("detail: collapsed")
+    assert len(places) == 1
+    assert not errors

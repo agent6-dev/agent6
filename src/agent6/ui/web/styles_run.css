@@ -82,6 +82,10 @@
 .conv-card > .card-head-row > button { flex: none; }
 /* The detail button overhangs the heading's 20px line, so the row lines up with the drawer's first card. */
 .conv-card > .card-head-row > button { margin-block: calc((20px - var(--ctl-h-sm)) / 2); }
+/* The detail button's labels share one grid cell and only the current one shows. */
+.cycle { display: inline-grid; }
+.cycle > * { grid-area: 1 / 1; }
+.cycle > :not(.on) { visibility: hidden; }
 /* The box pads its sides by the 4px an item's hover background and focus ring reach past its text
    (.ci's negative margins), so neither is cut; x stays hidden, as item text always wraps. */
 .conv-box { overflow: hidden auto; max-height: 62vh; padding-inline: 4px; margin-inline: -4px; }
