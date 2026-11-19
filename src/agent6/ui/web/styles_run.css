@@ -68,6 +68,8 @@
 .conv .s-task { color: var(--accent); font-weight: 700; }
 .conv .s-operator { color: var(--ok); font-weight: 600; }
 .conv-live { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; }
+/* The live pane's rule parts it from the items above it, so under no items it has none. */
+.conv:not(:has(.ci)) + .conv-live { border-top: 0; margin-top: 0; padding-top: 0; }
 .conv-live .lt { color: var(--accent); font-weight: 600; }
 /* The conversation card: header fixed, the body scrolls inside .conv-box (so
    the detail toggle stays reachable while following the tail). */

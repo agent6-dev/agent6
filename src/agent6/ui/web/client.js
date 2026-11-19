@@ -1049,11 +1049,9 @@ function makeConv(url, box, body) {
   new ResizeObserver(() => { if (atTail) box.scrollTop = box.scrollHeight; }).observe(box);
   // A run/machine that produced no conversation: "yet ... as it streams" while it
   // can still stream, past tense once it has ended (a terminal tool-only machine).
-  const emptyNote = () => conv.deadState
-    ? conv.deadState + ': the composer below resumes it'
-    : conv.finished
-      ? 'this session made no conversation'
-      : 'no conversation yet; it appears as the session streams';
+  const emptyNote = () => conv.finished
+    ? 'this session made no conversation'
+    : 'no conversation yet; it appears as the session streams';
 
   const paintItems = () => {
     itemsHost.innerHTML = '';
@@ -1114,13 +1112,15 @@ function makeConv(url, box, body) {
   // only at the expanded detail level (same rule as the TUI).
   conv.setLive = (s) => {
     conv.finished = notLive(s); // steers emptyNote()'s tense (may run before paintItems)
-    conv.deadState = s.dead_state || ''; // parked / created / stale, worded by the read model
     const r = s.last_model_call;
     liveHost.innerHTML = '';
     const note = itemsHost.querySelector('.conv-empty');
     if (notLive(s)) {
-      liveHost.style.display = 'none';
-      if (note) { note.textContent = emptyNote(); note.style.display = ''; } // re-tense if already painted
+      // Why the run has no worker, in the read model's words; a composer that resumes it says so.
+      const dead = s.dead_state || '';
+      liveHost.style.display = dead ? '' : 'none';
+      if (dead) liveHost.appendChild(el('div', 'muted', dead));
+      if (note) { note.textContent = emptyNote(); note.style.display = dead ? 'none' : ''; } // re-tense if already painted
       return;
     }
     if (s.status === 'waiting') {

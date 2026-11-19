@@ -608,3 +608,35 @@ def test_the_conversation_heading_lines_up_with_the_drawers_first_card(
     assert tops[0] == tops[1]
     assert tops[2] == tops[3]
     assert not errors
+
+
+def test_a_stale_run_says_why_under_its_conversation(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A run whose worker is gone says why under its conversation, in the read model's words.
+
+    Only an empty conversation's note gave the reason, so a stale run with items read "stale"
+    and nothing more; "the composer below resumes it" then showed on a draft, which has none.
+    With no items above it, the note sat under a rule that parted it from nothing.
+    """
+    from playwright.sync_api import expect
+
+    rows = [
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
+        {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
+    ]
+    _session(tmp_path, "stale-AAA111", rows)
+    created = paths.state_dir(tmp_path) / "sessions" / "runs" / "created-AAA111"
+    created.mkdir(parents=True)
+    (created / "logs.jsonl").write_text("")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/stale-AAA111")
+    expect(page.locator(".card-conv .ci").first).to_be_visible()
+    note = page.locator(".card-conv .conv-live")
+    expect(note).to_have_text("worker exited without finishing (crashed or killed)")
+    expect(page.locator(".card-conv .conv-empty")).to_have_count(0)
+    assert note.evaluate("e => getComputedStyle(e).borderTopWidth") == "1px"
+    page.goto(f"http://127.0.0.1:{port}/#/session/created-AAA111")
+    expect(note).to_have_text("the run has not started")
+    assert note.evaluate("e => getComputedStyle(e).borderTopWidth") == "0px"
+    assert not errors
