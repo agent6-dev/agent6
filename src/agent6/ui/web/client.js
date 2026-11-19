@@ -195,7 +195,14 @@ function toast(msg, level) {
     t.said = said;
     t.setAttribute('role', kind === 'hold' ? 'status' : 'alert');
     t.appendChild(closeButton('Dismiss', () => t.remove()));
-  } else { setTimeout(() => t.remove(), 4000); }
+  } else {
+    // Any other message fades 4 s after it shows, or after the pointer leaves it.
+    let timer = 0;
+    const fade = () => { timer = setTimeout(() => t.remove(), 4000); };
+    t.onpointerenter = () => clearTimeout(timer);
+    t.onpointerleave = fade;
+    fade();
+  }
   host.prepend(t); // the newest first: the column stacks it lowest
   return t;
 }

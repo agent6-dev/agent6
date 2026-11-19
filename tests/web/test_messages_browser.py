@@ -391,6 +391,29 @@ def test_prunes_undelete_commands_wait_for_dismiss(
     assert not errors
 
 
+def test_a_timed_message_waits_while_the_pointer_rests_on_it(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A message went 4 s after it showed, even while the pointer rested on it to read it."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.clock.install()
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.locator(".dock textarea").wait_for()
+    page.evaluate("toast('steer sent')")
+    timed = page.locator("#toasts .toast")
+    timed.hover()
+    page.clock.run_for(10_000)
+    expect(timed).to_be_visible()
+    page.mouse.move(0, 0)
+    page.clock.run_for(3_900)
+    expect(timed).to_be_visible()
+    page.clock.run_for(200)
+    expect(timed).to_have_count(0)
+    assert not errors
+
+
 def test_a_401_leaves_the_sign_in_form_alone(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
