@@ -430,8 +430,13 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       const isHead = c.sha === head.sha;
       row.appendChild(gitLanesSvg(lays[i], cols, c.is_merge ? 'merge' : '', isHead));
       const subj = el('div', 'gc-subj');
-      if (isHead && !c.refs.some(r => r.head)) subj.appendChild(refBadge({ name: 'HEAD', kind: 'head', head: true }));
-      for (const r of c.refs) subj.appendChild(refBadge(r));
+      // The row shows its first ref and counts the rest; the chip's tooltip and the commit panel list them.
+      const named = (isHead && !c.refs.some(r => r.head) ? [{ name: 'HEAD', kind: 'head', head: true }] : []).concat(c.refs);
+      if (named.length) subj.appendChild(refBadge(named[0]));
+      if (named.length > 1) {
+        const more = el('span', 'gref more', '+' + (named.length - 1)); more.title = named.slice(1).map(r => r.name).join(', ');
+        subj.appendChild(more);
+      }
       subj.appendChild(el('span', 'gc-text', c.subject));
       row.appendChild(subj);
       row.appendChild(el('span', 'gc-author muted', c.author));

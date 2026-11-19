@@ -55,6 +55,8 @@
 .gref.tag { border-color: var(--warn); color: var(--warn); }
 .gref.agent6 { border-color: var(--muted); color: var(--muted); }
 .gref.wt { border-style: dashed; }
+/* The count of a row's other refs; their names are in its tooltip. */
+.gref.more { border-color: var(--border-strong); color: var(--muted); }
 .git-side-head { gap: 8px; padding: 10px 16px 0; }
 .git-side-head h3 { margin: 0; font-size: 12px; font-weight: 600; line-height: 20px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .git-back { display: none; }
