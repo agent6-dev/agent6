@@ -179,6 +179,26 @@ def test_a_working_tree_rows_buttons_sit_beside_its_path_not_inside_a_button(
     assert errors == [], errors
 
 
+def test_hovering_a_file_rows_letter_names_its_state(
+    open_page: OpenPage, dirty_git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """The row's button covered the status letter, so hovering U or M showed no word."""
+    _git(tmp_path, "add", "b.txt")
+    (tmp_path / "b.txt").write_text("one\ntwo\nthree\nfour\nfive\n", encoding="utf-8")
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/worktree")
+    page.wait_for_selector(".git-side .gf")
+    tooltip = (
+        "p => { const b = [...document.querySelectorAll('.git-side .gf')]"
+        ".find(r => r.dataset.path === p).querySelector('.gf-st').getBoundingClientRect();"
+        " return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)"
+        ".closest('[title]')?.title; }"
+    )
+    assert page.evaluate(tooltip, "new.txt") == "untracked"
+    assert page.evaluate(tooltip, "b.txt") == "modified, partly staged"
+    assert errors == [], errors
+
+
 def test_a_phones_commit_panel_keeps_its_back_button_in_view(
     open_page: OpenPage, git_port: int
 ) -> None:

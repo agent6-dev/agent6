@@ -220,17 +220,19 @@ function fileList(files, truncated, open, actions) {
   const stop = rovingRows(body, '.gf-open, .gtree-dir');
   // A working-tree file reads U while untracked, and says when its changes are staged. The path
   // is the row's one control, and a click anywhere on the row opens the diff; a working-tree
-  // row's buttons sit beside it.
+  // row's buttons sit beside it. The control covers the letter, so its tooltip names the letter.
   const fileRow = (f, short) => {
     const row = el('div', 'gf');
     row.dataset.path = f.path;
     const status = f.untracked ? 'U' : f.status;
     const index = f.staged ? (f.unstaged ? 'partly staged' : 'staged') : '';
-    row.appendChild(statusBadge(status));
+    const badge = statusBadge(status);
+    row.appendChild(badge);
     const path = filePath(f, short);
     if (index) { path.appendChild(document.createTextNode(' ')); path.appendChild(el('span', 'gf-index', index)); }
     const button = el('button', 'gf-open');
     button.setAttribute('aria-label', status + ' ' + f.path + (index ? ', ' + index : ''));
+    button.title = badge.title + (index ? ', ' + index : '');
     button.onclick = () => open(files.indexOf(f));
     button.appendChild(path);
     row.appendChild(button);
