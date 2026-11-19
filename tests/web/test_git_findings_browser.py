@@ -211,3 +211,21 @@ def test_rule_link_opens_the_recorded_base_blob(
     page.reload()
     expect(page.locator(".files-text")).to_contain_text("Keep the base rule.")
     assert not errors
+
+
+def test_a_reviewed_comparisons_rules_read_as_a_note_above_its_files(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    evidence: tuple[int, dict[str, Any]],
+) -> None:
+    """The rules block was 14px body text butting against the file list under it."""
+    from playwright.sync_api import expect
+
+    port, revs = evidence
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/git/compare/{revs['base']}..{revs['head']}?panel=panel")
+    rules = page.locator(".gcmp .review-rules")
+    expect(rules).to_contain_text("Rules complete")
+    assert rules.evaluate("e => getComputedStyle(e).fontSize") == "12px"
+    box, files = rules.bounding_box(), page.locator(".gcmp .gfiles").bounding_box()
+    assert box and files and files["y"] - (box["y"] + box["height"]) >= 8, (box, files)
+    assert not errors
