@@ -158,10 +158,15 @@ function renderUnified(files, numbered, oldSpans = {}, newSpans = {}) {
 
 // Render one parsed file side by side: a row per pair of lines, deletions beside the
 // additions that replace them, context on both sides; a row carries `data-old` and
-// `data-new`, each cell its own gutter.
+// `data-new`, each cell its own gutter. A drag selects within the side it starts in.
 function renderSplit(file, oldSpans = {}, newSpans = {}) {
   const old = oldSpans[file.oldPath] || [], news = newSpans[file.newPath] || [];
   const box = el('div', 'dsplit numbered');
+  box.addEventListener('pointerdown', (e) => {
+    const c = e.target.closest('.ds-cell');
+    if (c) box.dataset.select = c === c.parentElement.children[0] ? 'old' : 'new';
+    else delete box.dataset.select;
+  });
   if (file.oldPath) box.dataset.oldPath = file.oldPath;
   if (file.newPath) box.dataset.newPath = file.newPath;
   let max = 0;

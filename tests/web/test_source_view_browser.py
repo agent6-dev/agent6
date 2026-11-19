@@ -147,3 +147,24 @@ def test_the_blame_card_opens_beside_its_line_near_the_bottom_edge(
     assert box["y"] + box["height"] <= 600 and box["x"] + box["width"] <= 1280
     assert card.locator(".mono").evaluate("e => e.getClientRects().length") == 1
     assert not errors
+
+
+def test_a_drag_in_the_split_view_selects_one_side(
+    open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
+) -> None:
+    """A drag down the new column selected the old column too, so a copy interleaved them."""
+    port, base, head = long_file
+    page, errors = open_page(port)
+    page.add_init_script("localStorage.setItem('a6-diff-mode', 'split')")
+    page.goto(f"http://127.0.0.1:{port}/#/git/compare/{base}..{head}?path=long.txt")
+    start = page.locator(".ds-row[data-new='48'] > :nth-child(2) .source-code").bounding_box()
+    end = page.locator(".ds-row[data-new='52'] > :nth-child(2) .source-code").bounding_box()
+    assert start and end
+    page.mouse.move(start["x"] + 2, start["y"] + start["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(end["x"] + 60, end["y"] + end["height"] / 2, steps=8)
+    page.mouse.up()
+    copied = page.evaluate("getSelection().toString()")
+    assert "value_50 = 'changed'" in copied
+    assert "value_50 = 50" not in copied, copied
+    assert not errors

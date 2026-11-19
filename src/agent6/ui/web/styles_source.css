@@ -25,6 +25,8 @@
 .ds-cell.add { background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .ds-cell.del { background: color-mix(in srgb, var(--err) 12%, transparent); }
 .ds-cell.ds-empty { background: var(--surface2); }
+/* A drag selects within the side it starts in: the other column and the headers take no part. */
+.dsplit[data-select=old] .ds-cell:nth-child(2), .dsplit[data-select=new] .ds-cell:first-child, .dsplit[data-select] .ds-head { user-select: none; }
 .ds-head { color: var(--text); white-space: pre-wrap; word-break: break-word; }
 .ds-head.hunk { color: var(--accent2); } .ds-head.meta { color: var(--muted); }
 .hl-keyword { color: var(--hl-keyword); } .hl-function { color: var(--hl-function); } .hl-type { color: var(--hl-type); }
