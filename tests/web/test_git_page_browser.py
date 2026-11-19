@@ -290,6 +290,24 @@ def test_create_fetch_pr_and_commit_wait_for_their_input(
     assert errors == [], errors
 
 
+def test_create_from_the_keyboard_hands_its_focus_to_the_name_field(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """Create disabled itself while it held the focus, and the focus dropped to the page."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    name = page.get_by_placeholder("new branch…")
+    name.fill("topic")
+    page.get_by_role("button", name="Create", exact=True).focus()
+    page.keyboard.press("Enter")
+    expect(name).to_be_focused()
+    expect(page.locator(".git-branch select").first).to_have_value("topic")  # re-read
+    expect(name).to_be_focused()
+    assert errors == [], errors
+
+
 def test_the_compare_pickers_reached_option_stays_in_view_and_is_named(
     open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
 ) -> None:

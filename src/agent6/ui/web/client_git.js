@@ -593,7 +593,8 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   pullNum.oninput = gatePull;
   pullNum.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); pullBtn.click(); } };
   switchBtn.onclick = () => gitWrite('switch', { name: branchSel.value });
-  createBtn.onclick = () => { const name = newName.value.trim(); newName.value = ''; gateCreate(); gitWrite('branch', { name }); };
+  // The focus moves to the name field before Create disables itself to wait for the next name.
+  createBtn.onclick = () => { const name = newName.value.trim(); newName.value = ''; newName.focus(); gateCreate(); gitWrite('branch', { name }); };
   newName.oninput = gateCreate;
   newName.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); createBtn.click(); } };
   paintBranches();
