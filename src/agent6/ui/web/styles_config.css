@@ -1,6 +1,5 @@
 /* The filter takes the bar's first line and the buttons wrap under it, so every button stays on
    the card at any width. */
-.cfg-bar { flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .cfg-bar input.filter { flex: 1 1 100%; }
 .cfg-bar button { flex: none; white-space: nowrap; }
 .cfg-point + .cfg-point { margin-top: 4px; }

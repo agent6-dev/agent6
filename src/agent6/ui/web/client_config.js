@@ -13,8 +13,9 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
   const selected = selectedPreset(data);
   view.innerHTML = '';
   const card = el('div', 'card cfg-card');
-  // The filter and entry actions share a row, in the TUI config page's words.
-  const bar = el('div', 'row cfg-bar');
+  // The filter and the page's actions share a toolbar, in the TUI config page's words; the command
+  // palette offers its buttons.
+  const bar = el('div', 'toolbar cfg-bar');
   const filter = el('input', 'filter'); filter.placeholder = 'filter settings…'; filter.type = 'search';
   filter.value = state.filter || '';
   bar.appendChild(filter);

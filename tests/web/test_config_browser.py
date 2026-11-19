@@ -425,3 +425,19 @@ def test_a_config_section_name_heads_its_muted_column_labels(
     page.set_viewport_size({"width": 390, "height": 844})
     assert page.locator(".cfg thead").first.evaluate("e => e.offsetHeight") <= 1
     assert not errors
+
+
+def test_the_command_palette_offers_the_config_bar_actions(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The palette listed none of the config page's actions: they sat outside a toolbar."""
+    page, errors = open_page(port)
+    _config(page, port)
+    page.keyboard.press("Control+k")
+    page.get_by_role("dialog").locator("input").fill(">add provider")
+    assert page.get_by_role("dialog").locator(".ac-item").all_inner_texts() == [
+        "Add provider… · this page"
+    ]
+    page.keyboard.press("Enter")
+    assert page.get_by_role("dialog").locator("h2").inner_text() == "Add provider"
+    assert not errors

@@ -105,7 +105,7 @@ const row = key => all(view).find(e => e.tag === 'tr' && e.children[0]?.textCont
 async function run() {
   token = (await request('/api/login', {secret})).token;
   await renderConfig();
-  const bar = all(view).find(e => e.className === 'row cfg-bar');
+  const bar = all(view).find(e => e.className === 'toolbar cfg-bar');
   assert.deepEqual(bar.children.map(e => e.textContent), [
     '', 'Modified only', 'Preset…', 'Add preset…', 'Remove preset',
     'Add provider…', 'Add MCP server…', 'Add skill…', 'Add reviewer…',
@@ -142,7 +142,7 @@ async function run() {
   assert.equal(writes.at(-1).path, '/api/config/entry');
   assert.equal(writes.at(-1).body.repo, false);
   assert.ok(row('providers.openrouter.base_url'));
-  const refreshedBar = all(view).find(e => e.className === 'row cfg-bar');
+  const refreshedBar = all(view).find(e => e.className === 'toolbar cfg-bar');
   assert.equal(refreshedBar.children[0].value, 'providers.');
   assert.equal(row('sandbox.network').style.display, 'none');
   refreshedBar.children[0].value = ''; refreshedBar.children[0].oninput();
