@@ -211,6 +211,7 @@ button.fold[aria-expanded=true]::before { rotate: 45deg; }
 .pickers { flex-wrap: wrap; gap: 6px 16px; margin-bottom: 8px; font-size: 13px; }
 .pickers .pick { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
 .pickers .pick > span { flex: none; } /* the dropdown narrows, never its label */
+.pickers .pick:has(:disabled) > span { opacity: .55; } /* a label dims with its control */
 .pickers .field { width: auto; min-width: 0; max-width: 100%; min-height: var(--ctl-h-sm); font-size: 13px; }
 /* The spend cap holds a few digits and no spin buttons at rest (Firefox paints them by default). */
 .pickers input[type=number] { width: 7em; appearance: textfield; }
@@ -261,7 +262,7 @@ textarea.field, select.field, input.field, input.filter {
   min-height: var(--ctl-h);
 }
 textarea.field { min-height: 72px; padding-block: 6px; line-height: 1.5; resize: vertical; }
-.field:disabled, input.filter:disabled { opacity: .55; cursor: not-allowed; }
+.field:disabled, input.filter:disabled, input[type=checkbox]:disabled { opacity: .55; cursor: not-allowed; }
 select, select.field {
   appearance: none; font: inherit; color: var(--text); background-color: var(--bg);
   border: 1px solid var(--border-strong); border-radius: var(--r);

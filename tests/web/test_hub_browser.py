@@ -293,3 +293,21 @@ def test_the_folds_say_whether_they_are_open_and_keep_the_focus(
     boxes = fields.evaluate_all("es => es.map(e => [e.getBoundingClientRect().y, e.offsetHeight])")
     assert boxes[0] == boxes[1], boxes
     assert not errors
+
+
+def test_a_disabled_picker_reads_disabled_with_its_label(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A plan greys worktree and from plan: Firefox drew both, and both labels, as enabled."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.locator(".dock select").first.select_option("plan")
+    worktree = page.locator(".dock input[type=checkbox]")
+    expect(worktree).to_be_disabled()
+    opacity = "es => es.map(e => +getComputedStyle(e).opacity)"
+    labels = page.locator(".dock .pick", has=page.locator(":disabled")).locator("> span")
+    expect(labels).to_have_text(["worktree", "from plan"])
+    assert max(worktree.evaluate_all(opacity) + labels.evaluate_all(opacity)) < 1
+    assert not errors
