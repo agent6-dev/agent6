@@ -291,9 +291,9 @@ dialog .err:empty { display: none; }
   nav.tabs { display: flex; }
   /* The top bar is a compact fixed strip, the mirror of the bottom tab bar:
      sticky slides away with horizontal overflow, fixed never moves. It takes no
-     flow space, so main pads down to clear it (--hdr-h = 6+34+6 padding+row
-     plus the 1px border). */
-  :root { --hdr-h: 47px; }
+     flow space, so main pads down to clear it (--hdr-h: its 6px paddings, a
+     control's height and the 1px border). */
+  :root { --hdr-h: calc(var(--ctl-h) + 13px); }
   header {
     position: fixed; top: 0; left: 0; right: 0;
     padding: 6px 12px; padding-top: calc(6px + env(safe-area-inset-top));

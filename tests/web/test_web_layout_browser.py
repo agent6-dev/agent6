@@ -158,6 +158,30 @@ def test_a_desktop_pane_fills_the_screen_under_a_header_of_any_height(
     assert not errors
 
 
+def test_a_touch_phones_page_starts_below_its_header(browser: Browser, port: int) -> None:
+    """The page clears the fixed header, which takes the touch screen's taller controls.
+
+    The page reserved a fixed 47px while the header grew to 53px with its 40px buttons, so
+    the first 6px of every page and every overlay hid under the header.
+    """
+    from playwright.sync_api import expect
+
+    context = browser.new_context(
+        viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True
+    )
+    context.add_init_script(f"localStorage.setItem('a6-token', {json.dumps(signin.token(port))})")
+    try:
+        page = context.new_page()
+        page.goto(f"http://127.0.0.1:{port}/#/")
+        expect(page.get_by_role("button", name="Start", exact=True)).to_be_visible()
+        header = page.locator("header").bounding_box()
+        assert header is not None and header["height"] == 53
+        main_top = "parseFloat(getComputedStyle(document.querySelector('main')).paddingTop)"
+        assert page.evaluate(main_top) == header["height"]
+    finally:
+        context.close()
+
+
 def test_a_long_line_in_a_phone_widget_never_widens_the_page(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
