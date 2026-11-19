@@ -166,3 +166,34 @@ def test_truncated_markdown_keeps_the_source_note_until_opened_whole(
         "aria-pressed", "true"
     )
     assert not errors
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_table_cells_keep_whole_words(
+    git_port: int,
+    tmp_path: pathlib.Path,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    width: int,
+) -> None:
+    """Cells broke words anywhere, so a column squeezed by a long one read De/fa/ult."""
+    from playwright.sync_api import expect
+
+    meaning = "the preset the session runs under and what selecting it changes " * 6
+    (tmp_path / "table.md").write_text(
+        "| Field | Default | Meaning |\n| --- | --- | --- |\n"
+        f'| `agent6.preset` | `"none"` | {meaning}|\n',
+        encoding="utf-8",
+    )
+    test_git_history._git(tmp_path, "add", "table.md")
+    test_git_history._git(tmp_path, "commit", "-m", "a table")
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/table.md")
+    header = page.locator(".md-view th", has_text="Default")
+    expect(header).to_be_visible()
+    lines = header.evaluate(
+        "th => { const r = document.createRange(); r.selectNodeContents(th);"
+        " return new Set([...r.getClientRects()].map(x => Math.round(x.top))).size; }"
+    )
+    assert lines == 1
+    assert not errors
