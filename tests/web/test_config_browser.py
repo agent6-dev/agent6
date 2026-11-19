@@ -1303,7 +1303,7 @@ def test_the_catalog_failure_line_ends_its_reason_with_one_period(
     )
     _config(page, port)
     page.get_by_role("button", name="Add reviewer…").click()
-    status = page.get_by_role("dialog").get_by_role("status")
+    status = page.get_by_role("dialog").locator(".cfg-catalog")
     expect(status).to_have_text(f"Catalog unavailable: {reason} You can type a model id.")
     assert not [error for error in errors if "500 (Internal Server Error)" not in error]
 
@@ -1327,7 +1327,8 @@ def test_the_model_lists_status_line_stays_outside_the_listbox(
     listbox = dialog.get_by_role("listbox")
     expect(listbox.get_by_role("option")).to_have_count(2)
     model.fill("zzz")
-    status = dialog.get_by_role("status")
+    status = dialog.locator(".cfg-catalog")
+    expect(status).to_have_attribute("role", "status")
     expect(status).to_have_text("No matches. You can save the typed model id.")
     assert listbox.evaluate("e => e.children.length") == 0
     status.evaluate("e => { e.dataset.kept = 1; }")
