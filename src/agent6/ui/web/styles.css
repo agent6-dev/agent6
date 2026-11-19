@@ -226,20 +226,26 @@ button.quiet.danger:hover { color: var(--err); border-color: transparent; backgr
 .advanced summary { cursor: pointer; list-style: none; width: max-content; font-size: 12px; color: var(--muted); }
 .advanced summary::-webkit-details-marker { display: none; }
 .advanced[open] summary { color: var(--text); }
-/* One stack, so a second message never lands on top of the first. */
+/* The messages (#toasts) stack in one column over the content, 16px above the docked composer's
+   top edge (--dock), or above the completion list open over it (--dock-top: the last element
+   with a name is the anchor), so none covers the dock's controls. A page without a dock puts
+   them 16px above the bottom edge, on a phone above the tab bar. */
+.composer.dock { anchor-name: --dock, --dock-top; }
+.composer.dock .ac-pop { anchor-name: --dock-top; }
 #toasts {
-  position: fixed; left: 50%; transform: translateX(-50%); z-index: 50;
-  bottom: calc(120px + env(safe-area-inset-bottom)); /* clears the docked composer */
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  max-width: 90vw; pointer-events: none;
+  position: fixed; z-index: 50; position-anchor: --dock;
+  left: anchor(left, var(--rail-w)); right: anchor(right, 0px); bottom: anchor(--dock-top top, 0px);
+  margin-bottom: 16px; padding: 0 16px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none;
 }
 .toast {
+  display: flex; align-items: flex-start; gap: 12px; max-width: min(100%, 640px);
   background: var(--surface); border: 1px solid var(--accent); border-radius: 10px;
   padding: 10px 16px; box-shadow: 0 4px 16px rgba(0,0,0,.4); pointer-events: auto;
-  white-space: pre-line; /* CLI-captured messages (merge, prune) are line-shaped */
+  white-space: pre-wrap; overflow-wrap: anywhere; /* CLI-captured messages (merge, prune) keep their lines */
 }
 .toast.bad { border-color: var(--err); color: var(--err); }
-.toast .t-x { min-height: 0; padding: 0 4px; background: none; border: 0; color: inherit; margin-left: 10px; }
+.toast .t-x { flex: none; min-height: 0; padding: 0 4px; line-height: inherit; background: none; border: 0; color: inherit; }
 .notif-banner { display: flex; align-items: flex-start; gap: 10px; background: var(--surface2); border-left: 3px solid var(--accent); padding: 10px 12px; margin-bottom: 10px; }
 .notif-banner.warn { border-color: var(--warn); }
 .notif-banner.error { border-color: var(--err); }
@@ -283,6 +289,7 @@ dialog .err:empty { display: none; }
   }
   header > button { min-width: var(--ctl-h); padding: 0 var(--ctl-px-sm); }
   main { padding: calc(var(--hdr-h) + env(safe-area-inset-top)) 0 calc(var(--nav-h) + 24px); }
+  #toasts { left: anchor(left, 0px); bottom: anchor(--dock-top top, calc(var(--nav-h) + env(safe-area-inset-bottom))); }
   .card.scroll { max-height: 60vh; }
   header .desktop-only { display: none; }
 }

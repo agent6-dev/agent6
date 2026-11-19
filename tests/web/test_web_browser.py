@@ -1355,3 +1355,28 @@ def test_a_dialog_keeps_tab_inside_and_esc_returns_focus_to_its_opener(
     expect(title).to_have_count(0)
     expect(task).to_be_focused()
     assert not errors
+
+
+def test_a_toast_never_covers_the_docked_composer(
+    port: int, open_page: Callable[[int], tuple[Page, list[str]]]
+) -> None:
+    """A toast covered the Sessions composer's controls, then the completion list open over it."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    dock = page.locator(".composer.dock")
+    expect(dock).to_be_visible()
+    page.evaluate("toast('merge refused\\n  src/stats.py\\ncommit or stash them', true)")
+    toast = page.locator(".toast")
+    expect(toast).to_contain_text("src/stats.py")
+    above, under = toast.bounding_box(), dock.bounding_box()
+    assert above and under
+    assert above["y"] + above["height"] <= under["y"], (above, under)
+    page.locator(".dock textarea").fill("/")
+    completions = page.locator(".ac-pop")
+    expect(completions).to_contain_text("/review")
+    above, under = toast.bounding_box(), completions.bounding_box()
+    assert above and under
+    assert above["y"] + above["height"] <= under["y"], (above, under)
+    assert not errors

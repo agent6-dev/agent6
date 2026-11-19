@@ -149,6 +149,16 @@ def test_a_failure_toast_holds_until_it_is_dismissed() -> None:
     assert "#toasts" in page.PAGE_HTML, "the stack has no container style"
 
 
+def test_toasts_are_announced() -> None:
+    """The toast stack was a bare div, so a screen reader announced no message."""
+    # role=status implies aria-atomic=true, which re-reads every toast still showing.
+    region = '<div id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>'
+    assert region in page.PAGE_HTML
+    start = page.CLIENT_JS.index("function toast(")
+    body = page.CLIENT_JS[start : page.CLIENT_JS.index("\nfunction ", start + 1)]
+    assert "t.setAttribute('role', 'alert')" in body, "a failure is not announced at once"
+
+
 def test_the_machine_page_offers_stop() -> None:
     """The page can park a machine at its next transition, as `machine stop` does."""
     start = page.CLIENT_JS.index("async function renderMachine")

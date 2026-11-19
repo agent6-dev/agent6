@@ -138,6 +138,7 @@ PAGE_HTML = (
     + _NAV_LINKS
     + r"""
 </nav>
+<div id="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
 
 <script>
 """

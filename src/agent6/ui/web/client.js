@@ -148,16 +148,17 @@ async function postMerge(r) {
   try { const d = await postJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge', {}); toast(d.message || 'merged'); route(); return true; }
   catch (err) { toast(err.message, true); return false; }
 }
-// Messages stack in one column. A failure carries a reason worth reading (a
-// captured CLI refusal runs several lines), so it holds until dismissed; a
-// confirmation clears itself.
+// Messages stack in one column, the page's #toasts region. A failure carries a reason worth
+// reading (a captured CLI refusal runs several lines), so it is announced at once and holds until
+// dismissed; a confirmation clears itself.
 function toast(msg, bad) {
-  let host = document.getElementById('toasts');
-  if (!host) { host = el('div'); host.id = 'toasts'; document.body.appendChild(host); }
   const t = el('div', 'toast' + (bad ? ' bad' : ''), msg);
-  if (bad) { const x = el('button', 't-x', '\u00d7'); x.onclick = () => t.remove(); t.appendChild(x); }
-  else { setTimeout(() => t.remove(), 4000); }
-  host.appendChild(t);
+  if (bad) {
+    t.setAttribute('role', 'alert');
+    const x = el('button', 't-x', '\u00d7'); x.setAttribute('aria-label', 'Dismiss');
+    x.onclick = () => t.remove(); t.appendChild(x);
+  } else { setTimeout(() => t.remove(), 4000); }
+  document.getElementById('toasts').appendChild(t);
 }
 function setCrumb(t) { crumb.textContent = t || ''; }
 
