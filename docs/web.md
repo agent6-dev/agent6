@@ -25,6 +25,11 @@ agent6 web <draft>      # open a `machine create` draft on load (read-only)
 `--host` / `--port` override the [`[web]`](config.md#web) config for one invocation.
 Stop it with Ctrl-C.
 
+## Browsers
+
+The page targets current Chrome and Firefox and uses only features both ship.
+Safari and iPhone browsers are untested.
+
 ## Sign in
 
 The server requires a secret and prints it when it starts:
