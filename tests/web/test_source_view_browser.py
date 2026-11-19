@@ -269,7 +269,7 @@ def test_the_source_container_leaves_the_config_source_column_alone(
     page, errors = open_page(port)
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(f"http://127.0.0.1:{port}/#/config")
-    cells = page.locator(".cfg td.src")
+    cells = page.locator(".cfg td.source")
     cells.first.wait_for()
     cut = cells.evaluate_all("""cells => cells.filter(c => {
       const text = document.createRange(); text.selectNodeContents(c);
