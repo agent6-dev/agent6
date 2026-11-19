@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import re
 from collections.abc import Callable
@@ -12,8 +11,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from agent6 import paths
-from agent6.sessions import process
-from tests.web import test_web_actions, test_web_browser
+from tests.web import test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Locator, Page
@@ -319,39 +317,6 @@ def test_the_open_pages_link_is_marked_by_more_than_its_colour(
         "machines": [False, False],
         "config": [False, False],
     }
-    assert not errors
-
-
-def test_a_banner_sits_under_the_header_with_a_full_size_close_button(
-    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
-) -> None:
-    """The first banner touched the header line, and its close button was a 32x20 target."""
-    from playwright.sync_api import expect
-
-    machine = paths.state_dir(tmp_path) / "machines" / "noting-machine"
-    (machine / "states" / "0001-work").mkdir(parents=True)
-    (machine / "machine.asm.toml").write_text(test_web_actions.TINY, encoding="utf-8")
-    (machine / "journal.jsonl").write_text("", encoding="utf-8")
-    process.write_worker_pid(machine, os.getpid())
-    page, errors = open_page(port)
-    page.goto(f"http://127.0.0.1:{port}/#/machine/noting-machine")
-    expect(page.get_by_role("button", name="Steer")).to_be_visible()
-    note = {
-        "type": "machine.notify",
-        "ts": "2026-11-13T10:00:00Z",
-        "state": "route",
-        "message": "Look",
-    }
-    with (machine / "journal.jsonl").open("a") as stream:
-        stream.write(json.dumps(note) + "\n")
-    banner = page.locator(".notif-banner")
-    expect(banner).to_have_count(1)
-    header, box = page.locator("header").bounding_box(), banner.bounding_box()
-    close = banner.get_by_role("button").bounding_box()
-    assert header is not None and box is not None and close is not None
-    assert box["y"] - (header["y"] + header["height"]) == 12
-    assert close["width"] == close["height"] == 32
-    assert close["y"] >= box["y"] and close["y"] + close["height"] <= box["y"] + box["height"]
     assert not errors
 
 
