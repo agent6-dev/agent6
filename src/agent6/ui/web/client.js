@@ -657,16 +657,18 @@ function createMachineDock() {
 // The hub's lists repaint in place on every refresh. Each row is keyed: an unchanged row keeps its
 // element, and with it the focus, a text selection or a press inside it; a changed row is painted
 // afresh and takes the focus over; moveBefore() puts rows in order without dropping the focus.
+// On a refresh (`hold`), a changed row under a press or a text selection keeps its paint until a
+// later one, so the click lands and the selection stays.
 // `rows` is [{ key, data, paint }]: `data` decides whether the row changed, `paint()` builds it.
 const focusables = (row) => [row, ...row.querySelectorAll('a[href], button, input, select, textarea, summary, [tabindex]')];
-function patchRows(list, rows) {
+function patchRows(list, rows, hold = false) {
   const old = new Map([...list.children].map(n => [n.rowKey, n]));
   const kept = new Set();
   let prev = null;
   for (const { key, data, paint } of rows) {
     const sig = JSON.stringify(data);
     let node = old.get(key);
-    if (!node || node.rowSig !== sig) {
+    if (!node || (node.rowSig !== sig && !(hold && (node.matches(':active') || selecting(node))))) {
       const fresh = paint();
       fresh.rowKey = key; fresh.rowSig = sig;
       if (node) {
@@ -685,13 +687,13 @@ function patchRows(list, rows) {
   }
   for (const n of [...list.children]) if (!kept.has(n)) n.remove();
 }
-// Whether the reader is selecting text in `node`: a refresh then waits, so the selection stays.
+// Whether the reader has text selected in `node`.
 function selecting(node) {
   const s = getSelection();
   return !!s && !s.isCollapsed && s.containsNode(node, true);
 }
 
-// A list card: an h2 title over rows that open what their titles link to. card.show(entries)
+// A list card: an h2 title over rows that open what their titles link to. card.show(entries, hold)
 // repaints the rows in place; `rows(entry)` lists the row or rows an entry shows (patchRows).
 function listCard(title, empty, rows) {
   const card = el('div', 'card');
@@ -714,8 +716,8 @@ function listCard(title, empty, rows) {
   list.onkeydown = (e) => {
     if (e.key === ' ' && e.target.matches('a.title')) { e.preventDefault(); e.target.click(); }
   };
-  card.show = (entries) => patchRows(list, entries.length ? entries.flatMap(rows)
-    : [{ key: '', data: empty, paint: () => el('div', 'empty', empty) }]);
+  card.show = (entries, hold) => patchRows(list, entries.length ? entries.flatMap(rows)
+    : [{ key: '', data: empty, paint: () => el('div', 'empty', empty) }], hold);
   return card;
 }
 // One row: `paint(it, g)` fills the row and its text column.
@@ -815,7 +817,7 @@ function sessionsCard() {
   };
   const card = listCard('', 'no sessions yet', r => rows(r, 0));
   const show = card.show;
-  card.show = (sessions) => { shown = sessions; show(sessions); };
+  card.show = (sessions, hold) => { shown = sessions; show(sessions, hold); };
   // Maintenance, the actions the TUI's File menu holds, sits in one row above the list.
   const toolbar = el('div', 'toolbar');
   // OS notifications for a session that starts waiting or ends need a granted permission.
@@ -874,7 +876,7 @@ function machineFilesCard() {
     return b;
   };
   card.appendChild(frow);
-  card.show = (files) => patchRows(frow, files.map(mf => ({ key: mf.path, data: mf, paint: () => run(mf) })));
+  card.show = (files, hold) => patchRows(frow, files.map(mf => ({ key: mf.path, data: mf, paint: () => run(mf) })), hold);
   return card;
 }
 
@@ -902,17 +904,18 @@ async function renderHub(focus, gen) {
   const lists = el('div', 'grid');
   let show;
   if (machinesTab) {
-    const files = machineFilesCard(), machines = machinesCard(), drafts = draftsCard();
-    show = (d) => {
-      files.show(d.machine_files || []); machines.show(d.machines || []); drafts.show(d.drafts || []);
+    const cards = { files: machineFilesCard(), machines: machinesCard(), drafts: draftsCard() };
+    show = (d, hold) => {
+      const entries = { files: d.machine_files || [], machines: d.machines || [], drafts: d.drafts || [] };
+      for (const k in cards) cards[k].show(entries[k], hold);
       // The machine files and drafts cards leave the page while they are empty.
-      const cards = [(d.machine_files || []).length && files, machines, (d.drafts || []).length && drafts].filter(Boolean);
-      if (cards.some((c, i) => c !== lists.children[i]) || cards.length !== lists.children.length) lists.replaceChildren(...cards);
+      patchRows(lists, Object.keys(cards).filter(k => k === 'machines' || entries[k].length)
+        .map(k => ({ key: k, data: k, paint: () => cards[k] })));
     };
   } else {
     const sessions = sessionsCard();
     lists.appendChild(sessions);
-    show = (d) => sessions.show(d.sessions);
+    show = (d, hold) => sessions.show(d.sessions, hold);
   }
   show(data);
   let statuses = seedStatuses(data.sessions);
@@ -931,10 +934,7 @@ async function renderHub(focus, gen) {
       if (gen !== undefined && gen !== routeGen) return;
       announceSessions(statuses, next.sessions);
       statuses = seedStatuses(next.sessions);
-      // A press or a text selection in the lists waits for the next refresh: repainting the row
-      // under it would drop the click or the selection.
-      if (lists.matches(':active') || selecting(lists)) return;
-      show(next);
+      show(next, true);
     } catch (_) { /* transient: keep the last good paint */ }
   };
   hubTimer = setInterval(refreshLists, HUB_POLL_MS);

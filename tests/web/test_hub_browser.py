@@ -382,3 +382,36 @@ def test_the_hubs_text_starts_at_one_left_edge(
     places = [".toolbar button", ".item a.title", ".dock .pick > span", ".dock textarea"]
     assert len({page.evaluate(left, sel) for sel in places}) == 1
     assert not errors
+
+
+def test_a_selection_holds_back_only_its_own_row(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A text selection anywhere in the list held back the whole refresh, so other rows went stale.
+
+    The row holding the selection keeps its paint until the selection goes.
+    """
+    from playwright.sync_api import expect
+
+    alpha = _run(tmp_path, "alpha-AAAAAA", "Alpha task", STOP)
+    beta = _run(tmp_path, "beta-BBBBBB", "Beta task", STOP)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    rows = page.locator(".item")
+    first, second = rows.filter(has_text="alpha-AAAAAA"), rows.filter(has_text="beta-BBBBBB")
+    expect(second).to_contain_text("Beta task")
+    second.locator(".sub").first.evaluate(
+        """e => { const r = document.createRange(); r.selectNodeContents(e);
+        getSelection().removeAllRanges(); getSelection().addRange(r); }"""
+    )
+    for log, usd in ((alpha, 1.5), (beta, 2.5)):
+        spent = {"type": "budget.update", "usd_total": usd}
+        log.write_text(log.read_text() + json.dumps(spent) + "\n", encoding="utf-8")
+    _refresh(page)
+    expect(first).to_contain_text("$1.50")
+    expect(second).not_to_contain_text("$2.50")
+    assert "beta-BBBBBB" in page.evaluate("String(getSelection())")
+    page.evaluate("getSelection().removeAllRanges()")
+    _refresh(page)
+    expect(second).to_contain_text("$2.50")
+    assert not errors
