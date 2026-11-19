@@ -2,8 +2,9 @@
 // The Files tab: the files at one revision (HEAD to start, the working tree, or any
 // revision the picker finds) as a folder tree with a filter, and one file read-only: text
 // with line numbers and highlighting, an image, or a binary file's size and kind. The
-// picked revision outlives a visit to another tab; the tree is fetched again on return.
-const filesState = { rev: null }; // the picker's { rev, label }; null until the first visit
+// picked revision and the folders opened outlive a visit to another tab; the tree is fetched
+// again on return.
+const filesState = { rev: null, folders: new Map() }; // the picker's { rev, label }; folder path → open
 const MARKDOWN_MODE_KEY = 'a6-markdown-mode';
 async function renderFiles(gen, revision = '', path = '', query = new URLSearchParams()) {
   if (query.has('panel')) return renderReviewedFile(gen, path, query);
@@ -82,8 +83,9 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     const q = filter.value.trim().toLowerCase();
     const kept = q ? entries.filter(f => f.path.toLowerCase().includes(q)) : entries;
     if (truncated) tree.appendChild(el('div', 'err gf-note page-pad', 'the list is cut: more files than are shown'));
+    // A large tree starts folded and keeps the folders opened by hand; a filter opens every folder holding a match.
     if (!kept.length) tree.appendChild(el('div', 'empty', entries.length ? 'no file matches' : 'no files'));
-    else tree.appendChild(treeView(buildTree(kept), fileRow, folderNote, !q && kept.length > 200, d => stateMark(treeFiles(d)))); // a large tree starts folded
+    else tree.appendChild(treeView(buildTree(kept), fileRow, folderNote, !q && kept.length > 200, d => stateMark(treeFiles(d)), q ? null : filesState.folders));
     counts.textContent = (q ? kept.length + ' of ' : '') + fileCount(entries.length) + (truncated ? '+' : '');
   };
   const loadTree = async (openPath = '') => {
@@ -98,10 +100,16 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
       if (n !== loading || !app.isConnected) return;
       entries = d.files; truncated = d.truncated; rev = d.rev; ignored = !!d.ignored;
     } catch (e) { if (n === loading && app.isConnected) { tree.innerHTML = ''; tree.appendChild(el('div', 'err page-pad', e.message)); } return; }
+    if (openPath) reveal(openPath);
     paintTree();
     if (openPath) await showFile(entries.find(f => f.path === openPath) || { path: openPath, kind: 'file', size: null }, false, true);
   };
   filter.oninput = paintTree;
+  // Open a file's folders, so its row shows in every later paint of the tree.
+  const reveal = (path) => {
+    const parts = path.split('/');
+    for (let i = 1; i < parts.length; i++) filesState.folders.set(parts.slice(0, i).join('/'), true);
+  };
 
   // -- one file: it takes the right pane, or the whole screen on a phone -------------
   let viewing = 0;
@@ -113,7 +121,11 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     const anchor = linked ? query.get('anchor') : null;
     const fileHash = '#/files/' + encodeURIComponent(rev) + '/' + f.path.split('/').map(encodeURIComponent).join('/');
     setViewHash(fileHash + (anchor ? '?' + new URLSearchParams({ anchor }) : ''), linked);
-    tree.querySelectorAll('.gf').forEach(r => r.classList.toggle('sel', r.dataset.path === f.path));
+    reveal(f.path);
+    for (const r of tree.querySelectorAll('.gf')) {
+      r.classList.toggle('sel', r.dataset.path === f.path);
+      if (r.dataset.path === f.path) r.scrollIntoView({ block: 'nearest' });
+    }
     body.classList.add('viewing');
     pane.innerHTML = '';
     const head = el('div', 'files-head row');

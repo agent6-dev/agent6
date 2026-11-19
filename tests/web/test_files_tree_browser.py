@@ -52,6 +52,35 @@ def _open_deep(page: Page) -> None:
             row.click()
 
 
+def test_a_deep_link_reveals_its_file_and_a_filter_edit_keeps_open_folders(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """A linked file's row stayed in folded folders, and any filter edit folded every folder."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(big_tree)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/{LEAF}")
+    page.wait_for_selector("[data-line='1']")
+    expect(page.locator(_row(LEAF))).to_be_in_viewport()
+    expect(page.locator(_row("deep"))).to_have_attribute("aria-expanded", "true")
+    folder = page.locator(_row("many"))
+    folder.click()
+    expect(folder).to_have_attribute("aria-expanded", "true")
+    search = page.locator(".files-bar input.filter")
+    search.click()
+    page.keyboard.type("x")
+    page.keyboard.press("Backspace")
+    expect(folder).to_have_attribute("aria-expanded", "true")
+    folder.click()
+    search.fill("f.txt")
+    page.locator(_row("dir/f.txt")).click()
+    page.wait_for_selector(".files-view [data-line='1']")
+    search.fill("")
+    expect(page.locator(_row("dir/f.txt"))).to_be_visible()
+    expect(folder).to_have_attribute("aria-expanded", "false")
+    assert not errors
+
+
 def test_a_narrow_tree_keeps_each_name_on_one_line(
     open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
 ) -> None:

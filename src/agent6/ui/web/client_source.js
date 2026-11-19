@@ -33,8 +33,9 @@ const fileCount = (n) => n === 1 ? '1 file' : n + ' files';
 // Render a tree: a folder row (a caret, the name, what `folderNote(node)` says of its
 // contents) that folds and unfolds its children on a click, and `fileRow(entry)` for each
 // file; both carry `data-path` and a `--depth` the stylesheet indents by. `folded` starts
-// every folder closed.
-function treeView(root, fileRow, folderNote, folded, folderMark) {
+// every folder closed; `opened`, a Map of folder path to open, overrides that per folder and
+// records each toggle, so a choice outlives a repaint.
+function treeView(root, fileRow, folderNote, folded, folderMark, opened) {
   const box = el('div', 'gtree');
   const paint = (node, host, depth) => {
     for (const d of node.dirs.values()) {
@@ -44,10 +45,10 @@ function treeView(root, fileRow, folderNote, folded, folderMark) {
       if (folderMark) { const mark = folderMark(d); if (mark) row.appendChild(mark); }
       row.appendChild(el('span', 'gtree-name', d.name)); row.appendChild(el('span', 'muted gtree-note', folderNote(d)));
       const kids = el('div', 'gtree-kids');
-      let open = !folded;
+      let open = opened?.has(d.path) ? opened.get(d.path) : !folded;
       caret.textContent = '▾'; // one glyph; the stylesheet turns it for a folded folder
       const apply = () => { kids.hidden = !open; caret.classList.toggle('folded', !open); row.setAttribute('aria-expanded', String(open)); };
-      actionable(row, () => { open = !open; apply(); }, 'folder ' + d.path);
+      actionable(row, () => { open = !open; opened?.set(d.path, open); apply(); }, 'folder ' + d.path);
       apply();
       host.appendChild(row); host.appendChild(kids);
       paint(d, kids, depth + 1);
