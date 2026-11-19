@@ -1040,6 +1040,20 @@ def test_an_images_diff_shows_it_before_and_after(
     assert errors == [], errors
 
 
+def test_an_added_images_one_side_takes_the_whole_width(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """An added image's only figure spans the diff; it took half and left the other half empty."""
+    sha = _git(tmp_path, "rev-parse", "main^1")  # the commit that adds logo.png
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/{sha}?path=logo.png")
+    page.wait_for_selector(".git-img img")
+    wrap = page.locator(".git-img").bounding_box()
+    figure = page.locator(".git-img figure").bounding_box()
+    assert wrap and figure and figure["width"] > 0.9 * wrap["width"]
+    assert errors == [], errors
+
+
 def test_a_changed_file_list_reads_as_a_tree_that_folds(
     open_page: Callable[[int], tuple[Page, list[str]]], dirty_git_port: int
 ) -> None:

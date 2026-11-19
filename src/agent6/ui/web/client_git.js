@@ -123,10 +123,10 @@ async function blobImage(rev, path, fig, cap, ignored = false) {
 // The pair: "before" at the base unless the file was added, "after" at the head unless it
 // was deleted; a rename's "before" is the old path.
 function imagePair(ctx, f) {
-  const wrap = el('div', 'git-img');
   const sides = [];
   if (f.status !== 'A') sides.push(['before', ctx.base, f.old_path || f.path]);
   if (f.status !== 'D') sides.push(['after', ctx.head, f.path]);
+  const wrap = el('div', 'git-img' + (sides.length === 1 ? ' one' : ''));
   for (const [label, rev, path] of sides) {
     const fig = el('figure', 'git-img-side');
     const cap = el('figcaption', 'muted'); cap.dataset.label = label; cap.textContent = label + ' · loading…';
