@@ -136,6 +136,22 @@ def test_every_config_section_lines_its_columns_up(
     assert not errors
 
 
+def test_a_config_source_naming_a_file_shows_whole_on_hover(
+    open_page: Callable[[int], tuple[Page, list[str]]], flag_port: int
+) -> None:
+    """A `flag (FILE)` source cut short with an ellipsis had no hover text of its own.
+
+    Hovering it showed the setting's description; a one-word source keeps that.
+    """
+    page, errors = open_page(flag_port)
+    _config(page, flag_port)
+    flagged = page.locator('[data-key="sandbox.network"] td.source')
+    assert flagged.evaluate("e => e.scrollWidth > e.clientWidth")
+    assert flagged.get_attribute("title") == flagged.inner_text()
+    assert page.locator('[data-key="budget.max_usd"] td.source').get_attribute("title") is None
+    assert not errors
+
+
 # The character before each line break in every visible settings cell.
 BREAKS = r"""() => [...document.querySelectorAll('.cfg td')].filter(td => td.offsetParent)
 .flatMap(td => {

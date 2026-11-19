@@ -100,7 +100,8 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     edit.type = 'button'; edit.setAttribute('aria-label', 'edit ' + k); edit.setAttribute('aria-haspopup', 'dialog');
     tr.appendChild(el('td', 'key')).appendChild(edit);
     tr.appendChild(breakable(el('td', 'val'), s.display, '/')); // the one shared value column (viewmodel.display_value)
-    tr.appendChild(el('td', 'source', esc(s.source)));
+    const source = tr.appendChild(el('td', 'source', esc(s.source)));
+    if (s.source.includes(' (')) source.title = s.source; // a file (`flag (FILE)`) the column cuts short
     // Hover text: the leaf's meaning (the docs table cell), from the same
     // per-key payload the editor dialog shows it in. The edit button, which takes the focus,
     // carries it as its description.
