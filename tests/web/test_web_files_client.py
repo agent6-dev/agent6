@@ -39,6 +39,7 @@ class Element {
     this.children.splice(this.children.indexOf(before), 0, c); c.parent = this;
   }
   remove() {
+    if (!this.parent) return; // a detached element, as the DOM's remove() allows
     this.parent.children = this.parent.children.filter(c => c !== this); this.parent = null;
   }
   setAttribute(k, v) { this[k] = v; }

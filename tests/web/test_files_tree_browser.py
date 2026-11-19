@@ -206,9 +206,15 @@ def test_the_file_head_keeps_one_height(
 
 @pytest.mark.parametrize("width", [820, 390])
 def test_a_narrow_file_head_keeps_its_height_while_the_text_loads(
-    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int, width: int
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    big_tree: int,
+    tmp_path: pathlib.Path,
+    width: int,
 ) -> None:
-    """A narrow head grew a row as its text loaded, and an image's head was a button shorter."""
+    """A narrow head grew as its text or Markdown buttons loaded; an image's head was shorter."""
+    (tmp_path / "notes.md").write_text("# Notes\n", encoding="utf-8")
+    _git(tmp_path, "add", "notes.md")
+    _git(tmp_path, "commit", "-m", "notes")
     page, errors = open_page(big_tree)
     page.set_viewport_size({"width": width, "height": 900})
     page.add_init_script("""
@@ -218,15 +224,33 @@ def test_a_narrow_file_head_keeps_its_height_while_the_text_loads(
         if (head) window.__heads.push(head.getBoundingClientRect().height);
       }).observe(document, {subtree: true, childList: true, characterData: true});
     """)
-    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/b.txt")
-    page.wait_for_selector(".files-blame:enabled")
-    heights = page.evaluate("window.__heads")
-    assert heights and len(set(heights)) == 1, heights
+    held: dict[str, float] = {}
+    for path, loaded in (("b.txt", ".files-blame:enabled"), ("notes.md", ".md-view h1")):
+        page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/{path}")
+        page.reload()  # a fresh document, so the heights recorded are this file's alone
+        page.wait_for_selector(loaded)
+        heights = page.evaluate("window.__heads")
+        assert heights and len(set(heights)) == 1, (path, heights)
+        held[path] = heights[0]
     page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/logo.png")
     page.wait_for_selector(".files-view img")
     assert page.locator(".files-head").evaluate(
         "e => e.getBoundingClientRect().height"
-    ) == pytest.approx(heights[0], abs=0.5)
+    ) == pytest.approx(held["b.txt"], abs=0.5)
+    assert not errors
+
+
+def test_the_file_note_shares_the_path_row_where_it_fits(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """At 1024px every file head gave its note a row of its own, though it fit beside the path."""
+    page, errors = open_page(big_tree)
+    page.set_viewport_size({"width": 1024, "height": 768})
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/b.txt")
+    page.wait_for_selector(".files-blame:enabled")
+    middle = "e => { const r = e.getBoundingClientRect(); return r.top + r.height / 2; }"
+    note = page.locator(".files-head .files-note").evaluate(middle)
+    assert note == pytest.approx(page.locator(".files-head .gf-path").evaluate(middle), abs=1)
     assert not errors
 
 

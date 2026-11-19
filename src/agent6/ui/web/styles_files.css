@@ -23,13 +23,13 @@
 .files-tree > :is(.gf-note, .empty) { overflow-wrap: anywhere; }
 .gf[aria-selected=true] { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
 /* The path is a mini button tall, so the head keeps one height whatever the file shows and while
-   its text loads. In a narrow pane the note takes a row of its own, so its language and line count
-   arrive in place. */
+   its text loads. The path asks for its whole width, so the buttons and the note move to the next
+   row before it wraps. The note keeps to the right and holds the width of a full note, such as
+   "7.5 KiB · markdown · 137 lines", from the start, so its language and line count arrive in
+   place. */
 .files-head { flex: none; flex-wrap: wrap; gap: 8px; padding: 8px var(--files-inset); border-bottom: 1px solid var(--border); }
-.files-head .gf-path { flex: 1 1 200px; min-height: var(--ctl-h-sm); align-content: center; }
-.files-note { font-size: 12px; white-space: nowrap; }
-.files-view { container: files-pane / inline-size; }
-@container files-pane (width < 560px) { .files-note { flex-basis: 100%; } }
+.files-head .gf-path { flex: 1 1 auto; min-height: var(--ctl-h-sm); align-content: center; }
+.files-note { margin-left: auto; min-width: 24ch; font-size: 12px; text-align: end; white-space: nowrap; }
 .files-text { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px var(--files-inset); }
 /* The browser makes the scrolling pane a Tab stop: its ring goes inside, where nothing clips it. */
 .files-text:focus-visible { outline-offset: -2px; }
@@ -88,4 +88,5 @@
   /* The open file covers the bar and the tree, so they leave the focus order and the accessibility tree. */
   .files-app:has(> .files-body.viewing) > .files-bar, .files-body.viewing > .files-tree { visibility: hidden; }
   .files-back { display: inline-block; }
+  .files-head .gf-path { flex-basis: 200px; } /* beside the back button, however long */
 }

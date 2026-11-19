@@ -196,17 +196,47 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
       return;
     }
     box.appendChild(el('div', 'muted', 'loading…'));
-    // The blame button holds its place in the head while the text loads.
+    // The buttons hold their places in the head while the text loads: Blame, and Rendered and
+    // Source for a name the server renders as Markdown (.md or .markdown, as text_payload in
+    // git_model.py decides).
     const blame = el('button', 'mini files-blame', 'Blame');
     blame.setAttribute('aria-pressed', 'false'); blame.disabled = true; head.insertBefore(blame, note);
+    const rendersMarkdown = /\.(md|markdown)$/i.test(f.path);
+    const modes = el('span', 'gview files-md-mode'), sourceBox = el('div', 'files-source');
+    let md = null;
+    const selectMode = mode => {
+      const rendered = mode !== 'source';
+      blame.hidden = rendered;
+      for (const button of modes.children) {
+        const active = button.dataset.mode === (rendered ? 'rendered' : 'source');
+        button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
+      }
+      if (!md) return;
+      md.hidden = !rendered; sourceBox.hidden = rendered;
+      if (rendered && anchor) [...md.querySelectorAll('[id]')].find(h => h.id === anchor)?.scrollIntoView({ block: 'start' });
+    };
+    if (rendersMarkdown) {
+      modes.setAttribute('role', 'group'); modes.setAttribute('aria-label', 'Markdown view');
+      for (const [mode, label] of [['rendered', 'Rendered'], ['source', 'Source']]) {
+        const button = el('button', 'mini', label); button.dataset.mode = mode; button.disabled = true;
+        button.onclick = () => { remember(MARKDOWN_MODE_KEY, mode); selectMode(mode); };
+        modes.appendChild(button);
+      }
+      head.insertBefore(modes, blame);
+      selectMode(recall(MARKDOWN_MODE_KEY, 'rendered'));
+    }
     let t;
     const readQuery = 'rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(f.path) + (whole ? '&whole=1' : '') + (ignored ? '&ignored=1' : '');
     try { t = await getJSON('/api/git/text?' + readQuery); }
-    catch (e) { if (current()) { blame.remove(); box.innerHTML = ''; box.appendChild(el('div', 'err', e.message)); } return; }
+    catch (e) { if (current()) { blame.remove(); modes.remove(); box.innerHTML = ''; box.appendChild(el('div', 'err', e.message)); } return; }
     if (!current()) return;
     box.innerHTML = '';
     if (t.language) facts.push(t.language);
-    if (t.binary) { blame.remove(); note.textContent = facts.join(' · '); box.appendChild(el('div', 'muted gf-note', 'binary file: no text')); return; }
+    if (t.binary) {
+      // Blame stays, disabled, so the head keeps the shape it had while the file loaded.
+      blame.title = 'a binary file has no lines to blame'; modes.remove();
+      note.textContent = facts.join(' · '); box.appendChild(el('div', 'muted gf-note', 'binary file: no text')); return;
+    }
     facts.push(t.lines === 1 ? '1 line' : t.lines + ' lines');
     note.textContent = facts.join(' · ');
     if (t.truncated) {
@@ -214,7 +244,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
       const all = el('button', 'mini', 'Show the whole file'); all.onclick = () => showFile(f, true);
       cut.appendChild(all); box.appendChild(cut);
     }
-    const sourceBox = el('div', 'files-source'); box.appendChild(sourceBox);
+    box.appendChild(sourceBox);
     const source = renderLines(splitLines(t.text), t.spans, null);
     sourceBox.appendChild(source);
     blame.disabled = false;
@@ -238,50 +268,35 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
         })));
       } catch (e) { if (current() && request === blameRequest) { notice.classList.add('err'); notice.textContent = e.message; } }
     };
-    if (typeof t.rendered_html === 'string') {
-      const md = el('div', 'md-view'); md.innerHTML = t.rendered_html; box.appendChild(md);
-      // The server's links to files name the commit listed; the page's name the revision picked.
-      const listed = '#/files/' + encodeURIComponent(rev) + '/';
-      for (const a of md.querySelectorAll('a[href^="#/files/"]')) {
-        const href = a.getAttribute('href');
-        if (href.startsWith(listed)) a.setAttribute('href', filesHash() + '/' + href.slice(listed.length));
-      }
-      filesState.markdown = { rev: filesState.rev.rev, path: f.path, view: md, scroll: (id) => {
-        const heading = id && [...md.querySelectorAll('[id]')].find(h => h.id === id);
-        if (heading) heading.scrollIntoView({ block: 'start' }); else box.scrollTo(0, 0);
-      } };
-      // A link to the hash already shown changes nothing a hashchange sees: route it again.
-      md.addEventListener('click', (e) => { if (e.target.closest('a')?.href === location.href) route(); });
-      for (const image of md.querySelectorAll('img[data-blob-src]')) {
-        blobImageData(image.dataset.blobSrc).then(data => {
-          if (current()) image.src = data.url;
-        }).catch(e => {
-          if (!current()) return;
-          const missing = el('span', 'md-missing');
-          missing.appendChild(el('span', null, image.alt || 'image'));
-          missing.appendChild(el('span', 'muted', e.message));
-          image.replaceWith(missing);
-        });
-      }
-      const modes = el('span', 'gview files-md-mode');
-      modes.setAttribute('role', 'group'); modes.setAttribute('aria-label', 'Markdown view');
-      head.insertBefore(modes, blame);
-      const selectMode = mode => {
-        const rendered = mode !== 'source';
-        md.hidden = !rendered; sourceBox.hidden = rendered; blame.hidden = rendered;
-        for (const button of modes.children) {
-          const active = button.dataset.mode === (rendered ? 'rendered' : 'source');
-          button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
-        }
-        if (rendered && anchor) [...md.querySelectorAll('[id]')].find(h => h.id === anchor)?.scrollIntoView({ block: 'start' });
-      };
-      for (const [mode, label] of [['rendered', 'Rendered'], ['source', 'Source']]) {
-        const button = el('button', 'mini', label); button.dataset.mode = mode;
-        button.onclick = () => { remember(MARKDOWN_MODE_KEY, mode); selectMode(mode); };
-        modes.appendChild(button);
-      }
-      selectMode(recall(MARKDOWN_MODE_KEY, 'rendered'));
+    if (!rendersMarkdown) return;
+    // A Markdown file cut at the size cap has no rendering: its text alone shows.
+    if (typeof t.rendered_html !== 'string') { modes.remove(); blame.hidden = false; return; }
+    md = el('div', 'md-view'); md.innerHTML = t.rendered_html; box.appendChild(md);
+    // The server's links to files name the commit listed; the page's name the revision picked.
+    const listed = '#/files/' + encodeURIComponent(rev) + '/';
+    for (const a of md.querySelectorAll('a[href^="#/files/"]')) {
+      const href = a.getAttribute('href');
+      if (href.startsWith(listed)) a.setAttribute('href', filesHash() + '/' + href.slice(listed.length));
     }
+    filesState.markdown = { rev: filesState.rev.rev, path: f.path, view: md, scroll: (id) => {
+      const heading = id && [...md.querySelectorAll('[id]')].find(h => h.id === id);
+      if (heading) heading.scrollIntoView({ block: 'start' }); else box.scrollTo(0, 0);
+    } };
+    // A link to the hash already shown changes nothing a hashchange sees: route it again.
+    md.addEventListener('click', (e) => { if (e.target.closest('a')?.href === location.href) route(); });
+    for (const image of md.querySelectorAll('img[data-blob-src]')) {
+      blobImageData(image.dataset.blobSrc).then(data => {
+        if (current()) image.src = data.url;
+      }).catch(e => {
+        if (!current()) return;
+        const missing = el('span', 'md-missing');
+        missing.appendChild(el('span', null, image.alt || 'image'));
+        missing.appendChild(el('span', 'muted', e.message));
+        image.replaceWith(missing);
+      });
+    }
+    for (const button of modes.children) button.disabled = false;
+    selectMode(recall(MARKDOWN_MODE_KEY, 'rendered'));
   };
   await loadTree(path);
 }
