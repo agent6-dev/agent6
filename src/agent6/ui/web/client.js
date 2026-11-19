@@ -1097,12 +1097,13 @@ function makeConv(url, box, body, empty = {}) {
   const itemsHost = el('div', 'conv');
   const liveHost = el('div', 'conv conv-live');
   liveHost.style.display = 'none';
-  body.appendChild(itemsHost); body.appendChild(liveHost);
-  // The box follows its tail while the reader stays there: each scroll records whether they do,
-  // and a resize (a composer growing as it is typed in, a narrower window) scrolls back to it.
+  conv.prompts = el('div', 'prompts'); // paintPrompts' boxes, after the last line, so new lines land above them
+  body.append(itemsHost, liveHost, conv.prompts);
+  // While the reader stays at the tail, a resize of the box or of what it holds scrolls back to it.
   let atTail = true;
   box.addEventListener('scroll', () => { atTail = box.scrollTop + box.clientHeight >= box.scrollHeight - 40; });
-  new ResizeObserver(() => { if (atTail) box.scrollTop = box.scrollHeight; }).observe(box);
+  const follow = new ResizeObserver(() => { if (atTail) box.scrollTop = box.scrollHeight; });
+  follow.observe(box); follow.observe(body);
   // A run/machine that produced no conversation: "yet ... as it streams" while it
   // can still stream, past tense once it has ended (a terminal tool-only machine).
   const emptyNote = () => conv.finished
@@ -1165,7 +1166,6 @@ function makeConv(url, box, body, empty = {}) {
     const heads = itemsHost.querySelectorAll('[role=button]');
     const stop = itemsHost.querySelector('.ci[data-i="' + conv.stop + '"] > [role=button]') || heads[heads.length - 1];
     if (stop) { stop.tabIndex = 0; if (refocus) stop.focus({ preventScroll: true }); }
-    if (atTail) box.scrollTop = box.scrollHeight;
   };
 
   conv.refresh = async () => {
@@ -1203,7 +1203,7 @@ function makeConv(url, box, body, empty = {}) {
       return;
     }
     if (s.status === 'waiting') {
-      // Blocked on the operator (the prompt card above): no thinking, no tool
+      // Blocked on the operator (the prompt boxes below): no thinking, no tool
       // running, so neither pulse may say so, nor "appears as the run
       // streams" over a run that has not started its first turn.
       liveHost.style.display = '';
@@ -1230,7 +1230,6 @@ function makeConv(url, box, body, empty = {}) {
     } else {
       const hb = el('div', 'muted'); hb.id = 'hb-line'; liveHost.appendChild(hb); hbTick();
     }
-    if (atTail) box.scrollTop = box.scrollHeight;
   };
   conv.detailButton = () => {
     // The button holds every label and shows the current one, so it holds still as it cycles.

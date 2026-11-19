@@ -247,20 +247,34 @@ def test_states_and_path_share_one_row_height(
     assert not errors
 
 
-def test_a_machines_first_prompt_stands_under_the_top_bar(
+def test_a_machines_prompt_waits_at_its_conversations_end(
     open_page: OpenPage, port: int, tmp_path: pathlib.Path
 ) -> None:
-    """A pending prompt sat flush against the top bar."""
+    """A pending prompt follows the conversation's last line, over the composer.
+
+    The prompts stood over Stop, which moved down as each one arrived.
+    """
     from playwright.sync_api import expect
 
     ask = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"}
     _machine(tmp_path, "asking", LOOP, [], [*_talk(1), ask], alive=True)
     page, errors = _open(open_page, port, "asking")
-    box = page.locator(".prompt-box")
+    expect(page.locator(".conv .ci").last).to_contain_text("Step 0")
+    box = page.locator(".conv-box .prompts .prompt-box")
     expect(box).to_have_count(1)
-    above, under = page.locator("header").bounding_box(), box.bounding_box()
-    assert above is not None and under is not None
-    assert under["y"] - (above["y"] + above["height"]) == 12
+    expect(box).to_be_in_viewport(ratio=1)
+    gap = box.evaluate(
+        """p => { const host = p.parentElement;
+        const shown = [...host.parentElement.children].filter(e => e !== host && e.offsetParent);
+        return Math.round(p.getBoundingClientRect().top
+          - shown.at(-1).lastElementChild.getBoundingClientRect().bottom); }"""
+    )
+    header, stop = page.locator("header").bounding_box(), page.locator(".actions").bounding_box()
+    prompt, dock = box.bounding_box(), page.locator(".composer.dock").bounding_box()
+    assert header is not None and stop is not None and prompt is not None and dock is not None
+    assert stop["y"] - (header["y"] + header["height"]) == 12
+    assert prompt["y"] + prompt["height"] <= dock["y"]
+    assert gap == 10
     assert not errors
 
 
@@ -485,6 +499,36 @@ def test_an_ended_machines_dock_stays_short_on_a_phone(
     expect(page.locator(".dock .refusal")).to_contain_text("already ended")
     dock = page.locator(".composer.dock").bounding_box()
     assert dock is not None and dock["height"] < 667 / 4, dock
+    assert not errors
+
+
+@pytest.mark.parametrize("asks", [False, True])
+def test_a_phone_opens_a_machine_at_its_waiting_prompt(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path, *, asks: bool
+) -> None:
+    """A phone opens a machine at its conversation's end while a prompt waits, else at its top.
+
+    The page opened on States, about 2,600px above the prompt the machine waited on.
+    """
+    from playwright.sync_api import expect
+
+    log = _talk(40)
+    if asks:
+        log.append({"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"})
+    _machine(tmp_path, "asking", LOOP, [], log, alive=True)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/machine/asking")
+    expect(page.locator(".conv .ci").filter(has_text="Step 39")).to_be_attached()
+    expect(page.locator(".conv-card h2")).to_contain_text("Current state")  # the first frame
+    if asks:
+        prompt = page.locator(".conv-box .prompt-box")
+        expect(prompt).to_be_in_viewport(ratio=1)
+        box, dock = prompt.bounding_box(), page.locator(".composer.dock").bounding_box()
+        assert box is not None and dock is not None
+        assert box["y"] + box["height"] <= dock["y"]
+    else:
+        assert page.evaluate("window.scrollY") == 0
     assert not errors
 
 

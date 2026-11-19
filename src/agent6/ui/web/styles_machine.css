@@ -1,9 +1,7 @@
-/* The machine view: prompts and actions on top, the States and Path cards, the newest agent
-   state's conversation under them, and the composer docked at the foot. */
+/* The machine view: actions on top, the States and Path cards, the newest agent state's
+   conversation under them, its prompts at its end, and the composer docked at the foot. */
 .machine-app { display: flex; flex-direction: column; flex: 1 0 auto; }
-/* The first prompt box stands 12px under the top bar, as the actions row does alone. */
-.machine-top:has(.prompt-box) { padding-top: 12px; }
-.machine-top > .row { margin-bottom: 10px; }
+.machine-app > .actions { margin-bottom: 10px; }
 /* A body that scrolls is a Tab stop in both browsers; its ring goes inside, as a scroll pane's
    does, in the 4px each side that the body reaches past its text. */
 .machine-grid .card-body { padding-inline: 4px; margin-inline: -4px; }
@@ -38,9 +36,6 @@
      the grid's zero basis keeps its content out of that minimum. */
   .machine-app { flex: 1 1 0; }
   .machine-app > * { flex: none; }
-  /* A pile of prompts scrolls, so the controls and the cards keep their room. Only a host holding a
-     prompt scrolls: margins cannot collapse through an empty scroll container. */
-  .machine-top > .page-pad:has(> .prompt-box) { max-height: 40vh; overflow: auto; }
   .machine-grid {
     flex: 1 1 0; min-height: 380px;
     grid-template-rows: fit-content(max(20%, 120px)) fit-content(max(20%, 120px)) minmax(0, 1fr);

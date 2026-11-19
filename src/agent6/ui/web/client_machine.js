@@ -9,13 +9,7 @@ async function renderMachine(name, gen) {
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint or open a stream
   view.innerHTML = '';
   const app = el('div', 'machine-app');
-  // The prompts and the actions flow in one block, so their margins collapse;
-  // the view is a flex column, where margins add up.
-  const top = el('div', 'machine-top'); app.appendChild(top);
-  // The prompts host holds pending approval/question boxes; it is appended to, never wiped,
-  // so a repaint can never clear a half-typed answer.
-  const prompts = el('div', 'page-pad'); top.appendChild(prompts);
-  const cards = { _prompts: prompts, _base: base };
+  const cards = { _base: base };
 
   // The page's actions sit on top, as the run view's do, and the command palette offers them.
   // Stop, as `agent6 machine stop` and the TUI machine watch do: the machine parks at its next
@@ -28,7 +22,7 @@ async function renderMachine(name, gen) {
     catch (e) { toast(e.message, true); }
   };
   actions.append(stopBtn, notificationsButton());
-  top.appendChild(actions);
+  app.appendChild(actions);
 
   // The States and Path cards, each a heading over a body that scrolls on a wide screen.
   const grid = el('div', 'grid machine-grid');
@@ -52,7 +46,6 @@ async function renderMachine(name, gen) {
   cards._conv_title = cc.card.querySelector('h2');
   grid.appendChild(cc.card);
   app.appendChild(grid);
-  cc.conv.refresh();
 
   // The machine composer, docked at the bottom: one text entry with the two
   // machine verbs the TUI machine watch offers (ui/keymap.py names its keys).
@@ -88,6 +81,7 @@ async function renderMachine(name, gen) {
   dock.append(drow, refusal, hint);
   app.appendChild(dock);
   view.appendChild(app);
+  const fetched = cc.conv.refresh(); // once the box is in the page: a refresh skips a box that is not
   cards._input = din; cards._steer_btn = steerBtn; cards._msg_btn = msgBtn; cards._stop_btn = stopBtn;
   cards._refusal = refusal; cards._hint = hint;
 
@@ -98,18 +92,23 @@ async function renderMachine(name, gen) {
     name, seen: null, lostNotified: false, endedNotified: false, shownCurrent: null, pathAtEnd: true,
     held: [], // the notifications' toasts that hold until dismissed
   };
-  // Path follows its newest transition while the reader stays at its end: each scroll records
-  // whether they do, and a resize (a prompt above it, the entry growing below) scrolls back to it.
+  // Path follows its newest transition while the reader stays at its end, through a resize too (the entry growing below).
   pathBody.addEventListener('scroll', () => {
     ctx.pathAtEnd = pathBody.scrollTop + pathBody.clientHeight >= pathBody.scrollHeight - 8;
   });
   new ResizeObserver(() => { if (ctx.pathAtEnd) pathBody.scrollTop = pathBody.scrollHeight; }).observe(pathBody);
   paintMachine(structBody, pathBody, cards, ctx, { machine: initial, reasoning: {} });
 
+  let opened = false;
   live = openStream(base + '/events', raw => {
     let data; try { data = JSON.parse(raw); } catch (_) { return; }
     if (data.type === 'error') { closeLive(); toast('stream error: ' + data.error, true); return; }
     paintMachine(structBody, pathBody, cards, ctx, data);
+    // A phone opens at the conversation's end while the first frame's prompt waits there, else on States.
+    if (!opened) {
+      opened = true;
+      fetched.then(() => { if (window.innerWidth < 781 && cc.conv.prompts.childElementCount) window.scrollTo(0, document.body.scrollHeight); });
+    }
     hbState.spin++;
     // A stopped machine is resumable and its stream stays open; a journaled end closes it.
     if (data.machine && data.machine.ended) closeLive();

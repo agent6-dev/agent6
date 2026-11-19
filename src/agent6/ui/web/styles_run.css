@@ -87,15 +87,15 @@
 /* The 4px side padding keeps an item's hover and focus ring whole; text wraps, so x stays hidden. */
 .conv-box { overflow: hidden auto; max-height: 62vh; padding-inline: 4px; margin-inline: -4px; }
 /* A focused control scrolls into view 12px clear of its pane's edge, so its ring shows whole. */
-.run-app .drawer, .run-app > .prompts, .conv-box { scroll-padding-block: 12px; }
-/* Firefox focuses a scroller itself: the drawer and the prompts, flush with the bars, ring inside. */
-.run-app .drawer:focus-visible, .run-app > .prompts:focus-visible { outline-offset: -2px; }
+.run-app .drawer, .conv-box { scroll-padding-block: 12px; }
+/* Firefox focuses a scroller itself: the drawer, flush with the bars, takes its ring inside. */
+.run-app .drawer:focus-visible { outline-offset: -2px; }
 
-/* Prompt boxes stand 10px under the top bar, 10px apart and 10px over the action bar. */
-.run-app > .prompts:not(:empty) { padding-top: 10px; }
 .run-app > .actions { margin-block: 10px; }
 /* Delete stands apart at the bar's far end. */
 .run-app > .actions > .delete-btn { margin-inline-start: auto; }
+/* A run's prompt boxes follow its conversation's last line, 10px under it and 10px apart. */
+.conv-box .prompts:not(:empty) { margin-top: 10px; }
 .prompt-box { background: var(--surface2); border-left: 3px solid var(--warn); padding: 12px; }
 .prompt-box + .prompt-box { margin-top: 10px; }
 .prompt-box .q { margin-bottom: 8px; white-space: pre-wrap; }
@@ -119,10 +119,9 @@
 .run-app { display: flex; flex-direction: column; flex: 1 0 auto; }
 @media (min-width: 781px) {
   .run-app { flex: 1 1 0; min-height: 0; }
-  /* prompts / controls / status keep their natural height; only the body pane
+  /* controls / status keep their natural height; only the body pane
      flexes (without this the column shrinks them and clips the status kv) */
   .run-app > * { flex: none; }
-  .run-app > .prompts { max-height: 40vh; overflow: auto; } /* a prompt pile can't push the composer off-screen */
   /* The children stop at 30% of the view and scroll under their names: the conversation keeps its share. */
   .run-app > .card-children { display: flex; flex-direction: column; max-height: 30vh; }
   .run-app > .card-children > .card-body { min-height: 0; overflow: auto; }

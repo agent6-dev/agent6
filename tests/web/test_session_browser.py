@@ -27,6 +27,35 @@ LONG_COMMAND = (
 )
 
 
+def _reads(count: int, start: int = 0) -> list[dict[str, Any]]:
+    """Return `count` read_file calls and their results, of files f<start>.py onwards."""
+    rows: list[dict[str, Any]] = []
+    for i in range(start, start + count):
+        rows.append(
+            {"type": "tool.call", "name": "read_file", "args_preview": {"path": f"f{i}.py"}}
+        )
+        rows.append({"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"})
+    return rows
+
+
+def _append(session: pathlib.Path, rows: list[dict[str, Any]]) -> None:
+    """Append rows to a run's log, as its worker writes them."""
+    with (session / "logs.jsonl").open("a", encoding="utf-8") as log:
+        log.write("".join(json.dumps(row) + "\n" for row in rows))
+
+
+# Once painted: the gap over the prompt, whether its box shows it whole, and that box's scrollTop.
+PROMPT_PLACE = """async p => {
+  await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+  const box = p.closest('.conv-box'), host = p.parentElement;
+  const shown = [...host.parentElement.children].filter(e => e !== host && e.offsetParent);
+  const line = shown.at(-1).lastElementChild.getBoundingClientRect();
+  const r = p.getBoundingClientRect(), b = box.getBoundingClientRect();
+  const whole = r.top >= b.top - 1 && r.bottom <= b.bottom + 1; // a scroll offset is whole pixels
+  return {gap: Math.round(r.top - line.bottom), whole, top: box.scrollTop};
+}"""
+
+
 def test_an_approval_shows_its_whole_command(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
@@ -69,16 +98,16 @@ def test_allow_is_an_approvals_one_filled_answer(
 
 
 @pytest.mark.parametrize("width", [1280, 390])
-def test_prompts_stand_under_the_top_bar_and_the_action_bar_clips_nothing(
+def test_the_action_bar_stands_under_the_top_bar_while_a_prompt_waits(
     open_page: Callable[[int], tuple[Page, list[str]]],
     port: int,
     tmp_path: pathlib.Path,
     width: int,
 ) -> None:
-    """A prompt box stands 10px under the top bar, over an action bar in the page's gutter.
+    """The action bar stands 10px under the top bar, in the page's gutter, over a waiting prompt.
 
-    The box touched the top bar. The action bar was a scroll container, which cut its buttons'
-    focus rings, and on a phone it sat 6px right of the boxes and cards.
+    The prompt boxes stood over the bar and pushed it down. The bar was a scroll container, which
+    cut its buttons' focus rings, and on a phone it sat 6px right of the cards.
     """
     from playwright.sync_api import expect
 
@@ -87,15 +116,51 @@ def test_prompts_stand_under_the_top_bar_and_the_action_bar_clips_nothing(
     page, errors = open_page(port)
     page.set_viewport_size({"width": width, "height": 844})
     page.goto(f"http://127.0.0.1:{port}/#/session/asking-AAA111")
-    box = page.locator(".prompt-box")
-    expect(box).to_be_visible()
+    expect(page.locator(".prompt-box")).to_be_visible()
     actions = page.locator(".run-app .actions")
-    header, top = page.locator("header").bounding_box(), box.bounding_box()
+    page.evaluate("window.scrollTo(0, 0)")
+    header, bar = page.locator("header").bounding_box(), actions.bounding_box()
     first = actions.locator("button:visible").first.bounding_box()
-    assert header is not None and top is not None and first is not None
-    gap = top["y"] - (header["y"] + header["height"])
+    entry = page.locator(".composer textarea").bounding_box()
+    assert header is not None and bar is not None and first is not None and entry is not None
+    gap = bar["y"] - (header["y"] + header["height"])
     overflow = actions.evaluate("e => getComputedStyle(e).overflow")
-    assert (gap, overflow, first["x"]) == (10, "visible", top["x"])
+    assert (gap, overflow, first["x"]) == (10, "visible", entry["x"])
+    assert not errors
+
+
+def test_a_prompt_lands_after_the_conversation_and_moves_neither_bar(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A prompt lands 10px under the conversation's last line, in view while the box follows it.
+
+    The prompts stood over the action bar, so the bar and Stop jumped down as one arrived. Output
+    that lands later goes above the prompt, and a reader scrolled up keeps their place.
+    """
+    from playwright.sync_api import expect
+
+    session = session_logs.write_run(tmp_path, "arrive-AAA111", _reads(40), live=True)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(f"http://127.0.0.1:{port}/#/session/arrive-AAA111")
+    box = page.locator(".card-conv .conv-box")
+    expect(box.locator(".ci").filter(has_text="f39.py")).to_be_attached()
+    bars = page.locator(".run-app .actions, .composer.dock")
+    before = bars.evaluate_all("all => all.map(e => e.getBoundingClientRect().toJSON())")
+    _append(session, [{"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"}])
+    prompt = box.locator(".prompts .prompt-box")
+    expect(prompt).to_be_visible()
+    place = prompt.evaluate(PROMPT_PLACE)
+    assert (place["gap"], place["whole"]) == (10, True)
+    assert bars.evaluate_all("all => all.map(e => e.getBoundingClientRect().toJSON())") == before
+    _append(session, _reads(1, 40))
+    expect(box.locator(".ci").filter(has_text="f40.py")).to_be_attached()
+    assert prompt.evaluate(PROMPT_PLACE)["whole"]
+    box.evaluate("b => { b.scrollTop = 0; }")
+    _append(session, _reads(1, 41))
+    expect(box.locator(".ci").filter(has_text="f41.py")).to_be_attached()
+    place = prompt.evaluate(PROMPT_PLACE)
+    assert (place["whole"], place["top"]) == (False, 0)
     assert not errors
 
 
@@ -234,38 +299,83 @@ def test_a_question_box_spaces_its_questions_and_wraps_a_narrow_field(
     assert not errors
 
 
+def test_the_approval_a_run_waits_on_sits_under_its_queued_questions(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """The approval a run waits on stays last, whole at the conversation's tail, as questions queue.
+
+    The approval painted first, so a queued question under it cut its question off at the top of a
+    short conversation.
+    """
+    from playwright.sync_api import expect
+
+    def queued(qid: str, text: str) -> dict[str, Any]:
+        ask = [{"question": text, "options": []}]
+        return {"type": "question.prompt", "id": qid, "wait": False, "questions": ask}
+
+    command = f"Allow run_command: {LONG_COMMAND}"
+    approval = {"type": "approval.prompt", "id": "approval-1", "prompt": command}
+    rows = [*_reads(30), queued("question-1", "Fixtures under tests/data?"), approval]
+    session = session_logs.write_run(tmp_path, "order-AAA111", rows, live=True)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1024, "height": 768})
+    page.goto(f"http://127.0.0.1:{port}/#/session/order-AAA111")
+    boxes = page.locator(".card-conv .prompts .prompt-box")
+    expect(boxes).to_contain_text(["Fixtures under tests/data?", "Allow run_command"])
+    _append(session, [queued("question-2", "Keep the BOM?")])
+    expect(boxes).to_contain_text(["Fixtures", "Keep the BOM?", "Allow run_command"])
+    assert boxes.last.evaluate(PROMPT_PLACE)["whole"]
+    assert not errors
+
+
+@pytest.mark.parametrize("children", [False, True])
 @pytest.mark.parametrize("asks", [False, True])
-def test_a_phone_opens_a_run_at_its_tail_unless_a_prompt_waits(
+def test_a_phone_opens_a_run_at_its_tail_where_a_prompt_waits(
     open_page: Callable[[int], tuple[Page, list[str]]],
     port: int,
     tmp_path: pathlib.Path,
     *,
     asks: bool,
+    children: bool,
 ) -> None:
-    """A phone opens a long conversation at its end, and at the top when a prompt box waits.
+    """A phone opens a long conversation at its end, where a waiting prompt sits over the composer.
 
-    The page always scrolled to the conversation's end, about 2,500px under the approval box.
+    With a prompt waiting the page opened at its top, about 2,500px above the conversation's end,
+    and a fan-out's did still. A fan-out with no prompt waiting opens at its top, on its children.
     """
     from playwright.sync_api import expect
 
-    rows: list[dict[str, Any]] = []
-    for i in range(40):
-        rows.append(
-            {"type": "tool.call", "name": "read_file", "args_preview": {"path": f"f{i}.py"}}
-        )
-        rows.append({"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"})
+    rows = _reads(40)
     if asks:
         rows.append({"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"})
-    session_logs.write_run(tmp_path, "long-AAA111", rows, live=True)
+    session = session_logs.write_run(tmp_path, "long-AAA111", rows, live=True)
+    if children:
+        stop = {"type": "session.stop", "verification": "passed", "reason": "finish_session"}
+        group = {"group": session.name, "parent": session.name}
+        for number in (1, 2):
+            child = session_logs.write_run(tmp_path, f"{session.name}-l{number}", [stop])
+            manifest = {"version": 3, "session_id": child.name, "mode": "run"}
+            (child / "manifest.json").write_text(
+                json.dumps({**manifest, "parallel": {**group, "number": number}})
+            )
+        manifest = {"version": 3, "session_id": session.name, "mode": "run"}
+        (session / "manifest.json").write_text(json.dumps(manifest))
     page, errors = open_page(port)
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(f"http://127.0.0.1:{port}/#/session/long-AAA111")
     expect(page.locator(".card-conv .ci").filter(has_text="f39.py")).to_be_attached()
-    if asks:
+    if children:
+        expect(page.locator(".card-children tr")).to_have_count(3)
+    if children and not asks:
         assert page.evaluate("window.scrollY") == 0
-        expect(page.locator(".prompt-box")).to_be_in_viewport()
     else:
         page.wait_for_function("window.scrollY > 0")
+    if asks:
+        prompt = page.locator(".card-conv .prompt-box")
+        expect(prompt).to_be_in_viewport(ratio=1)
+        box, dock = prompt.bounding_box(), page.locator(".composer.dock").bounding_box()
+        assert box is not None and dock is not None
+        assert box["y"] + box["height"] <= dock["y"]
     assert not errors
 
 

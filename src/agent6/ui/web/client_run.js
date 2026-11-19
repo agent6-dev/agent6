@@ -26,8 +26,7 @@ async function renderRun(id, opts, gen) {
   // "paged" only acts on phones: one widget shows at a time there, picked by
   // the floating menu; the desktop drawer ignores it.
   const app = el('div', 'run-app paged');
-  const prompts = el('div', 'page-pad prompts'); app.appendChild(prompts); // approval/question boxes surface here
-  const cards = { _id: id, _base: base, _prompts: prompts, _readOnly: readOnly, _crumb: crumbBase };
+  const cards = { _id: id, _base: base, _readOnly: readOnly, _crumb: crumbBase };
   const drawer = el('div', 'grid drawer');
   const mk = (key, title, cls, parent) => { const c = el('div', 'card card-' + key + ' ' + (cls||'')); c.dataset.w = key; const h = el('h2', null, title); c.appendChild(h); if (key === 'head') cards._head_title = h; const body = el('div', 'card-body'); c.appendChild(body); cards[key] = body; (parent || drawer).appendChild(c); return body; };
 
@@ -199,9 +198,8 @@ async function renderRun(id, opts, gen) {
   }), cc.card);
   paintRun(cards, snap);
   cc.conv.refresh().then(() => {
-    // A phone opens at the conversation's tail, unless a prompt or the children wait above it.
-    const above = prompts.childElementCount || children.parentElement.style.display !== 'none';
-    if (window.innerWidth < 781 && !above) window.scrollTo(0, document.body.scrollHeight);
+    // A phone opens at the conversation's tail, where its prompts wait; a fan-out with none waiting opens on its children.
+    if (window.innerWidth < 781 && (cc.conv.prompts.childElementCount || children.parentElement.style.display === 'none')) window.scrollTo(0, document.body.scrollHeight);
   });
 
   // The stream stays open across a finish: a resume from any surface logs into
@@ -242,7 +240,7 @@ async function postPrompt(box, url, body) {
 // half-typed free-text answer or drops focus; only add new prompts and remove
 // resolved ones.
 function paintPrompts(cards, s) {
-  const host = cards._prompts;
+  const host = cards._conv.prompts;
   // base is the POST prefix: sessions use /api/session/<id>, machines /api/machine/<name>.
   const base = cards._base || ('/api/session/' + encodeURIComponent(cards._id));
   // For a machine, the per-state dir the reasoning (and its prompts) came from.
@@ -287,8 +285,10 @@ function paintPrompts(cards, s) {
       return box;
     };
   }
+  const queued = new Set(); // the questions that pause nothing
   for (const q of (s.questions || [])) {
     if (q.answered) continue;
+    if (q.blocking === false) queued.add(pfx + 'q:' + q.id);
     build[pfx + 'q:' + q.id] = () => {
       // One or more related questions answered together; option buttons fill that
       // question's field, and a single Submit posts all answers (review first).
@@ -330,14 +330,16 @@ function paintPrompts(cards, s) {
       return box;
     };
   }
-  const want = new Set(Object.keys(build));
-  for (const child of Array.from(host.children)) {
-    if (!want.has(child.dataset.key)) child.remove(); // resolved / gone
-  }
-  const present = new Set(Array.from(host.children).map(c => c.dataset.key));
+  // The prompts the run waits on come last, nearest the composer, where the conversation's tail shows them.
+  const keys = Object.keys(build);
+  const want = [...keys.filter(key => queued.has(key)), ...keys.filter(key => !queued.has(key))];
+  const have = new Map(Array.from(host.children, box => [box.dataset.key, box]));
+  for (const [key, box] of have) if (!build[key]) box.remove(); // resolved / gone
+  let prev = null;
   for (const key of want) {
-    if (present.has(key)) continue; // leave the live box (input + focus) intact
-    const box = build[key](); box.dataset.key = key; host.appendChild(box);
+    let box = have.get(key); // a live box keeps its input and focus; a new one lands after the one before it
+    if (!box) { box = build[key](); box.dataset.key = key; host.insertBefore(box, prev ? prev.nextSibling : host.firstChild); }
+    prev = box;
   }
 }
 
