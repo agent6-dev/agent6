@@ -64,8 +64,10 @@ const document = {
   createDocumentFragment: () => el('fragment'), createTextNode: text => el('text', '', text),
   // openDialog's one question: is a dialog open?
   querySelector(selector) { assert.equal(selector, 'dialog[open]'); return dialog() ?? null; },
+  documentElement: {clientWidth: 0, classList: {toggle() {}}},
 };
 const window = {scrollX: 0, scrollY: 0, scrollTo(x, y) { this.scrollX = x; this.scrollY = y; }};
+const innerWidth = 0;
 const view = document.body.appendChild(el('main'));
 let routeGen = 0, token = '';
 const writes = [], notices = [];

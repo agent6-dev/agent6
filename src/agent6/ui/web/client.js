@@ -232,6 +232,9 @@ function openDialog(title, cls) {
   head.appendChild(heading); head.appendChild(closeButton('Close', () => dialog.close()));
   dialog.appendChild(head);
   dialog.addEventListener('close', () => dialog.remove());
+  // The page behind holds still (styles.css); a page with a scrollbar keeps the bar's room.
+  const root = document.documentElement;
+  root.classList.toggle('scrollbar', innerWidth > root.clientWidth);
   document.body.appendChild(dialog);
   dialog.showModal();
   dialog.focus(); // not its Close button, which the browser would pick; a caller's field takes it next

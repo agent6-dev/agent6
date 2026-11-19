@@ -432,8 +432,9 @@ const document = {
     assert.equal(selector, 'dialog[open]');
     return nodes().find(n => n.tag === 'dialog' && n.open) || null;
   },
+  documentElement: {clientWidth: 0, classList: {toggle() {}}},
 };
-const window = {scrollX: 0, scrollY: 0, scrollTo() {}};
+const window = {scrollX: 0, scrollY: 0, scrollTo() {}}, innerWidth = 0;
 const view = el('div'); document.body.appendChild(view);
 const boot = () => {}, setCrumb = () => {}, esc = String, toast = () => {};
 const withCode = text => el('text', null, text);

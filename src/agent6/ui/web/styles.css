@@ -355,14 +355,15 @@ button.x-btn { display: grid; place-items: center; flex: none; padding: 0; }
 button.x-btn:hover { background-color: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); }
 .toast .x-btn { line-height: inherit; margin-block: calc((1lh - var(--ctl-h)) / 2); }
 
-/* A dialog (openDialog) floats over the dimmed page in one of two widths: a form, or a list or
-   text to read. A wheel or a swipe over it or its backdrop never scrolls the page behind:
-   overscroll-behavior holds only in a scroll container, so the backdrop takes overflow: hidden. */
+/* A dialog (openDialog) floats over the dimmed page in one of two widths: a form, or a list or text to read. */
 dialog.card {
   width: 35rem; max-width: calc(100% - 2rem); max-height: calc(100% - 2rem); overflow: auto; padding-top: 0;
   color: var(--text); background: var(--surface); border: 1px solid var(--border);
-  border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.35); overscroll-behavior: contain;
+  border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.35);
 }
+/* While a dialog is open the page behind holds still under a wheel, a swipe or a key, in Firefox too. */
+html:has(dialog[open]) { overflow: hidden; }
+html.scrollbar:has(dialog[open]) { scrollbar-gutter: stable; } /* openDialog: the page showed a scrollbar */
 dialog.card.wide { width: 47.5rem; }
 /* A dialog's head: its title, as written (a config key keeps its case), then its Close button
    beside the title's first 20px line, which starts 14px down as in a card. A long title wraps, so
@@ -378,7 +379,7 @@ dialog .dialog-head > h2 {
 }
 /* A list dialog sits high and still, so its field stays put while the list narrows. */
 dialog.card.picker { margin-top: 12vh; max-height: calc(88vh - 1rem); }
-dialog::backdrop { background: rgba(0,0,0,.55); overflow: hidden; overscroll-behavior: contain; }
+dialog::backdrop { background: rgba(0,0,0,.55); }
 /* A dialog with no field holds the focus itself; the ring is for the controls inside it. */
 dialog:focus-visible { outline: none; }
 /* A question before an action (confirmDialog): its text keeps the line breaks it was given. */
