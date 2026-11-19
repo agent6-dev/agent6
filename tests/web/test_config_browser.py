@@ -270,3 +270,34 @@ def test_the_reviewer_roster_lists_each_reviewer_with_its_remove_at_the_row_end(
     )
     assert first_top < second_top
     assert not errors
+
+
+def test_a_save_keeps_the_folded_sections_and_the_edited_row_in_view(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A save re-rendered the page with every folded section open again.
+
+    The edited row then sat far below the restored scroll position, off the screen.
+    """
+    page, errors = open_page(port)
+    _config(page, port)
+    for name in ("git", "harness"):
+        page.locator("details.cfg-section > summary").get_by_text(name, exact=True).click()
+    row = page.locator('[data-key="web.port"]')
+    row.scroll_into_view_if_needed()
+    row.click()
+    field = page.get_by_role("dialog").locator(".field")
+    field.fill("8799")
+    field.press("Enter")
+    page.wait_for_function(
+        """() => document.querySelector('[data-key="web.port"] .val')?.textContent === '8799'"""
+    )
+    folded = page.locator("details.cfg-section:not([open]) > summary").all_inner_texts()
+    assert folded == ["git", "harness"]
+    row = page.locator('[data-key="web.port"]')
+    assert row.evaluate("e => e === document.activeElement")
+    box = row.bounding_box()
+    assert box is not None
+    assert box["y"] >= 0
+    assert box["y"] + box["height"] <= 900
+    assert not errors

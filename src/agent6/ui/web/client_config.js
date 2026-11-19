@@ -31,6 +31,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     if (gen !== routeGen || !card.isConnected) return;
     return renderConfig(gen, () => ({
       filter: filter.value, modified, x: window.scrollX, y: window.scrollY,
+      folded: [...sections].filter(([, box]) => !box.open).map(([name]) => name),
       key: document.activeElement?.getAttribute('data-key'),
       filtering: document.activeElement === filter,
     }));
@@ -69,19 +70,19 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
   bar.appendChild(reviewerBtn);
   card.appendChild(bar);
   // The payload comes in the order every surface shares (`config_view`); one collapsible
-  // section per table, as the TUI's page shows them.
-  const rows = [], sections = [];
+  // section per table, as the TUI's page shows them; a render keeps the sections folded before it.
+  const rows = [], sections = new Map();
   let section = null, tbl = null;
   for (const k of Object.keys(data)) {
     const s = data[k];
     const name = k.includes('.') ? k.slice(0, k.indexOf('.')) : k;
     if (name !== section) {
       section = name;
-      const box = el('details', 'cfg-section'); box.open = true;
+      const box = el('details', 'cfg-section'); box.open = !state.folded?.includes(section);
       box.appendChild(el('summary', null, section));
       tbl = el('table', 'cfg');
       const head = el('tr'); ['setting','value','source'].forEach(h => head.appendChild(el('th', null, h))); tbl.appendChild(head);
-      box.appendChild(tbl); card.appendChild(box); sections.push(box);
+      box.appendChild(tbl); card.appendChild(box); sections.set(section, box);
     }
     const tr = el('tr', s.modified ? 'mod' : '');
     tr.appendChild(breakableCell('key', k, '.'));
@@ -92,7 +93,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     tr.title = s.description ? (s.description_points || [s.description]).join('\n') : 'click to edit';
     tr.setAttribute('data-key', k);
     actionable(tr, () => { tr.focus({preventScroll: true}); editConfig(k, s, registry.tables, refresh, data); }, 'edit ' + k);
-    tbl.appendChild(tr); rows.push([k.toLowerCase(), tr, s.modified, sections.at(-1)]);
+    tbl.appendChild(tr); rows.push([k.toLowerCase(), tr, s.modified, sections.get(section)]);
   }
   filter.oninput = () => {
     const q = filter.value.toLowerCase();
@@ -102,14 +103,15 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
       tr.style.display = show ? '' : 'none';
       if (show) shown.add(box);
     }
-    for (const box of sections) box.style.display = shown.has(box) ? '' : 'none';
+    for (const box of sections.values()) box.style.display = shown.has(box) ? '' : 'none';
   };
   view.appendChild(card);
   filter.oninput();
+  if (state.y !== undefined) window.scrollTo(state.x, state.y);
+  // The focus goes back to the edited row, scrolled into view if the page moved it.
   const focused = rows.find(([, tr]) => tr.getAttribute('data-key') === state.key && tr.style.display !== 'none');
   if (state.filtering || (state.key && !focused)) filter.focus({preventScroll: true});
-  else if (focused) focused[1].focus({preventScroll: true});
-  if (state.y !== undefined) window.scrollTo(state.x, state.y);
+  else if (focused) { focused[1].focus({preventScroll: true}); focused[1].scrollIntoView({block: 'nearest'}); }
 }
 // A table cell whose text may wrap after each `mark` (a key's dots, a value's or a path's
 // slashes): a <wbr> marks the place, so a copy of the text holds no extra character.
