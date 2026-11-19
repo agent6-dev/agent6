@@ -1159,7 +1159,7 @@ def test_git_and_files_deep_links_survive_reload_and_back(
 def test_files_marks_worktree_states_and_sums_folders(
     open_page: Callable[[int], tuple[Page, list[str]]], files_port: int
 ) -> None:
-    """Working-tree marks distinguish tracked, untracked and modified files, not commits."""
+    """Working-tree marks name untracked and modified files; clean files and commits get none."""
     page, errors = open_page(files_port)
     page.goto(f"http://127.0.0.1:{files_port}/#/files")
     page.wait_for_selector(".files-tree [data-path='b.txt']")
@@ -1169,7 +1169,7 @@ def test_files_marks_worktree_states_and_sums_folders(
     page.wait_for_selector(".files-tree [data-path='src/tool.py']")
     for path, mark in (
         ("b.txt", "M"),
-        ("img.bin", "H"),
+        ("img.bin", ""),
         ("new.txt", "A"),
         ("src/tool.py", "A"),
         ("src", "A"),

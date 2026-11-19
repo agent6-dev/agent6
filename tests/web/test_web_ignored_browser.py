@@ -50,3 +50,26 @@ def test_show_ignored_is_remembered_and_opens_ignored_markdown(
     page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD")
     expect(toggle).to_have_count(0)
     assert not errors
+
+
+def test_an_ignored_row_reads_muted_and_a_clean_one_has_no_mark(
+    git_port: int,
+    tmp_path: pathlib.Path,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+) -> None:
+    """Every clean row carried a boxed H, and an ignored row looked like a tracked one."""
+    from playwright.sync_api import expect
+
+    (tmp_path / ".git" / "info" / "exclude").write_text("WORK_QUEUE.md\n", encoding="utf-8")
+    (tmp_path / "WORK_QUEUE.md").write_text("# Work queue\n", encoding="utf-8")
+    page, errors = open_page(git_port)
+    page.add_init_script("localStorage.setItem('a6-files-ignored', 'on')")
+    page.goto(f"http://127.0.0.1:{git_port}/#/files/WORKTREE")
+    ignored = page.locator(".files-tree [data-path='WORK_QUEUE.md']")
+    clean = page.locator(".files-tree [data-path='b.txt']")
+    expect(ignored.locator(".gf-st")).to_have_text("I")
+    expect(clean.locator(".gf-st")).to_have_text("")
+    color = "e => getComputedStyle(e).color"
+    assert ignored.locator(".gf-path").evaluate(color) == ignored.locator(".gf-st").evaluate(color)
+    assert ignored.locator(".gf-path").evaluate(color) != clean.locator(".gf-path").evaluate(color)
+    assert not errors

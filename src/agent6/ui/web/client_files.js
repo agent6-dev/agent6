@@ -68,12 +68,15 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
 
   // -- the tree ----------------------------------------------------------------------
   let entries = [], truncated = false, rev = '', ignored = false, loading = 0, shown = null;
+  // A working-tree row's mark says how it differs from HEAD: M modified, A untracked, I ignored. A
+  // clean row keeps an empty slot, so the names stay in line; a commit's rows have no marks.
   const stateMark = (files) => {
     const counts = { tracked: 0, untracked: 0, modified: 0, ignored: 0 };
     for (const f of files) if (f.state) counts[f.state]++;
     const state = counts.modified ? 'modified' : counts.untracked ? 'untracked' : counts.tracked ? 'tracked' : counts.ignored ? 'ignored' : '';
     if (!state) return null;
-    const mark = statusBadge({ tracked: 'H', untracked: 'A', modified: 'M', ignored: 'I' }[state]);
+    if (state === 'tracked') return el('span', 'gf-st');
+    const mark = statusBadge({ untracked: 'A', modified: 'M', ignored: 'I' }[state]);
     mark.title = Object.entries(counts).filter(([, n]) => n).map(([s, n]) => n + ' ' + s).join(', ');
     return mark;
   };

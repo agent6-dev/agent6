@@ -59,6 +59,9 @@
 .gf-st.st-M { color: var(--warn); border-color: var(--warn); }
 .gf-st.st-D { color: var(--err); border-color: var(--err); }
 .gf-st.st-R, .gf-st.st-T { color: var(--accent); border-color: var(--accent); }
+.gf-st:empty { border-color: transparent; } /* a clean working-tree row */
+/* An ignored file or folder reads muted, its mark and its name. */
+.gf-st.st-I, .gf:has(> .st-I) .gf-path, .gtree-dir:has(> .st-I) .gtree-name { color: var(--muted); }
 .gf-path { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
 .gf-counts { flex: none; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
 .gf-counts .add { color: var(--ok); } .gf-counts .del { color: var(--err); }
