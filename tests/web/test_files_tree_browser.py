@@ -202,12 +202,13 @@ def test_the_file_head_keeps_one_height(
     assert not errors
 
 
+@pytest.mark.parametrize("width", [820, 390])
 def test_a_narrow_file_head_keeps_its_height_while_the_text_loads(
-    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int, width: int
 ) -> None:
-    """On a phone the head grew a row when the blame button and the note's language arrived."""
+    """A narrow head grew a row as its text loaded, and an image's head was a button shorter."""
     page, errors = open_page(big_tree)
-    page.set_viewport_size({"width": 390, "height": 844})
+    page.set_viewport_size({"width": width, "height": 900})
     page.add_init_script("""
       window.__heads = [];
       new MutationObserver(() => {
