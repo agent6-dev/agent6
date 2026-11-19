@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from agent6 import paths
+from tests.unit import test_git_history
 from tests.web import session_logs, signin, test_web_browser
 
 if TYPE_CHECKING:
@@ -407,6 +408,26 @@ def test_a_slow_first_load_leaves_its_placeholder_undimmed(
     assert page.evaluate("getComputedStyle(view).opacity") == "1"
     held[0].continue_()
     expect(page.locator(".dock textarea")).to_be_visible()
+    assert not errors
+
+
+def test_a_markdown_files_link_to_its_own_heading_leaves_it_undimmed(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """The file scrolled to the heading in place and kept the busy mark that dimmed it."""
+    from playwright.sync_api import expect
+
+    guide = "# Guide\n\n[Last part](#last-part)\n\n" + "A paragraph.\n\n" * 40 + "## Last part\n"
+    (tmp_path / "guide.md").write_text(guide, encoding="utf-8")
+    test_git_history._git(tmp_path, "add", "guide.md")
+    test_git_history._git(tmp_path, "commit", "-m", "guide")
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/guide.md")
+    expect(page.locator(".md-view h1")).to_have_text("Guide")
+    page.get_by_role("link", name="Last part", exact=True).click()
+    expect(page.locator(".md-view #last-part")).to_be_in_viewport()
+    assert page.evaluate("location.hash").endswith("?anchor=last-part")
+    expect(page.locator("#view > [aria-busy=true]")).to_have_count(0)
     assert not errors
 
 

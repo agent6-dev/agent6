@@ -502,6 +502,7 @@ async function route() {
     else showProblem('Could not load this page', e.message, true, BACK[parts[0]]);
   }
   if (gen !== routeGen) return;
+  for (const kept of view.children) kept.removeAttribute('aria-busy'); // a page kept in place (a Markdown file scrolled to a heading) is not being replaced
   shownHash = location.hash;
   refocus(held, repaint ? document.body : null, crumb);
 }
