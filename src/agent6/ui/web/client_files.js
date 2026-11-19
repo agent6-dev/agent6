@@ -4,10 +4,15 @@
 // with line numbers and highlighting, an image, or a binary file's size and kind. The
 // picked revision and the folders opened outlive a visit to another tab; the tree is fetched
 // again on return.
-const filesState = { rev: null, folders: new Map() }; // the picker's { rev, label }; folder path → open
+// The picker's { rev, label }; each folder path → open; the Markdown file shown, if any.
+const filesState = { rev: null, folders: new Map(), markdown: null };
 const MARKDOWN_MODE_KEY = 'a6-markdown-mode';
 async function renderFiles(gen, revision = '', path = '', query = new URLSearchParams()) {
   if (query.has('panel')) return renderReviewedFile(gen, path, query);
+  // A hash naming the Markdown file shown moves within it: a link to a heading, and Back and
+  // Forward between them, scroll in place.
+  const markdown = filesState.markdown;
+  if (markdown?.view.isConnected && markdown.rev === revision && markdown.path === path) return markdown.scroll(query.get('anchor'));
   setCrumb('files');
   const refsData = await getJSON('/api/git/refs');
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
@@ -194,18 +199,12 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     };
     if (typeof t.rendered_html === 'string') {
       const md = el('div', 'md-view'); md.innerHTML = t.rendered_html; box.appendChild(md);
-      // A link to a heading of this file scrolls to it in place; the hash follows for copying.
-      md.addEventListener('click', (e) => {
-        const link = e.target.closest('a[href^="#/files/"]');
-        if (!link || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-        const [where, search = ''] = link.getAttribute('href').split('?');
-        const parts = where.split('/').slice(2).map(decodeURIComponent); // rev, then the path
-        if (parts[0] !== rev || parts.slice(1).join('/') !== f.path) return;
-        e.preventDefault();
-        const id = new URLSearchParams(search).get('anchor');
-        [...md.querySelectorAll('[id]')].find(h => h.id === id)?.scrollIntoView({ block: 'start' });
-        setViewHash(fileHash + (id ? '?' + new URLSearchParams({ anchor: id }) : ''), true);
-      });
+      filesState.markdown = { rev, path: f.path, view: md, scroll: (id) => {
+        const heading = id && [...md.querySelectorAll('[id]')].find(h => h.id === id);
+        if (heading) heading.scrollIntoView({ block: 'start' }); else box.scrollTo(0, 0);
+      } };
+      // A link to the hash already shown changes nothing a hashchange sees: route it again.
+      md.addEventListener('click', (e) => { if (e.target.closest('a')?.href === location.href) route(); });
       for (const image of md.querySelectorAll('img[data-blob-src]')) {
         blobImageData(image.dataset.blobSrc).then(data => {
           if (current()) image.src = data.url;

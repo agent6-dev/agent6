@@ -184,11 +184,17 @@ def test_a_heading_link_in_the_open_file_scrolls_in_place(
     expect(page.locator(".md-view h1")).to_have_text("Workspace guide")
     page.wait_for_load_state("networkidle")
     before = len(reads)
-    page.get_by_role("link", name="details", exact=True).click()
-    expect(page).to_have_url(
-        f"http://127.0.0.1:{port}/#/files/{sha}/docs/guide%20%23%25.md?anchor=details"
-    )
+    link = page.get_by_role("link", name="details", exact=True)
+    link.click()
+    url = f"http://127.0.0.1:{port}/#/files/{sha}/docs/guide%20%23%25.md"
+    expect(page).to_have_url(url + "?anchor=details")
     expect(page.locator(".md-view #details")).to_be_in_viewport()
+    page.locator(".files-text").evaluate("e => e.scrollTo(0, 0)")
+    link.click()  # the hash already shown
+    expect(page.locator(".md-view #details")).to_be_in_viewport()
+    page.go_back()
+    expect(page).to_have_url(url)
+    expect(page.locator(".md-view h1")).to_be_in_viewport()
     assert reads[before:] == []
     expect(page.get_by_role("textbox", name="revision")).to_have_value("HEAD")
     assert not errors
