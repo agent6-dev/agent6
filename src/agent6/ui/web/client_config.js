@@ -400,7 +400,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     desc.appendChild(descriptionNode(s.description_points || [s.description]));
     dialog.appendChild(desc);
   }
-  let field, combo;
+  let field, combo, meaning;
   const choices = s.choices || (s.type === 'bool' ? ['true', 'false'] : null);
   if (role) {
     combo = configCombobox(data[section + '.model']?.input || '');
@@ -418,11 +418,17 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       shown.value = ''; shown.disabled = true; shown.selected = true; field.appendChild(shown);
     }
     for (const c of choices) {
-      const meaning = s.choice_meanings?.[c];
-      const option = el('option', null, meaning ? `${c}: ${meaning}` : c);
-      option.value = c; field.appendChild(option);
+      const option = el('option', null, c); option.value = c; field.appendChild(option);
     }
     if (choices.includes(current)) field.value = current;
+    // An option holds only its value; the chosen one's meaning reads whole under the select,
+    // where a long meaning wraps instead of being cut at the select's edge.
+    if (Object.keys(s.choice_meanings || {}).length) {
+      meaning = el('div', 'cfg-desc cfg-help'); meaning.id = 'cfg-meaning';
+      field.setAttribute('aria-describedby', meaning.id);
+      field.oninput = () => { meaning.textContent = s.choice_meanings[field.value || s.effective] || ''; };
+      field.oninput();
+    }
   } else if (['list', 'table', 'str'].includes(s.type)) {
     // A list, table or string shows whole: the field grows with the value.
     field = el('textarea', 'field cfg-value');
@@ -435,6 +441,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   if (!combo) {
     field.setAttribute('aria-labelledby', dialog.getAttribute('aria-labelledby')); // named by the key
     dialog.appendChild(field);
+    if (meaning) dialog.appendChild(meaning);
   }
   const repoRow = el('label', 'row cfg-check');
   const repoCb = el('input'); repoCb.type = 'checkbox';

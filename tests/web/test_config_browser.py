@@ -696,3 +696,27 @@ def test_a_config_editor_names_its_value_field_by_the_key(
         page.keyboard.press("Escape")
         dialog.wait_for(state="detached")
     assert not errors
+
+
+def test_a_choice_editor_shows_the_chosen_meaning_whole_on_a_phone(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Each option read `value: meaning`, cut at the select's edge on a phone."""
+    page, errors = open_page(port)
+    _config(page, port, 390)
+    page.locator('[data-key="sandbox.isolation"]').click()
+    dialog = page.get_by_role("dialog")
+    select = dialog.locator("select")
+    assert select.locator("option").all_inner_texts() == [
+        "auto",
+        "full",
+        "partial",
+        "none",
+        "container",
+    ]
+    meaning = dialog.locator(f"#{select.get_attribute('aria-describedby')}")
+    assert meaning.inner_text() == "Strongest supported isolation, warning below full"
+    assert meaning.evaluate("e => e.scrollWidth <= e.clientWidth")
+    select.select_option("none")
+    assert meaning.inner_text() == "Run commands without confinement"
+    assert not errors

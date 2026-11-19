@@ -203,8 +203,10 @@ async function run() {
   row('sandbox.network').onclick();
   const network = all(dialog()).find(e => e.tag === 'select');
   assert.deepEqual(network.children.map(e => e.value), ['auto', 'session', 'host']);
-  assert.equal(network.children[1].textContent,
-    'session: Run-private network without outside access');
+  assert.equal(network.children[1].textContent, 'session');
+  const meaning = () => all(dialog()).find(e => e.id === network['aria-describedby']).textContent;
+  network.value = 'session'; network.oninput();
+  assert.equal(meaning(), 'Run-private network without outside access');
   assert.ok(!all(dialog()).some(e => e.tag === 'input' && e.type !== 'checkbox'));
   assert.ok(!all(dialog()).some(e => e.tag === 'button' && e.textContent.startsWith('Remove ')));
   await button('Cancel', dialog()).onclick();
