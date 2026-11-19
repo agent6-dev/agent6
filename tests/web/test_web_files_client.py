@@ -403,6 +403,23 @@ assert.ok(!requests[requests.length-1].includes('ignored=1'));
 """)
 
 
+def test_a_binary_markdown_file_keeps_its_blame_button_and_drops_the_modes() -> None:
+    """A binary Markdown file lost its mode buttons and left Blame hidden, as Rendered had it."""
+    _run(r"""
+const opening = renderFiles(1, 'HEAD', 'notes.md'); await tick();
+const modes = view.querySelector('.files-md-mode');
+assert.ok(modes && modes.children.every(b => b.disabled), 'mode buttons not held while loading');
+assert.equal(view.querySelector('.files-blame').hidden, true);
+pending[pending.length - 1].resolve({text:'', lines:0, spans:[], digest:'d', rendered_html:null,
+  binary:true, truncated:false, language:''});
+await opening;
+assert.equal(view.querySelector('.files-md-mode'), null);
+const blame = view.querySelector('.files-blame');
+assert.equal(blame.hidden, false);
+assert.equal(blame.disabled, true);
+""")
+
+
 def test_markdown_mode_switches_content_and_blame_and_survives_reopening() -> None:
     """The remembered markdown mode changes visibility without losing source or blame state."""
     _run(r"""

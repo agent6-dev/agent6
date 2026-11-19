@@ -236,7 +236,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     if (t.language) facts.push(t.language);
     if (t.binary) {
       // Blame stays, disabled, so the head keeps the shape it had while the file loaded.
-      blame.title = 'a binary file has no lines to blame'; modes.remove();
+      blame.title = 'a binary file has no lines to blame'; modes.remove(); blame.hidden = false;
       note.textContent = facts.join(' · '); box.appendChild(el('div', 'muted gf-note', 'binary file: no text')); return;
     }
     facts.push(t.lines === 1 ? '1 line' : t.lines + ' lines');
