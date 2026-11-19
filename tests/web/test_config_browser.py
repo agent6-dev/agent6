@@ -80,6 +80,29 @@ def test_the_config_bar_keeps_every_button_on_the_card(
     assert not errors
 
 
+@pytest.mark.parametrize("width", [1440, 390])
+def test_the_config_bar_lines_up_with_the_tables(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, width: int
+) -> None:
+    """The filter and the bar's buttons started 9px left of the headings and tables under them.
+
+    They took the outdent the Sessions toolbar's borderless buttons need.
+    """
+    page, errors = open_page(port)
+    _config(page, port, width)
+    edges = page.evaluate(
+        """() => { const box = s => document.querySelector(s).getBoundingClientRect();
+        const buttons = [...document.querySelectorAll('.cfg-bar button')]
+          .map(b => b.getBoundingClientRect().left);
+        return [box('.cfg-bar input.filter').left, Math.min(...buttons), box('table.cfg').left,
+                box('.cfg-bar').right, box('table.cfg').right]; }"""
+    )
+    filter_left, button_left, table_left, bar_right, table_right = edges
+    assert filter_left == button_left == table_left
+    assert bar_right == table_right
+    assert not errors
+
+
 # Per visible row: where its value starts, where its source ends, and its source's line count.
 COLUMNS = """() => [...document.querySelectorAll('.cfg tr[data-key]')].filter(r => r.offsetParent)
   .map(r => { const source = document.createRange(); source.selectNodeContents(r.cells[2]);
