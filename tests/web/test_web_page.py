@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "a3c590bac383605647ce1766c4b1068a217ce3f4c4b76c1f393ef2554595e8c3"
+PAGE_SHA256 = "07358669817cf4947c9b468f3316bbefc16af65819c8bc7e13577d45ae8d860d"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -96,13 +96,16 @@ Object.defineProperty(globalThis, 'localStorage', {
 const classes = new Set();
 const document = {
   getElementById() { return null; },
+  querySelectorAll() { return []; },
   documentElement: {classList: {
     add: c => classes.add(c), contains: c => classes.has(c),
+    remove: (...cs) => cs.forEach(c => classes.delete(c)),
     toggle(c) { if (classes.has(c)) { classes.delete(c); return false; }
                 classes.add(c); return true; }
   }},
 };
 const navigator = {}, window = {};
+const matchMedia = () => ({matches: true, addEventListener() {}});  // the system is dark
 let logins = 0;
 function showLogin() { logins++; }
 """
@@ -258,12 +261,19 @@ def test_a_tool_call_clips_its_args_instead_of_breaking_words() -> None:
 
 
 def test_native_controls_take_the_page_theme() -> None:
-    """The page declares its colour scheme per theme, so checkboxes and dropdowns follow it."""
+    """Native controls follow the page: the system's colour scheme, or the theme override."""
     css = page.STYLES_CSS
-    root, light = css.index(":root {"), css.index(":root.light {")
-    assert "color-scheme: dark;" in css[root:light]
-    assert "color-scheme: light;" in css[light : css.index("}", light)]
+    root = css.index(":root {")
+    assert "color-scheme: light dark;" in css[root : css.index("}", root)]
+    assert ":root.light { color-scheme: light; }" in css
+    assert ":root.dark { color-scheme: dark; }" in css
     assert "input[type=checkbox] { accent-color: var(--accent); }" in css
+
+
+def test_the_stored_theme_applies_before_the_first_paint() -> None:
+    """A stored theme is set from <head>: set from the body, a light page painted dark first."""
+    html = page.PAGE_HTML
+    assert html.index('localStorage.getItem("a6-theme")') < html.index("<style>")
 
 
 def test_the_resume_row_asks_what_a_bare_resume_runs_under() -> None:

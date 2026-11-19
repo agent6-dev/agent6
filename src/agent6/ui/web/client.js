@@ -25,11 +25,31 @@ function hbTick() {
 let activeOverlayClose = null; // an open modal dialog's dismisser, closed on navigation
 
 // --- theme -------------------------------------------------------------------
-if (recall('a6-theme', '') === 'light') document.documentElement.classList.add('light');
-function toggleTheme() {
-  const on = document.documentElement.classList.toggle('light');
-  remember('a6-theme', on ? 'light' : 'dark');
+// The page follows the system's scheme. The theme button flips it and stores the choice only
+// while it differs from the system's, so flipping back follows the system again; <head> applies
+// a stored choice before the first paint.
+const systemDark = matchMedia('(prefers-color-scheme: dark)');
+function themeIsDark() {
+  const c = document.documentElement.classList;
+  return c.contains('dark') || (!c.contains('light') && systemDark.matches);
 }
+function toggleTheme() {
+  const next = themeIsDark() ? 'light' : 'dark';
+  document.documentElement.classList.remove('light', 'dark');
+  if (next === (systemDark.matches ? 'dark' : 'light')) forget('a6-theme');
+  else { document.documentElement.classList.add(next); remember('a6-theme', next); }
+  syncThemeColor();
+}
+// The browser's own bar takes the page colour of the theme in force: a stored choice in both
+// theme-color metas, else each meta's own scheme.
+function syncThemeColor() {
+  const c = document.documentElement.classList;
+  const forced = c.contains('dark') ? 'dark' : c.contains('light') ? 'light' : '';
+  for (const m of document.querySelectorAll('meta[name=theme-color]')) {
+    m.content = (forced || (m.media.includes('dark') ? 'dark' : 'light')) === 'dark' ? '#0e1116' : '#f6f8fa';
+  }
+}
+syncThemeColor();
 
 // --- nav rail collapse ---------------------------------------------------------
 if (recall('a6-rail', '') === 'min') document.documentElement.classList.add('rail-min');

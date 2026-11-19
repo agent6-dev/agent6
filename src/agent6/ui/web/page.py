@@ -98,11 +98,13 @@ PAGE_HTML = (
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0e1116">
+<meta name="theme-color" content="#f6f8fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon.svg">
 <title>agent6</title>
+<script>try { const t = localStorage.getItem("a6-theme"); if (t === "light" || t === "dark") document.documentElement.classList.add(t); } catch (_) {}</script>
 <style>
 """
     + STYLES_CSS

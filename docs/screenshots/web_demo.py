@@ -377,6 +377,7 @@ def main() -> None:
         browser = pw.chromium.launch()
         context = browser.new_context(
             viewport=vp,
+            color_scheme="dark",
             record_video_dir=str(tmp_dir),
             record_video_size=vp,
             device_scale_factor=2,
