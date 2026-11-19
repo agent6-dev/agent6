@@ -250,3 +250,27 @@ def test_enter_and_space_press_a_switcher_rows_own_button(
     assert asked == ["session/run-1/merge", "session/run-1/merge"]
     assert page.evaluate("location.hash") == "#/config"
     assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
+@pytest.mark.parametrize(
+    ("key", "title"), [("Control+K", "Switch session"), ("?", "Keyboard shortcuts")]
+)
+def test_a_dialog_closes_from_its_own_close_button(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, key: str, title: str
+) -> None:
+    """The pickers and the keyboard list had no Close button.
+
+    A touch screen has no Esc, and nothing showed that a tap outside closes the dialog.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".dock textarea")).to_be_visible()
+    page.keyboard.press(key)
+    dialog = page.get_by_role("dialog", name=title)
+    close = dialog.get_by_role("button", name="Close", exact=True)
+    expect(close).to_be_visible()
+    close.click()
+    expect(page.get_by_role("dialog")).to_have_count(0)
+    assert not errors

@@ -174,11 +174,13 @@ function toast(msg, bad) {
 function setCrumb(t) { crumb.textContent = t || ''; }
 
 // --- dialogs -----------------------------------------------------------------
-// Every modal is a <dialog> in the card skin, named by its title. showModal() makes the page
-// behind it inert; Esc or a click outside closes it (closedby="any"), the browser hands the focus
-// back to the control that opened it, and the dialog leaves the page when it closes. The caller
-// fills the body and focuses its field. One dialog at a time: while one is open, openDialog
-// returns null and the caller drops its own (a fetch that lands after Ctrl-K opened the switcher).
+// Every modal is a <dialog> in the card skin, named by its title, with a Close button beside it.
+// showModal() makes the page behind it inert; the Close button, Esc or a click outside closes it
+// (closedby="any"), the browser hands the focus back to the control that opened it, and the
+// dialog leaves the page when it closes. The caller fills the body and focuses its field. One
+// dialog at a time: while one is open, openDialog returns null and the caller drops its own (a
+// fetch that lands after Ctrl-K opened the switcher).
+const CLOSE_ICON = '<svg class="ic" viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round" fill="none" stroke="currentColor" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
 let dialogCount = 0;
 function openDialog(title, cls) {
   if (document.querySelector('dialog[open]')) return null;
@@ -188,10 +190,18 @@ function openDialog(title, cls) {
   dialog.setAttribute('aria-labelledby', heading.id);
   dialog.setAttribute('closedby', 'any');
   dialog.tabIndex = -1; // no Tab stop: Firefox stops on a scrolling dialog, which draws no ring
-  dialog.appendChild(heading);
+  // A touch screen has no Esc, and nothing shows that a tap outside closes the dialog.
+  const close = el('button', 'quiet dialog-x');
+  close.setAttribute('aria-label', 'Close'); close.title = 'Close';
+  close.innerHTML = CLOSE_ICON;
+  close.onclick = () => dialog.close();
+  const head = el('div', 'dialog-head');
+  head.appendChild(heading); head.appendChild(close);
+  dialog.appendChild(head);
   dialog.addEventListener('close', () => dialog.remove());
   document.body.appendChild(dialog);
   dialog.showModal();
+  dialog.focus(); // not its Close button, which the browser would pick; a caller's field takes it next
   return dialog;
 }
 
@@ -1047,9 +1057,6 @@ function openRestate(text) {
   const dialog = openDialog('Since your last message', 'wide');
   if (!dialog) return;
   dialog.appendChild(el('pre', 'restate', text));
-  const close = el('button', null, 'Close');
-  close.onclick = () => dialog.close();
-  dialog.appendChild(close);
 }
 
 // Ctrl-R in a session composer: search this session's past messages (the task,

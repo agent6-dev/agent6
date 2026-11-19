@@ -1399,7 +1399,7 @@ def test_a_dialog_keeps_tab_inside_and_esc_returns_focus_to_its_opener(
     inside = """() => { const a = document.activeElement;
       const title = [...document.querySelectorAll('h2')]
         .find(h => h.textContent === 'Switch session');
-      return a === document.body || title.parentElement.contains(a); }"""
+      return a === document.body || title.closest('dialog').contains(a); }"""
     for _ in range(4):
         page.keyboard.press("Tab")
         assert page.evaluate(inside), page.evaluate("document.activeElement.outerHTML.slice(0, 99)")

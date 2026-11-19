@@ -168,7 +168,8 @@ async function run() {
   }
   row('providers.openrouter.base_url').onclick();
   await button('Add provider…', dialog()).onclick();
-  assert.equal(dialog().children[0].textContent, 'Add provider');  // handed to the add form
+  // handed to the add form
+  assert.equal(all(dialog()).find(e => e.tag === 'h2').textContent, 'Add provider');
   button('Cancel', dialog()).onclick();
   for (const [key, label, table, name, repo] of [
     ['mcp.servers.local.url', 'MCP server', 'mcp.servers', 'local', true],
