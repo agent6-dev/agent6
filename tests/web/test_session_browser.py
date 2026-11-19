@@ -1009,3 +1009,31 @@ def test_the_detail_toggle_holds_still_as_it_cycles(
     expect(button).to_have_accessible_name("detail: collapsed")
     assert len(places) == 1
     assert not errors
+
+
+def test_a_phone_draft_starts_its_conversation_under_the_top_bar(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """On a phone a machine draft's conversation starts right under the top bar.
+
+    The draft's action bar held only Details, which a phone hides, and kept a 20px empty band.
+    """
+    from playwright.sync_api import expect
+
+    draft = paths.state_dir(tmp_path) / "sessions" / "machines" / "brave-otter"
+    draft.mkdir(parents=True)
+    rows = [
+        {"type": "session.start", "mode": "machine", "user_task": "Author a triage machine"},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
+    ]
+    (draft / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/draft/brave-otter")
+    card = page.locator(".card-conv")
+    expect(card.locator(".ci").first).to_be_visible()
+    page.evaluate("window.scrollTo(0, 0)")
+    header, top = page.locator("header").bounding_box(), card.bounding_box()
+    assert header and top
+    assert top["y"] == header["y"] + header["height"]
+    assert not errors

@@ -169,4 +169,6 @@
   .wmenu button { border: 0; border-radius: 0; text-align: left; background: none; }
   .wmenu button[aria-current] { color: var(--accent); }
   .details-btn { display: none; } /* the drawer is a desktop shape */
+  /* A read-only view's action bar holds Details alone, so on a phone the bar goes with it. */
+  .run-app > .actions:has(> .details-btn:only-child) { display: none; }
 }
