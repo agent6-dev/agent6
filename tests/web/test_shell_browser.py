@@ -842,7 +842,7 @@ def test_the_pointer_and_the_arrows_share_one_highlighted_row(
 def test_a_switcher_rows_buttons_sit_in_a_grid_not_a_list_box(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
-    """The switcher's list box held its rows' Review code and Merge buttons.
+    """The switcher's list box held its rows' Review and Merge buttons.
 
     A list box may hold only options, so the switcher is a grid: each row a cell for its session
     and a cell for its buttons. The palette, whose rows have no buttons, stays a list box.
@@ -855,7 +855,7 @@ def test_a_switcher_rows_buttons_sit_in_a_grid_not_a_list_box(
     rows = dialog.get_by_role("grid").get_by_role("row")
     expect(rows).to_have_count(2)
     buttons = rows.nth(1).get_by_role("gridcell").nth(1).get_by_role("button")
-    expect(buttons).to_have_text(["Review code", "Merge"])
+    expect(buttons).to_have_text(["Review", "Merge"])  # the Sessions row's words
     expect(dialog.get_by_role("listbox")).to_have_count(0)
     page.keyboard.type(">")
     expect(page.get_by_role("dialog", name="Commands").get_by_role("listbox")).to_be_visible()

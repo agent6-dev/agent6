@@ -1526,12 +1526,7 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '
   render();
 }
 
-// Ctrl+K anywhere: switch to another session. The hub's rows, newest activity first,
-// children included, narrowed by what is typed against the id, mode, status, task,
-// branch and worktree. A row names where the run works and the ref holding its
-// commits; Enter opens the highlighted one, and Review code and Merge act as the
-// Sessions page's row buttons do. A draft typed in a composer waits for the way back.
-// A `>` typed first hands the box to the command palette.
+// Ctrl+K: the hub's rows, children too, narrowed by id, mode, status, task, branch or worktree; Review and Merge act as a row's do, `>` opens the palette.
 async function openSwitcher() {
   if (document.querySelector('dialog[open]')) return; // one dialog at a time: skip the fetch
   let data;
@@ -1559,7 +1554,7 @@ async function openSwitcher() {
     actions: (r, close) => {
       if (!r.branch || LIVE_WORDS.includes(r.status)) return null;
       const acts = el('div', 'row');
-      const review = el('button', 'mini', 'Review code');
+      const review = el('button', 'mini', 'Review');
       review.onclick = () => { close(); handToNewWork({ task: '/review ' + r.branch }); location.hash = '#/'; route(); };
       acts.appendChild(review);
       if (r.unmerged) {
