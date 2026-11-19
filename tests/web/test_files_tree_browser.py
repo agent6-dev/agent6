@@ -69,3 +69,20 @@ def test_a_narrow_tree_keeps_each_name_on_one_line(
     assert page.locator(_row(LEAF)).get_attribute("title") == LEAF
     assert page.locator(_row(DEEP)).get_attribute("title") == DEEP
     assert not errors
+
+
+def test_tree_files_line_up_with_their_sibling_folders(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """File names sat left of their sibling folders' names, children left of their parent's."""
+    page, errors = open_page(big_tree)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    page.wait_for_selector(_row("deep"))
+    _open_deep(page)
+    left = "e => e.getBoundingClientRect().left"
+    file_name = page.locator(_row(LEAF) + " .gf-path").evaluate(left)
+    folder = _row(DEEP + "/delta")
+    assert page.locator(folder + " .gtree-name").evaluate(left) == pytest.approx(file_name, abs=1)
+    parent_name = page.locator(_row(DEEP) + " .gtree-name").evaluate(left)
+    assert page.locator(folder).evaluate(_CONTENT_LEFT) == pytest.approx(parent_name, abs=1)
+    assert not errors
