@@ -406,6 +406,7 @@ function el(tag, cls, text = '') {
     set textContent(value) { this.text = value; this.children = []; },
     set innerHTML(value) { this.children = []; },
     appendChild(child) { this.children.push(child); child.parent = this; return child; },
+    append(...children) { children.forEach(child => this.appendChild(child)); },
     insertBefore(child, before) {
       this.children.splice(this.children.indexOf(before), 0, child); child.parent = this;
     },
@@ -432,6 +433,7 @@ const document = {
     assert.equal(selector, 'dialog[open]');
     return nodes().find(n => n.tag === 'dialog' && n.open) || null;
   },
+  getElementById: () => el('div'),  // the messages, which ride in an open dialog
   documentElement: {clientWidth: 0, classList: {toggle() {}}},
 };
 const window = {scrollX: 0, scrollY: 0, scrollTo() {}}, innerWidth = 0;

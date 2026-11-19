@@ -203,3 +203,34 @@ def test_a_dialog_moves_nothing_sideways_where_scrollbars_take_room(
             assert page.evaluate(edges)[1] == right, route
     finally:
         engine.close()
+
+
+def test_a_message_raised_under_a_dialog_shows_above_it_and_takes_the_keyboard(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A failure raised while the switcher was open sat dimmed and inert under its backdrop.
+
+    Tab never reached its Dismiss; a message put in the dialog went with it when it closed.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.locator(".dock textarea").wait_for()
+    page.keyboard.press("Control+K")
+    dialog = page.get_by_role("dialog", name="Switch session")
+    expect(dialog.get_by_role("combobox")).to_be_focused()
+    page.evaluate("text => toast(text, true)", FAILURE.format(1))
+    message = page.locator("#toasts .toast")
+    assert message.evaluate(PRESSABLE)
+    page.keyboard.press("Tab")
+    expect(message.get_by_role("button", name="Dismiss")).to_be_focused()
+    page.keyboard.press("Enter")
+    expect(message).to_have_count(0)
+    expect(dialog).to_be_visible()
+    page.evaluate("text => toast(text, true)", FAILURE.format(2))
+    page.keyboard.press("Escape")
+    expect(page.get_by_role("dialog")).to_have_count(0)
+    expect(message).to_contain_text("merge refused (2)")
+    assert message.evaluate(PRESSABLE)
+    assert not errors

@@ -237,12 +237,15 @@ function openDialog(title, cls) {
   const head = el('div', 'dialog-head');
   head.appendChild(heading); head.appendChild(closeButton('Close', () => dialog.close()));
   dialog.appendChild(head);
-  dialog.addEventListener('close', () => dialog.remove());
+  // The messages ride in the open dialog, above its backdrop, read out and in its Tab order.
+  const toasts = document.getElementById('toasts');
+  dialog.addEventListener('close', () => { if (toasts.parentNode === dialog) document.body.append(toasts); dialog.remove(); });
   // The page behind holds still (styles.css); a page with a scrollbar keeps the bar's room.
   const root = document.documentElement;
   root.classList.toggle('scrollbar', innerWidth > root.clientWidth);
   document.body.appendChild(dialog);
   dialog.showModal();
+  queueMicrotask(() => dialog.append(toasts)); // after what the caller adds, so they come last in its Tab order
   dialog.focus(); // not its Close button, which the browser would pick; a caller's field takes it next
   return dialog;
 }

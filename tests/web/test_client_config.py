@@ -42,6 +42,7 @@ class Element {
     this.open = false; this.opener?.focus();
     (this.listeners.close || []).forEach(fn => fn());
   }
+  append(...children) { children.forEach(child => this.appendChild(child)); }
   appendChild(child) {
     this.children.push(child); child.parent = this;
     if (this.tag === 'select' && this.children.length === 1) this.value = child.value;
@@ -64,6 +65,7 @@ const document = {
   createDocumentFragment: () => el('fragment'), createTextNode: text => el('text', '', text),
   // openDialog's one question: is a dialog open?
   querySelector(selector) { assert.equal(selector, 'dialog[open]'); return dialog() ?? null; },
+  getElementById: () => el('div'),  // the messages, which ride in an open dialog
   documentElement: {clientWidth: 0, classList: {toggle() {}}},
 };
 const window = {scrollX: 0, scrollY: 0, scrollTo(x, y) { this.scrollX = x; this.scrollY = y; }};

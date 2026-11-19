@@ -334,6 +334,7 @@ kbd {
 }
 /* An open completion list rises over the messages, which end at its dock's top edge. */
 .composer.dock:has(.ac-pop) { z-index: 51; }
+dialog > #toasts { bottom: 0; } /* the backdrop covers the dock: the messages keep clear of the dialog where they can */
 /* The newest message sits lowest; older ones scroll inside the full column, one at most its height. */
 .toast {
   display: flex; align-items: flex-start; gap: 0.75rem; max-width: min(100%, 40rem); flex: none; max-height: 100%;

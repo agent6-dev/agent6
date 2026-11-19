@@ -639,7 +639,7 @@ def test_the_model_editor_selects_qualified_suggestions_without_saving(
     expect(dialog).to_be_visible()
     assert 'model = "a/old"' in cfg.read_text()
     model.fill("b/newer-than-catalog")
-    expect(dialog.get_by_role("status")).to_contain_text("No matches")
+    expect(dialog.locator(".cfg-catalog")).to_contain_text("No matches")
     with page.expect_response(
         lambda response: response.request.method == "POST" and response.url.endswith("/api/config")
     ) as saved:
@@ -683,13 +683,13 @@ def test_model_catalog_ignores_a_closed_editors_response(
     page.get_by_role("button", name="edit models.worker.model", exact=True).click()
     dialog = page.get_by_role("dialog")
     dialog.get_by_role("combobox", name="Model", exact=True).focus()
-    expect(dialog.get_by_role("status")).to_contain_text("Loading models")
+    expect(dialog.locator(".cfg-catalog")).to_contain_text("Loading models")
     dialog.get_by_role("button", name="Cancel", exact=True).click()
     page.get_by_role("button", name="edit models.worker.model", exact=True).click()
     dialog = page.get_by_role("dialog")
     model = dialog.get_by_role("combobox", name="Model", exact=True)
     model.focus()
-    expect(dialog.get_by_role("status")).to_contain_text("Catalog empty or unavailable")
+    expect(dialog.locator(".cfg-catalog")).to_contain_text("Catalog empty or unavailable")
     assert len(held) == 1
     held[0].fulfill(json={"values": ["stale-model"]})
     page.wait_for_timeout(100)
