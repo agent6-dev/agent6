@@ -851,6 +851,24 @@ def test_the_refs_filter_hangs_under_its_button_and_escape_refocuses_it(
     assert errors == [], errors
 
 
+def test_the_git_panes_lay_out_by_their_own_width(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """At 820px the graph drops its author column and the compare puts head under base."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 820, "height": 900})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    expect(page.locator(".gc-author").first).to_be_hidden()
+    page.get_by_role("button", name="Compare", exact=True).click()
+    base = page.get_by_label("base", exact=True).bounding_box()
+    head = page.get_by_label("head", exact=True).bounding_box()
+    assert base and head and head["y"] >= base["y"] + base["height"]
+    assert errors == [], errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:

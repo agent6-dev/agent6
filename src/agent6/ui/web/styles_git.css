@@ -90,8 +90,6 @@
   /* The commit message takes the whole row, as a docked composer's entry does; Commit drops under it. */
   .git-commit textarea { flex-basis: 100%; }
   .git-commit button { flex: 1 1 auto; }
-  .gc-author { display: none; }
-  .gc-row { padding-right: 8px; gap: 8px; }
   .git-side { display: none; }
   .git-side.open {
     display: block; position: fixed; left: 0; right: 0; z-index: 16; overflow: auto;
@@ -103,9 +101,19 @@
     position: fixed; left: 0; right: 0; z-index: 16; background: var(--bg);
     top: calc(var(--hdr-h) + env(safe-area-inset-top)); bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
   }
-  .gref { max-width: 140px; }
   .git-img { grid-template-columns: 1fr; }
-  /* base beside the swap button, head on its own row under them */
+}
+/* The graph and the side panel lay out by their own width, whatever the screen's: a narrow graph
+   drops the author column and caps its badges, and a narrow side panel puts the compare's head
+   picker on its own row under the base and the swap button. */
+.git-graph { container: git-graph / inline-size; }
+.git-side { container: git-side / inline-size; }
+@container git-graph (max-width: 559px) {
+  .gc-author { display: none; }
+  .gc-row { padding-right: 8px; gap: 8px; }
+  .gref { max-width: 140px; }
+}
+@container git-side (max-width: 519px) {
   .gcmp-pick { display: grid; grid-template-columns: 1fr auto; }
   .gcmp-pick .gpick:last-child { grid-column: 1 / -1; }
 }
