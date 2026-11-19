@@ -107,7 +107,9 @@ main { padding: 0; }
 }
 
 .card { padding: 14px 16px; overflow: hidden; }
-.card h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+/* A card's or panel's heading is a label: small muted capitals, so it stays apart from the bold
+   line under it (Commit over the commit subject, Findings over its counts). */
+.card h2 { margin: 0 0 8px; font-size: 12px; font-weight: 600; line-height: 20px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .card.scroll { max-height: 420px; overflow: auto; }
 
 .row { display: flex; gap: 10px; align-items: center; }
@@ -178,8 +180,8 @@ main { padding: 0; }
 .hs-list { margin-top: 8px; max-height: 45vh; overflow-y: auto; }
 .hs-list .more-note { padding: 5px 10px; font-size: 13px; }
 .more-note { color: var(--muted); font-style: italic; }
-.card-head-row { display: flex; align-items: baseline; gap: 8px; }
-.card-head-row h2 { flex: 1; }
+.card-head-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.card-head-row h2 { flex: 1; margin: 0; }
 button.mini { min-height: var(--ctl-h-sm); padding: 0 var(--ctl-px-sm); font-size: 13px; }
 
 .empty { color: var(--muted); padding: 24px; text-align: center; }
@@ -257,6 +259,8 @@ button.quiet.danger:hover { color: var(--err); border-color: transparent; backgr
   max-height: 90vh; overflow: auto;
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
 }
+/* A dialog's title is a title, as written: a config key keeps its case. */
+.overlay .card > h2 { font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--text); }
 
 @media (max-width: 780px) {
   nav.tabs { display: flex; }

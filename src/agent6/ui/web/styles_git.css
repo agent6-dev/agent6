@@ -32,7 +32,7 @@
 .gref.agent6 { border-color: var(--muted); color: var(--muted); }
 .gref.wt { border-style: dashed; }
 .git-side-head { gap: 8px; padding: 10px 16px 0; }
-.git-side-head h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+.git-side-head h3 { margin: 0; font-size: 12px; font-weight: 600; line-height: 20px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .git-back { display: none; }
 .gd-subject { font-weight: 600; margin: 8px 0; overflow-wrap: anywhere; }
 .gd-meta { margin: 6px 0 10px; }

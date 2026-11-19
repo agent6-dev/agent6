@@ -161,7 +161,7 @@ function addEntry(table, refresh) {
   const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
   box.setAttribute('role', 'dialog');
   box.setAttribute('aria-label', 'add ' + table.label);
-  const title = el('h2', null, 'Add ' + table.label); title.style.textTransform = 'none';
+  const title = el('h2', null, 'Add ' + table.label);
   box.appendChild(title);
   box.appendChild(el('div', 'sub muted', table.path + '.<name>. A blank field keeps an existing value or uses the default.'));
   const labelled = (text, field) => { const l = el('label', 'sub muted', text); l.style.display = 'block'; l.style.marginTop = '8px'; field.name = text; l.appendChild(field); box.appendChild(l); return field; };
@@ -364,7 +364,6 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   const role = s.model_role || null; // the view's one rule for the model picker
   const section = role ? 'models.' + role : null;
   const title = el('h2', null, (role ? 'Model: ' + role : key) + (preset ? ' under preset ' + preset : ''));
-  title.style.textTransform = 'none'; // a config key is a case-sensitive identifier
   box.appendChild(title);
   const meta = el('div', 'sub muted');
   meta.textContent = `${esc(s.type)} · default: ${s.default_display} · set from: ${esc(s.source)}` + (s.adaptive ? ' · adaptive' : '');

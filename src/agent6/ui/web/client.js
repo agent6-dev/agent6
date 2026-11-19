@@ -1033,7 +1033,7 @@ function attachCommandSuggest(ta, root, liveNow, offered = null) {
 function openRestate(text) {
   const back = el('div', 'overlay');
   const box = el('div', 'card'); box.style.width = 'min(720px, 92vw)';
-  box.appendChild(el('h2', null, 'since your last message'));
+  box.appendChild(el('h2', null, 'Since your last message'));
   const pre = el('pre');
   pre.textContent = text;
   pre.style.whiteSpace = 'pre-wrap'; pre.style.maxHeight = '60vh';
@@ -1049,7 +1049,7 @@ function openRestate(text) {
 function openHistorySearch(entries, onPick) {
   const back = el('div', 'overlay');
   const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
-  box.appendChild(el('h2', null, 'search past messages'));
+  box.appendChild(el('h2', null, 'Search past messages'));
   const field = el('input', 'field'); field.placeholder = 'type to narrow…';
   box.appendChild(field);
   const list = el('div', 'hs-list');
@@ -1149,7 +1149,7 @@ async function openSwitcher() {
   const flatten = (r) => { rows.push(r); for (const child of (r.children || [])) flatten(child); };
   for (const r of (data.sessions || [])) flatten(r);
   openPicker({
-    title: 'switch session',
+    title: 'Switch session',
     placeholder: 'type to narrow: id, task, branch, worktree… (> for commands)',
     rows,
     empty: '(no sessions yet)',
@@ -1209,7 +1209,7 @@ function paletteItems() {
 }
 function openPalette(initial = '') {
   openPicker({
-    title: 'commands',
+    title: 'Commands',
     placeholder: 'type a command…',
     rows: paletteItems(),
     empty: '(no commands)',
@@ -1244,7 +1244,7 @@ function openKeys() {
   if (activeOverlayClose) return; // one dialog at a time
   const back = el('div', 'overlay');
   const box = el('div', 'card'); box.style.width = 'min(640px, 92vw)';
-  box.appendChild(el('h2', null, 'keyboard'));
+  box.appendChild(el('h2', null, 'Keyboard shortcuts'));
   const table = el('table', 'keys');
   for (const k of KEYS) {
     const tr = el('tr');
