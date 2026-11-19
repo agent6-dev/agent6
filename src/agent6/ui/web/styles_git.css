@@ -165,16 +165,16 @@
   .git-img { grid-template-columns: 1fr; }
 }
 /* The graph, the side panel and the diff lay out by their own width, whatever the screen's. A
-   narrow graph drops the author column and caps its badges; a narrow side panel puts the
-   compare's head picker under the base and the swap button, and a working-tree row's buttons
-   under its path, spread across the row where even that is tight. */
+   narrow graph drops the author column and keeps a row's ref badge to 40% of the subject column; a
+   narrow side panel puts the compare's head picker under the base and the swap button, and a
+   working-tree row's buttons under its path, spread across the row where even that is tight. */
 .git-graph { container: git-graph / inline-size; }
 .git-side { container: git-side / inline-size; }
 .git-diff { container: git-diff / inline-size; }
 @container git-graph (max-width: 559px) {
   .gc-author { display: none; }
   .gc-row { padding-right: 8px; gap: 8px; }
-  .gref { max-width: 140px; }
+  .gc-subj > .gref { max-width: 40%; }
 }
 @container git-side (max-width: 519px) {
   .gcmp-pick { display: grid; grid-template-columns: 1fr auto; }

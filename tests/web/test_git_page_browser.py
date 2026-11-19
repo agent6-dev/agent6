@@ -73,6 +73,23 @@ def test_a_graph_row_shows_its_first_ref_and_counts_the_rest(
     assert errors == [], errors
 
 
+def test_a_narrow_graph_rows_badge_leaves_its_subject_room(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """At 820px a long branch name and the ref count left a row's subject 20px of its column."""
+    _git(tmp_path, "branch", "a-long-descriptive-branch-name", "feature")
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 820, "height": 1180})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    row = page.locator(".gc-row", has_text="feature: rename")
+    shown, column = row.evaluate(
+        "r => { const s = r.querySelector('.gc-subj').getBoundingClientRect();"
+        " return [s.right - r.querySelector('.gc-text').getBoundingClientRect().left, s.width]; }"
+    )
+    assert shown >= column / 3, (shown, column)
+    assert errors == [], errors
+
+
 def test_arrow_keys_move_between_graph_rows_and_tab_stops_at_one(
     open_page: OpenPage, git_port: int
 ) -> None:
