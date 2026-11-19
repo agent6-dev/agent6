@@ -11,7 +11,8 @@ const GIT_WORKTREE = 'WORKTREE';
 const DIFF_MODE_KEY = 'a6-diff-mode';
 const DIFF_MODES = ['inline', 'split', 'old', 'new'];
 const GIT_WORKTREE_PICK = { rev: GIT_WORKTREE, label: 'working tree' };
-const GIT_LANE_COLORS = ['#6ea8fe', '#4ec9a5', '#e2c08d', '#f07178', '#b48ead', '#56b6c2', '#d19a66', '#98c379'];
+// Lane n draws in class `l<n mod 8>`, one of the theme's eight colours (styles_git.css).
+const GIT_LANE_COLORS = 8;
 const GIT_KIND_TITLE = { branch: 'branch', remote: 'remote-tracking branch', tag: 'tag', agent6: 'agent6 run ref', head: 'HEAD' };
 const gitState = {
   groupOn: { branch: true, remote: true, tag: true, agent6: false }, // agent6 chain refs are off until asked for
@@ -51,27 +52,26 @@ function gitLanesSvg(lay, cols, isMerge, isHead) {
   const NS = 'http://www.w3.org/2000/svg';
   const W = GIT_LANE_W, H = GIT_ROW_H, mid = H / 2;
   const x = i => W / 2 + i * W;
-  const color = i => GIT_LANE_COLORS[i % GIT_LANE_COLORS.length];
+  const color = i => 'l' + i % GIT_LANE_COLORS;
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('width', cols * W); svg.setAttribute('height', H);
   svg.setAttribute('class', 'gc-lanes');
-  const path = (d, stroke) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); p.setAttribute('stroke', stroke); svg.appendChild(p); };
+  const path = (d, lane) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); p.setAttribute('class', color(lane)); svg.appendChild(p); };
   // A merge curves down out of the dot into its parent's slot; a join curves down into the dot.
   const curve = (from, to) => `M${x(from)} ${mid} C${x(from)} ${H} ${x(to)} ${mid} ${x(to)} ${H}`;
   const join = (from, to) => `M${x(from)} 0 C${x(from)} ${mid} ${x(to)} 0 ${x(to)} ${mid}`;
   const n = Math.max(lay.before.length, lay.after.length);
   for (let i = 0; i < n && i < cols; i++) {
-    if (i !== lay.lane && lay.before[i] && lay.after[i] === lay.before[i]) path(`M${x(i)} 0 V${H}`, color(i));
+    if (i !== lay.lane && lay.before[i] && lay.after[i] === lay.before[i]) path(`M${x(i)} 0 V${H}`, i);
   }
   if (lay.lane < cols) {
-    if (lay.before[lay.lane]) path(`M${x(lay.lane)} 0 V${mid}`, color(lay.lane));
-    if (lay.after[lay.lane]) path(`M${x(lay.lane)} ${mid} V${H}`, color(lay.lane));
-    for (const j of lay.joins) if (j < cols) path(join(j, lay.lane), color(j));
-    for (const k of lay.merges) if (k < cols) path(curve(lay.lane, k), color(k));
+    if (lay.before[lay.lane]) path(`M${x(lay.lane)} 0 V${mid}`, lay.lane);
+    if (lay.after[lay.lane]) path(`M${x(lay.lane)} ${mid} V${H}`, lay.lane);
+    for (const j of lay.joins) if (j < cols) path(join(j, lay.lane), j);
+    for (const k of lay.merges) if (k < cols) path(curve(lay.lane, k), k);
     const dot = document.createElementNS(NS, 'circle');
     dot.setAttribute('cx', x(lay.lane)); dot.setAttribute('cy', mid); dot.setAttribute('r', isHead ? 5 : 4);
-    dot.setAttribute('stroke', color(lay.lane));
-    dot.setAttribute('class', 'gc-dot' + (isMerge ? ' merge' : ''));
+    dot.setAttribute('class', 'gc-dot ' + color(lay.lane) + (isMerge ? ' merge' : ''));
     svg.appendChild(dot);
   }
   return svg;
@@ -84,8 +84,7 @@ function gitWorktreeSvg(cols) {
   svg.setAttribute('class', 'gc-lanes');
   const dot = document.createElementNS(NS, 'circle');
   dot.setAttribute('cx', GIT_LANE_W / 2); dot.setAttribute('cy', GIT_ROW_H / 2); dot.setAttribute('r', 4);
-  dot.setAttribute('stroke', GIT_LANE_COLORS[0]);
-  dot.setAttribute('class', 'gc-dot wt');
+  dot.setAttribute('class', 'gc-dot wt l0');
   svg.appendChild(dot);
   return svg;
 }

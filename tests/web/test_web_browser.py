@@ -869,6 +869,30 @@ def test_the_git_panes_lay_out_by_their_own_width(
     assert errors == [], errors
 
 
+def test_graph_lanes_read_at_three_to_one_in_the_light_theme(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """Every lane line and dot reads at 3:1 on the light page; the dark pastels read 1.9 to 2.3:1."""
+    page, errors = open_page(git_port)
+    page.emulate_media(color_scheme="light")
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    ratios = page.evaluate(
+        """() => {
+          const lum = c => c.match(/[\\d.]+/g).slice(0, 3).map(v => v / 255)
+            .map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+            .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+          const bg = lum(getComputedStyle(document.body).backgroundColor);
+          return [...document.querySelectorAll('.gc-lanes :is(path, circle)')].map(e => {
+            const l = lum(getComputedStyle(e).stroke);
+            return (Math.max(l, bg) + 0.05) / (Math.min(l, bg) + 0.05);
+          });
+        }"""
+    )
+    assert len(ratios) > 4 and min(ratios) >= 3, ratios
+    assert errors == [], errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:

@@ -28,6 +28,11 @@
 .gc-row.sel { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
 .gc-lanes { flex: none; display: block; margin-left: 6px; }
 .gc-lanes path { fill: none; stroke-width: 2; }
+/* The lanes take the theme's colours, which read at 3:1 or more on a row in either theme. */
+.gc-lanes .l0 { stroke: var(--accent); } .gc-lanes .l1 { stroke: var(--ok); }
+.gc-lanes .l2 { stroke: var(--warn); } .gc-lanes .l3 { stroke: var(--err); }
+.gc-lanes .l4 { stroke: var(--accent2); } .gc-lanes .l5 { stroke: var(--hl-operator); }
+.gc-lanes .l6 { stroke: var(--hl-constant); } .gc-lanes .l7 { stroke: var(--hl-string); }
 .gc-dot { fill: currentColor; stroke-width: 2; }
 .gc-lanes .gc-dot { fill: var(--text); }
 .gc-lanes .gc-dot.merge { fill: var(--bg); }
