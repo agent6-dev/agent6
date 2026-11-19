@@ -319,7 +319,10 @@ def test_an_unknown_session_reads_not_found_under_its_section(
 def test_a_page_that_fails_to_load_offers_a_retry(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
-    """A failed load showed a bare error line, with no way to try again."""
+    """A failed load showed a bare error line, with no way to try again.
+
+    A failed Config offered Back to Sessions, a page it does not sit under.
+    """
     from playwright.sync_api import expect
 
     page, errors = open_page(port)
@@ -328,8 +331,26 @@ def test_a_page_that_fails_to_load_offers_a_retry(
     problem = page.locator("#view .problem")
     expect(problem.get_by_role("heading")).to_have_text("Could not load this page")
     expect(page.locator("#crumb")).to_have_text(re.compile("^config$", re.I))
+    expect(problem.get_by_role("link")).to_have_count(0)
     problem.get_by_role("button", name="Try again").click()
     expect(page.locator(".cfg").first).to_be_visible()
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
+@pytest.mark.parametrize("route", ["#/machine/nobody", "#/draft/nobody"])
+def test_a_problem_views_way_back_names_the_page_it_sits_under(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, route: str
+) -> None:
+    """A missing machine or draft, under State machines in both bars, offered Back to Sessions."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/{route}")
+    problem = page.locator("#view .problem")
+    expect(problem.get_by_role("heading")).to_have_text("Not found")
+    back = problem.get_by_role("link")
+    expect(back).to_have_text(["Back to State machines"])
+    expect(back).to_have_attribute("href", "#/machines")
     assert [e for e in errors if not e.startswith("Failed to load resource")] == []
 
 

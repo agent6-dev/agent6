@@ -399,18 +399,20 @@ let booted = false; // the one-shot deep-link to `agent6 web <target>` ran
 // stream (whose stale handler could later closeLive() the visible view when
 // the old run finishes).
 let routeGen = 0;
-// A route that shows no page: what went wrong, a retry for a failure, and the way back.
-function showProblem(heading, reason, failed) {
+// A route that shows no page: what went wrong, a retry for a failure, and a link `back` ([label, hash]).
+function showProblem(heading, reason, failed, back) {
   view.innerHTML = '';
   const card = el('div', 'card problem');
   card.appendChild(el('h2', null, heading));
   card.appendChild(el('p', failed ? 'err' : null)).append(withCode(reason));
   const ways = el('div', 'row');
   if (failed) { const again = el('button', null, 'Try again'); again.onclick = route; ways.appendChild(again); }
-  if (location.hash.replace(/^#\/?/, '')) { const back = el('a', null, 'Back to Sessions'); back.href = '#/'; ways.appendChild(back); }
+  if (back) { const link = el('a', null, 'Back to ' + back[0]); link.href = back[1]; ways.appendChild(link); }
   card.appendChild(ways);
   view.appendChild(card);
 }
+// The page each kind of route sits under, for its problem view's way back.
+const BACK = { session: ['Sessions', '#/'], machine: ['State machines', '#/machines'], draft: ['State machines', '#/machines'] };
 // Publish a tab selection without rebuilding its graph or file pane.
 function setViewHash(hash, replace = false) { if (location.hash !== hash) history[replace ? 'replaceState' : 'pushState'](null, '', hash); }
 async function route() {
@@ -451,12 +453,12 @@ async function route() {
     else if (parts[0] === 'session' && parts[1]) { setTab('hub'); await renderRun(decodeURIComponent(parts[1]), undefined, gen); }
     else if (parts[0] === 'machine' && parts[1]) { setTab('machines'); await renderMachine(decodeURIComponent(parts[1]), gen); }
     else if (parts[0] === 'draft' && parts[1]) { const n = decodeURIComponent(parts[1]); setTab('machines'); await renderRun(n, { base: '/api/draft/' + encodeURIComponent(n), readOnly: true, title: 'Machine draft', crumb: 'draft ' + n }, gen); }
-    else { setTab(''); setCrumb('Not found'); showProblem('Not found', 'No page lives at #' + h + '.'); }
+    else { setTab(''); setCrumb('Not found'); showProblem('Not found', 'No page lives at #' + h + '.', false, BACK.session); }
   } catch (e) {
     if (gen !== routeGen) return; // a superseded render's late error must not paint
     // A 404 names something that does not exist, which a retry cannot bring back.
-    if (e.status === 404) showProblem('Not found', e.message);
-    else showProblem('Could not load this page', e.message, true);
+    if (e.status === 404) showProblem('Not found', e.message, false, BACK[parts[0]]);
+    else showProblem('Could not load this page', e.message, true, BACK[parts[0]]);
   }
 }
 window.addEventListener('hashchange', route);
