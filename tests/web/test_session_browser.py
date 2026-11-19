@@ -400,3 +400,39 @@ def test_the_findings_card_spaces_its_parts_and_labels_its_filters(
     expect(selects).to_have_count(3)
     assert selects.evaluate_all("all => all.map(s => s.className)") == ["field"] * 3
     assert not errors
+
+
+def test_the_phone_widget_menu_closes_on_esc_an_outside_tap_and_a_pick(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """The phone's widget menu is named Widgets and closes on Esc, a tap outside or a pick.
+
+    The menu button was named "☰", and the menu stayed open over the page after Esc or a tap
+    outside it. Then a menu left open while the window widened past 780px stayed in the page.
+    """
+    from playwright.sync_api import expect
+
+    stop = {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+    _session(tmp_path, "menu-AAA111", [stop])
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/menu-AAA111")
+    button = page.get_by_role("button", name="Widgets", exact=True)
+    menu = page.locator(".wmenu")
+    for close in ("Escape", "tap"):
+        button.click()
+        expect(menu).to_be_visible()
+        if close == "Escape":
+            page.keyboard.press("Escape")
+        else:
+            page.mouse.click(120, 420)
+        expect(menu).to_be_hidden()
+    button.click()
+    menu.get_by_role("button", name="Budget", exact=True).click()
+    expect(menu).to_be_hidden()
+    expect(page.locator(".card-budget")).to_be_visible()
+    expect(menu.locator("[aria-current=true]")).to_have_text("Budget")
+    button.click()
+    page.set_viewport_size({"width": 1024, "height": 844})
+    expect(menu).to_be_hidden()
+    assert not errors

@@ -149,24 +149,28 @@ async function renderRun(id, opts, gen) {
   const saved = recall('a6-drawer', '');
   applyDrawer(saved ? saved === 'open' : window.innerWidth >= 1024);
 
-  // The phone widget menu: pick which single widget the page shows.
+  // The phone widget menu: pick which single widget the page shows. It is a popover, so Esc or a
+  // tap outside closes it, and its button reports whether it is open.
   const entries = [['conv', 'Conversation'], ['head', 'Overview'], ['plan', 'plan.md'],
                    ['review', 'Run review'], ['findings', 'Findings'],
                    ['tasks', 'Task graph'], ['budget', 'Budget'], ['tools', 'Tool calls'],
                    ['shells', 'Background shells'], ['diff', 'Latest commit'], ['log', 'Event log']];
   const wbtn = el('button', 'wmenu-btn', '☰');
-  wbtn.title = 'widgets';
-  const wmenu = el('div', 'wmenu'); wmenu.style.display = 'none';
+  wbtn.setAttribute('aria-label', 'Widgets');
+  const wmenu = el('div', 'wmenu');
+  wmenu.popover = 'auto';
+  wbtn.popoverTargetElement = wmenu;
   const setW = (key) => {
     app.querySelectorAll('[data-w]').forEach(c => c.classList.toggle('w-active', c.dataset.w === key));
-    wmenu.querySelectorAll('button').forEach(mb => mb.classList.toggle('w-on', mb.dataset.w === key));
+    wmenu.querySelectorAll('button').forEach(mb => {
+      if (mb.dataset.w === key) mb.setAttribute('aria-current', 'true'); else mb.removeAttribute('aria-current');
+    });
   };
   for (const [key, label] of entries) {
     const mb = el('button', null, label); mb.dataset.w = key;
-    mb.onclick = () => { setW(key); wmenu.style.display = 'none'; window.scrollTo(0, 0); };
+    mb.onclick = () => { setW(key); wmenu.hidePopover(); window.scrollTo(0, 0); };
     wmenu.appendChild(mb);
   }
-  wbtn.onclick = () => { wmenu.style.display = wmenu.style.display === 'none' ? '' : 'none'; };
   cards._setW = setW; // the Review run button activates its card on a phone
   setW('conv');
   // The button lives in the header (next to the theme toggle) so the two share
