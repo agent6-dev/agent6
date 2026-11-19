@@ -34,6 +34,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
       folded: folds(),
       key: rows.find(row => row.edit === document.activeElement)?.key,
       filtering: document.activeElement === filter,
+      action: [...bar.children].includes(document.activeElement) && document.activeElement.textContent,
     }));
   };
   // Preset… opens the `agent6.preset` row's editor; the rows are the config under the selected preset.
@@ -58,11 +59,15 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     : 'No preset is selected';
   removePresetBtn.onclick = async () => {
     if (!await confirmDialog('Remove [presets.' + selected + ']?', 'This removes every value under it from the global and repo config, and resets preset to none.', 'Remove', true)) return;
+    presetBtn.focus(); // Preset… takes the focus: this button stays disabled with no preset left
     removePresetBtn.disabled = true;
     try {
       const d = await postJSON('/api/config/preset/remove', {name: selected});
       toast(d.message || 'removed'); await refresh();
-    } catch (e) { toast(e.message, true); removePresetBtn.disabled = false; }
+    } catch (e) {
+      toast(e.message, true); removePresetBtn.disabled = false;
+      if (document.activeElement === presetBtn) removePresetBtn.focus(); // a refusal keeps the preset
+    }
   };
   bar.appendChild(removePresetBtn); // last, at its line's end: it removes a whole table
   card.appendChild(bar);
@@ -140,10 +145,11 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
   view.appendChild(card);
   filter.oninput();
   if (state.y !== undefined) window.scrollTo(state.x, state.y);
-  // The focus goes back to the edited row, scrolled into view if the page moved it.
+  // The focus goes back where the write started: the row (scrolled into view), the filter or the bar.
   const focused = rows.find(row => row.key === state.key && row.tr.style.display !== 'none');
   if (state.filtering || (state.key && !focused)) filter.focus({preventScroll: true});
   else if (focused) { focused.edit.focus({preventScroll: true}); focused.tr.scrollIntoView({block: 'nearest'}); }
+  else if (state.action) [...bar.children].find(b => b.textContent === state.action)?.focus({preventScroll: true});
 }
 // Fill `node` with text that may wrap after each `mark` (a key's dots, a value's or a path's
 // slashes): a <wbr> marks the place, so a copy of the text holds no extra character. The <wbr> is

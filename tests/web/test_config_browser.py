@@ -324,6 +324,45 @@ def test_a_save_keeps_the_folded_sections_and_the_edited_row_in_view(
     assert not errors
 
 
+def test_a_write_from_the_config_bar_returns_the_focus_to_the_bar(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """After a write started from the bar, the focus fell to the page's body.
+
+    The next Tab started over at the filter. Remove preset, disabled once its preset is gone,
+    hands the focus to Preset…; a refused removal gives it back.
+    """
+    from playwright.sync_api import expect
+
+    _global_config('[agent6]\npreset = "fast"\n\n[presets.fast]\n')
+    page, errors = open_page(port)
+    page.route("**/api/config/entry", lambda route: route.fulfill(json={"ok": True}))
+    _config(page, port)
+    stale = page.locator(".cfg-bar[data-stale]")
+    page.locator(".cfg-bar").evaluate("e => { e.dataset.stale = 1; }")
+    page.get_by_role("button", name="Add MCP server…").press("Enter")
+    page.get_by_role("dialog").locator('input[name="name"]').fill("local")
+    page.keyboard.press("Enter")
+    stale.wait_for(state="detached")  # the page has re-rendered
+    expect(page.get_by_role("button", name="Add MCP server…")).to_be_focused()
+    page.locator(".cfg-bar").evaluate("e => { e.dataset.stale = 1; }")
+    remove = page.get_by_role("button", name="Remove preset")
+    refused = "**/api/config/preset/remove"
+    page.route(refused, lambda route: route.fulfill(status=400, json={"error": "refused"}))
+    remove.press("Enter")
+    page.get_by_role("alertdialog").get_by_role("button", name="Remove").click()
+    page.locator("#toasts .toast.bad").wait_for()
+    expect(remove).to_be_enabled()
+    expect(remove).to_be_focused()
+    page.unroute(refused)
+    remove.press("Enter")
+    page.get_by_role("alertdialog").get_by_role("button", name="Remove").click()
+    stale.wait_for(state="detached")
+    expect(remove).to_be_disabled()
+    expect(page.get_by_role("button", name="Preset…", exact=True)).to_be_focused()
+    assert not [error for error in errors if "400 (Bad Request)" not in error]
+
+
 def test_the_filter_opens_folded_matches_and_says_when_nothing_matches(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
