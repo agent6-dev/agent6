@@ -1095,6 +1095,33 @@ def test_a_config_editor_shows_its_value_in_the_tables_type(
     assert not errors
 
 
+def test_the_model_editors_buttons_share_one_line_on_a_phone(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The model editor's `Unset models.worker.model` pushed Cancel onto a line of its own.
+
+    The key stays in the button's accessible name and hover text.
+    """
+    _global_config(
+        '[providers.a]\nbackend = "openai"\nbase_url = "http://localhost:1"\n'
+        '[models.worker]\nmodel = "a/old"\n'
+    )
+    page, errors = open_page(port)
+    page.route("**/api/config/suggest/**", lambda route: route.fulfill(json={"values": []}))
+    _config(page, port, 390)
+    page.locator('[data-key="models.worker.model"]').click()
+    dialog = page.get_by_role("dialog")
+    unset = dialog.get_by_role("button", name="Unset models.worker.model", exact=True)
+    assert unset.inner_text() == "Unset"
+    assert "models.worker.model" in (unset.get_attribute("title") or "")
+    tops = dialog.locator(".cfg-actions button").evaluate_all(
+        "buttons => buttons.map(b => Math.round(b.getBoundingClientRect().top))"
+    )
+    assert len(tops) == 3
+    assert len(set(tops)) == 1
+    assert not errors
+
+
 def test_only_the_arrow_keys_model_suggestion_reads_as_active(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

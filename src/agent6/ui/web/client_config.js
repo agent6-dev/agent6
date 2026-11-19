@@ -478,10 +478,13 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   // values have nothing to unset; flag/machine layers are not editable here.)
   let unsetBtn = null;
   if (s.source === 'repo' || s.source === 'global' || (preset && s.source === 'preset')) {
-    unsetBtn = el('button', null, role ? 'Unset ' + key : 'Unset');
+    unsetBtn = el('button', null, 'Unset');
+    // The model editor's title names the role: its Unset's name and hover text name the key.
+    if (role) unsetBtn.setAttribute('aria-label', 'Unset ' + key);
+    const what = role ? key + ' ' : '';
     unsetBtn.title = preset
-      ? 'remove from [presets.' + preset + '] in the chosen layer; the layer below takes over'
-      : 'remove from the ' + s.source + ' config; the next layer below takes over';
+      ? 'remove ' + what + 'from [presets.' + preset + '] in the chosen layer; the layer below takes over'
+      : 'remove ' + what + 'from the ' + s.source + ' config; the next layer below takes over';
     row.appendChild(unsetBtn);
   }
   const entry = s.entry;
