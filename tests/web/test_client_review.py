@@ -64,18 +64,16 @@ const patch = parseUnifiedDiff('diff --git a/old.txt b/new.txt\n'
   + '@@ -1,2 +1,2 @@\n first\n-old\n+new\n');
 """
     )
+    # The script carries the client files, more than one 128 KiB argument holds: it goes on stdin.
     result = subprocess.run(
-        [
-            node,
-            "-e",
-            dom
-            + scripts
-            + "\nlet finished = false; (async () => {\n"
-            + scenario
-            + "\nfinished = true; })().catch(e => { console.error(e); process.exitCode = 1; });"
-            + "process.on('beforeExit', () => { if (!finished && !process.exitCode) {"
-            + " console.error('the scenario did not finish'); process.exitCode = 1; } });",
-        ],
+        [node, "-"],
+        input=dom
+        + scripts
+        + "\nlet finished = false; (async () => {\n"
+        + scenario
+        + "\nfinished = true; })().catch(e => { console.error(e); process.exitCode = 1; });"
+        + "process.on('beforeExit', () => { if (!finished && !process.exitCode) {"
+        + " console.error('the scenario did not finish'); process.exitCode = 1; } });",
         capture_output=True,
         text=True,
         check=False,
