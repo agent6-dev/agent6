@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The Git page driven in a browser: its rows, keyboard, focus and waiting states."""
+"""The Git page driven in a browser: its layout, rows, keyboard, focus and waiting states."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
 open_page = test_web_browser.open_page
+port = test_web_browser.port
 git_port = test_web_browser.git_port
 dirty_git_port = test_web_browser.dirty_git_port
 
@@ -573,4 +574,387 @@ def test_a_handle_between_the_graph_and_the_panel_resizes_the_graph(
     page.locator(".git-side .gf").first.click()
     page.wait_for_selector(".git-diff .diff")
     expect(handle).to_be_hidden()
+    assert errors == [], errors
+
+
+def test_the_git_toolbar_controls_share_one_height_and_fit_their_values(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """Every toolbar control is one height, and the branch select fits its branch, not the row."""
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    heights = (
+        page.locator(".git-bar")
+        .locator("button, select, input")
+        .evaluate_all(
+            "els => els.filter(e => e.offsetParent)"
+            ".map(e => Math.round(e.getBoundingClientRect().height))"
+        )
+    )
+    assert len(heights) >= 7 and len(set(heights)) == 1, heights
+    select = page.locator(".git-branch select").first
+    assert select.evaluate("e => e.getBoundingClientRect().width") < 200
+    assert errors == [], errors
+
+
+def test_the_fetch_row_hides_in_a_repository_without_a_remote(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """With no remote to fetch from, the toolbar shows no Fetch or Fetch PR."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    expect(page.locator(".git-fetch")).to_be_hidden()
+    expect(page.get_by_role("button", name="Fetch PR")).to_be_hidden()
+    assert errors == [], errors
+
+
+def test_the_refs_filter_hangs_under_its_button_and_escape_refocuses_it(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """The Refs filter opens just under Refs, which reads open; Escape puts focus back on Refs."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    refs = page.get_by_role("button", name="Refs ▾")
+    refs.click()
+    expect(page.get_by_role("searchbox")).to_be_focused()
+    expect(refs).to_have_attribute("aria-expanded", "true")
+    button, popup = refs.bounding_box(), page.locator(".gfilter").bounding_box()
+    assert button and popup
+    assert 0 <= popup["y"] - (button["y"] + button["height"]) <= 8
+    assert abs(popup["x"] - button["x"]) <= 1
+    page.keyboard.press("Escape")
+    expect(page.locator(".gfilter")).to_be_hidden()
+    expect(refs).to_be_focused()
+    expect(refs).to_have_attribute("aria-expanded", "false")
+    assert errors == [], errors
+
+
+def test_the_git_panes_lay_out_by_their_own_width(open_page: OpenPage, git_port: int) -> None:
+    """At 820px the graph drops its author column and the compare puts head under base."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 820, "height": 900})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    expect(page.locator(".gc-author").first).to_be_hidden()
+    page.get_by_role("button", name="Compare", exact=True).click()
+    base = page.get_by_label("base", exact=True).bounding_box()
+    head = page.get_by_label("head", exact=True).bounding_box()
+    assert base and head and head["y"] >= base["y"] + base["height"]
+    assert errors == [], errors
+
+
+def test_graph_lanes_read_at_three_to_one_in_the_light_theme(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """Every lane reads at 3:1 on the light page; the dark theme's pastels read 1.9 to 2.3:1."""
+    page, errors = open_page(git_port)
+    page.emulate_media(color_scheme="light")
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    ratios = page.evaluate(
+        """() => {
+          const lum = c => c.match(/[\\d.]+/g).slice(0, 3).map(v => v / 255)
+            .map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+            .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+          const bg = lum(getComputedStyle(document.body).backgroundColor);
+          return [...document.querySelectorAll('.gc-lanes :is(path, circle)')].map(e => {
+            const l = lum(getComputedStyle(e).stroke);
+            return (Math.max(l, bg) + 0.05) / (Math.min(l, bg) + 0.05);
+          });
+        }"""
+    )
+    assert len(ratios) > 4 and min(ratios) >= 3, ratios
+    assert errors == [], errors
+
+
+def test_a_wrapped_file_path_breaks_after_a_slash(open_page: OpenPage, port: int) -> None:
+    """A rename's two paths wrap between folders; Chromium cut 'lane_watch.p' from its 'y'."""
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/")
+    page.wait_for_selector("#view")
+    lines = page.evaluate(
+        """() => {
+          const box = el('div'); box.style.width = '180px'; document.body.appendChild(box);
+          const p = filePath({path: 'src/agent6/app/child_wait.py',
+            old_path: 'src/agent6/app/lane_watch.py'}, false);
+          box.appendChild(p);
+          const lines = [''];
+          let top = null;
+          const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+          for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+            for (let i = 0; i < n.length; i++) {
+              const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + 1);
+              const y = r.getBoundingClientRect().top;
+              if (top !== null && y > top + 2) lines.push('');
+              top = y; lines[lines.length - 1] += n.data[i];
+            }
+          }
+          return lines;
+        }"""
+    )
+    assert len(lines) > 2, lines
+    assert all(line.endswith(("/", " ")) for line in lines[:-1]), lines
+    assert errors == [], errors
+
+
+def test_a_long_ref_name_shows_whole_in_the_refs_filter(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """A name past the graph badge's cap shows whole in the filter, its sha in the shas' column."""
+    name = "topic/a-long-branch-name-the-row-has-room-for"
+    _git(tmp_path, "branch", name)
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    page.get_by_role("button", name="Refs ▾").click()
+    badge = page.locator(".gfilter-item .gref", has_text=name)
+    assert badge.get_attribute("title") == name + " · branch"
+    assert badge.evaluate("b => b.scrollWidth <= b.clientWidth")
+    shas = page.locator(".gfilter-item .gref + .mono").evaluate_all(
+        "ss => ss.map(s => Math.round(s.getBoundingClientRect().right))"
+    )
+    assert len(set(shas)) == 1, shas
+    assert errors == [], errors
+
+
+def test_the_side_and_diff_heads_line_up_with_the_page(open_page: OpenPage, git_port: int) -> None:
+    """The side panel's heading starts where its content does, the diff's where the toolbar does."""
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    page.locator(".gc-row").first.click()
+    page.wait_for_selector(".git-side .gf")
+    left = "e => Math.round(e.getBoundingClientRect().left)"
+    assert page.locator(".git-side-head h3").evaluate(left) == page.locator(".gd").evaluate(left)
+    toolbar = page.locator(".git-bar button").first.evaluate(left)
+    page.locator(".git-side .gf .gf-path").first.click()
+    page.wait_for_selector(".git-diff .diff")
+    assert page.locator(".git-diff-head button").first.evaluate(left) == toolbar
+    assert page.locator(".git-diff-body .gf-patch").evaluate(left) == toolbar
+    assert errors == [], errors
+
+
+def test_a_commits_parent_label_sits_on_its_sha_buttons_baseline(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """The 'parents' label and its sha buttons share a baseline; the label sat 3px higher."""
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/main")
+    page.wait_for_selector(".gd-meta button")
+    baselines = page.evaluate(
+        """() => {
+          const label = [...document.querySelectorAll('.gd-meta .k')]
+            .find(k => k.textContent === 'parents');
+          const at = e => { const probe = el('span'); probe.style.display = 'inline-block';
+            e.appendChild(probe); return probe.getBoundingClientRect().top; };
+          return [at(label), at(label.nextElementSibling.querySelector('button'))];
+        }"""
+    )
+    assert abs(baselines[0] - baselines[1]) < 0.5, baselines
+    assert errors == [], errors
+
+
+def test_the_compare_hint_reads_as_a_note(open_page: OpenPage, git_port: int) -> None:
+    """The line under the pickers is small muted text, as quiet as the line it explains."""
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    page.get_by_role("button", name="Compare", exact=True).click()
+    style = "e => [getComputedStyle(e).fontSize, getComputedStyle(e).color]"
+    hint = page.locator(".gcmp .hint").evaluate(style)
+    muted = page.locator(".gcmp-result .muted").evaluate(style)
+    assert hint == ["12px", muted[1]], (hint, muted)
+    assert errors == [], errors
+
+
+def test_the_compare_pickers_placeholders_fit_their_fields(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """Side by side at 1440px, each picker's placeholder fits; both were cut mid-word."""
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    page.get_by_role("button", name="Compare", exact=True).click()
+    fits = page.locator(".gcmp-pick input").evaluate_all(
+        """inputs => inputs.map(i => {
+          const s = getComputedStyle(i), text = document.createElement('canvas').getContext('2d');
+          text.font = s.font;
+          const room = i.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight);
+          return text.measureText(i.placeholder).width <= room;
+        })"""
+    )
+    assert fits == [True, True]
+    assert errors == [], errors
+
+
+def test_a_commits_sha_and_dates_never_break_mid_token_on_a_phone(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """The full sha keeps one line and a date wraps only before its zone; both broke mid-token."""
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/main")
+    page.wait_for_selector(".gd-meta button")
+    value = "xpath=following-sibling::*[1]"
+    sha = page.locator(".gd-meta .k", has_text="commit").locator(value)
+    assert sha.get_attribute("title") == sha.inner_text() and len(sha.inner_text()) == 40
+    assert sha.evaluate("e => e.scrollHeight <= parseFloat(getComputedStyle(e).lineHeight) + 1")
+    date_lines = (
+        page.locator(".gd-meta .k", has_text="author")
+        .locator(value)
+        .evaluate(
+            """e => {
+          const walk = document.createTreeWalker(e, NodeFilter.SHOW_TEXT);
+          for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+            const at = n.data.search(/\\d{4}-\\d\\d-\\d\\d/);
+            if (at < 0) continue;
+            const range = document.createRange();
+            range.setStart(n, at); range.setEnd(n, at + 19);
+            return range.getClientRects().length;
+          }
+        }"""
+        )
+    )
+    assert date_lines == 1
+    assert errors == [], errors
+
+
+def test_a_commit_body_wraps_a_hard_wrapped_item_once(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """An item git wrapped reads as one block whose lines hang under its text.
+
+    The panel kept git's hard wraps and wrapped each line again into ragged fragments.
+    """
+    item = (
+        "an item whose text the author wrapped at seventy-two columns, as the\n"
+        "  convention asks, and which then went on for a while longer"
+    )
+    _git(tmp_path, "commit", "-q", "--allow-empty", "-m", "subject\n\n- " + item)
+    sha = _git(tmp_path, "rev-parse", "HEAD")
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/{sha}")
+    page.wait_for_selector(".gd-body")
+    assert "as the convention asks" in page.locator(".gd-body").inner_text()
+    lefts = page.locator(".gd-body .gd-line").first.evaluate(
+        """line => { const range = document.createRange(); range.selectNodeContents(line.lastChild);
+          return [...range.getClientRects()].map(r => Math.round(r.left)); }"""
+    )
+    assert len(lefts) > 1 and len(set(lefts)) == 1, lefts
+    assert errors == [], errors
+
+
+def test_a_phone_presses_inline_when_split_has_no_room(open_page: OpenPage, git_port: int) -> None:
+    """With split chosen, a phone shows inline pressed and split disabled; split read pressed."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.add_init_script("localStorage.setItem('a6-diff-mode', 'split')")
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/feature?path=b.txt")
+    expect(page.locator(".git-diff .diff")).to_be_visible()
+    expect(page.locator(".git-diff .gview button.active")).to_have_text("inline")
+    expect(page.locator(".git-diff .gview button", has_text="split")).to_be_disabled()
+    expect(page.locator(".git-diff")).to_contain_text("split needs a wider screen")
+    assert page.evaluate("localStorage.getItem('a6-diff-mode')") == "split"
+    assert errors == [], errors
+
+
+@pytest.mark.parametrize("width", [390, 820])
+def test_a_narrow_diff_head_keeps_its_controls_on_one_line(
+    open_page: OpenPage, git_port: int, width: int
+) -> None:
+    """Under the path the diff's controls took three rows on a phone, and two at 820px."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": width, "height": 844})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/feature?path=b.txt")
+    expect(page.locator(".git-diff .diff-blame")).to_be_enabled()
+    controls = page.locator(".git-diff-head").locator("button, a")
+    tops = controls.evaluate_all("es => es.map(e => Math.round(e.getBoundingClientRect().top))")
+    assert len(tops) == 10 and len(set(tops[1:])) == 1, tops  # past the back button
+    assert errors == [], errors
+
+
+def test_the_working_tree_row_joins_head_with_a_dashed_line(
+    open_page: OpenPage, dirty_git_port: int
+) -> None:
+    """A dashed line leaves the working tree's dot and enters HEAD's; the row floated, unjoined."""
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git")
+    page.wait_for_selector(".gc-wt")
+    head = page.locator(".gc-row:not(.gc-wt)").first  # HEAD is the newest commit here
+    assert head.locator("circle").get_attribute("r") == "5"
+    assert page.locator(".gc-wt path.wt").count() == 1
+    assert head.locator("path.wt").count() == 1
+    assert errors == [], errors
+
+
+def test_the_working_tree_rows_say_untracked_and_staged(
+    open_page: OpenPage, dirty_git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """An untracked file reads U, not A, and a row says when its changes are staged."""
+    _git(tmp_path, "add", "b.txt")
+    (tmp_path / "b.txt").write_text("one\ntwo\nthree\nfour\nfive\n", encoding="utf-8")
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/worktree")
+    page.wait_for_selector(".git-side .gf")
+
+    def row(path: str) -> tuple[str, str]:
+        found = page.locator(f".git-side .gf[data-path='{path}']")
+        index = found.locator(".gf-index")
+        return found.locator(".gf-st").inner_text(), index.inner_text() if index.count() else ""
+
+    assert row("new.txt") == ("U", "")
+    assert row("dir/g.txt") == ("R", "staged")
+    assert row("b.txt") == ("M", "partly staged")
+    assert row("logo.png") == ("M", "")
+    assert errors == [], errors
+
+
+def test_the_working_tree_rows_keep_one_slot_per_verb(
+    open_page: OpenPage, dirty_git_port: int
+) -> None:
+    """Each verb's button sits at one x down the list, and a narrow panel never squeezes a path."""
+    page, errors = open_page(dirty_git_port)
+    for width in (1280, 820):
+        page.set_viewport_size({"width": width, "height": 900})
+        page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/worktree")
+        page.wait_for_selector(".git-side .gf .gf-acts")
+        lefts = page.locator(".git-side .gf-acts button").evaluate_all(
+            "bs => bs.map(b => [b.textContent, Math.round(b.getBoundingClientRect().left)])"
+        )
+        slots: dict[str, set[int]] = {}
+        for verb, left in lefts:
+            slots.setdefault(verb, set()).add(left)
+        assert len(slots) == 3 and all(len(x) == 1 for x in slots.values()), (width, slots)
+        paths = page.locator(".git-side .gf-path").evaluate_all(
+            "ps => ps.map(p => Math.round(p.getBoundingClientRect().width))"
+        )
+        assert min(paths) > 100, (width, paths)
+    assert errors == [], errors
+
+
+def test_an_added_images_one_side_takes_the_whole_width(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """An added image's only figure spans the diff; it took half and left the other half empty."""
+    sha = _git(tmp_path, "rev-parse", "main^1")  # the commit that adds logo.png
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/{sha}?path=logo.png")
+    page.wait_for_selector(".git-img img")
+    wrap = page.locator(".git-img").bounding_box()
+    figure = page.locator(".git-img figure").bounding_box()
+    assert wrap and figure and figure["width"] > 0.9 * wrap["width"]
     assert errors == [], errors
