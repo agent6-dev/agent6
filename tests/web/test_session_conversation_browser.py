@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from agent6 import paths
-from tests.web import session_logs, test_web_browser
+from tests.web import session_logs, test_session_browser, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -185,6 +185,86 @@ def test_a_rule_marks_the_conversations_top_edge_while_it_is_scrolled(
     expect(box).to_have_css("box-shadow", f"{border} 0px -1px 0px 0px")  # opened at its tail
     box.evaluate("b => { b.scrollTop = 0; }")
     expect(box).to_have_css("box-shadow", "none")
+    assert not errors
+
+
+def test_a_conversation_that_stops_scrolling_draws_no_rule(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """At a phone's width a scrolled conversation drops its rule, and widened it draws it again.
+
+    Firefox fires no scroll event as the box stops scrolling, so the box kept its mark and drew the
+    rule over its first line.
+    """
+    from playwright.sync_api import expect
+
+    session_logs.write_run(tmp_path, "narrow-AAA111", test_session_browser._reads(60))
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1024, "height": 768})
+    page.goto(f"http://127.0.0.1:{port}/#/session/narrow-AAA111")
+    box = page.locator(".card-conv .conv-box")
+    expect(box.locator(".ci").filter(has_text="f59.py")).to_be_attached()
+    border = page.locator(".run-body").evaluate("e => getComputedStyle(e).borderTopColor")
+    expect(box).to_have_css("box-shadow", f"{border} 0px -1px 0px 0px")  # opened at its tail
+    page.evaluate("addEventListener('scroll', e => e.stopPropagation(), true)")  # as Firefox does
+    page.set_viewport_size({"width": 390, "height": 844})
+    expect(box).to_have_css("box-shadow", "none")
+    page.set_viewport_size({"width": 1024, "height": 768})
+    expect(box).to_have_css("box-shadow", f"{border} 0px -1px 0px 0px")
+    assert box.evaluate("b => b.scrollHeight - b.scrollTop - b.clientHeight") == 0
+    assert not errors
+
+
+# A queued change lands as a task after each resize observer: after its scroll, before that event.
+AFTER_OBSERVERS = """
+const Observer = window.ResizeObserver;
+window.afterObservers = [];
+window.ResizeObserver = class extends Observer {
+  constructor(callback) {
+    super((entries, observer) => {
+      callback(entries, observer);
+      for (const next of window.afterObservers.splice(0)) setTimeout(next, 0);
+    });
+  }
+};
+"""
+
+# Lines land, then a prompt-sized box lands a frame later, then more lines: the gap under the tail.
+LAND = """async b => {
+  const frames = async n => {
+    for (let i = 0; i < n; i++) await new Promise(r => requestAnimationFrame(r));
+  };
+  const add = (host, px) => {
+    const d = document.createElement('div'); d.style.height = px + 'px'; host.appendChild(d);
+  };
+  window.afterObservers.push(() => add(b.querySelector('.prompts'), 200));
+  add(b.querySelector('.conv'), 300);
+  await frames(4);
+  add(b.querySelector('.conv'), 120);
+  await frames(4);
+  return b.scrollHeight - b.scrollTop - b.clientHeight;
+}"""
+
+
+def test_a_conversation_at_its_tail_follows_lines_that_land_before_its_scroll_event(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A box at its tail follows a prompt that lands between the follow's scroll and its event.
+
+    That event read the prompt as the reader scrolling away, and the box stopped following.
+    """
+    from playwright.sync_api import expect
+
+    session_logs.write_run(tmp_path, "race-AAA111", test_session_browser._reads(40), live=True)
+    page, errors = open_page(port)
+    page.add_init_script(AFTER_OBSERVERS)
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(f"http://127.0.0.1:{port}/#/session/race-AAA111")
+    box = page.locator(".card-conv .conv-box")
+    expect(box.locator(".ci").filter(has_text="f39.py")).to_be_attached()
+    expect(box).to_have_class("conv-box tail scrolled")
+    assert box.evaluate(LAND) == 0
+    expect(box).to_have_class("conv-box tail scrolled")
     assert not errors
 
 

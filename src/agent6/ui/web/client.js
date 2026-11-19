@@ -1099,14 +1099,22 @@ function makeConv(url, box, body, empty = {}) {
   liveHost.style.display = 'none';
   conv.prompts = el('div', 'prompts'); // paintPrompts' boxes, after the last line, so new lines land above them
   body.append(itemsHost, liveHost, conv.prompts);
-  // While the reader stays at the tail, a resize of the box or of what it holds scrolls back to it.
-  let atTail = true;
-  box.addEventListener('scroll', () => {
-    atTail = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
-    box.classList.toggle('scrolled', box.scrollTop > 0); // a rule marks the top edge while lines pass under it
-  });
-  const follow = new ResizeObserver(() => { if (atTail) box.scrollTop = box.scrollHeight; });
+  // While the reader stays at the tail (.tail), a resize of the box or of what it holds scrolls back to it.
+  box.classList.add('tail');
+  let top = 0; // the offset the box was last read at
+  const mark = () => {
+    // Only a scroll up leaves the tail: a scroll event fires a frame late, when more lines may have landed.
+    if (box.scrollTop + box.clientHeight >= box.scrollHeight - 40) box.classList.add('tail');
+    else if (box.scrollTop < top) box.classList.remove('tail');
+    top = box.scrollTop;
+    box.classList.toggle('scrolled', top > 0); // a rule marks the top edge while lines pass under it
+  };
+  box.addEventListener('scroll', mark);
+  // A resize marks too: it can clamp the offset, and Firefox fires no scroll event as the box stops scrolling.
+  const follow = new ResizeObserver(() => { if (box.classList.contains('tail')) box.scrollTop = box.scrollHeight; mark(); });
   follow.observe(box); follow.observe(body);
+  // A paint can clamp the offset as it drops lines, before it adds more: that drop is no scroll up.
+  new MutationObserver(() => { top = Math.min(top, box.scrollTop); }).observe(body, { childList: true, subtree: true });
   // A run/machine that produced no conversation: "yet ... as it streams" while it
   // can still stream, past tense once it has ended (a terminal tool-only machine).
   const emptyNote = () => conv.finished

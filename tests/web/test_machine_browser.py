@@ -278,6 +278,41 @@ def test_a_machines_prompt_waits_at_its_conversations_end(
     assert not errors
 
 
+def test_a_poll_that_answers_a_prompt_and_streams_on_leaves_the_conversation_at_its_tail(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """One poll takes an answered prompt's box away and streams new text: the box keeps its tail.
+
+    The Path's follow laid the page out between the two, which clamped the conversation's offset,
+    and the clamp's scroll event read the text under it as the reader scrolling up.
+    """
+    from playwright.sync_api import expect
+
+    ask = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"}
+    machine = _machine(tmp_path, "asking", LOOP, [], [*_talk(40), ask], alive=True)
+    page, errors = _open(open_page, port, "asking")
+    box = page.locator(".conv-box")
+    expect(box.locator(".prompt-box")).to_have_count(1)
+    expect(box).to_have_class("conv-box tail scrolled")
+    said = "The parser keeps a quoted CRLF and drops the doubled quote before the line ending. "
+    call = {"role": "worker", "model_call_id": "n1"}
+    rows = [
+        {"type": "approval.answer", "id": "approval-1", "approved": True, "source": "web"},
+        {"type": "model.call", "model": "m", "provider": "p", **call},
+        {"type": "model.text_delta", "text": said * 6, **call},
+    ]
+    with (machine / "states" / "0000-work" / "logs.jsonl").open("a", encoding="utf-8") as log:
+        log.write("".join(json.dumps(row) + "\n" for row in rows))
+    expect(box.locator(".prompt-box")).to_have_count(0)
+    expect(box.locator(".conv-live")).to_contain_text("The parser keeps")
+    after = box.evaluate(
+        """b => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() =>
+        done([b.className, b.scrollHeight - b.scrollTop - b.clientHeight]))))"""
+    )
+    assert after == ["conv-box tail scrolled", 0]
+    assert not errors
+
+
 def test_long_states_and_transitions_wrap_under_their_text(
     open_page: OpenPage, port: int, tmp_path: pathlib.Path
 ) -> None:

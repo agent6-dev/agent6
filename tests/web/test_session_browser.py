@@ -164,6 +164,38 @@ def test_a_prompt_lands_after_the_conversation_and_moves_neither_bar(
     assert not errors
 
 
+def test_a_conversation_at_its_tail_keeps_its_prompt_in_view_as_the_drawer_opens(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Opening Details narrows the conversation, which stays at its tail with its prompt in view.
+
+    The browser's scroll anchoring held a short line in place as the long ones wrapped, which
+    scrolled the box off its tail: the box stopped following and the prompt dropped out of view.
+    """
+    from playwright.sync_api import expect
+
+    said = "The parser keeps a quoted CRLF and drops the doubled quote before the line ending. " * 3
+    rows = _reads(30)
+    for i in range(8):
+        reply = {"type": "model.result", "role": "worker", "ok": True, "text": f"{i}. {said}"}
+        rows += [*_reads(1, 30 + i), {**reply, "model_call_id": f"c{i}"}]
+    rows.append({"type": "approval.prompt", "id": "approval-1", "prompt": "Allow it?"})
+    session_logs.write_run(tmp_path, "drawer-AAA111", rows, live=True)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 820, "height": 1180})
+    page.goto(f"http://127.0.0.1:{port}/#/session/drawer-AAA111")
+    prompt = page.locator(".card-conv .prompts .prompt-box")
+    expect(page.locator(".card-conv .ci").filter(has_text="7. The parser")).to_be_attached()
+    expect(prompt).to_be_visible()
+    assert prompt.evaluate(PROMPT_PLACE)["whole"]
+    details = page.get_by_role("button", name="Details", exact=True)
+    expect(details).to_have_attribute("aria-expanded", "false")
+    details.click()
+    expect(page.locator(".drawer")).to_be_visible()
+    assert prompt.evaluate(PROMPT_PLACE)["whole"]
+    assert not errors
+
+
 @pytest.mark.parametrize("width", [1280, 390])
 @pytest.mark.parametrize("live", [True, False])
 def test_an_ended_runs_bar_offers_only_what_it_can_do_and_ends_in_delete(
