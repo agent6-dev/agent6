@@ -495,6 +495,27 @@ def test_an_image_states_its_facts_once(
     assert not errors
 
 
+def test_an_image_says_it_is_loading(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """An image's pane was an empty box until its image arrived."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(big_tree)
+    page.add_init_script("""
+      const fetchNow = window.fetch;
+      window.fetch = (url, init) => String(url).includes('/api/git/blob')
+        ? new Promise(r => setTimeout(r, 1500)).then(() => fetchNow(url, init))
+        : fetchNow(url, init);
+    """)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/logo.png")
+    text = page.locator(".files-text")
+    expect(text).to_have_text("loading…")
+    page.wait_for_selector(".files-view img")
+    expect(text).not_to_contain_text("loading…")
+    assert not errors
+
+
 def test_a_symlink_links_its_target_when_the_revision_lists_it(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
 ) -> None:

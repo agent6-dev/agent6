@@ -184,16 +184,17 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     if (f.kind !== 'file') { box.appendChild(el('div', 'muted gf-note', 'a submodule: its files are in another repository')); return; }
     if (isImagePath(f.path)) {
       // The head's note takes the image's size and dimensions, as it takes a text file's facts.
-      const wrap = el('div', 'git-img one'), fig = el('figure', 'git-img-side');
-      wrap.appendChild(fig); box.appendChild(wrap);
+      // The image takes the place of "loading…" once it has loaded or failed.
+      const loading = el('div', 'muted', 'loading…'); box.appendChild(loading);
       blobImageData('/api/git/blob?rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(f.path) + (ignored ? '&ignored=1' : '')).then(image => {
         if (!current()) return;
         if (!facts.length) facts.push(fmtBytes(image.size));
-        const img = el('img'); img.alt = f.path;
-        img.onload = () => { facts.push(img.naturalWidth + '\u00d7' + img.naturalHeight); note.textContent = facts.join(' · '); };
-        img.onerror = () => { note.textContent = facts.concat('the browser cannot show this image').join(' · '); };
-        img.src = image.url; fig.appendChild(img);
-      }).catch(e => { if (current()) wrap.replaceWith(el('div', 'err gf-note', e.message)); });
+        const wrap = el('div', 'git-img one'), fig = el('figure', 'git-img-side'), img = el('img');
+        img.alt = f.path; fig.appendChild(img); wrap.appendChild(fig);
+        img.onload = () => { facts.push(img.naturalWidth + '\u00d7' + img.naturalHeight); note.textContent = facts.join(' · '); loading.replaceWith(wrap); };
+        img.onerror = () => { note.textContent = facts.concat('the browser cannot show this image').join(' · '); loading.replaceWith(wrap); };
+        img.src = image.url;
+      }).catch(e => { if (current()) loading.replaceWith(el('div', 'err gf-note', e.message)); });
       return;
     }
     box.appendChild(el('div', 'muted', 'loading…'));
