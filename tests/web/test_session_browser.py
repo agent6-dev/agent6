@@ -756,3 +756,75 @@ def test_the_receipt_hangs_its_wrapped_lines_in_a_box_and_folds_only_output(
     assert all(gap == pytest.approx(2 * 7.2, abs=1.5) for gap in hangs)  # 2ch of 12px mono
     assert page.locator(".receipt summary").inner_text().endswith("stderr")
     assert not errors
+
+
+def test_the_receipt_says_it_is_loading_and_its_button_hides_it_again(
+    open_page: Callable[[int], tuple[Page, list[str]]], evidence: tuple[int, dict[str, Any]]
+) -> None:
+    """Receipt shows a loading line while it fetches, and a second press hides the receipt.
+
+    The card showed nothing until the receipt landed, seconds on a busy machine, and a second
+    press fetched and drew it again.
+    """
+    from playwright.sync_api import Route, expect
+
+    port, _ = evidence
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)  # answered once the loading line is seen
+
+    page.route("**/receipt", hold)
+    button = page.get_by_role("button", name="Receipt", exact=True)
+    button.click()
+    expect(page.locator(".receipt")).to_have_text("loading the receipt…")
+    expect(button).to_be_disabled()
+    while not held:
+        page.wait_for_timeout(50)
+    held[0].continue_()
+    expect(page.locator(".receipt > pre")).to_contain_text("Receipt review-run")
+    expect(button).to_have_attribute("aria-expanded", "true")
+    button.click()
+    expect(page.locator(".receipt")).to_be_hidden()
+    expect(button).to_have_attribute("aria-expanded", "false")
+    assert not errors
+
+
+def test_a_picked_commit_says_its_diff_is_loading(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A picked commit's diff shows a loading line until it lands, then the outcome alone.
+
+    The diff went blank until the picked commit's diff arrived.
+    """
+    from playwright.sync_api import Route, expect
+
+    patch = "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-old\n+new\n"
+    rows = [
+        {"type": "checkpoint.committed", "turn": 1, "sha": "1" * 40, "subject": "first"},
+        {"type": "checkpoint.committed", "turn": 2, "sha": "2" * 40, "subject": "second"},
+        {"type": "diff.updated", "patch": patch, "sha": "2" * 40},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
+    ]
+    session = _session(tmp_path, "picked-AAA111", rows)
+    (session / "manifest.json").write_text(json.dumps({"version": 3, "mode": "run"}))
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"http://127.0.0.1:{port}/#/session/picked-AAA111")
+    expect(page.locator(".card-diff .card-body")).to_contain_text("new")
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)  # answered once the loading line is seen
+
+    page.route(f"**/diff?sha={'1' * 40}*", hold)
+    page.locator(".card-diff select").select_option("1" * 40)
+    body = page.locator(".card-diff .card-body > div").last
+    expect(body).to_have_text("loading the diff…")
+    while not held:
+        page.wait_for_timeout(50)
+    held[0].continue_()
+    expect(body).to_have_text(f"no diff for {'1' * 12} (pruned, or not a commit of this run)")
+    assert [error for error in errors if "Failed to load resource" not in error] == []

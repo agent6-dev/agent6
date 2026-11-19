@@ -703,10 +703,12 @@ function paintCommits(cards, s) {
       const request = ++cards._diffGeneration;
       const current = () => request === cards._diffGeneration && body.isConnected;
       const selected = sel.value, sha = selected || commits[0].sha;
+      // The log holds the latest commit's diff; a picked commit's is a fetch away.
+      const loading = el('div', 'muted', 'loading the diff…');
       if (!selected) {
         cards._commitState = null; paintDetails(cards, cards._frame, null);
         body.appendChild(renderDiff({patch: s.latest_diff || ''}));
-      }
+      } else body.appendChild(loading);
       const url = cards._base + '/diff?sha=' + encodeURIComponent(sha) + '&cumulative=' + (cum.checked ? '1' : '0');
       try {
         if (!cards._diffCache.has(url)) cards._diffCache.set(url, getJSON(url).catch(e => { cards._diffCache.delete(url); throw e; }));
@@ -719,6 +721,7 @@ function paintCommits(cards, s) {
         if (!current()) return;
         cards._commitState = st; paintDetails(cards, st, st.as_of);
       } catch (e) {
+        loading.remove();
         // With no commit picked the log's diff already shows: only a picked commit's failure is
         // news (a squash merge or a deleted branch prunes a run's commits).
         if (current() && selected) body.appendChild(el('div', 'muted', e.message));

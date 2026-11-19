@@ -165,10 +165,23 @@ function paintFindings(cards, state) {
   if (!cards._readOnly) {
     // Keep the receipt's fetch target and output across streamed findings refreshes.
     if (!cards._receipt) {
+      // The button shows the receipt and hides it again; the fetch says it is loading meanwhile.
       const inspect = el('button', 'mini', 'Receipt'), receipt = el('div', 'receipt');
+      let open = false;
+      const mark = shown => {
+        open = shown;
+        inspect.setAttribute('aria-expanded', String(shown)); inspect.classList.toggle('active', shown);
+      };
+      mark(false);
       inspect.onclick = async () => {
+        receipt.innerHTML = '';
+        if (open) { mark(false); return; }
+        mark(true);
+        inspect.disabled = true;
+        receipt.appendChild(el('div', 'muted', 'loading the receipt…'));
         try { drawReceipt(receipt, await getJSON(cards._base + '/receipt')); }
-        catch (e) { toast(e.message, true); }
+        catch (e) { receipt.innerHTML = ''; mark(false); toast(e.message, true); }
+        finally { inspect.disabled = false; }
       };
       cards._receipt = {inspect, receipt};
     }
