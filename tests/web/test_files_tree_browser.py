@@ -304,3 +304,23 @@ def test_the_tree_insets_its_messages(
     top = page.locator(".files-tree").evaluate("e => e.getBoundingClientRect().top")
     assert message.evaluate(text)["y"] - top >= 16
     assert [e for e in errors if "422" not in e] == []  # the unknown revision's response
+
+
+def test_the_bar_holds_still_while_filtering_and_toggling(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """The count resized the fields as it changed, and the tree toggle grew 6px on Show tree."""
+    page, errors = open_page(big_tree)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    page.wait_for_selector(_row("deep"))
+    boxes = (
+        "() => [...document.querySelectorAll('.files-bar > *')].filter(c => c.offsetParent)"
+        ".map(c => { const r = c.getBoundingClientRect(); return [r.left, r.width]; }).flat()"
+    )
+    still = page.evaluate(boxes)
+    page.locator(".files-bar input.filter").fill("f1")
+    page.wait_for_function("document.querySelector('.files-counts').textContent.includes(' of ')")
+    assert page.evaluate(boxes) == pytest.approx(still, abs=0.5)
+    page.get_by_role("button", name="Hide tree", exact=True).click()
+    assert page.evaluate(boxes) == pytest.approx(still, abs=0.5)
+    assert not errors

@@ -7,7 +7,11 @@
 .files-bar .gpick { flex: 1 1 220px; position: relative; }
 .files-bar .gpick-host { position: absolute; top: 100%; left: 0; right: 0; z-index: 40; }
 .files-bar input.filter { flex: 1 1 160px; width: auto; min-width: 0; }
-.files-counts { font-size: 12px; white-space: nowrap; }
+/* The count and the tree toggle hold the width of their longest text ("19999 of 20000 files+",
+   "Show tree"), so typing in the filter or toggling the tree moves nothing on the bar. A count
+   wrapped to a row of its own keeps to the right. */
+.files-counts { margin-left: auto; font-size: 12px; white-space: nowrap; min-width: 18ch; text-align: end; font-variant-numeric: tabular-nums; }
+.files-tree-toggle { min-width: 7em; }
 /* A narrow tree shows the names alone: the folder notes and the file sizes go first. */
 .files-tree { container: files-tree / inline-size; --tree-inset: var(--files-inset); }
 @container files-tree (width < 320px) { .gtree-note, .gf-counts { display: none; } }
