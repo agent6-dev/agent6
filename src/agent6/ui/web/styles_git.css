@@ -162,6 +162,8 @@
     background: var(--bg);
   }
   .git-back { display: inline-block; }
+  /* A graph row the arrow keys reach stops clear of the fixed top bar and tab bar. */
+  .gc-row { scroll-margin-block: calc(var(--hdr-h) + env(safe-area-inset-top)) calc(var(--nav-h) + env(safe-area-inset-bottom)); }
   .git-body.diffing > .git-diff {
     position: fixed; left: 0; right: 0; z-index: 16; background: var(--bg);
     top: calc(var(--hdr-h) + env(safe-area-inset-top)); bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));

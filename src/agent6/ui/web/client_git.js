@@ -116,7 +116,8 @@ function rovingRows(list, selector) {
     e.preventDefault();
     const row = rows[Math.max(0, Math.min(rows.length - 1, to))];
     row.focus({ preventScroll: true });
-    row.scrollIntoView({ block: 'nearest' });
+    // A file's button sits inside the row that draws its ring: the whole row scrolls into view.
+    (row.closest('.gf') || row).scrollIntoView({ block: 'nearest' });
   });
   return stop;
 }

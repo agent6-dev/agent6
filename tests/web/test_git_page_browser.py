@@ -49,6 +49,17 @@ def _first(page: Page, held: list[Route]) -> Route:
     return held[0]
 
 
+def _long_history(path: pathlib.Path) -> str:
+    """Add twenty empty commits, then one that adds forty files; return the last one's sha."""
+    for n in range(20):
+        _git(path, "commit", "-q", "--allow-empty", "-m", f"empty {n}")
+    for n in range(40):
+        (path / f"f{n:02d}.txt").write_text(f"{n}\n", encoding="utf-8")
+    _git(path, "add", "-A")
+    _git(path, "commit", "-q", "-m", "forty files")
+    return _git(path, "rev-parse", "HEAD")
+
+
 def test_a_graph_row_shows_its_first_ref_and_counts_the_rest(
     open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
 ) -> None:
@@ -116,6 +127,38 @@ def test_arrow_keys_move_between_graph_rows_and_tab_stops_at_one(
     name = rows.first.get_attribute("aria-label") or ""
     assert name.startswith("main, v2, origin/main, merge feature, "), name
     assert rows.first.locator("svg").get_attribute("aria-hidden") == "true"
+    assert errors == [], errors
+
+
+def test_arrow_keys_keep_a_phones_rows_in_view(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """On a phone End and Home left the focused graph row under the tab bar or the top bar.
+
+    A file row scrolled its button into view and left the rest of the row and its ring outside.
+    """
+    sha = _long_history(tmp_path)
+    page, errors = open_page(git_port)
+    page.set_viewport_size({"width": 390, "height": 600})
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    box = (
+        "e => { const r = (e.closest('.gf') || e).getBoundingClientRect();"
+        " return [r.top, r.bottom]; }"
+    )
+    top = page.locator("header").evaluate("e => e.getBoundingClientRect().bottom")
+    bottom = page.locator("nav.tabs").evaluate("e => e.getBoundingClientRect().top")
+    rows = page.locator(".gc-row")
+    rows.first.focus()
+    page.keyboard.press("End")
+    assert rows.last.evaluate(box)[1] <= bottom
+    page.keyboard.press("Home")
+    assert rows.first.evaluate(box)[0] >= top
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/{sha}")
+    files = page.locator(".git-side .gf-open")
+    files.first.focus()
+    page.keyboard.press("End")
+    side = page.locator(".git-side").evaluate("e => e.getBoundingClientRect().bottom")
+    assert files.last.evaluate(box)[1] <= side
     assert errors == [], errors
 
 
