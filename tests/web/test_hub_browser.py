@@ -32,12 +32,14 @@ STOP: dict[str, object] = {
 FOCUS_ROW = "e => (e.querySelector('a[href]') || e).focus()"
 
 
-def _run(repo: pathlib.Path, sid: str, task: str, *events: dict[str, object]) -> pathlib.Path:
-    """Record a run that started on `task`, then `events`; return its journal."""
-    run = paths.state_dir(repo) / "sessions" / "runs" / sid
+def _run(
+    repo: pathlib.Path, sid: str, task: str, *events: dict[str, object], mode: str = "run"
+) -> pathlib.Path:
+    """Record a session in `mode` that started on `task`, then `events`; return its journal."""
+    run = paths.state_dir(repo) / "sessions" / f"{mode}s" / sid
     run.mkdir(parents=True, exist_ok=True)
     log = run / "logs.jsonl"
-    start = {"type": "session.start", "mode": "run", "user_task": task}
+    start = {"type": "session.start", "mode": mode, "user_task": task}
     log.write_text("".join(json.dumps(e) + "\n" for e in (start, *events)), encoding="utf-8")
     return log
 
@@ -414,4 +416,24 @@ def test_a_selection_holds_back_only_its_own_row(
     page.evaluate("getSelection().removeAllRanges()")
     _refresh(page)
     expect(second).to_contain_text("$2.50")
+    assert not errors
+
+
+def test_a_picker_is_as_wide_as_its_chosen_option(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """The 'from plan' dropdown took its longest plan's width, 460px, to show 'none'."""
+    from playwright.sync_api import expect
+
+    task = "Plan moving the argument parsing onto subcommand modules, one module per verb"
+    _run(tmp_path, "plan-AAAAAA", task, STOP, mode="plan")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.locator(".dock .pickers").get_by_role("button", name="advanced", exact=True).click()
+    seed = page.locator(".dock select[title^='seed the run']")
+    expect(seed.locator("option")).to_have_count(2)
+    width = "e => e.getBoundingClientRect().width"
+    resting = seed.evaluate(width)
+    seed.select_option("plan-AAAAAA")
+    assert resting < 100 < seed.evaluate(width), resting
     assert not errors
