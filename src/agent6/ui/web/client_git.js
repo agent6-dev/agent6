@@ -88,6 +88,12 @@ function refBadge(r) {
   b.title = r.name + ' · ' + (GIT_KIND_TITLE[r.kind] || r.kind);
   return b;
 }
+// A commit's refs as its row and its panel list them: HEAD's first, then the branches, tags,
+// remote-tracking branches and agent6 run refs, each kind in git's order.
+function orderedRefs(refs) {
+  const rank = (r) => r.head ? 0 : 1 + ['branch', 'tag', 'remote', 'agent6'].indexOf(r.kind);
+  return refs.toSorted((a, b) => rank(a) - rank(b));
+}
 function statusBadge(status) {
   const s = el('span', 'gf-st st-' + esc(status), status);
   s.title = { A: 'added', M: 'modified', D: 'deleted', R: 'renamed', T: 'type changed', I: 'ignored', U: 'untracked' }[status] || status;
@@ -497,7 +503,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       row.appendChild(gitLanesSvg(lays[i], cols, c.is_merge ? 'merge' : '', isHead));
       const subj = el('div', 'gc-subj');
       // The row shows its first ref and counts the rest; its name and the commit panel list them all.
-      const named = (isHead && !c.refs.some(r => r.head) ? [{ name: 'HEAD', kind: 'head', head: true }] : []).concat(c.refs);
+      const named = orderedRefs((isHead && !c.refs.some(r => r.head) ? [{ name: 'HEAD', kind: 'head', head: true }] : []).concat(c.refs));
       if (named.length) subj.appendChild(refBadge(named[0]));
       if (named.length > 1) {
         const more = el('span', 'gref more', '+' + (named.length - 1)); more.title = named.slice(1).map(r => r.name).join(', ');
@@ -684,7 +690,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     side.appendChild(sideHead('Commit'));
     const pad = el('div', 'gd page-pad'); side.appendChild(pad);
     const title = el('div', 'gd-subject');
-    for (const r of c.refs) title.appendChild(refBadge(r));
+    for (const r of orderedRefs(c.refs)) title.appendChild(refBadge(r));
     title.appendChild(el('span', null, c.subject));
     pad.appendChild(title);
     const kv = el('div', 'kv gd-meta');

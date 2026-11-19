@@ -50,15 +50,26 @@ def _first(page: Page, held: list[Route]) -> Route:
 
 
 def test_a_graph_row_shows_its_first_ref_and_counts_the_rest(
-    open_page: OpenPage, git_port: int
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
 ) -> None:
-    """A row's ref badges filled its subject column and hid the subject on a laptop."""
+    """A row's ref badges hid its subject; one badge in git's order hid HEAD's branch.
+
+    The row shows HEAD's ref, else a branch, a tag, a remote-tracking branch, an agent6 run ref.
+    """
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
-    row = page.locator(".gc-row").first  # the merge: main, origin/main and v2
-    row.wait_for()
-    assert row.locator(".gref").all_inner_texts() == ["main", "+2"]
-    assert row.locator(".gref", has_text="+2").get_attribute("title") == "origin/main, v2"
+
+    def badges(subject: str) -> tuple[list[str], str | None]:
+        row = page.locator(".gc-row", has_text=subject)
+        return row.locator(".gref").all_inner_texts(), row.locator(".more").get_attribute("title")
+
+    page.locator(".gc-row").first.wait_for()
+    assert badges("merge feature") == (["main", "+2"], "v2, origin/main")
+    assert badges("feature: rename") == (["feature", "+1"], "agent6/run-1/head")
+    _git(tmp_path, "checkout", "-q", "-b", "topic")  # HEAD on a branch git lists after main
+    page.reload()
+    page.locator(".gc-row").first.wait_for()
+    assert badges("merge feature") == (["topic", "+3"], "main, v2, origin/main")
     assert errors == [], errors
 
 
@@ -86,7 +97,7 @@ def test_arrow_keys_move_between_graph_rows_and_tab_stops_at_one(
     expect(page.locator(".git-graph [tabindex='0']")).to_have_count(1)
     # HEAD is the merge, where main, origin/main and v2 point.
     name = rows.first.get_attribute("aria-label") or ""
-    assert name.startswith("main, origin/main, v2, merge feature, "), name
+    assert name.startswith("main, v2, origin/main, merge feature, "), name
     assert rows.first.locator("svg").get_attribute("aria-hidden") == "true"
     assert errors == [], errors
 
