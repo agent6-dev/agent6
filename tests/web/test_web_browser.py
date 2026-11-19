@@ -893,6 +893,38 @@ def test_graph_lanes_read_at_three_to_one_in_the_light_theme(
     assert errors == [], errors
 
 
+def test_a_wrapped_file_path_breaks_after_a_slash(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A rename's two paths wrap between folders; Chromium cut 'lane_watch.p' from its 'y'."""
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/")
+    page.wait_for_selector("#view")
+    lines = page.evaluate(
+        """() => {
+          const box = el('div'); box.style.width = '180px'; document.body.appendChild(box);
+          const p = filePath({path: 'src/agent6/app/child_wait.py',
+            old_path: 'src/agent6/app/lane_watch.py'}, false);
+          box.appendChild(p);
+          const lines = [''];
+          let top = null;
+          const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+          for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+            for (let i = 0; i < n.length; i++) {
+              const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + 1);
+              const y = r.getBoundingClientRect().top;
+              if (top !== null && y > top + 2) lines.push('');
+              top = y; lines[lines.length - 1] += n.data[i];
+            }
+          }
+          return lines;
+        }"""
+    )
+    assert len(lines) > 2, lines
+    assert all(line.endswith(("/", " ")) for line in lines[:-1]), lines
+    assert errors == [], errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:

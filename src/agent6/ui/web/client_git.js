@@ -181,12 +181,17 @@ function fileList(files, truncated, open, actions) {
   return root;
 }
 // The path, or in a tree the file's own name; a rename keeps its old path, shortened too
-// when it sat in the same folder.
+// when it sat in the same folder. A long path wraps after a slash, not inside a name.
 function filePath(f, short) {
   const p = el('span', 'gf-path');
   const dir = (s) => s.slice(0, s.lastIndexOf('/') + 1), base = (s) => s.slice(s.lastIndexOf('/') + 1);
-  if (f.old_path) p.appendChild(el('span', 'muted', (short && dir(f.old_path) === dir(f.path) ? base(f.old_path) : f.old_path) + ' → '));
-  p.appendChild(document.createTextNode(short ? base(f.path) : f.path));
+  const wrapping = (text) => text.split('/').flatMap((part, i) => i ? ['/', el('wbr'), part] : [part]);
+  if (f.old_path) {
+    const old = el('span', 'muted');
+    old.append(...wrapping(short && dir(f.old_path) === dir(f.path) ? base(f.old_path) : f.old_path), ' → ');
+    p.appendChild(old);
+  }
+  p.append(...wrapping(short ? base(f.path) : f.path));
   return p;
 }
 function fileCounts(f) {
