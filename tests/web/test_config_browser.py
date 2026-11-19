@@ -46,6 +46,14 @@ def _config(page: Page, port: int, width: int = 1280) -> None:
     page.locator(READY).wait_for()
 
 
+def _global_config(text: str) -> pathlib.Path:
+    """Write the global config file the server reads."""
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(text, encoding="utf-8")
+    return config
+
+
 @pytest.mark.parametrize("width", [1024, 390])
 def test_the_config_bar_keeps_every_button_on_the_card(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, width: int
@@ -128,13 +136,10 @@ def test_a_long_config_key_or_value_wraps_between_its_parts(
     Chromium also split a URL value inside a word; every break now falls after a dot, a slash,
     a hyphen or a space.
     """
-    config = paths.global_config_path()
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(
+    _global_config(
         "[providers.company-gateway-eu-west-production]\n"
         'backend = "openai"\n'
-        'base_url = "https://llm-gateway.internal.example.com/openrouter/api/v1/chat/completions"\n',
-        encoding="utf-8",
+        'base_url = "https://llm-gateway.internal.example.com/openrouter/api/v1/chat/completions"\n'
     )
     page, errors = open_page(port)
     _config(page, port, 1024)
@@ -164,12 +169,9 @@ def test_an_unset_effort_opens_its_editor_on_the_value_its_row_shows(
 
     The row read `"off"  (adaptive)` meanwhile.
     """
-    config = paths.global_config_path()
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(
+    _global_config(
         '[providers.anthropic]\nbackend = "anthropic"\n\n'
-        '[models.worker]\nmodel = "anthropic/claude-sonnet-4-6"\n',
-        encoding="utf-8",
+        '[models.worker]\nmodel = "anthropic/claude-sonnet-4-6"\n'
     )
     page, errors = open_page(port)
     _config(page, port)
@@ -219,9 +221,7 @@ def test_a_long_list_value_shows_whole_in_its_editor(
         '["sh", "-c", "uv run ruff check && uv run ruff format --check && uv run pyright'
         ' && uv run tach check && uv run pytest"]'
     )
-    config = paths.global_config_path()
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(f"[harness.verify]\ncommand = {command}\n", encoding="utf-8")
+    _global_config(f"[harness.verify]\ncommand = {command}\n")
     page, errors = open_page(port)
     _config(page, port)
     page.locator('[data-key="harness.verify.command"]').click()
@@ -245,12 +245,7 @@ def test_the_reviewer_roster_lists_each_reviewer_with_its_remove_at_the_row_end(
 
     The roster ran into the field under it.
     """
-    config = paths.global_config_path()
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(
-        '[review]\nreviewers = [{ focus = "security" }, { focus = "correctness" }]\n',
-        encoding="utf-8",
-    )
+    _global_config('[review]\nreviewers = [{ focus = "security" }, { focus = "correctness" }]\n')
     page, errors = open_page(port)
     _config(page, port)
     page.locator('[data-key="review.reviewers"]').click()
@@ -334,12 +329,9 @@ def test_the_model_suggestions_leave_every_button_in_reach(
 
     A press where Save sat picked a model, and Enter in the field only closed the list.
     """
-    config = paths.global_config_path()
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(
+    config = _global_config(
         '[providers.a]\nbackend = "openai"\nbase_url = "http://localhost:1"\n'
-        '[models.worker]\nmodel = "a/old"\n',
-        encoding="utf-8",
+        '[models.worker]\nmodel = "a/old"\n'
     )
     page, errors = open_page(port)
     values = [f"a/model-{n}" for n in range(20)]
@@ -363,4 +355,35 @@ def test_the_model_suggestions_leave_every_button_in_reach(
     field.press("Enter")
     dialog.wait_for(state="hidden")
     assert 'model = "a/custom"' in config.read_text(encoding="utf-8")
+    assert not errors
+
+
+# Per cell of one row: the bottom of its first character and how many lines the cell takes.
+FIRST_LINES = """row => [...row.cells].map(td => {
+  const first = document.createTreeWalker(td, NodeFilter.SHOW_TEXT).nextNode();
+  const glyph = document.createRange(); glyph.setStart(first, 0); glyph.setEnd(first, 1);
+  const whole = document.createRange(); whole.selectNodeContents(td);
+  const lines = [...whole.getClientRects()].filter(r => r.width > 0);
+  const bottoms = lines.map(r => Math.round(r.bottom));
+  return [glyph.getBoundingClientRect().bottom, new Set(bottoms).size];
+})"""
+
+
+def test_a_wrapped_value_keeps_its_key_and_source_on_its_first_line(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A value that wrapped centred its key and source on its middle line."""
+    _global_config(
+        '[sandbox]\nextra_read_paths = ["/home/operator/.cache/uv",'
+        ' "/home/operator/.local/share/uv/python",'
+        ' "/opt/toolchains/rust-1.91.0-x86_64-unknown-linux-gnu"]\n'
+    )
+    page, errors = open_page(port)
+    _config(page, port, 1024)
+    (key, _), (value, lines), (source, _) = page.locator(
+        '[data-key="sandbox.extra_read_paths"]'
+    ).evaluate(FIRST_LINES)
+    assert lines >= 3
+    assert abs(key - value) <= 2
+    assert abs(source - value) <= 2
     assert not errors

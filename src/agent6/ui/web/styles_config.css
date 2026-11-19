@@ -28,7 +28,10 @@ textarea.field.cfg-value {
    the setting over its value, the source at the row's end. */
 .cfg-card { container-type: inline-size; }
 .cfg { width: 100%; border-collapse: collapse; font-size: 13px; }
-.cfg td, .cfg th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+/* A row's cells share their first line's baseline, however far a long value wraps. */
+.cfg td, .cfg th {
+  text-align: left; vertical-align: baseline; padding: 6px 8px; border-bottom: 1px solid var(--border);
+}
 /* A long key wraps after a dot, a long value or source after a slash (the page marks each with a
    <wbr>), and inside a part only when the part alone is wider than its column. */
 .cfg .key, .cfg .val, .cfg .src { overflow-wrap: anywhere; }
@@ -44,7 +47,10 @@ textarea.field.cfg-value {
   .cfg th:last-child { width: 96px; }
 }
 @container (width < 700px) {
-  .cfg tr { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(40%); border-bottom: 1px solid var(--border); }
+  .cfg tr {
+    display: grid; grid-template-columns: minmax(0, 1fr) fit-content(40%); align-items: baseline;
+    border-bottom: 1px solid var(--border);
+  }
   .cfg th:first-child, .cfg td.key { grid-column: 1 / -1; }
   .cfg td, .cfg th { border-bottom: 0; padding: 4px 8px; }
 }
