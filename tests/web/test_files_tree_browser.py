@@ -419,3 +419,17 @@ def test_a_revision_change_keeps_the_open_file_where_it_is_listed(
     expect(page).to_have_url(base + "WORKTREE")
     expect(page.locator(".files-view .empty")).to_have_text("click a file to read it")
     assert not errors
+
+
+def test_an_image_states_its_facts_once(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """An image's size showed in the head and again in a caption above the image."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(big_tree)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/logo.png")
+    page.wait_for_selector(".files-view img")
+    expect(page.locator(".files-head .files-note")).to_have_text("69 B · 1\u00d71")
+    expect(page.locator(".files-view figcaption")).to_have_count(0)
+    assert not errors

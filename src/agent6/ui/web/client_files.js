@@ -168,10 +168,17 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
       return;
     }
     if (isImagePath(f.path)) {
-      const wrap = el('div', 'git-img one'), fig = el('figure', 'git-img-side'), cap = el('figcaption', 'muted');
-      cap.dataset.label = 'image'; cap.textContent = 'image · loading…';
-      fig.appendChild(cap); wrap.appendChild(fig); box.appendChild(wrap);
-      blobImage(rev, f.path, fig, cap, ignored).catch(e => { if (current()) { cap.textContent = 'image · ' + e.message; cap.classList.add('err'); } });
+      // The head's note takes the image's size and dimensions, as it takes a text file's facts.
+      const wrap = el('div', 'git-img one'), fig = el('figure', 'git-img-side');
+      wrap.appendChild(fig); box.appendChild(wrap);
+      blobImageData('/api/git/blob?rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(f.path) + (ignored ? '&ignored=1' : '')).then(image => {
+        if (!current()) return;
+        if (!facts.length) facts.push(fmtBytes(image.size));
+        const img = el('img'); img.alt = f.path;
+        img.onload = () => { facts.push(img.naturalWidth + '\u00d7' + img.naturalHeight); note.textContent = facts.join(' · '); };
+        img.onerror = () => { note.textContent = facts.concat('the browser cannot show this image').join(' · '); };
+        img.src = image.url; fig.appendChild(img);
+      }).catch(e => { if (current()) wrap.replaceWith(el('div', 'err gf-note', e.message)); });
       return;
     }
     box.appendChild(el('div', 'muted', 'loading…'));
