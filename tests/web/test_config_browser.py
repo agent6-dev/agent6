@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import pathlib
 import threading
 from collections.abc import Callable, Iterator
@@ -819,4 +820,57 @@ def test_an_empty_reviewer_roster_explains_no_remove(
     page.locator('[data-key="review.reviewers"]').click()
     roster = page.get_by_role("dialog").locator(".cfg-roster")
     assert roster.inner_text() == "The reviewer roster is empty."
+    assert not errors
+
+
+def test_add_reviewer_suggests_catalog_models(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Add reviewer's model was a bare text box; the model editor suggests the same routes."""
+    page, errors = open_page(port)
+    asked: list[str] = []
+
+    def suggest(route: Route) -> None:
+        asked.append(route.request.url)
+        route.fulfill(json={"values": ["a/fast", "a/deep", "b/deep"]})
+
+    page.route("**/api/config/suggest/**", suggest)
+    posts: list[str] = []
+
+    def refuse(route: Route) -> None:
+        posts.append(route.request.post_data or "")
+        route.fulfill(status=400, json={"error": "refused by the test"})
+
+    page.route("**/api/config/reviewer", refuse)
+    _config(page, port)
+    page.get_by_role("button", name="Add reviewer…").click()
+    dialog = page.get_by_role("dialog")
+    dialog.get_by_label("focus").fill("security")
+    model = dialog.get_by_role("combobox", name="model")
+    model.fill("deep")
+    suggestions = dialog.get_by_role("listbox", name="Model suggestions").get_by_role("option")
+    assert suggestions.all_inner_texts() == ["a/deep", "b/deep"]
+    model.press("ArrowDown")
+    model.press("Enter")
+    assert model.input_value() == "a/deep"
+    assert posts == []
+    model.press("Enter")
+    dialog.get_by_role("alert").wait_for()
+    assert asked[0].endswith("/api/config/suggest/models.reviewer.model")
+    assert [json.loads(body)["model"] for body in posts] == ["a/deep"]
+    assert not [error for error in errors if "400 (Bad Request)" not in error]
+
+
+def test_add_reviewers_fields_read_in_one_type(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Add reviewer's model field read in the editor's monospace, its other fields in sans."""
+    page, errors = open_page(port)
+    page.route("**/api/config/suggest/**", lambda route: route.fulfill(json={"values": []}))
+    _config(page, port)
+    page.get_by_role("button", name="Add reviewer…").click()
+    fields = page.get_by_role("dialog").locator("input:not([type=checkbox]), select")
+    fonts = fields.evaluate_all(f"fields => fields.map({FONT})")
+    assert len(fonts) == 4
+    assert fonts == [fonts[0]] * 4
     assert not errors

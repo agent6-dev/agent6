@@ -298,12 +298,14 @@ async function addReviewer(refresh) {
   const fields = {};
   for (const name of ['focus', 'model', 'effort', 'temperature']) {
     const label = el('label', 'sub muted cfg-label', name);
-    const field = el(choices[name] ? 'select' : 'input', 'field');
+    // The model suggests from the catalog, as the model editor does.
+    const combo = name === 'model' ? configCombobox('', 'models.reviewer.model', 'field') : null;
+    const field = combo ? combo.field : el(choices[name] ? 'select' : 'input', 'field');
     field.id = 'reviewer-' + name; label.htmlFor = field.id;
     if (choices[name]) for (const value of ['', ...choices[name]]) {
       const option = el('option', null, value || 'blank = inherit'); option.value = value; field.appendChild(option);
-    }
-    fields[name] = field; dialog.appendChild(label); dialog.appendChild(field);
+    } else if (name !== 'focus') field.placeholder = 'blank = inherit';
+    fields[name] = field; dialog.appendChild(label); dialog.appendChild(combo ? combo.element : field);
   }
   const repoRow = el('label', 'row cfg-check');
   const repo = el('input'); repo.type = 'checkbox'; repo.id = 'reviewer-repo';
@@ -318,11 +320,12 @@ async function addReviewer(refresh) {
   });
 }
 
-// Suggestions guide text entry; catalog membership is not validation. The list stays open under
-// the field, so the dialog's buttons stay in view. Enter picks the active suggestion; with none
-// active it reaches the dialog, which saves.
-function configCombobox(current) {
-  const element = el('div', 'cfg-combo'), field = el('input', 'field cfg-value');
+// A model field over the catalog's suggestions for the leaf `key`. Suggestions guide text entry;
+// catalog membership is not validation. The list stays open under the field, so the dialog's
+// buttons stay in view. Enter picks the active suggestion; with none active it reaches the dialog,
+// which presses its Add or Save.
+function configCombobox(current, key, cls) {
+  const element = el('div', 'cfg-combo'), field = el('input', cls);
   field.value = current; field.autocomplete = 'off';
   field.setAttribute('role', 'combobox');
   field.setAttribute('aria-autocomplete', 'list');
@@ -332,7 +335,7 @@ function configCombobox(current) {
   list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', 'Model suggestions');
   field.setAttribute('aria-controls', list.id);
   element.appendChild(field); element.appendChild(list);
-  let values = [], matches = [], query = '', index = -1, request = 0, message = 'Loading models…';
+  let values = [], matches = [], query = '', index = -1, message = 'Loading models…';
   const choose = value => { field.value = value; query = value; index = -1; paint(); };
   const paint = () => {
     list.innerHTML = '';
@@ -366,21 +369,18 @@ function configCombobox(current) {
       e.preventDefault(); choose(matches[index]);
     }
   };
-  const load = async url => {
-    const generation = ++request;
-    values = []; index = -1; query = ''; message = 'Loading models…'; paint();
+  // The list says it is loading until the catalog answers; a dialog closed meanwhile stays closed.
+  const load = async () => {
     try {
-      const data = await getJSON(url);
-      if (generation !== request || !element.isConnected) return;
-      values = data.values || [];
+      values = (await getJSON('/api/config/suggest/' + key)).values || [];
       message = values.length ? '' : 'Catalog empty or unavailable. You can type a model id.';
     } catch (e) {
-      if (generation !== request || !element.isConnected) return;
       message = 'Catalog unavailable: ' + e.message + '. You can type a model id.';
     }
-    paint();
+    if (element.isConnected) paint();
   };
-  return {element, field, load};
+  paint(); load();
+  return {element, field};
 }
 
 function editConfig(key, s, tables, refresh = () => {}, data = {}) {
@@ -403,11 +403,10 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   let field, combo, meaning;
   const choices = s.choices || (s.type === 'bool' ? ['true', 'false'] : null);
   if (role) {
-    combo = configCombobox(data[section + '.model']?.input || '');
+    combo = configCombobox(data[section + '.model']?.input || '', section + '.model', 'field cfg-value');
     field = combo.field; field.id = 'cfg-model';
     const modelLabel = el('label', 'sub muted', 'Model'); modelLabel.htmlFor = field.id;
     dialog.appendChild(modelLabel); dialog.appendChild(combo.element);
-    combo.load('/api/config/suggest/' + section + '.model');
   } else if (choices) {
     field = el('select', 'field cfg-value');
     const current = cur || String(s.default ?? '');
