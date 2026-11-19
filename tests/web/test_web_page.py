@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "c91b29bf1ff6099f43d59ca493784ce06db2385e2ac4919733cdb7b083672771"
+PAGE_SHA256 = "ae700424e9220e0544af3e7090cf5c1ba553ba19c339e259d69313dab4fab679"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -503,9 +503,11 @@ def test_every_global_key_is_listed_and_handled_from_one_table() -> None:
             "document.addEventListener('keydown', (e) => {\n  for (const k of KEYS)"
         )
     ]
-    for label in ("Ctrl-K", "Ctrl-Shift-P", "'?'", "Ctrl-R", "Ctrl+Enter", "Shift+Enter"):
+    for label in ("Ctrl-K", "'?'", "Ctrl-R", "Ctrl+Enter", "Shift+Enter"):
         assert label in keys
-    assert keys.count("run: () =>") == 3  # the global bindings; the rest are listed only
+    # Firefox opens a private window on Ctrl-Shift-P; `>` in Ctrl-K's box opens the palette.
+    assert "Shift-P" not in client
+    assert keys.count("run: () =>") == 2  # the global bindings; the rest are listed only
     assert "for (const k of KEYS) if (k.run && k.match(e))" in client
     assert client.count("\n  openPicker({") == 2  # the switcher and the palette call it
     assert "prefix: { key: '>', open: (rest) => openPalette(rest) }" in client

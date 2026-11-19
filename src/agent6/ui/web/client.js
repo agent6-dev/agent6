@@ -1189,8 +1189,8 @@ async function openSwitcher() {
   });
 }
 
-// Ctrl-Shift-P anywhere, or `>` typed into Ctrl-K's box: the pages, the dialogs, the
-// theme, new work, and the controls the current page offers, each by the name it shows.
+// `>` typed into Ctrl-K's box: the pages, the dialogs, the theme, new work, and the controls
+// the current page offers, each by the name it shows.
 function paletteItems() {
   const go = (hash) => () => { location.hash = hash; };
   const items = [
@@ -1232,8 +1232,7 @@ function openPalette(initial = '') {
 function composing(e) { return e.isComposing || e.keyCode === 229; }
 function inField(e) { const t = e.target; return !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)); }
 const KEYS = [
-  { label: 'Ctrl-K', where: 'anywhere', does: 'switch session', match: (e) => e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey, run: () => openSwitcher() },
-  { label: 'Ctrl-Shift-P', where: 'anywhere', does: 'command palette (or > in the switcher)', match: (e) => e.key.toLowerCase() === 'p' && (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey, run: () => openPalette() },
+  { label: 'Ctrl-K', where: 'anywhere', does: 'switch session (> for commands)', match: (e) => e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey, run: () => openSwitcher() },
   { label: '?', where: 'outside a field', does: 'this list', match: (e) => e.key === '?' && !inField(e) && !e.ctrlKey && !e.metaKey && !e.altKey, run: () => openKeys() },
   { label: 'Esc', where: 'a dialog or popup', does: 'close it' },
   { label: 'Enter', where: 'the composer', does: 'send the instruction; resume an ended session' },

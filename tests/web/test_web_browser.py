@@ -1301,10 +1301,10 @@ def test_the_switchers_merge_reports_a_failure_on_the_page(
     assert [e for e in errors if not e.startswith("Failed to load resource")] == []
 
 
-def test_the_keyboard_overlay_and_the_palette_open_and_act(
+def test_the_keyboard_list_and_the_palette_open_and_act(
     git_port: int, open_page: Callable[[int], tuple[Page, list[str]]]
 ) -> None:
-    """`?` lists the bindings; Ctrl-Shift-P runs a command; `>` in Ctrl-K's box hands over."""
+    """`?` lists the bindings; `>` in Ctrl-K's box opens the palette, which runs a command."""
     from playwright.sync_api import expect
 
     page, errors = open_page(git_port)
@@ -1313,12 +1313,14 @@ def test_the_keyboard_overlay_and_the_palette_open_and_act(
     page.keyboard.press("?")
     keys = page.get_by_role("dialog").locator("table.keys")
     expect(keys).to_contain_text("Ctrl-K")
-    expect(keys).to_contain_text("Ctrl-Shift-P")
+    expect(keys).not_to_contain_text("Ctrl-Shift-P")
     page.keyboard.press("Escape")
     expect(keys).to_have_count(0)
     page.keyboard.press("Control+Shift+P")
-    field = page.get_by_role("dialog").locator("input.field")
-    field.fill("git")
+    expect(page.get_by_role("dialog")).to_have_count(0)
+    page.keyboard.press("Control+K")
+    page.get_by_role("dialog").locator("input.field").fill(">git")
+    expect(page.get_by_role("dialog", name="Commands")).to_be_visible()
     page.keyboard.press("Enter")
     page.wait_for_function("location.hash === '#/git'")
     page.keyboard.press("Control+K")
