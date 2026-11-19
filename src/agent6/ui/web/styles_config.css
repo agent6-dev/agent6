@@ -57,3 +57,5 @@
   font-family: var(--mono); font-size: 12px; color: var(--text);
   background: var(--surface2); padding: 0 3px; border-radius: 3px;
 }
+/* An Add dialog's field description sits right under its field. */
+.cfg-help { margin: 4px 0 0; }

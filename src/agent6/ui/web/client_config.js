@@ -186,11 +186,13 @@ function addEntry(table, refresh) {
         const option = el('option', null, value || 'blank = unchanged, or default');
         option.value = value; field.appendChild(option);
       }
-    } else {
-      field.placeholder = plainDescription(spec.description);
     }
-    field.title = plainDescription(spec.description);
     fields[spec.name] = labelled(spec.name, field);
+    // The field's description, whole, under the field: it stays in view while the field is typed in.
+    const help = el('div', 'cfg-desc cfg-help'); help.id = 'cfg-help-' + spec.name;
+    help.appendChild(descriptionNode(spec.description));
+    field.setAttribute('aria-describedby', help.id);
+    dialog.appendChild(help);
   }
   if (table.path === 'providers') {
     const format = fields.backend, baseUrl = fields.base_url;

@@ -98,6 +98,8 @@ const field = name => {
   const found = all(dialog()).find(e => e.name === name);
   assert.ok(found, 'missing field: ' + name); return found;
 };
+// The line a field's aria-describedby names: an Add dialog field's description.
+const described = name => all(dialog()).find(e => e.id === field(name)['aria-describedby']);
 const checkbox = () => all(dialog()).find(e => e.type === 'checkbox');
 const row = key => all(view).find(e => e.tag === 'tr' && e.children[0]?.textContent === key);
 async function run() {
@@ -117,7 +119,7 @@ async function run() {
   assert.equal(field('backend').tag, 'select');
   assert.equal(field('deployment').value, '');
   assert.equal(field('base_url').tag, 'input');
-  assert.match(field('base_url').title, /endpoint/);
+  assert.match(described('base_url').textContent, /endpoint/);
   field('name').value = 'bad.name';
   const toasted = notices.length;
   await button('Add', dialog()).onclick();
@@ -147,7 +149,7 @@ async function run() {
 
   await button('Add MCP server…').onclick();
   assert.equal(field('command').tag, 'input');
-  assert.match(field('command').title, /argv/);
+  assert.match(described('command').textContent, /argv/);
   assert.deepEqual(field('enabled').children.map(e => e.value), ['', 'true', 'false']);
   assert.deepEqual(field('approve').children.map(e => e.value), ['', 'ask', 'allow']);
   await button('Add', dialog()).onclick();

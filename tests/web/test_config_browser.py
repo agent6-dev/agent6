@@ -183,3 +183,26 @@ def test_an_unset_effort_opens_its_editor_on_the_value_its_row_shows(
     assert option.inner_text() == shown
     assert option.is_disabled()
     assert not errors
+
+
+def test_an_add_dialog_shows_each_field_description_whole_under_the_field(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Add provider and Add MCP server held each field's description in its placeholder.
+
+    The placeholder was cut at the field's edge with its backticks raw, and went once typing
+    started.
+    """
+    page, errors = open_page(port)
+    _config(page, port)
+    page.get_by_role("button", name="Add provider…").click()
+    dialog = page.get_by_role("dialog")
+    field = dialog.locator('input[name="base_url"]')
+    field.fill("https://llm.example.com/v1")
+    assert field.get_attribute("placeholder") is None
+    described = dialog.locator(f"#{field.get_attribute('aria-describedby')}")
+    assert described.is_visible()
+    assert "https://api.anthropic.com/v1" in described.locator("code").all_inner_texts()
+    assert "`" not in described.inner_text()
+    assert described.evaluate("e => e.scrollWidth <= e.clientWidth")
+    assert not errors
