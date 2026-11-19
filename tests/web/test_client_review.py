@@ -46,7 +46,7 @@ Element.prototype.querySelectorAll = function(s) {
 Object.defineProperty(Element.prototype, 'parentElement', {get() { return this.parent; }});
 const notLive = s => s.finished;
 let confirmations = 0, notices = [], posts = [];
-const confirm = () => { confirmations++; return true; };
+const confirmDialog = async () => { confirmations++; return true; };
 const crypto = {getRandomValues: array => array.fill(1)};
 let postJSON = async (url, body) => {
   posts.push({url, body}); return {message: 'steer submitted'};

@@ -49,7 +49,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     ? 'Remove [presets.' + selected + '] from the global and repo config and reset preset to none'
     : 'No preset is selected';
   removePresetBtn.onclick = async () => {
-    if (!confirm('Remove [presets.' + selected + '] and every value under it from the global and repo config, and reset preset to none?')) return;
+    if (!await confirmDialog('Remove [presets.' + selected + ']?', 'This removes every value under it from the global and repo config, and resets preset to none.', 'Remove', true)) return;
     removePresetBtn.disabled = true;
     try {
       const d = await postJSON('/api/config/preset/remove', {name: selected});
@@ -505,10 +505,11 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       const remove = el('button', 'danger', 'Remove'); remove.disabled = !editable;
       remove.setAttribute('aria-label', 'Remove reviewer ' + label);
       remove.onclick = async () => {
-        if (!confirm(`Remove reviewer ${label} from ${rosterWhere}?`)) return;
+        close(); // the question takes the editor's place: one dialog at a time
+        if (!await confirmDialog(`Remove reviewer ${label}?`, `This saves the remaining roster to ${rosterWhere}, including an empty list after the last reviewer.`, 'Remove', true)) return;
         await act(remove, async () => {
           const result = await postJSON('/api/config/reviewer/remove', {index, repo: s.source === 'repo'});
-          toast(result.message); close(); await refresh();
+          toast(result.message); await refresh();
         });
       };
       item.appendChild(remove); roster.appendChild(item);
@@ -529,10 +530,11 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     toast(d.message || 'unset ' + key); close(); await refresh();
   });
   if (removeBtn) removeBtn.onclick = async () => {
-    if (!confirm('Remove ' + table.label + " '" + entry.name + "' and all its values from " + entryWhere + '? Values from lower layers may become visible.')) return;
+    close(); // the question takes the editor's place: one dialog at a time
+    if (!await confirmDialog('Remove ' + table.label + " '" + entry.name + "'?", 'This removes it and all its values from ' + entryWhere + '. Values from lower layers may become visible.', 'Remove', true)) return;
     await act(removeBtn, async () => {
       const d = await postJSON('/api/config/entry/remove', {table: entry.table, name: entry.name, repo: entry.source === 'repo'});
-      toast(d.message || 'removed'); close(); await refresh();
+      toast(d.message || 'removed'); await refresh();
     });
   };
 }

@@ -173,7 +173,7 @@ async function confirmMerge(r) {
   let same = '';
   try { same = (await getJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge')).same_paths; }
   catch (err) { toast(err.message, true); return false; }
-  return confirm('Merge run ' + r.session_id + '? Lands its branch on its base with your git.merge_method, as `agent6 sessions merge` does; the checkout never moves.' + (same ? '\n\n' + same : ''));
+  return confirmDialog('Merge run ' + r.session_id + '?', 'Lands its branch on its base with your git.merge_method, as `agent6 sessions merge` does; the checkout never moves.' + (same ? '\n\n' + same : ''), 'Merge');
 }
 async function postMerge(r) {
   try { const d = await postJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge', {}); toast(d.message || 'merged'); route(); return true; }
@@ -232,6 +232,27 @@ function openDialog(title, cls) {
   dialog.showModal();
   dialog.focus(); // not its Close button, which the browser would pick; a caller's field takes it next
   return dialog;
+}
+// Resolves true from the action's button; false from any other close, or when a dialog is open.
+async function confirmDialog(title, text, action, danger) {
+  const dialog = openDialog(title, 'confirm');
+  if (!dialog) return false;
+  dialog.setAttribute('role', 'alertdialog');
+  const consequence = dialog.appendChild(el('p'));
+  consequence.id = 'dialog-text-' + dialogCount;
+  consequence.appendChild(withCode(text));
+  dialog.setAttribute('aria-describedby', consequence.id);
+  const row = dialog.appendChild(el('div', 'form-row'));
+  const yes = row.appendChild(el('button', danger ? 'danger' : 'primary', action));
+  const no = row.appendChild(el('button', null, 'Cancel'));
+  // A held Enter's repeats press nothing: the Enter that asked would answer too.
+  dialog.onkeydown = (e) => { if (e.key === 'Enter' && e.repeat) e.preventDefault(); };
+  (danger ? no : yes).focus(); // a destructive question opens on Cancel
+  return new Promise((resolve) => {
+    yes.onclick = () => { resolve(true); dialog.close(); };
+    no.onclick = () => dialog.close();
+    dialog.addEventListener('close', () => resolve(false));
+  });
 }
 
 // --- sign-in -----------------------------------------------------------------
@@ -452,8 +473,13 @@ function runOnce(button, action, ready = () => true) {
   let busy = false;
   button.sync = () => { button.disabled = busy || !ready(); };
   button.onclick = async () => {
+    const focused = document.activeElement === button;
     busy = true; button.sync();
-    try { await action(); } finally { busy = false; button.sync(); }
+    try { await action(); } finally {
+      busy = false; button.sync();
+      // A dialog that closed while the button was disabled could not hand the focus back to it.
+      if (focused && document.activeElement === document.body) button.focus();
+    }
   };
   button.sync();
 }
@@ -927,14 +953,14 @@ function sessionsCard() {
   // method every merged run's branch is unreachable, so a plain prune
   // reports them and deletes none.
   const prune = async (deleteSquashed) => {
-    if (deleteSquashed && !confirm('Force-delete branches and chain refs recorded as squash-merged? Their commits stay in the base; each deletion prints an undelete command.')) return;
+    if (deleteSquashed && !await confirmDialog('Force-delete branches and chain refs recorded as squash-merged?', 'Their commits stay in the base; each deletion prints an undelete command.', 'Force-delete', true)) return;
     try { const d = await postJSON('/api/sessions/prune', { delete_squashed: deleteSquashed }); toast(d.message || 'pruned'); route(); }
     catch (e) { toast(e.message, true); }
   };
   action('Prune merged runs', () => prune(false));
   action('Prune merged runs, squash-merged too', () => prune(true));
   action('Clear saved asks', async () => {
-    if (!confirm('Delete every saved ask?')) return;
+    if (!await confirmDialog('Delete every saved ask?', 'Runs `agent6 sessions remove --asks`: removes every saved `agent6 ask` transcript for this directory. Asks run elsewhere are untouched.', 'Delete', true)) return;
     try { const d = await postJSON('/api/sessions/rm_asks', {}); toast(d.message || 'cleared'); route(); }
     catch (e) { toast(e.message, true); }
   });
@@ -971,7 +997,7 @@ function machineFilesCard() {
       // A machine run spends against your provider from this one click, so
       // confirm the cost first (the deliberate-cost bar the composer's typed
       // Start and the stop dialog already hold).
-      if (!confirm('Run ' + mf.name + '? It starts a paid machine run now and spends against your provider.')) return;
+      if (!await confirmDialog('Run ' + mf.name + '?', 'It starts a paid machine run now and spends against your provider.', 'Run')) return;
       try { await postJSON('/api/machine/run', { file: mf.path }); toast('started ' + mf.name); setTimeout(route, 800); } catch (e) { toast(e.message, true); }
     });
     return b;

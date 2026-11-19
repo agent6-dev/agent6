@@ -120,8 +120,8 @@ function findingActions(card, entry, cards, state) {
     const dead = notLive(state), fix = el('button', 'mini', dead ? 'Resume to fix' : 'Fix');
     const request_id = findingRequestId();
     fix.disabled = entry.finding.fix_state === 'delivery_unknown';
-    fix.onclick = () => {
-      if (fix.posting || (dead && !confirm('Resume this session to reproduce and fix ' + entry.finding.finding_id + '?'))) return;
+    fix.onclick = async () => {
+      if (fix.hasAttribute('aria-disabled') || (dead && !await confirmDialog('Resume this session to reproduce and fix ' + entry.finding.finding_id + '?', 'The finding stays open.', 'Resume to fix'))) return;
       return send(fix, 'fix', {request_id, expected_version: entry.version, resume: dead});
     };
     row.appendChild(fix);
@@ -205,15 +205,15 @@ function paintFindings(cards, state) {
     // One steer for every open finding without a queued Fix; the per-finding Fix stays below.
     const dead = notLive(state), all = el('button', 'mini', dead ? 'Resume to fix all open' : 'Fix all open');
     all.onclick = async () => {
-      if (all.posting || (dead && !confirm('Resume this session to reproduce and fix every open finding?'))) return;
-      all.posting = true; // a press meanwhile does nothing, and the focus stays on the button
+      if (all.hasAttribute('aria-disabled') || (dead && !await confirmDialog('Resume this session to reproduce and fix every open finding?', 'The findings stay open.', 'Resume to fix'))) return;
+      all.setAttribute('aria-disabled', 'true'); // reads disabled, and keeps the keyboard focus
       try {
         const result = await postJSON(cards._base + '/findings/fix', {all_open: true, request_id: findingRequestId(), resume: dead});
         toast(result.results.map(r => r.finding_id + ': ' + r.message).join('; '));
         const snap = await getJSON(cards._base);
         if (cards.findings.isConnected) paintRun(cards, snap);
       } catch (e) { toast(e.message, true); }
-      finally { all.posting = false; }
+      finally { all.removeAttribute('aria-disabled'); }
     };
     host.appendChild(all);
   }

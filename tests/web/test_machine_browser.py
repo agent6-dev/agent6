@@ -18,7 +18,7 @@ from agent6.sessions import process
 from tests.web import test_web_browser
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Dialog, Page
+    from playwright.sync_api import Page
 
 pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
@@ -585,16 +585,10 @@ def test_the_palette_offers_the_machine_views_actions(
     expect(page.locator("dialog[open] .ac-item")).to_have_text(
         ["Stop · this page", "Notifications blocked · this page"]
     )
-    asked: list[str] = []
-
-    def dismiss(dialog: Dialog) -> None:
-        asked.append(dialog.message)
-        dialog.dismiss()
-
-    page.once("dialog", dismiss)
     page.keyboard.press("Enter")
+    question = page.get_by_role("alertdialog", name="Stop working?")
+    question.get_by_role("button", name="Cancel").click()
     expect(page.locator("dialog[open]")).to_have_count(0)
-    assert len(asked) == 1, asked
     assert not errors
 
 
@@ -606,18 +600,16 @@ def test_stop_asks_by_the_instance_name(
 
     _machine(tmp_path, "working", LOOP, [], _talk(2), alive=True)
     page, errors = _open(open_page, port, "working")
-    asked: list[str] = []
-
-    def dismiss(dialog: Dialog) -> None:
-        asked.append(dialog.message)
-        dialog.dismiss()
-
-    page.once("dialog", dismiss)
-    page.get_by_role("button", name="Stop").click()
-    expect(page.get_by_role("button", name="Stop")).to_be_enabled()
-    assert asked == [
-        "Stop working? It parks at its next transition, and agent6 machine run working resumes it."
-    ]
+    stop = page.get_by_role("button", name="Stop")
+    stop.click()
+    question = page.get_by_role("alertdialog", name="Stop working?")
+    text = question.locator("p")
+    expect(text).to_have_text(
+        "It parks at its next transition, and agent6 machine run working resumes it."
+    )
+    expect(text.locator("code")).to_have_text("agent6 machine run working")
+    question.get_by_role("button", name="Cancel").click()
+    expect(stop).to_be_focused()
     assert not errors
 
 

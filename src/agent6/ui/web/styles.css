@@ -45,8 +45,8 @@ body {
 }
 a { color: var(--accent); text-decoration: none; }
 code, pre, .mono { font-family: var(--mono); }
-/* A command named in a message, the sign-in form or a problem (withCode): code on a faint tint. */
-.toast code, .login code, .problem code { font-size: .92em; padding: 0 3px; border-radius: 3px; background: color-mix(in srgb, var(--text) 8%, transparent); }
+/* A command in a message, the sign-in form, a problem or a question (withCode): a tinted chip. */
+.toast code, .login code, .problem code, .confirm code { font-size: .92em; padding: 0 3px; border-radius: 3px; background: color-mix(in srgb, var(--text) 8%, transparent); }
 pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
 
 /* The top bar's ends line up with the page's text: 22px in, and 16px on a phone (below). */
@@ -368,6 +368,8 @@ dialog.card.picker { margin-top: 12vh; max-height: calc(88vh - 16px); }
 dialog::backdrop { background: rgba(0,0,0,.55); overflow: hidden; overscroll-behavior: contain; }
 /* A dialog with no field holds the focus itself; the ring is for the controls inside it. */
 dialog:focus-visible { outline: none; }
+/* A question before an action (confirmDialog): its text keeps the line breaks it was given. */
+dialog.confirm p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
 /* A dialog's own failure: one line under its buttons, gone while empty. */
 dialog .err { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 dialog .err:empty { display: none; }

@@ -689,8 +689,8 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       };
       if (f.unstaged || f.untracked) add('Stage', 'add this file to the index (git add)', () => gitWrite('stage', { paths: [f.path] }));
       if (f.staged) add('Unstage', 'take this file out of the index; its content stays (git restore --staged)', () => gitWrite('unstage', { paths: [f.path] }));
-      if (f.unstaged && !f.untracked) add('Discard', 'restore this file from the index, dropping its unstaged edits (git restore)', () => {
-        if (confirm('Discard the unstaged edits to ' + f.path + '? The file is restored from the index; the edits are not kept anywhere.')) gitWrite('discard', { path: f.path });
+      if (f.unstaged && !f.untracked) add('Discard', 'restore this file from the index, dropping its unstaged edits (git restore)', async () => {
+        if (await confirmDialog('Discard the unstaged edits to ' + f.path + '?', 'The file is restored from the index; the edits are not kept anywhere.', 'Discard', true)) gitWrite('discard', { path: f.path });
       });
       return row.children.length ? row : null;
     };

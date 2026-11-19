@@ -421,6 +421,7 @@ const document = {
 const window = {scrollX: 0, scrollY: 0, scrollTo() {}};
 const view = el('div'); document.body.appendChild(view);
 const boot = () => {}, setCrumb = () => {}, esc = String, toast = () => {};
+const withCode = text => el('text', null, text);
 const actionable = (node, action) => { node.onclick = action; };
 let routeGen = 0;
 const setting = {
@@ -434,8 +435,6 @@ const getJSON = async path => path === '/api/config/entry_tables' ? {tables: []}
   : path === '/api/config' ? {'review.reviewers': setting} : {values: []};
 const posts = [];
 const postJSON = async (path, body) => { posts.push({path, body}); return {ok: true}; };
-let confirmed = false;
-const confirm = () => confirmed;
 function nodes(root = document.body) {
   return [root, ...root.children.flatMap(child => nodes(child))];
 }
@@ -463,10 +462,16 @@ function field(id) { return nodes().find(n => n.id === id); }
   assert.equal(removes.length, 2);
   assert.ok(nodes().some(n => n.text === '1: tests'));
   assert.ok(nodes().some(n => n.text === '2: tests'));
-  await removes[1].onclick();
+  const cancelled = removes[1].onclick();
+  const open = nodes().filter(n => n.tag === 'dialog' && n.open);
+  assert.deepEqual(open.map(n => n.role), ['alertdialog'], "the question takes the editor's place");
+  button('Cancel').onclick();
+  await cancelled;
   assert.equal(posts.length, 0, 'cancel does not write');
-  confirmed = true;
-  await removes[1].onclick();
+  editConfig('review.reviewers', setting);
+  const removed = nodes().filter(n => n.tag === 'button' && n.text === 'Remove')[1].onclick();
+  button('Remove').onclick();
+  await removed;
   assert.deepEqual(posts.shift(), {
     path: '/api/config/reviewer/remove', body: {index: 1, repo: true},
   });

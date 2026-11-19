@@ -1,6 +1,6 @@
 // --- run dashboard -----------------------------------------------------------
 async function stopRun(base, label) {
-  if (!confirm('Stop ' + label + '? Its model call is cut and a running command handed back; it ends now and can be resumed later. A worker that does not answer within 5 s is killed.')) return;
+  if (!await confirmDialog('Stop ' + label + '?', 'Its model call is cut and a running command handed back; it ends now and can be resumed later. A worker that does not answer within 5 s is killed.', 'Stop now', true)) return;
   try { const d = await postJSON(base + '/stop', {}); toast(d.message || 'stopped'); } catch (e) { toast(e.message, true); }
 }
 
@@ -71,7 +71,7 @@ async function renderRun(id, opts, gen) {
       // worktree goes with the record, uncommitted edits included.
       const kept = cards._run_branch ? ' The branch and its commits are kept.' : '';
       const wt = cards._worktree ? ' Its worktree ' + cards._worktree + ' goes too when no other session names it and it holds no uncommitted work.' : '';
-      if (!confirm('Delete this session\'s history?' + kept + wt)) return;
+      if (!await confirmDialog('Delete this session\'s history?', 'This cannot be undone.' + kept + wt, 'Delete', true)) return;
       closeLive(); cc.conv.close(); // no poll or refresh may ask for the session while it goes
       try {
         const d = await postJSON('/api/session/' + encodeURIComponent(id) + '/rm', {});

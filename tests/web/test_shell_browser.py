@@ -832,3 +832,93 @@ def test_a_dialog_keeps_its_close_button_in_view_while_it_scrolls(
     assert before is not None and after is not None and box is not None
     assert after["y"] == before["y"] and after["y"] >= box["y"]
     assert not errors
+
+
+@pytest.mark.parametrize(
+    ("hash_", "files", "asker", "title", "action", "opens_on", "post"),
+    [
+        ("#/", [], "Clear saved asks", "Delete every saved ask?", "Delete", "Cancel", "rm_asks"),
+        ("#/machines", ["code-fixer"], "▶ code-fixer", "Run code-fixer?", "Run", "Run", "run"),
+    ],
+)
+def test_a_question_acts_only_on_its_action_button(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    hash_: str,
+    files: list[str],
+    asker: str,
+    title: str,
+    action: str,
+    opens_on: str,
+    post: str,
+) -> None:
+    """A native confirm() blocked the page, and a browser that suppresses it answers no unasked.
+
+    Esc, Cancel and a click outside answer no and post nothing, the focus back on the button that
+    asked; only the action posts. A destructive question opens on Cancel, any other on its action.
+    """
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(port)
+    posts: list[str] = []
+
+    def answer(route: Route) -> None:
+        posts.append(route.request.url.rsplit("/", 1)[1])
+        route.fulfill(json={"ok": True, "message": "done"})
+
+    page.route(f"**/api/*/{post}", answer)
+    if files:
+        mfs = [{"name": name, "path": f"machines/{name}.yaml"} for name in files]
+        page.route("**/api/hub", lambda route: route.fulfill(json={"machine_files": mfs}))
+    page.goto(f"http://127.0.0.1:{port}/{hash_}")
+    button = page.get_by_role("button", name=asker, exact=True)
+    question = page.get_by_role("alertdialog", name=title)
+    for decline in ("Escape", "Cancel", "outside"):
+        button.click()
+        expect(question.get_by_role("button", name=opens_on, exact=True)).to_be_focused()
+        if decline == "Escape":
+            page.keyboard.press("Escape")
+        elif decline == "Cancel":
+            question.get_by_role("button", name="Cancel", exact=True).click()
+        else:
+            page.mouse.click(5, 5)
+        expect(question).to_have_count(0)
+        expect(button).to_be_focused()
+    assert posts == []
+    button.click()
+    question.get_by_role("button", name=action, exact=True).click()
+    expect(question).to_have_count(0)
+    expect(page.locator(".toast").first).to_be_visible()
+    assert posts == [post]
+    assert not errors
+
+
+def test_a_held_enter_answers_no_question(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The repeats of the Enter that opened a question pressed its action: a paid run started."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    posts: list[str] = []
+    files = {"machine_files": [{"name": "code-fixer", "path": "machines/code-fixer.yaml"}]}
+    page.route("**/api/hub", lambda route: route.fulfill(json=files))
+    page.route(
+        "**/api/machine/run",
+        lambda route: (posts.append(route.request.method), route.fulfill(json={"ok": True})),
+    )
+    page.goto(f"http://127.0.0.1:{port}/#/machines")
+    page.get_by_role("button", name="▶ code-fixer", exact=True).focus()
+    page.keyboard.down("Enter")
+    run = page.get_by_role("alertdialog", name="Run code-fixer?").get_by_role("button", name="Run")
+    expect(run).to_be_focused()
+    page.keyboard.down("Enter")  # held: the keyboard repeats it
+    page.keyboard.down("Enter")
+    page.keyboard.up("Enter")
+    expect(run).to_be_focused()
+    assert posts == []
+    page.keyboard.press("Enter")
+    expect(run).to_have_count(0)
+    expect(page.locator(".toast").first).to_contain_text("started code-fixer")
+    assert posts == ["POST"]
+    assert not errors

@@ -30,8 +30,9 @@ class Element {
                         value: '', checked: false, disabled: false, isConnected: true,
                         listeners: {}});
   }
-  // An element's text is its children's, as in the DOM: a cell holds text nodes and <wbr>s.
-  get textContent() { return this.children.map(child => child.textContent).join('') || this.text; }
+  // An element's text is its own, then its children's, as in the DOM: a cell holds text nodes and
+  // <wbr>s, a dialog's title its first part and a span after each dot.
+  get textContent() { return (this.text ?? '') + this.children.map(c => c.textContent).join(''); }
   set textContent(text) { this.text = text; this.children = []; }
   addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); }
   // A modal dialog hands the focus back to its opener when it closes.
@@ -46,7 +47,7 @@ class Element {
     if (this.tag === 'select' && this.children.length === 1) this.value = child.value;
     return child;
   }
-  set innerHTML(value) { this.children = []; }
+  set innerHTML(value) { this.text = ''; this.children = []; }
   setAttribute(name, value) { this[name] = value; }
   getAttribute(name) { return this[name]; }
   focus() { document.activeElement = this; this.onfocus?.(); }
@@ -66,14 +67,14 @@ const document = {
 };
 const window = {scrollX: 0, scrollY: 0, scrollTo(x, y) { this.scrollX = x; this.scrollY = y; }};
 const view = document.body.appendChild(el('main'));
-let routeGen = 0, token = '', accept = false;
-const writes = [], confirmations = [], notices = [];
+let routeGen = 0, token = '';
+const writes = [], notices = [];
 function boot() {}
 function setCrumb() {}
 function esc(text) { return text; }
 function composing(e) { return e.isComposing || e.keyCode === 229; }
 function toast(text, error) { notices.push({text, error}); }
-function confirm(text) { confirmations.push(text); return accept; }
+function withCode(text) { return el('text', '', text); }
 async function request(path, body) {
   const response = await fetch(base + path, {
     method: body === undefined ? 'GET' : 'POST',
@@ -182,20 +183,23 @@ async function run() {
     ['skills.state.alpha', 'skill', 'skills.state', 'alpha', false],
     ['skills.state."org.some.skill"', 'skill', 'skills.state', 'org.some.skill', false],
   ]) {
-    row(key).onclick();
-    const remove = button('Remove ' + label, dialog());
-    accept = false;
-    const before = writes.length;
-    await remove.onclick();
-    assert.equal(writes.length, before);
-    assert.ok(dialog());
-    assert.ok(confirmations.at(-1).includes(label + " '" + name + "'"));
-    if (name === 'org.some.skill') {
-      assert.ok(!confirmations.at(-1).includes('skills.state.org.some.skill'));
+    // The question takes the editor's place; its Cancel writes nothing, its Remove removes.
+    for (const answer of ['Cancel', 'Remove']) {
+      row(key).onclick();
+      const before = writes.length;
+      const removing = button('Remove ' + label, dialog()).onclick();
+      const question = dialog();
+      assert.equal(question.role, 'alertdialog');
+      assert.ok(question.textContent.includes(label + " '" + name + "'"));
+      if (name === 'org.some.skill') {
+        assert.ok(!question.textContent.includes('skills.state.org.some.skill'));
+      }
+      assert.ok(question.textContent.includes(repo ? 'repo' : 'global'));
+      button(answer, question).onclick();
+      await removing;
+      assert.equal(dialog(), undefined);
+      if (answer === 'Cancel') assert.equal(writes.length, before);
     }
-    assert.ok(confirmations.at(-1).includes(repo ? 'repo' : 'global'));
-    accept = true;
-    await remove.onclick();
     assert.deepEqual(writes.at(-1), {path: '/api/config/entry/remove', body: {table, name, repo}});
     assert.equal(row(key), undefined);
   }

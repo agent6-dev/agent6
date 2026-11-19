@@ -419,10 +419,10 @@ def test_removal_controls_reach_the_cli(
     page.goto(f"http://127.0.0.1:{git_port}/{route}")
     button = page.get_by_role("button", name="Clear saved asks" if asks else "Delete", exact=True)
     expect(button).to_be_enabled()
-    page.once("dialog", lambda dialog: dialog.accept())
+    button.click()
     endpoint = "/api/sessions/rm_asks" if asks else f"/api/session/{session_id}/rm"
     with page.expect_response(lambda response: response.url.endswith(endpoint)) as response:
-        button.click()
+        page.get_by_role("alertdialog").get_by_role("button", name="Delete", exact=True).click()
     assert response.value.ok, response.value.text()
     assert not session.exists()
     assert not errors
