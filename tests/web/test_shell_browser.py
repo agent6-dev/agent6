@@ -334,6 +334,33 @@ def test_the_keyboard_list_spells_each_key_one_way_as_keycaps(
     assert not errors
 
 
+def test_a_small_buttons_label_stays_on_one_line_inside_its_card(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Beside a wide details pane, "detail: collapsed" wrapped to two lines in its heading.
+
+    The label keeps one line, and the button drops under the heading when the row is too narrow.
+    """
+    from playwright.sync_api import expect
+
+    run = paths.state_dir(tmp_path) / "sessions" / "runs" / "narrow-AAA111"
+    run.mkdir(parents=True)
+    start = {"type": "session.start", "mode": "run", "user_task": "Look"}
+    (run / "logs.jsonl").write_text(json.dumps(start) + "\n")
+    page, errors = open_page(port)
+    page.add_init_script("""localStorage.setItem('a6-drawer', 'open');
+      localStorage.setItem('a6-drawer-w', '390px');""")
+    page.set_viewport_size({"width": 820, "height": 900})
+    page.goto(f"http://127.0.0.1:{port}/#/session/narrow-AAA111")
+    detail = page.get_by_role("button", name=re.compile("^detail: "))
+    expect(detail).to_be_visible()
+    button, card = detail.bounding_box(), page.locator(".conv-card").first.bounding_box()
+    assert button is not None and card is not None
+    assert button["height"] == 26
+    assert button["x"] + button["width"] <= card["x"] + card["width"]
+    assert not errors
+
+
 def test_every_phone_tab_keeps_its_icon_on_one_line(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

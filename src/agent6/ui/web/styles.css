@@ -215,9 +215,11 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 .hs-list + .more-note { padding: 5px 10px; font-size: 13px; }
 .hs-list + .more-note:empty { display: none; }
 .more-note { color: var(--muted); font-style: italic; }
-.card-head-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.card-head-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
 .card-head-row h2 { flex: 1; margin: 0; }
-button.mini { min-height: var(--ctl-h-sm); min-width: var(--ctl-h-sm); padding: 0 var(--ctl-px-sm); font-size: 13px; }
+/* A small button keeps its label whole on one line: its min-width would let a flex row squeeze it
+   below the label's width, so it does not shrink, and the row wraps or its neighbours give way. */
+button.mini { min-height: var(--ctl-h-sm); min-width: var(--ctl-h-sm); padding: 0 var(--ctl-px-sm); font-size: 13px; white-space: nowrap; flex-shrink: 0; }
 
 .empty { color: var(--muted); padding: 24px; text-align: center; }
 .err { color: var(--err); }
