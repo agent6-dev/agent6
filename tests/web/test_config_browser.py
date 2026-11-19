@@ -1194,6 +1194,22 @@ def test_a_config_dialog_checkbox_sits_on_its_labels_first_line(
     assert not errors
 
 
+def test_a_config_dialog_checkbox_stands_6px_before_its_label(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The layer checkbox stood 10px before its label; the page's other checkboxes stand 6px off."""
+    page, errors = open_page(port)
+    _config(page, port)
+    page.locator('[data-key="budget.max_usd"]').click()
+    check = page.get_by_role("dialog").locator("label.cfg-check")
+    gap = check.evaluate(
+        """label => label.querySelector('span').getBoundingClientRect().left
+        - label.querySelector('input').getBoundingClientRect().right"""
+    )
+    assert gap == 6
+    assert not errors
+
+
 def test_an_empty_reviewer_roster_explains_no_remove(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
