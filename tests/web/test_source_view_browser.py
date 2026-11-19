@@ -202,7 +202,7 @@ def test_line_numbers_quote_from_the_keyboard(
     page.add_init_script("localStorage.setItem('a6-diff-mode', 'inline')")
     page.goto(f"http://127.0.0.1:{port}/#/git/compare/{base}..{head}?path=long.txt")
     page.wait_for_selector(".dl[data-new='50']")
-    page.locator(".diff-blame").focus()
+    page.locator(".diff-open-file").focus()  # the diff head's last control
     page.keyboard.press("Tab")
     focused = page.locator(":focus")
     expect(focused).to_have_attribute("role", "button")
