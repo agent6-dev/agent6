@@ -34,28 +34,61 @@ const fileCount = (n) => n === 1 ? '1 file' : n + ' files';
 // contents) that folds and unfolds its children on a click, and `fileRow(entry)` for each
 // file; both carry `data-path` and a `--depth` the stylesheet indents by. `folded` starts
 // every folder closed; `opened`, a Map of folder path to open, overrides that per folder and
-// records each toggle, so a choice outlives a repaint.
+// records each toggle, so a choice outlives a repaint. The tree is one Tab stop: ↑ and ↓ move
+// between the rows shown, → opens a folder or enters it, ← closes it or goes to its parent,
+// and Home and End go to the first and last row.
 function treeView(root, fileRow, folderNote, folded, folderMark, opened) {
   const box = el('div', 'gtree');
+  box.setAttribute('role', 'tree'); box.setAttribute('aria-label', 'Files');
+  const item = (row, depth) => {
+    row.setAttribute('role', 'treeitem'); row.setAttribute('aria-level', depth + 1); row.tabIndex = -1;
+    row.style.setProperty('--depth', depth);
+  };
   const paint = (node, host, depth) => {
     for (const d of node.dirs.values()) {
-      const row = el('div', 'gtree-dir'); row.dataset.path = d.path; row.title = d.path; row.style.setProperty('--depth', depth);
+      const row = el('div', 'gtree-dir'); row.dataset.path = d.path; row.title = d.path;
       const caret = el('span', 'gtree-caret');
       row.appendChild(caret);
       if (folderMark) { const mark = folderMark(d); if (mark) row.appendChild(mark); }
       row.appendChild(el('span', 'gtree-name', d.name)); row.appendChild(el('span', 'muted gtree-note', folderNote(d)));
-      const kids = el('div', 'gtree-kids');
+      const kids = el('div', 'gtree-kids'); kids.setAttribute('role', 'group');
       let open = opened?.has(d.path) ? opened.get(d.path) : !folded;
       caret.textContent = '▾'; // one glyph; the stylesheet turns it for a folded folder
       const apply = () => { kids.hidden = !open; caret.classList.toggle('folded', !open); row.setAttribute('aria-expanded', String(open)); };
       actionable(row, () => { open = !open; opened?.set(d.path, open); apply(); }, 'folder ' + d.path);
+      item(row, depth);
       apply();
       host.appendChild(row); host.appendChild(kids);
       paint(d, kids, depth + 1);
     }
-    for (const f of node.files) { const r = fileRow(f); r.style.setProperty('--depth', depth); host.appendChild(r); }
+    for (const f of node.files) { const r = fileRow(f); item(r, depth); host.appendChild(r); }
   };
   paint(root, box, 0);
+  const shown = () => [...box.querySelectorAll('[role=treeitem]')].filter(r => !r.closest('.gtree-kids[hidden]'));
+  const stop = box.querySelector('[aria-selected=true]') || box.querySelector('[role=treeitem]');
+  if (stop) stop.tabIndex = 0;
+  box.addEventListener('focusin', (e) => {
+    if (e.target.getAttribute('role') !== 'treeitem') return;
+    for (const r of box.querySelectorAll('[role=treeitem][tabindex="0"]')) r.tabIndex = -1;
+    e.target.tabIndex = 0;
+  });
+  box.addEventListener('keydown', (e) => {
+    const row = e.target;
+    if (row.getAttribute('role') !== 'treeitem') return;
+    const rows = shown(), i = rows.indexOf(row), state = row.getAttribute('aria-expanded');
+    let to = null;
+    if (e.key === 'ArrowDown') to = rows[i + 1];
+    else if (e.key === 'ArrowUp') to = rows[i - 1];
+    else if (e.key === 'Home') to = rows[0];
+    else if (e.key === 'End') to = rows[rows.length - 1];
+    else if (e.key === 'ArrowRight') { if (state === 'false') row.click(); else if (state === 'true') to = rows[i + 1]; }
+    else if (e.key === 'ArrowLeft') {
+      if (state === 'true') row.click();
+      else to = rows.slice(0, i).findLast(r => +r.getAttribute('aria-level') < +row.getAttribute('aria-level'));
+    } else return;
+    e.preventDefault();
+    to?.focus();
+  });
   return box;
 }
 

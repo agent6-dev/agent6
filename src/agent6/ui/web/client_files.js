@@ -69,8 +69,9 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     return mark;
   };
   const fileRow = (f) => {
-    const row = el('div', 'gf' + (shown === f.path ? ' sel' : ''));
+    const row = el('div', 'gf');
     row.dataset.path = f.path; row.title = f.path;
+    row.setAttribute('aria-selected', String(shown === f.path));
     const mark = stateMark([f]); if (mark) row.appendChild(mark);
     row.appendChild(el('span', 'gf-path', f.path.slice(f.path.lastIndexOf('/') + 1)));
     row.appendChild(el('span', 'gf-counts muted', f.kind === 'file' ? fmtBytes(f.size) : f.kind));
@@ -100,7 +101,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
       if (n !== loading || !app.isConnected) return;
       entries = d.files; truncated = d.truncated; rev = d.rev; ignored = !!d.ignored;
     } catch (e) { if (n === loading && app.isConnected) { tree.innerHTML = ''; tree.appendChild(el('div', 'err page-pad', e.message)); } return; }
-    if (openPath) reveal(openPath);
+    if (openPath) { reveal(openPath); shown = openPath; }
     paintTree();
     if (openPath) await showFile(entries.find(f => f.path === openPath) || { path: openPath, kind: 'file', size: null }, false, true);
   };
@@ -123,7 +124,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     setViewHash(fileHash + (anchor ? '?' + new URLSearchParams({ anchor }) : ''), linked);
     reveal(f.path);
     for (const r of tree.querySelectorAll('.gf')) {
-      r.classList.toggle('sel', r.dataset.path === f.path);
+      r.setAttribute('aria-selected', String(r.dataset.path === f.path));
       if (r.dataset.path === f.path) r.scrollIntoView({ block: 'nearest' });
     }
     body.classList.add('viewing');

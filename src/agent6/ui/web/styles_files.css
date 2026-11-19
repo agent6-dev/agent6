@@ -11,7 +11,7 @@
 /* A narrow tree shows the names alone: the folder notes and the file sizes go first. */
 .files-tree { container: files-tree / inline-size; --tree-inset: var(--files-inset); }
 @container files-tree (width < 320px) { .gtree-note, .gf-counts { display: none; } }
-.gf.sel { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
+.gf[aria-selected=true] { background: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
 /* The head is one row of mini buttons tall whatever the file shows, and before its text loads. */
 .files-head { flex: none; flex-wrap: wrap; gap: 8px; min-height: calc(var(--ctl-h-sm) + 17px); padding: 8px var(--files-inset); border-bottom: 1px solid var(--border); }
 .files-head .gf-path { flex: 1 1 200px; }

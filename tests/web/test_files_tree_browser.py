@@ -81,6 +81,42 @@ def test_a_deep_link_reveals_its_file_and_a_filter_edit_keeps_open_folders(
     assert not errors
 
 
+def test_the_tree_is_one_tab_stop_that_the_arrow_keys_walk(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """Every row was its own Tab stop with no arrow keys and no tree semantics."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(big_tree)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    page.wait_for_selector(_row("deep"))
+    expect(page.locator(".files-tree [role=tree]")).to_have_count(1)
+    page.locator(".files-bar input.filter").focus()
+    page.keyboard.press("Tab")
+    focused = page.locator(":focus")
+    expect(focused).to_have_attribute("role", "treeitem")
+    expect(focused).to_have_attribute("data-path", "deep")
+    assert page.locator(".files-tree [tabindex='0']").count() == 1
+    page.keyboard.press("ArrowRight")
+    expect(page.locator(_row("deep"))).to_have_attribute("aria-expanded", "true")
+    page.keyboard.press("ArrowRight")
+    expect(focused).to_have_attribute("data-path", "deep/alpha-folder-name")
+    expect(focused).to_have_attribute("aria-level", "2")
+    page.keyboard.press("ArrowLeft")
+    expect(focused).to_have_attribute("data-path", "deep")
+    page.keyboard.press("ArrowLeft")
+    expect(page.locator(_row("deep"))).to_have_attribute("aria-expanded", "false")
+    page.keyboard.press("ArrowDown")
+    expect(focused).to_have_attribute("data-path", "dir")
+    page.keyboard.press("End")
+    expect(focused).to_have_attribute("data-path", "logo.png")
+    page.keyboard.press("Enter")
+    page.wait_for_selector(".files-view img")
+    expect(page.locator(_row("logo.png"))).to_have_attribute("aria-selected", "true")
+    assert page.locator(".files-tree [tabindex='0']").count() == 1
+    assert not errors
+
+
 def test_a_narrow_tree_keeps_each_name_on_one_line(
     open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
 ) -> None:
