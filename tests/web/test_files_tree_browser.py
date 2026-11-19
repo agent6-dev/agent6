@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from agent6.ui.web import git_model
 from tests.unit.test_git_history import _git
 from tests.web import test_web_browser
 
@@ -277,3 +278,29 @@ def test_one_hairline_tops_the_tree(
     top = page.locator(_row("deep")).evaluate("e => getComputedStyle(e).borderTopWidth")
     assert top == line
     assert not errors
+
+
+def test_the_tree_insets_its_messages(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    big_tree: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The cut-list note sat on the tree's edge, and an error flush under the tree's top."""
+    from playwright.sync_api import expect
+
+    monkeypatch.setattr(git_model, "TREE_MAX", 5)
+    page, errors = open_page(big_tree)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    text = (
+        "e => { const r = document.createRange(); r.selectNodeContents(e);"
+        " return r.getBoundingClientRect(); }"
+    )
+    note = page.locator(".files-tree > .gf-note").evaluate(text)
+    row = page.locator(".files-tree [data-path]").first.evaluate(_CONTENT_LEFT)
+    assert note["x"] == pytest.approx(row, abs=1)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/no-such-revision")
+    message = page.locator(".files-tree > .err")
+    expect(message).to_contain_text("unknown revision")
+    top = page.locator(".files-tree").evaluate("e => e.getBoundingClientRect().top")
+    assert message.evaluate(text)["y"] - top >= 16
+    assert [e for e in errors if "422" not in e] == []  # the unknown revision's response

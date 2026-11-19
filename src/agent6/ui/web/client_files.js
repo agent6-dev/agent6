@@ -88,7 +88,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     tree.innerHTML = '';
     const q = filter.value.trim().toLowerCase();
     const kept = q ? entries.filter(f => f.path.toLowerCase().includes(q)) : entries;
-    if (truncated) tree.appendChild(el('div', 'err gf-note page-pad', 'the list is cut: more files than are shown'));
+    if (truncated) tree.appendChild(el('div', 'err gf-note', 'the list is cut: more files than are shown'));
     // A large tree starts folded and keeps the folders opened by hand; a filter opens every folder holding a match.
     if (!kept.length) tree.appendChild(el('div', 'empty', entries.length ? 'no file matches' : 'no files'));
     else tree.appendChild(treeView(buildTree(kept), fileRow, folderNote, !q && kept.length > 200, d => stateMark(treeFiles(d)), q ? null : filesState.folders));
@@ -100,12 +100,12 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     pane.dataset.key = ''; shown = null; rev = ''; ignored = false; entries = [];
     pane.innerHTML = ''; pane.appendChild(el('div', 'empty', 'click a file to read it'));
     body.classList.remove('viewing');
-    tree.innerHTML = ''; tree.appendChild(el('div', 'muted page-pad', 'loading…'));
+    tree.innerHTML = ''; tree.appendChild(el('div', 'empty', 'loading…'));
     try {
       const d = await getJSON('/api/git/tree?rev=' + encodeURIComponent(filesState.rev.rev) + (showIgnored && !ignoredToggle.hidden ? '&ignored=1' : ''));
       if (n !== loading || !app.isConnected) return;
       entries = d.files; truncated = d.truncated; rev = d.rev; ignored = !!d.ignored;
-    } catch (e) { if (n === loading && app.isConnected) { tree.innerHTML = ''; tree.appendChild(el('div', 'err page-pad', e.message)); } return; }
+    } catch (e) { if (n === loading && app.isConnected) { tree.innerHTML = ''; tree.appendChild(el('div', 'empty err', e.message)); } return; }
     if (openPath) { reveal(openPath); shown = openPath; }
     paintTree();
     if (openPath) await showFile(entries.find(f => f.path === openPath) || { path: openPath, kind: 'file', size: null }, false, true);
