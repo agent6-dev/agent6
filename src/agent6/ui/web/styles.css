@@ -173,10 +173,18 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 .item .sub .pill { display: inline; font-size: inherit; line-height: inherit; color: var(--text); white-space: normal; }
 .item .sub .pill::before { display: inline-block; margin-right: 6px; vertical-align: 1px; }
 .setting { display: inline-block; max-width: 100%; }
-.children-toggle {
-  display: block; margin-top: 4px; padding: 0; background: none; border: 0;
-  font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; text-align: left;
+/* A fold: a muted disclosure (a group's children, the new-work composer's advanced options)
+   whose chevron turns down while it is open. */
+button.fold {
+  display: inline-flex; align-items: center; gap: 6px; min-height: var(--ctl-h-sm); min-width: 0;
+  padding: 0 4px 0 0; border: 0; background: none; font-size: 12px; color: var(--muted);
 }
+button.fold:hover { background: none; color: var(--text); }
+button.fold::before {
+  content: ""; width: 5px; height: 5px; margin: 0 3px; border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0; rotate: -45deg; transition: rotate .15s;
+}
+button.fold[aria-expanded=true]::before { rotate: 45deg; }
 
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 13px; }
 .kv .k { color: var(--muted); }
@@ -195,14 +203,18 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 /* The docked composers (new-work, create-machine, machine steer/message) lay the entry and its
    buttons in a .row: the entry takes the width and the buttons sit on its bottom edge. */
 .composer .row > textarea.field { flex: 1 1 0; min-width: 0; }
-.composer .row > button { align-self: flex-end; }
+.composer .row:not(.pickers) > button { align-self: flex-end; }
 .composer .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
 /* Picker rows (pickerRow above a composer, the Latest commit card's picker row):
    compact dropdowns sized to their value, each beside its label; on a narrow
    screen the pairs wrap whole. */
 .pickers { flex-wrap: wrap; gap: 6px 16px; margin-bottom: 8px; font-size: 13px; }
 .pickers .pick { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
-.pickers select.field { width: auto; min-width: 0; max-width: 100%; min-height: var(--ctl-h-sm); font-size: 13px; }
+.pickers .pick > span { flex: none; } /* the dropdown narrows, never its label */
+.pickers .field { width: auto; min-width: 0; max-width: 100%; min-height: var(--ctl-h-sm); font-size: 13px; }
+/* The spend cap holds a few digits and no spin buttons at rest (Firefox paints them by default). */
+.pickers input[type=number] { width: 7em; appearance: textfield; }
+.pickers[hidden] { display: none; }
 /* /parallel model-id autocomplete popup (a textarea can't carry a native
    datalist, so this is the composer analogue of the config editor's list). */
 .ac-pop { position: absolute; left: 12px; bottom: 100%; margin-bottom: 6px; z-index: 40;
@@ -272,8 +284,7 @@ button.danger { color: var(--err); }
 button.danger:hover { border-color: var(--err); }
 button.quiet.danger { color: var(--muted); }
 button.quiet.danger:hover { color: var(--err); border-color: transparent; background-color: color-mix(in srgb, var(--err) 10%, transparent); }
-/* The sessions card's maintenance actions and the composer's advanced fold: one muted
-   disclosure each, closed by default. */
+/* The sessions card's maintenance actions, in one row above the list. */
 .toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
 /* The keyboard list (openKeys): a heading per place, then each key's caps beside what it does. */
 .keys { border-collapse: collapse; width: 100%; font-size: 13px; }
@@ -286,10 +297,6 @@ kbd {
   display: inline-block; min-width: 22px; padding: 1px 5px; font: 12px/18px var(--mono); text-align: center;
   color: var(--text); background: var(--surface2); border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: var(--r-sm);
 }
-.advanced { margin-top: 10px; }
-.advanced summary { cursor: pointer; list-style: none; width: max-content; font-size: 12px; color: var(--muted); }
-.advanced summary::-webkit-details-marker { display: none; }
-.advanced[open] summary { color: var(--text); }
 /* The messages (#toasts) stack in one column over the content, 16px above the docked composer's
    top edge (--dock), or above the completion list open over it (--dock-top: the last element
    with a name is the anchor), so none covers the dock's controls. A page without a dock puts
@@ -447,7 +454,7 @@ aside.rail { display: none; }
      narrow phone; the action drops onto the next line. */
   .composer.dock .row { flex-wrap: wrap; }
   .composer.dock .row > textarea.field { flex-basis: 100%; }
-  .composer.dock .row > button { flex: 1 1 auto; }
+  .composer.dock .row:not(.pickers) > button { flex: 1 1 auto; }
   /* No nested scrolling on a phone: an inner scroller traps the page scroll,
      so every card flows at natural height and the page is the one scroller. */
   .card.scroll, .conv-box { max-height: none !important; overflow: visible; }

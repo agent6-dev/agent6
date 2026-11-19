@@ -534,8 +534,9 @@ function pickerRow(pairs) {
 }
 
 // The new-work composer, docked at the bottom of the Sessions page: the mode,
-// worktree, preset and model row and the advanced fold (the plan to run from,
-// a spend cap) above task text + Start (Enter starts, Shift+Enter newline).
+// worktree, preset and model row, whose advanced fold opens a row with the plan
+// to run from and a spend cap, above task text + Start (Enter starts,
+// Shift+Enter newline).
 // `presets` and `presetDefault` are the hub payload's list and the label of
 // its first option, which keeps the config's own preset; `sessions` are the
 // hub's rows, whose finished plans the fold offers. The model box lists every
@@ -565,11 +566,13 @@ function newWorkDock(presets, presetDefault, sessions) {
   }
   const cap = el('input', 'field'); cap.type = 'number'; cap.step = 'any'; cap.placeholder = 'config';
   cap.title = 'the metered spend ceiling in USD for this session (--max-usd); -1 is unlimited';
-  cap.style.width = '7em';
-  const advanced = el('details', 'advanced');
-  advanced.appendChild(el('summary', null, 'advanced…'));
-  advanced.appendChild(pickerRow([['from plan', seed], ['max USD', cap]]));
-  if (pending.seed_from) { seed.value = pending.seed_from; advanced.open = true; }
+  // The last picker opens the advanced options in a row under the pickers.
+  const more = pickerRow([['from plan', seed], ['max USD', cap]]);
+  const advanced = el('button', 'fold', 'advanced');
+  const fold = (open) => { advanced.setAttribute('aria-expanded', String(open)); more.hidden = !open; };
+  advanced.onclick = () => fold(more.hidden);
+  fold(false);
+  if (pending.seed_from) { seed.value = pending.seed_from; fold(true); }
   // A worktree and a seed are run options: the other modes grey them.
   const followMode = () => { worktree.disabled = seed.disabled = mode.value !== 'run'; };
   const preset = el('select', 'field');
@@ -623,8 +626,10 @@ function newWorkDock(presets, presetDefault, sessions) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go.click(); }
   };
   row.appendChild(task); row.appendChild(go);
-  root.appendChild(pickerRow([['mode', mode], ['worktree', worktree], ['preset', preset], ['model', model]]));
-  root.appendChild(advanced);
+  const picks = pickerRow([['mode', mode], ['worktree', worktree], ['preset', preset], ['model', model]]);
+  picks.appendChild(advanced);
+  root.appendChild(picks);
+  root.appendChild(more);
   root.appendChild(row);
   root.appendChild(el('div', 'hint', 'Enter starts the run / plan / ask (a run from a plan needs no task) · Shift+Enter newline · '
     + '/parallel [SPEC --] TASK dispatches children (SPEC: count or models; repeat to queue more) · Ctrl-K switches sessions'));
@@ -789,7 +794,8 @@ function paintSession(r, depth, regroup) {
     const children = r.children || [];
     if (!children.length) return;
     const open = expandedGroups.has(r.session_id);
-    const toggle = el('button', 'children-toggle', `children: ${children.length} · ${open ? 'hide' : 'show'}`);
+    const toggle = el('button', 'fold', `children: ${children.length} · ${open ? 'hide' : 'show'}`);
+    toggle.setAttribute('aria-expanded', String(open));
     toggle.onclick = regroup;
     g.appendChild(toggle);
   });

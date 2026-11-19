@@ -261,3 +261,35 @@ def test_a_repeated_start_or_prune_sends_one_request(
     expect(page.locator(".toast")).to_have_count(2)
     expect(page.get_by_role("button", name="Start", exact=True)).to_be_enabled()
     assert not errors
+
+
+def test_the_folds_say_whether_they_are_open_and_keep_the_focus(
+    open_page: Callable[[int], tuple[Page, list[str]]], fan_port: int
+) -> None:
+    """The children toggle was a 40px button with no open state, and Enter on it lost the focus.
+
+    The advanced fold was an 18px line on the entry's top edge, and its spend cap stood taller
+    than the plan dropdown beside it.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(fan_port)
+    page.goto(f"http://127.0.0.1:{fan_port}/#/")
+    height = "e => e.getBoundingClientRect().height"
+    show = page.get_by_role("button", name="children: 2 · show")
+    expect(show).to_have_attribute("aria-expanded", "false")
+    show.focus()
+    page.keyboard.press("Enter")
+    hide = page.get_by_role("button", name="children: 2 · hide")
+    expect(hide).to_be_focused()
+    expect(hide).to_have_attribute("aria-expanded", "true")
+    assert 24 <= hide.evaluate(height) < 32
+    advanced = page.locator(".dock .pickers").get_by_role("button", name="advanced", exact=True)
+    expect(advanced).to_have_attribute("aria-expanded", "false")
+    advanced.click()
+    expect(advanced).to_have_attribute("aria-expanded", "true")
+    fields = page.locator(".dock select[title^='seed the run'], .dock input[type=number]")
+    expect(fields).to_have_count(2)
+    boxes = fields.evaluate_all("es => es.map(e => [e.getBoundingClientRect().y, e.offsetHeight])")
+    assert boxes[0] == boxes[1], boxes
+    assert not errors
