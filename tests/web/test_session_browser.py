@@ -52,6 +52,22 @@ def test_an_approval_shows_its_whole_command(
     assert not errors
 
 
+def test_allow_is_an_approvals_one_filled_answer(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Allow all was filled as Allow is, so the wider answer read as the expected one."""
+    from playwright.sync_api import expect
+
+    ask = {"type": "approval.prompt", "id": "approval-1", "prompt": "Allow run_command: make"}
+    session_logs.write_run(tmp_path, "asking-AAA111", [ask], live=True)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/asking-AAA111")
+    answers = page.locator(".prompt-box button")
+    expect(answers).to_have_text(["Allow", "Allow all", "Deny", "Deny all"])
+    expect(page.locator(".prompt-box button.primary")).to_have_text(["Allow"])
+    assert not errors
+
+
 @pytest.mark.parametrize("width", [1280, 390])
 def test_prompts_stand_under_the_top_bar_and_the_action_bar_clips_nothing(
     open_page: Callable[[int], tuple[Page, list[str]]],
