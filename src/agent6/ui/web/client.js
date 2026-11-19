@@ -895,7 +895,7 @@ function draftsCard() {
 function machineFilesCard() {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, 'Run a machine'));
-  const frow = el('div', 'form-row');
+  const frow = el('div', 'form-row machine-files');
   const run = (mf) => {
     const b = el('button', null, '▶ ' + mf.name);
     runOnce(b, async () => {

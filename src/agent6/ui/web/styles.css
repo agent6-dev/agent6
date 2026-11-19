@@ -164,6 +164,8 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 @media (hover: hover) { .item:hover { background: var(--surface2); border-left-color: var(--accent); } }
 .item .grow { flex: 1 1 320px; min-width: 0; }
 .item-actions { display: flex; gap: 6px; }
+/* A machine file's Run button: a name too long for the line wraps from the button's start. */
+.machine-files > button { text-align: start; }
 .item .title, .item .continued { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The title is the row's link, in the row's text; its keyboard ring goes round the whole row. */
 .item a.title { display: block; color: inherit; }

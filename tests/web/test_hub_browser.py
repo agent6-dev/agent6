@@ -658,3 +658,21 @@ def test_a_row_the_keyboard_reaches_scrolls_clear_of_the_dock(
         overlaps.append(page.evaluate(under))
     assert max(overlaps) <= 0, overlaps
     assert not errors
+
+
+def test_a_long_machine_file_name_wraps_from_its_buttons_start(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A machine file name too long for a phone centred its two lines in its Run button."""
+    name = "release-notes-drafter-for-the-quarterly-platform-changelog.asm.toml"
+    (tmp_path / "machines").mkdir()
+    (tmp_path / "machines" / name).write_text("", encoding="utf-8")
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/machines")
+    lines = page.get_by_role("button", name=name).evaluate(
+        """b => { const r = document.createRange(); r.selectNodeContents(b);
+        return [...r.getClientRects()].map(x => Math.round(x.left)); }"""
+    )
+    assert len(lines) > 1 and len(set(lines)) == 1, lines
+    assert not errors
