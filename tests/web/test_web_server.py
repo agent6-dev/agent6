@@ -1232,6 +1232,43 @@ def test_sse_run_catchup_folds_history_into_few_frames(
         conn.close()
 
 
+def test_the_first_stream_frame_folds_the_whole_log(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first frame folds the log as it stands at connect, however slowly the tailer reads.
+
+    A tailer that fell behind on a loaded machine sent a frame folded from the log's first
+    line: the page painted a finished run as stale until the next frame.
+    """
+    from agent6.ui.web import sse
+
+    tail_events = sse.tail_events
+
+    def slow(*args: Any, **kwargs: Any) -> Iterator[dict[str, Any]]:
+        for i, event in enumerate(tail_events(*args, **kwargs)):
+            yield event
+            if i == 0:
+                time.sleep(0.3)  # a reader preempted after its first event
+
+    monkeypatch.setattr(sse, "tail_events", slow)
+    events: list[dict[str, object]] = [{"type": "session.start", "user_task": "t"}]
+    for i in range(20):
+        events.append({"type": "tool.call", "name": f"t{i}", "args_preview": {}})
+        events.append({"type": "tool.result", "name": f"t{i}", "ok": True, "summary": "ok"})
+    events.append({"type": "session.stop", "verification": "passed"})
+    _make_run(tmp_path, "slow-tail", events)
+    frames: list[dict[str, Any]] = []
+
+    def send(payload: Any) -> bool:
+        frames.append(cast(dict[str, Any], payload))
+        return False  # one frame, then the client leaves
+
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "slow-tail"
+    sse.stream_session(sse.SseChannel(send=send, ping=lambda: False), session_dir, repo=tmp_path)
+
+    assert (frames[0]["log_count"], frames[0]["finished"]) == (len(events), True)
+
+
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
 def test_sse_run_closes_even_if_tailer_dies(
     server: tuple[web_server.WebServer, int],
@@ -1241,8 +1278,12 @@ def test_sse_run_closes_even_if_tailer_dies(
     # The tail thread always enqueues its None sentinel, so a raise there closes the stream.
     from agent6.ui.web import sse
 
-    def _boom(*_a: object, **_k: object) -> object:
-        raise RuntimeError("tailer died")
+    tail_events = sse.tail_events
+
+    def _boom(*args: Any, **kwargs: Any) -> Iterator[dict[str, Any]]:
+        if kwargs.get("follow"):  # the thread's tail, after the first frame's read
+            raise RuntimeError("tailer died")
+        return tail_events(*args, **kwargs)
 
     monkeypatch.setattr(sse, "tail_events", _boom)
     _srv, port = server
@@ -1254,7 +1295,7 @@ def test_sse_run_closes_even_if_tailer_dies(
         assert resp.status == 200
         seen = resp.read()  # must reach EOF, not time out
         frames = [f for f in seen.split(b"\n\n") if f.startswith(b"data:")]
-        assert len(frames) == 1  # the final (initial-state) snapshot
+        assert len(frames) == 1  # the first frame; the dead tail adds nothing to fold
     finally:
         conn.close()
 

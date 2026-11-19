@@ -24,9 +24,10 @@ from agent6.machine import MachineError
 from agent6.sessions import layout
 from agent6.ui.web import model
 from agent6.viewmodel import (
+    SessionState,
     apply_event,
     died_without_end,
-    initial_state,
+    fold_session,
     machine_snapshot,
     manifest_header,
     session_state_as_dict,
@@ -78,10 +79,30 @@ def _with_idle_age(payload: dict[str, Any]) -> dict[str, Any]:
     return {**payload, "reasoning": fresh}
 
 
+def _fold_log(src: pathlib.Path) -> tuple[SessionState, int]:
+    """Fold a run's log as it stands.
+
+    Args:
+        src: The run's log.
+
+    Returns:
+        The folded state, and the byte offset its last event ends at.
+    """
+    read_to = 0
+
+    def heard(end: int) -> None:
+        nonlocal read_to
+        read_to = end
+
+    state = fold_session(tail_events(src, follow=False, on_position=heard))
+    return state, read_to
+
+
 def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib.Path) -> None:  # noqa: PLR0915
     """Stream one run until the worker dies without an end or the client leaves.
 
-    A tailer thread feeds a queue; the loop coalesces queued events and delta bursts,
+    The first frame folds the log as it stands at connect. A tailer thread then feeds a
+    queue from where that read ended; the loop coalesces queued events and delta bursts,
     and refreshes disk-backed state on each idle heartbeat, including after an end.
 
     Args:
@@ -89,15 +110,15 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
         session_dir: The run's directory.
         repo: The repository the run worked in.
     """
+    src = session_dir / layout.LOGS_NAME
     events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     stop = threading.Event()
 
-    def tail() -> None:
-        src = session_dir / layout.LOGS_NAME
+    def tail(start: int) -> None:
         try:
             # A resumed run logs into this same file, so the stream outlives session.stop.
             for ev in tail_events(
-                src, follow=True, stop_when_finished=False, should_stop=stop.is_set
+                src, follow=True, stop_when_finished=False, should_stop=stop.is_set, start_at=start
             ):
                 events.put(ev)
         finally:
@@ -108,7 +129,9 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
     # heartbeat re-reads the header for every session.
     header = manifest_header(session_dir, repo=repo)
 
-    threading.Thread(target=tail, daemon=True).start()
+    # A frame folded from part of the log reads a finished run as stale: started, no end, no worker.
+    state, read_to = _fold_log(src)
+    threading.Thread(target=tail, args=(read_to,), daemon=True).start()
 
     previous: dict[str, Any] | None = None
 
@@ -163,7 +186,8 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
         return last_type, True
 
     try:
-        state = initial_state()
+        if not send_frame():
+            return
         last_delta_emit = 0.0
         while True:
             try:
