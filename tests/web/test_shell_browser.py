@@ -822,7 +822,10 @@ def test_the_arrows_keep_the_highlighted_session_in_view_and_named(
 def test_the_pointer_and_the_arrows_share_one_highlighted_row(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
-    """A hovered row looked as picked as the arrows' row, and Enter opened the arrows' row."""
+    """A hovered row looked as picked as the arrows' row, and Enter opened the arrows' row.
+
+    The arrows' row was a faint tint alone; it takes the accent bar the Git pickers draw.
+    """
     from playwright.sync_api import expect
 
     page, errors = open_page(port)
@@ -836,6 +839,10 @@ def test_the_pointer_and_the_arrows_share_one_highlighted_row(
         "rows => rows.map(r => getComputedStyle(r).backgroundColor !== 'rgba(0, 0, 0, 0)')"
     )
     assert lit == [False, False, False, True, False]  # the pointer still rests on the third
+    bars = dialog.locator(".ac-item").evaluate_all(
+        "rows => rows.map(r => getComputedStyle(r).boxShadow.includes('inset'))"
+    )
+    assert bars == [False, False, False, True, False]
     page.keyboard.press("Enter")
     page.wait_for_function("location.hash === '#/session/run-3'")
     assert [e for e in errors if not e.startswith("Failed to load resource")] == []

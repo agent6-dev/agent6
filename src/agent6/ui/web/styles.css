@@ -249,6 +249,8 @@ button.fold[aria-expanded=true]::before { rotate: 45deg; }
 .ac-item { padding: 0.3125rem 0.625rem; border-radius: 6px; cursor: pointer; font-size: var(--fs-m);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ac-item.on, .ac-item:hover { background: var(--surface2); color: var(--accent); }
+/* The option the arrows reached also takes an accent bar, which a hovered one does not. */
+.ac-item.on { box-shadow: inset 2px 0 0 var(--accent); }
 /* A picker's list box (openPicker): the autocomplete popup's rows in a dialog. Each line of an
    option ends in an ellipsis when it is too long, and a row's own buttons sit under its option.
    The note under the list says what the list leaves out. */
