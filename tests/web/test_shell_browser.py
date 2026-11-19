@@ -453,6 +453,62 @@ def test_a_refused_secret_is_read_out_and_marks_the_field(
     assert [e for e in errors if not e.startswith("Failed to load resource")] == []
 
 
+def test_signing_in_hands_the_focus_to_the_pages_heading(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Signing in replaced the form that held the focus and left the focus on the page body."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.add_init_script("localStorage.setItem('a6-token', 'expired')")
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    field = page.locator("#login").get_by_role("textbox", name="secret")
+    field.fill(signin.SECRET)
+    field.press("Enter")
+    heading = page.get_by_role("heading", level=1)
+    expect(heading).to_have_text("Sessions")
+    expect(page.locator(".dock textarea")).to_be_visible()
+    expect(heading).to_be_focused()
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
+@pytest.mark.parametrize("way", ["Fork", "Ctrl+K"])
+def test_a_navigation_hands_the_focus_to_the_new_pages_heading(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    way: str,
+) -> None:
+    """The new page's control named as the focused one took the focus: one Enter acted again.
+
+    Fork opened the fork on its own Fork, and a switch from Review run focused the next run's.
+    """
+    from playwright.sync_api import expect
+
+    for sid in ("first-AAA111", "second-BBB222"):
+        session_logs.write_run(tmp_path, sid, [{"type": "session.stop"}])
+    page, errors = open_page(port)
+    page.route(
+        "**/first-AAA111/fork",
+        lambda route: route.fulfill(json={"ok": True, "new_session_id": "second-BBB222"}),
+    )
+    page.goto(f"http://127.0.0.1:{port}/#/session/first-AAA111")
+    button = page.get_by_role("button", name="Fork" if way == "Fork" else "Review run", exact=True)
+    pressed = button.element_handle()
+    button.focus()
+    if way == "Ctrl+K":
+        page.keyboard.press("Control+K")
+        page.keyboard.type("second")
+        rows = page.get_by_role("dialog", name="Switch session").get_by_role("row")
+        expect(rows).to_have_text([re.compile("^second-BBB222")])
+    page.keyboard.press("Enter")
+    page.wait_for_function("b => !b.isConnected", arg=pressed)  # the next page painted
+    expect(page.locator(".run-app .composer textarea")).to_be_visible()
+    assert page.evaluate("location.hash") == "#/session/second-BBB222"
+    expect(page.get_by_role("heading", level=1)).to_be_focused()
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
 def test_a_message_shows_a_backticked_command_as_code(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

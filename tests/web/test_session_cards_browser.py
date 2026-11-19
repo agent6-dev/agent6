@@ -455,6 +455,58 @@ def test_a_button_keeps_the_keyboard_focus_while_its_request_is_in_flight(
     assert [e for e in errors if not e.startswith("Failed to load resource")] == []
 
 
+def test_a_resolved_finding_hands_the_focus_on(
+    open_page: Callable[[int], tuple[Page, list[str]]], evidence: tuple[int, dict[str, Any]]
+) -> None:
+    """The Findings card's repaint after Submit resolution dropped the focus to the page."""
+    from playwright.sync_api import expect
+
+    port, _ = evidence
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    card = page.locator(".card-findings")
+    finding = card.locator(".finding").first
+    finding.get_by_role("button", name="Resolve", exact=True).click()
+    finding.get_by_role("textbox", name="Reason").fill("the test fixture says so")
+    submit = finding.get_by_role("button", name="Submit resolution", exact=True)
+    pressed = submit.element_handle()
+    submit.focus()
+    page.keyboard.press("Enter")
+    page.wait_for_function("b => !b.isConnected", arg=pressed)  # the card repainted
+    expect(card.get_by_role("button", name="Receipt", exact=True)).to_be_focused()
+    assert not errors
+
+
+def test_a_streamed_review_keeps_the_focus_on_receipt(
+    open_page: Callable[[int], tuple[Page, list[str]]], evidence: tuple[int, dict[str, Any]]
+) -> None:
+    """A frame with a new review repainted the Findings card: Receipt, put back, lost the focus."""
+    from playwright.sync_api import Route, expect
+
+    port, _ = evidence
+    page, errors = open_page(port)
+    streams: list[Route] = []
+
+    def hold(route: Route) -> None:
+        streams.append(route)
+
+    page.route("**/review-run/events", hold)
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    card = page.locator(".card-findings")
+    receipt = card.get_by_role("button", name="Receipt", exact=True)
+    painted = card.locator(".finding").first.element_handle()
+    receipt.focus()
+    snap = page.evaluate("getJSON('/api/session/review-run')")
+    snap["review"]["version"] += 1
+    while not streams:
+        page.wait_for_timeout(50)
+    frame = "data: " + json.dumps(snap) + "\n\n"
+    streams[0].fulfill(headers={"Content-Type": "text/event-stream"}, body=frame)
+    page.wait_for_function("f => !f.isConnected", arg=painted)  # the card repainted
+    expect(receipt).to_be_focused()
+    assert not errors
+
+
 def test_a_picked_commit_says_its_diff_is_loading(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:

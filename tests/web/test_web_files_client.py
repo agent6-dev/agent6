@@ -83,6 +83,7 @@ const remember = (key, value) => saved.set(key, value);
 const toast = message => { throw new Error(message); };
 const view = el('main');
 const setCrumb = () => {};
+const crumb = el('h1');
 const boot = () => {};
 const esc = x => x;
 const actionable = (node, fn) => node.onclick = fn;

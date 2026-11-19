@@ -413,10 +413,37 @@ function showProblem(heading, reason, failed, back) {
 }
 // The page each kind of route sits under, for its problem view's way back.
 const BACK = { session: ['Sessions', '#/'], machine: ['State machines', '#/machines'], draft: ['State machines', '#/machines'] };
+
+// The controls a repaint can hand the focus to.
+const FOCUSABLE = 'a[href], button, input, select, textarea, summary, [tabindex]';
+// The row a control sits in: the nearest element with a `rowKey` (patchRows' rows, a finding).
+function rowOf(e) { while (e && e.rowKey === undefined) e = e.parentElement; return e; }
+// A control's identity across a repaint: its row's key, its tag and its name.
+function controlKey(e) {
+  const name = e.getAttribute('aria-label') || e.getAttribute('href') || e.labels?.[0]?.textContent
+    || (e.matches('button, summary') ? e.textContent.trim() : '');
+  return JSON.stringify([rowOf(e)?.rowKey ?? null, e.tagName, name]);
+}
+// A repaint that dropped the focus hands it back to `held` if the paint kept it, else to its match in `scope`, else its row's first control there, else `fallback`; a null scope matches nothing, and a focus set since stays.
+function refocus(held, scope, fallback) {
+  const now = document.activeElement;
+  if (!held || held === document.body || (now && now !== document.body)) return;
+  if (held.isConnected && held.checkVisibility()) { held.focus({ preventScroll: true }); return; } // put back, as the Findings card's Receipt
+  const key = controlKey(held), row = rowOf(held);
+  const controls = scope ? [...scope.querySelectorAll(FOCUSABLE)].filter(c => c.checkVisibility()) : [];
+  const same = controls.find(c => controlKey(c) === key);
+  const sameRow = row ? controls.find(c => rowOf(c)?.rowKey === row.rowKey) : null;
+  for (const c of [same, sameRow]) { c?.focus(); if (c && document.activeElement === c) return; }
+  fallback?.focus();
+}
+// The hash of the page the view shows: route() on it again repaints that page, on any other it navigates.
+let shownHash = null;
 // Publish a tab selection without rebuilding its graph or file pane.
-function setViewHash(hash, replace = false) { if (location.hash !== hash) history[replace ? 'replaceState' : 'pushState'](null, '', hash); }
+function setViewHash(hash, replace = false) { if (location.hash !== hash) history[replace ? 'replaceState' : 'pushState'](null, '', hash); shownHash = location.hash; }
 async function route() {
   const gen = ++routeGen;
+  const held = document.activeElement; // the next paint hands its focus on (refocus)
+  const repaint = location.hash === shownHash; // a navigation matches nothing: a control of the same name on the new page acts on something else
   closeLive();
   document.querySelector('dialog[open]')?.close();
   document.querySelectorAll('.wmenu-btn').forEach(b => b.remove()); // header-mounted by the run view
@@ -460,6 +487,9 @@ async function route() {
     if (e.status === 404) showProblem('Not found', e.message, false, BACK[parts[0]]);
     else showProblem('Could not load this page', e.message, true, BACK[parts[0]]);
   }
+  if (gen !== routeGen) return;
+  shownHash = location.hash;
+  refocus(held, repaint ? document.body : null, crumb);
 }
 window.addEventListener('hashchange', route);
 
@@ -471,21 +501,17 @@ function handToNewWork(fields) {
 }
 
 // --- hub ---------------------------------------------------------------------
-// A button whose action sends a request runs it once at a time, and only when `ready()` says
-// there is something to send: it stays disabled while the action is in flight, so a double click
-// or a repeated Enter sends one request, and while ready() is false. button.sync() reads ready()
-// again; call it when what ready() reads changes.
+// The button runs `action` once at a time and only while ready(): busy, it reads disabled but keeps the focus; sync() re-reads ready().
 function runOnce(button, action, ready = () => true) {
   let busy = false;
-  button.sync = () => { button.disabled = busy || !ready(); };
+  button.sync = () => {
+    button.disabled = !ready();
+    if (busy) button.setAttribute('aria-disabled', 'true'); else button.removeAttribute('aria-disabled');
+  };
   button.onclick = async () => {
-    const focused = document.activeElement === button;
+    if (busy) return;
     busy = true; button.sync();
-    try { await action(); } finally {
-      busy = false; button.sync();
-      // A dialog that closed while the button was disabled could not hand the focus back to it.
-      if (focused && document.activeElement === document.body) button.focus();
-    }
+    try { await action(); } finally { busy = false; button.sync(); }
   };
   button.sync();
 }
@@ -750,7 +776,7 @@ function createMachineDock() {
 // On a refresh (`hold`), a changed row under a press or a text selection keeps its paint until a
 // later one, so the click lands and the selection stays.
 // `rows` is [{ key, data, paint }]: `data` decides whether the row changed, `paint()` builds it.
-const focusables = (row) => [row, ...row.querySelectorAll('a[href], button, input, select, textarea, summary, [tabindex]')];
+const focusables = (row) => [row, ...row.querySelectorAll(FOCUSABLE)];
 let refocusing = false; // a repainted row is taking the focus over, which scrolls nothing
 function patchRows(list, rows, hold = false) {
   const old = new Map([...list.children].map(n => [n.rowKey, n]));
@@ -1567,7 +1593,7 @@ function paletteItems() {
   ];
   // The page's own controls, as the page labels them; a hidden or disabled one is not offered.
   for (const b of view.querySelectorAll('.toolbar button, .actions button')) {
-    if (b.disabled || b.offsetParent === null) continue;
+    if (b.matches(':disabled, [aria-disabled=true]') || b.offsetParent === null) continue;
     items.push({ label: b.textContent.replace(/^[■▶]\s*/, ''), hint: 'this page', run: () => b.click() });
   }
   return items;
@@ -1709,7 +1735,7 @@ function makeComposer(id) {
   const suggest = attachCommandSuggest(ta, root, () => finished === false, offeredCommands);
   const models = attachParallelSuggest(ta, root); // the spec before `--`
   const apply = () => {
-    ta.disabled = busy;
+    ta.readOnly = busy; // not disabled: the entry keeps the keyboard focus
     presetRow.style.display = summary.style.display = finished ? '' : 'none';
     if (finished) fillPresets();
     if (finished && !rowShown) relabel();

@@ -35,6 +35,7 @@ function reviewRules(panel) {
 function findingCard(entry) {
   const f = entry.observation.finding, loc = f.location;
   const card = el('span', 'finding'); card.dataset.finding = entry.finding.finding_id;
+  card.rowKey = entry.finding.finding_id; // a repaint finds the focused control in it again (refocus)
   card.dataset.side = loc.side;
   card.appendChild(el('span', 'finding-title', f.severity + ' · ' + entry.finding.status + ' · ' + f.title));
   const range = loc.start_line == null ? ' (file)' : ':' + loc.start_line
@@ -163,7 +164,7 @@ function paintFindings(cards, state) {
   cards._findings_key = key;
   // A draft has no Receipt, so its card waits for a review's first event (the version counts them).
   if (cards._readOnly) cards.findings.parentElement.style.display = review.version ? '' : 'none';
-  const host = cards.findings; host.innerHTML = '';
+  const host = cards.findings, held = document.activeElement; host.innerHTML = '';
   // The counts lead the card with the Receipt button at their end; the receipt opens under them.
   const counts = review.open_counts || {};
   const head = el('div', 'row finding-head');
@@ -262,6 +263,7 @@ function paintFindings(cards, state) {
     if (!list.children.length) list.appendChild(el('div', 'muted', 'No findings in this filter.'));
   };
   status.onchange = severity.onchange = paint; paint();
+  refocus(held, host, host.querySelector(FOCUSABLE));
 }
 async function renderReviewedFile(gen, path, query) {
   setCrumb('Files · reviewed version');

@@ -250,6 +250,43 @@ def test_space_opens_a_focused_row_as_enter_does(
     assert not errors
 
 
+def test_a_pressed_button_keeps_the_focus_through_the_repaint_it_starts(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Prune and a row's Merge repainted the page and left the focus on the page body."""
+    from playwright.sync_api import expect
+
+    row = {
+        "session_id": "run-A",
+        "mode": "run",
+        "status": "passed",
+        "status_label": "passed",
+        "status_level": "ok",
+        "task": "Merge me",
+        "branch": "agent6/run-A",
+        "unmerged": True,
+    }
+    page, errors = open_page(port)
+    page.route("**/api/hub", lambda route: route.fulfill(json={"sessions": [row]}))
+    page.route("**/api/sessions/prune", lambda route: route.fulfill(json={"ok": True}))
+    page.route("**/api/session/run-A/merge", lambda route: route.fulfill(json={"ok": True}))
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.get_by_role("button", name="Merge", exact=True)).to_be_visible()
+    page.evaluate("clearInterval(hubTimer)")  # only the action may repaint the page
+    for name in ("Prune merged runs", "Merge"):
+        button = page.get_by_role("button", name=name, exact=True)
+        pressed = button.element_handle()
+        button.focus()
+        page.keyboard.press("Enter")
+        if name == "Merge":
+            question = page.get_by_role("alertdialog", name="Merge run run-A?")
+            expect(question.get_by_role("button", name="Merge")).to_be_focused()
+            page.keyboard.press("Enter")
+        page.wait_for_function("b => !b.isConnected", arg=pressed)  # the page repainted
+        expect(button).to_be_focused()
+    assert not errors
+
+
 def test_a_repeated_start_or_prune_sends_one_request(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

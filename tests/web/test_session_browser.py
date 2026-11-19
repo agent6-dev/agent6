@@ -237,6 +237,40 @@ def test_an_ended_runs_bar_offers_only_what_it_can_do_and_ends_in_delete(
     assert not errors
 
 
+def test_the_composer_keeps_the_focus_while_a_resume_is_in_flight(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """Enter in an ended run's composer disabled the entry, and the focus fell to the page.
+
+    A refused resume gave the entry back its text but not the focus.
+    """
+    from playwright.sync_api import Route, expect
+
+    session_logs.write_run(tmp_path, "resume-AAA111", [{"type": "session.stop"}])
+    page, errors = open_page(port)
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    page.route("**/resume", hold)
+    page.goto(f"http://127.0.0.1:{port}/#/session/resume-AAA111")
+    entry = page.locator(".run-app .composer textarea")
+    expect(entry).to_have_attribute("placeholder", re.compile("next|continue"))  # resumes
+    entry.fill("go on")
+    entry.press("Enter")
+    while not held:
+        page.wait_for_timeout(50)
+    expect(entry).to_be_focused()
+    expect(entry).not_to_be_editable()
+    held[0].fulfill(status=409, json={"error": "refused"})
+    expect(page.locator(".toast.bad")).to_contain_text("refused")
+    expect(entry).to_be_editable()
+    expect(entry).to_be_focused()
+    expect(entry).to_have_value("go on")
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
 @pytest.mark.parametrize(
     ("model", "line"), [("o/vendor/configured", "configured"), ("", "no model")]
 )
