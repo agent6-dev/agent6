@@ -90,7 +90,7 @@ function refBadge(r) {
 }
 function statusBadge(status) {
   const s = el('span', 'gf-st st-' + esc(status), status);
-  s.title = { A: 'added', M: 'modified', D: 'deleted', R: 'renamed', T: 'type changed', I: 'ignored' }[status] || status;
+  s.title = { A: 'added', M: 'modified', D: 'deleted', R: 'renamed', T: 'type changed', I: 'ignored', U: 'untracked' }[status] || status;
   return s;
 }
 function shortLabel(c) { return c.short + ' ' + c.subject; }
@@ -188,14 +188,19 @@ function fileList(files, truncated, open, actions) {
   if (truncated) root.appendChild(el('div', 'err gf-note', 'the list is cut: more files changed than are shown'));
   const body = el('div'); root.appendChild(body);
   let mode = recall(FILES_VIEW_KEY, 'list');
+  // A working-tree file reads U while untracked, and says when its changes are staged.
   const fileRow = (f, short) => {
     const row = el('div', 'gf');
     row.dataset.path = f.path;
-    row.appendChild(statusBadge(f.status));
-    row.appendChild(filePath(f, short));
+    const status = f.untracked ? 'U' : f.status;
+    const index = f.staged ? (f.unstaged ? 'partly staged' : 'staged') : '';
+    row.appendChild(statusBadge(status));
+    const path = filePath(f, short);
+    if (index) path.append(' ', el('span', 'gf-index', index));
+    row.appendChild(path);
     row.appendChild(fileCounts(f));
     if (actions) { const acts = actions(f); if (acts) row.appendChild(acts); }
-    actionable(row, () => open(files.indexOf(f)), f.status + ' ' + f.path);
+    actionable(row, () => open(files.indexOf(f)), status + ' ' + f.path + (index ? ', ' + index : ''));
     return row;
   };
   const folderNote = (d) => {

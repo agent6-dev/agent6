@@ -1161,6 +1161,28 @@ def test_the_working_tree_row_joins_head_with_a_dashed_line(
     assert errors == [], errors
 
 
+def test_the_working_tree_rows_say_untracked_and_staged(
+    open_page: Callable[[int], tuple[Page, list[str]]], dirty_git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """An untracked file reads U, not A, and a row says when its changes are staged."""
+    _git(tmp_path, "add", "b.txt")
+    (tmp_path / "b.txt").write_text("one\ntwo\nthree\nfour\nfive\n", encoding="utf-8")
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/worktree")
+    page.wait_for_selector(".git-side .gf")
+
+    def row(path: str) -> tuple[str, str]:
+        found = page.locator(f".git-side .gf[data-path='{path}']")
+        index = found.locator(".gf-index")
+        return found.locator(".gf-st").inner_text(), index.inner_text() if index.count() else ""
+
+    assert row("new.txt") == ("U", "")
+    assert row("dir/g.txt") == ("R", "staged")
+    assert row("b.txt") == ("M", "partly staged")
+    assert row("logo.png") == ("M", "")
+    assert errors == [], errors
+
+
 def test_the_working_tree_rows_keep_one_slot_per_verb(
     open_page: Callable[[int], tuple[Page, list[str]]], dirty_git_port: int
 ) -> None:
