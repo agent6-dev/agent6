@@ -137,8 +137,14 @@ function signedOut(r) {
   }
   return r;
 }
-// Every GET: the token on the request, a 401 to the sign-in form, the server's error text thrown.
-async function getResponse(url) { const r = signedOut(await fetch(url, { headers: authHeaders() })); if (!r.ok) throw new Error((await r.json().catch(()=>({error:r.statusText}))).error || r.statusText); return r; }
+// Every GET: the token on the request, a 401 to the sign-in form, the server's error text thrown
+// with the response's status.
+async function getResponse(url) {
+  const r = signedOut(await fetch(url, { headers: authHeaders() }));
+  if (r.ok) return r;
+  const reason = (await r.json().catch(() => ({ error: r.statusText }))).error || r.statusText;
+  throw Object.assign(new Error(reason), { status: r.status });
+}
 async function getJSON(url) { return (await getResponse(url)).json(); }
 async function getBlob(url) { return (await getResponse(url)).blob(); }
 async function postJSON(url, body) {
@@ -171,7 +177,8 @@ function toast(msg, bad) {
   } else { setTimeout(() => t.remove(), 4000); }
   document.getElementById('toasts').appendChild(t);
 }
-function setCrumb(t) { crumb.textContent = t || ''; }
+// The crumb names the page; the browser's tab and history read the same name.
+function setCrumb(t) { crumb.textContent = t || ''; document.title = t ? t + ' · agent6' : 'agent6'; }
 
 // --- dialogs -----------------------------------------------------------------
 // Every modal is a <dialog> in the card skin, named by its title, with a Close button beside it.
@@ -213,8 +220,9 @@ function showLogin(error) {
   routeGen++; // a render in flight must not paint over the form
   closeLive();
   document.querySelector('dialog[open]')?.close();
-  setCrumb('sign in');
   setTab('');
+  setCrumb('Sign in');
+  view.removeAttribute('aria-busy'); // a form kept from a repeat call changes no child of the view
   let form = document.getElementById('login');
   if (!form) {
     view.innerHTML = '';
@@ -315,12 +323,16 @@ function actionable(elem, activate, label) {
   };
 }
 
-// The open page's nav link in both bars carries aria-current, which also styles it.
+// The open page's nav link in both bars carries aria-current, which also styles it. The crumb
+// starts as that link's label, so it is right while the page loads; a page under it (a session,
+// a machine) names itself once it has loaded.
 function setTab(name) {
+  let label = '';
   for (const a of document.querySelectorAll('nav.tabs a, aside.rail .rail-nav a')) {
-    if (a.dataset.tab === name) a.setAttribute('aria-current', 'page');
+    if (a.dataset.tab === name) { a.setAttribute('aria-current', 'page'); label = a.title; }
     else a.removeAttribute('aria-current');
   }
+  setCrumb(label);
 }
 
 // --- router ------------------------------------------------------------------
@@ -333,6 +345,21 @@ let booted = false; // the one-shot deep-link to `agent6 web <target>` ran
 // stream (whose stale handler could later closeLive() the visible view when
 // the old run finishes).
 let routeGen = 0;
+// While a route loads, its old view dims after a beat (styles.css), so a quick hop never flickers;
+// the first change to the view's children, the new page or a problem, ends it.
+const viewPainted = new MutationObserver(() => { viewPainted.disconnect(); view.removeAttribute('aria-busy'); });
+// A route that shows no page: what went wrong, a retry for a failure, and the way back.
+function showProblem(heading, reason, failed) {
+  view.innerHTML = '';
+  const card = el('div', 'card problem');
+  card.appendChild(el('h2', null, heading));
+  card.appendChild(el('p', failed ? 'err' : null, reason));
+  const ways = el('div', 'row');
+  if (failed) { const again = el('button', null, 'Try again'); again.onclick = route; ways.appendChild(again); }
+  if (location.hash.replace(/^#\/?/, '')) { const back = el('a', null, 'Back to Sessions'); back.href = '#/'; ways.appendChild(back); }
+  card.appendChild(ways);
+  view.appendChild(card);
+}
 // Publish a tab selection without rebuilding its graph or file pane.
 function setViewHash(hash, replace = false) { if (location.hash !== hash) history[replace ? 'replaceState' : 'pushState'](null, '', hash); }
 async function route() {
@@ -340,6 +367,8 @@ async function route() {
   closeLive();
   document.querySelector('dialog[open]')?.close();
   document.querySelectorAll('.wmenu-btn').forEach(b => b.remove()); // header-mounted by the run view
+  view.setAttribute('aria-busy', 'true');
+  viewPainted.observe(view, { childList: true });
   const h = location.hash.replace(/^#/, '') || '/';
   // First load with no hash: honor the CLI's target (`agent6 web <run-id>`
   // opens that run; a machine name its machine). Explicit hashes win.
@@ -370,11 +399,12 @@ async function route() {
     else if (parts[0] === 'session' && parts[1]) { setTab('hub'); await renderRun(decodeURIComponent(parts[1]), undefined, gen); }
     else if (parts[0] === 'machine' && parts[1]) { setTab('machines'); await renderMachine(decodeURIComponent(parts[1]), gen); }
     else if (parts[0] === 'draft' && parts[1]) { const n = decodeURIComponent(parts[1]); setTab('machines'); await renderRun(n, { base: '/api/draft/' + encodeURIComponent(n), readOnly: true, title: 'Machine draft', crumb: 'draft ' + n }, gen); }
-    else { view.innerHTML = ''; view.appendChild(el('div', 'empty', 'not found')); }
+    else { setTab(''); setCrumb('Not found'); showProblem('Not found', 'No page lives at #' + h + '.'); }
   } catch (e) {
     if (gen !== routeGen) return; // a superseded render's late error must not paint
-    view.innerHTML = '';
-    view.appendChild(el('div', 'empty err', 'error: ' + e.message));
+    // A 404 names something that does not exist, which a retry cannot bring back.
+    if (e.status === 404) showProblem('Not found', e.message);
+    else showProblem('Could not load this page', e.message, true);
   }
 }
 window.addEventListener('hashchange', route);

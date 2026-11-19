@@ -216,6 +216,10 @@ button.mini { min-height: var(--ctl-h-sm); min-width: var(--ctl-h-sm); padding: 
 
 .empty { color: var(--muted); padding: 24px; text-align: center; }
 .err { color: var(--err); }
+/* A route that shows no page (showProblem): the reason keeps its lines and wraps a long word. */
+.problem p { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* While a route loads, its old view dims after a beat, so a quick hop never flickers. */
+#view[aria-busy=true] { opacity: .55; transition: opacity .15s .2s; }
 
 /* Fields sit on the page colour inside an outline, so a field never reads as a button; every
    select draws one chevron in both browsers. */

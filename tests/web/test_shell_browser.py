@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -52,9 +53,97 @@ def test_the_sign_in_form_has_its_own_crumb_and_no_current_page(
     page.goto(f"http://127.0.0.1:{port}/{route}")
     expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible()
     page.wait_for_load_state("networkidle")
-    expect(page.locator("#crumb")).to_have_text("sign in")
+    expect(page.locator("#crumb")).to_have_text("Sign in")
     expect(page.locator("[aria-current=page]")).to_have_count(0)
     assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
+def test_a_route_with_no_page_says_so_under_its_own_crumb(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """`#/nope` showed a bare "not found" under a blank crumb, with the last page current.
+
+    It offered no way back, and the browser's tab read "agent6" on every page.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    expect(page).to_have_title(re.compile("^config · agent6$", re.I))
+    page.evaluate("location.hash = '#/nope'")
+    expect(page.locator("#view")).to_contain_text("No page lives at #/nope.")
+    expect(page.locator("#crumb")).to_have_text("Not found")
+    expect(page).to_have_title("Not found · agent6")
+    expect(page.locator("[aria-current=page]")).to_have_count(0)
+    page.get_by_role("link", name="Back to Sessions").click()
+    expect(page.locator(".dock textarea")).to_be_visible()
+    expect(page).to_have_title(re.compile("^sessions · agent6$", re.I))
+    assert not errors
+
+
+def test_an_unknown_session_reads_not_found_under_its_section(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """An unknown session opened from Config showed a bare error line under the crumb "config".
+
+    It reads Not found under the Sessions crumb, with no Try again: a retry cannot bring it back.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    expect(page.locator("#crumb")).to_have_text(re.compile("config", re.I))
+    page.evaluate("location.hash = '#/session/nobody'")
+    problem = page.locator("#view .problem")
+    expect(problem.get_by_role("heading")).to_have_text("Not found")
+    expect(problem).to_contain_text("no session 'nobody'")
+    expect(page.locator("#crumb")).to_have_text("Sessions")
+    expect(page.locator("[aria-current=page]")).to_have_count(2)  # the rail and the phone tabs
+    expect(problem.get_by_role("button", name="Try again")).to_have_count(0)
+    expect(problem.get_by_role("link", name="Back to Sessions")).to_have_attribute("href", "#/")
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
+def test_a_page_that_fails_to_load_offers_a_retry(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A failed load showed a bare error line, with no way to try again."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.route("**/api/config", lambda route: route.abort(), times=1)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    problem = page.locator("#view .problem")
+    expect(problem.get_by_role("heading")).to_have_text("Could not load this page")
+    expect(page.locator("#crumb")).to_have_text(re.compile("^config$", re.I))
+    problem.get_by_role("button", name="Try again").click()
+    expect(page.locator(".cfg").first).to_be_visible()
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
+def test_the_old_view_is_marked_busy_until_the_next_page_paints(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Config's tab and crumb showed over the Sessions list for a slow load, with no sign of it."""
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(port)
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    page.route("**/api/config", hold)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".dock textarea")).to_be_visible()
+    page.get_by_role("link", name="Config").first.click()
+    view = page.locator("#view")
+    expect(view).to_have_attribute("aria-busy", "true")
+    expect(view.locator(".dock textarea")).to_be_visible()
+    held[0].continue_()
+    expect(page.locator(".cfg").first).to_be_visible()
+    expect(view).not_to_have_attribute("aria-busy", "true")
+    assert not errors
 
 
 def test_the_rail_brand_sits_on_the_header_line(
@@ -69,7 +158,7 @@ def test_the_rail_brand_sits_on_the_header_line(
 
     page, errors = open_page(port)
     page.goto(f"http://127.0.0.1:{port}/#/")
-    expect(page.locator("#crumb")).to_have_text("sessions")
+    expect(page.locator("#crumb")).to_have_text(re.compile("sessions", re.I))
     boxes = """() => Object.fromEntries(Object.entries({ header: 'header',
       brand: 'aside.rail .rail-brand', mark: 'aside.rail .rail-brand img',
       icon: 'aside.rail .rail-nav .ic' }).map(([k, s]) => {
