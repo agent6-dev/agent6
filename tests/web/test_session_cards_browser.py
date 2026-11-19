@@ -455,6 +455,35 @@ def test_a_button_keeps_the_keyboard_focus_while_its_request_is_in_flight(
     assert [e for e in errors if not e.startswith("Failed to load resource")] == []
 
 
+def test_a_findings_buttons_and_links_name_their_finding(
+    open_page: Callable[[int], tuple[Page, list[str]]], evidence: tuple[int, dict[str, Any]]
+) -> None:
+    """Each finding's Resolve and Reviewed links read like every other's, naming no finding.
+
+    Naming it then dropped a link's own title: a pre-existing line's reason, a blame's commit.
+    """
+    from playwright.sync_api import expect
+
+    port, _ = evidence
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    findings = page.locator(".card-findings .finding")
+    expect(findings.first).to_be_visible()
+    titled = 0
+    for finding in findings.all():
+        title = finding.locator(".finding-title").inner_text()
+        resolve = finding.get_by_role("button", name="Resolve", exact=True)
+        expect(resolve).to_have_accessible_description(title)
+        links = finding.get_by_role("link")
+        expect(links.filter(has_text="Reviewed")).to_have_count(2)
+        for link in links.all():
+            own = link.get_attribute("title")
+            titled += bool(own)
+            expect(link).to_have_accessible_description(f"{title} {own}" if own else title)
+    assert titled
+    assert not errors
+
+
 def test_a_resolved_finding_hands_the_focus_on(
     open_page: Callable[[int], tuple[Page, list[str]]], evidence: tuple[int, dict[str, Any]]
 ) -> None:

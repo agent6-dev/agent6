@@ -37,7 +37,7 @@ function findingCard(entry) {
   const card = el('span', 'finding'); card.dataset.finding = entry.finding.finding_id;
   card.rowKey = entry.finding.finding_id; // a repaint finds the focused control in it again (refocus)
   card.dataset.side = loc.side;
-  card.appendChild(el('span', 'finding-title', f.severity + ' · ' + entry.finding.status + ' · ' + f.title));
+  const title = card.appendChild(el('span', 'finding-title', f.severity + ' · ' + entry.finding.status + ' · ' + f.title));
   const range = loc.start_line == null ? ' (file)' : ':' + loc.start_line
     + (loc.end_line !== loc.start_line ? '-' + loc.end_line : '');
   card.appendChild(el('span', 'muted', entry.finding.finding_id + ' · ' + loc.side + ' · ' + loc.path + range));
@@ -62,6 +62,7 @@ function findingCard(entry) {
     const run = el('a', null, 'Session findings'); run.href = '#/session/' + encodeURIComponent(entry.session_id);
     links.appendChild(run);
   }
+  for (const link of [...links.children]) describedBy(title, link); // a copy: describedBy() puts a sibling after a titled link
   return card;
 }
 function drawDiffFindings(host, entries, file, mode) {
@@ -142,6 +143,7 @@ function findingActions(card, entry, cards, state) {
   reason.placeholder = 'Reason (required, at most 2,000 characters)'; form.appendChild(reason);
   const submit = el('button', 'mini', verb === 'resolve' ? 'Submit resolution' : 'Submit reopen'); submit.type = 'submit'; form.appendChild(submit);
   const request_id = findingRequestId();
+  for (const control of card.querySelectorAll('button')) describedBy(card.querySelector('.finding-title'), control);
   form.onsubmit = event => {
     event.preventDefault();
     if (!reason.value.trim()) { reason.focus(); return; }

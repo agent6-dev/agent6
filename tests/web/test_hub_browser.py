@@ -336,6 +336,44 @@ def test_a_modifier_or_middle_click_on_a_row_opens_it_in_a_new_tab(
     assert not errors
 
 
+def test_a_rows_buttons_name_the_row_they_act_on(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Every row's Review, Merge and children toggle read alike, naming no row."""
+    from playwright.sync_api import expect
+
+    def row(sid: str, task: str, **fields: object) -> dict[str, object]:
+        return {
+            "session_id": sid,
+            "mode": "run",
+            "status": "passed",
+            "status_label": "passed",
+            "status_level": "ok",
+            "task": task,
+            **fields,
+        }
+
+    child = row("fan-l1", "Child task")
+    rows = [
+        row("run-A", "Merge me", branch="agent6/run-A", unmerged=True),
+        row("run-B", "Review me too", branch="agent6/run-B"),
+        row("fan", "Fan out", children=[child]),
+    ]
+    page, errors = open_page(port)
+    page.route("**/api/hub", lambda route: route.fulfill(json={"sessions": rows}))
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    for task, names in (
+        ("Merge me", ["Review", "Merge"]),
+        ("Review me too", ["Review"]),
+        ("Fan out", ["children: 1 · show"]),
+    ):
+        buttons = page.locator(".item", has_text=task).get_by_role("button")
+        expect(buttons).to_have_text(names)
+        for at in range(len(names)):
+            expect(buttons.nth(at)).to_have_accessible_description(task)
+    assert not errors
+
+
 def test_a_pressed_button_keeps_the_focus_through_the_repaint_it_starts(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
@@ -916,8 +954,10 @@ def test_a_long_machine_file_name_wraps_from_its_buttons_start(
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(f"http://127.0.0.1:{port}/#/machines")
     lines = page.get_by_role("button", name=name).evaluate(
-        """b => { const r = document.createRange(); r.selectNodeContents(b);
-        return [...r.getClientRects()].map(x => Math.round(x.left)); }"""
+        """b => { const r = document.createRange(); r.selectNodeContents(b); const starts = {};
+        for (const x of r.getClientRects()) {  // a line starts at its leftmost box
+          const top = Math.round(x.top); starts[top] = Math.min(starts[top] ?? 1e9, x.left); }
+        return Object.values(starts).map(Math.round); }"""
     )
     assert len(lines) > 1 and len(set(lines)) == 1, lines
     assert not errors

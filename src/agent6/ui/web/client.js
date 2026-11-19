@@ -414,6 +414,20 @@ function showProblem(heading, reason, failed, back) {
 // The page each kind of route sits under, for its problem view's way back.
 const BACK = { session: ['Sessions', '#/'], machine: ['State machines', '#/machines'], draft: ['State machines', '#/machines'] };
 
+// A glyph that leads a control's words ('▶ code-fixer'), hidden from assistive technology.
+function glyph(char) { const g = el('span', null, char); g.setAttribute('aria-hidden', 'true'); return g; }
+// A control repeated on every row is described by its row's title, so each names the row it acts on; a hidden copy of its own title keeps that in the description.
+let titleIds = 0;
+function describedBy(title, control) {
+  title.id ||= 'title-' + ++titleIds;
+  const ids = [title.id];
+  if (control.title) {
+    const own = el('span', null, control.title);
+    own.id = 'title-' + ++titleIds; own.hidden = true;
+    control.after(own); ids.push(own.id);
+  }
+  control.setAttribute('aria-describedby', ids.join(' '));
+}
 // The controls a repaint can hand the focus to.
 const FOCUSABLE = 'a[href], button, input, select, textarea, summary, [tabindex]';
 // The row a control sits in: the nearest element with a `rowKey` (patchRows' rows, a finding).
@@ -940,11 +954,13 @@ function paintSession(r, depth, regroup) {
     // as `sessions merge` does. Both need a finished run whose branch exists; Merge also
     // needs commits no merge stamped. A group has no branch of its own.
     const live = LIVE_WORDS.includes(r.status);
+    const title = g.querySelector('a.title');
     if (r.branch && !live) {
       const actions = el('div', 'item-actions'); // wraps under the text as one piece
       const review = el('button', 'mini', 'Review');
       review.onclick = () => fillAsEdit(view.querySelector('.dock textarea'), '/review ' + r.branch);
       actions.appendChild(review);
+      describedBy(title, review);
       if (r.unmerged) {
         const merge = el('button', 'mini', 'Merge');
         runOnce(merge, async () => {
@@ -952,6 +968,7 @@ function paintSession(r, depth, regroup) {
           await postMerge(r);
         });
         actions.appendChild(merge);
+        describedBy(title, merge);
       }
       it.appendChild(actions);
     }
@@ -961,6 +978,7 @@ function paintSession(r, depth, regroup) {
     const toggle = el('button', 'fold', `children: ${children.length} · ${open ? 'hide' : 'show'}`);
     toggle.setAttribute('aria-expanded', String(open));
     toggle.onclick = regroup;
+    describedBy(title, toggle);
     g.appendChild(toggle);
   });
 }
@@ -1052,7 +1070,9 @@ function machineFilesCard() {
   card.appendChild(el('h2', null, 'Run a machine'));
   const frow = el('div', 'form-row machine-files');
   const run = (mf) => {
-    const b = el('button', null, '▶ ' + mf.name);
+    const b = el('button');
+    b.append(glyph('▶'), ' ' + mf.name);
+    b.setAttribute('aria-label', 'Run ' + mf.name);
     runOnce(b, async () => {
       // A machine run spends against your provider from this one click, so
       // confirm the cost first (the deliberate-cost bar the composer's typed

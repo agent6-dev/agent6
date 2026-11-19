@@ -1161,7 +1161,7 @@ def test_a_dialog_keeps_its_close_button_in_view_while_it_scrolls(
     ("hash_", "files", "asker", "title", "action", "opens_on", "post"),
     [
         ("#/", [], "Clear saved asks", "Delete every saved ask?", "Delete", "Cancel", "rm_asks"),
-        ("#/machines", ["code-fixer"], "▶ code-fixer", "Run code-fixer?", "Run", "Run", "run"),
+        ("#/machines", ["code-fixer"], "Run code-fixer", "Run code-fixer?", "Run", "Run", "run"),
     ],
 )
 def test_a_question_acts_only_on_its_action_button(
@@ -1231,7 +1231,7 @@ def test_a_held_enter_answers_no_question(
         lambda route: (posts.append(route.request.method), route.fulfill(json={"ok": True})),
     )
     page.goto(f"http://127.0.0.1:{port}/#/machines")
-    page.get_by_role("button", name="▶ code-fixer", exact=True).focus()
+    page.get_by_role("button", name="Run code-fixer", exact=True).focus()
     page.keyboard.down("Enter")
     run = page.get_by_role("alertdialog", name="Run code-fixer?").get_by_role("button", name="Run")
     expect(run).to_be_focused()
