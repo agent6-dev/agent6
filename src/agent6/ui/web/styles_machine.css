@@ -1,7 +1,7 @@
-/* The machine view: prompts and controls on top, the States and Path cards, the newest agent
+/* The machine view: prompts and actions on top, the States and Path cards, the newest agent
    state's conversation under them, and the composer docked at the foot. */
 .machine-app { display: flex; flex-direction: column; flex: 1 0 auto; }
-/* The first prompt box stands 12px under the top bar, as the controls row does alone. */
+/* The first prompt box stands 12px under the top bar, as the actions row does alone. */
 .machine-top:has(.prompt-box) { padding-top: 12px; }
 .machine-top > .row { margin-bottom: 10px; }
 /* A body that scrolls is a Tab stop in both browsers; its ring goes inside, as a scroll pane's

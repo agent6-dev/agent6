@@ -9,7 +9,7 @@ async function renderMachine(name, gen) {
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint or open a stream
   view.innerHTML = '';
   const app = el('div', 'machine-app');
-  // The prompts and the controls flow in one block, so their margins collapse;
+  // The prompts and the actions flow in one block, so their margins collapse;
   // the view is a flex column, where margins add up.
   const top = el('div', 'machine-top'); app.appendChild(top);
   // The prompts host holds pending approval/question boxes; it is appended to, never wiped,
@@ -17,11 +17,20 @@ async function renderMachine(name, gen) {
   const prompts = el('div', 'page-pad'); top.appendChild(prompts);
   const cards = { _prompts: prompts, _base: base };
 
-  const controls = el('div', 'row wrap page-pad');
+  // The page's actions sit on top, as the run view's do, and the command palette offers them.
+  // Stop, as `agent6 machine stop` and the TUI machine watch do: the machine parks at its next
+  // transition and `machine run` resumes it.
+  const actions = el('div', 'row wrap page-pad actions');
+  const stopBtn = el('button', 'danger', '■ Stop');
+  stopBtn.onclick = async () => {
+    if (!confirm('Stop this machine at its next transition? `agent6 machine run` resumes it.')) return;
+    try { const d = await postJSON(base + '/stop', {}); toast(d.message || 'stop requested'); }
+    catch (e) { toast(e.message, true); }
+  };
   const bell = el('button', null, '🔔 Notifications');
   bell.onclick = enableNotifications;
-  controls.appendChild(bell);
-  top.appendChild(controls);
+  actions.append(stopBtn, bell);
+  top.appendChild(actions);
 
   // The States and Path cards, each a heading over a body that scrolls on a wide screen.
   const grid = el('div', 'grid machine-grid');
@@ -71,15 +80,7 @@ async function renderMachine(name, gen) {
       else if (!msgBtn.disabled) msgBtn.click();
     }
   };
-  // Stop, as `agent6 machine stop` and the TUI machine watch do: the machine
-  // parks at its next transition and `machine run` resumes it.
-  const stopBtn = el('button', 'danger', 'Stop');
-  stopBtn.onclick = async () => {
-    if (!confirm('Stop this machine at its next transition? `agent6 machine run` resumes it.')) return;
-    try { const d = await postJSON(base + '/stop', {}); toast(d.message || 'stop requested'); }
-    catch (e) { toast(e.message, true); }
-  };
-  drow.appendChild(din); drow.appendChild(steerBtn); drow.appendChild(msgBtn); drow.appendChild(stopBtn);
+  drow.append(din, steerBtn, msgBtn);
   dock.appendChild(drow);
   dock.appendChild(el('div', 'hint', 'Steer injects into the current agent state · Message wakes a waiting machine (its next tool reads it) · Enter sends, Shift+Enter newline'));
   app.appendChild(dock);

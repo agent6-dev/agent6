@@ -18,7 +18,7 @@ from agent6.sessions import process
 from tests.web import test_web_browser
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Page
+    from playwright.sync_api import Dialog, Page
 
 pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
@@ -453,4 +453,31 @@ def test_a_notification_shows_as_a_toast_named_by_the_instance(
         journal.write(json.dumps({**note, "level": "info"}) + "\n")
     expect(page.locator("#toasts .toast")).to_have_text("nightly · work: checkpoint committed")
     assert grid.bounding_box() == before
+    assert not errors
+
+
+def test_the_palette_offers_the_machine_views_actions(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """The command palette offered none of the machine view's controls, Stop among them."""
+    from playwright.sync_api import expect
+
+    _machine(tmp_path, "working", LOOP, [], _talk(2), alive=True)
+    page, errors = _open(open_page, port, "working")
+    page.keyboard.press("Control+k")
+    expect(page.locator("dialog[open] input")).to_be_focused()
+    page.keyboard.type(">this page")
+    expect(page.locator("dialog[open] .ac-item")).to_have_text(
+        ["Stop · this page", "🔔 Notifications · this page"]
+    )
+    asked: list[str] = []
+
+    def dismiss(dialog: Dialog) -> None:
+        asked.append(dialog.message)
+        dialog.dismiss()
+
+    page.once("dialog", dismiss)
+    page.keyboard.press("Enter")
+    expect(page.locator("dialog[open]")).to_have_count(0)
+    assert len(asked) == 1, asked
     assert not errors
