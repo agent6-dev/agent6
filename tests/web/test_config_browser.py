@@ -80,11 +80,12 @@ def test_the_config_bar_keeps_every_button_on_the_card(
     assert not errors
 
 
-# Per visible row: where its value starts, where its source ends, and whether the source overflows.
+# Per visible row: where its value starts, where its source ends, and its source's line count.
 COLUMNS = """() => [...document.querySelectorAll('.cfg tr[data-key]')].filter(r => r.offsetParent)
-  .map(r => [Math.round(r.cells[1].getBoundingClientRect().left),
-             Math.round(r.cells[2].getBoundingClientRect().right),
-             r.cells[2].scrollWidth > r.cells[2].clientWidth])"""
+  .map(r => { const source = document.createRange(); source.selectNodeContents(r.cells[2]);
+    return [Math.round(r.cells[1].getBoundingClientRect().left),
+            Math.round(r.cells[2].getBoundingClientRect().right),
+            new Set([...source.getClientRects()].map(line => Math.round(line.top))).size]; })"""
 
 
 @pytest.mark.parametrize("width", [1440, 1024, 390])
@@ -94,8 +95,8 @@ def test_every_config_section_lines_its_columns_up(
     """Each section's table sized its columns from its own rows.
 
     The value and source columns started at a different x in every section and moved again
-    when Modified only hid rows; a `--config FILE` source never wrapped, so it widened its
-    column on a desktop and pushed a phone's rows past the card.
+    when Modified only hid rows; a `--config FILE` source widened its column on a desktop and
+    pushed a phone's rows past the card, and wrapped in its column took eleven lines.
     """
     page, errors = open_page(flag_port)
     _config(page, flag_port, width)
@@ -103,7 +104,7 @@ def test_every_config_section_lines_its_columns_up(
     rows = page.evaluate(COLUMNS)
     columns = {(value, source) for value, source, _ in rows}
     assert len(columns) == 1
-    assert not any(overflow for *_, overflow in rows)
+    assert {lines for *_, lines in rows} == {1}
     page.get_by_role("button", name="Modified only").click()
     modified = page.evaluate(COLUMNS)
     assert 0 < len(modified) < len(rows)
