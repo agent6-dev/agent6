@@ -4,16 +4,25 @@ from __future__ import annotations
 
 import posixpath
 import re
+from collections.abc import Sequence
 from urllib import parse
 
 import markdown_it
 from markdown_it import token
-from markdown_it.common import normalize_url
+from markdown_it.common import normalize_url, utils
 
 
 def _valid_link(url: str) -> bool:
     # The library permits raster data URLs; repository markdown permits none.
     return normalize_url.validateLink(url) and not url.strip().lower().startswith("data:")
+
+
+def _raw_block(_renderer: object, tokens: Sequence[token.Token], idx: int, *_: object) -> str:
+    return f'<pre class="md-raw"><code>{utils.escapeHtml(tokens[idx].content)}</code></pre>\n'
+
+
+def _raw_inline(_renderer: object, tokens: Sequence[token.Token], idx: int, *_: object) -> str:
+    return f'<code class="md-raw">{utils.escapeHtml(tokens[idx].content)}</code>'
 
 
 def _rewrite_link(item: token.Token, rev: str, path: str, ignored: bool) -> None:
@@ -49,6 +58,8 @@ def _rewrite_link(item: token.Token, rev: str, path: str, ignored: bool) -> None
 def render(text: str, *, rev: str, path: str, ignored: bool = False) -> str:
     """Render repository markdown with escaped HTML and revision-aware destinations.
 
+    Raw HTML shows as its source, never as elements: a block as a code block, a tag as code.
+
     Args:
         text: The complete markdown source.
         rev: The resolved revision, or WORKTREE.
@@ -59,10 +70,11 @@ def render(text: str, *, rev: str, path: str, ignored: bool = False) -> str:
         HTML with heading ids and Files links whose anchor query names a heading id.
         Relative images carry data-blob-src for the client's authenticated blob fetch.
     """
-    parser = markdown_it.MarkdownIt("commonmark", {"html": False}).enable(
-        ["table", "strikethrough"]
-    )
+    parser = markdown_it.MarkdownIt("commonmark", {"html": True}).enable(["table", "strikethrough"])
     parser.validateLink = _valid_link
+    # The parser finds raw HTML so these rules can show it as escaped source.
+    parser.add_render_rule("html_block", _raw_block)
+    parser.add_render_rule("html_inline", _raw_inline)
     tokens = parser.parse(text)
     ids: dict[str, int] = {}
     for index, item in enumerate(tokens):

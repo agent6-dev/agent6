@@ -73,3 +73,19 @@ def test_heading_ids_follow_visible_text_and_do_not_collide() -> None:
     assert '<h1 id="read-me-code">' in rendered
     assert '<h2 id="read-me-code-1">' in rendered
     assert '<h2 id="read-me-code-1-1">' in rendered
+
+
+def test_raw_html_shows_as_its_source() -> None:
+    """Raw HTML ran into the prose as text; a block reads as source and a tag as code."""
+    rendered = markdown.render(
+        "Text\n\n<table>\n  <tr><td>cell</td></tr>\n</table>\n\nA <b>bold</b> word\n",
+        rev="HEAD",
+        path="README.md",
+    )
+    raw = '<code class="md-raw">'
+    assert (
+        '<pre class="md-raw"><code>&lt;table&gt;\n'
+        "  &lt;tr&gt;&lt;td&gt;cell&lt;/td&gt;&lt;/tr&gt;\n&lt;/table&gt;\n</code></pre>"
+        in rendered
+    )
+    assert f"<p>A {raw}&lt;b&gt;</code>bold{raw}&lt;/b&gt;</code> word</p>" in rendered

@@ -81,16 +81,17 @@ def test_markdown_opens_rendered_and_remembers_both_toggle_choices(
     expect(page.locator(".md-view s")).to_have_text("old")
     expect(page.locator(".md-view blockquote")).to_contain_text("A quoted note.")
     expect(page.locator(".md-view li")).to_have_count(2)
-    assert page.locator(".md-view pre").evaluate(
+    fence = page.locator(".md-view pre:not(.md-raw)")
+    assert fence.evaluate(
         "e => getComputedStyle(e).fontFamily === "
         "getComputedStyle(document.querySelector('.src')).fontFamily"
     )
-    assert page.locator(".md-view pre").evaluate(
+    assert fence.evaluate(
         "e => getComputedStyle(e).backgroundColor === "
         "getComputedStyle(document.querySelector('header')).backgroundColor"
     )
     expect(page.locator(".md-view script, .md-view [onerror]")).to_have_count(0)
-    expect(page.locator(".md-view")).to_contain_text(
+    expect(page.locator(".md-view pre.md-raw")).to_have_text(
         "<script>window.markdownExecuted = true</script>"
     )
     assert page.evaluate("window.markdownExecuted") is None
