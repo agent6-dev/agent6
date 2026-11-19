@@ -311,3 +311,24 @@ def test_a_disabled_picker_reads_disabled_with_its_label(
     expect(labels).to_have_text(["worktree", "from plan"])
     assert max(worktree.evaluate_all(opacity) + labels.evaluate_all(opacity)) < 1
     assert not errors
+
+
+def test_a_suggestion_popup_opens_on_its_entry_at_the_entrys_width(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The directive popup opened 10px left of the entry and over the pickers, cut at 480px."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    entry = page.locator(".dock textarea")
+    entry.fill("/")
+    popup = page.locator(".ac-pop")
+    expect(popup).to_contain_text("/parallel")
+    above, under = popup.bounding_box(), entry.bounding_box()
+    assert above and under
+    assert above["x"] == under["x"], (above, under)
+    assert 0 <= under["y"] - (above["y"] + above["height"]) <= 8, (above, under)
+    whole = "rows => rows.every(r => r.scrollWidth <= r.clientWidth)"
+    assert popup.locator(".ac-item").evaluate_all(whole)
+    assert not errors

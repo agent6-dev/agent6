@@ -216,12 +216,15 @@ button.fold[aria-expanded=true]::before { rotate: 45deg; }
 /* The spend cap holds a few digits and no spin buttons at rest (Firefox paints them by default). */
 .pickers input[type=number] { width: 7em; appearance: textfield; }
 .pickers[hidden] { display: none; }
-/* /parallel model-id autocomplete popup (a textarea can't carry a native
-   datalist, so this is the composer analogue of the config editor's list). */
-.ac-pop { position: absolute; left: 12px; bottom: 100%; margin-bottom: 6px; z-index: 40;
+/* A composer's suggestion popup (the /parallel model ids, the directives: a textarea can't carry
+   a native datalist) opens on its text entry's top edge, at most as wide as the entry. */
+.composer { anchor-scope: --entry; }
+.composer textarea.field { anchor-name: --entry; }
+.ac-pop { position: absolute; position-anchor: --entry; left: anchor(left); bottom: anchor(top);
+  margin-bottom: 4px; z-index: 40;
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 6px 24px rgba(0,0,0,.3); max-height: 240px; overflow-y: auto;
-  min-width: 260px; max-width: min(480px, 90vw); padding: 4px; }
+  min-width: 260px; max-width: anchor-size(width); padding: 4px; }
 .ac-item { padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ac-item.on, .ac-item:hover { background: var(--surface2); color: var(--accent); }
