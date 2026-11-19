@@ -1076,6 +1076,9 @@ function makeConv(url, box, body) {
         const ln = el('div');
         for (const [text, style] of line) ln.appendChild(el('span', 's-' + style, text));
         if (!line.length) ln.appendChild(document.createTextNode(' '));
+        // A wrapped line continues under its own text, past its indent and its marker ("└ ").
+        const hang = /^\s*(?:[\p{P}\p{S}]\s+)?/u.exec(ln.textContent)[0].length;
+        if (hang) ln.style.setProperty('--hang', hang + 'ch');
         div.appendChild(ln);
       }
       itemsHost.appendChild(div); shown++;

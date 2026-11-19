@@ -466,3 +466,56 @@ def test_the_phone_widget_menu_offers_only_the_widgets_a_run_has(
         ]
     )
     assert not errors
+
+
+def test_a_wrapped_conversation_line_hangs_under_its_text(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A wrapped line's later lines start under its first word, past its indent and marker.
+
+    They restarted at the item's left edge, under the "└" of a tool's result; then a line
+    indented past the column hung its words outside it.
+    """
+    from playwright.sync_api import expect
+
+    rows = [
+        {"type": "tool.call", "name": "run_command", "args_preview": {"argv": ["make"]}},
+        {"type": "tool.result", "name": "run_command", "ok": True, "summary": "word " * 60},
+    ]
+    _session(tmp_path, "wrap-AAA111", rows)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/wrap-AAA111")
+    line = page.locator(".card-conv .ci > div").filter(has_text="└ word")
+    expect(line).to_be_visible()
+    # The text starts at the line's fifth character, after two spaces, the marker and a space.
+    lines, last, text = line.evaluate(
+        """e => { const r = document.createRange(); r.selectNodeContents(e);
+        const lines = [...r.getClientRects()].map(x => Math.round(x.top));
+        const tops = [...new Set(lines)], all = [...r.getClientRects()];
+        const walker = document.createTreeWalker(e, NodeFilter.SHOW_TEXT);
+        let node, seen = 0, first = null;
+        while ((node = walker.nextNode())) {
+            if (seen + node.length > 4) { const c = document.createRange();
+                c.setStart(node, 4 - seen); c.setEnd(node, 5 - seen);
+                first = c.getBoundingClientRect().left; break; }
+            seen += node.length;
+        }
+        return [tops.length, Math.min(...all.filter(x => Math.round(x.top) === tops.at(-1))
+            .map(x => x.left)), first]; }"""
+    )
+    assert lines > 1
+    assert last == pytest.approx(text, abs=0.5)  # layout rounds to 1/64 px
+    # The hang stops at 40% of the box, so a line indented 200 spaces keeps its words in it.
+    deep = {"type": "model.result", "role": "worker", "text": "Deep:\n" + " " * 200 + "word " * 40}
+    _session(tmp_path, "deep-AAA111", [deep])
+    page.goto(f"http://127.0.0.1:{port}/#/session/deep-AAA111")
+    deep_line = page.locator(".card-conv .ci > div").filter(has_text="word word")
+    expect(deep_line).to_be_visible()
+    inside = deep_line.evaluate(
+        """e => { const t = e.querySelector('span').firstChild, r = document.createRange();
+        r.setStart(t, t.data.search(/\\S/)); r.setEnd(t, t.data.length);
+        const box = e.closest('.conv-box').getBoundingClientRect();
+        return [...r.getClientRects()].every(x => x.left >= box.left && x.right <= box.right); }"""
+    )
+    assert inside
+    assert not errors

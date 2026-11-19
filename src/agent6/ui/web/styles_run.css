@@ -42,6 +42,10 @@
 .conv { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; }
 .conv .ci { padding: 2px 4px; margin: 0 -4px 8px; white-space: pre-wrap; word-break: break-word; border-radius: 6px; }
 .conv .ci.exp { cursor: pointer; }
+/* A line's indent and marker (paintItems sets --hang) hang its wrapped text under its first word. */
+.conv .ci > div { --indent: min(var(--hang, 0px), 40cqi); padding-left: var(--indent); text-indent: calc(-1 * var(--indent)); }
+/* The hang stops at 40% of the box's width, so a line indented past the column keeps its text in view. */
+.conv-box { container-type: inline-size; }
 /* hover-capable devices only: on touch, a tap leaves the hover background stuck */
 @media (hover: hover) { .conv .ci.exp:hover { background: var(--surface2); } }
 .conv .s-thinking { color: var(--muted); font-style: italic; }
