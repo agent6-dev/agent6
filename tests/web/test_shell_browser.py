@@ -404,6 +404,31 @@ def test_the_keyboard_list_spells_each_key_one_way_as_keycaps(
     assert not errors
 
 
+def test_the_keyboard_list_puts_each_key_under_where_it_works(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Ctrl+R and Ctrl+Enter sat under "In the composer", and the list left out Home and End.
+
+    On the Sessions page's composer Ctrl+R reloads the page and Ctrl+Enter starts the run.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".dock textarea")).to_be_visible()
+    page.keyboard.press("?")
+    table = page.get_by_role("dialog", name="Keyboard shortcuts").locator("table.keys")
+    groups = table.evaluate("""t => [...t.tBodies].map(b => [b.querySelector('th').textContent,
+      [...b.querySelectorAll('td.key')].map(k => k.textContent)])""")
+    places = [place for place, _ in groups]
+    assert len(places) == len(set(places)), places
+    keys = dict(groups)
+    assert keys["In the composer"] == ["Enter", "Shift+Enter", "/"]
+    assert keys["In a session's composer"] == ["Ctrl+Enter", "Ctrl+R"]
+    assert keys["In a list"] == ["↑ ↓", "Home End"]
+    assert not errors
+
+
 def test_a_small_buttons_label_stays_on_one_line_inside_its_card(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:

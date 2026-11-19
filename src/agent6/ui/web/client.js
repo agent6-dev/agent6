@@ -1511,11 +1511,12 @@ const KEYS = [
   { label: '?', where: 'Outside a field', does: 'this list', match: (e) => e.key === '?' && !inField(e) && !e.ctrlKey && !e.metaKey && !e.altKey, run: () => openKeys() },
   { label: 'Esc', where: 'In a dialog or popup', does: 'close it' },
   { label: 'Enter', where: 'In the composer', does: 'send the instruction; resume an ended session' },
-  { label: 'Ctrl+Enter', where: 'In the composer', does: 'send now, interrupting the call in flight (/now)' },
   { label: 'Shift+Enter', where: 'In the composer', does: 'newline' },
-  { label: 'Ctrl+R', where: 'In the composer', does: "search this session's past messages" },
   { label: '/', where: 'In the composer', does: 'directive completion; Tab or Enter accepts' },
+  { label: 'Ctrl+Enter', where: "In a session's composer", does: 'send now, interrupting the call in flight (/now)' },
+  { label: 'Ctrl+R', where: "In a session's composer", does: "search this session's past messages" },
   { label: '↑ ↓', where: 'In a list', does: 'move' },
+  { label: 'Home End', where: 'In a list', does: 'first, last' },
   { label: 'Enter or Space', where: 'On a focused row', does: 'open it' },
 ];
 document.addEventListener('keydown', (e) => {
