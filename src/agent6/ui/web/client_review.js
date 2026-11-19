@@ -17,10 +17,10 @@ function reviewRules(panel) {
   const box = el('div', 'review-rules');
   const status = panel.rules_complete == null ? 'Rule sources not recorded'
     : panel.rules_complete ? 'Rules complete' : 'Rules incomplete';
-  box.appendChild(el('div', panel.rules_complete === false ? 'err' : 'muted', status));
-  if (panel.rules_reason) box.appendChild(el('div', 'err', panel.rules_reason));
   const sources = panel.rule_sources || [];
-  if (panel.rules_complete && !sources.length) box.appendChild(el('div', 'muted', 'No base rules exist.'));
+  const none = panel.rules_complete && !sources.length ? ' · No base rules exist.' : '';
+  box.appendChild(el('div', panel.rules_complete === false ? 'err' : 'muted', status + none));
+  if (panel.rules_reason) box.appendChild(el('div', 'err', panel.rules_reason));
   for (const source of sources) {
     const row = el('div', 'row wrap'); box.appendChild(row);
     const link = el('a', null, source.path);
@@ -127,7 +127,7 @@ function findingActions(card, entry, cards, state) {
   const verb = entry.finding.status === 'open' ? 'resolve' : 'reopen';
   const button = el('button', 'mini', verb === 'resolve' ? 'Resolve' : 'Reopen'); row.appendChild(button);
   const form = el('form', 'finding-form'); form.hidden = true; card.appendChild(form);
-  const disposition = el('select'); disposition.setAttribute('aria-label', 'Disposition');
+  const disposition = el('select', 'field'); disposition.setAttribute('aria-label', 'Disposition');
   for (const value of ['fixed', 'false_positive', 'intentional', 'wont_fix', 'duplicate', 'pre_existing']) {
     const option = el('option', null, value); option.value = value; disposition.appendChild(option);
   }
@@ -157,22 +157,31 @@ function paintFindings(cards, state) {
   if (cards._findings_key === key) return;
   cards._findings_key = key;
   const host = cards.findings; host.innerHTML = '';
+  // The counts lead the card with the Receipt button at their end; the receipt opens under them.
+  const counts = review.open_counts || {};
+  const head = el('div', 'row finding-head');
+  head.appendChild(el('div', 'finding-counts', ['block', 'warn', 'nit'].map(s => (counts[s] || 0) + ' ' + s).join(' · ')));
+  host.appendChild(head);
   if (!cards._readOnly) {
     // Keep the receipt's fetch target and output across streamed findings refreshes.
     if (!cards._receipt) {
-      cards._receipt = el('div');
-      const inspect = el('button', 'mini', 'Receipt'); cards._receipt.appendChild(inspect);
-      const receipt = el('div', 'receipt'); cards._receipt.appendChild(receipt);
+      const inspect = el('button', 'mini', 'Receipt'), receipt = el('div', 'receipt');
       inspect.onclick = async () => {
         try { drawReceipt(receipt, await getJSON(cards._base + '/receipt')); }
         catch (e) { toast(e.message, true); }
       };
+      cards._receipt = {inspect, receipt};
     }
-    host.appendChild(cards._receipt);
+    head.appendChild(cards._receipt.inspect);
+    host.appendChild(cards._receipt.receipt);
   }
-  const counts = review.open_counts || {};
-  host.appendChild(el('div', 'finding-counts', ['block', 'warn', 'nit'].map(s => (counts[s] || 0) + ' ' + s).join(' · ')));
-  host.appendChild(el('div', 'muted', 'Review: ' + (review.summary || 'unknown')));
+  const guard = reviewMergeReason(review);
+  const facts = el('div', 'kv');
+  facts.appendChild(el('div', 'k', 'review')); facts.appendChild(el('div', 'v', review.summary || 'unknown'));
+  facts.appendChild(el('div', 'k', 'merge'));
+  facts.appendChild(el('div', guard ? 'v err' : 'v', guard || 'no open block findings'));
+  host.appendChild(facts);
+  if (review.legacy_notice) host.appendChild(el('div', 'muted', review.legacy_notice));
   if (!cards._readOnly && (review.findings || []).some(f => f.status === 'open')) {
     // One steer for every open finding without a queued Fix; the per-finding Fix stays below.
     const dead = notLive(state), all = el('button', 'mini', dead ? 'Resume to fix all open' : 'Fix all open');
@@ -189,31 +198,32 @@ function paintFindings(cards, state) {
     };
     host.appendChild(all);
   }
-  const guard = reviewMergeReason(review);
-  host.appendChild(el('div', guard ? 'err' : 'muted', guard || 'Merge: no open block findings.'));
-  if (review.legacy_notice) host.appendChild(el('div', 'muted', review.legacy_notice));
+  // One block per panel: its outcome (the twelve-character id the conversation prints) over its rules.
   for (const panel of review.panels || []) {
-    const result = panel.result;
-    host.appendChild(reviewRules(panel));
-    host.appendChild(el('div', 'muted', 'Panel ' + panel.panel_id + ': ' + panel.completion
+    const result = panel.result, block = el('div', 'review-panel');
+    const line = el('div', 'muted', 'Panel ' + panel.panel_id.slice(0, 12) + ': ' + panel.completion
       + (panel.reason ? ' (' + panel.reason + ')' : '')
-      + (result ? ' · worker finish ' + (result.blocked ? 'rejected' : 'not rejected') + ' (review.block_on=' + result.block_on + (result.disarmed ? ', rejection cap reached' : '') + ')' : '')));
+      + (result ? ' · worker finish ' + (result.blocked ? 'rejected' : 'not rejected') + ' (review.block_on=' + result.block_on + (result.disarmed ? ', rejection cap reached' : '') + ')' : ''));
+    line.title = panel.panel_id;
+    block.appendChild(line);
+    block.appendChild(reviewRules(panel));
     // One line per reviewer: its session holds the reviewer's own conversation.
     for (const reviewer of panel.reviewers || []) if (reviewer.session_id) {
-      const line = el('div', 'sub', `Reviewer ${reviewer.reviewer_index + 1} (${reviewer.focus}): `);
+      const who = el('div', 'sub', `Reviewer ${reviewer.reviewer_index + 1} (${reviewer.focus}): `);
       const link = el('a', null, reviewer.session_id);
       link.href = '#/session/' + encodeURIComponent(reviewer.session_id);
-      line.appendChild(link);
-      host.appendChild(line);
+      who.appendChild(link);
+      block.appendChild(who);
     }
+    host.appendChild(block);
   }
-  const filters = el('div', 'row wrap'); host.appendChild(filters);
-  const status = el('select'); status.setAttribute('aria-label', 'Finding status');
-  const severity = el('select'); severity.setAttribute('aria-label', 'Finding severity');
+  const status = el('select', 'field'); status.setAttribute('aria-label', 'Finding status');
+  const severity = el('select', 'field'); severity.setAttribute('aria-label', 'Finding severity');
   for (const [select, values, value] of [[status, ['open', 'resolved', 'all'], cards._finding_status || 'open'], [severity, ['all', 'block', 'warn', 'nit'], cards._finding_severity || 'all']]) {
     for (const item of values) { const option = el('option', null, item); option.value = item; select.appendChild(option); }
-    select.value = value; filters.appendChild(select);
+    select.value = value;
   }
+  host.appendChild(pickerRow([['status', status], ['severity', severity]]));
   const list = el('div'); host.appendChild(list);
   const paint = () => {
     cards._finding_status = status.value; cards._finding_severity = severity.value; list.innerHTML = '';

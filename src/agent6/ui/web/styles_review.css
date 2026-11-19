@@ -8,4 +8,11 @@
 .finding-form { display: grid; gap: 8px; margin-top: 10px; }
 .finding-form[hidden] { display: none; }
 .finding-form .field { min-width: 0; width: 100%; }
-.finding-counts { font-weight: 600; margin-bottom: 8px; }
+/* The findings card: one 6px rhythm between its counts, facts, panels, filters and findings, and
+   its buttons at their own width. */
+.card-findings .card-body { display: grid; gap: 6px; justify-items: start; }
+.card-findings .card-body > div { justify-self: stretch; }
+.card-findings .receipt:empty { display: none; }
+.card-findings .pickers { margin-bottom: 0; }
+.finding-head { justify-content: space-between; }
+.finding-counts { font-weight: 600; }

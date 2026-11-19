@@ -21,6 +21,8 @@ def _run(scenario: str) -> None:
     review = web.joinpath("client_review.js")
     client = web.joinpath("client.js").read_text()
     scripts = client[client.index("// --- router") : client.index("// --- hub")]
+    picker = client.index("function pickerRow(")  # the findings filters' row
+    scripts += client[picker : client.index("\n}\n", picker) + 3]
     scripts += web.joinpath("client_source.js").read_text()
     if review.is_file():
         scripts += review.read_text()
@@ -89,13 +91,14 @@ def test_findings_card_uses_the_shared_review_summary(
     log = tmp_path / "logs.jsonl"
     log.write_text('{"type":' if unreadable else "")
     payload = review.as_dict(session_log.scan_session_log(log).review)
-    expected = "Review: unknown · freshness: unknown" if unreadable else "Review: no panel ran"
+    expected = "unknown · freshness: unknown" if unreadable else "no panel ran"
     _run(
         f"const review = {json.dumps(payload)}; const expected = {json.dumps(expected)};"
         + """
 const cards = {_id: 'run', _base: '/api/session/run', findings: el('div')};
 paintFindings(cards, {finished: true, review});
-assert.ok(cards.findings.textContent.includes(expected), cards.findings.textContent);
+const [summary] = cards.findings.querySelectorAll('.kv')[0].querySelectorAll('.v');
+assert.equal(summary.textContent, expected);
 if (expected.includes('no panel')) assert.ok(!cards.findings.textContent.includes('freshness:'));
 """
     )

@@ -12,7 +12,7 @@ import pytest
 
 from agent6 import paths
 from agent6.sessions import process
-from tests.web import test_web_browser
+from tests.web import test_review_evidence, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -21,6 +21,7 @@ pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
 open_page = test_web_browser.open_page
 port = test_web_browser.port
+evidence = test_review_evidence.evidence
 
 LONG_COMMAND = (
     "sh -c 'rm -rf build dist && python -m pip install --no-deps -e . && .venv/bin/python -m "
@@ -369,4 +370,33 @@ def test_a_live_runs_conversation_keeps_a_selection_across_frames(
         log.write(json.dumps({"type": "budget.update", "usd_total": 0.5}) + "\n")
     page.wait_for_timeout(200)  # the response's paint
     assert page.evaluate("getSelection().toString()").startswith("→ read_file")
+    assert not errors
+
+
+def test_the_findings_card_spaces_its_parts_and_labels_its_filters(
+    open_page: Callable[[int], tuple[Page, list[str]]], evidence: tuple[int, dict[str, Any]]
+) -> None:
+    """The findings card's parts stand 6px apart, its facts are rows, its selects take the skin.
+
+    The counts touched the Receipt button, Resume to fix all open touched the review and merge
+    lines it sat between, and the filters and the disposition were unlabelled native selects.
+    """
+    from playwright.sync_api import expect
+
+    port, _ = evidence
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    body = page.locator(".card-findings .card-body")
+    expect(body.locator(".kv .k")).to_have_text(["review", "merge"])
+    expect(body.locator(".pickers .pick > span")).to_have_text(["status", "severity"])
+    gaps = body.evaluate(
+        """b => { const parts = [...b.children].filter(part => part.offsetParent);
+        return parts.slice(1).map((part, i) => Math.round(
+            part.getBoundingClientRect().top - parts[i].getBoundingClientRect().bottom)); }"""
+    )
+    assert set(gaps[:-1]) == {6}  # the last part is the list, whose cards keep their own margin
+    body.locator(".finding").first.get_by_role("button", name="Resolve", exact=True).click()
+    selects = body.locator("select:visible")
+    expect(selects).to_have_count(3)
+    assert selects.evaluate_all("all => all.map(s => s.className)") == ["field"] * 3
     assert not errors

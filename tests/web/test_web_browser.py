@@ -188,12 +188,9 @@ def test_unreviewed_run_names_the_absent_panel(
     )
     page, errors = open_page(port)
     page.goto(f"http://127.0.0.1:{port}/#/session/{session.name}")
-    expected = "Review: unknown · freshness: unknown" if unreadable else "Review: no panel ran"
-    expect(page.get_by_text(expected, exact=True)).to_have_count(1)
-    if not unreadable:
-        expect(page.get_by_text("Review: unknown · freshness: unknown", exact=True)).to_have_count(
-            0
-        )
+    expected = "unknown · freshness: unknown" if unreadable else "no panel ran"
+    review = page.locator(".card-findings .kv .k").filter(has_text=re.compile(r"^review$"))
+    expect(review.locator("+ .v")).to_have_text(expected)
     assert not errors
 
 
