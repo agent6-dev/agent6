@@ -89,6 +89,19 @@ kind = "terminal"
 status = "failed"
 reason = "the collector could not reach the forge"
 """
+STAGES = [f"stage_{i:02d}" for i in range(30)]
+
+
+def _chain() -> str:
+    """Return a spec of 30 tool states in a loop, which a failing state ends."""
+    spec = ['machine = "chain"', "version = 1", 'initial = "stage_00"', "", "[budget]"]
+    spec += ["max_transitions = 500", ""]
+    for i, name in enumerate(STAGES):
+        after = STAGES[(i + 1) % len(STAGES)]
+        spec += [f"[states.{name}]", 'kind = "tool"', 'command = ["true"]', "timeout_s = 60"]
+        spec += [f'on = {{ ok = "{after}", nonzero = "finished", timeout = "finished" }}', ""]
+    spec += ["[states.finished]", 'kind = "terminal"', 'status = "ok"', 'reason = "done"']
+    return "\n".join(spec) + "\n"
 
 
 def _step(seq: int, state: str, label: str, goto: str, fact: dict[str, Any]) -> dict[str, Any]:
@@ -101,6 +114,11 @@ def _step(seq: int, state: str, label: str, goto: str, fact: dict[str, Any]) -> 
         "goto": goto,
         "fact": fact,
     }
+
+
+def _chain_step(seq: int) -> dict[str, Any]:
+    """Return the chain's step `seq`: each stage passes to the next, the last back to the first."""
+    return _step(seq, STAGES[seq % 30], "ok", STAGES[(seq + 1) % 30], TOOL)
 
 
 def _machine(
@@ -282,4 +300,52 @@ def test_long_states_and_transitions_wrap_under_their_text(
     wrapped = [line for line in lines if line["lines"] > 1]
     assert len(wrapped) >= 3, lines  # both long states and the transition
     assert all(len(line["lefts"]) == 1 for line in wrapped), wrapped
+    assert not errors
+
+
+def test_the_current_state_and_the_newest_transition_open_in_view(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """States opened at its top with the current state below the fold, Path at its oldest line.
+
+    Path follows each new transition while the reader stays at its end, and keeps the reader's
+    place once they scroll up.
+    """
+    from playwright.sync_api import expect
+
+    machine = _machine(tmp_path, "chain", _chain(), [_chain_step(seq) for seq in range(55)])
+    page, errors = _open(open_page, port, "chain")
+    in_view = """() => {
+      const node = document.querySelector('.tree .cursor');
+      const pane = node.parentElement.parentElement, a = node.getBoundingClientRect();
+      const b = pane.getBoundingClientRect();
+      return pane.scrollTop > 0 && a.top >= b.top && a.bottom <= b.bottom;
+    }"""
+    at_end = """() => {
+      const pane = [...document.querySelectorAll('.tree')][1].parentElement;
+      return pane.scrollHeight > pane.clientHeight
+        && pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1;
+    }"""
+    expect(page.locator(".tree .cursor")).to_contain_text("stage_25")
+    assert page.evaluate(in_view)
+    assert page.evaluate(at_end)
+
+    def add(seq: int) -> None:
+        with (machine / "journal.jsonl").open("a", encoding="utf-8") as journal:
+            journal.write(json.dumps(_chain_step(seq)) + "\n")
+        expect(page.locator(".tree .node", has_text=f"[{seq}]")).to_have_count(1)
+
+    page.evaluate(
+        "() => { [...document.querySelectorAll('.tree')][1].parentElement.scrollTop = 0 }"
+    )
+    add(55)
+    assert page.evaluate("[...document.querySelectorAll('.tree')][1].parentElement.scrollTop") == 0
+    page.evaluate(
+        "() => { const p = [...document.querySelectorAll('.tree')][1].parentElement;"
+        " p.scrollTop = p.scrollHeight; }"
+    )
+    add(56)
+    assert page.evaluate(at_end)
+    expect(page.locator(".tree .cursor")).to_contain_text("stage_27")
+    assert page.evaluate(in_view)
     assert not errors

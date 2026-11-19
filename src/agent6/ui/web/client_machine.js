@@ -34,6 +34,8 @@ async function renderMachine(name, gen) {
   };
   const structBody = addCard('States');
   const pathBody = addCard('Path');
+  // The machine's summary and status stay over the States list as it scrolls.
+  cards._summary = el('div', 'row wrap'); structBody.before(cards._summary);
   // The current agent state's conversation: the same folded view a run shows,
   // full-width under the states/path pair.
   const cc = convCard(base + '/conversation', 'Current state');
@@ -88,7 +90,7 @@ async function renderMachine(name, gen) {
   // Notification de-dup across repaints: seed with history on the first frame so
   // opening a machine does not replay every past notification; banner + OS-notify
   // only genuinely new ones.
-  const ctx = { notifsHost: notifs, seen: null, lostNotified: false, endedNotified: false };
+  const ctx = { notifsHost: notifs, seen: null, lostNotified: false, endedNotified: false, shownCurrent: null };
   paintMachine(structBody, pathBody, cards, ctx, { machine: initial, reasoning: {} });
 
   live = openStream(base + '/events', raw => {
@@ -167,21 +169,23 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
     banner.appendChild(x); ctx.notifsHost.appendChild(banner);
     osNotify('agent6: ' + (m.machine || 'machine') + ' ' + m.ended.status, m.ended.reason || '');
   }
-  structBody.innerHTML = '';
+  // Path follows its newest transition while the reader stays at its end (read before the repaint).
+  const pathFollows = pathBody.scrollTop + pathBody.clientHeight >= pathBody.scrollHeight - 8;
   // `spend` is the instance total, as `machine status` reports it, rendered server-side.
   const sp = m.spend || {};
   const cost = sp.text ? ' · ' + sp.text : '';
-  const summary = el('div', 'row wrap');
-  summary.appendChild(el('div', 'sub muted',
-    `${esc(m.machine)} v${esc(m.version)} · current: ${esc(m.current)}${cost}`));
-  summary.appendChild(pill(m.status_level, m.status));
-  structBody.appendChild(summary);
+  cards._summary.replaceChildren(
+    el('div', 'sub muted', `${esc(m.machine)} v${esc(m.version)} · current: ${esc(m.current)}${cost}`),
+    pill(m.status_level, m.status));
   // Each line leads with its mark, or its `[seq] `; a wrapped line continues under the text
   // after the lead (--hang: the lead's width).
+  structBody.innerHTML = '';
   const tree = el('div', 'tree');
+  let cursor = null;
   for (const st of m.states || []) {
     const line = el('div', 'node' + (st.is_current ? ' cursor' : ''));
     line.append(el('span', 'lead', st.mark + ' '), `${st.name}  (${st.kind})`); // machine_state_mark, server-side
+    if (st.is_current) cursor = line;
     tree.appendChild(line);
   }
   structBody.appendChild(tree);
@@ -199,6 +203,14 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   pathBody.appendChild(path);
   if (m.ended) pathBody.appendChild(el('div', 'sub muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));
   if (m.worker_lost) pathBody.appendChild(el('div', 'sub muted', `stopped: ${esc(m.worker_lost.reason)} at ${esc(m.worker_lost.state)}; resumable`));
+  if (pathFollows) pathBody.scrollTop = pathBody.scrollHeight;
+  // States brings the current state into view when the machine moves; a phone's cards flow, so
+  // nothing scrolls there.
+  if (cursor && ctx.shownCurrent !== m.current) {
+    ctx.shownCurrent = m.current;
+    const box = structBody.getBoundingClientRect(), at = cursor.getBoundingClientRect();
+    if (at.top < box.top || at.bottom > box.bottom) structBody.scrollTop += (at.top + at.bottom - box.top - box.bottom) / 2;
+  }
 
   // Every control is gated and labelled from the wire refusals, the one
   // decision the CLI and the TUI run: a steer needs an open agent state, a
