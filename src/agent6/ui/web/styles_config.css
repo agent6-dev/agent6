@@ -1,7 +1,8 @@
-.cfg-bar { margin-bottom: 8px; }
-.cfg-bar input.filter { flex: 1 1 auto; width: auto; min-width: 0; }
+/* The filter takes the bar's first line and the buttons wrap under it, so every button stays on
+   the card at any width. */
+.cfg-bar { flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.cfg-bar input.filter { flex: 1 1 100%; }
 .cfg-bar button { flex: none; white-space: nowrap; }
-.cfg-bar button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
 .cfg-point + .cfg-point { margin-top: 4px; }
 /* Config dialogs: the editor's type and source line, each label over its field, and the layer
    checkbox under them. */
