@@ -151,7 +151,8 @@ function splitLines(text) { const lines = text.split('\n'); if (lines.length && 
 function gutter(n) { const g = el('i', 'g'); g.dataset.n = n == null ? '' : String(n); return g; }
 const gutterWidth = (max) => String(Math.max(1, max)).length + 'ch';
 // A line's code: its text with highlight spans, then its newline. The newline sits inside the
-// code because a line is a flex row, which renders no bare text, and a copy then loses blank lines.
+// code because a line is a flex row, which renders no bare whitespace, and a copy then loses
+// blank lines.
 function codeSpan(text, spans, marker = '') {
   const code = el('span', 'source-code');
   if (marker) code.appendChild(el('span', 'diff-marker', marker));
