@@ -126,6 +126,8 @@
    row caps its badge, and the shas line up in a column. */
 .gfilter-item > .gref, .gpick-list .ac-item > .gref, .gd-subject .gref { min-width: 0; max-width: 100%; }
 .gfilter-item > .gref + .mono, .gpick-list .ac-item > .gref + .mono { flex: none; margin-left: auto; }
+/* The option the arrow keys reached carries the selected row's bar: a badge keeps its own colour. */
+.gpick-list .ac-item.on { box-shadow: inset 2px 0 0 var(--accent); }
 @media (min-width: 781px) {
   .git-app { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
   .git-app > .git-bar { flex: none; }

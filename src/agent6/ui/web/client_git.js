@@ -298,10 +298,28 @@ function gitPicker(name, initial, onPick, listHost, fixed) {
   if (value) input.value = value.label;
   // The text is a search only once typed: a picked label opens the full list again.
   const query = () => value ? '' : input.value.trim();
-  const list = el('div', 'gpick-list');
+  // A combobox: the list is a listbox, and the input names the option the arrow keys reached.
+  const list = el('div', 'gpick-list'); list.id = 'gpick-' + name;
+  list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', name + ' choices');
+  input.setAttribute('role', 'combobox'); input.setAttribute('aria-controls', list.id);
+  input.setAttribute('aria-expanded', 'false');
   let items = [], active = -1, request = 0, timer = null;
+  const show = () => { listHost.innerHTML = ''; listHost.appendChild(list); input.setAttribute('aria-expanded', 'true'); };
+  // The reached option reads selected and scrolls into the list's view.
+  const reach = (i) => {
+    active = i;
+    items.forEach((it, k) => { it.node.classList.toggle('on', k === i); it.node.setAttribute('aria-selected', String(k === i)); });
+    if (i < 0) { input.removeAttribute('aria-activedescendant'); return; }
+    input.setAttribute('aria-activedescendant', items[i].node.id);
+    items[i].node.scrollIntoView({ block: 'nearest' });
+  };
+  // A note row (no match, more, an error) is an option that cannot be picked.
+  const note = (cls, text) => { const n = el('div', 'ac-item ' + cls, text); n.setAttribute('role', 'option'); n.setAttribute('aria-disabled', 'true'); return n; };
   // Closing drops the search still pending or in flight, so neither can reopen the list.
-  const close = () => { clearTimeout(timer); request++; list.remove(); list.innerHTML = ''; items = []; active = -1; };
+  const close = () => {
+    clearTimeout(timer); request++; list.remove(); list.innerHTML = ''; items = []; active = -1;
+    input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant');
+  };
   const choose = (v) => { value = v; input.value = v.label; close(); onPick(v); };
   const paint = (d) => {
     list.innerHTML = ''; items = [];
@@ -309,26 +327,30 @@ function gitPicker(name, initial, onPick, listHost, fixed) {
     for (const f of fixed || []) if (f.label.includes(q)) items.push({ rev: f.rev, label: f.label, node: (() => { const o = el('div', 'ac-item'); o.appendChild(el('span', 'gref wt', f.label)); return o; })() });
     for (const r of d.refs) items.push({ rev: r.full, label: r.name, node: (() => { const o = el('div', 'ac-item'); o.appendChild(refBadge(r)); o.appendChild(el('span', 'muted mono', ' ' + r.sha.slice(0, 7))); return o; })() });
     for (const c of d.commits) items.push({ rev: c.sha, label: shortLabel(c), node: (() => { const o = el('div', 'ac-item'); o.appendChild(el('span', 'mono', c.short)); o.appendChild(el('span', null, ' ' + c.subject)); o.appendChild(el('span', 'muted', ' · ' + c.when)); return o; })() });
-    items.forEach((it, i) => { it.node.classList.toggle('on', i === active); it.node.onmousedown = (e) => { e.preventDefault(); choose(it); }; list.appendChild(it.node); });
-    if (!items.length) list.appendChild(el('div', 'more-note ac-item', '(no match: Enter keeps the text as the revision)'));
-    else if (d.truncated) list.appendChild(el('div', 'more-note ac-item', '… more; type to narrow'));
-    listHost.innerHTML = ''; listHost.appendChild(list);
+    items.forEach((it, i) => {
+      it.node.id = list.id + '-' + i; it.node.setAttribute('role', 'option');
+      it.node.onmousedown = (e) => { e.preventDefault(); choose(it); }; list.appendChild(it.node);
+    });
+    if (!items.length) list.appendChild(note('more-note', '(no match: Enter keeps the text as the revision)'));
+    else if (d.truncated) list.appendChild(note('more-note', '… more; type to narrow'));
+    show(); reach(-1);
   };
   const search = async () => {
     const n = ++request;
     let d;
     try { d = await getJSON('/api/git/search?q=' + encodeURIComponent(query())); }
-    catch (e) { if (n === request) { list.innerHTML = ''; list.appendChild(el('div', 'ac-item err', e.message)); listHost.innerHTML = ''; listHost.appendChild(list); } return; }
+    catch (e) { if (n === request) { list.innerHTML = ''; items = []; list.appendChild(note('err', e.message)); show(); reach(-1); } return; }
     if (n !== request || !root.isConnected) return;
-    active = -1; paint(d);
+    paint(d);
   };
   input.oninput = () => { value = null; clearTimeout(timer); timer = setTimeout(search, 150); };
   input.onfocus = () => { if (!list.isConnected) search(); };
   input.onblur = () => setTimeout(close, 150);
   input.onkeydown = (e) => {
     if (composing(e)) return;
-    if (e.key === 'ArrowDown' && items.length) { e.preventDefault(); active = (active + 1) % items.length; items.forEach((it, i) => it.node.classList.toggle('on', i === active)); }
-    else if (e.key === 'ArrowUp' && items.length) { e.preventDefault(); active = (active - 1 + items.length) % items.length; items.forEach((it, i) => it.node.classList.toggle('on', i === active)); }
+    if (e.key === 'ArrowDown' && !list.isConnected) { e.preventDefault(); search(); }
+    else if (e.key === 'ArrowDown' && items.length) { e.preventDefault(); reach((active + 1) % items.length); }
+    else if (e.key === 'ArrowUp' && items.length) { e.preventDefault(); reach((active - 1 + items.length) % items.length); }
     else if (e.key === 'Escape') { e.preventDefault(); close(); }
     else if (e.key === 'Enter') {
       e.preventDefault();
@@ -741,7 +763,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     const listHost = el('div', 'gpick-host');
     const pickBase = gitPicker('base', gitState.compare.base, (v) => { query = new URLSearchParams(); gitState.compare.base = v; run(); }, listHost);
     const pickHead = gitPicker('head', gitState.compare.head, (v) => { query = new URLSearchParams(); gitState.compare.head = v; run(); }, listHost, [GIT_WORKTREE_PICK]);
-    const swap = el('button', 'mini', '⇄'); swap.title = 'swap base and head';
+    const swap = el('button', 'mini', '⇄'); swap.title = 'swap base and head'; swap.setAttribute('aria-label', 'swap base and head');
     swap.onclick = () => { query = new URLSearchParams(); const { base, head: h } = gitState.compare; gitState.compare = { base: h, head: base }; pickBase.set(h); pickHead.set(base); run(); };
     const row = el('div', 'gcmp-pick');
     row.appendChild(pickBase.root); row.appendChild(swap); row.appendChild(pickHead.root);

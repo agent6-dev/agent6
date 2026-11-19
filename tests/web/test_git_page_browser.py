@@ -238,3 +238,29 @@ def test_create_fetch_pr_and_commit_wait_for_their_input(
     page.locator(".git-commit textarea").fill("rename f to g")
     expect(commit).to_be_enabled()
     assert errors == [], errors
+
+
+def test_the_compare_pickers_reached_option_stays_in_view_and_is_named(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """ArrowDown took the highlight past the list's edge, unnamed; the swap button read '⇄'."""
+    from playwright.sync_api import expect
+
+    for n in range(24):
+        _git(tmp_path, "tag", f"t{n:02d}")
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.get_by_role("button", name="Compare", exact=True).click()
+    base = page.get_by_label("base", exact=True)
+    base.click()
+    page.locator(".gpick-list .ac-item").nth(20).wait_for()
+    for _ in range(18):
+        base.press("ArrowDown")
+    reached = page.locator(".gpick-list .ac-item.on")
+    shown, box = page.locator(".gpick-list").bounding_box(), reached.bounding_box()
+    assert shown and box, (shown, box)
+    assert shown["y"] <= box["y"] <= shown["y"] + shown["height"] - box["height"], (shown, box)
+    expect(base).to_have_attribute("aria-activedescendant", reached.get_attribute("id") or "-")
+    expect(reached).to_have_attribute("aria-selected", "true")
+    expect(page.get_by_role("button", name="swap base and head", exact=True)).to_be_visible()
+    assert errors == [], errors
