@@ -456,3 +456,53 @@ def test_the_pickers_note_is_read_out_as_the_typing_narrows(
     page.keyboard.type("zzzz")
     expect(note).to_have_text("(no match)")
     assert not errors
+
+
+def test_esc_dismisses_the_newest_held_message_when_nothing_else_takes_it(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Esc left held failures in place, and their Dismiss buttons were the page's last Tab stops."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    task = page.locator(".dock textarea")
+    task.wait_for()
+    for i in range(2):
+        page.evaluate("text => toast(text, true)", FAILURE.format(i))
+    toasts = page.locator("#toasts .toast")
+    page.keyboard.press("Escape")
+    expect(toasts).to_have_count(1)
+    expect(toasts).to_contain_text("merge refused (0)")
+    task.press("/")
+    expect(page.locator(".ac-pop")).to_be_visible()
+    task.press("Escape")  # the popup takes it
+    expect(page.locator(".ac-pop")).to_have_count(0)
+    page.keyboard.press("Control+K")
+    expect(page.get_by_role("dialog")).to_be_visible()
+    page.keyboard.press("Escape")  # the dialog takes it
+    expect(page.get_by_role("dialog")).to_have_count(0)
+    expect(toasts).to_have_count(1)
+    task.press("Escape")
+    expect(toasts).to_have_count(0)
+    assert not errors
+
+
+def test_esc_in_a_filter_with_text_clears_it_before_reaching_a_message(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Esc in a filter with text dismissed a held message and kept the text it clears."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    search = page.get_by_placeholder("filter settings…")
+    search.fill("budget")
+    page.evaluate("text => toast(text, true)", FAILURE.format(0))
+    toasts = page.locator("#toasts .toast")
+    search.press("Escape")
+    expect(search).to_have_value("")
+    expect(toasts).to_have_count(1)
+    search.press("Escape")  # the empty filter leaves it to the message
+    expect(toasts).to_have_count(0)
+    assert not errors

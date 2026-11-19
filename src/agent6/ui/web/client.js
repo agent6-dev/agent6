@@ -206,6 +206,7 @@ function toast(msg, level) {
   host.prepend(t); // the newest first: the column stacks it lowest
   return t;
 }
+function newestHeld() { return document.querySelector('#toasts > .toast:is(.bad, .warn, .hold)'); }
 // The crumb names the page, a session's after its state pill; the tab title reads the same words.
 function setCrumb(t, statePill) {
   crumb.replaceChildren(...(statePill ? [statePill] : []), el('span', null, t || ''));
@@ -1721,6 +1722,8 @@ const KEYS = [
   { label: 'Ctrl+K', where: 'Anywhere', does: 'switch session (> for commands)', match: (e) => e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey, run: () => openSwitcher() },
   { label: '?', where: 'Outside a field', does: 'this list', match: (e) => e.key === '?' && !inField(e) && !e.ctrlKey && !e.metaKey && !e.altKey, run: () => openKeys() },
   { label: 'Esc', where: 'In a dialog or popup', does: 'close it' },
+  // A search field with text takes Esc to clear itself.
+  { label: 'Esc', where: 'Outside a dialog or popup', does: 'dismiss the newest message', match: (e) => e.key === 'Escape' && !e.defaultPrevented && !composing(e) && !(e.target.matches?.('input[type=search]') && e.target.value) && !document.querySelector('dialog[open], :popover-open') && !!newestHeld(), run: () => newestHeld().remove() },
   { label: 'Enter', where: 'In the composer', does: 'send the instruction; resume an ended session' },
   { label: 'Shift+Enter', where: 'In the composer', does: 'newline' },
   { label: '/', where: 'In the composer', does: 'directive completion; Tab or Enter accepts' },

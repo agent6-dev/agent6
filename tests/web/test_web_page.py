@@ -557,7 +557,7 @@ def test_every_global_key_is_listed_and_handled_from_one_table() -> None:
         assert label in keys
     # Firefox opens a private window on Ctrl+Shift+P; `>` in Ctrl+K's box opens the palette.
     assert "Shift-P" not in client
-    assert keys.count("run: () =>") == 2  # the global bindings; the rest are listed only
+    assert keys.count("run: () =>") == 3  # the global bindings; the rest are listed only
     assert "for (const k of KEYS) if (k.run && k.match(e))" in client
     assert client.count("\n  openPicker({") == 3  # the switcher, the palette, history search
     assert "prefix: { key: '>', open: (rest) => openPalette(rest) }" in client

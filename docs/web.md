@@ -69,7 +69,7 @@ Buttons do what the matching CLI command does, and prompts are answered inline o
 A run's approvals and questions wait after its conversation's last line, over the composer, and scroll with the conversation.
 On a phone, a run's or a machine's page opens at the conversation's end while a prompt waits there.
 A question the model queued, or an ended run's, keeps its box: the answer reaches the run at its next turn, or at its resume.
-A failure, a warning and Prune's undelete commands stay on screen until dismissed; any other message fades 4 seconds after it shows or after the pointer leaves it.
+A failure, a warning and Prune's undelete commands stay on screen until dismissed, the newest by Esc; any other message fades 4 seconds after it shows or after the pointer leaves it.
 When the server stops answering, the Sessions and State machines lists, a session and a machine keep what they last showed, under a line that names the reason and the time of the last update, until the next answer.
 
 - **Sessions page**: every session (mode, status, last activity, usage), newest activity first, a group's children folded under its row, each row carrying its [merge note](usage.md#a-rows-merge-note)
