@@ -481,6 +481,8 @@ aside.rail { display: none; }
      scroller), so nothing in a card widens the page. */
   .card.scroll { overflow-x: clip; overflow-wrap: break-word; }
   .composer .hint { display: none; } /* the keyboard's enter key says it; space is tight */
+  /* A suggestion's help wraps under it; the history search's rows keep one line each. */
+  .ac-pop .ac-item { white-space: normal; }
 }
 /* A pressed toggle: a class where a view tracks it, aria-pressed where the button says it. */
 button.active, button[aria-pressed=true] {

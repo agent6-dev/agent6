@@ -287,6 +287,27 @@ def test_shells_opens_the_drawer_as_details_does(
     assert not errors
 
 
+def test_a_phone_shows_each_directives_whole_help(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """On a phone the directive popup cut every help line short with an ellipsis."""
+    from playwright.sync_api import expect
+
+    stop = {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+    session_logs.write_run(tmp_path, "help-AAA111", [stop])
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/help-AAA111")
+    entry = page.locator(".composer textarea")
+    expect(entry).to_have_attribute("placeholder", re.compile("continue|next"))
+    entry.fill("/")
+    rows = page.locator(".ac-pop .ac-item")
+    expect(rows.first).to_be_visible()
+    assert rows.count() > 1
+    assert rows.evaluate_all("rows => rows.every(r => r.scrollWidth <= r.clientWidth)")
+    assert not errors
+
+
 def test_the_phone_widget_menu_closes_on_esc_an_outside_tap_and_a_pick(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
