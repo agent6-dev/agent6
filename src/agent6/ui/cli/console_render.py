@@ -45,6 +45,8 @@ _STYLE_ANSI: dict[transcript_style.StyleName, str] = {
     "text": "",
     "call": _ANSI["bold"] + _ANSI["cyan"],
     "verify": _ANSI["bold"] + _ANSI["yellow"],
+    "verify-ok": _ANSI["bold"] + _ANSI["green"],
+    "verify-fail": _ANSI["bold"] + _ANSI["red"],
     "arg": _ANSI["dim"],
     "ok": _ANSI["green"],
     "fail": _ANSI["red"],

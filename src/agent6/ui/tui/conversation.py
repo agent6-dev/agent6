@@ -66,6 +66,8 @@ _STYLE_RICH: dict[transcript_style.StyleName, str] = {
     "text": "",
     "call": "bold cyan",
     "verify": "bold yellow",
+    "verify-ok": "bold green",
+    "verify-fail": "bold red",
     "arg": "dim",
     "ok": "green",
     "fail": "red",
@@ -84,7 +86,7 @@ _STYLE_RICH: dict[transcript_style.StyleName, str] = {
 }
 
 
-def _rich_line(line: transcript_style.Line) -> rich_text.Text:
+def rich_line(line: transcript_style.Line) -> rich_text.Text:
     """Return one styled line of item_lines() as a Rich Text."""
     text = rich_text.Text()
     for chunk, style in line:
@@ -99,7 +101,7 @@ def _item_renderables(
     lines = transcript_style.item_lines(item, detail=detail)
     if not lines:
         return []
-    out = [_rich_line(line) for line in lines]
+    out = [rich_line(line) for line in lines]
     out.append(rich_text.Text(""))
     return out
 
@@ -514,7 +516,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
             for i, row in enumerate(rows):
                 if i:
                     body.append("\n  ")
-                body.append_text(_rich_line(row))
+                body.append_text(rich_line(row))
             live.display = True
             live.update(body)
             return

@@ -20,6 +20,8 @@ StyleName = Literal[
     "text",
     "call",
     "verify",
+    "verify-ok",
+    "verify-fail",
     "arg",
     "ok",
     "fail",
@@ -161,7 +163,11 @@ def item_lines(item: transcript_items.TranscriptItem, *, detail: DetailLevel) ->
     elif item.kind == "commit":
         lines.append([(f"{transcript.COMMIT} commit  {item.detail}", "commit")])
     elif item.kind == "verify":
-        lines.append([(item.body, "verify")])
+        # Plain "verify" until the verification ends.
+        outcome: StyleName = (
+            "verify-ok" if item.ok else "verify-fail" if item.ok is False else "verify"
+        )
+        lines.append([(item.body, outcome)])
         if detail == "expanded" and item.tail:
             lines.extend([(f"  {line}", "tail")] for line in item.tail.split("\n"))
     elif item.kind == "marker":

@@ -58,6 +58,8 @@
 .conv .s-think-marker { color: var(--accent); }
 .conv .s-call { color: var(--accent); font-weight: 600; }
 .conv .s-verify { color: var(--warn); font-weight: 600; }
+.conv .s-verify-ok { color: var(--ok); font-weight: 600; }
+.conv .s-verify-fail { color: var(--err); font-weight: 600; }
 .conv .s-arg, .conv .s-detail, .conv .s-tail, .conv .s-done-detail { color: var(--muted); }
 .conv .s-more, .conv .s-marker { color: var(--muted); font-style: italic; }
 .conv .s-ok { color: var(--ok); }

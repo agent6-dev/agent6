@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from agent6 import paths
+from tests.unit import test_transcript_verify
 from tests.web import session_logs, test_session_browser, test_web_browser
 
 if TYPE_CHECKING:
@@ -126,6 +127,35 @@ def test_a_wrapped_conversation_line_hangs_under_its_text(
         return [...r.getClientRects()].every(x => x.left >= box.left && x.right <= box.right); }"""
     )
     assert inside
+    assert not errors
+
+
+# An element's text colour, and the colour a token resolves to beside it.
+PAINT = """(e, token) => {
+  const probe = e.parentElement.appendChild(document.createElement('span'));
+  probe.style.color = `var(${token})`;
+  const want = getComputedStyle(probe).color; probe.remove();
+  return [getComputedStyle(e).color, want];
+}"""
+
+
+def test_a_verification_line_is_painted_its_outcomes_colour(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A failed and a passed verification were both painted --warn, told apart only by the mark."""
+    from playwright.sync_api import expect
+
+    failed = test_transcript_verify.attempt()
+    failed[-1].update(exit_code=1, outcome="failed")
+    passed = test_transcript_verify.attempt(verify_id="v2")
+    session_logs.write_run(tmp_path, "verify-AAA111", [*failed, *passed])
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/verify-AAA111")
+    for mark, token in (("✗", "--err"), ("✓", "--ok")):
+        line = page.locator(".card-conv .ci span").filter(has_text=f"verify: {mark}")
+        expect(line).to_have_count(1)
+        color, want = line.evaluate(PAINT, token)
+        assert color == want, mark
     assert not errors
 
 

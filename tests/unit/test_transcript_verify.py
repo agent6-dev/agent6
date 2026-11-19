@@ -84,6 +84,21 @@ def test_failed_verification_keeps_its_output_tail() -> None:
     assert "AssertionError: expected 2" in "".join(t for line in expanded for t, _ in line)
 
 
+def test_a_verification_line_takes_its_outcomes_style() -> None:
+    """A pass and a failure shared the one "verify" style, told apart only by the mark."""
+    rows = attempt()
+    failed = [*rows[:-1], {**rows[-1], "exit_code": 1, "outcome": "failed"}]
+    for events, style in [
+        (rows[:1], "verify"),  # waiting for approval
+        (rows[:3], "verify"),  # running
+        (rows, "verify-ok"),
+        (failed, "verify-fail"),
+    ]:
+        (item,) = transcript.fold_transcript(events)
+        for detail in ("hidden", "collapsed", "expanded"):
+            assert transcript_style.item_lines(item, detail=detail)[0] == [(item.body, style)]
+
+
 def test_web_payload_uses_the_shared_verification_lines() -> None:
     """The web payload has one verification entry at every phase, including when tools hide."""
     from agent6.ui.web import model

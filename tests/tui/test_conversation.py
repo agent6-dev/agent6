@@ -611,11 +611,15 @@ def test_an_in_flight_tool_call_shows_in_the_live_pane_then_settles(tmp_path: pa
 
 
 def test_verification_updates_one_item_in_both_tui_views(tmp_path: pathlib.Path) -> None:
-    """Baseline approval, execution and result share one visible marker in both TUI views."""
+    """Baseline approval, execution and result share one visible marker in both TUI views.
+
+    The dashboard's stream pane printed the marker unstyled while the conversation painted it.
+    """
     from tests.unit import test_transcript_verify
 
     rows = test_transcript_verify.attempt()
     run = tmp_path / "run"
+    styles = conversation._STYLE_RICH
 
     async def scenario() -> None:
         app = _hosted(run, [_EVENTS[0], *rows[:2]], live=True)
@@ -623,10 +627,10 @@ def test_verification_updates_one_item_in_both_tui_views(tmp_path: pathlib.Path)
             await pilot.pause()
             conv = app._conv
             live = conv.query_one("#conv-live", widgets.Static)
-            for row, expected in [
-                (None, "verify: waiting for approval"),
-                (rows[2], "verify: running `pytest -q`"),
-                (rows[3], "verify: ✓ pass · 0.2s"),
+            for row, expected, style in [
+                (None, "verify: waiting for approval", styles["verify"]),
+                (rows[2], "verify: running `pytest -q`", styles["verify"]),
+                (rows[3], "verify: ✓ pass · 0.2s", styles["verify-ok"]),
             ]:
                 if row is not None:
                     with (run / "logs.jsonl").open("a") as stream:
@@ -641,7 +645,9 @@ def test_verification_updates_one_item_in_both_tui_views(tmp_path: pathlib.Path)
                 )
                 shown = _body_text(app) + (str(live.render()) if live.display else "")
                 assert shown.count("verify:") == 1
-                assert expected in app._dash._stream_story(app.state, active=False).plain
+                story = app._dash._stream_story(app.state, active=False)
+                assert expected in story.plain
+                assert [span.style for span in story.spans] == [style]
 
     asyncio.run(scenario())
 

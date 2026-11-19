@@ -31,6 +31,7 @@ from agent6.ui import keymap
 from agent6.ui.tui import (
     clipboard,
     composer,
+    conversation,
     dashboard_header,
     diff_pane,
     forms,
@@ -43,7 +44,7 @@ from agent6.ui.tui import (
     theme,
 )
 from agent6.ui.tui import prompts as tui_prompts
-from agent6.viewmodel import SessionState, ToolCallView, format, tail, wire
+from agent6.viewmodel import SessionState, ToolCallView, format, tail, transcript_style, wire
 from agent6.viewmodel.session import state
 
 if TYPE_CHECKING:
@@ -550,7 +551,8 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             and tui.verification_item is not None
             and (not active or tui.verification_item.ok is None)
         ):
-            st.append(tui.verification_item.body)
+            line = transcript_style.item_lines(tui.verification_item, detail="collapsed")[0]
+            st.append_text(conversation.rich_line(line))
         elif streaming:
             assert call is not None
             if call.streamed_thinking:
