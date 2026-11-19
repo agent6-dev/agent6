@@ -945,6 +945,25 @@ def test_a_long_ref_name_shows_whole_in_the_refs_filter(
     assert errors == [], errors
 
 
+def test_the_side_and_diff_heads_line_up_with_the_page(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+) -> None:
+    """The side panel's heading starts where its content does, the diff's where the toolbar does."""
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    page.locator(".gc-row").first.click()
+    page.wait_for_selector(".git-side .gf")
+    left = "e => Math.round(e.getBoundingClientRect().left)"
+    assert page.locator(".git-side-head h3").evaluate(left) == page.locator(".gd").evaluate(left)
+    toolbar = page.locator(".git-bar button").first.evaluate(left)
+    page.locator(".git-side .gf .gf-path").first.click()
+    page.wait_for_selector(".git-diff .diff")
+    assert page.locator(".git-diff-head button").first.evaluate(left) == toolbar
+    assert page.locator(".git-diff-body .gf-patch").evaluate(left) == toolbar
+    assert errors == [], errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:

@@ -102,6 +102,8 @@
   .git-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
   .git-graph { flex: 1 1 55%; min-width: 0; overflow: auto; }
   .git-side { flex: 1 1 45%; min-width: 0; overflow: auto; border-left: 1px solid var(--border); }
+  /* the page's gutter, as .page-pad sets it, so the heads line up with the content */
+  .git-side-head, .git-diff-head, .git-diff-body { padding-inline: 22px; }
 }
 @media (max-width: 780px) {
   /* The commit message takes the whole row, as a docked composer's entry does; Commit drops under it. */
