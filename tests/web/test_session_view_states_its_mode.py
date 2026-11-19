@@ -74,7 +74,7 @@ def test_the_run_crumb_carries_the_state_word() -> None:
     approval, or dead, said neither on the page it opened.
     """
     client = page.CLIENT_JS
-    assert "setCrumb(runState(s) + ' · ' + cards._crumb)" in client
+    assert "setCrumb(cards._crumb, pill(s.status_level, runState(s)))" in client
     # One owner for the word: the status row reads the same helper.
     assert "add('status', runState(s))" in client
 

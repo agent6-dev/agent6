@@ -59,8 +59,12 @@ header {
 /* The brand: the transparent mark (favicon.svg) beside the name in the accent colour. */
 header .brand { display: inline-flex; align-items: center; gap: 0.5rem; color: inherit; font-weight: 700; letter-spacing: .3px; }
 header .brand b { color: var(--accent); }
-header .spacer { flex: 1; }
-header .crumb { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The crumb names the page; a session's leads with its state, the rows' status pill. */
+header .crumb { display: flex; min-width: 0; margin-right: auto; color: var(--muted); }
+header .crumb > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+header .crumb > .pill { display: block; font-size: inherit; line-height: inherit; color: var(--text); }
+header .crumb > .pill::before { display: inline-block; margin-right: 0.4375rem; vertical-align: 1px; }
+header .crumb > .pill + span::before { content: "\a0· "; }
 /* The header's buttons are icons centred in a square. */
 header > button {
   display: inline-flex; align-items: center; justify-content: center;
@@ -386,6 +390,11 @@ dialog .err:empty { display: none; }
     position: fixed; top: 0; left: 0; right: 0;
     padding: 0.375rem 1rem; padding-top: calc(0.375rem + env(safe-area-inset-top));
   }
+  /* A session's id goes under its state in smaller text; the two lines fit a control's height. */
+  header .crumb { flex-direction: column; line-height: 1.25; }
+  header .crumb > .pill { font-size: 0.8125rem; }
+  header .crumb > .pill + span { font-size: 0.75rem; }
+  header .crumb > .pill + span::before { content: none; }
   main { padding: calc(var(--hdr-h) + env(safe-area-inset-top)) 0 calc(var(--nav-h) + 1.5rem); }
   #toasts { left: anchor(left, 0px); bottom: anchor(--dock-top top, calc(var(--nav-h) + env(safe-area-inset-bottom))); }
   .card.scroll { max-height: 60vh; }

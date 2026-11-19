@@ -191,8 +191,12 @@ function toast(msg, level) {
   document.getElementById('toasts').appendChild(t);
   return t;
 }
-// The crumb names the page; the browser's tab and history read the same name.
-function setCrumb(t) { crumb.textContent = t || ''; document.title = t ? t + ' · agent6' : 'agent6'; }
+// The crumb names the page, a session's after its state pill; the tab title reads the same words.
+function setCrumb(t, statePill) {
+  crumb.replaceChildren(...(statePill ? [statePill] : []), el('span', null, t || ''));
+  const words = statePill ? statePill.textContent + ' · ' + t : t;
+  document.title = words ? words + ' · agent6' : 'agent6';
+}
 
 // --- dialogs -----------------------------------------------------------------
 // Every modal is a <dialog> in the card skin, named by its title, with a Close button beside it.

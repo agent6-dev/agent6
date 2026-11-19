@@ -11,10 +11,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 from agent6 import paths
-from tests.web import test_web_browser
+from tests.web import session_logs, signin, test_web_browser
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Locator, Page
+    from playwright.sync_api import Browser, Locator, Page
 
 pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
@@ -117,6 +117,74 @@ def test_the_crumb_names_each_page_as_its_nav_link_does(
     expect(page.locator("#crumb")).to_have_text(label)
     expect(page).to_have_title(f"{label} · agent6")
     assert not errors
+
+
+def test_a_sessions_crumb_leads_with_its_state_as_a_status_pill(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A session's crumb was the text "running · <id>", with no status dot.
+
+    It holds the rows' status pill, which follows the run, then the id on the same line; the tab's
+    title reads both.
+    """
+    from playwright.sync_api import expect
+
+    session = session_logs.write_run(tmp_path, "crumb-AAA111", [], live=True)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/crumb-AAA111")
+    state, name = page.locator("#crumb > .pill"), page.locator("#crumb > .pill + span")
+    expect(state).to_have_text("running")
+    expect(state).to_have_class("pill active")
+    expect(name).to_have_text("crumb-AAA111")
+    expect(page).to_have_title("running · crumb-AAA111 · agent6")
+    first, second = state.bounding_box(), name.bounding_box()
+    assert first and second
+    assert first["y"] == second["y"] and first["x"] < second["x"]
+    stop = {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+    with (session / "logs.jsonl").open("a") as log:
+        log.write(json.dumps(stop) + "\n")
+    expect(state).to_have_class("pill ok")
+    expect(state).to_have_text("passed")
+    expect(page).to_have_title("passed · crumb-AAA111 · agent6")
+    assert not errors
+
+
+def test_a_phones_crumb_shows_a_sessions_state_and_id_whole(
+    browser: Browser, port: int, tmp_path: pathlib.Path
+) -> None:
+    """A phone's crumb cut the session's id beside the brand: "passed · ready-ro…".
+
+    The id goes under the state, in smaller text, and the crumb runs up to the buttons: at 375px
+    an empty spacer before them cut "merry-fountain-B7…".
+    """
+    from playwright.sync_api import expect
+
+    stop = {"type": "session.stop", "reason": "max_turns", "verification": "unverified"}
+    session_logs.write_run(tmp_path, "merry-fountain-B7XAJS", [stop])
+    token = json.dumps(signin.token(port))
+    with browser.new_context(
+        viewport={"width": 375, "height": 812}, has_touch=True, is_mobile=True
+    ) as context:
+        context.add_init_script(f"localStorage.setItem('a6-token', {token})")
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
+        page.goto(f"http://127.0.0.1:{port}/#/session/merry-fountain-B7XAJS")
+        parts = page.locator("#crumb > *")
+        expect(parts).to_have_text(["failed · max turns", "merry-fountain-B7XAJS"])
+        # Unrounded: scrollWidth and clientWidth round, and read 140 = 140 over an ellipsis.
+        over = parts.evaluate_all("""ps => ps.map(p => {
+          const box = p.getBoundingClientRect().width;
+          p.style.width = 'max-content';
+          const need = p.getBoundingClientRect().width;
+          p.style.width = '';
+          return need - box; })""")
+        assert max(over) <= 0, over
+        state, name = parts.first.bounding_box(), parts.last.bounding_box()
+        assert state and name
+        assert name["y"] >= state["y"] + state["height"]
+        assert [e for e in errors if not e.startswith("Failed to load resource")] == []
 
 
 @pytest.mark.parametrize(("width", "height"), [(1280, 900), (390, 844)])

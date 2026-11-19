@@ -189,6 +189,7 @@ def session_state_as_dict(
         open_approval: The current approval identifier, or null when none is open.
         status: The lifecycle status word.
         status_label: The rendered status with mode and unmerged marks when available.
+        status_level: The status presentation level.
         task: The operator's words, whole.
         continued_task: The latest resume steer, whole; empty without a continuation.
         task_line: The task clipped to 200 characters, then a newline and `continued: <steer>`,
@@ -218,9 +219,9 @@ def session_state_as_dict(
 
     Returns:
         The state's fields with tuples as lists, plus the computed `context_used_percent`,
-        `needs_new_work`, `open_approval`, `status`, `status_label`, the full `task`, `task_line`,
-        `dead_state`, `operator_blocked`, the rendered budget text, approval parts and
-        commit labels, and `log_tail` as plain strings.
+        `needs_new_work`, `open_approval`, `status`, `status_label`, `status_level`, the full
+        `task`, `task_line`, `dead_state`, `operator_blocked`, the rendered budget text, approval
+        parts and commit labels, and `log_tail` as plain strings.
         Journal event fields keep their stored names.
     """
     d = {name: _wire_value(getattr(state, name)) for name in PUBLIC_STATE_FIELDS}
@@ -281,6 +282,7 @@ def session_state_as_dict(
         if session_dir is not None
         else format.status_label(word, reason)
     )
+    d["status_level"] = format.status_level(word)
     label = state.task_label.fallback(fallback_task, fallback_continued)
     d["task"] = label.task
     d["continued_task"] = label.continued_task

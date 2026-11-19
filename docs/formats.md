@@ -1723,6 +1723,7 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `open_approval` | `JSON` | The current approval identifier, or null when none is open. |
 | `status` | `JSON` | The lifecycle status word. |
 | `status_label` | `JSON` | The rendered status with mode and unmerged marks when available. |
+| `status_level` | `JSON` | The status presentation level. |
 | `task` | `JSON` | The operator's words, whole. |
 | `continued_task` | `JSON` | The latest resume steer, whole; empty without a continuation. |
 | `task_line` | `JSON` | The task clipped to 200 characters, then a newline and `continued: <steer>`, clipped the same way, when a resume steer exists. |

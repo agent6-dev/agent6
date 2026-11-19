@@ -235,6 +235,7 @@
   "live": null,
   "status": "passed",
   "status_label": "passed",
+  "status_level": "ok",
   "task": "# Fix the bug\n\nRestore the thing.",
   "continued_task": "",
   "task_line": "Fix the bug",

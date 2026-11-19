@@ -507,11 +507,8 @@ function paintRun(cards, s) {
   // The panel's own heading states the mode, the fact that tells an operator
   // what they are looking at.
   if (cards._head_title && s.mode) cards._head_title.textContent = s.mode[0].toUpperCase() + s.mode.slice(1);
-  // A phone shows one widget at a time and opens on the conversation, so the
-  // state would sit on a card the operator has to go find. The crumb is in the
-  // fixed header on every widget page; state leads it, since the crumb
-  // ellipsises.
-  if (cards._crumb) setCrumb(runState(s) + ' · ' + cards._crumb);
+  // A phone shows one widget at a time, so the state rides in the fixed header's crumb.
+  if (cards._crumb) setCrumb(cards._crumb, pill(s.status_level, runState(s)));
   const kv = el('div', 'kv');
   const add = (k, v) => { kv.appendChild(el('div', 'k', k)); kv.appendChild(el('div', 'v', v)); };
   add('task', s.task_line || '(none)');
