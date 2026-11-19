@@ -367,6 +367,28 @@ def test_a_request_with_no_answer_names_the_server_in_one_sentence(
     )
 
 
+def test_an_answer_with_no_reason_phrase_names_its_status_code(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, no_phrase: str
+) -> None:
+    """A page, a refresh or an action refused with an HTML page over HTTP/2 gave no reason."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.route("**/api/config", lambda route: route.continue_(url=no_phrase))
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    expect(page.locator(".problem .err")).to_have_text("HTTP 502")
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.route("**/api/sessions/prune", lambda route: route.continue_(url=no_phrase))
+    page.get_by_role("button", name="Prune merged runs", exact=True).click()
+    expect(page.locator("#toasts .toast")).to_have_text("HTTP 502")
+    page.route("**/api/hub", lambda route: route.continue_(url=no_phrase))
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    expect(page.locator("#view > .stale")).to_have_text(
+        re.compile(r"^HTTP 502 · not updated since \d\d:\d\d · retrying every 4 s$")
+    )
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
 def test_prunes_undelete_commands_wait_for_dismiss(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

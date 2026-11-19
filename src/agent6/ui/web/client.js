@@ -158,7 +158,7 @@ async function serverFetch(url, init = {}) {
 async function getResponse(url) {
   const r = await serverFetch(url);
   if (r.ok) return r;
-  const reason = (await r.json().catch(() => ({ error: r.statusText }))).error || r.statusText;
+  const reason = (await r.json().catch(() => ({}))).error || r.statusText || 'HTTP ' + r.status;
   throw Object.assign(new Error(reason), { status: r.status });
 }
 async function getJSON(url) { return (await getResponse(url)).json(); }
@@ -166,7 +166,7 @@ async function getBlob(url) { return (await getResponse(url)).blob(); }
 async function postJSON(url, body) {
   const r = await serverFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok || data.ok === false) throw new Error(data.error || r.statusText);
+  if (!r.ok || data.ok === false) throw new Error(data.error || r.statusText || 'HTTP ' + r.status);
   return data;
 }
 // The Merge buttons' two steps. The confirm names the unmerged runs that changed the same
