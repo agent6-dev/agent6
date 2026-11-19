@@ -553,3 +553,27 @@ def test_a_task_title_wraps_and_a_skipped_task_strikes_only_its_title(
     assert ["\u2013", "none"] in struck  # the skipped glyph
     assert ["Handle a", "line-through"] in struck
     assert not errors
+
+
+def test_a_budget_bar_stands_apart_from_its_label_and_the_next_line(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A budget bar stands 4px under its label and 10px over the line under it.
+
+    The bar touched its label above and the tokens line below.
+    """
+    from playwright.sync_api import expect
+
+    _session(tmp_path, "budget-AAA111", [{"type": "budget.update", "usd_total": 0.5}])
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"http://127.0.0.1:{port}/#/session/budget-AAA111")
+    bar = page.locator(".card-budget .bar")
+    expect(bar).to_be_visible()
+    gaps = bar.evaluate(
+        """b => { const r = e => e.getBoundingClientRect();
+        const label = b.previousElementSibling, next = b.parentElement.nextElementSibling;
+        return [r(b).top - r(label).bottom, r(next).top - r(b).bottom]; }"""
+    )
+    assert gaps == [4, 10]
+    assert not errors

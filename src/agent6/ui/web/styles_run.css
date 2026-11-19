@@ -1,6 +1,8 @@
 /* The run view: task graph, budget, tool calls, event log, plan, conversation,
    approval and question prompts, and the details drawer. */
-.bar { height: 8px; background: var(--surface2); border-radius: 999px; overflow: hidden; }
+/* A budget bar stands 4px under its label and 10px over the next line; its track takes the
+   hairline colour, so an empty or nearly empty bar still shows its length. */
+.bar { height: 8px; margin: 4px 0 10px; background: var(--border); border-radius: 999px; overflow: hidden; }
 .bar > span { display: block; height: 100%; background: var(--accent); }
 .bar.warn > span { background: var(--warn); }
 
