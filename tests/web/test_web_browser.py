@@ -1280,7 +1280,7 @@ def test_child_details_read_the_parents_rationale(
 def test_a_dialog_whose_fetch_lands_late_never_opens_over_another(
     port: int, open_page: Callable[[int], tuple[Page, list[str]]]
 ) -> None:
-    """A late fetch stacked its dialog over Ctrl-K's switcher, and navigation left it open."""
+    """A late fetch stacked its dialog over Ctrl+K's switcher, and navigation left it open."""
     from playwright.sync_api import Route, expect
 
     page, errors = open_page(port)
@@ -1347,7 +1347,7 @@ def test_the_switchers_merge_reports_a_failure_on_the_page(
 def test_the_keyboard_list_and_the_palette_open_and_act(
     git_port: int, open_page: Callable[[int], tuple[Page, list[str]]]
 ) -> None:
-    """`?` lists the bindings; `>` in Ctrl-K's box opens the palette, which runs a command."""
+    """`?` lists the bindings; `>` in Ctrl+K's box opens the palette, which runs a command."""
     from playwright.sync_api import expect
 
     page, errors = open_page(git_port)
@@ -1356,7 +1356,7 @@ def test_the_keyboard_list_and_the_palette_open_and_act(
     page.keyboard.press("?")
     keys = page.get_by_role("dialog").locator("table.keys")
     expect(keys).to_contain_text("Ctrl+K")
-    expect(keys).not_to_contain_text("Ctrl-Shift-P")
+    expect(keys).not_to_contain_text("Ctrl+Shift+P")
     page.keyboard.press("Escape")
     expect(keys).to_have_count(0)
     page.keyboard.press("Control+Shift+P")

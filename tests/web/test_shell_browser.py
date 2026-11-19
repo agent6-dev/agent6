@@ -448,7 +448,7 @@ def _sessions(count: int, **fields: object) -> list[dict[str, object]]:
 
 
 def _open_switcher(page: Page, port: int, rows: list[dict[str, object]]) -> Locator:
-    """Serve `rows` as the hub, open the Config page, then Ctrl-K's switcher."""
+    """Serve `rows` as the hub, open the Config page, then Ctrl+K's switcher."""
     page.route("**/api/hub", lambda route: route.fulfill(json={"sessions": rows}))
     page.goto(f"http://127.0.0.1:{port}/#/config")
     page.wait_for_selector(".cfg")

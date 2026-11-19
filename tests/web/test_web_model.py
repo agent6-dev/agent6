@@ -294,7 +294,7 @@ def test_hub_marks_the_group_winner(tmp_path: pathlib.Path) -> None:
 def test_conversation_payload_carries_operator_inputs(tmp_path: pathlib.Path) -> None:
     """`operator_inputs` carries the task, then every steer, raw text in journal order.
 
-    The composer's Ctrl-R history search reads it; the client flattens and reverses for display.
+    The composer's Ctrl+R history search reads it; the client flattens and reverses for display.
     """
     d = _run(
         tmp_path,

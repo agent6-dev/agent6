@@ -188,7 +188,7 @@ def test_a_session_row_shows_its_mode() -> None:
 
 
 def test_ctrl_k_opens_the_session_switcher_and_drafts_wait_in_the_composer() -> None:
-    """Ctrl-K lists the hub's rows with checkout and ref; a composer draft survives a switch."""
+    """Ctrl+K lists the hub's rows with checkout and ref; a composer draft survives a switch."""
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
     switcher = client[
         client.index("async function openSwitcher") : client.index("function makeComposer")
@@ -529,7 +529,7 @@ def test_every_global_key_is_listed_and_handled_from_one_table() -> None:
     ]
     for label in ("Ctrl+K", "'?'", "Ctrl+R", "Ctrl+Enter", "Shift+Enter"):
         assert label in keys
-    # Firefox opens a private window on Ctrl-Shift-P; `>` in Ctrl-K's box opens the palette.
+    # Firefox opens a private window on Ctrl+Shift+P; `>` in Ctrl+K's box opens the palette.
     assert "Shift-P" not in client
     assert keys.count("run: () =>") == 2  # the global bindings; the rest are listed only
     assert "for (const k of KEYS) if (k.run && k.match(e))" in client

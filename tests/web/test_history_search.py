@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The composer's Ctrl-R history search wires the payload key, scoped to the focused composer.
+"""The composer's Ctrl+R history search wires the payload key, scoped to the focused composer.
 
 The browser keeps its reload elsewhere.
 """
@@ -14,7 +14,7 @@ def test_composer_intercepts_ctrl_r_only() -> None:
     # The intercept lives in the composer's own keydown and requires the bare Ctrl chord.
     assert "e.key === 'r' && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey" in page.CLIENT_JS
     # The only ctrlKey sites are that chord, the composer's Ctrl+Enter, the two rows of the
-    # page's key table (Ctrl-K, a bare `?`) and the Git rows' arrow keys, which leave a
+    # page's key table (Ctrl+K, a bare `?`) and the Git rows' arrow keys, which leave a
     # modified key to the browser; reload works elsewhere.
     assert page.CLIENT_JS.count("ctrlKey") == 5
     assert "openHistorySearch" in page.CLIENT_JS

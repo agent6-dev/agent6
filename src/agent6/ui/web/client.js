@@ -1211,7 +1211,7 @@ function convCard(url, title, cls) {
 let pendingComposerFill = '';
 
 // Fill a composer through an edit the browser records, so the native undo
-// stack (Ctrl-Z / Cmd-Z) survives programmatic fills like history recall and
+// stack (Ctrl+Z / Cmd+Z) survives programmatic fills like history recall and
 // slash completion. execCommand is deprecated but remains the only widely
 // implemented way to write a textarea's value as a user edit; the fallback
 // keeps the fill working, minus undo.
@@ -1560,7 +1560,7 @@ function openKeys() {
 // run Enter resumes the run with the text as the follow-up instruction (empty
 // = plain resume), then waits for the resumed worker to take over and
 // re-renders. Shift+Enter inserts a newline. setState(s) keeps the mode in
-// sync with each SSE frame. Ctrl-R (composer-focused only, so the browser
+// sync with each SSE frame. Ctrl+R (composer-focused only, so the browser
 // keeps its reload elsewhere) opens the past-message search above.
 function makeComposer(id) {
   const root = el('div', 'composer');
@@ -1665,7 +1665,7 @@ function makeComposer(id) {
     if (composing(e)) return;
     if (suggest.onKeyDown(e) || models.onKeyDown(e)) return;
     if (e.key === 'r' && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-      e.preventDefault(); // Ctrl-R here is history search, not a page reload
+      e.preventDefault(); // Ctrl+R here is history search, not a page reload
       if (busy) return;
       getJSON('/api/session/' + encodeURIComponent(id) + '/conversation').then(d => {
         const seen = new Set(), entries = [];
