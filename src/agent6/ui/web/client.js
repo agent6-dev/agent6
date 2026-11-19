@@ -242,6 +242,14 @@ function openDialog(title, cls) {
   heading.id = 'dialog-title-' + ++dialogCount;
   dialog.setAttribute('aria-labelledby', heading.id);
   dialog.setAttribute('closedby', 'any');
+  // The double-click that opened the dialog: its second press neither selects, presses nor closes it.
+  let own = false, stray = false;
+  for (const type of ['pointerdown', 'keydown']) dialog.addEventListener(type, () => { stray = false; }, true);
+  dialog.addEventListener('mousedown', e => {
+    if (e.detail < 2) own = true; else if (!own) { stray = true; e.preventDefault(); }
+  }, true);
+  dialog.addEventListener('click', e => { if (stray) { e.stopPropagation(); e.preventDefault(); } }, true);
+  dialog.addEventListener('cancel', e => { if (stray) e.preventDefault(); });
   dialog.tabIndex = -1; // no Tab stop: Firefox stops on a scrolling dialog, which draws no ring
   // A touch screen has no Esc, and nothing shows that a tap outside closes the dialog.
   const head = el('div', 'dialog-head');

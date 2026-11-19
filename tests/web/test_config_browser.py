@@ -694,6 +694,62 @@ def test_a_drag_across_a_config_value_selects_it_without_opening_the_editor(
     assert not errors
 
 
+def test_a_double_click_on_a_config_row_leaves_its_editor_open_on_the_field(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The double-click's second press closed the editor it opened, or selected a word in it.
+
+    Outside the dialog it was a click on the backdrop; inside, it took the focus off the field.
+    A later click on the backdrop still closes the editor.
+    """
+    page, errors = open_page(port)
+    _config(page, port)
+    state = """() => [document.querySelectorAll('dialog[open]').length, String(getSelection()),
+      document.activeElement.matches('dialog .field')]"""
+    for cell in ("td.key", "td.val"):  # the second press lands on the backdrop, then on the dialog
+        target = page.locator(f'[data-key="budget.max_usd"] {cell}')
+        target.evaluate("e => e.scrollIntoView({block: 'center'})")
+        box = target.bounding_box()
+        assert box is not None
+        page.mouse.dblclick(box["x"] + 20, box["y"] + box["height"] / 2)
+        page.wait_for_timeout(300)
+        assert page.evaluate(state) == [1, "", True], cell
+        page.mouse.click(8, 450)
+        page.locator("dialog").wait_for(state="detached")
+    assert not errors
+
+
+def test_a_double_click_on_a_config_row_leaves_the_editors_checkbox_under_it_alone(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A double-click's second press on the editor's layer checkbox, or its label, toggled it.
+
+    Save then wrote the other layer's config.
+    """
+    page, errors = open_page(port)
+    _config(page, port)
+    row = page.locator('[data-key="budget.max_usd"]')
+    dialog = page.get_by_role("dialog")
+    checkbox = dialog.get_by_role("checkbox")
+    for target in (checkbox, dialog.get_by_text("set for this repo only")):
+        row.get_by_role("button").press("Enter")  # opened from the keyboard to see where it sits
+        box = target.bounding_box()
+        assert box is not None
+        x, y = box["x"] + 4, box["y"] + box["height"] / 2
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="detached")
+        row.evaluate(f"r => scrollBy(0, r.getBoundingClientRect().top + r.offsetHeight / 2 - {y})")
+        under = page.evaluate(f"document.elementFromPoint({x}, {y}).closest('tr').dataset.key")
+        assert under == "budget.max_usd"
+        page.mouse.dblclick(x, y)
+        page.wait_for_timeout(300)
+        assert not checkbox.is_checked()
+        assert page.evaluate("document.activeElement.matches('dialog .field')")
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="detached")
+    assert not errors
+
+
 def test_a_held_enter_on_a_config_row_saves_nothing(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
