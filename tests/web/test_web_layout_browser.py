@@ -124,6 +124,124 @@ def test_a_long_line_in_a_phone_widget_never_widens_the_page(
     assert not errors
 
 
+def test_a_composer_entry_rests_at_one_line_and_grows_to_a_cap(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The docked entry is one field tall at rest and grows with each typed line.
+
+    It stops at 40% of the screen, shrinks back when emptied, and keeps Start on its bottom
+    edge. It was two lines tall at rest, and only a drag grip above it made it taller.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    entry = page.locator(".dock textarea")
+    expect(entry).to_be_visible()
+    start = page.get_by_role("button", name="Start", exact=True)
+
+    def box(locator: Locator) -> tuple[float, float]:
+        b = locator.bounding_box()
+        assert b is not None
+        return b["height"], b["y"] + b["height"]
+
+    assert box(entry)[0] == 32
+    entry.fill("one\ntwo\nthree\nfour")
+    assert box(entry)[0] == 32 + 3 * 21
+    assert box(start)[1] == box(entry)[1]
+    entry.fill("\n".join(["line"] * 60))
+    assert box(entry)[0] == pytest.approx(900 * 0.4, abs=0.5)
+    assert box(start)[1] == box(entry)[1]
+    entry.fill("")
+    assert box(entry)[0] == 32
+    assert not errors
+
+
+def test_a_live_conversation_follows_its_tail_while_a_steer_grows(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A new item lands in view while a steer of several lines is typed under the conversation.
+
+    The growing entry shrank the conversation box, so the box read as scrolled away from its
+    tail and stopped following: the new item landed below the box's visible part.
+    """
+    import os
+
+    from playwright.sync_api import expect
+
+    from agent6.sessions import process
+
+    session = paths.state_dir(tmp_path) / "sessions" / "runs" / "follow-live-AAA111"
+    session.mkdir(parents=True)
+    process.write_worker_pid(session, os.getpid())
+    rows: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "Follow the tail"}
+    ]
+    for i in range(40):
+        path = {"path": f"f{i}.py"}
+        rows.append({"type": "tool.call", "name": "read_file", "args_preview": path})
+        rows.append({"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"})
+    log = session / "logs.jsonl"
+    log.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/{session.name}")
+    # A paint renders the items and scrolls to the tail in one task.
+    in_box = """text => {
+      const box = document.querySelector('.card-conv .conv-box').getBoundingClientRect();
+      const item = [...document.querySelectorAll('.card-conv .ci')]
+        .find(e => e.textContent.includes(text));
+      const r = item.getBoundingClientRect();
+      return r.top >= box.top && r.bottom <= box.bottom;
+    }"""
+    items = page.locator(".card-conv .ci")
+    expect(items.filter(has_text="f39.py")).to_be_attached()
+    assert page.evaluate(in_box, "f39.py")
+    page.locator(".run-app .composer textarea").fill("check\nthe\ntests\ntoo")
+    new = {"type": "tool.call", "name": "read_file", "args_preview": {"path": "new.py"}}
+    with log.open("a") as stream:
+        stream.write(json.dumps(new) + "\n")
+    expect(items.filter(has_text="new.py")).to_be_attached()
+    assert page.evaluate(in_box, "new.py")
+    assert not errors
+
+
+@pytest.mark.parametrize(("width", "height"), [(1280, 900), (390, 844)])
+def test_the_last_session_row_scrolls_clear_of_the_dock(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    width: int,
+    height: int,
+) -> None:
+    """At the end of the Sessions page the last row sits above the dock, however tall it grows.
+
+    The page reserved a fixed space under a fixed dock: on a phone the dock outgrew it and hid
+    the last row, and a grown entry hid it on a desktop too.
+    """
+    from playwright.sync_api import expect
+
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs"
+    for i in range(24):
+        run = runs / f"row-{i:02d}-AAAAAA"
+        run.mkdir(parents=True)
+        start = {"type": "session.start", "mode": "run", "user_task": f"Task {i}"}
+        (run / "logs.jsonl").write_text(json.dumps(start) + "\n", encoding="utf-8")
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": height})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".item")).to_have_count(24)
+    # Scroll and measure in one task: the model list landing later may grow the dock.
+    gap_at_end = """() => {
+      window.scrollTo(0, document.scrollingElement.scrollHeight);
+      const last = [...document.querySelectorAll('.item')].at(-1).getBoundingClientRect();
+      return document.querySelector('.dock').getBoundingClientRect().top - last.bottom;
+    }"""
+    for text in ("", "\n".join(["line"] * 60)):
+        page.locator(".dock textarea").fill(text)
+        assert page.evaluate(gap_at_end) >= 0
+    assert not errors
+
+
 def test_files_tree_width_survives_reload_and_keyboard_resize(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:

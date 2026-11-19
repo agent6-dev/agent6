@@ -155,15 +155,19 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 .kv .v.task { white-space: pre-line; }
 
 /* The composer: docked under the conversation, the web analogue of the TUI's
-   steer bar (steer a live run; type the follow-up a finished run resumes with). */
-.composer { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px;
-  position: relative; /* the .ac-pop suggestion popups anchor to the composer */ }
-.composer textarea { min-height: 46px; }
-/* The docked composers (new-work, create-machine, machine steer/message) lay the
-   textarea + actions in a .row; the textarea grows to fill it. flex-basis 0 +
-   min-width 0 lets it shrink so a long placeholder wraps instead of clipping --
-   the sizing lives here (not an inline flex the phone rule must override). */
+   steer bar (steer a live run; type the follow-up a finished run resumes with).
+   A composer's entry and the Git commit message rest at one line, a field's height, and grow
+   with what is typed up to 40% of the screen, then scroll. A placeholder too long for the line
+   is cut, so it never makes the entry taller. */
+.composer textarea.field, .git-commit textarea.field {
+  field-sizing: content; resize: none; min-height: var(--ctl-h); max-height: 40dvh;
+  padding-block: calc((var(--ctl-h) - 1lh - 2px) / 2);
+}
+.composer textarea.field::placeholder, .git-commit textarea.field::placeholder { white-space: nowrap; }
+/* The docked composers (new-work, create-machine, machine steer/message) lay the entry and its
+   buttons in a .row: the entry takes the width and the buttons sit on its bottom edge. */
 .composer .row > textarea.field { flex: 1 1 0; min-width: 0; }
+.composer .row > button { align-self: flex-end; }
 .composer .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
 /* Picker rows (pickerRow above a composer, the Latest commit card's picker row):
    compact dropdowns sized to their value, each beside its label; on a narrow
@@ -337,22 +341,14 @@ aside.rail { display: none; }
   .page-pad { margin: 0 22px; }
 }
 
-/* Docked composers: the new-work, create-machine and machine docks and the run
-   view's composer. */
+/* Docked composers: the new-work, create-machine and machine docks and the run view's composer.
+   A dock sticks to the screen's bottom while the page scrolls and takes its own room at the
+   page's end, so the last row always scrolls clear of it, at any height; the top margin
+   pushes it to the bottom of a short page. The .ac-pop suggestion popups anchor to it. */
 .composer.dock {
-  border-top: 1px solid var(--border); margin: 0; background: var(--surface);
-  padding: 6px 22px calc(10px + env(safe-area-inset-bottom));
-}
-/* Docked at the screen bottom there is no room to drag a native bottom-right
-   resize grip down; the strip along the dock's top resizes instead (drag up). */
-.composer.dock textarea.field { min-height: 46px; resize: none; }
-.composer .grow-grip { height: 8px; margin: 0 0 2px; cursor: ns-resize; border-radius: 4px; }
-@media (hover: hover) { .composer .grow-grip:hover, .composer .grow-grip.dragging { background: var(--border); } }
-/* Page-scrolling views (hub, machine view) pin their dock to the viewport
-   bottom; app-pane views (run, conversation) dock it as their last flex child. */
-@media (min-width: 781px) {
-  .dock-fixed { position: fixed; left: var(--rail-w); right: 0; bottom: 0; z-index: 15; }
-  main:has(.dock-fixed) { padding-bottom: 180px; }
+  position: sticky; bottom: 0; z-index: 15; margin: auto 0 0;
+  border-top: 1px solid var(--border); background: var(--surface);
+  padding: 10px 22px calc(10px + env(safe-area-inset-bottom));
 }
 .resize-handle { display: none; touch-action: none; user-select: none; }
 @media (min-width: 781px) {
@@ -361,19 +357,15 @@ aside.rail { display: none; }
   .resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 }
 @media (max-width: 780px) {
-  /* the composer rides above the tab bar; content padding keeps the page tail
-     reachable under it */
-  .composer.dock {
-    position: fixed; left: 0; right: 0; z-index: 15;
-    bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding: 8px 12px;
-  }
+  /* A dock rides above the tab bar, and a page with one ends where the tab bar begins. */
+  .composer.dock { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding: 8px 12px; }
+  main:has(.composer.dock) { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); }
   /* Give the input the full row so a long placeholder ("describe a machine to
      create…") can't clip mid-word in the sliver left beside the button on a
      narrow phone; the action drops onto the next line. */
   .composer.dock .row { flex-wrap: wrap; }
   .composer.dock .row > textarea.field { flex-basis: 100%; }
   .composer.dock .row > button { flex: 1 1 auto; }
-  main:has(.composer.dock) { padding-bottom: calc(var(--nav-h) + 220px); }
   /* No nested scrolling on a phone: an inner scroller traps the page scroll,
      so every card flows at natural height and the page is the one scroller. */
   .card.scroll, .conv-box { max-height: none !important; overflow: visible; }

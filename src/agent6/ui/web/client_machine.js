@@ -40,10 +40,10 @@ async function renderMachine(name, gen) {
   // (blank = continue); Message is a poke payload a waiting machine's next
   // tool reads (blank = a bare wake). Created once, so the input survives
   // repaints; paintMachine gates the buttons.
-  const dock = el('div', 'composer dock dock-fixed');
+  const dock = el('div', 'composer dock');
   const drow = el('div', 'row');
   const din = el('textarea', 'field');
-  din.placeholder = 'steer the agent state, or message the machine…';
+  din.placeholder = 'steer or message the machine…';
   const steerBtn = el('button', 'primary', 'Steer');
   steerBtn.onclick = async () => {
     // cards._state is set each frame to the agent state currently rendered, so
@@ -71,7 +71,6 @@ async function renderMachine(name, gen) {
     catch (e) { toast(e.message, true); }
   };
   drow.appendChild(din); drow.appendChild(steerBtn); drow.appendChild(msgBtn); drow.appendChild(stopBtn);
-  dock.appendChild(growGrip(din));
   dock.appendChild(drow);
   dock.appendChild(el('div', 'hint', 'Steer injects into the current agent state · Message wakes a waiting machine (its next tool reads it) · Enter sends, Shift+Enter newline'));
   view.appendChild(dock);

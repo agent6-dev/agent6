@@ -74,9 +74,11 @@
    the composer docks at the bottom. The task graph, budget, tool calls,
    latest commit, and event log live in a collapsible, drag-resizable details
    drawer on the left. Below 781px everything stacks and the page scrolls
-   (the mobile widget menu picks what is shown). --- */
+   (the mobile widget menu picks what is shown); the column still fills the
+   screen, so the composer sits at its foot under a short widget. --- */
+.run-app { display: flex; flex-direction: column; flex: 1 0 auto; }
 @media (min-width: 781px) {
-  .run-app { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
+  .run-app { flex: 1 1 0; min-height: 0; }
   /* prompts / controls / status keep their natural height; only the body pane
      flexes (without this the column shrinks them and clips the status kv) */
   .run-app > * { flex: none; }

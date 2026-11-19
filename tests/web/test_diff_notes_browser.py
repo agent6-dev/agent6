@@ -86,7 +86,7 @@ def test_a_git_page_diff_line_is_quoted_for_the_new_work_composer(
     page.locator(".git-diff .dl.del .g").first.click()
     expect(page.locator(".toast").last).to_contain_text("2 lines quoted")
     page.evaluate("location.hash = '#/'")
-    expect(page.locator(".composer.dock-fixed textarea")).to_have_value(
+    expect(page.locator(".composer.dock textarea")).to_have_value(
         f"code.py:1 (head side, commit {head[:12]}):\n> class New:\n\n"
         f"code.py:1 (base side, commit {base[:12]}):\n> def old():\n\n"
     )

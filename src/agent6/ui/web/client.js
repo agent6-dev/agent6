@@ -457,7 +457,7 @@ function pickerRow(pairs) {
 // picked again on every change of either. Each first option adds no flag;
 // any other pick rides as --preset / --model / --worktree / --from / --max-usd.
 function newWorkDock(presets, presetDefault, sessions) {
-  const root = el('div', 'composer dock dock-fixed');
+  const root = el('div', 'composer dock');
   const row = el('div', 'row');
   const pending = window.pendingNewWork || {}; delete window.pendingNewWork;
   const task = el('textarea', 'field'); task.placeholder = 'task / question…';
@@ -535,7 +535,6 @@ function newWorkDock(presets, presetDefault, sessions) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(); }
   };
   row.appendChild(task); row.appendChild(go);
-  root.appendChild(growGrip(task));
   root.appendChild(pickerRow([['mode', mode], ['worktree', worktree], ['preset', preset], ['model', model]]));
   root.appendChild(advanced);
   root.appendChild(row);
@@ -546,7 +545,7 @@ function newWorkDock(presets, presetDefault, sessions) {
 
 // The create-machine composer, docked at the bottom of the Machines page.
 function createMachineDock() {
-  const root = el('div', 'composer dock dock-fixed');
+  const root = el('div', 'composer dock');
   const row = el('div', 'row');
   const ct = el('textarea', 'field'); ct.placeholder = 'describe a machine to create…';
   const cbtn = el('button', 'primary', 'Create machine');
@@ -558,7 +557,6 @@ function createMachineDock() {
   cbtn.onclick = create;
   ct.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !composing(e)) { e.preventDefault(); create(); } };
   row.appendChild(ct); row.appendChild(cbtn);
-  root.appendChild(growGrip(ct));
   root.appendChild(row);
   root.appendChild(el('div', 'hint', 'Enter creates a machine draft from the description · Shift+Enter newline'));
   return root;
@@ -795,7 +793,11 @@ function makeConv(url, box, body) {
   const liveHost = el('div', 'conv conv-live');
   liveHost.style.display = 'none';
   body.appendChild(itemsHost); body.appendChild(liveHost);
-  const following = () => box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
+  // The box follows its tail while the reader stays there: each scroll records whether they do,
+  // and a resize (a composer growing as it is typed in, a narrower window) scrolls back to it.
+  let atTail = true;
+  box.addEventListener('scroll', () => { atTail = box.scrollTop + box.clientHeight >= box.scrollHeight - 40; });
+  new ResizeObserver(() => { if (atTail) box.scrollTop = box.scrollHeight; }).observe(box);
   // A run/machine that produced no conversation: "yet ... as it streams" while it
   // can still stream, past tense once it has ended (a terminal tool-only machine).
   const emptyNote = () => conv.deadState
@@ -805,7 +807,6 @@ function makeConv(url, box, body) {
       : 'no conversation yet; it appears as the session streams';
 
   const paintItems = () => {
-    const follow = following();
     itemsHost.innerHTML = '';
     let shown = 0;
     conv.items.forEach((it, i) => {
@@ -830,7 +831,7 @@ function makeConv(url, box, body) {
     if (!shown && liveHost.style.display === 'none') {
       itemsHost.appendChild(el('div', 'muted conv-empty', emptyNote()));
     }
-    if (follow) box.scrollTop = box.scrollHeight;
+    if (atTail) box.scrollTop = box.scrollHeight;
   };
 
   conv.refresh = async () => {
@@ -854,7 +855,6 @@ function makeConv(url, box, body) {
     conv.finished = notLive(s); // steers emptyNote()'s tense (may run before paintItems)
     conv.deadState = s.dead_state || ''; // parked / created / stale, worded by the read model
     const r = s.last_model_call;
-    const follow = following();
     liveHost.innerHTML = '';
     const note = itemsHost.querySelector('.conv-empty');
     if (notLive(s)) {
@@ -890,7 +890,7 @@ function makeConv(url, box, body) {
     } else {
       const hb = el('div', 'muted'); hb.id = 'hb-line'; liveHost.appendChild(hb); hbTick();
     }
-    if (follow) box.scrollTop = box.scrollHeight;
+    if (atTail) box.scrollTop = box.scrollHeight;
   };
   conv.detailButton = () => {
     const b = el('button', 'mini', 'detail: ' + conv.detail);
@@ -920,29 +920,6 @@ function convCard(url, title, cls) {
   hrow.appendChild(conv.detailButton());
   card.appendChild(hrow); card.appendChild(box);
   return { card, conv, box };
-}
-
-// A horizontal grip along a docked composer's top edge: dragging it up grows
-// the text entry (the native grip sits bottom-right, where the screen ends).
-function growGrip(ta) {
-  const g = el('div', 'grow-grip');
-  g.title = 'drag to resize';
-  g.onpointerdown = (e) => {
-    e.preventDefault();
-    g.setPointerCapture(e.pointerId);
-    g.classList.add('dragging');
-    const startY = e.clientY;
-    const startH = ta.getBoundingClientRect().height;
-    g.onpointermove = (ev) => {
-      ta.style.height = Math.round(Math.max(46, Math.min(window.innerHeight * 0.5, startH + startY - ev.clientY))) + 'px';
-    };
-    g.onpointerup = (ev) => {
-      g.releasePointerCapture(ev.pointerId);
-      g.classList.remove('dragging');
-      g.onpointermove = null; g.onpointerup = null;
-    };
-  };
-  return g;
 }
 
 // The text /undo takes back, consumed by the next session view's composer.
@@ -1335,7 +1312,7 @@ function makeComposer(id) {
       ta.placeholder = 'continue this session…';
       hint.textContent = 'Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline · Ctrl-R past messages · Ctrl-K switch session · ? keys';
     } else {
-      ta.placeholder = 'steer this session… (/pin pins an instruction, /compact [focus] compacts)';
+      ta.placeholder = 'steer this session… (type / for directives)';
       hint.textContent = 'Enter sends the instruction at the session’s next safe boundary · Ctrl+Enter sends it now · Shift+Enter newline · Ctrl-R past messages · Ctrl-K switch session · ? keys';
     }
   };
@@ -1454,7 +1431,7 @@ function makeComposer(id) {
       resume(text);
     }
   };
-  root.appendChild(growGrip(ta)); root.appendChild(presetRow); root.appendChild(ta); root.appendChild(hint);
+  root.appendChild(presetRow); root.appendChild(ta); root.appendChild(hint);
   // A quoted diff line lands beneath what is typed, for the words that follow it.
   root.quote = (note) => {
     const typed = ta.value.replace(/\s+$/, '');
