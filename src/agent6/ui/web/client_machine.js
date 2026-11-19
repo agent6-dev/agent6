@@ -50,12 +50,12 @@ async function renderMachine(name, gen) {
   // Steer injects into the current agent state at its next safe boundary
   // (blank = continue); Message is a poke payload a waiting machine's next
   // tool reads (blank = a bare wake). Created once, so the input survives
-  // repaints; paintMachine gates the buttons.
+  // repaints; paintMachine gates the buttons and fills the one Enter sends.
   const dock = el('div', 'composer dock');
   const drow = el('div', 'row');
   const din = el('textarea', 'field');
   din.placeholder = 'steer or message the machine…';
-  const steerBtn = el('button', 'primary', 'Steer');
+  const steerBtn = el('button', null, 'Steer');
   steerBtn.onclick = async () => {
     // cards._state is set each frame to the agent state currently rendered, so
     // the steer routes to that state, not whichever is newest at click time.
@@ -222,13 +222,16 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // Every control is gated and labelled from the wire refusals, the one
   // decision the CLI and the TUI run: a steer needs an open agent state, a
   // poke an open wait, a stop a live worker; the input follows steer and poke.
+  // The filled button is the verb Enter sends: Steer, else Message.
   if (cards._steer_btn) {
     cards._steer_btn.disabled = !!refusals.steer;
+    cards._steer_btn.classList.toggle('primary', !refusals.steer);
     cards._steer_btn.title = refusals.steer
       || 'inject into the current agent state at its next safe boundary';
   }
   if (cards._msg_btn) {
     cards._msg_btn.disabled = !!refusals.poke;
+    cards._msg_btn.classList.toggle('primary', !!refusals.steer && !refusals.poke);
     cards._msg_btn.title = refusals.poke || 'wake a waiting machine; its next tool reads the message';
   }
   if (cards._stop_btn) {

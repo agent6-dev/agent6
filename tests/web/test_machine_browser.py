@@ -382,3 +382,27 @@ def test_the_conversation_names_the_agent_state_it_shows(
     page.goto(f"http://127.0.0.1:{port}/#/machine/again")
     expect(title).to_have_text("Last agent state · work")
     assert not errors
+
+
+def test_the_filled_button_is_the_verb_enter_sends(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """A parked machine kept the fill on its refused Steer while Enter sent Message."""
+    from playwright.sync_api import expect
+
+    _parked(tmp_path)
+    _machine(tmp_path, "working", LOOP, [], _talk(2), alive=True)
+    page, errors = _open(open_page, port, "parked")
+    steer, message = (
+        page.locator(".dock button", has_text="Steer"),
+        page.locator(".dock button", has_text="Message"),
+    )
+    expect(message).to_be_enabled()
+    expect(message).to_contain_class("primary")
+    expect(steer).to_be_disabled()
+    expect(steer).not_to_contain_class("primary")
+    page.goto(f"http://127.0.0.1:{port}/#/machine/working")
+    expect(steer).to_be_enabled()
+    expect(steer).to_contain_class("primary")
+    expect(message).not_to_contain_class("primary")
+    assert not errors
