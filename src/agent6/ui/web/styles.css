@@ -265,7 +265,7 @@ button.fold[aria-expanded=true]::before { rotate: 45deg; }
 .hs-list .ac-opt .row > .pill { margin-left: auto; }
 .hs-list .ac-item > .row { margin-top: 0.25rem; }
 .hs-list + .more-note { padding: 0.3125rem 0.625rem; }
-.hs-list + .more-note:empty { display: none; }
+.hs-list + .more-note:empty { padding: 0; } /* a live region: it stays in the page while empty */
 .more-note { color: var(--muted); font-style: italic; font-size: var(--fs-s); }
 .card-head-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
 .card-head-row h2 { flex: 1; margin: 0; }

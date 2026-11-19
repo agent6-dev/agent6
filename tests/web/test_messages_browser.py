@@ -430,3 +430,29 @@ def test_a_401_leaves_the_sign_in_form_alone(
     expect(page.locator("#toasts .toast")).to_have_count(0)
     expect(page.locator("#login")).to_be_visible()
     assert [e for e in errors if not e.startswith("Failed to load resource")] == []
+
+
+def test_the_pickers_note_is_read_out_as_the_typing_narrows(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """'(no match)' and '… N more' changed unannounced: the note was no live region.
+
+    While empty it left the page, and a live region that comes with its text is not read out.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.locator(".dock textarea").wait_for()
+    page.keyboard.press("Control+K")
+    expect(
+        page.get_by_role("dialog", name="Switch session").get_by_role("combobox")
+    ).to_be_focused()
+    page.keyboard.type(">session")
+    note = page.get_by_role("dialog", name="Commands").locator(".more-note")
+    expect(note).to_have_text("")
+    expect(note).to_have_attribute("role", "status")
+    assert note.evaluate("n => getComputedStyle(n).display") != "none"
+    page.keyboard.type("zzzz")
+    expect(note).to_have_text("(no match)")
+    assert not errors

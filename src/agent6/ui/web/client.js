@@ -1571,6 +1571,7 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '
   aria(list, { role: popup, 'aria-labelledby': name });
   aria(field, { role: 'combobox', 'aria-labelledby': name, 'aria-controls': list.id, 'aria-expanded': 'true', 'aria-autocomplete': 'list', 'aria-haspopup': popup });
   const note = el('div', 'more-note');
+  note.setAttribute('role', 'status'); // '(no match)' and '… N more' are read out as the typing narrows
   dialog.append(field, list, note);
   const close = () => dialog.close();
   const choose = (r) => { close(); pick(r); };
