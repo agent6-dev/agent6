@@ -226,3 +226,24 @@ def test_a_narrow_file_head_keeps_its_height_while_the_text_loads(
         "e => e.getBoundingClientRect().height"
     ) == pytest.approx(heights[0], abs=0.5)
     assert not errors
+
+
+def test_the_file_pane_draws_its_focus_ring_inside(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """The scrolling file pane's ring sat outside it, cut off at the screen's edges."""
+    (tmp_path / "long.txt").write_text("".join(f"line {i}\n" for i in range(200)), encoding="utf-8")
+    _git(tmp_path, "add", "long.txt")
+    _git(tmp_path, "commit", "-m", "a long file")
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/long.txt")
+    page.wait_for_selector(".files-blame:enabled")
+    page.locator(".files-blame").focus()
+    page.keyboard.press("Tab")
+    ring = page.locator(".files-text").evaluate(
+        "e => e === document.activeElement && e.matches(':focus-visible')"
+        " && parseFloat(getComputedStyle(e).outlineOffset)"
+        " + parseFloat(getComputedStyle(e).outlineWidth)"
+    )
+    assert ring is not False and ring <= 0, ring
+    assert not errors

@@ -21,6 +21,8 @@
 .files-view { container: files-pane / inline-size; }
 @container files-pane (width < 560px) { .files-note { flex-basis: 100%; } }
 .files-text { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px var(--files-inset); }
+/* The browser makes the scrolling pane a Tab stop: its ring goes inside, where nothing clips it. */
+.files-text:focus-visible { outline-offset: -2px; }
 .files-back, .files-tree-toggle { display: none; }
 .md-view { max-width: 80ch; margin: 0 auto; padding: 12px 0 32px; line-height: 1.65; overflow-wrap: break-word; }
 .md-view h1, .md-view h2, .md-view h3, .md-view h4, .md-view h5, .md-view h6 { line-height: 1.3; margin: 1.4em 0 .6em; scroll-margin-top: 16px; }
