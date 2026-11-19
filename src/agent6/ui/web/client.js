@@ -181,9 +181,9 @@ async function postMerge(r) {
   try { const d = await postJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge', {}); toast(d.message || 'merged'); route(); return true; }
   catch (err) { toast(err.message, true); return false; }
 }
-// A failure or a warning holds until dismissed: its reason, often a CLI refusal, is worth reading.
+// A failure, a warning or a message passed 'hold' (CLI output worth keeping) stays until dismissed.
 function toast(msg, level) {
-  const kind = level === true || level === 'error' ? 'bad' : level === 'warn' ? 'warn' : '';
+  const kind = level === true || level === 'error' ? 'bad' : level === 'warn' ? 'warn' : level === 'hold' ? 'hold' : '';
   const host = document.getElementById('toasts');
   // A held message that is showing already moves to the newest place instead of showing twice.
   const said = kind && kind + '\n' + msg;
@@ -193,7 +193,7 @@ function toast(msg, level) {
   t.appendChild(el('div')).append(withCode(msg)); // one flex item beside the Dismiss button
   if (kind) {
     t.said = said;
-    t.setAttribute('role', 'alert');
+    t.setAttribute('role', kind === 'hold' ? 'status' : 'alert');
     t.appendChild(closeButton('Dismiss', () => t.remove()));
   } else { setTimeout(() => t.remove(), 4000); }
   host.prepend(t); // the newest first: the column stacks it lowest
@@ -1065,7 +1065,7 @@ function sessionsCard() {
   // reports them and deletes none.
   const prune = async (deleteSquashed) => {
     if (deleteSquashed && !await confirmDialog('Force-delete branches and chain refs recorded as squash-merged?', 'Their commits stay in the base; each deletion prints an undelete command.', 'Force-delete', true)) return;
-    try { const d = await postJSON('/api/sessions/prune', { delete_squashed: deleteSquashed }); toast(d.message || 'pruned'); route(); }
+    try { const d = await postJSON('/api/sessions/prune', { delete_squashed: deleteSquashed }); toast(d.message || 'pruned', 'hold'); route(); }
     catch (e) { toast(e.message, true); }
   };
   action('Prune merged runs', () => prune(false));

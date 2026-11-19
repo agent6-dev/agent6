@@ -157,7 +157,9 @@ def test_toasts_are_announced() -> None:
     assert region in page.PAGE_HTML
     start = page.CLIENT_JS.index("function toast(")
     body = page.CLIENT_JS[start : page.CLIENT_JS.index("\nfunction ", start + 1)]
-    assert "t.setAttribute('role', 'alert')" in body, "a failure is not announced at once"
+    assert "t.setAttribute('role', kind === 'hold' ? 'status' : 'alert')" in body, (
+        "a failure is not announced at once"
+    )
 
 
 def test_the_machine_page_offers_stop() -> None:

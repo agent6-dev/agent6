@@ -367,6 +367,30 @@ def test_a_request_with_no_answer_names_the_server_in_one_sentence(
     )
 
 
+def test_prunes_undelete_commands_wait_for_dismiss(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Prune's undelete commands, shown nowhere else on the page, vanished after 4 s."""
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(port)
+    answer = "pruned 1 merged run\nundelete: git branch agent6/run-a 1234567890abcdef"
+
+    def pruned(route: Route) -> None:
+        route.fulfill(json={"ok": True, "message": answer})
+
+    page.route("**/api/sessions/prune", pruned)
+    page.clock.install()
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.get_by_role("button", name="Prune merged runs", exact=True).click()
+    held = page.locator("#toasts .toast").filter(has_text="undelete: git branch")
+    expect(held).to_have_attribute("role", "status")
+    page.clock.run_for(10_000)
+    held.get_by_role("button", name="Dismiss").click()
+    expect(held).to_have_count(0)
+    assert not errors
+
+
 def test_a_401_leaves_the_sign_in_form_alone(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
