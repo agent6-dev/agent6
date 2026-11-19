@@ -520,6 +520,25 @@ def test_a_notification_shows_as_a_toast_named_by_the_instance(
     assert not errors
 
 
+def test_a_warning_holds_until_dismissed_in_the_warning_colour(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """A warn-level notification cleared itself after four seconds, as an info one does."""
+    from playwright.sync_api import expect
+
+    machine = _machine(tmp_path, "nightly", LOOP, [], _talk(2), alive=True)
+    page, errors = _open(open_page, port, "nightly")
+    note = {"type": "machine.notify", "ts": TS, "state": "work", "message": "disk 91% full"}
+    with (machine / "journal.jsonl").open("a", encoding="utf-8") as journal:
+        journal.write(json.dumps({**note, "level": "warn"}) + "\n")
+    toast = page.locator("#toasts .toast.warn")
+    expect(toast).to_have_text("nightly · work: disk 91% full")
+    expect(toast).to_have_attribute("role", "alert")
+    toast.get_by_role("button", name="Dismiss").click()
+    expect(toast).to_have_count(0)
+    assert not errors
+
+
 def test_the_palette_offers_the_machine_views_actions(
     open_page: OpenPage, port: int, tmp_path: pathlib.Path
 ) -> None:

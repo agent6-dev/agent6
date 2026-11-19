@@ -114,7 +114,7 @@ async function renderMachine(name, gen) {
 }
 
 // A notification, a stop or an end that lands while the page watches shows once as a toast, as
-// the hub announces a session and the TUI a machine; an error-level one or a failed end holds
+// the hub announces a session and the TUI a machine; a warning, an error or a failed end holds
 // until dismissed.
 function machineNotify(ctx, m) {
   const notes = m.notifications || [];
@@ -133,7 +133,7 @@ function machineNotify(ctx, m) {
     const k = keyOf(n);
     if (ctx.seen.has(k)) continue;
     ctx.seen.add(k);
-    toast(`${ctx.name} · ${esc(n.state)}: ${esc(n.message)}`, n.level === 'error');
+    toast(`${ctx.name} · ${esc(n.state)}: ${esc(n.message)}`, n.level);
     osNotify('agent6: ' + ctx.name, n.message || '');
   }
 }

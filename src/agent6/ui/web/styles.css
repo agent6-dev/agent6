@@ -331,6 +331,7 @@ kbd {
   white-space: pre-wrap; overflow-wrap: anywhere; /* CLI-captured messages (merge, prune) keep their lines */
 }
 .toast.bad { border-color: var(--err); color: var(--err); }
+.toast.warn { border-color: var(--warn); }
 /* The machine view's banners stack under the header, each 12px below what is above it. */
 .notif-banner { display: flex; align-items: flex-start; gap: 10px; background: var(--surface2); border-left: 3px solid var(--accent); padding: 10px 12px; margin-top: 12px; }
 .notif-banner.warn { border-color: var(--warn); }

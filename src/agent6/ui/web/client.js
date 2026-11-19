@@ -165,17 +165,17 @@ async function postMerge(r) {
   try { const d = await postJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge', {}); toast(d.message || 'merged'); route(); return true; }
   catch (err) { toast(err.message, true); return false; }
 }
-// Messages stack in one column, the page's #toasts region. A failure carries a reason worth
-// reading (a captured CLI refusal runs several lines), so it is announced at once and holds until
-// dismissed; a confirmation clears itself.
-function toast(msg, bad) {
-  const t = el('div', 'toast' + (bad ? ' bad' : ''));
+// A failure or a warning holds until dismissed: its reason, often a CLI refusal, is worth reading.
+function toast(msg, level) {
+  const kind = level === true || level === 'error' ? 'bad' : level === 'warn' ? 'warn' : '';
+  const t = el('div', kind ? 'toast ' + kind : 'toast');
   t.appendChild(el('div')).append(withCode(msg)); // one flex item beside the Dismiss button
-  if (bad) {
+  if (kind) {
     t.setAttribute('role', 'alert');
     t.appendChild(closeButton('Dismiss', () => t.remove()));
   } else { setTimeout(() => t.remove(), 4000); }
   document.getElementById('toasts').appendChild(t);
+  return t;
 }
 // The crumb names the page; the browser's tab and history read the same name.
 function setCrumb(t) { crumb.textContent = t || ''; document.title = t ? t + ' · agent6' : 'agent6'; }
