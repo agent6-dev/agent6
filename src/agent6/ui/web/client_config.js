@@ -405,7 +405,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     desc.appendChild(descriptionNode(s.description_points || [s.description]));
     dialog.appendChild(desc);
   }
-  let field, combo, meaning;
+  let field, combo, meaning, unpicked = false;
   const choices = s.choices || (s.type === 'bool' ? ['true', 'false'] : null);
   if (role) {
     combo = configCombobox(data[section + '.model']?.input || '', section + '.model', 'field cfg-value');
@@ -420,6 +420,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       // option reads what its row reads, so the select never opens blank.
       const shown = el('option', null, s.display.replace(/\s+/g, ' '));
       shown.value = ''; shown.disabled = true; shown.selected = true; field.appendChild(shown);
+      unpicked = true;
     }
     for (const c of choices) {
       const option = el('option', null, c); option.value = c; field.appendChild(option);
@@ -457,6 +458,11 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   dialog.appendChild(repoRow);
   const row = el('div', 'form-row cfg-actions');
   const save = el('button', 'primary', 'Save'), cancel = el('button', null, 'Cancel');
+  // The row's value is no choice, so Save waits for one.
+  if (unpicked) {
+    save.disabled = true; save.title = 'Choose a value to save';
+    field.addEventListener('input', () => { save.disabled = false; save.title = ''; });
+  }
   row.appendChild(save);
   // A value set from an editable layer gets an Unset: remove it from that layer
   // so it reverts to the next-lower one / the built-in default. (default-sourced

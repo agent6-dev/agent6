@@ -213,6 +213,43 @@ def test_an_unset_effort_opens_its_editor_on_the_value_its_row_shows(
     assert not errors
 
 
+def test_an_untouched_effort_editor_has_nothing_to_save(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """An unset effort's editor sent an empty value on Save or Enter, which the server refused.
+
+    Save waits for a choice.
+    """
+    from playwright.sync_api import expect
+
+    _global_config('[models.worker]\nmodel = "a/m"\n')
+    page, errors = open_page(port)
+    posts: list[str] = []
+
+    def record(route: Route) -> None:
+        if route.request.method != "POST":
+            route.fallback()
+            return
+        posts.append(route.request.post_data or "")
+        route.fulfill(json={"ok": True})
+
+    page.route("**/api/config", record)
+    _config(page, port)
+    page.locator('[data-key="models.worker.effort"]').click()
+    dialog = page.get_by_role("dialog")
+    save = dialog.get_by_role("button", name="Save")
+    expect(save).to_be_disabled()
+    dialog.locator("select").press("Enter")
+    page.wait_for_timeout(300)
+    assert posts == []
+    dialog.locator("select").select_option("high")
+    expect(save).to_be_enabled()
+    save.click()
+    dialog.wait_for(state="detached")
+    assert [json.loads(body)["value"] for body in posts] == ["high"]
+    assert not errors
+
+
 def test_an_add_dialog_shows_each_field_description_whole_under_the_field(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
