@@ -1059,50 +1059,38 @@ function openRestate(text) {
 // Picking fills the composer for editing (Enter keeps the highlighted match,
 // or the typed text itself when nothing matches); nothing is sent.
 function openHistorySearch(entries, onPick) {
-  const dialog = openDialog('Search past messages', 'wide picker');
-  if (!dialog) return;
-  const field = el('input', 'field'); field.placeholder = 'type to narrow…';
-  dialog.appendChild(field);
-  const list = el('div', 'hs-list');
-  dialog.appendChild(list);
-  const pick = (t) => { dialog.close(); onPick(t); };
-  let items = [], active = 0;
-  const render = () => {
-    const q = field.value.toLowerCase();
-    const all = entries.filter(t => t.toLowerCase().includes(q));
-    items = all.slice(0, 8);
-    if (active >= items.length) active = Math.max(0, items.length - 1);
-    list.textContent = '';
-    items.forEach((t, i) => {
-      const o = el('div', 'ac-item' + (i === active ? ' on' : ''), t);
-      o.onmousedown = (e) => { e.preventDefault(); pick(t); };
-      list.appendChild(o);
-    });
-    if (!items.length) list.appendChild(el('div', 'more-note', '(no match)'));
-    else if (all.length > items.length) list.appendChild(el('div', 'more-note', '… ' + (all.length - items.length) + ' more (type to narrow)'));
-  };
-  dialog.onkeydown = (e) => {
-    if (composing(e)) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { active = (active + 1) % items.length; render(); } }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { active = (active - 1 + items.length) % items.length; render(); } }
-    else if (e.key === 'Enter') { e.preventDefault(); pick(items.length ? items[active] : field.value); }
-  };
-  field.oninput = () => { active = 0; render(); };
-  field.focus();
-  render();
+  openPicker({
+    title: 'Search past messages',
+    placeholder: 'type to narrow…',
+    rows: entries,
+    limit: 8,
+    typed: true,
+    haystack: (t) => t.toLowerCase(),
+    paint: (t, o) => { o.textContent = t; },
+    pick: onPick,
+  });
 }
 
 // --- keyboard -----------------------------------------------------------------
-// One picker shape under the session switcher and the command palette: a dialog with a filter
-// field and a list; arrows move, Enter picks, Esc, a click outside or navigation closes.
-// `prefix` hands the field to another picker when typed first.
-function openPicker({ title, placeholder, rows, haystack, paint, pick, empty, initial = '', prefix = null, limit = 12 }) {
+// One picker under the session switcher, the command palette and history search: a dialog with a
+// filter field (a combobox) over a list box. The arrows move the highlighted option, keep it in
+// view and make it the field's active descendant, which a screen reader reads; Enter picks it, or
+// with `typed` the typed text when nothing matches. `actions(row, close)` returns a row's own
+// buttons, kept outside its option: inside one, a screen reader would not find them. `prefix`
+// hands the field to another picker when typed first.
+function openPicker({ title, placeholder, rows, haystack, paint, pick, empty = '', initial = '', prefix = null, limit = 12, typed = false, actions = null }) {
   const dialog = openDialog(title, 'wide picker');
   if (!dialog) return;
+  const name = dialog.getAttribute('aria-labelledby');
+  const aria = (e, attrs) => { for (const k in attrs) e.setAttribute(k, attrs[k]); };
   const field = el('input', 'field'); field.placeholder = placeholder; field.value = initial;
-  dialog.appendChild(field);
   const list = el('div', 'hs-list');
-  dialog.appendChild(list);
+  list.id = name + '-list';
+  list.tabIndex = -1; // the arrows scroll it: no Tab stop
+  aria(list, { role: 'listbox', 'aria-labelledby': name });
+  aria(field, { role: 'combobox', 'aria-labelledby': name, 'aria-controls': list.id, 'aria-expanded': 'true', 'aria-autocomplete': 'list' });
+  const note = el('div', 'more-note');
+  dialog.append(field, list, note);
   const close = () => dialog.close();
   const choose = (r) => { close(); pick(r); };
   let items = [], active = 0;
@@ -1113,19 +1101,32 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty, in
     if (active >= items.length) active = Math.max(0, items.length - 1);
     list.textContent = '';
     items.forEach((r, i) => {
-      const o = el('div', 'ac-item' + (i === active ? ' on' : ''));
-      paint(r, o, close);
-      o.onmousedown = (e) => { e.preventDefault(); choose(r); };
-      list.appendChild(o);
+      const row = el('div', 'ac-item' + (i === active ? ' on' : ''));
+      const option = el('div', 'ac-opt');
+      aria(option, { id: list.id + '-' + i, role: 'option', 'aria-selected': String(i === active) });
+      paint(r, option);
+      row.appendChild(option);
+      const own = actions && actions(r, close);
+      if (own) {
+        for (const b of own.querySelectorAll('button')) b.setAttribute('aria-describedby', option.id);
+        row.appendChild(own);
+      }
+      row.onmousedown = (e) => { if (e.target.closest('button')) return; e.preventDefault(); choose(r); };
+      list.appendChild(row);
     });
-    if (!items.length) list.appendChild(el('div', 'more-note', rows.length ? '(no match)' : empty));
-    else if (all.length > items.length) list.appendChild(el('div', 'more-note', '… ' + (all.length - items.length) + ' more (type to narrow)'));
+    if (items.length) {
+      field.setAttribute('aria-activedescendant', list.id + '-' + active);
+      list.children[active].scrollIntoView({ block: 'nearest' });
+    } else field.removeAttribute('aria-activedescendant');
+    const more = all.length - items.length;
+    note.textContent = !items.length ? (rows.length ? '(no match)' : empty) : more ? '… ' + more + ' more (type to narrow)' : '';
   };
+  // A row's own button keeps its keys: Enter or Space presses it.
   dialog.onkeydown = (e) => {
-    if (composing(e)) return;
+    if (composing(e) || e.target.closest('button')) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { active = (active + 1) % items.length; render(); } }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { active = (active - 1 + items.length) % items.length; render(); } }
-    else if (e.key === 'Enter') { e.preventDefault(); if (items.length) choose(items[active]); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (items.length || typed) choose(items.length ? items[active] : field.value); }
   };
   field.oninput = () => {
     if (prefix && field.value.startsWith(prefix.key)) { const rest = field.value.slice(prefix.key.length); close(); prefix.open(rest); return; }
@@ -1156,31 +1157,31 @@ async function openSwitcher() {
     prefix: { key: '>', open: (rest) => openPalette(rest) },
     haystack: (r) => [r.session_id, r.mode, r.status_label, r.task_line || r.task || '', r.branch || '', r.worktree || ''].join(' ').toLowerCase(),
     pick: (r) => { location.hash = '#/session/' + encodeURIComponent(r.session_id); },
-    paint: (r, o, close) => {
+    // The status ends the first line, as on a Sessions row, so the ids line up.
+    paint: (r, o) => {
       const head = el('div', 'row');
+      head.appendChild(el('span', 'grow', r.session_id + ' · ' + r.mode + ' · ' + (r.task_line || r.task || '').split('\n')[0]));
       head.appendChild(pill(r.status_level, r.status_label));
-      head.appendChild(el('span', null, r.session_id + ' · ' + r.mode + ' · ' + (r.task_line || r.task || '').split('\n')[0].slice(0, 80)));
       o.appendChild(head);
       const where = [r.worktree ? 'worktree ' + r.worktree : 'this checkout', r.branch && 'ref ' + r.branch, r.when].filter(Boolean).join(' · ');
       o.appendChild(el('div', 'muted', where));
-      const live = LIVE_WORDS.includes(r.status);
-      if (r.branch && !live) {
-        const acts = el('div', 'row');
-        const review = el('button', 'mini', 'Review code');
-        review.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); close(); handToNewWork({ task: '/review ' + r.branch }); location.hash = '#/'; route(); };
-        acts.appendChild(review);
-        if (r.unmerged) {
-          const merge = el('button', 'mini', 'Merge');
-          merge.onmousedown = async (e) => {
-            e.preventDefault(); e.stopPropagation();
-            close(); // the confirm and a failure's toast meet the page, not the backdrop
-            if (!await confirmMerge(r)) return;
-            await postMerge(r);
-          };
-          acts.appendChild(merge);
-        }
-        o.appendChild(acts);
+    },
+    actions: (r, close) => {
+      if (!r.branch || LIVE_WORDS.includes(r.status)) return null;
+      const acts = el('div', 'row');
+      const review = el('button', 'mini', 'Review code');
+      review.onclick = () => { close(); handToNewWork({ task: '/review ' + r.branch }); location.hash = '#/'; route(); };
+      acts.appendChild(review);
+      if (r.unmerged) {
+        const merge = el('button', 'mini', 'Merge');
+        merge.onclick = async () => {
+          close(); // the confirm and a failure's toast meet the page, not the backdrop
+          if (!await confirmMerge(r)) return;
+          await postMerge(r);
+        };
+        acts.appendChild(merge);
       }
+      return acts;
     },
   });
 }

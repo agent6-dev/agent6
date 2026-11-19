@@ -188,10 +188,19 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 .ac-item { padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ac-item.on, .ac-item:hover { background: var(--surface2); color: var(--accent); }
-/* Ctrl-R history search: the composer's past-message picker (same rows as the
-   autocomplete popup, docked in a modal card). */
+/* A picker's list box (openPicker): the autocomplete popup's rows in a dialog. Each line of an
+   option ends in an ellipsis when it is too long, and a row's own buttons sit under its option.
+   The note under the list says what the list leaves out. */
 .hs-list { margin-top: 8px; max-height: 45vh; overflow-y: auto; }
-.hs-list .more-note { padding: 5px 10px; font-size: 13px; }
+.hs-list .ac-opt, .hs-list .ac-opt > .muted, .hs-list .ac-opt .grow { overflow: hidden; text-overflow: ellipsis; }
+/* A switcher row's text keeps 16em, room for its session id and mode, before its status sits
+   beside it; on a narrower row the status drops under the text and still ends the line. */
+.hs-list .ac-opt .row { flex-wrap: wrap; row-gap: 0; }
+.hs-list .ac-opt .grow { flex: 1 1 16em; min-width: 0; }
+.hs-list .ac-opt .row > .pill { margin-left: auto; }
+.hs-list .ac-item > .row { margin-top: 4px; }
+.hs-list + .more-note { padding: 5px 10px; font-size: 13px; }
+.hs-list + .more-note:empty { display: none; }
 .more-note { color: var(--muted); font-style: italic; }
 .card-head-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .card-head-row h2 { flex: 1; margin: 0; }

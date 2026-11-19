@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "c65ec8312d5eec071c8da92178d4492f0b81a81a1da75041699737c79293700e"
+PAGE_SHA256 = "1d6a2e0e77cef57e46bd4dd6f2645103fe30d8c6248041bad6ccad05a1b3d08b"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -534,7 +534,7 @@ def test_every_global_key_is_listed_and_handled_from_one_table() -> None:
     assert "Shift-P" not in client
     assert keys.count("run: () =>") == 2  # the global bindings; the rest are listed only
     assert "for (const k of KEYS) if (k.run && k.match(e))" in client
-    assert client.count("\n  openPicker({") == 2  # the switcher and the palette call it
+    assert client.count("\n  openPicker({") == 3  # the switcher, the palette, history search
     assert "prefix: { key: '>', open: (rest) => openPalette(rest) }" in client
     assert "function openKeys()" in client and "el('table', 'keys')" in client
 

@@ -28,4 +28,4 @@ def test_history_reads_the_payload_key_and_advertises_the_chord() -> None:
 
 def test_enter_keeps_the_typed_text_when_nothing_matches() -> None:
     # One accept rule on every surface: the highlighted match, else the query itself.
-    assert "pick(items.length ? items[active] : field.value)" in page.CLIENT_JS
+    assert "choose(items.length ? items[active] : field.value)" in page.CLIENT_JS

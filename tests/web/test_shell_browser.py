@@ -10,7 +10,7 @@ import pytest
 from tests.web import test_web_browser
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Page
+    from playwright.sync_api import Locator, Page
 
 pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
@@ -115,3 +115,134 @@ def test_every_phone_tab_keeps_its_icon_on_one_line(
         assert t["label"] == pytest.approx(t["icon"], abs=0.5)
         assert t["end"] < t["bar"]
     assert not errors
+
+
+def _sessions(count: int, **fields: object) -> list[dict[str, object]]:
+    """Return `count` finished hub rows, run-0 first, each with `fields`."""
+    return [
+        {
+            "session_id": f"run-{i}",
+            "mode": "run",
+            "status": "passed",
+            "status_label": "passed",
+            "status_level": "ok",
+            "task": f"task {i}",
+            **fields,
+        }
+        for i in range(count)
+    ]
+
+
+def _open_switcher(page: Page, port: int, rows: list[dict[str, object]]) -> Locator:
+    """Serve `rows` as the hub, open the Config page, then Ctrl-K's switcher."""
+    page.route("**/api/hub", lambda route: route.fulfill(json={"sessions": rows}))
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    page.wait_for_selector(".cfg")
+    page.keyboard.press("Control+K")
+    dialog = page.get_by_role("dialog", name="Switch session")
+    dialog.get_by_text(str(rows[0]["session_id"])).first.wait_for()
+    return dialog
+
+
+def test_a_long_switcher_row_ends_in_an_ellipsis_and_its_ids_line_up(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A long row ran past the switcher's edge, cut mid-word, and each id started after its status.
+
+    The status now ends the line, as on a Sessions row.
+    """
+    page, errors = open_page(port)
+    rows = _sessions(2)
+    rows[0].update(task="parse " * 60, status_label="passed · unmerged")
+    rows[1].update(status="stale", status_label="stale", status_level="error")
+    _open_switcher(page, port, rows)
+    lines = page.evaluate("""() => ['run-0', 'run-1'].map(id => {
+      const text = [...document.querySelectorAll('dialog[open] span')]
+        .find(s => s.textContent.startsWith(id + ' · '));
+      const row = text.closest('.ac-item').getBoundingClientRect();
+      const box = text.getBoundingClientRect();
+      return { left: box.left, right: box.right, rowRight: row.right,
+               cut: text.scrollWidth > text.clientWidth,
+               ellipsis: getComputedStyle(text).textOverflow }; })""")
+    assert lines[0]["left"] == lines[1]["left"]
+    for line in lines:
+        assert line["right"] <= line["rowRight"]
+    assert lines[0]["cut"] and lines[0]["ellipsis"] == "ellipsis"
+    assert not errors
+
+
+def test_a_narrow_switcher_row_keeps_its_session_id_whole(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """On a phone a long status cut the id beside it: "merry-fou…" by "passed · unmerged".
+
+    The status drops under the row's text and still ends the row.
+    """
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 320, "height": 640})
+    sid = "merry-fountain-B7XAJS"
+    row = _sessions(1, session_id=sid, status_label="passed · unmerged", task="parse " * 9)
+    _open_switcher(page, port, row)
+    box = page.evaluate(f"""() => {{
+      const text = document.querySelector('dialog[open] .ac-opt .grow');
+      const id = document.createRange();
+      id.setStart(text.firstChild, 0); id.setEnd(text.firstChild, {len(sid)});
+      return [id.getBoundingClientRect().right, text.getBoundingClientRect().right,
+              text.nextElementSibling.getBoundingClientRect().right,
+              text.closest('.ac-opt').getBoundingClientRect().right]; }}""")
+    id_end, text_end, status_end, row_end = box
+    assert id_end <= text_end
+    assert status_end == pytest.approx(row_end, abs=1)
+    assert not errors
+
+
+def test_the_arrows_keep_the_highlighted_session_in_view_and_named(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Ten ArrowDown presses left the switcher's highlighted row below its list, out of sight.
+
+    The list is a list box and the field names the highlighted option as its active descendant,
+    so a screen reader reads each option the arrows reach.
+    """
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    dialog = _open_switcher(page, port, _sessions(20))
+    for _ in range(10):
+        page.keyboard.press("ArrowDown")
+    active = dialog.get_by_role("option", selected=True)
+    expect(active).to_contain_text("run-10 · run · task 10")
+    expect(dialog.get_by_role("combobox")).to_have_attribute(
+        "aria-activedescendant", str(active.get_attribute("id"))
+    )
+    box, shown = active.bounding_box(), dialog.get_by_role("listbox").bounding_box()
+    assert box is not None and shown is not None
+    assert shown["y"] <= box["y"] and box["y"] + box["height"] <= shown["y"] + shown["height"]
+    assert page.evaluate("document.scrollingElement.scrollTop") == 0
+    assert not errors
+
+
+def test_enter_and_space_press_a_switcher_rows_own_button(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Enter on the second row's Merge opened the highlighted first session; Space did nothing."""
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(port)
+    asked: list[str] = []
+
+    def refuse(route: Route) -> None:
+        asked.append(route.request.url.split("/api/", 1)[1])
+        route.fulfill(status=409, json={"error": "merge preview failed"})
+
+    page.route("**/api/session/*/merge", refuse)
+    rows = _sessions(2, branch="agent6/run", unmerged=True)
+    for key in ("Enter", " "):
+        dialog = _open_switcher(page, port, rows)
+        dialog.get_by_role("button", name="Merge").nth(1).focus()
+        page.keyboard.press(key)
+        expect(page.get_by_role("dialog")).to_have_count(0)
+        expect(page.locator(".toast").last).to_contain_text("merge preview failed")
+    assert asked == ["session/run-1/merge", "session/run-1/merge"]
+    assert page.evaluate("location.hash") == "#/config"
+    assert [e for e in errors if not e.startswith("Failed to load resource")] == []
