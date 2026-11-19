@@ -164,6 +164,8 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 @media (hover: hover) { .item:hover { background: var(--surface2); border-left-color: var(--accent); } }
 .item .grow { flex: 1 1 320px; min-width: 0; }
 .item-actions { display: flex; gap: 6px; }
+/* An empty list says so, and how to start one, where a row's text would start. */
+.list > .empty { padding: 12px 10px; border-top: 1px solid var(--border); text-align: start; }
 /* A machine file's Run button: a name too long for the line wraps from the button's start. */
 .machine-files > button { text-align: start; }
 .item .title, .item .continued { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

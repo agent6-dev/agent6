@@ -857,7 +857,7 @@ function sessionsCard() {
     return [{ key: r.session_id, data: [r, open], paint: () => paintSession(r, depth, regroup) },
       ...(open ? (r.children || []).flatMap(c => rows(c, depth + 1)) : [])];
   };
-  const card = listCard('', 'no sessions yet', r => rows(r, 0));
+  const card = listCard('', 'no sessions yet (describe a task below to start one)', r => rows(r, 0));
   const show = card.show;
   card.show = (sessions, hold) => { shown = sessions; show(sessions, hold); };
   // Maintenance, the actions the TUI's File menu holds, sits in one row above the list.
@@ -887,7 +887,7 @@ function sessionsCard() {
 }
 
 function machinesCard() {
-  return listCard('Instances', 'no machines yet', m => [{ key: m.name, data: m, paint: () => itemRow('item', (it, g) => {
+  return listCard('Instances', 'no machines yet (describe one below to create it)', m => [{ key: m.name, data: m, paint: () => itemRow('item', (it, g) => {
     // An instance goes by its own name, as `machine list` and the TUI list it; the sub line names
     // the machine it runs when the two differ. The reason rides the status label (failed · why).
     g.appendChild(titleLink('title name', m.name, '#/machine/' + encodeURIComponent(m.name)));

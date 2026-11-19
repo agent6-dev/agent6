@@ -752,3 +752,25 @@ def test_open_findings_read_as_part_of_the_status(
     color = "e => getComputedStyle(e).color"
     assert status.evaluate(color) != sub.evaluate(color)  # the status's text colour, not muted
     assert not errors
+
+
+def test_an_empty_list_says_how_to_start_where_a_rows_text_starts(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """An empty list was a bare centred line that never pointed at the composer below it."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    left = """e => {
+      const range = document.createRange();
+      range.selectNodeContents([...e.childNodes].find(n => n.nodeType === 3 && n.data.trim()));
+      return Math.round(range.getBoundingClientRect().left);
+    }"""
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    empty = page.locator(".list > .empty")
+    expect(empty).to_have_text("no sessions yet (describe a task below to start one)")
+    assert empty.evaluate(left) == page.locator(".dock .pick > span").first.evaluate(left)
+    page.goto(f"http://127.0.0.1:{port}/#/machines")
+    expect(empty).to_have_text("no machines yet (describe one below to create it)")
+    assert empty.evaluate(left) == page.locator(".card h2").first.evaluate(left)
+    assert not errors

@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "ffabc30f11b10160a045d2e522377185dd3c8f7c4c6592dc76de9ebfea76ca93"
+PAGE_SHA256 = "c6033f4940cf052c8b784f4417aa2ff1b9998a0b3c1db3a755f2eec9622682fb"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -495,8 +495,8 @@ def test_the_config_editor_sends_a_string_leaf_as_a_toml_string() -> None:
 
 
 def test_the_empty_machines_card_says_what_the_tui_says() -> None:
-    """The web card says "no machines yet", as the TUI's machines screen does."""
-    assert "'no machines yet'" in page.CLIENT_JS and "no machine instances" not in page.CLIENT_JS
+    """The web card says "no machines yet" and how to make one, as the TUI's machines list does."""
+    assert "'no machines yet (" in page.CLIENT_JS and "no machine instances" not in page.CLIENT_JS
 
 
 def test_the_hub_shows_its_maintenance_actions_in_one_toolbar() -> None:
