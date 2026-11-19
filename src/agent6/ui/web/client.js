@@ -1106,7 +1106,7 @@ function attachCommandSuggest(ta, root, liveNow, offered = null) {
 function openRestate(text) {
   const dialog = openDialog('Since your last message', 'wide');
   if (!dialog) return;
-  dialog.appendChild(el('pre', 'restate', text));
+  dialog.appendChild(el('pre', null, text));
 }
 
 // Ctrl+R in a session composer: search this session's past messages (the task,

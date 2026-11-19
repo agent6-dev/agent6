@@ -661,3 +661,24 @@ def test_a_long_dialog_title_wraps_beside_its_close_button(
       return [r.getBoundingClientRect().top, h.lastChild.getBoundingClientRect().top]; }""")
     assert rest > first  # "review." ends the first line
     assert not errors
+
+
+def test_a_dialog_keeps_its_close_button_in_view_while_it_scrolls(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """On a short screen the keyboard list scrolled its Close button out of the dialog."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 390, "height": 480})
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    expect(page.locator(".dock textarea")).to_be_visible()
+    page.keyboard.press("?")
+    dialog = page.get_by_role("dialog", name="Keyboard shortcuts")
+    close = dialog.get_by_role("button", name="Close")
+    before = close.bounding_box()
+    assert dialog.evaluate("d => { d.scrollTop = d.scrollHeight; return d.scrollTop; }") > 0
+    after, box = close.bounding_box(), dialog.bounding_box()
+    assert before is not None and after is not None and box is not None
+    assert after["y"] == before["y"] and after["y"] >= box["y"]
+    assert not errors

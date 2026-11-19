@@ -315,15 +315,19 @@ button.x-btn:hover, .notif-banner .nb-x:hover { background-color: color-mix(in s
    text to read. A wheel or a swipe over it or its backdrop never scrolls the page behind:
    overscroll-behavior holds only in a scroll container, so the backdrop takes overflow: hidden. */
 dialog.card {
-  width: 560px; max-width: calc(100% - 32px); max-height: calc(100% - 32px); overflow: auto;
+  width: 560px; max-width: calc(100% - 32px); max-height: calc(100% - 32px); overflow: auto; padding-top: 0;
   color: var(--text); background: var(--surface); border: 1px solid var(--border);
   border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.35); overscroll-behavior: contain;
 }
 dialog.card.wide { width: 760px; }
 /* A dialog's head: its title, as written (a config key keeps its case), then its Close button
-   beside the title's first 20px line. The head rises by half the button's height past that line,
-   so the title stays put. A long title wraps, so the Close button stays inside the dialog. */
-dialog .dialog-head { display: flex; align-items: flex-start; gap: 8px; margin: calc(10px - var(--ctl-h) / 2) 0 8px; }
+   beside the title's first 20px line, which starts 14px down as in a card. A long title wraps, so
+   the Close button stays inside the dialog. The head holds the dialog's top padding and stays at
+   the top while the dialog scrolls, over a fill that hides what scrolls under it. */
+dialog .dialog-head {
+  position: sticky; top: 0; display: flex; align-items: flex-start; gap: 8px;
+  margin-bottom: 8px; padding-top: calc(24px - var(--ctl-h) / 2); background: var(--surface);
+}
 dialog .dialog-head > h2 {
   flex: 1; min-width: 0; margin: 0; padding-block: calc(var(--ctl-h) / 2 - 10px); overflow-wrap: anywhere;
   font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--text);
@@ -336,8 +340,6 @@ dialog:focus-visible { outline: none; }
 /* A dialog's own failure: one line under its buttons, gone while empty. */
 dialog .err { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 dialog .err:empty { display: none; }
-/* /restate's text scrolls inside the dialog, so the dialog's Close button stays in view. */
-.restate { max-height: 60vh; overflow: auto; }
 
 @media (max-width: 780px) {
   nav.tabs { display: flex; }
