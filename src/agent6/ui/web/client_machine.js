@@ -53,7 +53,7 @@ async function renderMachine(name, gen) {
     try { await postJSON(base + '/poke', { message: din.value }); toast('message sent'); din.value = ''; } catch (e) { toast(e.message, true); }
   };
   din.onkeydown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !composing(e)) {
       e.preventDefault();
       if (!steerBtn.disabled) steerBtn.click();
       else if (!msgBtn.disabled) msgBtn.click();

@@ -238,7 +238,7 @@ function addPreset(onAdded) {
     } catch (e) { toast(e.message, true); add.disabled = false; }
   };
   add.onclick = submit;
-  name.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
+  name.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); submit(); } };
   name.focus();
 }
 
@@ -321,6 +321,7 @@ function configCombobox(current) {
   field.oninput = () => { query = field.value; index = -1; open(); };
   field.onblur = close;
   field.onkeydown = e => {
+    if (composing(e)) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       if (list.hidden) open();
@@ -506,5 +507,5 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       toast(d.message || 'removed'); close(); await refresh();
     } catch (e) { toast(e.message, true); removeBtn.disabled = false; }
   };
-  if (!combo) field.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
+  if (!combo) field.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); submit(); } };
 }

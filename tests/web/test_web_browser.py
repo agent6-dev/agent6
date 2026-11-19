@@ -105,6 +105,24 @@ def open_page(browser: Browser) -> Iterator[Callable[[int], tuple[Page, list[str
             context.close()
 
 
+def test_enter_confirming_an_input_method_candidate_sends_nothing(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """An Enter that confirms an IME candidate started a run on the half-converted task."""
+    page, _ = open_page(port)
+    posted: list[str] = []
+    page.route("**/api/new", lambda route: (posted.append(route.request.url), route.abort()))
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    task = page.locator(".dock textarea")
+    task.fill("にほんご")
+    task.dispatch_event("keydown", {"key": "Enter", "isComposing": True})
+    page.wait_for_timeout(300)
+    assert posted == []
+    task.dispatch_event("keydown", {"key": "Enter"})
+    page.wait_for_timeout(300)
+    assert len(posted) == 1
+
+
 def test_resume_composer_keeps_the_recorded_model(
     port: int,
     tmp_path: pathlib.Path,

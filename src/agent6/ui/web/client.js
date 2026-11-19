@@ -404,7 +404,7 @@ function attachParallelSuggest(task, root) {
   task.addEventListener('blur', () => setTimeout(close, 120));
   // Returns true when the popup consumed the key (caller must not also act on it).
   return { onKeyDown(e) {
-    if (!box || !items.length) return false;
+    if (!box || !items.length || composing(e)) return false;
     if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % items.length; render(); return true; }
     if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + items.length) % items.length; render(); return true; }
     if (e.key === 'Enter' && active >= 0) { e.preventDefault(); insert(items[active]); return true; }
@@ -508,6 +508,7 @@ function newWorkDock(presets, presetDefault, sessions) {
   const ac = attachParallelSuggest(task, root);
   const commands = attachCommandSuggest(task, root, () => false, ['/parallel', '/review']);
   task.onkeydown = (e) => {
+    if (composing(e)) return;
     if (commands.onKeyDown(e)) return;
     if (ac.onKeyDown(e)) return;   // the /parallel suggestion popup took the key
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(); }
@@ -534,7 +535,7 @@ function createMachineDock() {
     catch (e) { toast(e.message, true); cbtn.disabled = false; }
   };
   cbtn.onclick = create;
-  ct.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); create(); } };
+  ct.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey && !composing(e)) { e.preventDefault(); create(); } };
   row.appendChild(ct); row.appendChild(cbtn);
   root.appendChild(growGrip(ct));
   root.appendChild(row);
@@ -1014,7 +1015,7 @@ function attachCommandSuggest(ta, root, liveNow, offered = null) {
   ta.addEventListener('blur', () => setTimeout(close, 120));
   // Returns true when the popup consumed the key (caller must not also act on it).
   return { onKeyDown(e) {
-    if (!box || !items.length) return false;
+    if (!box || !items.length || composing(e)) return false;
     if (e.key === 'ArrowDown') { e.preventDefault(); active = (active + 1) % items.length; render(); return true; }
     if (e.key === 'ArrowUp') { e.preventDefault(); active = (active - 1 + items.length) % items.length; render(); return true; }
     if (e.key === 'Tab') { e.preventDefault(); insert(items[active >= 0 ? active : 0][0]); return true; }
@@ -1072,6 +1073,7 @@ function openHistorySearch(entries, onPick) {
     else if (all.length > items.length) list.appendChild(el('div', 'more-note', '… ' + (all.length - items.length) + ' more (type to narrow)'));
   };
   function onKey(e) {
+    if (composing(e)) return;
     if (e.key === 'Escape') { e.preventDefault(); close(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { active = (active + 1) % items.length; render(); } }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { active = (active - 1 + items.length) % items.length; render(); } }
@@ -1118,6 +1120,7 @@ function openPicker({ title, placeholder, rows, haystack, paint, pick, empty, in
     else if (all.length > items.length) list.appendChild(el('div', 'more-note', '… ' + (all.length - items.length) + ' more (type to narrow)'));
   };
   function onKey(e) {
+    if (composing(e)) return;
     if (e.key === 'Escape') { e.preventDefault(); close(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); if (items.length) { active = (active + 1) % items.length; render(); } }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { active = (active - 1 + items.length) % items.length; render(); } }
@@ -1223,6 +1226,9 @@ function openPalette(initial = '') {
 // Every binding the web answers, in one table: the global handler runs the rows that
 // carry `run`, and the Keyboard overlay (`?`) lists every row. The composer's keys are
 // handled where the composer is built, and named here so the list is whole.
+// An Enter that confirms an input method's candidate (Japanese, Chinese, Korean) is part of
+// typing, not a send; keyCode 229 covers engines that report the composition only that way.
+function composing(e) { return e.isComposing || e.keyCode === 229; }
 function inField(e) { const t = e.target; return !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)); }
 const KEYS = [
   { label: 'Ctrl-K', where: 'anywhere', does: 'switch session', match: (e) => e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey, run: () => openSwitcher() },
@@ -1367,6 +1373,7 @@ function makeComposer(id) {
     setTimeout(() => fillAsEdit(ta, fill), 0); // after the view attaches
   }
   ta.onkeydown = (e) => {
+    if (composing(e)) return;
     if (suggest.onKeyDown(e) || models.onKeyDown(e)) return;
     if (e.key === 'r' && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       e.preventDefault(); // Ctrl-R here is history search, not a page reload

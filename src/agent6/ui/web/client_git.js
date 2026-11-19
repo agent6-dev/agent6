@@ -248,6 +248,7 @@ function gitPicker(name, initial, onPick, listHost, fixed) {
   input.onfocus = () => { if (!list.isConnected) search(); };
   input.onblur = () => setTimeout(close, 150);
   input.onkeydown = (e) => {
+    if (composing(e)) return;
     if (e.key === 'ArrowDown' && items.length) { e.preventDefault(); active = (active + 1) % items.length; items.forEach((it, i) => it.node.classList.toggle('on', i === active)); }
     else if (e.key === 'ArrowUp' && items.length) { e.preventDefault(); active = (active - 1 + items.length) % items.length; items.forEach((it, i) => it.node.classList.toggle('on', i === active)); }
     else if (e.key === 'Escape') { e.preventDefault(); close(); }
@@ -443,10 +444,10 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     pullNum.value = '';
     gitFetch(n);
   };
-  pullNum.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); pullBtn.onclick(); } };
+  pullNum.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); pullBtn.onclick(); } };
   switchBtn.onclick = () => gitWrite('switch', { name: branchSel.value });
   createBtn.onclick = () => { const name = newName.value.trim(); if (!name) return; newName.value = ''; gitWrite('branch', { name }); };
-  newName.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); createBtn.onclick(); } };
+  newName.onkeydown = (e) => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); createBtn.onclick(); } };
   paintBranches();
   paintRemotes();
 

@@ -57,6 +57,7 @@ function boot() {}
 function setCrumb() {}
 function esc(text) { return text; }
 function actionable(node, fn) { node.onclick = fn; }
+function composing(e) { return e.isComposing || e.keyCode === 229; }
 function toast(text, error) { notices.push({text, error}); }
 function confirm(text) { confirmations.push(text); return accept; }
 async function request(path, body) {
