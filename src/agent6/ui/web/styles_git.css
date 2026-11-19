@@ -106,7 +106,10 @@
 .git-body.diffing > .git-diff { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; }
 .git-diff-head { flex: none; flex-wrap: wrap; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
 .git-diff-head .gf-path { flex: 1 1 200px; }
-.git-diff-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* The controls keep to one line: beside the path where it leaves room, else under it, scrolled
+   sideways where the diff is narrower; the padding leaves room for a focus ring. */
+.git-diff-tools { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding: 4px; margin: -4px; }
+.git-diff-tools > * { flex: none; }
 /* Open in Files is a link drawn as the mini buttons beside it. */
 .git-diff-head a.mini {
   display: inline-flex; align-items: center; min-height: var(--ctl-h-sm); padding: 0 var(--ctl-px-sm);
@@ -172,13 +175,12 @@
   }
   .git-img { grid-template-columns: 1fr; }
 }
-/* The graph, the side panel and the diff lay out by their own width, whatever the screen's. A
-   narrow graph drops the author column and keeps a row's ref badge to 40% of the subject column; a
+/* The graph and the side panel lay out by their own width, whatever the screen's. A narrow
+   graph drops the author column and keeps a row's ref badge to 40% of the subject column; a
    narrow side panel puts the compare's head picker under the base and the swap button, and a
    working-tree row's buttons under its path, spread across the row where even that is tight. */
 .git-graph { container: git-graph / inline-size; }
 .git-side { container: git-side / inline-size; }
-.git-diff { container: git-diff / inline-size; }
 @container git-graph (max-width: 559px) {
   .gc-author { display: none; }
   .gc-row { padding-right: 8px; gap: 8px; }
@@ -192,10 +194,4 @@
 }
 @container git-side (max-width: 319px) {
   .gf-acts { grid-column: 1 / -1; justify-self: stretch; grid-template-columns: repeat(3, minmax(min-content, 1fr)); }
-}
-/* A phone-wide diff keeps its controls on one line under the path, scrolled sideways; the padding
-   leaves room for a focus ring. */
-@container git-diff (max-width: 480px) {
-  .git-diff-tools { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; padding: 4px; margin: -4px; }
-  .git-diff-tools > * { flex: none; }
 }

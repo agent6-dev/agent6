@@ -55,7 +55,7 @@ function gitDiffViewer(body) {
     head.appendChild(statusBadge(f.status));
     head.appendChild(filePath(f));
     head.appendChild(fileCounts(f));
-    // The controls wrap under the path as one group; a phone keeps them on one line that scrolls.
+    // The controls keep to one line beside or under the path, scrolled sideways where it is narrow.
     const tools = el('div', 'git-diff-tools'); head.appendChild(tools);
     const prev = el('button', 'mini', '‹'); prev.title = 'previous file'; prev.disabled = i === 0;
     prev.onclick = () => showDiff(ctx, i - 1);

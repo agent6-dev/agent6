@@ -1099,14 +1099,15 @@ def test_a_phone_presses_inline_when_split_has_no_room(
     assert errors == [], errors
 
 
-def test_a_phones_diff_head_keeps_its_controls_on_one_line(
-    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
+@pytest.mark.parametrize("width", [390, 820])
+def test_a_narrow_diff_head_keeps_its_controls_on_one_line(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int, width: int
 ) -> None:
-    """On a phone the diff's controls take one line under the path; they took three rows."""
+    """Under the path the diff's controls took three rows on a phone, and two at 820px."""
     from playwright.sync_api import expect
 
     page, errors = open_page(git_port)
-    page.set_viewport_size({"width": 390, "height": 844})
+    page.set_viewport_size({"width": width, "height": 844})
     page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/feature?path=b.txt")
     expect(page.locator(".git-diff .diff-blame")).to_be_enabled()
     controls = page.locator(".git-diff-head").locator("button, a")
