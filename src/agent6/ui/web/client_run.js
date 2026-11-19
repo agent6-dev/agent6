@@ -297,7 +297,8 @@ function paintPrompts(cards, s) {
         const label = (qs.length > 1 ? (qi + 1) + '. ' : '') + (sub.question || 'The agent asked a question');
         box.appendChild(el('div', 'q', label));
         const row = el('div', 'form-row');
-        const inp = el('input', 'field'); inp.placeholder = 'pick above or type an answer…'; inp.style.flex = '1';
+        const inp = el('input', 'field');
+        inp.placeholder = (sub.options || []).length ? 'pick an option or type an answer…' : 'type an answer…';
         for (const opt of (sub.options || [])) {
           const b = el('button', null, opt);
           b.onclick = () => { inp.value = opt; };
@@ -314,7 +315,7 @@ function paintPrompts(cards, s) {
         if (answers.every(a => a === '')) { toast('Pick an option or type an answer first.', true); return; }
         try { await postPrompt(box, base + '/answer', { id: q.id, answers, ...extra }); } catch (e) { toast(e.message, true); }
       };
-      box.appendChild(send);
+      const end = el('div', 'form-row'); end.appendChild(send); box.appendChild(end);
       return box;
     };
   }

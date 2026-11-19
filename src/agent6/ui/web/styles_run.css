@@ -67,6 +67,10 @@
 .prompt-box { background: var(--surface2); border-left: 3px solid var(--warn); padding: 12px; }
 .prompt-box + .prompt-box { margin-top: 10px; }
 .prompt-box .q { margin-bottom: 8px; white-space: pre-wrap; }
+/* An answer field shares its options' row while it keeps 192px, else it takes a row of its own.
+   The next question, or the row that sends the answers, stands 14px under a field. */
+.prompt-box .form-row > input.field { flex: 1 1 192px; min-width: 0; }
+.prompt-box .form-row + .q, .prompt-box .form-row + .form-row { margin-top: 14px; }
 /* The command under judgment wraps, so its whole tail shows before Allow. */
 .prompt-box .cmd { font-size: 0.92em; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 10px; margin: 0 0 10px; }
 .prompt-box .cmd .tok-str { color: var(--warn); }

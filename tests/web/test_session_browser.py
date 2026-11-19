@@ -95,3 +95,51 @@ def test_prompts_stand_under_the_top_bar_and_the_action_bar_clips_nothing(
     overflow = actions.evaluate("e => getComputedStyle(e).overflow")
     assert (gap, overflow, first["x"]) == (10, "visible", top["x"])
     assert not errors
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_a_question_box_spaces_its_questions_and_wraps_a_narrow_field(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    width: int,
+) -> None:
+    """Each question and Submit all stand 14px under a field; a narrow field takes its own row.
+
+    Question 2 and Submit all touched the field above them, and on a phone the field shrank
+    beside its options until its placeholder was cut.
+    """
+    from playwright.sync_api import expect
+
+    ask = {
+        "type": "question.prompt",
+        "id": "question-1",
+        "wait": True,
+        "questions": [
+            {"question": "Should a lone CR also end a row?", "options": ["yes", "no, raise"]},
+            {"question": "Keep the strict dialect?", "options": []},
+        ],
+    }
+    _session(tmp_path, "asking-AAA111", [ask], live=True)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/asking-AAA111")
+    box = page.locator(".prompt-box")
+    fields = box.locator("input.field")
+    expect(fields).to_have_count(2)
+    expect(fields.first).to_have_attribute("placeholder", "pick an option or type an answer…")
+    expect(fields.last).to_have_attribute("placeholder", "type an answer…")
+    first, last = fields.first.bounding_box(), fields.last.bounding_box()
+    second = box.locator(".q").last.bounding_box()
+    send = box.get_by_role("button", name="Submit all", exact=True).bounding_box()
+    option = box.get_by_role("button", name="no, raise", exact=True).bounding_box()
+    row = box.locator(".form-row").first.bounding_box()
+    assert first and last and second and send and option and row
+    assert second["y"] - (first["y"] + first["height"]) == 14
+    assert send["y"] - (last["y"] + last["height"]) == 14
+    if width > 780:
+        assert first["y"] == option["y"]
+    else:
+        assert first["y"] > option["y"] + option["height"]
+        assert first["width"] == row["width"]
+    assert not errors
