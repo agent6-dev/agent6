@@ -748,7 +748,7 @@ def test_the_summary_and_the_end_note_take_their_neighbours_type(
           const path = [...document.querySelectorAll('.tree')][1].closest('.card');
           const note = [...path.querySelectorAll('div')]
             .find(e => e.textContent.startsWith('ended:'));
-          return [font(document.querySelector('.machine-grid .row .sub')),
+          return [font(document.querySelector('.machine-grid .row.sub > .muted')),
                   font(document.querySelector('.machine-grid .pill')),
                   font(note), font(path.querySelector('.node'))];
         }"""

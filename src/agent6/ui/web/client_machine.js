@@ -34,8 +34,8 @@ async function renderMachine(name, gen) {
   };
   const structBody = addCard('States');
   const pathBody = addCard('Path');
-  // The machine's summary and status stay over the States list as it scrolls.
-  cards._summary = el('div', 'row wrap'); structBody.before(cards._summary);
+  // The machine's summary and status stay over the States list as it scrolls: one sub line.
+  cards._summary = el('div', 'row wrap sub'); structBody.before(cards._summary);
   // The newest agent state's conversation, the same folded view a run shows, under the pair;
   // paintMachine titles it by that state.
   const cc = convCard(base + '/conversation', 'Conversation', '', {
@@ -187,7 +187,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   const sp = m.spend || {};
   const cost = sp.text ? ' · ' + sp.text : '';
   cards._summary.replaceChildren(
-    el('div', 'sub muted', `${esc(m.machine)} v${esc(m.version)} · current: ${esc(m.current)}${cost}`),
+    el('div', 'muted', `${esc(m.machine)} v${esc(m.version)} · current: ${esc(m.current)}${cost}`),
     pill(m.status_level, m.status));
   // Each line leads with its mark, or its `[seq] `; a wrapped line continues under the text
   // after the lead (--hang: the lead's width).
@@ -216,8 +216,8 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   }
   if (!transitions.length) path.appendChild(el('div', 'muted', 'no transitions yet'));
   // How the path ends, in the list's own type: a journaled end, or a stop it resumes from.
-  if (m.ended) path.appendChild(el('div', 'sub muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));
-  if (m.worker_lost) path.appendChild(el('div', 'sub muted', `stopped: ${esc(m.worker_lost.reason)} at ${esc(m.worker_lost.state)}; resumable`));
+  if (m.ended) path.appendChild(el('div', 'muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));
+  if (m.worker_lost) path.appendChild(el('div', 'muted', `stopped: ${esc(m.worker_lost.reason)} at ${esc(m.worker_lost.state)}; resumable`));
   pathBody.appendChild(path);
   if (ctx.pathAtEnd) pathToEnd(pathBody, ctx);
   // States brings the current state into view when the machine moves; a phone's cards flow, so

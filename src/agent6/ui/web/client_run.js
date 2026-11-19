@@ -351,7 +351,7 @@ function paintDetails(cards, s, asOf) {
   const b = s.budget || {};
   cards.budget.innerHTML = '';
   const barRow = (label, frac, text) => {
-    const w = el('div'); w.appendChild(el('div', 'sub muted', `${label}: ${text}`));
+    const w = el('div'); w.appendChild(el('div', 'muted', `${label}: ${text}`));
     const bar = el('div', 'bar' + (frac > 0.85 ? ' warn' : '')); const sp = el('span'); sp.style.width = (frac*100)+'%'; bar.appendChild(sp); w.appendChild(bar); return w;
   };
   // `b.session` is the run's usage across executions; `b.execution` is this execution's
@@ -389,7 +389,7 @@ function paintDetails(cards, s, asOf) {
   // was recorded, so it shows only when nonzero.
   const cached = (run.cache_read_tokens || run.cache_write_tokens)
     ? ` · cached read ${run.cache_read_tokens||0} · cached written ${run.cache_write_tokens||0}` : '';
-  cards.budget.appendChild(el('div', 'sub muted', `tokens: in ${run.input_tokens||0} · out ${run.output_tokens||0}${cached}${ctxPct}`));
+  cards.budget.appendChild(el('div', 'muted', `tokens: in ${run.input_tokens||0} · out ${run.output_tokens||0}${cached}${ctxPct}`));
 
   // task tree
   cards.tasks.innerHTML = '';
@@ -404,7 +404,7 @@ function paintDetails(cards, s, asOf) {
     const task = el('span', 'task');
     task.appendChild(el('span', 'title', t.title));
     // The operator's mark beside a task they own (the server's owner_note).
-    if (t.note) task.appendChild(el('span', 'sub muted', ' ' + t.note));
+    if (t.note) task.appendChild(el('span', 'muted', ' ' + t.note));
     line.appendChild(task);
     tree.appendChild(line);
   }

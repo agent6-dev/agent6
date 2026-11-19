@@ -9,7 +9,7 @@
 .cfg-label { display: block; margin-top: 0.5rem; }
 /* A value field and its suggestions read in the table's monospace. A list, table or string value
    rests at a field's height and grows with the value to 40% of the screen, then scrolls. */
-.field.cfg-value { font-family: var(--mono); font-size: 0.8125rem; }
+.field.cfg-value { font-family: var(--mono); font-size: var(--fs-m); }
 textarea.field.cfg-value {
   field-sizing: content; resize: none; min-height: var(--ctl-h); max-height: 40dvh;
   padding-block: calc((var(--ctl-h) - 1lh - 2px) / 2);
@@ -37,14 +37,14 @@ textarea.field.cfg-value {
 }
 .cfg-section[open] > summary::before { transform: translateY(-2px) rotate(45deg); }
 .cfg th {
-  font-size: 0.75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+  font-size: var(--fs-s); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
 }
 /* The settings grid: every section's table spans the card and takes the same column widths (a
    fixed layout reads them off the header row), so the setting, value and source columns line up
    down the page and stay put while the filter hides rows. Below 700px of card the cells stack:
    the setting over its value, the source at the row's end. */
 .cfg-card { container-type: inline-size; }
-.cfg { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.cfg { width: 100%; border-collapse: collapse; font-size: var(--fs-m); }
 /* A row's cells share their first line's baseline, however far a long value wraps. */
 .cfg td, .cfg th {
   text-align: left; vertical-align: baseline; padding: 0.375rem 0.5rem; border-bottom: 1px solid var(--border);
@@ -67,7 +67,7 @@ textarea.field.cfg-value {
 /* A source takes one line: a long one, a `--config FILE` path, ends in an ellipsis at the
    column's edge, and the editor's `set from:` line shows it whole. */
 .cfg .source {
-  color: var(--muted); font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--muted); font-size: var(--fs-s); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 @container (width >= 43.75rem) {
   .cfg { table-layout: fixed; }
@@ -93,7 +93,7 @@ textarea.field.cfg-value {
   border-radius: var(--r); background: var(--surface2);
 }
 .cfg-option, .cfg-catalog { padding: 0.375rem 0.625rem; overflow-wrap: anywhere; }
-.cfg-option { cursor: pointer; font-family: var(--mono); font-size: 0.8125rem; }
+.cfg-option { cursor: pointer; font-family: var(--mono); font-size: var(--fs-m); }
 /* The pointer lights an option; the option the arrow keys moved to, which Enter picks, also takes
    the accent and an outline. */
 .cfg-option:hover, .cfg-option[aria-selected=true] { background: var(--surface); }
@@ -101,9 +101,9 @@ textarea.field.cfg-value {
   color: var(--accent); outline: 1px solid var(--accent); outline-offset: -1px;
 }
 /* The config editor's description: a readable measure, code spans as code. */
-.cfg-desc { color: var(--muted); font-size: 0.8125rem; line-height: 1.5; margin: 0 0 0.75rem; max-width: 62ch; }
+.cfg-desc { color: var(--muted); font-size: var(--fs-m); line-height: 1.5; margin: 0 0 0.75rem; max-width: 62ch; }
 .cfg-desc code {
-  font-family: var(--mono); font-size: 0.75rem; color: var(--text);
+  font-family: var(--mono); font-size: var(--fs-s); color: var(--text);
   background: var(--surface2); padding: 0 0.1875rem; border-radius: 3px;
 }
 /* An Add dialog's field description sits right under its field. */

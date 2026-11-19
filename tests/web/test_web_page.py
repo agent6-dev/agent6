@@ -300,6 +300,23 @@ def test_the_stored_theme_applies_before_the_first_paint() -> None:
     assert html.index('localStorage.getItem("a6-theme")') < html.index("<style>")
 
 
+def test_every_text_size_is_a_step_of_the_type_scale() -> None:
+    """Text came in 11, 12, 12.5, 12.88, 13, 14 and 17px, each rule with a size of its own.
+
+    The rail's brand keeps its own size, and a rendered markdown file sizes its headings and its
+    code from its text, as a document does.
+    """
+    css = re.sub(r"/\*.*?\*/", "", page.STYLES_CSS, flags=re.DOTALL)
+    assert "--fs-s: 0.75rem; --fs-m: 0.8125rem; --fs-l: 0.875rem;" in css
+    loose = [
+        (selector.strip(), value.strip())
+        for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+        for value in re.findall(r"\bfont(?:-size)?:\s*([^;]+)", body)
+        if not re.match(r"var\(--fs-[sml]\)|inherit\b", value) and ".md-view" not in selector
+    ]
+    assert loose == [("aside.rail .rail-brand", "1.0625rem")]
+
+
 def test_the_resume_row_asks_what_a_bare_resume_runs_under() -> None:
     """The resume row's first options name what a resume without flags runs under.
 

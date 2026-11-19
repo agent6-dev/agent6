@@ -223,6 +223,45 @@ def test_a_budget_bar_stands_apart_from_its_label_and_the_next_line(
     assert not errors
 
 
+def test_the_details_cards_and_the_conversation_set_text_in_the_dense_size(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """The findings' counts and the budget's lines stood in 14px beside 13px rows.
+
+    The conversation sat between the scale's sizes, at 12.5px.
+    """
+    from playwright.sync_api import expect
+
+    rows = [
+        {"type": "budget.update", "usd_total": 0.5},
+        {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
+        {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
+    ]
+    session_logs.write_run(tmp_path, "sizes-AAA111", rows)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"http://127.0.0.1:{port}/#/session/sizes-AAA111")
+    expect(page.locator(".card-budget .bar")).to_be_visible()
+    expect(page.locator(".conv .ci").first).to_be_visible()
+    sizes = page.evaluate(
+        """() => { const sizes = {};
+        for (const body of document.querySelectorAll('.drawer .card-body')) {
+          const walk = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+          while (walk.nextNode()) {
+            const text = walk.currentNode, e = text.parentElement;
+            if (!text.data.trim() || !e.getClientRects().length) continue;
+            (sizes[getComputedStyle(e).fontSize] ||= []).push(text.data.trim());
+          }
+        }
+        return sizes; }"""
+    )
+    assert set(sizes) <= {"12px", "13px"}, sizes
+    assert any(text.startswith("usage: ") for text in sizes.get("13px", [])), sizes
+    conv = page.locator(".conv .ci").first.evaluate("e => getComputedStyle(e).fontSize")
+    assert conv == "13px"
+    assert not errors
+
+
 def test_the_latest_commit_card_shows_no_error_under_the_logs_diff(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:

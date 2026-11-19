@@ -15,7 +15,7 @@
 /* The count and the tree toggle hold the width of their longest text (the listing's own
    "N of N files", and "Show tree"), so typing in the filter or toggling the tree moves nothing on
    the bar. A count wrapped to a row of its own keeps to the right. */
-.files-counts { margin-left: auto; font-size: 0.75rem; white-space: nowrap; text-align: end; font-variant-numeric: tabular-nums; }
+.files-counts { margin-left: auto; font-size: var(--fs-s); white-space: nowrap; text-align: end; font-variant-numeric: tabular-nums; }
 .files-counts::after { content: attr(data-room); display: block; height: 0; visibility: hidden; }
 .files-tree-toggle { min-width: 7em; }
 /* Each name keeps to one line, ending in an ellipsis where it does not fit; the row's title
@@ -35,7 +35,7 @@
    place. */
 .files-head { flex: none; flex-wrap: wrap; gap: 0.5rem; padding: 0.5rem var(--files-inset); border-bottom: 1px solid var(--border); }
 .files-head .gf-path { flex: 1 1 auto; min-height: var(--ctl-h-sm); align-content: center; }
-.files-note { margin-left: auto; min-width: 24ch; font-size: 0.75rem; text-align: end; white-space: nowrap; }
+.files-note { margin-left: auto; min-width: 24ch; font-size: var(--fs-s); text-align: end; white-space: nowrap; }
 .files-text { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0.5rem var(--files-inset); }
 /* The browser makes the scrolling pane a Tab stop: its ring goes inside, where nothing clips it. */
 .files-text:focus-visible { outline-offset: -2px; }
@@ -70,7 +70,7 @@
 .md-view th, .md-view tr:nth-child(even) { background: var(--surface2); }
 .md-view img { max-width: 100%; height: auto; }
 /* An image the page cannot show keeps its place as a dashed box: its alt text, then why. */
-.md-view .md-missing { display: inline-flex; flex-direction: column; max-width: 100%; padding: 0.5rem 0.75rem; border: 1px dashed var(--border-strong); border-radius: 6px; font-size: 0.75rem; line-height: 1.5; overflow-wrap: anywhere; vertical-align: top; }
+.md-view .md-missing { display: inline-flex; flex-direction: column; max-width: 100%; padding: 0.5rem 0.75rem; border: 1px dashed var(--border-strong); border-radius: 6px; font-size: var(--fs-s); line-height: 1.5; overflow-wrap: anywhere; vertical-align: top; }
 .md-view hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
 @media (width > 48.75em) {
   .files-app { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }

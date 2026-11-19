@@ -5,7 +5,7 @@
 .bar > span { display: block; height: 100%; background: var(--accent); }
 .bar.warn > span { background: var(--warn); }
 
-.tree { font-family: var(--mono); font-size: 0.8125rem; }
+.tree { font-family: var(--mono); font-size: var(--fs-m); }
 /* A task's line: its id, its glyph at its depth, then its title, which wraps under itself. */
 .tree .node { display: flex; padding: 1px 0; white-space: pre; }
 .tree .task { min-width: 0; white-space: normal; overflow-wrap: anywhere; } /* Firefox strikes a space pre-wrap keeps at a wrap */
@@ -18,31 +18,31 @@
 /* Tool calls: each call's name over one clipped line of its args and result
    (the full text on hover), so the narrow details drawer never breaks a path
    mid-word. */
-.calls .call { padding: 0.375rem 0; border-bottom: 1px solid var(--border); font-size: 0.8125rem; }
+.calls .call { padding: 0.375rem 0; border-bottom: 1px solid var(--border); }
 .calls .call-head { display: flex; align-items: center; gap: 0.5rem; }
 .calls .name { font-family: var(--mono); }
-.calls .call-head .more-note { margin-left: auto; font-size: 0.75rem; }
+.calls .call-head .more-note { margin-left: auto; }
 .calls .args {
-  padding-left: 1rem; color: var(--muted); font-family: var(--mono); font-size: 0.75rem;
+  padding-left: 1rem; color: var(--muted); font-family: var(--mono); font-size: var(--fs-s);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--muted); }
 .dot.ok { background: var(--ok); } .dot.bad { background: var(--err); }
 
-.log { font-family: var(--mono); font-size: 0.75rem; line-height: 1.4; }
+.log { font-family: var(--mono); font-size: var(--fs-s); line-height: 1.4; }
 /* A wrapped row hangs under its event, clear of its time (12 characters and two spaces). */
 .log > div { white-space: pre-wrap; word-break: break-word; padding-left: 14ch; text-indent: -14ch; }
 
-.plan { font-family: var(--mono); font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; margin: 0; }
+.plan { font-family: var(--mono); font-size: var(--fs-s); white-space: pre-wrap; word-break: break-word; margin: 0; }
 
 /* A fan-out's children, one row each at the run card's text size, under muted column names. */
-.card-children table { border-collapse: collapse; font-size: 0.8125rem; }
+.card-children table { border-collapse: collapse; font-size: var(--fs-m); }
 .card-children th, .card-children td { text-align: left; padding: 0.25rem 1.5rem 0.25rem 0; border-bottom: 1px solid var(--border); }
 .card-children th { color: var(--muted); font-weight: 400; }
 
 /* conversation: the folded transcript, the same items (and semantic span
    styles) the CLI stream and the TUI conversation view render. */
-.conv { font-family: var(--mono); font-size: 0.78125rem; line-height: 1.5; }
+.conv { font-family: var(--mono); font-size: var(--fs-m); line-height: 1.5; }
 .conv .ci { padding: 2px 0.25rem; margin: 0 -0.25rem 0.5rem; white-space: pre-wrap; word-break: break-word; border-radius: 6px; }
 .conv .ci.exp { cursor: pointer; }
 /* An expandable item's first line takes the keyboard focus, and the whole item draws the ring. */
@@ -110,7 +110,7 @@
 /* The next question, or the row that sends the answers, stands 14px under a field. */
 .prompt-box .form-row + .q, .prompt-box .form-row + .form-row { margin-top: 0.875rem; }
 /* The command under judgment wraps, so its whole tail shows before Allow. */
-.prompt-box .cmd { font-size: 0.92em; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 0.5rem 0.625rem; margin: 0 0 0.625rem; }
+.prompt-box .cmd { font-size: var(--fs-m); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 0.5rem 0.625rem; margin: 0 0 0.625rem; }
 .prompt-box .cmd .tok-str { color: var(--warn); }
 .prompt-box .cmd .tok-flag { color: var(--accent); }
 .prompt-box .cmd .tok-op { font-weight: 700; }
@@ -123,6 +123,8 @@
    (the mobile widget menu picks what is shown); the column still fills the
    screen, so the composer sits at its foot under a short widget. --- */
 .run-app { display: flex; flex-direction: column; flex: 1 0 auto; }
+/* The details cards set their text in the dense size, so no card mixes it with body text. */
+.run-app .drawer .card { font-size: var(--fs-m); }
 @media (width > 48.75em) {
   .run-app { flex: 1 1 0; min-height: 0; }
   /* controls / status keep their natural height; only the body pane

@@ -6,20 +6,19 @@
    does, in the 4px each side that the body reaches past its text. */
 .machine-grid .card-body { padding-inline: 0.25rem; margin-inline: -0.25rem; }
 .machine-grid .card-body:focus-visible { outline-offset: -2px; }
-/* The summary takes the size of the status beside it, and the Path's end note the size of its
-   list; both wrap a long word. */
-.machine-grid .sub { font-size: 0.8125rem; overflow-wrap: anywhere; }
+/* A long name or reason wraps: in the summary line and in the States and Path lists. */
+.machine-grid :is(.sub, .tree) { overflow-wrap: anywhere; }
 /* Every name and transition shows whole: a long one wraps, and a wrapped line continues under the
    text after its lead, a state's mark or a transition's `[seq] ` (--hang: the lead's width). The
    node is a block: a hanging indent needs one, and the run view's task tree lays its nodes out flex. */
 .machine-grid .tree .node {
-  display: block; white-space: pre-wrap; overflow-wrap: anywhere;
+  display: block; white-space: pre-wrap;
   padding-left: var(--hang, 2ch); text-indent: calc(-1 * var(--hang, 2ch));
 }
 .machine-grid .tree .lead { white-space: pre; } /* kept whole, with no break before the first word */
 /* Why a dimmed verb in the dock is refused, in the hint's type, on every screen. An end's reason
    runs to any length and the Path card holds it whole, so the dock shows its first two lines. */
-.composer .refusal { margin-top: 0.25rem; font-size: 0.6875rem; color: var(--muted); overflow-wrap: anywhere; }
+.composer .refusal { margin-top: 0.25rem; font-size: var(--fs-s); color: var(--muted); overflow-wrap: anywhere; }
 .composer .refusal.ended {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
 }

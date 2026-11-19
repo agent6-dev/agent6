@@ -1,5 +1,5 @@
 /* Review findings: the session's findings card and notes attached to diff lines. */
-.finding { display: block; white-space: normal; overflow-wrap: anywhere; min-width: 0; margin: 0.625rem 0; padding: 0.75rem; border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: 6px; background: var(--surface); color: var(--text); font: 0.8125rem/1.5 system-ui, sans-serif; }
+.finding { display: block; white-space: normal; overflow-wrap: anywhere; min-width: 0; margin: 0.625rem 0; padding: 0.75rem; border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: 6px; background: var(--surface); color: var(--text); font: var(--fs-m)/1.5 system-ui, sans-serif; }
 .finding > span { display: block; }
 .finding .row { display: flex; gap: 0.625rem; margin-top: 0.5rem; }
 .finding-title { font-weight: 600; }
@@ -17,11 +17,11 @@
 .receipt { display: grid; gap: 0.375rem; }
 .receipt > button { justify-self: start; }
 .receipt pre {
-  font-size: 0.75rem; line-height: 1.45; padding: 0.5rem 0.625rem;
+  font-size: var(--fs-s); line-height: 1.45; padding: 0.5rem 0.625rem;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
 }
 .receipt-text > div { padding-left: 2ch; text-indent: -2ch; }
-.receipt summary { cursor: pointer; font: 0.75rem/1.45 var(--mono); }
+.receipt summary { cursor: pointer; font: var(--fs-s)/1.45 var(--mono); }
 .receipt details > pre { margin-top: 0.375rem; }
 .card-findings .pickers { margin-bottom: 0; }
 .finding-head { justify-content: space-between; }

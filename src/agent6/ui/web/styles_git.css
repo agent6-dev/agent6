@@ -26,7 +26,7 @@
 .gf-acts > [data-act=stage] { grid-column: 1; }
 .gf-acts > [data-act=unstage] { grid-column: 2; }
 .gf-acts > [data-act=discard] { grid-column: 3; }
-.gf-index { font: 0.75rem system-ui, sans-serif; color: var(--muted); white-space: nowrap; }
+.gf-index { font: var(--fs-s) system-ui, sans-serif; color: var(--muted); white-space: nowrap; }
 /* A file row's path is a button whose box covers the row, so a click anywhere on the row opens the
    diff; the row's own buttons sit above it, and its focus ring goes round the row. */
 .gfiles .gf { position: relative; }
@@ -39,7 +39,7 @@
 .gf-open:focus-visible { outline: none; }
 .gf-open:focus-visible::after { outline: 2px solid var(--accent); outline-offset: -2px; }
 .gf-acts > button { position: relative; }
-.git-counts { font-size: 0.75rem; }
+.git-counts { font-size: var(--fs-s); }
 /* --row-bg is the colour a row shows, which a hollow dot is filled with. */
 .gc-row { --row-bg: var(--bg); display: flex; align-items: center; gap: 0.625rem; height: 1.875rem; padding-right: 0.75rem; cursor: pointer; background: var(--row-bg); }
 @media (hover: hover) { .gc-row:hover { --row-bg: var(--surface2); } }
@@ -60,12 +60,12 @@
 .gc-lanes .gc-dot.merge, .gc-lanes .gc-dot.wt { fill: var(--row-bg); }
 .gc-lanes .gc-dot.wt { stroke-dasharray: 2 2; }
 .gc-wt .gc-text { font-weight: 600; }
-.gc-subj { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.8125rem; }
-.gc-author { flex: none; width: 6.875rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.75rem; }
-.gc-when { flex: none; font-size: 0.75rem; white-space: nowrap; }
+.gc-subj { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--fs-m); }
+.gc-author { flex: none; width: 6.875rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--fs-s); }
+.gc-when { flex: none; font-size: var(--fs-s); white-space: nowrap; }
 .git-more { display: block; margin: 0.75rem auto; }
 .gref {
-  display: inline-block; font-size: 0.6875rem; line-height: 1rem; padding: 0 0.4375rem; margin-right: 0.3125rem;
+  display: inline-block; font-size: var(--fs-s); line-height: 1rem; padding: 0 0.4375rem; margin-right: 0.3125rem;
   border-radius: 10px; border: 1px solid var(--accent); color: var(--accent); vertical-align: 1px;
   max-width: 11.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
 }
@@ -80,7 +80,7 @@
    scrolled into view stops below the head: its padding and border, and its title line or ‹ graph. */
 .git-side-head { position: sticky; top: 0; z-index: 2; gap: 0.5rem; padding: 0.625rem 1rem 0.5rem; background: var(--bg); border-bottom: 1px solid var(--border); }
 .git-side { scroll-padding-top: calc(1.1875rem + max(1.25rem, var(--ctl-h-sm))); }
-.git-side-head h3 { margin: 0; font-size: 0.75rem; font-weight: 600; line-height: 1.25rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.git-side-head h3 { margin: 0; font-size: var(--fs-s); font-weight: 600; line-height: 1.25rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 /* The heading takes the focus a new panel replaces or covers; its ring sits outside it. */
 .git-side-head h3:focus-visible { outline-offset: 2px; border-radius: var(--r-sm); }
 .git-back { display: none; }
@@ -89,20 +89,20 @@
 .gd-meta .v { overflow-wrap: anywhere; }
 /* The full sha stays one line, cut with an ellipsis where the panel is narrower (the tooltip and a
    double-click select it whole); a date wraps only before its zone. */
-.gd-meta .gd-sha { font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gd-meta .gd-sha { font-size: var(--fs-s); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gd-date > span { white-space: nowrap; }
 .gd-meta button.mini { margin-right: 0.25rem; }
 .gd-actions { margin-bottom: 0.625rem; }
-.gd-body { font-size: 0.8125rem; line-height: 1.5; margin: 0 0 0.75rem; padding: 0.5rem 0.625rem; border-left: 2px solid var(--border); overflow-wrap: break-word; }
+.gd-body { font-size: var(--fs-m); line-height: 1.5; margin: 0 0 0.75rem; padding: 0.5rem 0.625rem; border-left: 2px solid var(--border); overflow-wrap: break-word; }
 /* A list item's marker sits in a box as wide as its text, so the item's later lines hang under
    the text; a blank line keeps half a line between paragraphs. */
 .gd-line { padding-left: calc((var(--lead, 0) + var(--hang, 0)) * 1ch); text-indent: calc(var(--hang, 0) * -1ch); }
 .gd-line:empty { height: .75em; }
 .gd-marker { display: inline-block; width: calc(var(--hang) * 1ch); text-indent: 0; }
-.gd-code { font: 0.75rem/1.5 var(--mono); white-space: pre-wrap; }
+.gd-code { font: var(--fs-s)/1.5 var(--mono); white-space: pre-wrap; }
 .gf-head { align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
 .gf-head .gf-count { flex: 1; margin: 0; }
-.gf-count { font-size: 0.75rem; margin-bottom: 0.25rem; }
+.gf-count { font-size: var(--fs-s); margin-bottom: 0.25rem; }
 .git-diff { display: none; }
 .git-body.diffing > .git-graph, .git-body.diffing > .git-side, .git-body.diffing > .resize-handle { display: none; }
 .git-body.diffing > .git-diff { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; }
@@ -115,17 +115,16 @@
 /* Open in Files is a link drawn as the mini buttons beside it. */
 .git-diff-head a.mini {
   display: inline-flex; align-items: center; min-height: var(--ctl-h-sm); padding: 0 var(--ctl-px-sm);
-  font-size: 0.8125rem; line-height: 1.25; color: var(--text); background: var(--surface2);
+  font-size: var(--fs-m); line-height: 1.25; color: var(--text); background: var(--surface2);
   border: 1px solid var(--border); border-radius: var(--r); transition: border-color .15s, background-color .15s;
 }
 .git-diff-head a.mini:hover { border-color: var(--border-strong); background-color: color-mix(in srgb, var(--text) 6%, var(--surface2)); }
-.git-diff-pos { font-size: 0.75rem; white-space: nowrap; }
+.git-diff-pos { font-size: var(--fs-s); white-space: nowrap; }
 .git-diff-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0.5rem 1rem; }
 .gcmp-pick { display: flex; gap: 0.5rem; align-items: center; margin: 0.5rem 0 0.25rem; }
 .gcmp-pick button.mini { flex: none; min-height: var(--ctl-h); }
-.gcmp-sum { font-size: 0.75rem; margin: 0.625rem 0 0.5rem; overflow-wrap: anywhere; }
-.gcmp .review-rules { font-size: 0.75rem; margin: 0 0 0.75rem; }
-.gcmp .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem; }
+.gcmp-sum { font-size: var(--fs-s); margin: 0.625rem 0 0.5rem; overflow-wrap: anywhere; }
+.gcmp .review-rules { font-size: var(--fs-s); margin: 0 0 0.75rem; }
 /* The Refs filter: a popover hung under its button, flipped above it or leftwards where the
    screen ends. */
 .git-refs { anchor-name: --git-refs; }
@@ -135,10 +134,10 @@
   width: min(27.5rem, calc(100vw - 2rem)); color: var(--text); background: var(--surface);
   border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.35);
 }
-.gfilter-groups { gap: 0.375rem 0.875rem; margin-bottom: 0.5rem; font-size: 0.8125rem; }
+.gfilter-groups { gap: 0.375rem 0.875rem; margin-bottom: 0.5rem; font-size: var(--fs-m); }
 .gfilter-group, .gfilter-item { display: inline-flex; align-items: center; gap: 0.375rem; cursor: pointer; }
 .gfilter-list { max-height: 40vh; overflow-y: auto; margin-top: 0.5rem; }
-.gfilter-item { display: flex; padding: 0.1875rem 0; font-size: 0.8125rem; }
+.gfilter-item { display: flex; padding: 0.1875rem 0; font-size: var(--fs-m); }
 .gfilter-item.off { opacity: .5; cursor: not-allowed; }
 .gfilter-item.off input { cursor: inherit; }
 .gfilter-item .gref { margin-right: 0; }

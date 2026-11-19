@@ -217,7 +217,7 @@ function addEntry(table, refresh) {
   const dialog = openDialog('Add ' + table.label);
   if (!dialog) return;
   dialog.appendChild(el('div', 'sub muted', table.path + '.<name>. A blank field keeps an existing value or uses the default.'));
-  const labelled = (text, field) => { const l = el('label', 'sub muted cfg-label', text); field.name = text; l.appendChild(field); dialog.appendChild(l); return field; };
+  const labelled = (text, field) => { const l = el('label', 'muted cfg-label', text); field.name = text; l.appendChild(field); dialog.appendChild(l); return field; };
   const name = labelled('name', el('input', 'field'));
   const fields = {};
   for (const spec of table.fields) {
@@ -252,7 +252,7 @@ function addEntry(table, refresh) {
   }
   const repoRow = el('label', 'row cfg-check');
   const repoCb = el('input'); repoCb.type = 'checkbox';
-  repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
+  repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'muted', 'set for this repo only (not the global config)'));
   dialog.appendChild(repoRow);
   const { add, act } = addButtons(dialog);
   name.focus();
@@ -272,11 +272,11 @@ function addPreset(onAdded) {
   const dialog = openDialog('Add preset');
   if (!dialog) return;
   dialog.appendChild(el('div', 'sub muted', 'An empty [presets.<name>] table, selected as preset in the chosen layer; edit the rows to fill it.'));
-  const label = el('label', 'sub muted cfg-label', 'name');
+  const label = el('label', 'muted cfg-label', 'name');
   const name = el('input', 'field'); name.name = 'name'; label.appendChild(name); dialog.appendChild(label);
   const repoRow = el('label', 'row cfg-check');
   const repoCb = el('input'); repoCb.type = 'checkbox';
-  repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'create in this repo\'s config (not the global config)'));
+  repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'muted', 'create in this repo\'s config (not the global config)'));
   dialog.appendChild(repoRow);
   const { add, act } = addButtons(dialog);
   add.onclick = () => act(add, async () => {
@@ -296,7 +296,7 @@ async function addReviewer(refresh) {
   dialog.appendChild(el('div', 'sub muted', 'Focus is required. Set model to provider/model, or leave it blank. Blank optional fields inherit the route\'s settings.'));
   const fields = {};
   for (const name of ['focus', 'model', 'effort', 'temperature']) {
-    const label = el('label', 'sub muted cfg-label', name);
+    const label = el('label', 'muted cfg-label', name);
     // The model suggests from the catalog, as the model editor does.
     const combo = name === 'model' ? configCombobox('', 'models.reviewer.model', 'field') : null;
     const field = combo ? combo.field : el(choices[name] ? 'select' : 'input', 'field');
@@ -308,7 +308,7 @@ async function addReviewer(refresh) {
   }
   const repoRow = el('label', 'row cfg-check');
   const repo = el('input'); repo.type = 'checkbox'; repo.id = 'reviewer-repo';
-  repoRow.appendChild(repo); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
+  repoRow.appendChild(repo); repoRow.appendChild(el('span', 'muted', 'set for this repo only (not the global config)'));
   dialog.appendChild(repoRow);
   const { add, act } = addButtons(dialog);
   fields.focus.focus();
@@ -404,7 +404,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   if (role) {
     combo = configCombobox(data[section + '.model']?.input || '', section + '.model', 'field cfg-value');
     field = combo.field; field.id = 'cfg-model';
-    const modelLabel = el('label', 'sub muted', 'Model'); modelLabel.htmlFor = field.id;
+    const modelLabel = el('label', 'muted', 'Model'); modelLabel.htmlFor = field.id;
     dialog.appendChild(modelLabel); dialog.appendChild(combo.element);
   } else if (choices) {
     field = el('select', 'field cfg-value');
@@ -447,7 +447,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   // must write the repo config, or the repo overlay keeps masking the edit and it
   // looks like the save vanished.
   repoCb.checked = (s.source === 'repo');
-  repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'set for this repo only (not the global config)'));
+  repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'muted', 'set for this repo only (not the global config)'));
   dialog.appendChild(repoRow);
   const row = el('div', 'form-row cfg-actions');
   const save = el('button', 'primary', 'Save'), cancel = el('button', null, 'Cancel');
