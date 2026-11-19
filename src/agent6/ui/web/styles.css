@@ -37,6 +37,8 @@
 input[type=checkbox] { accent-color: var(--accent); }
 input[type=checkbox] { width: 16px; height: 16px; margin: 0; flex: none; }
 html, body { margin: 0; height: 100%; }
+/* An element focused or scrolled to stops 6px clear of the header, and of a phone's tab bar (below). */
+html { scroll-padding-top: calc(var(--hdr-h) + env(safe-area-inset-top) + 6px); }
 body {
   background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif;
   -webkit-text-size-adjust: 100%;
@@ -362,6 +364,7 @@ dialog .err:empty { display: none; }
 
 @media (max-width: 780px) {
   nav.tabs { display: flex; }
+  html { scroll-padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 6px); }
   /* The top bar is a compact fixed strip, the mirror of the bottom tab bar:
      sticky slides away with horizontal overflow, fixed never moves. It takes no
      flow space, so main pads down to clear it (--hdr-h: its 6px paddings, a
@@ -450,7 +453,6 @@ aside.rail { display: none; }
 @media (max-width: 780px) {
   /* A dock rides above the tab bar, and a page with one ends where the tab bar begins. */
   .composer.dock { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding: 8px 16px; }
-  .item { scroll-margin-bottom: calc(var(--dock-h, 0px) + var(--nav-h) + env(safe-area-inset-bottom) + 8px); }
   main:has(.composer.dock) { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); }
   /* Give the input the full row so a long placeholder ("describe a machine to
      create…") can't clip mid-word in the sliver left beside the button on a

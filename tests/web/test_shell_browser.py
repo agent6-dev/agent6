@@ -113,6 +113,35 @@ def test_the_crumb_names_each_page_as_its_nav_link_does(
     assert not errors
 
 
+@pytest.mark.parametrize(("width", "height"), [(1280, 900), (390, 844)])
+def test_a_focused_row_stops_clear_of_the_header_and_the_tab_bar(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, width: int, height: int
+) -> None:
+    """Shift+Tab left a Config row under the header, and on a phone Tab left one under the tabs."""
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": height})
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    keys = page.locator(".cfg .cfg-edit")
+    keys.nth(30).wait_for()
+    bars = """() => { const top = document.querySelector('header').getBoundingClientRect().bottom;
+      const tabs = document.querySelector('nav.tabs');
+      return [top, tabs.checkVisibility() ? tabs.getBoundingClientRect().top : innerHeight]; }"""
+    top, bottom = page.evaluate(bars)
+    row = "() => document.activeElement.closest('tr').getBoundingClientRect().toJSON()"
+    # Row 30 just under the header, then Shift+Tab; row 30 just over the bottom bar, then Tab.
+    for edge, key in ((top, "Shift+Tab"), (bottom, "Tab")):
+        keys.nth(30).focus()
+        box = page.evaluate(row)
+        page.evaluate(
+            "y => scrollBy(0, y)",
+            box["top"] - top - 2 if key == "Shift+Tab" else box["bottom"] - edge + 2,
+        )
+        page.keyboard.press(key)
+        box = page.evaluate(row)
+        assert top <= box["top"] and box["bottom"] <= bottom, (key, box, top, bottom)
+    assert not errors
+
+
 def test_a_disabled_button_keeps_its_look_under_the_pointer(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
