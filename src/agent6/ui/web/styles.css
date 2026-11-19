@@ -298,8 +298,6 @@ button.danger { color: var(--err); }
 button.danger:hover { border-color: var(--err); }
 button.quiet.danger { color: var(--muted); }
 button.quiet.danger:hover { color: var(--err); border-color: transparent; background-color: color-mix(in srgb, var(--err) 10%, transparent); }
-/* The hub's failed first load: why, the retry cadence and a Retry button, centred. */
-.hub-error { display: grid; justify-items: center; gap: 12px; }
 /* The sessions card's maintenance actions, in one row above the list; the first one's text
    starts at the content edge. */
 .toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px calc(-1px - var(--ctl-px-sm)); }

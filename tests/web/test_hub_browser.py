@@ -352,7 +352,10 @@ def test_a_suggestion_popup_opens_on_its_entry_at_the_entrys_width(
 def test_a_failed_first_load_offers_retry_and_recovers_on_its_own(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
-    """A failed first load showed one red line and stayed so after the server answered again."""
+    """A failed first load showed one red line and stayed so after the server answered again.
+
+    The card says how often the page retries on its own.
+    """
     from playwright.sync_api import Route, expect
 
     _run(tmp_path, "alpha-AAAAAA", "Alpha task", STOP)
@@ -364,7 +367,8 @@ def test_a_failed_first_load_offers_retry_and_recovers_on_its_own(
     page.route("**/api/hub", fail)
     page.goto(f"http://127.0.0.1:{port}/#/")
     expect(page.locator("main")).to_contain_text("hub listing failed: probe")
-    expect(page.get_by_role("button", name="Retry")).to_be_visible()
+    expect(page.locator(".problem")).to_contain_text("retrying every 4 s")
+    expect(page.get_by_role("button", name="Try again")).to_be_visible()
     page.unroute("**/api/hub", fail)
     expect(page.locator(".item")).to_contain_text("Alpha task", timeout=10000)
     errors[:] = [e for e in errors if "500" not in e]  # the failed loads the test answered

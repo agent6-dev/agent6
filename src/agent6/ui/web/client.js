@@ -961,13 +961,9 @@ async function renderHub(focus, gen) {
   try { data = await getJSON('/api/hub'); }
   catch (e) {
     if (gen !== undefined && gen !== routeGen) return; // superseded, or the sign-in form took over
-    // A failed first load says why, offers Retry, and paints the page once the server answers.
-    view.innerHTML = '';
-    const retry = el('button', null, 'Retry');
-    retry.onclick = route;
-    const failed = el('div', 'empty hub-error');
-    failed.append(el('div', 'err', 'error: ' + e.message), el('div', null, `retrying every ${HUB_POLL_MS / 1000} s`), retry);
-    view.appendChild(failed);
+    // A failed first load says why, offers Try again, and paints the page once the server answers.
+    showProblem('Could not load this page', e.message, true);
+    view.querySelector('.problem p').after(el('p', 'muted', `retrying every ${HUB_POLL_MS / 1000} s`));
     hubTimer = setInterval(() => getJSON('/api/hub').then(route, () => {}), HUB_POLL_MS);
     return;
   }
