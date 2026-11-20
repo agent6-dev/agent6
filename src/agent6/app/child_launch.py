@@ -51,6 +51,9 @@ class CloneReceipt(pydantic.BaseModel, frozen=True, extra="forbid"):
     def capture(cls, root: pathlib.Path) -> CloneReceipt:
         """Identify a plain clone without accepting links in place of it or its git dir.
 
+        Args:
+            root: The checkout granted to the child.
+
         Returns:
             The clone's state and directory identities.
 
@@ -128,6 +131,12 @@ class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
 
     def checked_clone(self, root: pathlib.Path) -> CloneReceipt:
         """Return the original grant, never a state dir selected by a replacement checkout.
+
+        Args:
+            root: The checkout the child would use.
+
+        Returns:
+            The receipt recorded at first launch.
 
         Raises:
             LaunchError: The launch is unbound or its checkout changed.
