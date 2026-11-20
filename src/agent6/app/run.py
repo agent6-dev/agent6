@@ -13,7 +13,7 @@ import contextlib
 import os
 import pathlib
 import shutil
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 
 from agent6 import budget as agent6_budget
 from agent6 import directive, errors, kinds, pack, paths
@@ -31,7 +31,7 @@ from agent6.app import reporter as app_reporter
 from agent6.app.review import directive as review_directive
 from agent6.app.session import prepare as session_prepare
 from agent6.app.session import setup as session_setup
-from agent6.config import Config
+from agent6.config import Config, layer_data
 from agent6.sessions import id, ipc, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -72,7 +72,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     explicit_leaves: frozenset[str] = frozenset(),
     worktree: bool = False,
     config_paths: tuple[pathlib.Path, ...] = (),
-    config_sources: Mapping[str, str] | None = None,
+    effective: layer_data.EffectiveConfig | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
     contract: kinds.ConversationContract | None = None,
     opening: directive.Segment | tuple[directive.Segment, ...] | None = None,
@@ -112,7 +112,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         worktree: Whether the run works in its own linked worktree, added at HEAD's
             commit under `[git.worktree].base_dir`; the checkout is then never touched.
         config_paths: The `--config` files, which an `/undo` fork is stamped under.
-        config_sources: The layer that supplied each config leaf.
+        effective: The config and its file origins before execution policy.
         reporter: Receives every refusal and note.
         contract: The bounded conversation a `reviewer` session drives; None for every
             other mode.
@@ -406,7 +406,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             base_branch=base_branch,
             run_branch=run_branch,
             cfg=cfg,
-            config_sources=config_sources,
+            config_sources=effective.sources if effective else None,
             mode=mode,
             gate=(
                 sessions_manifest.GateStamp(
@@ -575,6 +575,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 mode=mode,
                 role=role,
                 explicit_leaves=explicit_leaves,
+                effective=effective,
                 isolation=isolation,
                 tui_enabled=tui_enabled,
                 interactive=interactive,

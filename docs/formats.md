@@ -1732,6 +1732,7 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `unattended_questions` | `int` | Questions answered empty because nobody was attached. |
 | `setup_output` | `str \| None` | Retained setup output, or null when absent. |
 | `environment_evidence` | `dict[str, Any]` | Recorded targets, setup and lifecycle observations. |
+| `settings` | `list[dict[str, Any]]` | The non-default settings recorded at each execution start. |
 | `source_session_id` | `str \| None` | The source session used by run --from, or null. |
 | `parent_session_id` | `str \| None` | The fork parent, or null. |
 | `forked_from_turn` | `int \| None` | The fork's source turn, or null. |
@@ -2894,6 +2895,7 @@ Source: [`agent6.viewmodel.receipt.ReceiptView`](https://github.com/agent6-dev/a
 | `cache_usage` | `CacheUsage` | Session-wide worker cache use and post-compaction input. |
 | `child_verification` | `ChildVerification \| None` | The full pass a child recorded on the final tree, when used. |
 | `model_tokens` | `TokenBreakdown` | Session-wide fresh input and output, split by parent and children. |
+| `settings` | `tuple[ExecutionSettings, ...]` | The non-default settings observed at each execution start. |
 
 ### CacheUsage
 
@@ -3939,6 +3941,17 @@ Source: [`agent6.token_usage.TokenBreakdown`](https://github.com/agent6-dev/agen
 | `parent` | `TokenCounts` | Usage from the session's own provider calls. |
 | `children` | `TokenCounts` | Usage charged through the settlement of attempts and reviewers. |
 
+### ExecutionSettings
+
+**Support: public.** Record the non-default settings of one execution.
+
+Source: [`agent6.sessions.journal.ExecutionSettings`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/journal.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str` | The execution whose settings were observed. |
+| `settings` | `tuple[SettingObservation, ...]` | The observed settings. |
+
 ### FindingResolution
 
 **Support: public.** Record the operator's conclusion without inferring verification success.
@@ -4228,6 +4241,19 @@ Source: [`agent6.token_usage.TokenCounts`](https://github.com/agent6-dev/agent6/
 | --- | --- | --- |
 | `input_tokens` | `int \| None` | Fresh input tokens, or null when unreported. |
 | `output_tokens` | `int \| None` | Output tokens, or null when unreported. |
+
+### SettingObservation
+
+**Support: public.** Keep one non-default setting as evidence, never as config.
+
+Source: [`agent6.sessions.journal.SettingObservation`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/journal.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `key` | `str` | The dotted config key. |
+| `value` | `str \| float \| int \| bool \| None` | The observed value, or *** for text that could contain credentials. |
+| `source` | `str` | The winning layer, preset, flag or runtime policy. |
+| `file` | `str \| None` | The defining config file, if any. |
 
 ### ChildContext
 

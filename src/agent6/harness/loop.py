@@ -124,6 +124,7 @@ class Harness:
         finish_validator: A machine state's finish contract, returning the problems with a
             finish_session payload; None leaves finishes ungated.
         bridge: What the operator can do to the run, as the front-end injects it.
+        settings: The non-default settings written at each execution start.
         call: The worker call's knobs: retries, temperature, output caps.
         compactor: The in-process compaction strategy.
         compaction: The compaction tiers' thresholds, the tail kept, the summariser.
@@ -162,6 +163,7 @@ class Harness:
     dispatcher: dispatch.ToolDispatcher
     logger: Callable[[str], None] = dataclasses.field(default=print)
     events: event_log.EventSink | None = None
+    settings: tuple[journal.SettingObservation, ...] = ()
     curator: graph_curator.GraphCurator | None = None
     budget: agent6_budget.BudgetTracker | None = None
     state_dir: pathlib.Path | None = None
@@ -2186,7 +2188,9 @@ class Harness:
         if self.events is not None:
             # The id is read after the rotation above, so a second start names its own execution.
             event = event.model_copy(update={"execution_id": self.execution_id})
-            process.emit_session_start(self.events, self.events.path.parent, event)
+            process.emit_session_start(
+                self.events, self.events.path.parent, event, settings=self.settings
+            )
 
     def _emit_budget(self, turn: int) -> None:
         """Emit the per-turn usage heartbeat that tells a long model call from a stall.

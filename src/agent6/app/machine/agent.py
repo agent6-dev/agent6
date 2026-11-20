@@ -48,6 +48,7 @@ from agent6.tools import dispatch, operator_prompts
 from agent6.vcs import commit_message
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
+from agent6.viewmodel import execution_settings
 from agent6.viewmodel.machine import logs as machine_logs
 
 
@@ -536,6 +537,7 @@ def _drive_state(
     )
     cfg = role_providers.resolve_decompose(cfg, rm, log=reporter.err)
     wf = loop.Harness(
+        settings=execution_settings.observations(cfg, None),
         media_input=role_providers.input_capabilities(cfg, rm),
         # A run-mode state commits on its own chain, named by the instance dir.
         chain=run_chain.RunChain(

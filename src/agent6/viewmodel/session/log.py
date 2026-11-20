@@ -82,6 +82,7 @@ class LogScan:
         evidence_notes: Missing or unreadable execution evidence.
         targets: Immutable target observations, never inferred from current runtime state.
         current_target: The journal's current target binding, None when unproved.
+        settings: The non-default settings observed at each execution start.
         setups: Setup results with their recorded execution and target references.
         jobs: Job-settlement observations, separate from environment lifecycle.
         environments: Environment lifecycle observations, absent in historical journals.
@@ -139,6 +140,7 @@ class LogScan:
     evidence_notes: tuple[str, ...] = ()
     targets: tuple[evidence.ExecutionTargetEvidence, ...] = ()
     current_target: evidence.ExecutionTargetEvidence | None = None
+    settings: tuple[journal.ExecutionSettings, ...] = ()
     setups: tuple[evidence.SetupEvidence, ...] = ()
     jobs: tuple[evidence.JobsObservation, ...] = ()
     environments: tuple[evidence.EnvironmentObservation, ...] = ()
@@ -359,6 +361,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     child_verification: journal.ChildVerification | None = None
     pending_verifications: set[str] = set()
     evidence_notes: list[str] = []
+    settings: list[journal.ExecutionSettings] = []
     observations = evidence.ExecutionObservations()
     try:
         with logs.open(encoding="utf-8", errors="replace") as fh:
@@ -382,8 +385,14 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                 review_view = review.apply_event(review_view, ev)
                 etype = ev.get("type")
                 try:
+                    if etype == journal.ExecutionSettings.TYPE:
+                        settings.append(
+                            journal.ExecutionSettings(
+                                execution_id=ev["execution_id"], settings=ev["settings"]
+                            )
+                        )
                     observations.observe(ev)
-                except (ValueError, TypeError) as exc:
+                except (KeyError, ValueError, TypeError) as exc:
                     evidence_notes.append(f"journal line {line_number}: {exc}")
                 if etype in ("session.start", "session.resume"):
                     final_verify_id = None
@@ -500,6 +509,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         verifications=tuple(verifications),
         targets=observations.targets.recorded,
         current_target=observations.targets.current,
+        settings=tuple(settings),
         setups=tuple(observations.setups),
         jobs=tuple(observations.jobs),
         environments=tuple(observations.environments),

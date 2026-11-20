@@ -226,6 +226,8 @@ def emit_session_start(
     events: event_log.EventSink,
     session_dir: pathlib.Path,
     event: journal.SessionStart | journal.SessionResume,
+    *,
+    settings: tuple[journal.SettingObservation, ...] = (),
 ) -> None:
     """Emit a start-family record with the worker pid already on disk.
 
@@ -235,9 +237,11 @@ def emit_session_start(
         events: The event sink.
         session_dir: The session directory.
         event: The start record, its execution id set.
+        settings: The settings this execution runs under.
     """
     write_worker_pid(session_dir, os.getpid())
     events.emit(event)
+    events.emit(journal.ExecutionSettings(execution_id=event.execution_id, settings=settings))
 
 
 def clear_worker_pid(session_dir: pathlib.Path) -> None:

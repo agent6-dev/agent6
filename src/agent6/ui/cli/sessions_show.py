@@ -287,6 +287,7 @@ class StatusJSON(TypedDict):
     unattended_questions: int
     setup_output: str | None
     environment_evidence: dict[str, Any]
+    settings: list[dict[str, Any]]
     source_session_id: str | None
     parent_session_id: str | None
     forked_from_turn: int | None
@@ -340,6 +341,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             carries it.
         unattended_questions: Questions answered empty because nobody was attached.
         setup_output: Retained setup output, or null when absent.
+        settings: The non-default settings recorded at each execution start.
         environment_evidence: Recorded targets, setup and lifecycle observations.
         source_session_id: The source session used by run --from, or null.
         parent_session_id: The fork parent, or null.
@@ -439,6 +441,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             "unattended_questions": scan.unattended_questions,
             "setup_output": scan.setup_output or None,
             "environment_evidence": receipt.environment_dict(scan),
+            "settings": [r.model_dump(mode="json") for r in scan.settings],
             "source_session_id": manifest.source_session_id,
             "parent_session_id": manifest.parent_session_id,
             "forked_from_turn": manifest.forked_from_turn,
@@ -490,7 +493,9 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         + "".join(f"\nmodels:     {line}" for line in policy.model_lines(manifest))
     )
     print(
-        terminal.scrub_terminal_controls(receipt.environment_summary(scan))
+        terminal.scrub_terminal_controls(
+            "\n".join([receipt.environment_summary(scan), *receipt.settings_lines(scan.settings)])
+        )
         + f"\nstatus:     {state}{pid_note}"
     )
     print(f"turn:       {scan.turn if scan.turn is not None else '-'}")

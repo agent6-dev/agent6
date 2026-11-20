@@ -490,6 +490,7 @@ path = "agent6.viewmodel"
 depends_on = [
   "agent6.budget",
   "agent6.child_records",
+  "agent6.config",
   "agent6.config.io",
   "agent6.config.layer",
   "agent6.config.layer_data",

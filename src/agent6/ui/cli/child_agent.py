@@ -161,7 +161,7 @@ def main() -> int:
         pins=launch.pins,
         explicit_leaves=effective.explicit_leaves,
         config_paths=(launch.config,),
-        config_sources=effective.sources,
+        effective=effective,
     )
 
 

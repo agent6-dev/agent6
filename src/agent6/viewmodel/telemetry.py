@@ -10,6 +10,7 @@ open work live in `telemetry_records`, the metrics in `telemetry_metrics`.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from typing import Any, ClassVar, Literal
 
@@ -632,12 +633,26 @@ class TelemetryFold:
         step.spans.append(execution.end(root, now, status))
         execution.ended = True
 
+    def _settings(self, step: telemetry_records.Step) -> None:
+        rows = step.event.get("settings")
+        if isinstance(rows, list):
+            step.logs.append(
+                step.execution.log(
+                    step.now,
+                    "INFO",
+                    "Execution settings",
+                    {"agent6.settings": json.dumps(rows)},
+                    step.execution.span.span_id,
+                )
+            )
+
     def _stranded(self, step: telemetry_records.Step) -> None:
         execution = step.execution
         log = execution.log(step.now, "WARN", "edits left uncommitted", {}, execution.span.span_id)
         step.logs.append(log)
 
     _HANDLERS: ClassVar[dict[str, Callable[[TelemetryFold, telemetry_records.Step], None]]] = {
+        "execution.settings": _settings,
         "model.attempt": _model_attempt,
         "model.call": _model_call,
         "model.result": _model_result,

@@ -387,7 +387,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 preset=preset,
                 model=route,
                 explicit_leaves=effective.explicit_leaves,
-                config_sources=effective.sources,
+                effective=effective,
                 # The original stamp survives only for a flag-selected preset this resume
                 # does not override; a config-selected one re-derives.
                 preset_stamp=(
@@ -833,6 +833,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 mode=mode,
                 role=role,
                 explicit_leaves=explicit_leaves,
+                effective=effective,
                 isolation=isolation,
                 tui_enabled=tui_enabled,
                 interactive=interactive,

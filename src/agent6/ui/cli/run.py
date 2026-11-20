@@ -381,6 +381,6 @@ def _cmd_run(
         explicit_leaves=explicit_leaves,
         worktree=worktree,
         config_paths=config_paths,
-        config_sources=effective.sources,
+        effective=effective,
         opening=opening,
     )

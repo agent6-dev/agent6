@@ -39,7 +39,7 @@ from agent6.app.review import actions as review_actions
 from agent6.app.review import directive as review_directive
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
-from agent6.config import Config, RoleName
+from agent6.config import Config, RoleName, layer_data
 from agent6.harness import loop, loop_snapshot, operator_bridge, provider_call, run_chain
 from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as review_gate
@@ -52,7 +52,7 @@ from agent6.tools import command_tools, dispatch, operator_prompts, schema, targ
 from agent6.vcs import commit_message
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import policy, transcript_text
+from agent6.viewmodel import execution_settings, policy, transcript_text
 from agent6.viewmodel.session import log as session_log
 
 
@@ -69,6 +69,7 @@ class ExecutionInputs:
         tui_enabled: Whether the TUI owns the terminal.
         interactive: Whether an operator is at the terminal.
         task: The task a fresh execution runs; None resumes the snapshot.
+        effective: The config origins before execution policy.
         operator_task: The words before composition; None means `task` is uncomposed.
         gate: The gate step: a fresh execution infers one, a resumed one reuses the snapshot's;
             both drop an unrunnable gate and pin the result. Runs once the budget exists.
@@ -119,6 +120,7 @@ class ExecutionInputs:
     prompts: operator_prompts.OperatorPrompts
     ask_transcript_task: str | None
     operator_task: str | None = None
+    effective: layer_data.EffectiveConfig | None = None
     budget_overrides: session_setup.BudgetOverrides | None = None
     sandbox_overrides: session_setup.SandboxOverrides | None = None
     standing_goal: str = ""
@@ -555,6 +557,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             child_watch.ChildWatch(inputs.prompts, layout.session_dir, budget, events.emit),
         )
         wf = loop.Harness(
+            settings=execution_settings.observations(cfg, inputs.effective),
             media_input=role_providers.input_capabilities(cfg, session.rm_role),
             chain=run_chain.RunChain(
                 cwd,

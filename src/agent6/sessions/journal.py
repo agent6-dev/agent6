@@ -1441,6 +1441,25 @@ class SessionStart(Event):
     execution_id: str = pydantic.Field(description="Execution identifier.")
 
 
+class SettingObservation(pydantic.BaseModel, frozen=True, extra="forbid"):
+    """Keep one non-default setting as evidence, never as config."""
+
+    key: str = pydantic.Field(description="The dotted config key.")
+    value: str | float | int | bool | None = pydantic.Field(
+        description="The observed value, or *** for text that could contain credentials."
+    )
+    source: str = pydantic.Field(description="The winning layer, preset, flag or runtime policy.")
+    file: str | None = pydantic.Field(default=None, description="The defining config file, if any.")
+
+
+class ExecutionSettings(Event):
+    """Record the non-default settings of one execution."""
+
+    TYPE: ClassVar[str] = "execution.settings"
+    execution_id: str = pydantic.Field(description="The execution whose settings were observed.")
+    settings: tuple[SettingObservation, ...] = pydantic.Field(description="The observed settings.")
+
+
 class ChildVerification(pydantic.BaseModel, frozen=True, extra="forbid"):
     """Identify the child's full gate pass covering the parent's final tree."""
 

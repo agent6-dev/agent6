@@ -290,9 +290,21 @@ def load_session_config(
         role = kinds.session_kind(mode).role
         route = cfg.model_route(model) if isinstance(model, str) else model
         cfg = cfg.with_model_route(role, route)
-    cfg = session_config(cfg, mode, sandbox_overrides)
+    flagged = layer_data.config_leaves(cfg)
+    clamped = session_config(cfg, mode)
+    policy = layer_data.config_leaves(clamped)
+    cfg = sandbox_overrides.apply(clamped) if sandbox_overrides else clamped
+    sources: dict[str, str] = {}
+    previous = layer_data.config_leaves(effective.config)
+    for name, updated in (
+        ("flag", flagged),
+        ("mode", policy),
+        ("flag", layer_data.config_leaves(cfg)),
+    ):
+        sources.update((key, name) for key, value in updated.items() if previous.get(key) != value)
+        previous = updated
     cfg.require_runnable(kinds.session_kind(mode).role)
-    return dataclasses.replace(effective, config=cfg)
+    return dataclasses.replace(effective, config=cfg, applied_sources=sources)
 
 
 def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str | None:

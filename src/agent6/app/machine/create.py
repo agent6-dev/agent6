@@ -31,6 +31,7 @@ from agent6.machine import (
 from agent6.sessions import event_log, id, journal, layout, lock, process
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
+from agent6.viewmodel import execution_settings
 
 _CREATE_TIMEOUT_S = 900.0
 
@@ -241,6 +242,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         events,
         scratch,
         journal.SessionStart(execution_id=execution_id, user_task=task, mode="machine"),
+        settings=execution_settings.observations(cfg, eff),
     )
     reporter.err(
         f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})"

@@ -59,12 +59,14 @@ class EffectiveConfig:
         sources: The layer name that set each dotted leaf.
         layers: The layers that contributed, in precedence order.
         presets: The preset names this load knew, built-ins and `[presets.*]` tables, sorted.
+        applied_sources: Sources of runtime overrides for reporting, not permission checks.
     """
 
     config: config_model.Config
     sources: dict[str, str]
     layers: tuple[Layer, ...]
     presets: tuple[str, ...] = ()
+    applied_sources: dict[str, str] = dataclasses.field(default_factory=dict)
 
     def origin(self, leaf: str) -> Layer | None:
         """Return the layer that supplied the effective leaf, including a preset definition.

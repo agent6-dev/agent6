@@ -140,6 +140,7 @@ class ReceiptView:
         evidence_notes: Diagnostics for absent or unreadable evidence.
         merged: The MergeStamp, or null without a recorded landing.
         targets: The recorded execution targets, without runtime queries.
+        settings: The non-default settings observed at each execution start.
         setups: Every recorded setup result.
         jobs: Job-settlement observations.
         environments: Environment lifecycle observations.
@@ -172,6 +173,8 @@ class ReceiptView:
     model_tokens: token_usage.TokenBreakdown = dataclasses.field(
         default_factory=token_usage.TokenBreakdown
     )
+
+    settings: tuple[journal.ExecutionSettings, ...] = ()
 
 
 def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
@@ -221,6 +224,7 @@ def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
         fold.cache_usage,
         fold.child_verification,
         fold.budget.model_tokens,
+        fold.settings,
     )
 
 
@@ -313,6 +317,26 @@ def revert_request(view: ReceiptView) -> str:
         )
     )
     return "\n".join(lines)
+
+
+def settings_lines(records: tuple[journal.ExecutionSettings, ...]) -> list[str]:
+    """Render the settings observed at each execution start.
+
+    Args:
+        records: The settings records in journal order.
+
+    Returns:
+        One section per execution with the source beside each value.
+    """
+    lines: list[str] = []
+    for record in records:
+        lines.append(f"Settings for {record.execution_id}:")
+        if not record.settings:
+            lines.append("  No non-default settings.")
+        for row in record.settings:
+            where = f"{row.source}, {row.file}" if row.file else row.source
+            lines.append(f"  {row.key} = {row.value} ({where})")
+    return lines
 
 
 def environment_dict(view: ReceiptView | session_log.LogScan) -> dict[str, Any]:
@@ -455,6 +479,7 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
         f"Execution: {view.execution_id or 'unknown'}",
         f"Source tip: {view.source_tip or 'unknown'}",
         environment_summary(view),
+        *settings_lines(view.settings),
         "Model tokens (all executions):",
         *view.model_tokens.lines(),
         *view.cache_usage.lines(),
