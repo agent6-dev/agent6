@@ -681,7 +681,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     msg.placeholder = staged.length ? 'commit message for ' + fileCount(staged.length) + ' staged…' : 'stage files to commit';
     msg.disabled = !staged.length;
     // Commit staged waits for staged files and a message.
-    const commitBtn = el('button', 'primary mini', 'Commit staged');
+    const commitBtn = el('button', 'primary', 'Commit staged');
     const gateCommit = () => { commitBtn.disabled = !staged.length || !msg.value.trim(); };
     msg.oninput = gateCommit; gateCommit();
     commitBtn.onclick = () => gitWrite('commit', { message: msg.value });

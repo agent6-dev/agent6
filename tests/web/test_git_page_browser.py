@@ -731,6 +731,20 @@ def test_the_graph_handle_stops_where_the_stylesheet_stops_the_graph(
     assert errors == [], errors
 
 
+def test_commit_staged_stands_as_tall_as_the_message_beside_it(
+    open_page: OpenPage, dirty_git_port: int
+) -> None:
+    """Commit staged was a 26px mini button beside the 32px message field."""
+    page, errors = open_page(dirty_git_port)
+    page.set_viewport_size({"width": 1440, "height": 900})  # a side panel wide enough for both
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/worktree")
+    message = page.locator(".git-commit textarea").bounding_box()
+    commit = page.get_by_role("button", name="Commit staged", exact=True).bounding_box()
+    assert message and commit, (message, commit)
+    assert (commit["y"], commit["height"]) == (message["y"], message["height"]), (message, commit)
+    assert errors == [], errors
+
+
 def test_the_git_toolbar_controls_share_one_height_and_fit_their_values(
     open_page: OpenPage, git_port: int
 ) -> None:
