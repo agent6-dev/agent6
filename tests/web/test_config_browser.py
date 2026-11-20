@@ -16,7 +16,7 @@ from agent6.ui.web import server as web_server
 from tests.web import signin, test_web_browser
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Page, Route
+    from playwright.sync_api import Browser, Page, Route
 
 pytestmark = pytest.mark.browser
 browser = test_web_browser.browser
@@ -46,6 +46,24 @@ def _config(page: Page, port: int, width: int = 1280) -> None:
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(f"http://127.0.0.1:{port}/#/config")
     page.locator(READY).wait_for()
+
+
+@pytest.fixture
+def touch_page(browser: Browser, port: int) -> Iterator[tuple[Page, list[str]]]:
+    """Open the Config page signed in on a phone with a touch screen, collecting page errors."""
+    context = browser.new_context(
+        viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True
+    )
+    context.add_init_script(f"localStorage.setItem('a6-token', {json.dumps(signin.token(port))})")
+    try:
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        page.goto(f"http://127.0.0.1:{port}/#/config")
+        page.locator(READY).wait_for()
+        yield page, errors
+    finally:
+        context.close()
 
 
 def _global_config(text: str) -> pathlib.Path:
@@ -851,7 +869,8 @@ def test_a_drag_across_a_config_value_selects_it_without_opening_the_editor(
 ) -> None:
     """A row opened its editor on any click, so a drag never left the value selected to copy.
 
-    A plain click, and Enter on the row's key, still open the editor.
+    A click on the key while the value stays selected, a plain click, and Enter on the row's key
+    still open the editor.
     """
     _global_config(
         '[providers.openrouter]\nbackend = "openai"\nbase_url = "https://openrouter.ai/api/v1"\n'
@@ -871,8 +890,12 @@ def test_a_drag_across_a_config_value_selects_it_without_opening_the_editor(
     page.wait_for_timeout(300)
     assert page.locator("dialog[open]").count() == 0
     assert "openrouter.ai/api/v1" in page.evaluate("String(getSelection())")
-    row.click()
     dialog = page.get_by_role("dialog")
+    row.get_by_role("button").click()  # a click on a button keeps the selection
+    assert dialog.locator("h2").inner_text() == "providers.openrouter.base_url"
+    page.keyboard.press("Escape")
+    dialog.wait_for(state="detached")
+    row.click()
     assert dialog.locator("h2").inner_text() == "providers.openrouter.base_url"
     page.keyboard.press("Escape")
     dialog.wait_for(state="detached")
@@ -934,6 +957,72 @@ def test_a_double_click_on_a_config_row_leaves_the_editors_checkbox_under_it_alo
         assert page.evaluate("document.activeElement.matches('dialog .field')")
         page.keyboard.press("Escape")
         dialog.wait_for(state="detached")
+    assert not errors
+
+
+def test_a_tap_on_a_config_value_just_under_its_key_opens_the_editor(
+    touch_page: tuple[Page, list[str]],
+) -> None:
+    """A tap on a phone's config value, just under its key, opened nothing.
+
+    Touch adjustment moved the click a few pixels onto the key, and the row read that as a drag.
+    """
+    page, errors = touch_page
+    row = page.locator('[data-key="budget.max_usd"]')
+    row.evaluate("r => r.scrollIntoView({block: 'center'})")
+    key, value = row.get_by_role("button").bounding_box(), row.locator("td.val").bounding_box()
+    assert key and value
+    page.touchscreen.tap(value["x"] + 30, key["y"] + key["height"] + 4)
+    assert page.get_by_role("dialog").locator("h2").inner_text() == "budget.max_usd"
+    assert not errors
+
+
+def test_a_tap_right_after_the_tap_that_opened_a_config_editor_presses_nothing(
+    touch_page: tuple[Page, list[str]],
+) -> None:
+    """A double-tap's second tap on a config editor's Save saved, and on its checkbox toggled it.
+
+    A tap's click count can stay 1, so the double-click guard let that tap through. A tap once
+    the editor has been open half a second still acts.
+    """
+    page, errors = touch_page
+    posts: list[str] = []
+
+    def refuse(route: Route) -> None:
+        if route.request.method != "POST":
+            route.fallback()
+            return
+        posts.append(route.request.post_data or "")
+        route.fulfill(status=400, json={"error": "refused by the test"})
+
+    page.route("**/api/config", refuse)
+    row = page.locator('[data-key="budget.max_usd"]')
+    row.evaluate("r => r.scrollIntoView({block: 'center'})")
+    key = row.get_by_role("button").bounding_box()
+    assert key
+    dialog = page.get_by_role("dialog")
+    checkbox = dialog.get_by_role("checkbox")
+    for target in (dialog.get_by_role("button", name="Save"), checkbox):
+        row.get_by_role("button").press("Enter")  # opened from the keyboard to see where it sits
+        box = target.bounding_box()
+        assert box
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="detached")
+        page.touchscreen.tap(key["x"] + 20, key["y"] + key["height"] / 2)
+        page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.wait_for_timeout(300)
+        assert posts == []
+        assert not checkbox.is_checked()
+        assert page.evaluate("document.activeElement.matches('dialog .field')")
+        page.keyboard.press("Escape")
+        dialog.wait_for(state="detached")
+    page.touchscreen.tap(key["x"] + 20, key["y"] + key["height"] / 2)
+    dialog.wait_for()  # the guard counts its 500 ms from the opening, not from the tap
+    page.wait_for_timeout(600)
+    box = checkbox.bounding_box()
+    assert box
+    page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    assert checkbox.is_checked()
     assert not errors
 
 

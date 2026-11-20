@@ -242,11 +242,16 @@ function openDialog(title, cls) {
   heading.id = 'dialog-title-' + ++dialogCount;
   dialog.setAttribute('aria-labelledby', heading.id);
   dialog.setAttribute('closedby', 'any');
-  // The double-click that opened the dialog: its second press neither selects, presses nor closes it.
+  // The second press of the double-click or double-tap that opened the dialog does nothing; a tap's click count can stay 1, so a tap in its first 500 ms is that press.
   let own = false, stray = false;
-  for (const type of ['pointerdown', 'keydown']) dialog.addEventListener(type, () => { stray = false; }, true);
+  const opened = performance.now();
+  dialog.addEventListener('pointerdown', e => {
+    stray = !own && e.pointerType === 'touch' && e.timeStamp - opened < 500;
+  }, true);
+  dialog.addEventListener('keydown', () => { stray = false; }, true);
   dialog.addEventListener('mousedown', e => {
-    if (e.detail < 2) own = true; else if (!own) { stray = true; e.preventDefault(); }
+    if (e.detail > 1 && !own) stray = true;
+    if (stray) e.preventDefault(); else own = true;
   }, true);
   dialog.addEventListener('click', e => { if (stray) { e.stopPropagation(); e.preventDefault(); } }, true);
   dialog.addEventListener('cancel', e => { if (stray) e.preventDefault(); });

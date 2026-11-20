@@ -93,9 +93,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
       box.appendChild(tbl); card.appendChild(box); sections.set(section, box);
     }
     const tr = el('tr', s.modified ? 'mod' : '');
-    // The key is the row's edit button, so the row keeps its cells for a screen reader. A click
-    // anywhere on the row presses it, unless the pointer moved between press and release: that
-    // drag selects text to copy.
+    // The key is the row's edit button, so the row keeps its cells for a screen reader; a click anywhere on the row presses it, unless its press selected text to copy.
     const edit = breakable(el('button', 'cfg-edit'), k, '.');
     edit.type = 'button'; edit.setAttribute('aria-label', 'edit ' + k); edit.setAttribute('aria-haspopup', 'dialog');
     tr.appendChild(el('td', 'key')).appendChild(edit);
@@ -108,11 +106,13 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     tr.title = s.description ? (s.description_points || [s.description]).join('\n') : 'click to edit';
     if (s.description) edit.setAttribute('aria-description', tr.title);
     tr.setAttribute('data-key', k);
-    let press = null;
-    tr.onpointerdown = e => { press = [e.clientX, e.clientY]; };
+    // Touch adjustment moves a tap's click a few pixels onto the key, so only a new selection marks a drag.
+    let found = null;
+    tr.onpointerdown = () => { found = String(getSelection()); };
     tr.onclick = e => {
-      const dragged = press && e.detail && Math.hypot(e.clientX - press[0], e.clientY - press[1]) > 4;
-      press = null;
+      const selected = found !== null && e.detail && String(getSelection());
+      const dragged = selected && selected !== found;
+      found = null;
       if (dragged) return;
       edit.focus({preventScroll: true});
       editConfig(k, s, registry.tables, refresh, data);
