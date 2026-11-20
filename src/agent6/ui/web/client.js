@@ -1781,8 +1781,8 @@ function openPalette(initial = '') {
 // typing, not a send; keyCode 229 covers engines that report the composition only that way.
 function composing(e) { return e.isComposing || e.keyCode === 229; }
 function inField(e) { const t = e.target; return !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)); }
-// A touch screen's keyboard has no Shift+Enter, so there Enter types a new line and only a composer's buttons send.
-function enterSends(e) { return e.key === 'Enter' && !e.shiftKey && !composing(e) && !matchMedia('(pointer: coarse)').matches; }
+// A touch screen's keyboard has no Shift+Enter, so there Enter types a new line; Ctrl+Enter, typed only on a hardware keyboard, sends on every screen.
+function enterSends(e) { return e.key === 'Enter' && !e.shiftKey && !composing(e) && (e.ctrlKey || !matchMedia('(pointer: coarse)').matches); }
 // A composer hint's words on Enter for a keyboard and for a touch screen; the stylesheet shows the pointer's.
 function enterHint(keys, touch) { return [el('span', 'on-keys', keys), el('span', 'on-touch', touch)]; }
 const KEYS = [

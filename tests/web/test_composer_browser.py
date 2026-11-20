@@ -230,7 +230,8 @@ def test_enter_sends_from_a_keyboard_and_types_a_new_line_on_a_touch_screen(
 ) -> None:
     """A touch screen's Enter sent the composer's text, and its keyboard has no Shift+Enter.
 
-    Each composer's hint names what Enter does there.
+    Each composer's hint names what Enter does there. On a touch screen Ctrl+Enter sent nothing,
+    though a tablet's hardware keyboard types it.
     """
     from playwright.sync_api import expect
 
@@ -262,6 +263,9 @@ def test_enter_sends_from_a_keyboard_and_types_a_new_line_on_a_touch_screen(
         expect(hint).not_to_contain_text("Shift+Enter", use_inner_text=True)
         page.wait_for_timeout(300)
         assert sent == []
+        with page.expect_request(f"**{endpoint}"):
+            entry.press("Control+Enter")
+        assert sent == [endpoint]
     else:
         with page.expect_request(f"**{endpoint}"):
             entry.press("Enter")
