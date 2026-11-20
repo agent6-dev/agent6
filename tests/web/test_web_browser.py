@@ -347,14 +347,18 @@ def test_verification_waits_runs_and_finishes_in_one_transcript_item(
 
 
 @pytest.mark.parametrize("expanded", [False, True])
-def test_every_tool_expands_to_whole_arguments(
+def test_a_long_command_expands_to_whole_arguments(
     port: int,
     tmp_path: pathlib.Path,
     open_page: Callable[[int], tuple[Page, list[str]]],
     *,
     expanded: bool,
 ) -> None:
-    """Long commands and no-argument calls expand and collapse at either global detail level."""
+    """A long command expands and collapses at either detail level; a bare call has no control.
+
+    A call with no arguments and a short result looked expandable too, and opened onto
+    `arguments: (none)`.
+    """
     from playwright.sync_api import expect
 
     session = paths.state_dir(tmp_path) / "sessions" / "runs" / "whole-tool-AAA111"
@@ -386,11 +390,14 @@ def test_every_tool_expands_to_whole_arguments(
     command.click()
     assert "LAST SCRIPT BYTE" not in command.inner_text()
     verify = page.locator(".ci").filter(has=page.locator(".s-verify")).first
-    expect(verify).to_have_class(re.compile(r"\bexp\b"))
-    if expanded:
-        verify.click()
+    expect(verify).not_to_have_class(re.compile(r"\bexp\b"))
+    expect(verify.get_by_role("button")).to_have_count(0)
+    assert verify.get_attribute("title") is None
+    assert verify.evaluate("e => getComputedStyle(e).cursor") == "auto"
+    shown = verify.inner_text()
     verify.click()
-    expect(verify).to_contain_text("arguments: (none)")
+    assert verify.inner_text() == shown
+    assert "arguments" not in shown
     assert not errors
 
 

@@ -369,7 +369,7 @@ def test_a_conversation_item_opens_and_closes_from_the_keyboard(
     page, errors = open_page(port)
     page.goto(f"http://127.0.0.1:{port}/#/session/keys-AAA111")
     heads = page.locator(".card-conv .ci > [role=button]")
-    expect(heads).to_have_count(4)  # the task and three calls
+    expect(heads).to_have_count(3)  # the three calls; the one-line task has nothing more to show
     page.get_by_role("button", name="detail: collapsed").focus()
     page.keyboard.press("Tab")
     expect(heads.last).to_be_focused()  # the newest item holds the stop
@@ -377,7 +377,7 @@ def test_a_conversation_item_opens_and_closes_from_the_keyboard(
     assert page.evaluate("() => !document.activeElement.closest('.card-conv')")
     page.keyboard.press("Shift+Tab")
     expect(heads.last).to_be_focused()
-    for key, at in (("ArrowUp", 2), ("Home", 0), ("ArrowDown", 1), ("End", 3)):
+    for key, at in (("ArrowUp", 1), ("Home", 0), ("ArrowDown", 1), ("End", 2)):
         page.keyboard.press(key)
         expect(heads.nth(at)).to_be_focused()
     item = page.locator(".card-conv .ci.exp").last

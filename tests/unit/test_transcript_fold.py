@@ -345,6 +345,34 @@ def test_salient_arg_renders_ask_user_questions_as_text() -> None:
     assert transcript_text.salient_arg(args) == "Which theme? (+1)"
 
 
+def test_a_call_lists_its_arguments_only_when_the_head_leaves_some_out() -> None:
+    """An expanded call repeats no argument its head already shows whole.
+
+    Every call listed its arguments: `arguments: (none)` under a call with none, and the
+    head's own path or command again under a call with only that.
+    """
+    whole: list[dict[str, object]] = [
+        {},
+        {"path": "a.py"},
+        {"argv": ["make", "test"]},
+        {"n": 3},
+    ]
+    cut: list[dict[str, object]] = [
+        {"path": "a.py", "start_line": 40},
+        {"argv": ["sh", "-c", "echo " + "word " * 20]},
+        {"argv": ["python", "-c", "import os\nprint(os.sep)"]},
+        {"questions": [{"question": "Which theme?", "options": ["dark", "light"]}]},
+        {"edits": [{"old_string": "a", "new_string": "b"}]},
+    ]
+    for args in whole + cut:
+        events = [
+            {"type": "tool.call", "name": "t", "args_preview": args},
+            {"type": "tool.result", "name": "t", "ok": True, "summary": "ok"},
+        ]
+        (item,) = fold_transcript(events)
+        assert (item.args_full == "") is (args in whole), args
+
+
 def test_interleaved_tool_calls_pair_by_name() -> None:
     # A concurrent repo-scope review panel can interleave tool.call/tool.result
     # across tools; each result must pair with its own call by name, not with the

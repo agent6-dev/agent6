@@ -56,7 +56,7 @@ def _tool_lines(item: transcript_items.TranscriptItem, *, expanded: bool) -> lis
 
     Args:
         item: The tool item.
-        expanded: Show every argument and the whole detail and tail.
+        expanded: Show the whole detail and tail, and the arguments unless the head shows all.
 
     Returns:
         The lines; an in-flight call is marked running.
@@ -66,8 +66,8 @@ def _tool_lines(item: transcript_items.TranscriptItem, *, expanded: bool) -> lis
     if item.arg:
         head.append((f"  {item.arg}", "arg"))
     lines: list[Line] = [head]
-    if expanded:
-        first, *rest = (item.args_full or "(none)").split("\n")
+    if expanded and item.args_full:
+        first, *rest = item.args_full.split("\n")
         if rest:
             lines.append([("  arguments:", "arg")])
             lines.extend([(f"    {ln}", "arg")] for ln in (first, *rest))

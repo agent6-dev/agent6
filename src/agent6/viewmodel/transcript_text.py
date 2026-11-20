@@ -72,11 +72,12 @@ def call_preview(name: str, args: Any) -> str:
     return "\n".join(lines)
 
 
-def salient_arg(args: Any) -> str:
+def salient_arg(args: Any, *, limit: int | None = 60) -> str:
     """Return the one argument worth showing beside a tool name.
 
     Args:
         args: The raw args; a non-dict is tolerated.
+        limit: The length of the one line it is clipped to; None leaves it uncut.
 
     Returns:
         An argv as a shell line, a question's text, the first primary arg found, else
@@ -84,22 +85,44 @@ def salient_arg(args: Any) -> str:
     """
     if not isinstance(args, dict) or not args:
         return ""
+
+    def cut(text: str) -> str:
+        return text if limit is None else clip(text, limit)
+
     argv = args.get("argv")
     if isinstance(argv, (list, tuple)) and argv:
-        return clip(shlex.join(str(a) for a in argv))
+        return cut(shlex.join(str(a) for a in argv))
     questions = args.get("questions")
     if isinstance(questions, (list, tuple)) and questions:
         first = questions[0]
         q = first.get("question", "") if isinstance(first, dict) else str(first)
         more = f" (+{len(questions) - 1})" if len(questions) > 1 else ""
-        return clip(str(q)) + more
+        return cut(str(q)) + more
     for key in PRIMARY_ARGS:
         value = args.get(key)
         if isinstance(value, (str, int)):
             text = format.tool_path(str(value)) if key in format.PATH_KEYS else str(value)
-            return clip(text)
+            return cut(text)
     key, value = next(iter(args.items()))
-    return clip(f"{key}={value}")
+    return cut(f"{key}={value}")
+
+
+def head_shows_every_arg(args: Any) -> bool:
+    """Return whether a tool's head, its `salient_arg`, shows every argument whole.
+
+    Args:
+        args: The raw args; a non-dict is tolerated.
+
+    Returns:
+        True for no args, or for one plain value or argv the head leaves uncut; a list or a
+        mapping, such as questions with their options, never reads whole on one line.
+    """
+    if not isinstance(args, dict) or not args:
+        return True
+    (key, value), *more = args.items()
+    if more or (key != "argv" and isinstance(value, (dict, list, tuple))):
+        return False
+    return salient_arg(args) == salient_arg(args, limit=None)
 
 
 def parallel_group_label(event: dict[str, Any]) -> str:

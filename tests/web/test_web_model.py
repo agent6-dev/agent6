@@ -146,13 +146,20 @@ def test_run_summary_survives_torn_utf8_tail(tmp_path: pathlib.Path) -> None:
     assert s["task"] == "torn tail"
 
 
-def test_every_tool_item_has_complete_expanded_arguments() -> None:
-    """Short results, pending calls and no-argument tools all have an expanded form."""
+def test_an_item_carries_full_only_when_it_shows_more() -> None:
+    """A task, steer or call with nothing more to show carries no `full`; a longer one does.
+
+    Every task, steer and call carried one, so each looked expandable: a click changed nothing,
+    or added `arguments: (none)` or the head's own path.
+    """
     words = "script " * 900 + "LAST SCRIPT BYTE"
-    for name, args in (
-        ("run_command", {"argv": ["python", "-c", words], "background": True}),
-        ("apply_edit", {"path": "a.py", "edits": [{"new_string": words}]}),
-        ("run_verify_command", {}),
+    for name, args, more in (
+        ("read_file", {"path": "a.py"}, False),
+        ("run_command", {"argv": ["make", "test"]}, False),
+        ("run_verify_command", {}, False),
+        ("read_file", {"path": "a.py", "start_line": 40}, True),
+        ("run_command", {"argv": ["python", "-c", words], "background": True}, True),
+        ("apply_edit", {"path": "a.py", "edits": [{"new_string": words}]}, True),
     ):
         for settled in (False, True):
             events: list[dict[str, object]] = [
@@ -162,12 +169,15 @@ def test_every_tool_item_has_complete_expanded_arguments() -> None:
                 events.append({"type": "tool.result", "name": name, "ok": True, "summary": "ok"})
             (item,) = model.conversation_items(events)
             assert item["kind"] == "tool"
-            full = "\n".join("".join(text for text, _ in line) for line in item["full"])
-            assert "arguments:" in full
-            if args:
-                assert words in full
-            else:
-                assert "(none)" in full
+            assert ("full" in item) is more, (name, args, settled)
+            full = "\n".join("".join(text for text, _ in line) for line in item.get("full", []))
+            assert (words in full) is (words in str(args))
+    for text, more in (("Parse CSV rows", False), ("Parse CSV rows\nwith quotes", True)):
+        said = [
+            {"type": "session.start", "user_task": text},
+            {"type": "steer.injected", "text": text},
+        ]
+        assert [("full" in item) for item in model.conversation_items(said)] == [more, more]
 
 
 def test_an_expanded_edit_prints_its_strings_as_lines() -> None:

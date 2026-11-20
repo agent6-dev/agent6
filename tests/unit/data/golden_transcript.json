@@ -41,7 +41,7 @@
     "detail": "4773 bytes",
     "tail": "",
     "call_id": "read_file",
-    "args_full": "path=src/x.py"
+    "args_full": ""
   },
   {
     "kind": "tool",
@@ -52,7 +52,7 @@
     "detail": "exit=2",
     "tail": "ls: /nope: No such file",
     "call_id": "run_command",
-    "args_full": "argv=['ls', '/nope']"
+    "args_full": ""
   },
   {
     "kind": "tool",
@@ -63,7 +63,7 @@
     "detail": "applied=1",
     "tail": "",
     "call_id": "apply_patch",
-    "args_full": "path=src/x.py"
+    "args_full": ""
   },
   {
     "kind": "verify",
