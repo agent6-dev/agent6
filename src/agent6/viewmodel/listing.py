@@ -141,7 +141,7 @@ class SessionSummary:
     mode: str
     task_label: session_status.TaskLabel
     status: str
-    detail: str
+    detail: format.StatusReason
     cost_usd: float
     usd_partial: bool
     last_activity: float
@@ -463,7 +463,7 @@ def summary_row(
         "task_line": s.task_label.line(),
         "continued_task": s.task_label.continued_task,
         "status": s.status,
-        "status_detail": s.detail,
+        "status_detail": str(s.detail),
         "stop_reason": s.stop_reason,
         "status_label": format.listing_status_label(
             s.mode, s.status, s.detail, unmerged=s.unmerged

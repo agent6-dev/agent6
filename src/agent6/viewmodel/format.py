@@ -10,9 +10,9 @@ pins the copy.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import pathlib
-import re
 import shlex
 import time
 from collections.abc import Mapping
@@ -88,7 +88,7 @@ def clip_cell(text: str, width: int) -> str:
     return line if len(line) <= width else line[: max(1, width - 1)] + "\u2026"
 
 
-def dead_run_note(word: str, detail: str) -> tuple[str, str]:
+def dead_run_note(word: str, detail: StatusReason) -> tuple[str, str]:
     """Word a run with no live worker for every surface.
 
     Args:
@@ -385,16 +385,27 @@ def format_compare(
     return " · ".join(parts), comparison.rationale if comparison is not None else ""
 
 
-# A run's stop reason (`max_turns`); any other reason, a path or a URL, keeps its underscores.
-_STOP_REASON = re.compile(r"[a-z]+(?:_[a-z]+)+")
+@dataclasses.dataclass(frozen=True, slots=True)
+class StopCode:
+    """A journaled stop code, separate from any text displayed beside it."""
+
+    code: str
+    detail: str = ""
+
+    def __str__(self) -> str:
+        """Return the raw status detail, including the code as recorded."""
+        return f"{self.code} · {self.detail}" if self.detail else self.code
 
 
-def status_label(status: str, reason: str = "") -> str:
-    """Return the status word, then its reason as written; a bare stop reason reads as words."""
-    if not reason:
-        return status
-    parts = (p.replace("_", " ") if _STOP_REASON.fullmatch(p) else p for p in reason.split(" · "))
-    return " · ".join((status, *parts))
+type StatusReason = str | StopCode
+
+
+def status_label(status: str, reason: StatusReason = "") -> str:
+    """Return the status with its stop code as words and free-form detail verbatim."""
+    if isinstance(reason, StopCode):
+        status += " · " + reason.code.replace("_", " ")
+        reason = reason.detail
+    return f"{status} · {reason}" if reason else status
 
 
 # Status words that already name the session's mode.
@@ -415,7 +426,7 @@ def child_id_cell(id_cell: str, depth: int = 1) -> str:
 
 
 def listing_status_label(
-    mode: str, status: str, reason: str = "", *, unmerged: bool = False
+    mode: str, status: str, reason: StatusReason = "", *, unmerged: bool = False
 ) -> str:
     """Return the listing status cell every hub shows.
 

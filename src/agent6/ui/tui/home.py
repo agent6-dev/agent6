@@ -104,7 +104,7 @@ def attention_notice(before: str, summary: SessionSummary) -> tuple[str, str] | 
     if before == now:
         return None
     if now == "waiting":
-        return f"{summary.session_id} needs you", summary.detail
+        return f"{summary.session_id} needs you", str(summary.detail)
     if before in session_status.LIVE_STATUS_WORDS and now not in session_status.LIVE_STATUS_WORDS:
         return f"{summary.session_id} {_status_cell(summary).plain}", summary.task_label.task[:200]
     return None

@@ -124,7 +124,11 @@ def _status_state(
             error = terminal.scrub_terminal_controls(scan.provider_error)
             return word, cell, " ".join(error.split())
         # The raw end reason is the diagnostic, unless the label already carries it.
-        end = "" if scan.stop_reason in (word, *reason.split(" · ")) else scan.stop_reason
+        end = (
+            ""
+            if scan.stop_reason == word or isinstance(reason, format.StopCode)
+            else scan.stop_reason
+        )
         return word, cell, end
     detail = {
         "waiting": "needs answer; attach to respond",

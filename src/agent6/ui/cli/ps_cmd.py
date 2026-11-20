@@ -28,7 +28,7 @@ class _Row:
         repo_id: The state dir's name for the repo.
         id: The session id or machine name.
         mode: The session mode, or "machine".
-        status: The raw status word, without its detail.
+        status: The raw status word in JSON, the status label in the table.
         status_detail: The detail explaining the status, or "" when there is none.
         pid: The worker pid, when readable.
         attached: A front end is live on the session.
@@ -60,7 +60,7 @@ class _Row:
             where,
             id_cell,
             self.mode,
-            format.status_label(self.status, self.status_detail),
+            self.status,
             str(self.pid) if self.pid is not None else "?",
             "attached" if self.attached else "",
             common.home_contracted(self.worktree) if self.worktree else "",
@@ -108,7 +108,7 @@ class _Live:
         return [*(row for _mtime, row in session_rows), *self.machines]
 
 
-def _live_rows() -> _Live:
+def _live_rows(*, as_json: bool) -> _Live:
     """Return every live session and machine instance under the state base, one row each."""
     base = paths.state_base()
     rows_by_dir: dict[pathlib.Path, _Row] = {}
@@ -134,8 +134,10 @@ def _live_rows() -> _Live:
                         repo_dir.name,
                         sdir.name,
                         summary.mode,
-                        summary.status,
-                        summary.detail,
+                        summary.status
+                        if as_json
+                        else format.status_label(summary.status, summary.detail),
+                        str(summary.detail),
                         process.read_worker_pid(sdir),
                         process.frontend_is_live(sdir),
                         parent=summary.parent,
@@ -154,7 +156,9 @@ def _live_rows() -> _Live:
                             repo_dir.name,
                             mdir.name,
                             "machine",
-                            machine.status,
+                            machine.status
+                            if as_json
+                            else format.status_label(machine.status, machine.reason),
                             machine.reason,
                             process.read_worker_pid(mdir),
                             False,
@@ -181,7 +185,7 @@ def cmd_ps(*, as_json: bool = False, children: bool = False) -> int:
     Returns:
         The exit code, 0.
     """
-    rows = _live_rows().nested()
+    rows = _live_rows(as_json=as_json).nested()
     if as_json:
         print(json.dumps([dataclasses.asdict(r) for r in rows], indent=2))
         return 0

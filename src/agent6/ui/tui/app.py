@@ -149,7 +149,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self._manifest_due = 0.0
         # The (word, reason) the hub row shows too, refreshed on the ~1/s heartbeat; derived,
         # never latched, so a crash then a resume reads as running again.
-        self.dir_status: tuple[str, str] = session_status.status_for_session_dir(
+        self.dir_status: tuple[str, format.StatusReason] = session_status.status_for_session_dir(
             session_dir, status_facts(self.state)
         )
         # The journal prefix folded at open; the reader starts after it.

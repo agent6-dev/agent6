@@ -107,7 +107,7 @@ def _item_renderables(
     return out
 
 
-def empty_conversation_note(word: str, detail: str, *, ended: bool) -> str:
+def empty_conversation_note(word: str, detail: format.StatusReason, *, ended: bool) -> str:
     """Return the empty-conversation placeholder, naming the state the session is in.
 
     A crashed run and a run that never started must not both read as an ordinary

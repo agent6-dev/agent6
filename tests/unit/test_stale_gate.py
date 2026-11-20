@@ -25,6 +25,7 @@ from agent6.harness import (
     tool_effects,
 )
 from agent6.tools import results
+from agent6.viewmodel import format
 from agent6.viewmodel.session import status as session_status
 
 
@@ -39,7 +40,7 @@ def test_a_stale_gate_finish_reads_finished_with_its_cause() -> None:
         finished=True, verification="unverified", stop_reason="gate_stale"
     ) == (
         "finished",
-        "gate_stale",
+        format.StopCode("gate_stale"),
     )
 
 

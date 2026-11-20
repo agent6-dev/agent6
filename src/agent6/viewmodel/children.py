@@ -262,7 +262,7 @@ def _session_child(
         status="finished"
         if scan.finished and status in ("passed", "answered", "planned")
         else status,
-        error=reason,
+        error=str(reason),
         current_tool=scan.current_tool if live else "",
         turn=scan.turn,
         elapsed_s=max(0, int(end - scan.start_ep))

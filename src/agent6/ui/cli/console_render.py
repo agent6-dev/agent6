@@ -328,7 +328,7 @@ class ConsoleView:
                 stop_reason=str(event.get("reason", "")),
                 scoped=bool(event.get("scoped", False)),
             )
-            title, body = f"agent6: {who} {word}", detail
+            title, body = f"agent6: {who} {word}", str(detail)
         else:
             title, body = f"agent6: {who} needs you", format.attention_line(event) or ""
         if self._out.isatty():

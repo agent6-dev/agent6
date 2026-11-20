@@ -25,6 +25,7 @@ from agent6.machine import (
 )
 from agent6.sandbox import detect
 from agent6.ui.cli import main
+from agent6.viewmodel import format
 from agent6.viewmodel.session import status as session_status
 
 VALID_MACHINE = """\
@@ -1358,8 +1359,9 @@ def test_create_failure_stop_reason_names_the_failure(
         finished=True, verification="unverified", stop_reason=end["reason"]
     )
     assert word == "failed"
-    assert " " not in detail  # a token, like every other session.stop reason
-    assert "finished" not in detail  # never success prose under a failed status
+    assert isinstance(detail, format.StopCode)
+    assert " " not in detail.code  # a token, like every other session.stop reason
+    assert "finished" not in detail.code  # never success prose under a failed status
 
 
 def test_create_stamps_a_liveness_marker_on_the_draft(

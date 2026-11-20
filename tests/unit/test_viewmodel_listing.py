@@ -642,7 +642,7 @@ def test_summary_failure_carries_its_reason(tmp_path: pathlib.Path) -> None:
         ],
     )
     s = summarize_session_dir(rd)
-    assert (s.status, s.detail) == ("failed", "provider_error")
+    assert (s.status, s.detail) == ("failed", format.StopCode("provider_error"))
 
 
 def test_summary_stop_is_not_a_failure(tmp_path: pathlib.Path) -> None:
@@ -973,6 +973,7 @@ def test_summary_torn_manifest_reads_unreadable_not_created(tmp_path: pathlib.Pa
     (rd / "manifest.json").write_text('{"mode": 5}', encoding="utf-8")
     s = summarize_session_dir(rd)
     assert s.status == "unreadable"
+    assert isinstance(s.detail, str)
     assert "\n" not in s.detail and 0 < len(s.detail) <= 60
 
 
@@ -1393,7 +1394,7 @@ def test_a_crashed_run_reads_dead_at_once(tmp_path: pathlib.Path) -> None:
         encoding="utf-8",
     )
     summary = summarize_session_dir(session_dir)
-    assert (summary.status, summary.detail) == ("failed", "crashed")
+    assert (summary.status, summary.detail) == ("failed", format.StopCode("crashed"))
     assert session_is_live(session_dir) is False
 
 
@@ -1624,7 +1625,7 @@ def test_summary_keeps_the_unanswered_count_beside_another_reason(tmp_path: path
     ]
     ends = {
         "gate_red_at_base": ("finished", "gate red at base · 1 question unanswered"),
-        "max_turns": ("failed", "max_turns · 1 question unanswered"),
+        "max_turns": ("failed", format.StopCode("max_turns", "1 question unanswered")),
     }
     for reason, expected in ends.items():
         rd = _write_run(
@@ -1636,6 +1637,10 @@ def test_summary_keeps_the_unanswered_count_beside_another_reason(tmp_path: path
         (rd / "worker.pid").unlink()
         s = summarize_session_dir(rd)
         assert (s.status, s.detail) == expected
+        if reason == "max_turns":
+            row = listing.summary_row(s)
+            assert row["status_detail"] == "max_turns · 1 question unanswered"
+            assert row["status_label"] == "failed · max turns · 1 question unanswered"
 
 
 def test_a_timed_out_gate_reads_gate_timed_out_beside_gate_red_and_unverified() -> None:

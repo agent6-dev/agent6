@@ -32,7 +32,7 @@ from agent6.sessions import process
 from agent6.ui import spawn
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import composer, dashboard_header
-from agent6.viewmodel import status_facts, tail
+from agent6.viewmodel import format, status_facts, tail
 from tests.tui import waits
 
 
@@ -980,7 +980,7 @@ def test_end_hold_header_keeps_the_shared_status_reason(tmp_path: pathlib.Path) 
     d = tmp_path / "failed"
     d.mkdir()
     app = tui_app.Agent6TUI(d)
-    app.dir_status = ("failed", "provider_error")
+    app.dir_status = ("failed", format.StopCode("provider_error"))
     app._end_hold = True
 
     assert "failed · provider error" in app.run_title()
@@ -1438,8 +1438,6 @@ def test_dashboard_header_says_what_the_run_serves(tmp_path: pathlib.Path) -> No
 
 def test_a_clipped_table_cell_says_it_was_clipped() -> None:
     """The tools table marks sliced args, so `background=True` and `preview=True` stay visible."""
-    from agent6.viewmodel import format
-
     assert (
         format.clip_cell("argv=/bin/sh -c 'echo hi', background=True", 20)
         == "argv=/bin/sh -c 'ec\u2026"
@@ -1483,7 +1481,7 @@ def test_both_run_views_word_a_dead_state_the_same(tmp_path: pathlib.Path, make:
     d = tmp_path / "dead1"
     make(d)
     out: list[str] = []
-    status: list[tuple[str, str]] = []
+    status: list[tuple[str, format.StatusReason]] = []
 
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d)

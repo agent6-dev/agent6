@@ -69,7 +69,7 @@ def _cmd_steer(
         # Parked on an operator prompt, only the answer ends the wait; approvals need a front-end.
         how = (
             f"agent6 answer {layout.session_id}"
-            if summary.detail.startswith("question")
+            if str(summary.detail).startswith("question")
             else f"agent6 attach {layout.session_id}"
         )
         print(

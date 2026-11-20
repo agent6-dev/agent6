@@ -455,7 +455,9 @@ def test_a_status_label_quotes_a_reason_and_spaces_only_a_bare_stop_reason(
     blocked = machine_state.summarize_machine_dir(tmp_path)
     label = format.status_label(blocked.status, blocked.reason)
     assert label == "waiting · on an answer in 0000-run_tests"
-    reason = "the forge refused /api/v4/projects/platform%2Finfra/merge_requests?state=merged"
+    reason = (
+        "build_id · the forge refused /api/v4/projects/platform%2Finfra/merge_requests?state=merged"
+    )
     journal.append(
         machine_journal.MachineEnd(
             ts="t", status="failed", reason=reason, state="done", transitions=0
@@ -465,8 +467,8 @@ def test_a_status_label_quotes_a_reason_and_spaces_only_a_bare_stop_reason(
     assert machine_state.machine_state_as_dict(ms, tmp_path)["status_label"] == (
         f"failed · {reason}"
     )
-    assert format.status_label("failed", "max_turns") == "failed · max turns"
-    stop = "max_turns · 2 questions unanswered"
+    assert format.status_label("failed", format.StopCode("max_turns")) == "failed · max turns"
+    stop = format.StopCode("max_turns", "2 questions unanswered")
     assert format.status_label("failed", stop) == "failed · max turns · 2 questions unanswered"
 
 

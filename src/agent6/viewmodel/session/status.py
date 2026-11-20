@@ -158,7 +158,7 @@ def status_word(
     gate_red: bool = False,
     gate_timed_out: bool = False,
     stranded: bool = False,
-) -> tuple[str, str]:
+) -> tuple[str, format.StatusReason]:
     """Map an end state to the status word and its detail.
 
     The one place that decides how a run's outcome reads; headers and listings share
@@ -235,7 +235,7 @@ def status_word(
         detail = not_green if verification in ("failed", "unverified") else ""
         return "finished", uncommitted or detail
     return (
-        ("finished" if stop_reason == "gate_stale" else "failed", stop_reason)
+        ("finished" if stop_reason == "gate_stale" else "failed", format.StopCode(stop_reason))
         if stop_reason
         else ("finished", uncommitted)
     )
@@ -300,7 +300,9 @@ def _waiting_reason(facts: StatusFacts) -> str:
     return "needs answer"
 
 
-def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tuple[str, str]:
+def status_for_session_dir(
+    session_dir: pathlib.Path, facts: StatusFacts
+) -> tuple[str, format.StatusReason]:
     """Decide the status word and detail for a session that has a dir on disk.
 
     The dir supplies what events cannot: a parked submission (the manifest), a pending
@@ -334,17 +336,24 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
             gate_timed_out=facts.gate_timed_out,
             stranded=facts.stranded,
         )
+        notes: list[str] = []
         if n := facts.unattended_questions:
-            note = f"{n} question{'s' if n != 1 else ''} unanswered"
-            reason = f"{reason} · {note}" if reason else note
-        return word, _with_pending(reason, facts.pending_questions, session_dir, " for the resume")
+            notes.append(f"{n} question{'s' if n != 1 else ''} unanswered")
+        notes.extend(_pending_notes(facts.pending_questions, session_dir, " for the resume"))
+        return word, (
+            format.StopCode(reason.code, " · ".join(notes))
+            if isinstance(reason, format.StopCode)
+            else " · ".join(filter(None, (reason, *notes)))
+        )
     elif not facts.started:
         word, reason = unstarted_status(session_dir)
     elif not live:
-        return "stale", _with_pending("", facts.pending_questions, session_dir, " for the resume")
+        return "stale", " · ".join(
+            _pending_notes(facts.pending_questions, session_dir, " for the resume")
+        )
     else:
         word = "in review" if facts.in_review else "running"
-        reason = _with_pending("", facts.pending_questions, session_dir, "")
+        reason = " · ".join(_pending_notes(facts.pending_questions, session_dir, ""))
     if (
         word in LIVE_STATUS_WORDS
         and ipc.stop_request_pending(session_dir)
@@ -365,17 +374,16 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
     return word, reason
 
 
-def _with_pending(reason: str, pending: int, session_dir: pathlib.Path, saved_suffix: str) -> str:
-    """Return the reason with the questions nobody answered and the answers saved on disk.
+def _pending_notes(pending: int, session_dir: pathlib.Path, saved_suffix: str) -> list[str]:
+    """Count the questions nobody answered and the answers saved on disk.
 
     Args:
-        reason: The reason so far.
         pending: The questions the journal holds unanswered.
         session_dir: The session directory, whose answer files count as saved.
         saved_suffix: What follows "saved": where the run reads them.
 
     Returns:
-        The reason, with "N questions pending" and "N answers saved…" appended when any.
+        The "N questions pending" and "N answers saved…" notes when applicable.
     """
     saved = min(len(ipc.saved_question_answers(session_dir)), pending)
     notes: list[str] = []
@@ -383,9 +391,7 @@ def _with_pending(reason: str, pending: int, session_dir: pathlib.Path, saved_su
         notes.append(f"{pending - saved} question{'s' if pending - saved != 1 else ''} pending")
     if saved:
         notes.append(f"{saved} answer{'s' if saved != 1 else ''} saved{saved_suffix}")
-    for note in notes:
-        reason = f"{reason} · {note}" if reason else note
-    return reason
+    return notes
 
 
 def unstarted_status(session_dir: pathlib.Path) -> tuple[str, str]:

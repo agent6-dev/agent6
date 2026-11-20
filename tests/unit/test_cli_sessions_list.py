@@ -270,7 +270,9 @@ def test_listing_status_label_folds_mode_reason_and_unmerged() -> None:
     assert format.listing_status_label("ask", "answered") == "answered"
     assert format.listing_status_label("machine", "finished") == "machine · finished"
     assert (
-        format.listing_status_label("run", "failed", "provider_error", unmerged=True)
+        format.listing_status_label(
+            "run", "failed", format.StopCode("provider_error"), unmerged=True
+        )
         == "failed · provider error · unmerged"
     )
     # A live run's branch is unmerged by definition: no mark.

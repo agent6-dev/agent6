@@ -405,7 +405,7 @@ _LEVEL_SGR: dict[format.StatusLevel, str] = {
 
 
 def styled_status(
-    status: str, reason: str, *, color: bool, label: str | None = None
+    status: str, reason: format.StatusReason, *, color: bool, label: str | None = None
 ) -> tuple[str, str]:
     """Return a listing row's status as (styled label, plain label); the plain one drives widths.
 

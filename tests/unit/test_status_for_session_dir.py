@@ -73,7 +73,9 @@ def _end(reason: str, verification: kinds.Verification | None = "unverified") ->
 
 
 # (name, events (None = no logs.jsonl), parked_task, pid, expected word, expected reason)
-MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, str]] = [
+MATRIX: list[
+    tuple[str, list[dict[str, object]] | None, str, int | None, str, format.StatusReason]
+] = [
     ("created", None, "", None, "created", ""),
     ("parked", None, "fix it", None, "parked", "checkout busy"),
     # A parked run being resumed: a live worker in its pre-session.start preflight
@@ -169,7 +171,14 @@ MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, st
         "",
     ),
     ("settled", [_START, _end("settled")], "", None, "finished", "unverified"),
-    ("failed", [_START, _end("provider_error")], "", None, "failed", "provider_error"),
+    (
+        "failed",
+        [_START, _end("provider_error")],
+        "",
+        None,
+        "failed",
+        format.StopCode("provider_error"),
+    ),
     ("stopped", [_START, _end("steer_abort")], "", None, "stopped", ""),
     ("planned", [_START, _end("finish_planning")], "", None, "planned", ""),
     ("answered", [_START, _end("answered")], "", None, "answered", ""),
@@ -188,7 +197,7 @@ def test_both_fact_producers_and_the_listing_agree(
     parked: str,
     pid: int | None,
     word: str,
-    reason: str,
+    reason: format.StatusReason,
 ) -> None:
     d = _mk(tmp_path, name, events, parked=parked, pid=pid)
     logs = d / "logs.jsonl"
@@ -198,6 +207,22 @@ def test_both_fact_producers_and_the_listing_agree(
     assert session_status.status_for_session_dir(d, status_facts(fold)) == (word, reason)
     summary = listing.summarize_session_dir(d)
     assert (summary.status, summary.detail) == (word, reason)
+
+
+@pytest.mark.parametrize("detail", ["max_turns", "run_tests · src/my_file.py · build_id"])
+def test_parked_detail_is_not_a_stop_code(tmp_path: pathlib.Path, detail: str) -> None:
+    """A parked reason can have the same spelling as a journaled stop code."""
+    d = tmp_path / "parked"
+    d.mkdir()
+    (d / "manifest.json").write_text(
+        json.dumps({"mode": "run", "parked_task": "work", "parked_reason": detail})
+    )
+    row = listing.summary_row(listing.summarize_session_dir(d))
+    assert row["status_detail"] == detail
+    assert row["status_label"] == f"parked · {detail}"
+    assert session_state_as_dict(viewmodel_state.initial_state(), d)["status_label"] == (
+        f"parked · {detail}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -438,7 +463,7 @@ def test_pending_questions_are_counted_in_both_producers(tmp_path: pathlib.Path)
     scan = session_log.scan_session_log(d / "logs.jsonl")
     for facts in (scan.status_facts(), status_facts(viewmodel_state.fold_session(ended))):
         word, reason = session_status.status_for_session_dir(d, facts)
-        assert word != "waiting" and reason.endswith("1 question pending")
+        assert word != "waiting" and str(reason).endswith("1 question pending")
     stale = _mk(tmp_path, "stale-pending", running, parked="", pid=999_999_999)
     facts = session_log.scan_session_log(stale / "logs.jsonl").status_facts()
     assert session_status.status_for_session_dir(stale, facts) == ("stale", "1 question pending")
@@ -463,9 +488,9 @@ def test_a_saved_answer_reads_as_saved_not_pending(tmp_path: pathlib.Path) -> No
     scan = session_log.scan_session_log(d / "logs.jsonl")
     for facts in (scan.status_facts(), status_facts(viewmodel_state.fold_session(ended))):
         word, reason = session_status.status_for_session_dir(d, facts)
-        assert word != "waiting" and reason.endswith("1 answer saved for the resume")
-        assert "pending" not in reason
-    assert listing.summarize_session_dir(d).detail.endswith("1 answer saved for the resume")
+        assert word != "waiting" and str(reason).endswith("1 answer saved for the resume")
+        assert "pending" not in str(reason)
+    assert str(listing.summarize_session_dir(d).detail).endswith("1 answer saved for the resume")
 
 
 def test_pending_steer_is_visible_until_consumed(tmp_path: pathlib.Path) -> None:
