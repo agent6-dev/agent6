@@ -75,7 +75,7 @@ def result_record(root: pathlib.Path, shell_id: str) -> dict[str, object] | None
     Returns:
         The result fields, an empty record for an unreadable ending, or None without an ending.
     """
-    if not re.fullmatch(r"bg[0-9]+", shell_id):
+    if not re.fullmatch(r"bg-?[0-9]+", shell_id):
         return None
     try:
         entry = path_safety.contain(root.parent, pathlib.Path(root.name) / shell_id / RESULT_NAME)

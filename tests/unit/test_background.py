@@ -229,6 +229,17 @@ def test_read_drops_the_line_the_byte_cap_cut_through(
     assert output.splitlines()[1:] == ["b" * (cap - 1)]
 
 
+@pytest.mark.parametrize("job_id", ["bg1", "bg-1"])
+def test_the_result_reader_accepts_both_recorded_job_id_forms(
+    tmp_path: pathlib.Path, job_id: str
+) -> None:
+    root = tmp_path / "shells"
+    job = root / job_id
+    job.mkdir(parents=True)
+    (job / "result.json").write_text('{"returncode": 7}', encoding="utf-8")
+    assert session_shells.result_record(root, job_id) == {"returncode": 7}
+
+
 def test_the_disk_roster_skips_metadata_that_is_not_an_object(tmp_path: pathlib.Path) -> None:
     """One malformed shell record must not break every roster surface."""
     shell = tmp_path / "shells" / "bg1"
