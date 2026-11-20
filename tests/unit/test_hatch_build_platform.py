@@ -10,12 +10,20 @@ from __future__ import annotations
 import importlib.util
 import pathlib
 import sys
+import tomllib
 import types
 from typing import Any
 
 import pytest
 
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+def test_sdist_includes_name_files_at_the_project_root() -> None:
+    """A nested README or AGENTS file is not a source distribution input."""
+    config = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    includes = config["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
+    assert all(pattern.startswith("/") for pattern in includes)
 
 
 def _load_hook_module() -> types.ModuleType:
