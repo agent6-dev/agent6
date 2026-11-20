@@ -485,7 +485,7 @@ def start(
     except Exception as exc:
         for child in started:
             child.stop()
-        dispatcher.failed_launch(record, exc)
+        dispatcher.failed_launch(record, exc, submitted={c.session_id for c in started})
         return f"the judges could not start ({exc})"
     return Judging(record, started)
 

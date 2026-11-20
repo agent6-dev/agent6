@@ -144,6 +144,7 @@ def execute(
     assert dispatcher.child_spawner is not None
     record = dispatcher.announce(record, children)
     started: list[child_records.StartedChild] = []
+    submitted: set[str] = set()
     try:
         results: list[child_records.ChildResult] = []
         for offset in range(0, len(children), batch_width):
@@ -157,6 +158,7 @@ def execute(
                 group if len(children) <= batch_width else f"{group}-b{offset // batch_width + 1}"
             )
             started = dispatcher.child_spawner(batch, batch_group, at=record.base or None)
+            submitted.update(child.session_id for child in started)
             results.extend(child.result.result() for child in started)
         if len(results) != len(children):
             raise child_repo.ChildRepoError(
@@ -166,7 +168,7 @@ def execute(
         # The front-end callback may fail after launching: the children's usage is unknown.
         for child in started:
             child.stop()
-        failed = dispatcher.failed_launch(record, exc)
+        failed = dispatcher.failed_launch(record, exc, submitted=submitted)
         return child_records.DispatchResult(
             failed.identity, True, (), failed.message, base=failed.base
         )

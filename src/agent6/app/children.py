@@ -281,6 +281,7 @@ def run_child_to_completion(
     continuation: str = "",
     clock: Callable[[], float] = time.time,
     watch: Callable[[pathlib.Path, str, str], bool] | None = None,
+    parent_events: event_log.EventSink | None = None,
 ) -> child_records.ChildResult:
     """Run one child to its end and import it into the origin.
 
@@ -324,6 +325,7 @@ def run_child_to_completion(
         contract: The harness-owned read-only conversation; None for work.
         continuation: The next instruction in a retained child clone; empty starts a new child.
         clock: The wall clock the deadline is read against.
+        parent_events: The parent execution's sink for a confirmed start.
         watch: The parent's side of the wait, called on each poll with the child's dir,
             its label and its status: it counts the child's spend and answers its prompt,
             and returns whether the parent's budget is spent. None leaves the child's
@@ -360,6 +362,12 @@ def run_child_to_completion(
         if how != "gone":
             res = dataclasses.replace(res, error=f"{res.error}; its process {how}")
         return res
+    if parent_events is not None:
+        parent_events.emit(
+            journal.ParallelChildActivity(
+                child=spec.session_id, activity="started", detail=task[:200]
+            )
+        )
     deadline_at = limits.deadline_at if limits is not None else None
     overdue = over_budget = False
     label = f"{'reviewer' if contract is not None else 'child'} {spec.number} {spec.session_id}"
@@ -882,6 +890,48 @@ class GroupSpawner:
         self.teardown.set()
 
 
+def _watch_child(
+    run: Callable[[], child_records.ChildResult],
+    result: concurrent.futures.Future[child_records.ChildResult],
+    session_id: str,
+    parent_events: event_log.EventSink | None,
+) -> None:
+    """Report the child's end before making its result available to its parent.
+
+    Args:
+        run: The child execution on this thread.
+        result: The result the parent waits on.
+        session_id: The child's id.
+        parent_events: The parent execution's sink when it has one.
+    """
+    try:
+        try:
+            ended = run()
+        except Exception as exc:
+            if parent_events is not None:
+                parent_events.emit(
+                    journal.ParallelChildActivity(
+                        child=session_id, activity="failed", detail=str(exc)
+                    )
+                )
+            raise
+        if parent_events is not None:
+            parent_events.emit(
+                journal.ParallelChildActivity(
+                    child=session_id,
+                    activity="failed"
+                    if not ended.ok
+                    else "stopped"
+                    if ended.stopped_by
+                    else "finished",
+                    detail=ended.error or ended.stopped_by or ended.report,
+                )
+            )
+        result.set_result(ended)
+    except BaseException as exc:
+        result.set_exception(exc)
+
+
 def build_child_spawner(
     cfg: Config,
     origin: pathlib.Path,
@@ -896,6 +946,7 @@ def build_child_spawner(
     child_away: ipc.AwayMode = "wait",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
     watch: Callable[[pathlib.Path, str, str], bool] | None = None,
+    parent_events: event_log.EventSink | None = None,
 ) -> GroupSpawner:
     """Build the group dispatcher the loop calls at a `/parallel` boundary.
 
@@ -915,6 +966,7 @@ def build_child_spawner(
         auto_approve: The parent's own `--auto-approve`, forwarded to every child.
         child_away: Every child's away-mode, without a watch.
         reporter: Receives the notes.
+        parent_events: The parent execution's sink for child activity.
         watch: The parent's side of each child's wait (`run_child_to_completion`); with it
             every child waits for the parent's operator to answer its prompts.
 
@@ -1042,19 +1094,8 @@ def build_child_spawner(
                 if child.continuation is not None
                 else "",
                 watch=watch,
+                parent_events=parent_events,
             )
-
-        def watched(
-            spec: child_records.ChildSpec,
-            child: child_records.ChildTask,
-            asked: threading.Event,
-            result: concurrent.futures.Future[child_records.ChildResult],
-        ) -> None:
-            try:
-                result.set_result(one(spec, child, asked))
-            except BaseException as exc:
-                # A watch that raises is a bug: its reader hears it, the child dies with it.
-                result.set_exception(exc)
 
         started: list[child_records.StartedChild] = []
         for spec, child in zip(specs, children, strict=True):
@@ -1064,8 +1105,13 @@ def build_child_spawner(
             )
             # The kernel ties a child to the thread that forked it: its watch outlives it.
             threading.Thread(
-                target=watched,
-                args=(spec, child, asked, result),
+                target=_watch_child,
+                args=(
+                    functools.partial(one, spec, child, asked),
+                    result,
+                    spec.session_id,
+                    parent_events,
+                ),
                 name=f"agent6-child-{spec.session_id}",
                 daemon=True,
             ).start()
@@ -1089,6 +1135,7 @@ def build_parent_spawner(
     child_away: ipc.AwayMode = "wait",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
     watch: Callable[[pathlib.Path, str, str], bool] | None = None,
+    parent_events: event_log.EventSink | None = None,
 ) -> GroupSpawner | None:
     """Build the `/parallel` dispatcher for a run's loop, or None when dispatch is unavailable.
 
@@ -1106,6 +1153,7 @@ def build_parent_spawner(
         auto_approve: The run's own `--auto-approve`, forwarded to every child.
         child_away: Every child's away-mode, without a watch.
         reporter: Receives the notes.
+        parent_events: The parent execution's sink for child activity.
         watch: The run's side of each child's wait: its prompts and its spend.
 
     Returns:
@@ -1127,4 +1175,5 @@ def build_parent_spawner(
         child_away=child_away,
         reporter=reporter,
         watch=watch,
+        parent_events=parent_events,
     )

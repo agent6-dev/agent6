@@ -222,7 +222,7 @@ def test_the_steer_seam_is_inert() -> None:
     steer.reset_stage()
 
 
-def test_parallel_children_are_not_spawned_into_a_single_pane() -> None:
+def test_parallel_children_are_not_spawned_into_a_single_pane(tmp_path: pathlib.Path) -> None:
     """`/parallel` fans out sibling runs.
 
     An ACP client renders ONE session, so children would run invisibly.
@@ -239,6 +239,7 @@ def test_parallel_children_are_not_spawned_into_a_single_pane() -> None:
         "r",
         None,
         False,
+        event_log.EventSink(tmp_path / "logs.jsonl"),
         lambda _child, _label, _status: False,
     )
     assert spawner is None

@@ -42,7 +42,7 @@ from agent6.config import Config
 from agent6.context import memory
 from agent6.harness import child_repo
 from agent6.providers import ProviderResponse
-from agent6.sessions import ipc, process
+from agent6.sessions import event_log, ipc, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import child_agent, cli_main, interact, main
 from agent6.ui.cli import parallel as parallel_cmd
@@ -2669,6 +2669,51 @@ def test_the_spawner_returns_while_its_children_run_and_stops_one_by_its_handle(
     assert not one.result.done()
     dispatch.close()
     assert one.result.result(timeout=4.0).ok and not one.result.result().stopped_by
+
+
+def test_parent_sink_observes_confirmed_starts_and_individual_ends(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runtime: app_children.ChildRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed launch has no start. Every terminal fact precedes its future's result."""
+    state = paths.state_dir(origin)
+    sink = event_log.EventSink(state / "sessions" / "runs" / "parent" / "logs.jsonl")
+    heard: list[dict[str, Any]] = []
+    sink.subscribe(heard.append)
+    fake = _FakeSpawner(
+        origin, state, tmp_path / "child-state", fail={1}, status_by_child={2: "failed"}
+    )
+
+    def spawn(
+        spec: child_records.ChildSpec, task: str, **_kwargs: object
+    ) -> child_records.ChildResult:
+        res = fake(spec, task)
+        if spec.number == 3:
+            with (res.session_dir / "logs.jsonl").open("a", encoding="utf-8") as log:
+                log.write(json.dumps({"type": "session.stop", "reason": "steer_abort"}) + "\n")
+        return res
+
+    monkeypatch.setattr(app_children, "bridge_spawner", spawn)
+    spawner = app_children.build_parent_spawner(
+        _provider_cfg(),
+        origin,
+        state,
+        explicit_leaves=frozenset(),
+        mode="run",
+        session_id="parent",
+        runtime=runtime,
+        parent_events=sink,
+    )
+    assert spawner is not None
+    handles = spawner([child_records.ChildTask(task="read", model=None)] * 3, "p1")
+    for handle, activities in zip(
+        handles, [["failed"], ["started", "failed"], ["started", "stopped"]], strict=True
+    ):
+        handle.result.result(timeout=15)
+        assert [e["activity"] for e in heard if e["child"] == handle.session_id] == activities
+    assert heard == [json.loads(line) for line in sink.path.read_text().splitlines()]
 
 
 def test_a_parent_stop_keeps_the_clone_before_the_result_returns(

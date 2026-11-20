@@ -154,9 +154,8 @@ class SessionFrontend:
         build_repl_hook: Builds the `run -i` / `ask -i` hook.
         run_ask_repl: Runs the ask REPL.
         save_ask_transcript: Saves an ask's transcript.
-        build_parent_spawner: Builds the `/parallel` dispatch spawner, or None; its last
-            argument is this session's side of a child's wait: it answers the child's prompts
-            and counts its spend.
+        build_parent_spawner: Builds the dispatch spawner or None. The parent sink records child
+            activity. The watch answers child prompts and counts spend.
         agent6_exe: The agent6 executable to spawn.
         spawn_detached_resume: (cwd, session_id, flags) -> spawns the detached execution under
             this invocation's overrides as CLI options (see `session_setup.override_flags`).
@@ -196,6 +195,7 @@ class SessionFrontend:
             str,
             float | None,
             bool,
+            event_log.EventSink,
             Callable[[pathlib.Path, str, str], bool],
         ],
         children.GroupSpawner | None,

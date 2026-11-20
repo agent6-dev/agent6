@@ -206,6 +206,19 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
     assert a_join.target_before == b_join.target_after
     assert first.children[0].limits is None, "a child the model starts has no cap of its own"
     rows = [json.loads(line) for line in (session_dir / "logs.jsonl").read_text().splitlines()]
+    for sid in (one, two):
+        assert [
+            r["activity"]
+            for r in rows
+            if r["type"] == "parallel.child_activity" and r["child"] == sid
+        ] == ["started", "finished"]
+    assert cli_main(["attach", session]) == 0
+    attached = capsys.readouterr().out
+    for rendered in (out.out + out.err, attached):
+        for sid in (one, two):
+            assert f"child {sid} started" in rendered
+            assert f"child {sid} finished" in rendered
+            assert f"{'merged' if control == 'agent6' else 'unmerged'}  {sid}" in rendered
     assert [row["group"] for row in rows if row["type"] == "parallel.joined"] == [
         f"{session}-p2",
         f"{session}-p1",
@@ -307,6 +320,9 @@ def test_a_parent_steers_its_running_child_and_the_child_reads_it_as_its_parents
     rows = [json.loads(line) for line in (runs / child / "logs.jsonl").read_text().splitlines()]
     (steer,) = [row for row in rows if row["type"] == "steer.parent"]
     assert (steer["text"], steer["chars"]) == ("also write c.txt", 16)
+    assert f"child {child} steered: also write c.txt" in out.out + out.err
+    assert cli_main(["attach", session_dir.name]) == 0
+    assert f"child {child} steered: also write c.txt" in capsys.readouterr().out
     assert not [row for row in rows if row["type"] == "steer.injected"]
 
 

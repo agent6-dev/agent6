@@ -151,13 +151,20 @@ class ExecutionEnd:
 
 
 def headless_marker(event: dict[str, Any], *, log: Callable[[str], None]) -> None:
-    """Print the warning markers a live view renders, through the run's text log.
+    """Print warnings and child activity through the run's text log.
 
     Args:
         event: One journal event.
         log: The run's text logger.
     """
-    if event.get("type") in ("jail.degraded", "pack.quarantined"):
+    if event.get("type") in (
+        "jail.degraded",
+        "pack.quarantined",
+        "parallel.child_activity",
+        "parallel.child_continued",
+        "parallel.child_merged",
+        "parallel.joined",
+    ):
         log(f"[agent6] {transcript_text.MARKER_BODIES[event['type']](event)}")
 
 
@@ -445,7 +452,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
 
         loop_log = frontend.loop_logger(mode)
         if not console_stream:
-            # Headless, the fold's markers reach no view: its warnings are said once here.
+            # A headless run has no console view to print its markers.
             events.subscribe(functools.partial(headless_marker, log=loop_log))
         # A bounded conversation is its parent's evidence: the operator hears of the parent.
         if inputs.contract is None:
@@ -544,6 +551,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             inputs.sandbox_overrides.auto_approve
             if inputs.sandbox_overrides is not None
             else False,
+            events,
             child_watch.ChildWatch(inputs.prompts, layout.session_dir, budget, events.emit),
         )
         wf = loop.Harness(

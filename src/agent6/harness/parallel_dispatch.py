@@ -271,7 +271,7 @@ class ParallelDispatcher:
             for child in started:
                 child.stop()
             # The caller delivers the failure as its answer: the record needs no second one.
-            failed = self.failed_launch(record, exc)
+            failed = self.failed_launch(record, exc, submitted={c.session_id for c in started})
             self.write(failed.model_copy(update={"delivered": True}))
             return child_records.Started((), failed.message)
         self.open[record.identity] = OpenDispatch(record, started)
@@ -309,13 +309,14 @@ class ParallelDispatcher:
         return record
 
     def failed_launch(
-        self, record: child_dispatch.DispatchRecord, exc: Exception
+        self, record: child_dispatch.DispatchRecord, exc: Exception, *, submitted: set[str]
     ) -> child_dispatch.DispatchRecord:
         """Record a dispatch whose spawner failed: its nodes, its event, its message.
 
         Args:
             record: The running dispatch.
             exc: The spawner's fault.
+            submitted: Children whose watches report their own ends.
 
         Returns:
             The record, complete, its message the failure.
@@ -323,6 +324,13 @@ class ParallelDispatcher:
         identity = record.identity
         self.log(f"PARALLEL: group {identity} dispatch failed: {exc}")
         record = self.fail_nodes(record, f"dispatch failed: {exc}")
+        for child in record.children:
+            if child.session_id not in submitted:
+                self.emit(
+                    journal.ParallelChildActivity(
+                        child=child.session_id, activity="failed", detail=str(exc)
+                    )
+                )
         self.emit(journal.ParallelFailed(group=identity, error=str(exc)))
         message = f"[parallel] group {identity} dispatch failed: {exc}. Nothing was joined."
         record = self.settled(record, {}).advanced("complete", message=message)

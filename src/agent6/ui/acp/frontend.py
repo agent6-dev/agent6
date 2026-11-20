@@ -269,6 +269,7 @@ def _no_parent(
     _session_id: str,
     _max_usd: float | None,
     _auto_approve: bool,
+    _events: event_log.EventSink,
     _watch: Callable[[pathlib.Path, str, str], bool],
 ) -> None:
     """Refuse `/parallel`: an ACP client renders one session, so children would run unseen."""

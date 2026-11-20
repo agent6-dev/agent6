@@ -886,6 +886,10 @@ def test_spawner_raising_never_aborts_the_run(tmp_path: pathlib.Path) -> None:
     failed = events.of("parallel.failed")
     assert [row["group"] for row in failed] == ["run-boom-p1", "run-boom-p2"]
     assert "disk full" in str(failed[0])
+    assert [(e["child"], e["activity"]) for e in events.of("parallel.child_activity")] == [
+        ("run-boom-p1-l1", "failed"),
+        ("run-boom-p2-l1", "failed"),
+    ]
     texts = _user_texts(_final_messages(provider))
     assert any(t.count("disk full while cloning child 1") == 2 for t in texts)
     # No steering node is orphaned as pending, and neither record waits on a delivery.

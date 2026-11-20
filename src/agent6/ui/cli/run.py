@@ -184,19 +184,20 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
             layout, question=question, answer=answer
         ),
         build_parent_spawner=(
-            lambda cfg, leaves, cwd, state_dir, mode, session_id, max_usd, auto_approve, watch: (
+            lambda cfg, leaves, cwd, state, mode, sid, cap, approve, events, watch: (
                 app_children.build_parent_spawner(
                     cfg,
                     cwd,
-                    state_dir,
+                    state,
                     explicit_leaves=leaves,
                     mode=mode,
-                    session_id=session_id,
+                    session_id=sid,
                     runtime=cli_parallel.child_runtime(),
-                    max_usd=max_usd,
-                    auto_approve=auto_approve,
+                    max_usd=cap,
+                    auto_approve=approve,
                     child_away=interact.child_away_mode(),
                     watch=watch,
+                    parent_events=events,
                 )
             )
         ),
