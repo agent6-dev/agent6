@@ -459,20 +459,20 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 
 ### `[harness.parallel]`
 
-Child limit for `run --parallel N|selector,...`.
-Each child is a disposable clone running its own `agent6/<id>` branch; children are imported and ranked, and the first-ranked child joins the run's own branch.
+The most children a run has running at once, for `run --parallel N|selector,...`, the `/parallel` steer and the `parallel` tool.
+Each child is a disposable clone running its own `agent6/<id>` branch; one child's work is merged onto the run's own branch, and several children on one task are ranked, the first-ranked one joining it.
 `harness.parallel.judges` names who ranks them: each judge ranks once, and the lowest sum of ranks wins.
 `git.auto_merge = true` then lands the run as it lands any run; without it, `agent6 sessions merge <run id>` does.
 `--max-usd` caps the children and the judges together; `--auto-approve` forwards to every child.
 A live run dispatches children the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
-`harness.parallel.tool = true` offers a run's model the `parallel` tool, which dispatches a task through the same path ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.
+`harness.parallel.tool = true` offers a run's model the `parallel` tool, which starts a task's children in the background through the same path ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.
 A child's model or steer cannot dispatch work; its configured harness panel may still run its reviewers.
 Headless surfaces without a dispatcher answer "not available".
 
 | Field | Default | Meaning |
 |---|---|---|
-| `tool` | `false` | offer a run's model the `parallel` tool, which dispatches a task to isolated children (fresh clones of the committed tree, each an ordinary run that may edit) and joins their commits back in order; each child runs under 200 turns, 30 minutes and the run's remaining budget, which the children share; `harness.parallel.tool = false`: no run is offered it; neither value changes `run --parallel`, the `/parallel` steer or the review panel |
-| `max_children` | `4` | The most children one `--parallel` group may run, `1` to `1024`; a spec asking for more is refused before anything is cloned; a review roster longer than this runs in batches of this width, with no reviewer dropped. |
+| `tool` | `false` | offer a run's model the `parallel` tool, which starts one task in isolated children (fresh clones of the committed tree, each an ordinary run that may edit) and lands their work at the run's turn boundaries; a child runs under the run's own config and its remaining budget, which the children share; `harness.parallel.tool = false`: no run is offered it; neither value changes `run --parallel`, the `/parallel` steer or the review panel |
+| `max_children` | `4` | The most children a run has running at once, `1` to `1024`; a dispatch asking for more is refused before anything is cloned; a review roster longer than this runs in batches of this width, with no reviewer dropped. |
 | `judges` | `["reviewer"]` | who ranks the candidates of a `run --parallel` group and of `sessions compare`: selectors as `--parallel` takes them, a role name or `[provider/]model`; each judges once and the lowest sum of ranks wins, a tie going to the mechanical order (a passed gate first, then the lower cost); a role with no model route judges nothing; `[]`: the mechanical order alone |
 
 ### `[harness.prompt]`

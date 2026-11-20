@@ -365,6 +365,16 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `target_id` | `str` | Host-issued evidence reference, not launcher identity. |
 | `target` | `object` | ExecutionTargetStamp facts; null fields stay unobserved. |
 
+### finish.refused.children
+
+**Support: public.** An end declared while a child's work had not landed was returned to the model.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `turn` | `int` | The execution's turn number. |
+| `children` | `list` | The session ids of the children whose task had not landed. |
+| `trigger` | `str` | The action that triggered the gate or panel. |
+
 ### finish.refused.contract
 
 **Support: public.** The finish payload did not satisfy the machine's result contract.
@@ -2598,7 +2608,7 @@ Source: [`agent6.sessions.completion.CompletionRecord`](https://github.com/agent
 
 ### DispatchRecord
 
-**Support: public.** The record of one dispatch.
+**Support: public.** The record of one dispatch: one task's children, or one panel's reviewers.
 
 Source: [`agent6.sessions.child_dispatch.DispatchRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
 
@@ -2607,16 +2617,18 @@ Source: [`agent6.sessions.child_dispatch.DispatchRecord`](https://github.com/age
 | `version` | `int` | The record's shape; a newer one refuses the read. |
 | `identity` | `str` | The dispatch's id, the group id `<parent>-p<n>`. |
 | `source` | `Literal['operator', 'model', 'panel']` | Who asked. |
-| `join_policy` | `Literal['merge', 'record_only', 'rank']` | Ordered work merge, harness-owned record-only import, or the best-ranked child alone. |
+| `join_policy` | `Literal['merge', 'record_only', 'rank']` | How the work lands: a task's one child merged, a panel's records imported and nothing merged, or the best-ranked of a task's attempts alone. |
 | `ranking` | `RankRecord \| None` | A rank join's order; None before it ranked and under the other policies. |
 | `owner` | `str` | The execution that made it. |
 | `turn` | `int` | The turn it was dispatched after. |
 | `base` | `str` | The chain tip the children were cut from. |
-| `segments` | `tuple[SegmentRecord, ...]` | The requested tasks. |
+| `spec` | `str` | The task's child spec as given; "" for one default child and for a panel. |
+| `parent_node` | `str \| None` | The DAG node the task was dispatched under; None without a graph and for a panel. |
+| `node_id` | `str \| None` | The task's DAG node, added when its work lands or its dispatch fails; None until then, without a graph and for a panel. |
 | `children` | `tuple[ChildRecord, ...]` | The children, in child order. |
 | `state` | `Literal['prepared', 'running', 'settling', 'joining', 'complete']` | How far the dispatch got. |
-| `message` | `str` | The result delivered for it, "" until complete. |
-| `delivered` | `bool` | Whether the result reached the conversation. |
+| `message` | `str` | The notice of what landed, "" until complete. |
+| `delivered` | `bool` | Whether that notice reached the conversation. |
 | `written_at` | `float` | When this version of the record was written, as epoch seconds. |
 
 ### SessionManifest
@@ -3151,19 +3163,6 @@ Source: [`agent6.sessions.child_dispatch.RankRecord`](https://github.com/agent6-
 | `rationale` | `str` | The judges' words; "" for the mechanical order. |
 | `winner` | `str` | The one child the join lands; "" when the order crowns none. |
 
-### SegmentRecord
-
-**Support: public.** One requested task and its child spec.
-
-Source: [`agent6.sessions.child_dispatch.SegmentRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `task` | `str` | The task text. |
-| `spec` | `str` | The child spec as given. |
-| `children` | `int` | How many children the segment expanded to. |
-| `node_id` | `str \| None` | The DAG node the segment got, None without a graph. |
-
 ### ChildRecord
 
 **Support: public.** One child of the dispatch.
@@ -3178,7 +3177,8 @@ Source: [`agent6.sessions.child_dispatch.ChildRecord`](https://github.com/agent6
 | `model` | `str \| None` | Its selector, None for the worker's own settings. |
 | `limits` | `ChildLimits \| None` | Its turn cap and deadline, None for the config's own. |
 | `join` | `JoinRecord \| None` | How it joined, None until it did. |
-| `report` | `str` | What it said at its end, its finish summary; "" until it joined or when it gave none. |
+| `report` | `str` | What it said at its end, its finish summary; "" until its end was reported or when it gave none. |
+| `reported` | `bool` | Whether its parent's conversation holds the notice of its end. |
 | `usage` | `UsageRecord \| None` | What it used, None until settled with known usage. |
 | `settled` | `bool` | Whether its usage was charged; False while it is unknown. |
 
@@ -3729,7 +3729,7 @@ Source: [`agent6.sessions.child_dispatch.JoinRecord`](https://github.com/agent6-
 | `branch` | `str` | The child's branch. |
 | `status` | `Literal['joined', 'no_changes', 'conflict', 'failed', 'ranked']` | The join's outcome. |
 | `sha` | `str` | The merge commit, "" when none. |
-| `detail` | `str` | The failure's reason, or what stopped a child whose work still joined; "" when neither. |
+| `detail` | `str` | The failure's reason, a conflict's files, a ranked child's place, or what stopped a child whose work still joined; "" when none. |
 | `target_before` | `str` | The chain tip before the join. |
 | `target_after` | `str` | The chain tip after it; equal to `target_before` when nothing merged. |
 
