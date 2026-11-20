@@ -282,6 +282,29 @@ def test_a_standing_answer_at_the_parent_is_handed_down(tmp_path: pathlib.Path) 
     assert len(refusing.asked) == 1, "a standing deny answers without asking"
 
 
+@pytest.mark.parametrize("startup", [False, True], ids=["waiting", "startup"])
+def test_regrowth_cannot_hide_a_new_blocking_question(
+    tmp_path: pathlib.Path, startup: bool
+) -> None:
+    child = _child(tmp_path)
+    log = child / "logs.jsonl"
+    prefix = log.read_bytes()
+    status = child_watch.ChildStartup(os.getpid(), len(prefix)) if startup else "waiting"
+    note = b'{"type":"loop.note","text":"padding"}\n'
+    log.write_bytes(prefix + note * 20)
+    parent = _Parent(
+        tmp_path, answers=operator_prompts.QuestionAnswer(("8080", "here"), "frontend")
+    )
+    watch = parent.watch()
+    watch(child, "child", status)
+    assert not parent.questions
+    question = json.dumps(_question()).encode()
+    log.write_bytes(prefix + question.ljust(len(note) * 8 - 1) + b"\n" + note * 16)
+    for _ in range(3):
+        watch(child, "child", status)
+    assert len(parent.questions) == 1 and _reply(child) == ipc.QuestionReply(("8080", "here"))
+
+
 def test_a_prompt_with_no_scope_is_asked_every_time(tmp_path: pathlib.Path) -> None:
     """`fetch` offers no standing answer; an "allow all" on it grants that call only."""
     child = _child(tmp_path, _prompt(scope=None))

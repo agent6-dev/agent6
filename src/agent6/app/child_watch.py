@@ -43,6 +43,27 @@ class ChildStartup:
     start_at: int
 
 
+class _PrefixCheck:
+    """Check an earlier fold in bounded reads, even when it found no open slot."""
+
+    def __init__(self, start: int, end: int, expected: bytes, size: int) -> None:
+        self.position, self.end, self.expected, self.size = start, end, expected, size
+        self.digest = hashlib.sha256()
+
+    def matches(self, fh: BinaryIO, *, finish: bool) -> bool | None:
+        """Return whether the prefix matches, or None to continue on the next tick."""
+        fh.seek(self.position)
+        while self.position < self.end:
+            block = fh.read(min(self.end - self.position, 256 * 1024))
+            if not block:
+                return False
+            self.digest.update(block)
+            self.position += len(block)
+            if not finish and self.position < self.end:
+                return None
+        return self.digest.digest() == self.expected
+
+
 class _PromptJournal:
     """Fold complete rows for one worker, starting at the launch boundary."""
 
@@ -55,6 +76,9 @@ class _PromptJournal:
         self.seen: os.stat_result | None = None
         self.state = session_fold.initial_state()
         self.digest = hashlib.sha256()
+        self.check: _PrefixCheck | None = None
+        self.checked_size = 0
+        self.check_after = 0.0
 
     def pending(
         self, *, confirm: bool = False
@@ -65,16 +89,10 @@ class _PromptJournal:
             with self.log.open("rb") as fh:
                 # An unreadable or replaced file cannot confirm a cached slot. Stamp the open fd.
                 stamp = os.fstat(fh.fileno())
-                if self.seen is None or (
-                    not os.path.samestat(stamp, self.seen)
-                    or stamp.st_size < self.seen.st_size
-                    or (
-                        stamp.st_size == self.seen.st_size
-                        and stamp.st_ctime_ns != self.seen.st_ctime_ns
-                    )
-                ):
+                if self._rewritten(fh, stamp, confirm=confirm):
                     self.position, self.state = start_at, session_fold.initial_state()
                     self.digest = hashlib.sha256()
+                    self.check, self.checked_size, self.check_after = None, stamp.st_size, 0.0
                 self.seen = stamp
                 fh.seek(self.position)
                 while self.position < stamp.st_size:
@@ -89,9 +107,14 @@ class _PromptJournal:
                         continue
                     if isinstance(event, dict):
                         self.state = session_fold.apply_event(self.state, event)
-                if confirm and not self._confirms_fold(fh, stamp):
-                    self.seen = None
-                    return None
+                if confirm:
+                    current = self.log.stat()
+                    if not os.path.samestat(current, stamp) or (
+                        current.st_size,
+                        current.st_ctime_ns,
+                    ) != (stamp.st_size, stamp.st_ctime_ns):
+                        self.seen = None
+                        return None
         except OSError:
             self.seen = None
             return None
@@ -105,23 +128,26 @@ class _PromptJournal:
             return question
         return None
 
-    def _confirms_fold(self, fh: BinaryIO, stamp: os.stat_result) -> bool:
-        """Return whether the folded bytes still match after possible truncation and regrowth."""
-        _, _, start_at = self.binding
-        fh.seek(start_at)
-        actual = hashlib.sha256()
-        while (left := self.position - fh.tell()) > 0:
-            block = fh.read(min(left, 256 * 1024))
-            if not block:
+    def _rewritten(self, fh: BinaryIO, stamp: os.stat_result, *, confirm: bool) -> bool:
+        """Return whether a rewrite invalidated the cursor; growth can conceal a new prompt."""
+        old = self.seen
+        if old is None or not os.path.samestat(stamp, old) or stamp.st_size < old.st_size:
+            return True
+        if stamp.st_size == old.st_size and stamp.st_ctime_ns != old.st_ctime_ns:
+            return True
+        if stamp.st_size == self.checked_size:
+            return False
+        if confirm or self.check is None:
+            if not confirm and time.monotonic() < self.check_after:
                 return False
-            actual.update(block)
-        current = self.log.stat()
-        return (
-            actual.digest() == self.digest.digest()
-            and os.path.samestat(stamp, current)
-            and stamp.st_size == current.st_size
-            and stamp.st_ctime_ns == current.st_ctime_ns
-        )
+            _, _, start = self.binding
+            self.check = _PrefixCheck(start, self.position, self.digest.digest(), stamp.st_size)
+        match = self.check.matches(fh, finish=confirm)
+        if match is not None:
+            self.checked_size = self.check.size
+            self.check = None
+            self.check_after = time.monotonic() + 1.0
+        return match is False
 
 
 class _WatchThread(threading.local):
