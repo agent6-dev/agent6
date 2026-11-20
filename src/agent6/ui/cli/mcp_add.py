@@ -379,7 +379,7 @@ def cmd_mcp_remove(
         return 2
     res = write.unset_config_table(pathlib.Path.cwd(), f"mcp.servers.{name}", to_repo=to_repo)
     if res.error is not None:
-        common.error(f"removing {name} left an invalid config:\n{res.error}")
+        common.error(f"removing {name} would leave an invalid config:\n{res.error}")
         return 2
     if not res.removed:
         # A dotted key or inline table the line surgery cannot delete: still live, and said so.

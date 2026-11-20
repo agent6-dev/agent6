@@ -219,30 +219,31 @@ def test_reject_machine_protected_covers_every_spec_forbidden_key(tmp_path: path
     assert cc._reject_machine_protected("review.panel_size", m) is None  # pyright: ignore[reportPrivateUsage]
 
 
-def test_revalidate_machine_rejects_invalid_spec_and_rolls_back(
+def test_write_machine_refuses_an_invalid_spec_and_writes_nothing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The cwd-dependent [config]-overlay validation is stubbed out.
     monkeypatch.setattr(config_layer, "load_effective_with_overlay", _noop_overlay)
     target = tmp_path / "m.asm.toml"
-    target.write_text(_BAD, encoding="utf-8")
+    target.write_text(_GOOD, encoding="utf-8")
 
-    err = cc._revalidate_machine(target, _GOOD)  # pyright: ignore[reportPrivateUsage]
+    err = cc._write_machine(target, _GOOD, _BAD)  # pyright: ignore[reportPrivateUsage]
 
     assert err is not None  # the invalid machine was caught (not silently left)
-    assert target.read_text(encoding="utf-8") == _GOOD  # and the file was rolled back
+    assert target.read_text(encoding="utf-8") == _GOOD  # and never reached the file
 
 
-def test_revalidate_machine_accepts_valid_spec(
+def test_write_machine_writes_a_valid_spec(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
     target = tmp_path / "m.asm.toml"
     target.write_text(_GOOD, encoding="utf-8")
+    edited = _GOOD + "# edited\n"
 
-    # prior_text=_GOOD makes _machine_is_valid true, so load_machine(target) runs.
-    assert cc._revalidate_machine(target, _GOOD) is None  # pyright: ignore[reportPrivateUsage]
-    assert target.read_text(encoding="utf-8") == _GOOD  # untouched
+    # prior_text=_GOOD makes _machine_is_valid true, so the edited spec is loaded.
+    assert cc._write_machine(target, _GOOD, edited) is None  # pyright: ignore[reportPrivateUsage]
+    assert target.read_text(encoding="utf-8") == edited
 
 
 def test_config_show_and_get_share_the_unknown_key_error(
@@ -481,10 +482,7 @@ def test_config_set_rejects_a_newly_invalid_value(
 def test_a_refused_write_still_hands_the_config_back_to_the_operator(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A refused write still hands the config back to the operator under sudo.
-
-    Every write publishes a fresh root-owned inode, the rollback of a refused value included.
-    """
+    """A refused write still hands the config back to the operator under sudo."""
     from agent6.ui.cli import main
 
     handed: list[pathlib.Path] = []
@@ -495,8 +493,8 @@ def test_a_refused_write_still_hands_the_config_back_to_the_operator(
     gpath.write_text("[budget]\nmax_usd = 5.0\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    assert main(["config", "set", "harness.prompt.decompose", "bogus"]) == 2  # rolled back
-    assert gpath in handed  # the rolled-back file is the operator's again
+    assert main(["config", "set", "harness.prompt.decompose", "bogus"]) == 2  # refused
+    assert gpath in handed  # the file is the operator's
     assert gpath.parent in handed  # and so is the dir the write may have created
 
 
@@ -972,23 +970,6 @@ def test_equal_tolerating_nan_matches_nan_at_every_depth() -> None:
     assert cc._equal_tolerating_nan([1.0, math.nan], [1.0, math.nan])  # pyright: ignore[reportPrivateUsage]
     assert not cc._equal_tolerating_nan({"x": math.nan}, {"x": 1.0})  # pyright: ignore[reportPrivateUsage]
     assert not cc._equal_tolerating_nan([math.nan], [math.nan, math.nan])  # pyright: ignore[reportPrivateUsage]
-
-
-def test_revalidate_machine_no_lock_keeps_the_write_and_says_so(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Without the config lock the machine path keeps an invalid write and says so.
-
-    A whole-file restore could clobber a concurrent writer's update.
-    """
-    monkeypatch.setattr(config_layer, "load_effective_with_overlay", _noop_overlay)
-    target = tmp_path / "m.asm.toml"
-    target.write_text(_BAD, encoding="utf-8")
-
-    err = cc._revalidate_machine(target, _GOOD, held=False)  # pyright: ignore[reportPrivateUsage]
-
-    assert err is not None and "kept as written" in err
-    assert target.read_text(encoding="utf-8") == _BAD  # NOT rolled back
 
 
 def test_config_set_names_the_flag_file_that_shadows_the_write(

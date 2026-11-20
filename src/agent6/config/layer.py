@@ -47,6 +47,7 @@ def load_effective(
     *,
     preset: str = "",
     allow_pack: bool = False,
+    candidate: layer_data.Candidate | None = None,
 ) -> layer_data.EffectiveConfig:
     """Load the effective config of a repo.
 
@@ -55,6 +56,7 @@ def load_effective(
         explicit_paths: The `--config FILE` layers in command-line order.
         preset: The `--preset` flag, or "".
         allow_pack: Allow config reads while replacing a workspace pack.
+        candidate: A global or repo config an edit is about to write, read in place of its file.
 
     Returns:
         The effective config.
@@ -62,7 +64,9 @@ def load_effective(
     Raises:
         ConfigError: A layer is unreadable or the merged config is invalid.
     """
-    layers = layer_data.discover_layers(repo_root, explicit_paths, allow_pack=allow_pack)
+    layers = layer_data.discover_layers(
+        repo_root, explicit_paths, allow_pack=allow_pack, candidate=candidate
+    )
     presets = layer_presets.preset_names(layers)
     layers = layer_presets.apply_preset(layers, preset)
     return layer_data.effective_from_layers(

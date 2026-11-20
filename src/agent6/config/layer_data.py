@@ -70,6 +70,19 @@ class EffectiveConfig:
         return frozenset(leaf for leaf, layer in self.sources.items() if layer != "default")
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class Candidate:
+    """A config file as an edit would write it, which a load reads in place of the file.
+
+    Attributes:
+        path: The file.
+        data: The parsed table the edit's text holds.
+    """
+
+    path: pathlib.Path
+    data: dict[str, Any]
+
+
 def read_toml(path: pathlib.Path) -> dict[str, Any]:
     """Parse a config file.
 
@@ -128,7 +141,11 @@ def forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
 
 
 def discover_layers(
-    repo_root: pathlib.Path, explicit_paths: tuple[pathlib.Path, ...], *, allow_pack: bool = False
+    repo_root: pathlib.Path,
+    explicit_paths: tuple[pathlib.Path, ...],
+    *,
+    allow_pack: bool = False,
+    candidate: Candidate | None = None,
 ) -> list[Layer]:
     """Read the config files that exist, in precedence order.
 
@@ -136,6 +153,7 @@ def discover_layers(
         repo_root: The repo whose state-dir config is the `repo` layer.
         explicit_paths: The `--config FILE` layers in command-line order.
         allow_pack: Allow config reads while replacing a workspace pack.
+        candidate: A global or repo config an edit is about to write, read in place of its file.
 
     Returns:
         The layers, lowest precedence first.
@@ -145,12 +163,15 @@ def discover_layers(
             missing, or one carries `agent6.preset`.
     """
     layers: list[Layer] = []
-    gpath = paths.global_config_path()
-    if gpath.is_file():
-        layers.append(Layer("global", gpath, read_toml(gpath)))
-    rpath = paths.repo_config_path(repo_root, allow_pack=allow_pack)
-    if rpath.is_file():
-        layers.append(Layer("repo", rpath, read_toml(rpath)))
+    files: tuple[tuple[LayerName, pathlib.Path], ...] = (
+        ("global", paths.global_config_path()),
+        ("repo", paths.repo_config_path(repo_root, allow_pack=allow_pack)),
+    )
+    for name, path in files:
+        if candidate is not None and path.resolve() == candidate.path.resolve():
+            layers.append(Layer(name, path, candidate.data))
+        elif path.is_file():
+            layers.append(Layer(name, path, read_toml(path)))
     for explicit_path in explicit_paths:
         if not explicit_path.is_file():
             raise validation.ConfigError(f"--config file not found: {explicit_path}")

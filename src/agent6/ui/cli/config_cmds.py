@@ -236,17 +236,24 @@ def _reject_machine_protected(key: str, machine: pathlib.Path | None) -> str | N
     return protected_overlay_key_error(io.render_key(io.split_key(key)))
 
 
-def _machine_is_valid(text: str | None) -> bool:
-    """Return whether the text parses as a complete, valid machine spec."""
-    if text is None:
-        return False
+def _check_machine(text: str) -> None:
+    """Load the text as a machine spec.
+
+    Raises:
+        MachineError: The spec is incomplete or invalid.
+    """
     with tempfile.NamedTemporaryFile("w", suffix=".asm.toml", delete=True, encoding="utf-8") as tf:
         tf.write(text)
         tf.flush()
-        try:
-            load_machine(pathlib.Path(tf.name))
-        except MachineError:
-            return False
+        load_machine(pathlib.Path(tf.name))
+
+
+def _machine_is_valid(text: str) -> bool:
+    """Return whether the text parses as a complete, valid machine spec."""
+    try:
+        _check_machine(text)
+    except MachineError:
+        return False
     return True
 
 
@@ -291,16 +298,16 @@ def _sandbox_problems(
 
 
 def _added_widening(
-    prior_text: str | None, overlay: dict[str, object], config_paths: tuple[pathlib.Path, ...]
+    prior_text: str, overlay: dict[str, object], config_paths: tuple[pathlib.Path, ...]
 ) -> str | None:
-    """Return the refusal for each sandbox widening an edit added to a machine's `[config]`.
+    """Return the refusal for each sandbox widening an edit adds to a machine's `[config]`.
 
     Compared before and after the edit, so no spelling of the key slips past, and a widening
     the file already held is left for `machine check`.
 
     Args:
-        prior_text: The file before the write; None when it did not exist.
-        overlay: The `[config]` table as the file now holds it.
+        prior_text: The file before the edit, "" when it did not exist.
+        overlay: The `[config]` table as the edit leaves it.
         config_paths: The invocation's `--config`, part of the operator's ceiling.
 
     Returns:
@@ -313,7 +320,7 @@ def _added_widening(
     if not after:
         return None
     try:
-        prior = tomllib.loads(prior_text or "").get("config", {})
+        prior = tomllib.loads(prior_text).get("config", {})
         before = _sandbox_problems(prior if isinstance(prior, dict) else {}, config_paths)
     except (tomllib.TOMLDecodeError, ConfigError):
         before = {}
@@ -325,43 +332,43 @@ def _added_widening(
     return "\n".join(added) or None
 
 
-def _revalidate_machine(
+def _write_machine(
     target: pathlib.Path,
-    prior_text: str | None,
-    *,
-    held: bool = True,
+    prior_text: str,
+    text: str,
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> str | None:
-    """Re-validate a machine file after an overlay write, restoring the prior text on failure.
+    """Write an overlay edit's text to a machine file when it validates; a refusal writes nothing.
 
-    Blocks only when the edit made a valid machine invalid, or added a `sandbox` value wider
+    Refuses only an edit that makes a valid machine invalid, or adds a `sandbox` value wider
     than the operator's config; a machine already invalid is left for the author to finish.
 
     Args:
         target: The machine file.
-        prior_text: The file before the write; None when it did not exist.
-        held: The lock was held; when not, a broken edit is kept, saying so.
+        prior_text: The file before the edit, "" when it did not exist.
+        text: The file's text with the edit applied.
         config_paths: The invocation's `--config`, part of the operator's ceiling.
 
     Returns:
         The error to print, or None.
     """
-    err: str | None = None
     try:
-        data = io.read_toml_file(target)
+        data = tomllib.loads(text)
         overlay = data.get("config", {})
         overlay = overlay if isinstance(overlay, dict) else {}
         layer.load_effective_with_overlay(pathlib.Path.cwd(), overlay, explicit_paths=config_paths)
         if "states" in data and _machine_is_valid(prior_text):
-            load_machine(target)
+            _check_machine(text)
         err = _added_widening(prior_text, overlay, config_paths)
+    except tomllib.TOMLDecodeError as exc:
+        err = f"{target}: invalid TOML: {exc}"
     except ConfigError as exc:
         err = _leaf_problems(str(exc))
     except MachineError as exc:
         err = "; ".join(exc.problems)
     if err is None:
-        return None
-    return write.keep_or_rollback(target, prior_text, err, held=held)
+        portable.atomic_write(target, text)
+    return err
 
 
 def _warn_if_still_broken() -> None:
@@ -439,11 +446,10 @@ def _cmd_config_set(
         err = write.set_config_value(pathlib.Path.cwd(), key, value, to_repo=repo)
     else:
         _open_target(target)
-        with write.writing_config(target) as held:
-            prior = errors.read_operator_file(target) if target.is_file() else None
-            io.read_toml_file(target)  # no line surgery on a file that does not parse
-            io.upsert_toml_leaf(target, prefix + key, parsed)
-            err = _revalidate_machine(target, prior, held=held, config_paths=config_paths)
+        with write.writing_config(target):
+            prior = write.editable_text(target)
+            text = io.upsert_leaf_text(prior, prefix + key, parsed, path=target)
+            err = _write_machine(target, prior, text, config_paths)
     if err:
         common.error(f"{err}")
         return 2
@@ -527,13 +533,13 @@ def _cmd_config_unset(
         res = write.unset_config_value(pathlib.Path.cwd(), key, to_repo=repo)
         removed, err = res.removed, res.error
     else:
-        with write.writing_config(target) as held:
-            prior = errors.read_operator_file(target)
-            io.read_toml_file(target)  # no line surgery on a file that does not parse
-            removed = io.remove_toml_leaf(target, prefix + key)
-            err = _revalidate_machine(target, prior, held=held) if removed else None
+        with write.writing_config(target):
+            prior = write.editable_text(target)
+            text = io.remove_leaf_text(prior, prefix + key, path=target)
+            removed = text is not None
+            err = _write_machine(target, prior, text) if text is not None else None
     if err:
-        common.error(f"unsetting {key} left an invalid config:\n{err}")
+        common.error(f"unsetting {key} would leave an invalid config:\n{err}")
         return 2
     if not removed:
         print(f"{key} is not set in {target}; nothing to unset.")
@@ -578,7 +584,7 @@ def _config_list_edit(
     target, prefix = _config_write_target(repo=repo, machine=machine)
     _open_target(target)
     # The lock spans from the read: two concurrent adds would otherwise drop one element.
-    with write.writing_config(target) as held:
+    with write.writing_config(target):
         current = io.read_toml_leaf(io.read_toml_file(target), prefix + key)
         if current is None:
             # A new override starts from the value it overrides, not [].
@@ -601,20 +607,12 @@ def _config_list_edit(
             print(f"{io.format_toml_value(parsed)} {'already' if add else 'not'} in {key}.")
             return 0
         items = [*items, parsed] if add else [x for x in items if x != parsed]
-        prior = errors.read_operator_file(target) if target.is_file() else None
-        was_valid = machine is None and write.merged_config_error(pathlib.Path.cwd()) is None
-        io.upsert_toml_leaf(target, prefix + key, items)
+        prior = write.editable_text(target)
+        text = io.upsert_leaf_text(prior, prefix + key, items, path=target)
         if machine is None:
-            err = write.revalidate_write(
-                pathlib.Path.cwd(),
-                target,
-                prior,
-                was_valid=was_valid,
-                held=held,
-                written=[(key, items)],
-            )
+            err = write.write_validated(pathlib.Path.cwd(), target, text, written=[(key, items)])
         else:
-            err = _revalidate_machine(target, prior, held=held, config_paths=config_paths)
+            err = _write_machine(target, prior, text, config_paths)
         if err:
             common.error(f"{value!r} is not valid for {key}:\n{err}")
             return 2

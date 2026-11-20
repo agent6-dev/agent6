@@ -1,21 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Config write surgery is crash-safe: writers publish through atomic_write, never in place."""
+"""The config writers are crash-safe: they publish through atomic_write, never in place."""
 
 from __future__ import annotations
 
 import pathlib
+import tomllib
 
 import pytest
 
-from agent6 import portable
-from agent6.config import io
+from agent6 import paths, portable
+from agent6.config import io, write
 
 
 def test_writers_go_through_atomic_write_and_never_truncate(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    cfg = tmp_path / "config.toml"
+    cfg = paths.global_config_path()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
     original = '[sandbox]\nprotect_git = "on"\n'
     cfg.write_text(original, encoding="utf-8")
 
@@ -25,24 +27,23 @@ def test_writers_go_through_atomic_write_and_never_truncate(
     # path.write_text would truncate cfg before any rename; atomic_write fails before it.
     monkeypatch.setattr(portable, "atomic_write", boom)
     with pytest.raises(RuntimeError):
-        io.upsert_toml_leaf(cfg, "sandbox.protect_git", False)
+        write.set_config_value(tmp_path, "sandbox.protect_git", "off")
     assert cfg.read_text(encoding="utf-8") == original  # not truncated
 
 
 def test_write_leaves_no_temp_siblings(tmp_path: pathlib.Path) -> None:
-    cfg = tmp_path / "config.toml"
-    io.upsert_toml_leaf(cfg, "sandbox.network", "auto")
-    io.upsert_toml_leaf(cfg, "sandbox.protect_git", False)
+    assert write.set_config_value(tmp_path, "sandbox.network", "auto") is None
+    assert write.set_config_value(tmp_path, "sandbox.protect_git", "off") is None
+    cfg = paths.global_config_path()
     assert 'network = "auto"' in cfg.read_text(encoding="utf-8")
-    assert [p.name for p in tmp_path.iterdir()] == ["config.toml"]  # tmp files cleaned up
+    assert [p.name for p in cfg.parent.iterdir()] == ["config.toml"]  # tmp files cleaned up
 
 
 def test_a_quoted_leaf_key_is_the_same_leaf(tmp_path: pathlib.Path) -> None:
     """`"protect_git" = true` is valid TOML naming the same leaf, and the surgery matches it."""
-    path = tmp_path / "config.toml"
-    path.write_text('[sandbox]\n"protect_git" = true\nhome = "tmp"\n', encoding="utf-8")
+    text = '[sandbox]\n"protect_git" = true\nhome = "tmp"\n'
 
-    io.upsert_toml_leaf(path, "sandbox.protect_git", False)
+    edited = io.upsert_leaf_text(text, "sandbox.protect_git", False, path=tmp_path / "c.toml")
 
-    assert io.read_toml_file(path) == {"sandbox": {"protect_git": False, "home": "tmp"}}
-    assert path.read_text(encoding="utf-8").count("protect_git") == 1
+    assert tomllib.loads(edited) == {"sandbox": {"protect_git": False, "home": "tmp"}}
+    assert edited.count("protect_git") == 1

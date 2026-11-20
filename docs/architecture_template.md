@@ -41,7 +41,7 @@ Only its modules import the runner, `git_command.py`.
   `pack --repo-config` folds inherited global leaves into repo config through `config.write` before copying, using `config.layer_data`'s merge rules.
   `ui/cli/pack_cmds.py` owns the two command surfaces and shares init's `.gitignore` writer.
   `paths.project_root` refuses any pack until `unpack` imports it or the operator deletes it.
-- every config edit goes through [config/write.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py): one lock-held validate + revalidate + rollback cycle, or "kept as written" when the fail-open lock was not held
+- every config edit goes through [config/write.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py): one lock-held cycle that edits the file's text, validates it and only then writes the file, so a refused edit writes nothing
 
 Every model call requires `models.default`.
 The four optional roles inherit each unset field directly from it; their jobs are listed in [Usage](usage.md#connect-a-provider).

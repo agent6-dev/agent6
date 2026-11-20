@@ -2,11 +2,11 @@
 # Copyright 2026 Eric Lesiuta
 """The one config write cycle every editor uses.
 
-A writer holds the config lock, refuses line surgery on a file that does not parse, writes
-through the surgery in `io`, validates the written value standalone, then revalidates the
-merged config and rolls back when this edit broke it. It raises `OperatorError` when the
-edit cannot be attempted and returns an error string only when a landed edit failed
-revalidation (rolled back, or kept when the lock failed open).
+A writer holds the config lock, refuses line surgery on a file that does not parse, edits the
+file's text through the surgery in `io`, validates the written value standalone and the
+merged config with that text in the file's place, and writes the file only then. It raises
+`OperatorError` when the edit cannot be attempted and returns an error string when the edit
+is refused; a refused edit writes nothing.
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ import dataclasses
 import difflib
 import pathlib
 import shlex
-from collections.abc import Callable, Generator, Sequence
+import tomllib
+from collections.abc import Generator, Sequence
 from typing import Annotated, Any, Literal, get_args, get_origin
 
 import pydantic
@@ -120,7 +121,7 @@ def writing_config(target: pathlib.Path) -> Generator[bool]:
         target: The config file.
 
     Yields:
-        Whether the lock is held, for `keep_or_rollback`.
+        Whether the lock is held.
     """
     with portable.locked_file(target) as held:
         try:
@@ -129,68 +130,43 @@ def writing_config(target: pathlib.Path) -> Generator[bool]:
             paths.chown_to_real_user(target)
 
 
-def target_unparseable(target: pathlib.Path) -> bool:
-    """Return whether the file itself is no longer valid TOML.
+def editable_text(target: pathlib.Path) -> str:
+    """Return a config file's text for line surgery, "" for a file yet to be created.
 
     Args:
         target: The config file.
 
     Returns:
-        True when it exists and does not parse.
+        The text.
+
+    Raises:
+        ConfigError: The file does not parse, so no surgery is attempted on it.
+        OperatorError: The file cannot be read.
     """
-    try:
-        io.read_toml_file(target)
-    except validation.ConfigError:
-        return True
-    return False
+    if not target.is_file():
+        return ""
+    text = agent6_errors.read_operator_file(target)
+    io.read_toml_file(target)
+    return text
 
 
-def merged_config_error(repo_root: pathlib.Path) -> str | None:
+def merged_config_error(repo_root: pathlib.Path, *, allow_pack: bool = False) -> str | None:
     """Return the merged config's load error as it sits on disk, or None.
 
-    Measured before a write, so `revalidate_write` tells this edit's breakage from an older
-    one elsewhere.
+    `write_validated` tells an edit's breakage from an older one elsewhere by it.
 
     Args:
         repo_root: The repo.
+        allow_pack: Allow config reads while replacing a workspace pack.
 
     Returns:
         The error message, or None when the config loads.
     """
     try:
-        layer.load_effective(repo_root, ())
+        layer.load_effective(repo_root, (), allow_pack=allow_pack)
     except validation.ConfigError as exc:
         return str(exc)
     return None
-
-
-# Without the lock a snapshot restore could erase a concurrent writer's update.
-_KEPT_NO_LOCK = (
-    "(kept as written: the config lock could not be taken, so an automatic"
-    " rollback might erase a concurrent edit; undo by hand or run `agent6 config fix`)"
-)
-
-
-def keep_or_rollback(target: pathlib.Path, prior: str | None, err: str, *, held: bool) -> str:
-    """Roll the file back to its prior text and hand the error back.
-
-    Args:
-        target: The config file.
-        prior: The text before the edit; None deletes the file.
-        err: The revalidation error.
-        held: Whether the lock is held; without it the write is kept, since a restore could
-            erase a concurrent writer's update.
-
-    Returns:
-        The error, with the kept-as-written note when the lock failed open.
-    """
-    if not held:
-        return f"{err}\n{_KEPT_NO_LOCK}"
-    if prior is None:
-        target.unlink(missing_ok=True)
-    else:
-        portable.atomic_write(target, prior)
-    return err
 
 
 # Derived: a hand-listed copy would leave a new entry type validated by nothing.
@@ -337,7 +313,7 @@ def written_value_error(
     Returns:
         An error at the key, under it, or at a parent of it; None when the value is
         acceptable or the only complaint is a missing child, which means the written
-        container is partial and the merged revalidation still catches a genuine absence.
+        container is partial and the merged validation still catches a genuine absence.
     """
     parts = io.split_key(key)
     key = io.render_key(parts)
@@ -409,7 +385,7 @@ def _error_about(
     if loc != key and not loc.startswith(key + "."):
         return None
     if err["type"] == "missing":
-        # The written container is partial; the merged revalidation catches a genuine absence.
+        # The written container is partial; the merged validation catches a genuine absence.
         return None
     if err["type"] in ("bool_parsing", "bool_type"):
         detail = f"expected true or false, got {value!r}"
@@ -421,72 +397,63 @@ def _error_about(
     return f"{key}: {detail}"
 
 
-def revalidate_write(
+def write_validated(
     repo_root: pathlib.Path,
     target: pathlib.Path,
-    prior: str | None,
+    text: str,
     *,
-    was_valid: bool,
-    held: bool = True,
     written: Sequence[tuple[str, object]] = (),
     to_repo: bool = False,
     allow_pack: bool = False,
 ) -> str | None:
-    """Reload the merged config after an edit and roll the file back when this edit broke it.
+    """Write an edit's text to a config file when the edit validates; a refusal writes nothing.
 
-    A config that was already invalid keeps the edit, or a stale value in an unedited layer
+    A config that was already invalid takes the edit, or a stale value in an unedited layer
     would refuse every write; `agent6 config fix` removes it. The caller holds
-    `writing_config` across the whole cycle.
+    `writing_config` from its read of the file.
 
     Args:
         repo_root: The repo.
         target: The file edited.
-        prior: Its text before the edit; None for a file this edit created.
-        was_valid: Whether the merged config loaded before the edit.
-        held: Whether the lock is held; without it the edit is kept and the error says so.
-        written: The `(key, value)` pairs this edit wrote, each validated against the
-            section as the file now holds it, so a value a higher layer masks in the merge
-            is caught here.
+        text: The file's text with the edit applied.
+        written: The `(key, value)` pairs the edit wrote, each validated against the section
+            as the text holds it, so a value a higher layer masks in the merge is caught here.
         to_repo: The target is the repo layer, so a command in the error keeps `--repo`.
         allow_pack: Allow config reads while replacing a workspace pack.
 
     Returns:
-        The error when this edit broke the config, else None.
+        The error when the edit would break the config, else None.
     """
     try:
-        doc = io.read_toml_file(target)
-    except validation.ConfigError as exc:
-        # Unparseable TOML is always this edit's doing; a raise would escape the rollback.
-        return keep_or_rollback(target, prior, str(exc), held=held)
+        doc = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        return f"{target}: invalid TOML: {exc}"
     for wkey, wvalue in written:
-        section = _section_leaves(doc, wkey)
         value_err = written_value_error(
             wkey,
             wvalue,
             repo_root=repo_root,
-            section=section,
+            section=_section_leaves(doc, wkey),
             to_repo=to_repo,
             allow_pack=allow_pack,
         )
-        if value_err is None:
-            continue
         # A section rule can fire over a sibling that was already wrong; the value alone
         # settles whose fault it is, and the merged check below keeps a pre-broken config.
-        if (
+        if value_err is not None and (
             written_value_error(wkey, wvalue, repo_root=repo_root, allow_pack=allow_pack)
             is not None
         ):
-            return keep_or_rollback(target, prior, value_err, held=held)
+            return value_err
     try:
-        layer.load_effective(repo_root, (), allow_pack=allow_pack)
+        layer.load_effective(
+            repo_root, (), allow_pack=allow_pack, candidate=layer_data.Candidate(target, doc)
+        )
     except validation.ConfigError as exc:
-        err = str(exc) + _whole_table_hint(exc, written, to_repo=to_repo)
-    else:
-        return None
-    # A target that no longer parses is always this write's doing, never another layer's.
-    if not was_valid and not target_unparseable(target):
-        return None  # broken before this edit; not ours to refuse
-    return keep_or_rollback(target, prior, err, held=held)
+        # A config broken before this edit is not this edit's to refuse.
+        if merged_config_error(repo_root, allow_pack=allow_pack) is None:
+            return str(exc) + _whole_table_hint(exc, written, to_repo=to_repo)
+    portable.atomic_write(target, text)
+    return None
 
 
 def _whole_table_hint(
@@ -495,7 +462,7 @@ def _whole_table_hint(
     """Return the line naming the one write that sets a table's required fields together.
 
     A table with required fields (`harness.metric`) cannot be built one leaf at a time: each
-    write alone fails validation and rolls back.
+    write alone fails validation.
 
     Args:
         exc: The merged config's load error.
@@ -610,26 +577,32 @@ def names_a_section(dotted_key: str) -> bool:
     return True
 
 
-def _seed_builtin_preset(repo_root: pathlib.Path, target: pathlib.Path, key: str) -> None:
-    """Copy a built-in preset's values into the target before the first write under its name.
+def _seed_builtin_preset(
+    repo_root: pathlib.Path, text: str, key: str, *, path: pathlib.Path
+) -> str:
+    """Copy a built-in preset's values into the text before the first write under its name.
 
     A `[presets.<name>]` table replaces the built-in of that name wholesale, so a write that
     created the table with one leaf would drop the rest of the built-in.
 
     Args:
         repo_root: The repo, whose layers may already hold the table.
-        target: The file being written, inside its write lock.
+        text: The text of the file being written.
         key: The dotted key being written.
+        path: The file, named in a refusal.
+
+    Returns:
+        The text, with the built-in's leaves when the key starts its table.
     """
     parts = io.split_key(key)
     if len(parts) < 3 or parts[0] != "presets" or parts[1] not in layer_presets.BUILTIN_PRESETS:
-        return
+        return text
     if preset_layer(repo_root, parts[1]) is not None:
-        return
+        return text
     for leaf, value in layer_data.flatten_leaves(layer_presets.BUILTIN_PRESETS[parts[1]]).items():
-        io.upsert_toml_leaf(
-            target, io.render_key(("presets", parts[1], *io.split_key(leaf))), value
-        )
+        seeded = io.render_key(("presets", parts[1], *io.split_key(leaf)))
+        text = io.upsert_leaf_text(text, seeded, value, path=path)
+    return text
 
 
 def set_config_value(
@@ -647,7 +620,7 @@ def set_config_value(
         to_repo: The repo layer instead of the global one.
 
     Returns:
-        The error when the edit produced an invalid config (rolled back), else None.
+        The error when the edit would leave an invalid config, else None.
 
     Raises:
         ConfigError: The target does not parse, the surgery refuses the key, or a section
@@ -658,39 +631,24 @@ def set_config_value(
     if refusal := _provider_key_refusal(dotted_key, parsed):
         return refusal
     target = _prepare_write_target(repo_root, to_repo=to_repo)
-    with writing_config(target) as held:
-        prior = agent6_errors.read_operator_file(target) if target.is_file() else None
-        io.read_toml_file(target)  # refuse line surgery on a file that does not parse
-        was_valid = merged_config_error(repo_root) is None
-        _seed_builtin_preset(repo_root, target, dotted_key)
+    with writing_config(target):
+        text = _seed_builtin_preset(repo_root, editable_text(target), dotted_key, path=target)
         if isinstance(parsed, dict) and names_a_section(dotted_key):
             if not parsed:
                 raise validation.ConfigError(
                     f"{dotted_key} = {{}} sets nothing; name the leaves to set"
                 )
+            section = io.split_key(dotted_key)
+            written = [(io.render_key((*section, leaf)), val) for leaf, val in parsed.items()]
             try:
-                for leaf, val in parsed.items():
-                    io.upsert_toml_leaf(
-                        target, io.render_key((*io.split_key(dotted_key), leaf)), val
-                    )
+                for key, val in written:
+                    text = io.upsert_leaf_text(text, key, val, path=target)
             except validation.ConfigError as exc:
-                # A refusal mid-way leaves earlier leaves on disk.
-                return keep_or_rollback(target, prior, str(exc), held=held)
-            written = [
-                (io.render_key((*io.split_key(dotted_key), leaf)), v) for leaf, v in parsed.items()
-            ]
+                return str(exc)
         else:
-            io.upsert_toml_leaf(target, dotted_key, parsed)
+            text = io.upsert_leaf_text(text, dotted_key, parsed, path=target)
             written = [(dotted_key, parsed)]
-        return revalidate_write(
-            repo_root,
-            target,
-            prior,
-            was_valid=was_valid,
-            held=held,
-            written=written,
-            to_repo=to_repo,
-        )
+        return write_validated(repo_root, target, text, written=written, to_repo=to_repo)
 
 
 def set_config_table(
@@ -709,19 +667,13 @@ def set_config_table(
         to_repo: The repo layer instead of the global one.
 
     Returns:
-        The error when the edit produced an invalid config (rolled back), else None.
+        The error when the edit would leave an invalid config, else None.
 
     Raises:
         ConfigError: The target does not parse, or a value has no TOML form.
         OperatorError: The target cannot be written.
     """
-    return _write_fields(
-        repo_root,
-        table,
-        fields,
-        to_repo=to_repo,
-        edit=lambda target, _prior, _held: io.upsert_toml_table(target, table, fields),
-    )
+    return _write_fields(repo_root, table, fields, to_repo=to_repo, whole=True)
 
 
 def _write_fields(
@@ -730,43 +682,37 @@ def _write_fields(
     fields: dict[str, io.ConfigLeafValue],
     *,
     to_repo: bool,
-    edit: Callable[[pathlib.Path, str | None, bool], None],
+    whole: bool,
 ) -> str | None:
-    """Edit one `[table]` under the config lock and revalidate each leaf it wrote.
+    """Edit one `[table]` under the config lock and validate each leaf the edit writes.
 
     Args:
         repo_root: The repo.
         table: The table name.
         fields: The leaves; a None value is omitted.
         to_repo: The repo layer instead of the global one.
-        edit: Writes the file; given the target, its text before the edit and whether the
-            lock is held.
+        whole: Replace the table's block; False upserts each leaf beside its siblings.
 
     Returns:
-        The error when the edit produced an invalid config (rolled back), else None.
+        The error when the edit would leave an invalid config, else None.
     """
     if refusal := _provider_key_refusal(table, fields):
         return refusal
     target = _prepare_write_target(repo_root, to_repo=to_repo)
-    with writing_config(target) as held:
-        prior = agent6_errors.read_operator_file(target) if target.is_file() else None
-        io.read_toml_file(target)  # refuse line surgery on a file that does not parse
-        was_valid = merged_config_error(repo_root) is None
-        _seed_builtin_preset(repo_root, target, table)
-        edit(target, prior, held)
-        return revalidate_write(
-            repo_root,
-            target,
-            prior,
-            was_valid=was_valid,
-            held=held,
-            # Per leaf: a whole-table pair would hide every leaf-level error.
-            written=[
-                (io.render_key((*io.split_key(table), k)), v)
-                for k, v in fields.items()
-                if v is not None
-            ],
-        )
+    with writing_config(target):
+        text = _seed_builtin_preset(repo_root, editable_text(target), table, path=target)
+        # Per leaf: a whole-table pair would hide every leaf-level error.
+        written = [
+            (io.render_key((*io.split_key(table), k)), v)
+            for k, v in fields.items()
+            if v is not None
+        ]
+        if whole:
+            text = io.upsert_table_text(text, table, fields)
+        else:
+            for key, val in written:
+                text = io.upsert_leaf_text(text, key, val, path=target)
+        return write_validated(repo_root, target, text, written=written)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -1018,7 +964,7 @@ def remove_entry(
         preset: The selected preset; the entry is read under `[presets.<name>]`.
 
     Returns:
-        Whether the entry was present and any revalidation error.
+        Whether the entry was present and any validation error.
     """
     if table.path == "providers" and (refusal := provider_config.provider_name_refusal(name)):
         return UnsetResult(removed=False, error=refusal)
@@ -1118,7 +1064,7 @@ def remove_preset(repo_root: pathlib.Path, name: str) -> UnsetResult:
         name: The preset name.
 
     Returns:
-        Whether a table or a selector was present, and the first revalidation error.
+        Whether a table or a selector was present, and the first validation error.
     """
     removed = False
     for to_repo in (True, False):
@@ -1176,7 +1122,7 @@ def set_config_leaves(
 ) -> str | None:
     """Upsert individual `[table]` leaves, preserving sibling keys and comments.
 
-    The update counterpart of `set_config_table`; one revalidation wraps every leaf write.
+    The update counterpart of `set_config_table`; one validation and one write cover every leaf.
 
     Args:
         repo_root: The repo.
@@ -1185,26 +1131,13 @@ def set_config_leaves(
         to_repo: The repo layer instead of the global one.
 
     Returns:
-        The error when the edit produced an invalid config (rolled back), else None.
+        The error when the edit would leave an invalid config, else None.
 
     Raises:
-        ConfigError: The target does not parse, or the surgery refuses a leaf (the file is
-            rolled back first).
+        ConfigError: The target does not parse, or the surgery refuses a leaf.
         OperatorError: The target cannot be written.
     """
-
-    def edit(target: pathlib.Path, prior: str | None, held: bool) -> None:
-        try:
-            for key, val in fields.items():
-                if val is not None:
-                    io.upsert_toml_leaf(target, io.render_key((*io.split_key(table), key)), val)
-        except validation.ConfigError as exc:
-            # Earlier leaves may already have landed.
-            raise validation.ConfigError(
-                keep_or_rollback(target, prior, str(exc), held=held)
-            ) from exc
-
-    return _write_fields(repo_root, table, fields, to_repo=to_repo, edit=edit)
+    return _write_fields(repo_root, table, fields, to_repo=to_repo, whole=False)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -1212,9 +1145,8 @@ class UnsetResult:
     """How an unset ended.
 
     Attributes:
-        removed: Whether anything was removed.
-        error: The revalidation error when the removal broke the config (rolled back, or
-            kept without the lock), else None.
+        removed: Whether the entry was in the file.
+        error: Why the removal was refused, which leaves the entry in the file; else None.
     """
 
     removed: bool
@@ -1240,8 +1172,7 @@ def unset_config_table(
         target: An exact file to repair, including a machine overlay; None uses the layer.
 
     Returns:
-        Whether the table was present, and the revalidation error if removing it broke the
-        config.
+        Whether the table was present, and the error if removing it would break the config.
 
     Raises:
         ConfigError: The target does not parse.
@@ -1256,16 +1187,11 @@ def unset_config_table(
     )
     if not target.is_file():
         return UnsetResult(removed=False)
-    with writing_config(target) as held:
-        prior = agent6_errors.read_operator_file(target)
-        io.read_toml_file(target)  # refuse line surgery on a file that does not parse
-        was_valid = merged_config_error(repo_root) is None
-        if not io.remove_toml_table(target, table):
+    with writing_config(target):
+        text = io.remove_table_text(editable_text(target), table)
+        if text is None:
             return UnsetResult(removed=False)
-        return UnsetResult(
-            removed=True,
-            error=revalidate_write(repo_root, target, prior, was_valid=was_valid, held=held),
-        )
+        return UnsetResult(removed=True, error=write_validated(repo_root, target, text))
 
 
 def unset_config_value(
@@ -1284,8 +1210,8 @@ def unset_config_value(
         target: An exact file to repair, including a machine overlay; None uses the layer.
 
     Returns:
-        Whether the leaf was set in the file, and the revalidation error if removing it
-        broke the config.
+        Whether the leaf was set in the file, and the error if removing it would break the
+        config.
 
     Raises:
         ConfigError: The target does not parse, or the key's ancestor is not a plain table.
@@ -1300,13 +1226,8 @@ def unset_config_value(
     )
     if not target.is_file():
         return UnsetResult(removed=False)
-    with writing_config(target) as held:
-        prior = agent6_errors.read_operator_file(target)
-        io.read_toml_file(target)  # refuse line surgery on a file that does not parse
-        was_valid = merged_config_error(repo_root) is None
-        if not io.remove_toml_leaf(target, dotted_key):
+    with writing_config(target):
+        text = io.remove_leaf_text(editable_text(target), dotted_key, path=target)
+        if text is None:
             return UnsetResult(removed=False)
-        return UnsetResult(
-            removed=True,
-            error=revalidate_write(repo_root, target, prior, was_valid=was_valid, held=held),
-        )
+        return UnsetResult(removed=True, error=write_validated(repo_root, target, text))

@@ -37,10 +37,9 @@ It can be empty or absent when the global config supplies a provider and model.
   A key component that is not a bare TOML key (`[A-Za-z0-9_-]+`) is written quoted, as in `providers.demo.extra_body."a.b"` (keep those quotes inside a shell-quoted argument).
   `get` accepts a whole mapping or one entry and prints each entry with its own origin.
   `set` and `unset` accept a whole mapping or one entry, such as `skills.state.alpha`.
-  Every edit is re-validated; an invalid edit is rolled back when the config lock is held.
+  Every edit is validated before it is written; a refused edit leaves the file untouched.
   A sibling pair that must move together is set as one inline table: `agent6 config set compaction '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'`.
 - Writes are atomic; failure to take the config lock does not block the write, but concurrent edits can lose updates.
-  An invalid edit without the lock is reported as "kept as written".
   A symlinked config file is followed only when you own the target, or its nearest existing parent when the target does not exist.
 - The [TUI config page](terminal.md#configuration) adds and removes named provider, MCP server and skill state entries through forms.
 - `agent6 config set --secret telemetry.headers.<name> <value>` saves a literal header value in the private global `secrets.toml`; `agent6 config unset --secret telemetry.headers.<name>` removes it.

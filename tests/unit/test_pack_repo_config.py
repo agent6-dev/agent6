@@ -196,7 +196,7 @@ def test_invalid_fold_keeps_repo_file_unchanged(
 def test_fold_refuses_without_the_config_writer_lock(
     repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fold must not write when a rollback cannot be protected from another writer."""
+    """A fold must not write when it cannot hold the config lock against another writer."""
     _write(paths.global_config_path(), "[budget]\nmax_usd = 5\n")
     target = _write(paths.repo_config_path(repo), "[web]\nport = 8001\n")
     target.with_name(target.name + ".lock").symlink_to(repo / "missing")

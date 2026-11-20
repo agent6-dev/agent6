@@ -175,7 +175,7 @@ def _fold_global_config(root: pathlib.Path) -> tuple[str, ...]:
     with write.writing_config(target) as held:
         if not held:
             raise errors.PackError(f"{target}: cannot take writer lock; nothing folded")
-        prior = errors.read_operator_file(target) if target.is_file() else None
+        text = write.editable_text(target)
         merged, sources = layer_data.merge_layers(
             [
                 layer_data.Layer("global", source, io.read_toml_file(source)),
@@ -187,22 +187,21 @@ def _fold_global_config(root: pathlib.Path) -> tuple[str, ...]:
         layer.load_effective(root, allow_pack=True)
         try:
             for key in moved:
-                owner = io.undeclared_table_ancestor(target, key) or key
-                io.upsert_toml_leaf(target, owner, io.read_toml_leaf(merged, owner))
+                owner = io.undeclared_table_ancestor(text, key) or key
+                text = io.upsert_leaf_text(
+                    text, owner, io.read_toml_leaf(merged, owner), path=target
+                )
+            error = write.write_validated(
+                root,
+                target,
+                text,
+                written=[(key, leaves[key]) for key in moved],
+                to_repo=True,
+                allow_pack=True,
+            )
         except (OSError, errors.OperatorError) as exc:
-            raise errors.PackError(
-                write.keep_or_rollback(target, prior, str(exc), held=held)
-            ) from exc
-        if error := write.revalidate_write(
-            root,
-            target,
-            prior,
-            was_valid=True,
-            held=held,
-            written=[(key, leaves[key]) for key in moved],
-            to_repo=True,
-            allow_pack=True,
-        ):
+            raise errors.PackError(str(exc)) from exc
+        if error:
             raise errors.PackError(error)
         return moved
 

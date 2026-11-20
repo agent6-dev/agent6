@@ -849,17 +849,17 @@ def test_materialize_escapes_control_chars_in_values(
     assert list(reloaded.harness.verify.command) == ["echo", "a\x01b\nc"]
 
 
-def test_concurrent_rollback_does_not_erase_a_valid_write(
+def test_concurrent_writes_lose_no_update(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The whole write, revalidate and rollback cycle holds locked_file.
+    """The whole read, validate and write cycle holds locked_file.
 
-    A concurrent valid write survives.
+    A writer that read the file before a concurrent one wrote would publish over its update.
     """
     import threading
     import time
 
-    a_in_revalidate = threading.Event()
+    a_in_validation = threading.Event()
     b_attempted = threading.Event()
     real_load = layer.load_effective
     calls = {"n": 0}
@@ -870,22 +870,23 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
         *,
         preset: str = "",
         allow_pack: bool = False,
+        candidate: layer_data.Candidate | None = None,
     ) -> object:
         calls["n"] += 1
-        if calls["n"] == 1:  # A's revalidate: hold the transaction open
-            a_in_revalidate.set()
+        if calls["n"] == 1:  # A's validation: hold the cycle open
+            a_in_validation.set()
             b_attempted.wait(timeout=5)
-            time.sleep(0.4)  # window for B to (old code) land / (fixed) queue
-        return real_load(root, flag, preset=preset, allow_pack=allow_pack)
+            time.sleep(0.4)  # window for B to land (unlocked) or queue (locked)
+        return real_load(root, flag, preset=preset, allow_pack=allow_pack, candidate=candidate)
 
     monkeypatch.setattr(layer, "load_effective", gated_load)
     results: dict[str, str | None] = {}
 
     def writer_a() -> None:
-        results["a"] = write.set_config_value(repo, "sandbox.run_commands", "bogus", to_repo=True)
+        results["a"] = write.set_config_value(repo, "sandbox.run_commands", "deny", to_repo=True)
 
     def writer_b() -> None:
-        a_in_revalidate.wait(timeout=5)
+        a_in_validation.wait(timeout=5)
         b_attempted.set()
         results["b"] = write.set_config_value(repo, "git.dirty_tree", "stash", to_repo=True)
 
@@ -895,11 +896,12 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
     tb.start()
     ta.join(timeout=10)
     tb.join(timeout=10)
-    assert results["a"] is not None  # the invalid write was rejected
-    assert results["b"] is None  # ...without taking B's valid write down with it
+    assert results == {"a": None, "b": None}
     eff = layer.load_effective(repo)
-    assert eff.config.git.dirty_tree == "stash"  # B's update survived A's rollback
-    assert eff.config.sandbox.run_commands == "allow"  # A rolled back to the prior value
+    assert eff.config.git.dirty_tree == "stash"  # B's update survived A's write
+    assert eff.config.sandbox.run_commands == "deny"
+    rcfg = paths_mod.repo_config_path(repo)
+    assert not rcfg.with_name(rcfg.name + ".lock").exists()  # the lock is removed on release
 
 
 def test_prepare_write_target_hands_back_the_created_state_base(
@@ -956,7 +958,7 @@ def test_config_write_hands_the_dir_over_before_writing(
     def killed(*_args: object, **_kwargs: object) -> None:
         raise KeyboardInterrupt  # stands in for the operator killing the writer
 
-    monkeypatch.setattr(io, "upsert_toml_leaf", killed)
+    monkeypatch.setattr(io, "upsert_leaf_text", killed)
     with pytest.raises(KeyboardInterrupt):
         write.set_config_value(repo, "git.dirty_tree", "stash", to_repo=True)
     assert handed[0] == paths_mod.repo_config_path(repo).parent  # before the write, not after it
@@ -965,7 +967,7 @@ def test_config_write_hands_the_dir_over_before_writing(
 def test_config_write_hands_the_file_over_after_a_rejected_edit(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The file is handed over after a rejected edit too: its rollback republishes a new inode."""
+    """The file is handed over after a rejected edit too."""
     handed: list[pathlib.Path] = []
 
     def record(path: pathlib.Path, user: object = None) -> None:
@@ -996,12 +998,12 @@ def test_engine_writers_refuse_a_write_into_an_unparseable_target(
     assert gcfg.read_text(encoding="utf-8") == before
 
 
-def test_no_lock_rollback_keeps_the_write_and_says_so(
+def test_a_refused_edit_without_the_lock_writes_nothing(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Without the lock, a failed revalidation keeps the write and says so.
+    """Without the lock, a refused edit still never reaches the file.
 
-    A whole-file restore could erase a concurrent writer's just-validated update.
+    The writer published first and could not roll back unserialized, so the bad value stayed.
     """
     from agent6 import portable
 
@@ -1009,12 +1011,11 @@ def test_no_lock_rollback_keeps_the_write_and_says_so(
         return None
 
     monkeypatch.setattr(portable, "_acquire_lock", _no_lock)
+    rcfg = paths_mod.repo_config_path(repo)
+    before = rcfg.read_text(encoding="utf-8")
     err = write.set_config_value(repo, "sandbox.run_commands", "bogus_value", to_repo=True)
-    assert err is not None
-    assert "kept as written" in err and "lock" in err
-    # NOT restored: the invalid value is still in the file for the operator.
-    text = paths_mod.repo_config_path(repo).read_text(encoding="utf-8")
-    assert 'run_commands = "bogus_value"' in text
+    assert err is not None and "kept as written" not in err
+    assert rcfg.read_text(encoding="utf-8") == before
 
 
 def test_an_optional_section_is_written_leaf_by_leaf(repo: pathlib.Path) -> None:
@@ -1103,64 +1104,37 @@ def test_set_config_leaves_refuses_a_headerless_ancestor(
     assert rcfg.read_text(encoding="utf-8") == before  # nothing partially written
 
 
-def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
-    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("locked", [True, False])
+def test_set_config_leaves_writes_nothing_when_a_later_leaf_is_refused(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, locked: bool
 ) -> None:
-    """One revalidate and rollback wraps all the leaf writes.
+    """One validation and one write cover all the leaves, with or without the lock.
 
-    A later leaf's error rolls back the earlier ones.
+    A later leaf's refusal left the earlier ones written when the lock could not be taken.
     """
-    rcfg = paths_mod.repo_config_path(repo)
-    before = '[providers.anthropic]\nbackend = "anthropic"\n'
-    rcfg.write_text(before, encoding="utf-8")
-
-    real = io.upsert_toml_leaf
-    calls = {"n": 0}
-
-    def _fail_second(path: pathlib.Path, key: str, value: object) -> None:
-        calls["n"] += 1
-        if calls["n"] == 2:
-            raise ConfigError("second leaf refused")
-        real(path, key, value)
-
-    monkeypatch.setattr(io, "upsert_toml_leaf", _fail_second)
-
-    with pytest.raises(errors.OperatorError, match="second leaf refused"):
-        write.set_config_leaves(
-            repo,
-            "providers.anthropic",
-            {"base_url": "https://x/v1", "api_key_env": "KEY"},
-            to_repo=True,
-        )
-
-    assert rcfg.read_text(encoding="utf-8") == before  # the first leaf's write rolled back
-
-
-def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
-    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A partial multi-leaf write without the lock is kept, and the refusal says so."""
     from agent6 import portable
 
     def _no_lock(_p: pathlib.Path) -> int | None:
         return None
 
-    monkeypatch.setattr(portable, "_acquire_lock", _no_lock)
+    if not locked:
+        monkeypatch.setattr(portable, "_acquire_lock", _no_lock)
     rcfg = paths_mod.repo_config_path(repo)
     before = '[providers.anthropic]\nbackend = "anthropic"\n'
     rcfg.write_text(before, encoding="utf-8")
-    real = io.upsert_toml_leaf
+
+    real = io.upsert_leaf_text
     calls = {"n": 0}
 
-    def _fail_second(path: pathlib.Path, key: str, value: object) -> None:
+    def _fail_second(text: str, key: str, value: object, *, path: pathlib.Path) -> str:
         calls["n"] += 1
         if calls["n"] == 2:
             raise ConfigError("second leaf refused")
-        real(path, key, value)
+        return real(text, key, value, path=path)
 
-    monkeypatch.setattr(io, "upsert_toml_leaf", _fail_second)
+    monkeypatch.setattr(io, "upsert_leaf_text", _fail_second)
 
-    with pytest.raises(errors.OperatorError, match="kept as written"):
+    with pytest.raises(errors.OperatorError, match="second leaf refused") as refusal:
         write.set_config_leaves(
             repo,
             "providers.anthropic",
@@ -1168,7 +1142,8 @@ def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
             to_repo=True,
         )
 
-    assert "base_url" in rcfg.read_text(encoding="utf-8")  # the landed leaf was kept
+    assert "kept as written" not in str(refusal.value)
+    assert rcfg.read_text(encoding="utf-8") == before
 
 
 def test_load_config_wraps_an_unreadable_file(tmp_path: pathlib.Path) -> None:

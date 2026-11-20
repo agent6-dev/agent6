@@ -317,7 +317,7 @@ def _cmd_model(
     if effort:
         fields["effort"] = effort
     roles: tuple[RoleName, ...] = kinds.MODEL_ROLES if role == "all" else (cast("RoleName", role),)
-    # The shared edit path re-validates and rolls back, so a bad route never breaks config.toml.
+    # The shared edit path validates before it writes, so a bad route never reaches config.toml.
     for r in roles:
         err = write.set_config_leaves(pathlib.Path.cwd(), f"models.{r}", fields, to_repo=to_repo)
         if err is not None:

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import tomllib
 
@@ -713,7 +714,7 @@ def test_a_write_command_bug_still_crash_reports(
     def _boom(*_a: object, **_k: object) -> None:
         raise RuntimeError("kaboom")
 
-    monkeypatch.setattr(io, "upsert_toml_leaf", _boom)
+    monkeypatch.setattr(io, "upsert_leaf_text", _boom)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     assert _refuse(["config", "set", "harness.max_turns", "7"]) == 1
     err = capsys.readouterr().err
@@ -1012,3 +1013,73 @@ def test_mapping_writes_name_only_the_overridden_entries(
         assert "note: the repo config overrides skills.state.alpha;" in capsys.readouterr().out
     assert _run(["config", "set", "skills.state.beta", '"disabled"']) == 0
     assert "note:" not in capsys.readouterr().out
+
+
+_METRIC = '{ command = ["true"], pattern = "x", goal = "maximize" }'
+_MACHINE = (
+    'machine = "m"\nversion = 1\ninitial = "s"\n'
+    "[budget]\nmax_usd = 1.0\nmax_transitions = 10\n"
+    '[states.s]\nkind = "terminal"\nstatus = "ok"\nreason = "done"\n'
+    '[config.harness.metric]\ncommand = ["true"]\npattern = "x"\ngoal = "maximize"\n'
+)
+
+
+def _files(*roots: pathlib.Path) -> dict[pathlib.Path, tuple[int, bytes]]:
+    """Return the mtime and bytes of every file under the roots."""
+    files = [p for root in roots for p in sorted(root.rglob("*")) if p.is_file()]
+    return {path: (path.stat().st_mtime_ns, path.read_bytes()) for path in files}
+
+
+def _backdated(*roots: pathlib.Path) -> dict[pathlib.Path, tuple[int, bytes]]:
+    """Return `_files` after setting each mtime to a time no write gives."""
+    for path in _files(*roots):
+        os.utime(path, ns=(10**9, 10**9))
+    return _files(*roots)
+
+
+@pytest.mark.parametrize(
+    ("setup", "refused"),
+    [
+        (["set", "models.worker.effort", "high"], ["set", "--", "models.worker.effort", ""]),
+        (
+            ["set", "--repo", "sandbox.run_commands", "allow"],
+            ["set", "--repo", "sandbox.run_commands", "bogus"],
+        ),
+        ([], ["set", "--machine-file", "m.asm.toml", "sandbox.run_commands", "bogus"]),
+        (["set", "harness.metric", _METRIC], ["unset", "harness.metric.pattern"]),
+        (
+            ["set", "--repo", "harness.metric", _METRIC],
+            ["unset", "--repo", "harness.metric.pattern"],
+        ),
+        ([], ["unset", "--machine-file", "m.asm.toml", "harness.metric.pattern"]),
+        (
+            ["set", "sandbox.fetch_approved_hosts", '["ok.example"]'],
+            ["add", "sandbox.fetch_approved_hosts", "5"],
+        ),
+        ([], ["add", "--machine-file", "m.asm.toml", "sandbox.fetch_approved_hosts", "5"]),
+    ],
+)
+def test_a_refused_config_edit_writes_nothing(
+    iso: pathlib.Path, setup: list[str], refused: list[str]
+) -> None:
+    """A refused edit leaves every file's bytes and mtime.
+
+    The writer published the edit, validated it and rolled it back, so the mtime moved.
+    """
+    (iso / "m.asm.toml").write_text(_MACHINE, encoding="utf-8")
+    if setup:
+        assert _run(["config", *setup]) == 0
+    roots = (iso, paths.state_dir(iso))
+    before = _backdated(*roots)
+    assert _refuse(["config", *refused]) == 2
+    assert _files(*roots) == before
+
+
+def test_a_refused_config_fix_writes_nothing(iso: pathlib.Path) -> None:
+    """A fix that cannot carve its entry out of an inline table leaves the file as it was."""
+    gcfg = iso / "g" / "agent6" / "config.toml"
+    gcfg.parent.mkdir(parents=True)
+    gcfg.write_text('sandbox = { run_commands = "bogus" }\n', encoding="utf-8")
+    before = _backdated(iso)
+    assert _refuse(["config", "fix"]) == 2
+    assert _files(iso) == before
