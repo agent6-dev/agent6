@@ -335,6 +335,8 @@ def _create(path: str, content: str) -> _Turn:
 
 
 _FORGE = _create(".agent6/pack.json", _MANIFEST)
+# A project rule outranks the exclude file agent6 writes, so the run's commits hold the pack.
+_UNIGNORE = _create(".gitignore", "!.agent6/\n")
 _FINISH: _Turn = (
     {"type": "tool_use", "id": "t1", "name": "finish_session", "input": {"summary": "done"}},
 )
@@ -432,6 +434,34 @@ def test_a_session_whose_model_forges_a_pack_ends_with_it_renamed(
     _next_start_is_not_refused(capsys)
 
 
+def test_a_runs_commits_leave_a_forged_pack_out(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The per-turn commit staged `.agent6/pack.json` with the rest of the tree.
+
+    A merge then landed it, and a restore or a branch switch put it back beside no session.
+    A run now excludes `.agent6/` as `agent6 pack` does, in the repository's own exclude file.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+    _script(monkeypatch, _FORGE, _create("made.txt", "by the run\n"), _FINISH)
+
+    assert cli_main(["run", "--session-id", "pk-TREE01", "tidy the repo"]) == 0
+    out, err = capsys.readouterr()
+
+    tip = git_read.chain_tip(repo, git_read.chain_ref_for("pk-TREE01"))
+    assert tip is not None
+    assert git_read.tree_paths(repo, tip) == {"a.py", "made.txt"}
+    exclude = repo / ".git/info/exclude"
+    assert ".agent6/" in exclude.read_text(encoding="utf-8").splitlines()
+    assert f"[agent6] excluded .agent6/ in {exclude}; .gitignore is untouched" in out + err
+    assert not (repo / ".gitignore").exists()
+    assert _names(repo / ".agent6") == ["pack.invalid"]  # the end check still sets it aside
+
+    _script(monkeypatch, _FINISH)
+    assert cli_main(["run", "--session-id", "pk-TREE02", "tidy the repo"]) == 0
+    assert "excluded .agent6/" not in "".join(capsys.readouterr())  # said once
+
+
 def test_a_merge_that_lands_a_tracked_pack_json_leaves_it_renamed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -440,7 +470,7 @@ def test_a_merge_that_lands_a_tracked_pack_json_leaves_it_renamed(
     The session's own end took the first name; the merge's copy gets the next free one.
     """
     repo = _repo(tmp_path, monkeypatch)
-    _script(monkeypatch, _FORGE, _FINISH)
+    _script(monkeypatch, _UNIGNORE, _FORGE, _FINISH)
     assert cli_main(["run", "--session-id", "pk-MERG01", "tidy the repo"]) == 0
     tip = git_read.chain_tip(repo, git_read.chain_ref_for("pk-MERG01"))
     assert tip is not None and ".agent6/pack.json" in git_read.tree_paths(repo, tip)
@@ -468,7 +498,7 @@ def test_an_automatic_merge_from_a_worktree_run_renames_what_it_lands(
     The run's own checkout is its worktree, so only the landing reaches the operator's.
     """
     repo = _repo(tmp_path, monkeypatch, config=_CONFIG + "\n[git]\nauto_merge = true\n")
-    _script(monkeypatch, _FORGE, _FINISH)
+    _script(monkeypatch, _UNIGNORE, _FORGE, _FINISH)
 
     assert cli_main(["run", "--worktree", "--session-id", "pk-AUTO01", "tidy the repo"]) == 0
     out, err = capsys.readouterr()

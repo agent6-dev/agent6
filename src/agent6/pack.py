@@ -25,6 +25,8 @@ from agent6.config import io, layer, layer_data, write
 from agent6.machine import schema as machine_schema
 from agent6.sessions import event_log, journal, layout, lock, process
 from agent6.sessions import manifest as sessions_manifest
+from agent6.vcs.git import ops as git_ops
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing
 from agent6.viewmodel.machine import state as machine_state
 from agent6.viewmodel.session import status as session_status
@@ -113,6 +115,32 @@ def choose_file(packed: str, base: str | None, home: str | None) -> Outcome:
     if base is not None and packed == base:
         return "keep"
     return "conflict"
+
+
+def keep_out_of_git(root: pathlib.Path) -> pathlib.Path | None:
+    """Exclude `.agent6/` in the repository's own exclude file, unless git ignores it already.
+
+    A project's `.gitignore` is shared with people who do not use agent6, so it is never
+    written. A `.gitignore` rule such as `!.agent6/` outranks the exclude file.
+
+    Args:
+        root: The checkout.
+
+    Returns:
+        The exclude file when the line was added; None when git ignored the pack already.
+
+    Raises:
+        PackError: The exclude file cannot be read or written.
+    """
+    if git_read.pack_is_ignored(root):
+        return None
+    try:
+        excluded = git_ops.exclude_locally(root, ".agent6/")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise errors.PackError(f"{root / '.git/info/exclude'}: {exc}") from exc
+    if excluded is not None:
+        paths.chown_to_real_user(excluded)
+    return excluded
 
 
 def _files(root: pathlib.Path, *, exclude: tuple[str, ...] = ()) -> Iterator[pathlib.Path]:

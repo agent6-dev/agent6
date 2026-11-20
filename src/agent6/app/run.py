@@ -16,7 +16,7 @@ import shutil
 from collections.abc import Callable, Mapping, Sequence
 
 from agent6 import budget as agent6_budget
-from agent6 import directive, errors, kinds, paths
+from agent6 import directive, errors, kinds, pack, paths
 from agent6.app import (
     execution,
     finalize,
@@ -507,6 +507,14 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                         return _park(
                             "stash failed", f"stashing the working tree's changes failed: {exc}"
                         )
+            # agent6's own directory stays out of the run's commits, a pack a model writes too.
+            try:
+                excluded = pack.keep_out_of_git(cwd)
+            except (errors.PackError, errors.GitError) as exc:
+                reporter.warn(f"could not exclude .agent6/ from git: {exc}")
+            else:
+                if excluded is not None:
+                    reporter.note(f"excluded .agent6/ in {excluded}; .gitignore is untouched")
             # The operator's files, untracked after any stash; every commit leaves them out.
             untracked_at_start = git_read.untracked_paths(cwd)
             sessions_layout.write_untracked_at_start(layout.session_dir, untracked_at_start)

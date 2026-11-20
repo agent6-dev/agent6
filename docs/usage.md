@@ -441,6 +441,7 @@ The verify command is the success gate.
 
 Run `agent6 pack` before syncing a checkout to a devcontainer, remote-ssh host or new location.
 It copies this home's state into `<project root>/.agent6/` and keeps it out of git through the repository's own exclude file (`.git/info/exclude`), unless git already ignores it; the project's `.gitignore` is never written.
+A run adds the same line when it starts, so its commits leave `.agent6/` out.
 Before copying, it asks git whether `.agent6/pack.json` is ignored and refuses if it is not (a `.gitignore` rule such as `!.agent6/` outranks the exclude file) or if any `.agent6` path is tracked.
 Home keeps its copies.
 Run `agent6 unpack` in the destination checkout to move the pack into that home's global directories and the state directory keyed to the new project root.
