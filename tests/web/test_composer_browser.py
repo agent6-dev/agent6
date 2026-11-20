@@ -131,6 +131,28 @@ def test_a_phones_session_button_is_a_named_icon_that_leaves_the_entry_the_row(
     assert field["width"] > 0.8 * row["width"]
 
 
+@pytest.mark.parametrize("font", [16, 20])
+def test_a_phones_live_placeholder_fits_beside_the_send_icon(
+    touch_page: TouchPage, port: int, tmp_path: pathlib.Path, font: int
+) -> None:
+    """Beside the icon, a 360px phone cut "steer this session… (type / for directives)" mid-word."""
+    from playwright.sync_api import expect
+
+    session_logs.write_run(tmp_path, "live-AAA111", [], live=True)
+    page = touch_page(port, 360, 800, True)
+    page.context.new_cdp_session(page).send("Page.setFontSizes", {"fontSizes": {"standard": font}})
+    page.goto(f"http://127.0.0.1:{port}/#/session/live-AAA111")
+    entry = page.locator(".composer textarea")
+    expect(entry).to_have_attribute("placeholder", "steer… (/ for directives)")  # the first frame
+    assert page.evaluate("parseFloat(getComputedStyle(document.documentElement).fontSize)") == font
+    need, room = entry.evaluate("""f => { const s = getComputedStyle(f);
+      const text = document.createElement('canvas').getContext('2d');
+      text.font = s.fontSize + ' ' + s.fontFamily;
+      return [text.measureText(f.placeholder).width,
+              f.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight)]; }""")
+    assert need <= room
+
+
 def test_a_sessions_button_waits_for_something_to_send(
     open_page: OpenPage, port: int, tmp_path: pathlib.Path
 ) -> None:
@@ -143,7 +165,7 @@ def test_a_sessions_button_waits_for_something_to_send(
     page, errors = open_page(port)
     entry = page.locator(".composer textarea")
     for session, name, placeholder, bare in (
-        ("live-AAA111", "Send", "steer this session… (type / for directives)", False),
+        ("live-AAA111", "Send", "steer… (/ for directives)", False),
         ("ended-AAA111", "Resume", "what should it do next…", False),
         ("short-AAA111", "Resume", "continue this session…", True),
     ):

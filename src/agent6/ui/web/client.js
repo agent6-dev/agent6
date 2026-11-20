@@ -1940,7 +1940,7 @@ function makeComposer(id) {
       hint.replaceChildren(...enterHint('Enter resumes this session with the instruction (empty = just resume) · Shift+Enter newline',
         'Resume continues this session with the instruction (empty = just resume) · Enter newline'), keys);
     } else {
-      ta.placeholder = 'steer this session… (type / for directives)';
+      ta.placeholder = 'steer… (/ for directives)';
       hint.replaceChildren(...enterHint('Enter sends the instruction at the session’s next safe boundary · Ctrl+Enter sends it now · Shift+Enter newline',
         'Send injects the instruction at the session’s next safe boundary · Enter newline'), keys);
     }
