@@ -475,7 +475,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             return journal.EnvironmentAcquired(
                 execution_id=raw.get("execution_id"),
                 lifecycle_ref=_text(raw, "lifecycle_ref"),
-                actor=_text(raw, "actor"),
+                role=_text(raw, "role"),
                 reason=_text(raw, "reason"),
                 started=bool(raw.get("started", False)),
                 start_s=_cap(raw.get("start_s")),
