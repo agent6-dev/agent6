@@ -709,6 +709,27 @@ class StartedResult(ToolResult):
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class SteeredResult(ToolResult):
+    """The `steer_child` tool's result: the child an instruction was sent to.
+
+    Attributes:
+        child: The child's session id.
+        message: When the child reads it.
+    """
+
+    child: str
+    message: str
+
+    def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
+        return {"steered": self.child, "message": self.message}
+
+    def summary(self) -> str:
+        """Return the one-line summary."""
+        return f"steered {self.child}"
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class BackgroundResult(ToolResult):
     """A background tool's result.
 

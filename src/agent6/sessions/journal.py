@@ -1466,6 +1466,14 @@ class SteerInjected(Event):
     text: str = pydantic.Field(description="The event's text.")
 
 
+class SteerFromParent(Event):
+    """An instruction the session's parent sent with `steer_child` was injected into context."""
+
+    TYPE: ClassVar[str] = "steer.parent"
+    chars: int = pydantic.Field(description="Text length in characters.")
+    text: str = pydantic.Field(description="The parent's instruction.")
+
+
 class SteerRequested(Event):
     """The loop reached an operator steer request."""
 
@@ -1943,6 +1951,7 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "steer.exited": SteerExited,
     "steer.feedback": SteerFeedback,
     "steer.injected": SteerInjected,
+    "steer.parent": SteerFromParent,
     "steer.requested": SteerRequested,
     "steer.signalled": SteerSignalled,
     "steer.skill": SteerSkill,

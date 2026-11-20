@@ -39,6 +39,11 @@ STEER_VERBS: dict[str, tuple[str, type[journal.Event], str]] = {
 }
 
 
+# The heading of a steer a child's parent sent with `steer_child`: the first line of the text
+# in the child's steer channel, and of the notice its model reads.
+PARENT_STEERING = "PARENT STEERING (an instruction from the run that started this child):"
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class OperatorBridge:
     """What the operator can do to a running loop, as the front-end injects it.
@@ -152,7 +157,8 @@ class Steering:
 
     A verb (`STEER_VERBS`), a `/parallel` directive started at once, a `/pin` that survives
     compaction, a `/<skill>` expanded to its text, or an instruction injected into the
-    conversation, paired with the question it answers when the model just asked one.
+    conversation, paired with the question it answers when the model just asked one. A
+    steer from the session's parent (`PARENT_STEERING`) is an instruction and none of the rest.
 
     Attributes:
         bridge: The operator's callables.
@@ -191,8 +197,8 @@ class Steering:
 
         Returns:
             The verb's name ("abort", "exit", "undo", "detach") when the steer was one; None
-            otherwise (no request, an empty steer, a directive, a pin, a skill, or an injected
-            instruction).
+            otherwise (no request, an empty steer, a directive, a pin, a skill, an injected
+            instruction, or a parent's steer).
         """
         if not self.bridge.steer_requested():
             return None
@@ -205,6 +211,39 @@ class Steering:
         if text is None or not text.strip():
             self.log("  (empty - continuing)")
             return None
+        steer_text = text.strip()
+        if steer_text.startswith(PARENT_STEERING):
+            # The parent's model wrote this: text for this model, with none of the operator's
+            # verbs, directives or rulings.
+            said = steer_text.removeprefix(PARENT_STEERING).strip()
+            state.settled.restart()
+            self.log(f"  injecting the parent's steer ({len(said)} chars)")
+            self.emit(journal.SteerFromParent(chars=len(said), text=said))
+            conversation.notice(steer_text)
+            return None
+        return self.operator_steer(conversation, turn, state, text, heading=heading)
+
+    def operator_steer(
+        self,
+        conversation: loop_conversation.Conversation,
+        turn: int,
+        state: loop_state.LoopState,
+        text: str,
+        *,
+        heading: str,
+    ) -> str | None:
+        """Take the operator's own words: a verb, a review, a directive, or an instruction.
+
+        Args:
+            conversation: The run's conversation.
+            turn: The turn just completed.
+            state: The loop state.
+            text: The steer as the operator sent it, not blank.
+            heading: The notice introducing the operator's instruction.
+
+        Returns:
+            The verb's name when the steer was one; None otherwise.
+        """
         steer_text = text.strip()
         if verb := STEER_VERBS.get(steer_text.lower()):
             name, record, line = verb

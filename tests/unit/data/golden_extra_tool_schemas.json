@@ -89,6 +89,17 @@
     "properties": {}
   },
   {
+    "name": "steer_child",
+    "required": [
+      "id",
+      "text"
+    ],
+    "properties": {
+      "id": "string",
+      "text": "string"
+    }
+  },
+  {
     "name": "update_task",
     "required": [
       "id"

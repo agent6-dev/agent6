@@ -70,6 +70,9 @@ _COMMAND_TOOLS = frozenset(
     }
 )
 
+# The tools that start and steer children: offered and refused on the same grounds.
+_CHILD_TOOLS = frozenset({schema.ParallelInput.TOOL_NAME, schema.SteerChildInput.TOOL_NAME})
+
 # Bench arms keyed by AGENT6_SYMBOL_TOOLS: "none" hides the symbol tools; unset or unknown hides
 # nothing, and the bench harness validates the arm name.
 _SYMBOL_TOOL_ARMS: dict[str, frozenset[str]] = {
@@ -219,6 +222,7 @@ class ToolDispatcher:
             schema.AskUserInput.TOOL_NAME: self._ask_user,
             schema.ListFindingsInput.TOOL_NAME: self._list_findings,
             schema.ParallelInput.TOOL_NAME: self._parallel,
+            schema.SteerChildInput.TOOL_NAME: self._steer_child,
             schema.DagAddTaskInput.TOOL_NAME: lambda raw: dag_tools.add_task(
                 self._curator, self._run_root_node_id, raw
             ),
@@ -309,7 +313,11 @@ class ToolDispatcher:
         return self._mode == "run" and self._tool_refusal(schema.ParallelInput.TOOL_NAME) is None
 
     def _parallel_refusal(self) -> str | None:
-        """Return why the `parallel` tool is withheld: the knob, the depth, the dispatcher."""
+        """Return why the tools that start and steer children are withheld.
+
+        Returns:
+            The knob, the depth or the missing dispatcher; None when they are offered.
+        """
         if not self._config.harness.parallel.tool:
             return "not available (harness.parallel.tool is off)"
         if os.environ.get("AGENT6_CHILD"):
@@ -320,7 +328,7 @@ class ToolDispatcher:
 
     def _tool_refusal(self, name: str) -> str | None:
         """Return why a built-in tool is withheld right now, or None when it is offered."""
-        if name == schema.ParallelInput.TOOL_NAME and (why := self._parallel_refusal()):
+        if name in _CHILD_TOOLS and (why := self._parallel_refusal()):
             return why
         if self.tool_is_withheld(name):
             if name == schema.RunVerifyInput.TOOL_NAME and self.verify_withheld:
@@ -1092,6 +1100,23 @@ class ToolDispatcher:
         if self.children is None:
             raise tool_errors.ToolError("not available (no child dispatcher in this front-end)")
         return self.children.start(request.task, request.spec)
+
+    def _steer_child(self, raw: dict[str, Any]) -> results.SteeredResult:
+        """Send a running child an instruction through the loop.
+
+        Args:
+            raw: The model's arguments.
+
+        Returns:
+            The child steered and when it reads the instruction.
+
+        Raises:
+            ToolError: The loop holds no children, or the id names no running child of the run.
+        """
+        request = schema.SteerChildInput.model_validate(raw)
+        if self.children is None:
+            raise tool_errors.ToolError("not available (no child dispatcher in this front-end)")
+        return results.SteeredResult(request.id, self.children.steer(request.id, request.text))
 
     def _ask_user(self, raw: dict[str, Any]) -> results.ToolResult:
         """Return the operator's answers to the model's questions."""

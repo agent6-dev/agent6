@@ -318,8 +318,8 @@ class ParallelInput(_ToolInput):
         " and temperature; `[provider/]model` runs with the worker's. A notice arrives when a"
         " child ends, with its summary, and when its task lands: at the turn boundary after its"
         " children end, merged onto this run's work. `read_background` reads a child or waits"
-        " for the next to end; `stop_background` stops one. `finish_session` is refused until"
-        " every task has landed."
+        " for the next to end; `steer_child` sends a running child an instruction;"
+        " `stop_background` stops one. `finish_session` is refused until every task has landed."
     )
 
     task: str = pydantic.Field(min_length=1, max_length=20_000)
@@ -330,6 +330,27 @@ class ParallelInput(_ToolInput):
     def _nonblank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("task is blank")
+        return value
+
+
+class SteerChildInput(_ToolInput):
+    """The `steer_child` tool's arguments."""
+
+    TOOL_NAME: ClassVar[str] = "steer_child"
+    TOOL_DESCRIPTION: ClassVar[str] = (
+        "Send an instruction to a running child, by the id `parallel` returned. The child reads"
+        " it at its next turn boundary, marked as from its parent, and keeps working; the call"
+        " returns at once. `read_background` shows what a child has done since."
+    )
+
+    id: str = pydantic.Field(min_length=1)
+    text: str = pydantic.Field(min_length=1, max_length=20_000)
+
+    @pydantic.field_validator("text")
+    @classmethod
+    def _nonblank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("text is blank")
         return value
 
 
@@ -662,6 +683,7 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     ListFindingsInput,
     # Offered only under `[harness.parallel].tool` in a run whose loop holds children.
     ParallelInput,
+    SteerChildInput,
     DagAddTaskInput,
     DagUpdateTaskInput,
     DagListTasksInput,

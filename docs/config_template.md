@@ -353,7 +353,7 @@ Each child is a disposable clone running its own `agent6/<id>` branch; one child
 `git.auto_merge = true` then lands the run as it lands any run; without it, `agent6 sessions merge <run id>` does.
 `--max-usd` caps the children and the judges together; `--auto-approve` forwards to every child.
 A live run dispatches children the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
-`harness.parallel.tool = true` offers a run's model the `parallel` tool, which starts a task's children in the background through the same path ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.
+`harness.parallel.tool = true` offers a run's model the `parallel` tool, which starts a task's children in the background through the same path, and `steer_child`, which sends a running child an instruction ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.
 A child's model or steer cannot dispatch work; its configured harness panel may still run its reviewers.
 Headless surfaces without a dispatcher answer "not available".
 

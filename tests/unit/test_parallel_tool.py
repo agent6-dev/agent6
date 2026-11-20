@@ -315,7 +315,10 @@ def test_the_description_names_every_role_the_providers_and_the_limits(
     assert "reviewer: q/critic, effort max, temperature 0.7 (temperature from default)" in text
     assert "Configured providers: p, q" in text
     assert "turns" not in text.split("Configured providers")[1] and "minutes" not in text
-    assert "an ordinary run with this run's tools and limits that may edit its clone" in text
+    assert (
+        "an ordinary run, a worker with this run's tools, guards and limits, that may edit its"
+        " clone" in text
+    )
     assert "the children share this run's remaining budget" in text
     assert "at most 4 run at once (`harness.parallel.max_children`)" in text
     assert "secret" not in text and "localhost" not in text

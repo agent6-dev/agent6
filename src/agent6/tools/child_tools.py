@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A run's children as the background tools reach them: read one, wait for one, stop one.
+"""A run's children as the tools reach them: read one, wait for one, steer one, stop one.
 
 A child is background work of its parent, named by its session id beside a command's
 `bg<N>`. The loop owns the children and hands the tools this view of them.
@@ -59,6 +59,10 @@ class Children(Protocol):
 
     def stop(self, child: str) -> None:
         """Ask a running child to stop now; an ended one is left as it is."""
+        ...
+
+    def steer(self, child: str, text: str) -> str:
+        """Send a running child an instruction and say when it reads it; a refusal raises."""
         ...
 
 

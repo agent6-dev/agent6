@@ -3,7 +3,7 @@
 """A run's children as its tools and its finish gate reach them.
 
 `ChildWork` is the loop's side of `tools.child_tools.Children`; the functions read the
-dispatcher's open dispatches: where each child stands, a wait for one to end, a stop.
+dispatcher's open dispatches: where each child stands, a wait for one to end, a steer, a stop.
 """
 
 from __future__ import annotations
@@ -14,9 +14,10 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from agent6 import child_records, directive
-from agent6.harness import parallel_join
-from agent6.sessions import child_dispatch
+from agent6 import child_records, directive, kinds
+from agent6.harness import operator_bridge, parallel_join
+from agent6.sessions import child_dispatch, ipc
+from agent6.sessions import layout as sessions_layout
 from agent6.tools import child_tools, results, tool_errors
 
 if TYPE_CHECKING:
@@ -143,9 +144,56 @@ def stop(dispatcher: parallel_dispatch.ParallelDispatcher, child: str) -> None:
                 dispatcher.stopping.add(child)
 
 
+def steer(dispatcher: parallel_dispatch.ParallelDispatcher, child: str, text: str) -> str:
+    """Send a running child an instruction, through the steer channel its operator uses.
+
+    The child reads it at its next turn boundary under `operator_bridge.PARENT_STEERING`:
+    text for its model, never a steer verb or a directive.
+
+    Args:
+        dispatcher: The run's dispatcher.
+        child: The child's session id.
+        text: The instruction.
+
+    Returns:
+        The line that says when the child reads it.
+
+    Raises:
+        ToolError: The id names no child of this run, a child that has ended, or one that
+            has not started; nothing was sent.
+    """
+    running = any(
+        started.session_id == child and not started.result.done()
+        for task in dispatcher.open.values()
+        for started in task.children
+    )
+    if not running:
+        ended = next((line for line in roster(dispatcher) if line.id == child), None)
+        if ended is None:
+            raise tool_errors.ToolError(
+                f"no child {child} in this run; read_background with no id lists this run's"
+                " children."
+            )
+        raise tool_errors.ToolError(
+            f"child {child} has ended ({ended.state}); nothing was sent."
+            " parallel starts another child."
+        )
+    assert dispatcher.session_dir is not None
+    state_dir = sessions_layout.layout_of(dispatcher.session_dir).state_dir
+    child_dir = sessions_layout.bucket_dir(state_dir, kinds.session_bucket("run")) / child
+    if not child_dir.is_dir() or not ipc.submit_steer(
+        child_dir, f"{operator_bridge.PARENT_STEERING}\n{text}"
+    ):
+        raise tool_errors.ToolError(
+            f"child {child} has not started yet; nothing was sent. Send it again once"
+            " read_background shows its transcript."
+        )
+    return f"[parallel] child {child} reads this at its next turn boundary."
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class ChildWork:
-    """Start, list, await and stop a run's children for its tools.
+    """Start, list, await, steer and stop a run's children for its tools.
 
     Attributes:
         harness: The run's loop, whose dispatcher holds the children.
@@ -190,3 +238,23 @@ class ChildWork:
         """Ask a running child to stop now; an ended one is left as it is."""
         if (dispatcher := self.harness.children) is not None:
             stop(dispatcher, child)
+
+    def steer(self, child: str, text: str) -> str:
+        """Send a running child an instruction and say when it reads it.
+
+        Args:
+            child: The child's session id.
+            text: The instruction.
+
+        Returns:
+            The line that says when the child reads it.
+
+        Raises:
+            ToolError: The run started no child, or `steer` refused the id.
+        """
+        if (dispatcher := self.harness.children) is None:
+            raise tool_errors.ToolError(
+                f"no child {child} in this run; read_background with no id lists this run's"
+                " children."
+            )
+        return steer(dispatcher, child, text)

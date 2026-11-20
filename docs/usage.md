@@ -178,13 +178,17 @@ The call starts its children through the `/parallel` path (a checkpoint, fresh c
 Each child is an ordinary run with the same tools as the parent: it may edit its clone, and its commits land on the parent's chain when its task lands.
 A child runs under the parent's own config and the run's remaining budget, with no turn cap or deadline of its own.
 `read_background` with a child's id reads the child (its state and the tail of its transcript) after waiting up to `wait_s` for it to end; with no id and a `wait_s` it waits for the next child to end.
+`steer_child` (`id`, `text`), offered with the `parallel` tool, sends a running child an instruction and returns at once.
+It travels the steer channel `agent6 steer <child>` uses, so it queues in order with the operator's steers, and the child reads it at its next turn boundary under `PARENT STEERING (an instruction from the run that started this child):`.
+A parent's steer is text for the child's model: `abort`, `/pin` or `/parallel` in it are words, not commands.
+It is refused, with what to do instead, for an id that is no child of the run, a child that has ended and one that has not started.
 `stop_background` with a child's id stops the child; its work does not land, and its branch holds what it committed.
 The two tools' descriptions mention children only in a run that has the `parallel` tool.
 `finish_session` is refused until every task has landed, and the refusal names the children that hold it: one still running, or one that ended and has not landed.
 A stopped child holds no end.
 The run counts its children's spend while they run and ends them once the sum reaches a cap, so the total can pass the cap by what was in flight.
 The tool's description names every role's resolved model, effort and temperature and the configured providers, so the model can pick a selector such as `reviewer`.
-The tool is offered only in run mode, never inside a child and never in a front-end without a child dispatcher; a call that slips past the list is refused with the reason.
+The two tools are offered only in run mode, never inside a child and never in a front-end without a child dispatcher; a call that slips past the list is refused with the reason.
 A worker child's configured harness panel may still run its reviewers; neither the worker's model nor its `/parallel` steer may dispatch work.
 The knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel.
 

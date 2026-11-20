@@ -195,3 +195,89 @@ def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_each_lands_as
         f"{session}-p1",
     ]
     assert [row["reason"] for row in rows if row["type"] == "session.stop"] == ["finish_session"]
+
+
+def test_a_parent_steers_its_running_child_and_the_child_reads_it_as_its_parents(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`steer_child` reaches a real child at its next boundary, marked as from its parent."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "t")
+    (repo / "README.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    child_started, steered = threading.Event(), threading.Event()
+    seen: list[tuple[str, int, dict[str, Any]]] = []
+    lock = threading.Lock()
+    heading = "PARENT STEERING (an instruction from the run that started this child):"
+
+    def reply(body: dict[str, Any]) -> launch_env.Reply:
+        task, turn = _first_task(body), _turn(body)
+        who = "PARENT" if "PARENT" in task else "CHILD"
+        with lock:
+            seen.append((who, turn, body))
+        if who == "PARENT":
+            (child, *_rest) = (*_started(body), "")
+            if turn == 1:
+                # The child has a session dir once it has asked for its first turn.
+                assert child_started.wait(120)
+            if turn == 2:
+                steered.set()
+            return [
+                [("parallel", {"task": "CHILD: write a.txt"})],
+                [("steer_child", {"id": child, "text": "also write c.txt"})],
+                [("read_background", {"id": child, "wait_s": 120})],
+                [("finish_session", {"summary": "the child wrote both"})],
+            ][min(turn, 3)]
+        if turn == 0:
+            child_started.set()
+            assert steered.wait(120)
+            return [("apply_edit", {"path": "a.txt", "old_string": "", "new_string": "a\n"})]
+        if turn == 1 and heading in json.dumps(body["messages"]):
+            return [("apply_edit", {"path": "c.txt", "old_string": "", "new_string": "c\n"})]
+        return [("finish_session", {"summary": "wrote what was asked"})]
+
+    with launch_env.scripted_provider(reply_for=reply) as (base_url, _calls):
+        cfg = Config.model_validate(
+            {
+                "providers": {"p": {"backend": "openai", "base_url": base_url}},
+                "models": {"default": {"model": "p/m"}},
+                "git": {"worktree": {"base_dir": str(tmp_path / "clones")}},
+                "sandbox": {"isolation": "none", "run_commands": "allow"},
+                "harness": {"parallel": {"tool": True}, "verify": {"infer": False}},
+                "review": {"when": "never"},
+            }
+        )
+        config = tmp_path / "config.toml"
+        config.write_text(layer.materialize(cfg, explicit_leaves=frozenset()))
+        monkeypatch.chdir(repo)
+        code = cli_main(["--config", str(config), "run", "--auto-approve", "PARENT: delegate"])
+
+    out = capsys.readouterr()
+    assert code == 0, out.out[-3000:] + out.err[-3000:]
+    runs = paths.state_dir(repo) / "sessions" / "runs"
+    (session_dir,) = [d for d in runs.iterdir() if not _CHILD_ID.search(d.name)]
+    child = f"{session_dir.name}-p1-l1"
+    parent = [body for who, _turn_no, body in seen if who == "PARENT"]
+    # The steer answered at once, while the child was still in its first turn.
+    answer = json.loads(
+        _text(next(m for m in reversed(parent[2]["messages"]) if m["role"] == "tool"))
+    )
+    assert answer == {
+        "steered": child,
+        "message": f"[parallel] child {child} reads this at its next turn boundary.",
+    }
+    # The child's second request carries the steer under its parent's heading, once.
+    second = next(body for who, turn, body in seen if (who, turn) == ("CHILD", 1))
+    told = [_text(m) for m in second["messages"] if m["role"] == "user"]
+    assert sum(text.count(f"{heading}\nalso write c.txt") for text in told) == 1
+    assert not any("OPERATOR STEERING" in text for text in told)
+    # It did what its parent asked, and the work landed with the rest of its task.
+    assert (repo / "a.txt").exists() and (repo / "c.txt").read_text(encoding="utf-8") == "c\n"
+    rows = [json.loads(line) for line in (runs / child / "logs.jsonl").read_text().splitlines()]
+    (steer,) = [row for row in rows if row["type"] == "steer.parent"]
+    assert (steer["text"], steer["chars"]) == ("also write c.txt", 16)
+    assert not [row for row in rows if row["type"] == "steer.injected"]

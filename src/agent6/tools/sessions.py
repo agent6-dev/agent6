@@ -24,6 +24,7 @@ _SPEAKER = {
     "model.result": ("assistant", "text"),
     "session.start": ("user", "user_task"),
     "steer.injected": ("user", "text"),
+    "steer.parent": ("parent", "text"),
 }
 
 

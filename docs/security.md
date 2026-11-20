@@ -84,7 +84,7 @@ The model reaches the machine through two surfaces:
 
 The model sees the fixed tool set in `src/agent6/tools/schema.py`, plus the tools of operator-configured MCP servers when `[mcp].enabled` is set.
 
-- structured edits, read-only navigation, `read_session`, `list_findings` (the run's own review findings), fixed-argv verify and metric commands, `finish_session` (`finish_planning` in plan mode), `ask_user`, a curator task notepad, `use_skill` ([Skills](#skills)), approval-gated `fetch` ([Network](#5-network)), capability-gated `run_command` with `read_background` / `stop_background`, and `agent6_docs` under `agent6 ask` only
+- structured edits, read-only navigation, `read_session`, `list_findings` (the run's own review findings), fixed-argv verify and metric commands, `finish_session` (`finish_planning` in plan mode), `ask_user`, a curator task notepad, `use_skill` ([Skills](#skills)), approval-gated `fetch` ([Network](#5-network)), capability-gated `run_command` with `read_background` / `stop_background`, `parallel` and `steer_child` under `harness.parallel.tool` ([Parallel children](#10-parallel-children)), and `agent6_docs` under `agent6 ask` only
 - no `shell`, no `write_file`, no `eval`
 - adding a tool needs a security review note ([AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md))
 
@@ -808,6 +808,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
 - The model's `parallel` tool is off by default (`[harness.parallel].tool`) and gated twice: the tool list offers it only under the knob, in run mode, outside a child and with the loop's children installed, and the dispatcher refuses a call that slips past the list on the same grounds; the knob neither authorizes nor disables `run --parallel`, the `/parallel` steer or the review panel
     - a child the model starts is an ordinary run that may edit its clone, under its parent's config and the parent's remaining budget, which its children share, with no turn cap or deadline of its own; at most `harness.parallel.max_children` run at once, and its commits join the parent's chain when its task lands
     - `read_background` and `stop_background` reach a child only by a session id the run's own dispatch records name, so the model reads or stops through them no session it did not start; under `run_commands = "deny"` a run with the `parallel` tool keeps `stop_background`, which then stops children only
+    - `steer_child` rides the same knob and the same two gates, and reaches only a child the run's dispatch records name that still runs; the text enters that child's conversation as one notice headed as its parent's and is never read as a steer verb (`abort`, `exit`, `/undo`, `detach`), a directive (`/parallel`, `/pin`, `/review`, a skill) or an answer to a question, so it grants the child nothing its config does not; the child journals it as `steer.parent`, and a child is offered neither tool, so depth stays 1
     - the parent's model cannot end the run over a child: `finish_session` is refused until every task has landed
 - A child's config carries key references, never secret values
     - the parent writes each child's config snapshot beside its launch file (the resolved `Config`: provider `base_url`, `api_key_env` names)

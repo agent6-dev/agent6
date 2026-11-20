@@ -207,9 +207,10 @@ class ParallelConfig(pydantic.BaseModel):
         description=(
             "offer a run's model the `parallel` tool, which starts one task in isolated "
             "children (fresh clones of the committed tree, each an ordinary run that may edit) "
-            "and lands their work at the run's turn boundaries; a child runs under the run's "
+            "and lands their work at the run's turn boundaries, and `steer_child`, which sends "
+            "a running child an instruction; a child runs under the run's "
             "own config and its remaining budget, which the children share; "
-            "`harness.parallel.tool = false`: no run is offered it; neither value changes "
+            "`harness.parallel.tool = false`: no run is offered either; neither value changes "
             "`run --parallel`, the `/parallel` steer or the review panel"
         ),
     )

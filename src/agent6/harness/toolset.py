@@ -13,6 +13,8 @@ from agent6.providers import ToolDefinition
 from agent6.tools import dispatch as tools_dispatch
 from agent6.tools import schema as tools_schema
 
+# The tools that start and steer children, offered together.
+CHILD_TOOLS = (tools_schema.ParallelInput, tools_schema.SteerChildInput)
 # The task-graph tools, offered only where a curator backs them.
 DAG_TOOLS = (
     tools_schema.DagAddTaskInput,
@@ -55,7 +57,7 @@ def tool_definitions(
             and not dispatcher.skills_available()
         ):
             continue  # no skills: the tool could only error
-        if cls is tools_schema.ParallelInput and not dispatcher.parallel_available():
+        if cls in CHILD_TOOLS and not dispatcher.parallel_available():
             continue  # off by config, a child or no child dispatcher
         description = cls.TOOL_DESCRIPTION
         if cls is tools_schema.ListFindingsInput and dispatcher.session_id:
@@ -132,8 +134,8 @@ def parallel_description(cfg: Config) -> str:
         tools_schema.ParallelInput.TOOL_DESCRIPTION
         + " Roles: "
         + "; ".join(roles)
-        + f". Configured providers: {providers}. Each child is an ordinary run with this"
-        " run's tools and limits that may edit its clone; the children share this run's"
-        f" remaining budget, at most {cfg.harness.parallel.max_children} run at once"
+        + f". Configured providers: {providers}. Each child is an ordinary run, a worker with"
+        " this run's tools, guards and limits, that may edit its clone; the children share this"
+        f" run's remaining budget, at most {cfg.harness.parallel.max_children} run at once"
         " (`harness.parallel.max_children`), and `read_session` reads a child's whole transcript."
     )

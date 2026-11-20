@@ -179,6 +179,7 @@ CASES: list[tuple[str, results_mod.ToolResult, str]] = [
     ),
     ("parallel_started", results_mod.StartedResult(("run-p1-l1", "run-p1-l2"), "m"), "started 2"),
     ("parallel_refused", results_mod.StartedResult((), "[parallel] no"), "nothing started"),
+    ("child_steered", results_mod.SteeredResult("run-p1-l1", "m"), "steered run-p1-l1"),
     # execution
     (
         "exec",
