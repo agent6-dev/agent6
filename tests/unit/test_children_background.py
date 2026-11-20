@@ -312,7 +312,7 @@ def test_an_end_stops_the_children_still_running_and_a_resume_lands_their_work(
         repo, tmp_path / "run", resumed, _Children(repo, "run"), max_turns=2, recoverer=recoverer
     ).resume()
 
-    assert f"[parallel] child {child} finished (stopped by its parent)." in resumed.seen[0]
+    assert f"[parallel] child {child} stopped by its parent." in resumed.seen[0]
     assert "[parallel] group run-p1 complete (1 child(ren))" in resumed.seen[0]
     assert (repo / f"{child}.txt").exists()
     (record,) = child_dispatch.read_records(tmp_path / "run")
@@ -517,7 +517,7 @@ def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
     assert children.stopped == [two]
     stopped = answers(provider.seen[3])[-1]
     assert stopped["children"][1] in (f"[{two}] stopping: b", f"[{two}] ended, not landed: b")
-    assert f"[parallel] child {two} finished (stopped by its parent)." in provider.seen[3]
+    assert f"[parallel] child {two} stopped by its parent." in provider.seen[3]
     # The wait for the next child to end returned with the first task's child ended.
     waited = answers(provider.seen[4])[-1]
     assert waited["children"][0] == f"[{one}] ended, not landed: write a"

@@ -154,8 +154,7 @@ def end_notice(res: child_records.ChildResult) -> str:
     sid = res.spec.session_id
     if not res.ok:
         return f"[parallel] child {sid} ended without a result: {res.error}"
-    stopped = f" ({res.stopped_by})" if res.stopped_by else ""
-    head = f"[parallel] child {sid} finished{stopped}."
+    head = f"[parallel] child {sid} {res.stopped_by or 'finished'}."
     report = res.report.strip()
     return f"{head}\nsummary: " + report.replace("\n", "\n  ") if report else head
 

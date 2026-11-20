@@ -149,8 +149,9 @@ class ChildResult:
             came back.
         report: What the child said at its end, its finish summary; "" when it ended another
             way.
-        stopped_by: What ended the child when its parent stopped it (its deadline, the
-            run's budget, the parent's own stop); "" when it ended by itself or by the operator.
+        stopped_by: What ended the child short of its own finish: its deadline, the run's
+            budget, its parent's stop, or `stopped` for the operator's; "" when it ended by
+            itself.
     """
 
     spec: ChildSpec

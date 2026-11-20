@@ -235,7 +235,7 @@ def test_the_end_notice_gives_a_childs_finish_summary_and_the_landing_gives_its_
     ]
     stopped = dataclasses.replace(_res(ok=True), stopped_by="stopped at the run's budget")
     assert parallel_join.end_notice(stopped) == (
-        "[parallel] child child-1 finished (stopped at the run's budget)."
+        "[parallel] child child-1 stopped at the run's budget."
     )
     assert parallel_join.end_notice(_res(ok=False, error="no result (failed)")) == (
         "[parallel] child child-1 ended without a result: no result (failed)"
@@ -348,6 +348,19 @@ def test_a_children_result_carries_its_finish_summary(tmp_path: pathlib.Path) ->
         tmp_path, res, ref="", fallback_parent=None, identity=None, also_branch=None
     )
     assert (join.status, join.detail) == ("no_changes", "stopped at the run's budget")
+
+    # A child the operator stopped, or a resume found stopped, reads stopped, not finished.
+    res = children.recorded_result(
+        spec, "", halted, child_records.Imported(halted), origin=tmp_path
+    )
+    assert res.ok and res.stopped_by == "stopped"
+    assert parallel_join.end_notice(res).splitlines()[0] == "[parallel] child done stopped."
+    join = parallel_join.join_child_result(
+        tmp_path, res, ref="", fallback_parent=None, identity=None, also_branch=None
+    )
+    assert parallel_join.summary_text("g", [join]).splitlines()[1] == (
+        "  - done (): stopped with no changes to join."
+    )
 
     cut = tmp_path / "cut"
     _ended_child(cut, reason="max_turns", verification="unverified")

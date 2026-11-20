@@ -530,7 +530,8 @@ def recorded_result(
         report=fold_session(
             tail_events(dest / sessions_layout.LOGS_NAME, follow=False)
         ).finish_summary,
-        stopped_by=stopped_by,
+        # A stop counts as a result: the child's own record still says it was one.
+        stopped_by=stopped_by or ("stopped" if summary.status == "stopped" else ""),
     )
 
 
@@ -1008,7 +1009,7 @@ def build_child_spawner(
                 contract=child.contract,
                 watch=watch,
             )
-            if asked.is_set() and res.ok and not res.stopped_by:
+            if asked.is_set() and res.ok and res.stopped_by in ("", "stopped"):
                 res = dataclasses.replace(res, stopped_by="stopped by its parent")
             return res
 
