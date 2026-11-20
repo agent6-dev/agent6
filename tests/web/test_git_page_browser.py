@@ -50,6 +50,13 @@ def _first(page: Page, held: list[Route]) -> Route:
     return held[0]
 
 
+def _default_font(page: Page, px: int) -> None:
+    """Set Chromium's default font size, as a reader's browser setting does."""
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("Page.enable")
+    cdp.send("Page.setFontSizes", {"fontSizes": {"standard": px, "fixed": round(px * 13 / 16)}})
+
+
 def _long_history(path: pathlib.Path) -> str:
     """Add twenty empty commits, then one that adds forty files; return the last one's sha."""
     for n in range(20):
@@ -574,6 +581,23 @@ def test_a_handle_between_the_graph_and_the_panel_resizes_the_graph(
     page.locator(".git-side .gf").first.click()
     page.wait_for_selector(".git-diff .diff")
     expect(handle).to_be_hidden()
+    assert errors == [], errors
+
+
+def test_a_lane_is_one_row_tall_at_a_larger_default_font(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """At a 20px default font each row was 37.5px and its lanes 30px, so every line broke."""
+    page, errors = open_page(git_port)
+    _default_font(page, 20)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.wait_for_selector(".gc-row")
+    boxes = page.locator(".gc-row").evaluate_all(
+        """rows => rows.map(r => { const a = r.getBoundingClientRect();
+          const s = r.querySelector('svg').getBoundingClientRect();
+          return [a.height, s.top - a.top, s.height]; })"""
+    )
+    assert len(boxes) == 4 and all(b == [37.5, 0, 37.5] for b in boxes), boxes
     assert errors == [], errors
 
 

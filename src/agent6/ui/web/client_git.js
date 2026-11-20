@@ -4,6 +4,8 @@
 // and a compare of any two revisions. The server lists, verifies and caps (/api/git/*);
 // this file lays out the lanes and paints. Filter and compare state outlive a visit to
 // another tab; the graph and the working tree are fetched again on return, and on ↻.
+
+// A lane draws in a 14-by-30 box the stylesheet scales to the row's height.
 const GIT_LANE_W = 14, GIT_ROW_H = 30, GIT_LANES_MAX = 16;
 // The server's sentinel revision for the working tree, a diff or compare head.
 const GIT_WORKTREE = 'WORKTREE';
@@ -56,23 +58,25 @@ function gitLayout(commits) {
 // dashed), and HEAD's is larger. The working tree's line down to HEAD is dashed.
 function gitLanesSvg(lay, cols, dot, isHead) {
   const NS = 'http://www.w3.org/2000/svg';
-  const W = GIT_LANE_W, H = GIT_ROW_H, mid = H / 2;
+  // A line leaving the row runs one unit past its edge, so rows meeting mid-pixel show no seam.
+  const W = GIT_LANE_W, H = GIT_ROW_H, mid = H / 2, top = -1, bottom = H + 1;
   const x = i => W / 2 + i * W;
   const color = i => 'l' + i % GIT_LANE_COLORS;
   const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('width', cols * W); svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', `0 0 ${cols * W} ${H}`);
   svg.setAttribute('class', 'gc-lanes'); svg.setAttribute('aria-hidden', 'true');
   const path = (d, lane, dashed) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); p.setAttribute('class', color(lane) + (dashed ? ' wt' : '')); svg.appendChild(p); };
   // A merge curves down out of the dot into its parent's slot; a join curves down into the dot.
-  const curve = (from, to) => `M${x(from)} ${mid} C${x(from)} ${H} ${x(to)} ${mid} ${x(to)} ${H}`;
-  const join = (from, to) => `M${x(from)} 0 C${x(from)} ${mid} ${x(to)} 0 ${x(to)} ${mid}`;
+  const curve = (from, to) => `M${x(from)} ${mid} C${x(from)} ${H} ${x(to)} ${mid} ${x(to)} ${H} V${bottom}`;
+  const join = (from, to) => `M${x(from)} ${top} V0 C${x(from)} ${mid} ${x(to)} 0 ${x(to)} ${mid}`;
   const n = Math.max(lay.before.length, lay.after.length);
   for (let i = 0; i < n && i < cols; i++) {
-    if (i !== lay.lane && lay.before[i] && lay.after[i] === lay.before[i]) path(`M${x(i)} 0 V${H}`, i, i === lay.wt);
+    if (i !== lay.lane && lay.before[i] && lay.after[i] === lay.before[i]) path(`M${x(i)} ${top} V${bottom}`, i, i === lay.wt);
   }
   if (lay.lane < cols) {
-    if (lay.before[lay.lane]) path(`M${x(lay.lane)} 0 V${mid}`, lay.lane, lay.lane === lay.wt);
-    if (lay.after[lay.lane]) path(`M${x(lay.lane)} ${mid} V${H}`, lay.lane, dot === 'wt');
+    if (lay.before[lay.lane]) path(`M${x(lay.lane)} ${top} V${mid}`, lay.lane, lay.lane === lay.wt);
+    // It starts a unit up, under the dot, so a dashed line keeps its step into the next row.
+    if (lay.after[lay.lane]) path(`M${x(lay.lane)} ${mid - 1} V${bottom}`, lay.lane, dot === 'wt');
     for (const j of lay.joins) if (j < cols) path(join(j, lay.lane), j, j === lay.wt);
     for (const k of lay.merges) if (k < cols) path(curve(lay.lane, k), k);
     const circle = document.createElementNS(NS, 'circle');
