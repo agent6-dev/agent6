@@ -19,7 +19,7 @@ from agent6 import budget, kinds
 
 # Who asked for a dispatch: the operator's steer, the model's tool call, or a review panel.
 DispatchSource = Literal["operator", "model", "panel"]
-# How a dispatch lands its children: each merged in order, none (a panel's records), or the
+# How a dispatch merges its children: each merged in order, none (a panel's records), or the
 # best-ranked one alone.
 JoinPolicy = Literal["merge", "record_only", "rank"]
 # How one child's work joined the parent's chain.
@@ -117,7 +117,7 @@ class ChildSpec:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Imported:
-    """What a child's import landed in the origin.
+    """What a child's import retained in the origin.
 
     Attributes:
         session_dir: The child's session dir under the origin's state.
@@ -140,7 +140,7 @@ class ChildResult:
         branch: The branch the child was given; a name, not proof that work was imported.
         ok: Whether it ended with a result and its record was imported.
         error: Why it failed, "" on success.
-        imported_ref: The ref the import landed the child's work in; "" when none.
+        imported_ref: The ref the import stored the child's work in; "" when none.
         imported_tip: That ref's commit; "" when none.
         has_commits: Whether the imported tip holds commits beyond the child's base.
         commits: How many it holds; 0 when none, or when the base is unrecorded.
@@ -154,7 +154,7 @@ class ChildResult:
         stopped_by: What ended the child short of its own finish: its deadline, the run's
             budget, its parent's stop, or `stopped` for the operator's and for the end of the
             execution that started it; "" when it ended by itself. A stopped child's work
-            never lands by itself.
+            never merges by itself.
     """
 
     spec: ChildSpec
@@ -194,7 +194,7 @@ class StartedChild:
         result: Resolves once: with the child's result after its import, or with why it
             never ran.
         stop: Asks the child to stop now; its result still resolves, with its work imported
-            and never landed.
+            and never merged.
     """
 
     session_id: str
@@ -245,13 +245,13 @@ class CandidateBrief:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Ranking:
-    """The order a rank join lands by.
+    """The order a rank join merges by.
 
     Attributes:
         order: The ranked children's session ids, best first.
         ranked_by: `judge` when a judge's order ranked them, else `mechanical`.
         rationale: The judges' words; "" for the mechanical order.
-        winner: The child the join lands, or "" when the order crowns none: every gate ran
+        winner: The child the join merges, or "" when the order crowns none: every gate ran
             red, or a child that did not verify was ranked over one that did.
         fallback: Why the mechanical order ranked; "" when judges did.
         judge_cost_usd: What the judges spent; 0.0 when none ran.
@@ -300,9 +300,9 @@ class ChildJoin:
         status: `joined` (merged, `sha` set), `no_changes` (ended with a result and no commit
             beyond its base; nothing to merge), `conflict` (imported, the merge conflicted,
             the ref exists locally), `failed` (no result or nothing importable),
-            `ranked` (a rank join placed the child and did not join it: another child landed,
+            `ranked` (a rank join placed the child and did not join it: another child merged,
             or the run has no chain to join onto; the branch holds this one's work) or
-            `stopped` (the child was stopped, so nothing landed; the branch holds its work).
+            `stopped` (the child was stopped, so nothing merged; the branch holds its work).
         sha: The merge commit, or "".
         detail: The failure's reason; a conflict's files; a ranked child's place (`2 of 3`);
             what stopped a stopped child (`stopped by its parent`); else "".
@@ -337,7 +337,7 @@ class Started:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class DispatchResult:
-    """What a landed dispatch did, for the caller to deliver as it sees fit.
+    """What a completed dispatch did, for the caller to deliver as it sees fit.
 
     Attributes:
         group: The group id the children were stamped with; "" when nothing was dispatched.

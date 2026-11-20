@@ -66,13 +66,13 @@ def blocking(
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class Landed:
-    """A work dispatch run to its landing.
+class Completed:
+    """A work dispatch run to completion.
 
     Attributes:
         started: What the dispatch started, or its refusal.
         children: Each child's recorded join, in the order written.
-        message: The landing notices, one per task.
+        message: The completion notices, one per task.
     """
 
     started: child_records.Started
@@ -80,15 +80,15 @@ class Landed:
     message: str
 
 
-def landed(
+def completed(
     dispatcher: parallel_dispatch.ParallelDispatcher,
     conversation: loop_conversation.Conversation,
     turn: int,
     state: loop_state.LoopState,
     segments: list[directive.Segment],
     **kwargs: Any,
-) -> Landed:
-    """Dispatch, wait for the children and land them at once, as an entry with no turn does."""
+) -> Completed:
+    """Dispatch, wait for the children and complete the task without taking a turn."""
     started = dispatcher.dispatch(conversation, turn, state, segments, **kwargs)
     dispatcher.wait()
     dispatcher.settle(conversation, turn)
@@ -97,7 +97,7 @@ def landed(
         child_dispatch.read_record(child_dispatch.record_path(dispatcher.session_dir, group))
         for group in started.groups
     ]
-    return Landed(
+    return Completed(
         started,
         [join for group in started.groups for join in dispatcher.joins(group)],
         "\n".join(record.message for record in records),

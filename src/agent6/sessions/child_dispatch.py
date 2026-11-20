@@ -64,13 +64,13 @@ class UsageRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
 
 
 class RankRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """The order a rank join landed by, written before the first join so no resume ranks twice.
+    """The order a rank join merged by, written before the first join so no resume ranks twice.
 
     Attributes:
         order: The ranked children's session ids, best first; empty when no child had a result.
         ranked_by: `judge` or `mechanical`.
         rationale: The judges' words; "" for the mechanical order.
-        winner: The one child the join lands; "" when the order crowns none.
+        winner: The one child the join merges; "" when the order crowns none.
         fallback: Why the mechanical order ranked; "" when judges did.
     """
 
@@ -119,7 +119,7 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         version: The record's shape; a newer one refuses the read.
         identity: The dispatch's id, the group id `<parent>-p<n>`.
         source: Who asked.
-        join_policy: How the work lands: a task's one child merged, a panel's records
+        join_policy: How the work merges: a task's one child merged, a panel's records
             imported and nothing merged, or the best-ranked of a task's attempts alone.
         ranking: A rank join's order; None before it ranked and under the other policies.
         owner: The execution that made it.
@@ -128,11 +128,11 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         spec: The task's child spec as given; "" for one default child and for a panel.
         parent_node: The DAG node the task was dispatched under; None without a graph and
             for a panel.
-        node_id: The task's DAG node, added when its work lands or its dispatch fails; None
+        node_id: The task's DAG node, added when its work merges or its dispatch fails; None
             until then, without a graph and for a panel.
         children: The children, in child order.
         state: How far the dispatch got; `ranking` while a task's judges run.
-        message: The notice of what landed, "" until complete.
+        message: The notice of what merged, "" until complete.
         delivered: Whether that notice reached the conversation.
         written_at: When this version of the record was written, as epoch seconds.
     """

@@ -112,7 +112,7 @@ def test_a_child_without_commits_joins_as_no_changes_without_merging(
     j = parallel_join.join_child_result(pathlib.Path("/r"), _res(ok=True, has_commits=False), **kw)
     assert j == child_records.ChildJoin("child-1", "agent6/child-1", "no_changes", "", "")
     assert merges == []
-    # A child with commits merges the ref the import landed, not the branch name it was given.
+    # A child with commits merges the ref the import merged, not the branch name it was given.
     res = child_records.ChildResult(
         spec=_res(ok=True).spec,
         session_dir=pathlib.Path("/nowhere"),
@@ -182,7 +182,7 @@ def test_summary_text_names_every_outcome() -> None:
     assert "d (agent6/d): finished with no changes to join." in text
     assert "CONFLICT" in text and "git merge agent6/b" in text
     assert "FAILED -- boom; nothing joined." in text
-    assert text.endswith("Review what landed and continue.")
+    assert text.endswith("Review what merged and continue.")
 
 
 def test_child_note_wordings() -> None:
@@ -200,7 +200,7 @@ def test_segment_children_carry_the_operator_pins_out_of_band() -> None:
 
     `/pin` tells the worker an instruction "stays binding for the rest of the run", and a child's
     branch is merged back into the parent's, so a child that never saw the pin could violate a
-    standing instruction and have that work land. A pin folded into the task text is the child's
+    standing instruction and have that work merge. A pin folded into the task text is the child's
     manifest user_task, so every listing and the judge's CandidateBrief lead with "PINNED operator
     instructions (verbatim):" instead of the work. Pins ride the ChildTask; the task text stays the
     task.
@@ -220,8 +220,8 @@ def test_segment_children_carry_the_operator_pins_out_of_band() -> None:
     assert plain[0].task == "do it" and plain[0].pins == ()
 
 
-def test_the_end_notice_gives_a_childs_finish_summary_and_the_landing_gives_its_join() -> None:
-    """What a child said reaches its parent when the child ends; how it joined, when it lands.
+def test_the_end_notice_gives_a_childs_finish_summary_and_the_merge_gives_its_join() -> None:
+    """What a child said reaches its parent when the child ends; how it joined, when it merges.
 
     The parent read only "finished with no changes to join." for a child sent to find
     something out, and went through the child's transcript for the answer.
@@ -237,7 +237,7 @@ def test_the_end_notice_gives_a_childs_finish_summary_and_the_landing_gives_its_
         _res(ok=True), stopped_by="stopped at the run's budget", commits=2
     )
     assert parallel_join.end_notice(stopped) == (
-        "[parallel] child child-1 stopped at the run's budget, not landed;"
+        "[parallel] child child-1 stopped at the run's budget, not merged;"
         " agent6/child-1 holds 2 commit(s)."
     )
     assert parallel_join.end_notice(_res(ok=False, error="no result (failed)")) == (
@@ -256,7 +256,7 @@ def test_the_end_notice_gives_a_childs_finish_summary_and_the_landing_gives_its_
         "  - a (agent6/a): finished with no changes to join.",
         "  - b (agent6/b): joined at abc123def456",
         "  - c (agent6/c): FAILED -- boom; nothing joined.",
-        "Review what landed and continue.",
+        "Review what merged and continue.",
     ]
 
 
@@ -270,8 +270,8 @@ def test_started_text_tells_one_child_from_attempts() -> None:
     )
 
 
-def test_summary_text_says_a_stopped_child_did_not_land() -> None:
-    """A stopped child's line says what stopped it, that nothing landed, and what holds its work.
+def test_summary_text_says_a_stopped_child_did_not_merge() -> None:
+    """A stopped child's line says what stopped it, that nothing merged, and what holds its work.
 
     A stopped child's commits were merged, its line reading "joined at <sha> (stopped by its
     parent)".
@@ -281,23 +281,23 @@ def test_summary_text_says_a_stopped_child_did_not_land() -> None:
     text = parallel_join.summary_text("p1", [idle, busy])
     assert text.splitlines() == [
         "[parallel] group p1 complete (2 child(ren)):",
-        "  - a (agent6/a): stopped at the run's budget, not landed; it made no commit.",
-        "  - b (agent6/b): stopped by its parent, not landed; the branch holds 3 commit(s).",
-        "Every child stopped: nothing landed.",
+        "  - a (agent6/a): stopped at the run's budget, not merged; it made no commit.",
+        "  - b (agent6/b): stopped by its parent, not merged; the branch holds 3 commit(s).",
+        "Every child stopped: nothing merged.",
     ]
-    # A task whose every child stopped did not pass; one that landed a sibling did.
+    # A task whose every child stopped did not pass; one that merged a sibling did.
     assert parallel_join.segment_stamp([idle, busy]) == (
         "failed",
-        "a stopped at the run's budget; not landed; b stopped by its parent; not landed",
+        "a stopped at the run's budget; not merged; b stopped by its parent; not merged",
         "",
     )
-    landed = _join("joined", "c", sha="abc123def4567")
-    assert parallel_join.segment_stamp([busy, landed])[0] == "passed"
-    assert parallel_join.summary_text("p1", [busy, landed]).splitlines()[-1] == (
-        "Review what landed and continue."
+    merged = _join("joined", "c", sha="abc123def4567")
+    assert parallel_join.segment_stamp([busy, merged])[0] == "passed"
+    assert parallel_join.summary_text("p1", [busy, merged]).splitlines()[-1] == (
+        "Review what merged and continue."
     )
     assert parallel_join.join_words(busy) == (
-        "stopped by its parent, not landed; agent6/b holds 3 commit(s)"
+        "stopped by its parent, not merged; agent6/b holds 3 commit(s)"
     )
 
 
@@ -309,10 +309,10 @@ def test_summary_hands_a_conflicted_child_to_the_operator() -> None:
     """
     text = parallel_join.summary_text("g", [_join("conflict")])
     assert "(`git merge agent6/child-1` for the operator)" in text
-    assert "nothing landed" in text and "continue without it" in text
+    assert "nothing merged" in text and "continue without it" in text
     assert "resolve" not in text
     named = dataclasses.replace(_join("conflict"), detail="merge conflict in a.py, b.py")
-    assert "CONFLICT -- merge conflict in a.py, b.py; nothing landed." in (
+    assert "CONFLICT -- merge conflict in a.py, b.py; nothing merged." in (
         parallel_join.summary_text("g", [named])
     )
 
@@ -361,12 +361,12 @@ def test_a_children_result_carries_its_finish_summary(tmp_path: pathlib.Path) ->
     )
     assert res.ok and res.stopped_by == "stopped"
     assert parallel_join.end_notice(res).splitlines()[0] == (
-        "[parallel] child done stopped, not landed; it made no commit."
+        "[parallel] child done stopped, not merged; it made no commit."
     )
     join = parallel_join.stopped_join(res)
     assert parallel_join.summary_text("g", [join]).splitlines()[1:] == [
-        "  - done (): stopped, not landed; it made no commit.",
-        "Every child stopped: nothing landed.",
+        "  - done (): stopped, not merged; it made no commit.",
+        "Every child stopped: nothing merged.",
     ]
 
     cut = tmp_path / "cut"

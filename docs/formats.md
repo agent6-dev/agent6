@@ -367,12 +367,12 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### finish.refused.children
 
-**Support: public.** An end declared while a child's work had not landed was returned to the model.
+**Support: public.** An end declared while a child's work had not merged was returned to the model.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `turn` | `int` | The execution's turn number. |
-| `children` | `list` | The session ids of the children whose task had not landed. |
+| `children` | `list` | The session ids of the children whose task had not merged. |
 | `trigger` | `str` | The action that triggered the gate or panel. |
 
 ### finish.refused.contract
@@ -2650,17 +2650,17 @@ Source: [`agent6.sessions.child_dispatch.DispatchRecord`](https://github.com/age
 | `version` | `int` | The record's shape; a newer one refuses the read. |
 | `identity` | `str` | The dispatch's id, the group id `<parent>-p<n>`. |
 | `source` | `Literal['operator', 'model', 'panel']` | Who asked. |
-| `join_policy` | `Literal['merge', 'record_only', 'rank']` | How the work lands: a task's one child merged, a panel's records imported and nothing merged, or the best-ranked of a task's attempts alone. |
+| `join_policy` | `Literal['merge', 'record_only', 'rank']` | How the work merges: a task's one child merged, a panel's records imported and nothing merged, or the best-ranked of a task's attempts alone. |
 | `ranking` | `RankRecord \| None` | A rank join's order; None before it ranked and under the other policies. |
 | `owner` | `str` | The execution that made it. |
 | `turn` | `int` | The turn it was dispatched after. |
 | `base` | `str` | The chain tip the children were cut from. |
 | `spec` | `str` | The task's child spec as given; "" for one default child and for a panel. |
 | `parent_node` | `str \| None` | The DAG node the task was dispatched under; None without a graph and for a panel. |
-| `node_id` | `str \| None` | The task's DAG node, added when its work lands or its dispatch fails; None until then, without a graph and for a panel. |
+| `node_id` | `str \| None` | The task's DAG node, added when its work merges or its dispatch fails; None until then, without a graph and for a panel. |
 | `children` | `tuple[ChildRecord, ...]` | The children, in child order. |
 | `state` | `Literal['prepared', 'running', 'settling', 'ranking', 'joining', 'complete']` | How far the dispatch got; `ranking` while a task's judges run. |
-| `message` | `str` | The notice of what landed, "" until complete. |
+| `message` | `str` | The notice of what merged, "" until complete. |
 | `delivered` | `bool` | Whether that notice reached the conversation. |
 | `written_at` | `float` | When this version of the record was written, as epoch seconds. |
 
@@ -3185,7 +3185,7 @@ Source: [`agent6.review_records.ReviewBinding`](https://github.com/agent6-dev/ag
 
 ### RankRecord
 
-**Support: public.** The order a rank join landed by, written before the first join so no resume ranks twice.
+**Support: public.** The order a rank join merged by, written before the first join so no resume ranks twice.
 
 Source: [`agent6.sessions.child_dispatch.RankRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
 
@@ -3194,7 +3194,7 @@ Source: [`agent6.sessions.child_dispatch.RankRecord`](https://github.com/agent6-
 | `order` | `tuple[str, ...]` | The ranked children's session ids, best first; empty when no child had a result. |
 | `ranked_by` | `Literal['judge', 'mechanical']` | `judge` or `mechanical`. |
 | `rationale` | `str` | The judges' words; "" for the mechanical order. |
-| `winner` | `str` | The one child the join lands; "" when the order crowns none. |
+| `winner` | `str` | The one child the join merges; "" when the order crowns none. |
 | `fallback` | `str` | Why the mechanical order ranked; "" when judges did. |
 
 ### ChildRecord

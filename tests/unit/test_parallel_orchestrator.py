@@ -2141,7 +2141,7 @@ def test_child_sampling_notes_survive_import_and_reach_both_reports(
         runtime=dataclasses.replace(runtime, spawn=child),
     )
     assert result.ok, result.error
-    landed = app_children.land_child(
+    landed = app_children.finish_import(
         result,
         parallel_results.import_child(result, origin, None),
         cfg=cfg,

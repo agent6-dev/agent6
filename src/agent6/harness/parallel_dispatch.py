@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Dispatch a run's children and land their work.
+"""Dispatch a run's children and merge their work.
 
 `ParallelDispatcher` owns the policy: when to cut children, the DAG stamps, the events, the
 injected group spawner. A work dispatch starts its children in the background and returns;
-`settle` lands what finished at a turn boundary. `parallel_join` projects child results into
+`settle` merges what finished at a turn boundary. `parallel_join` projects child results into
 ordered merges, DAG stamps and notices; `parallel_panel` runs a panel's record-only batches
-through the same executor, and a rank join lands the one child `parallel_rank` puts first.
+through the same executor, and a rank join merges the one child `parallel_rank` puts first.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ def segment_children(
 
     A bad spec (zero children, an empty model list, more than the limit) raises `DirectiveError`
     from `parse_spec`. Operator pins ride on every child out of band: the spawner's `--pin`
-    channel seeds the child's own pin state, so a child never lands work that violates a
+    channel seeds the child's own pin state, so a child never merges work that violates a
     standing instruction, and the task text stays the child's manifest task.
 
     Args:
@@ -56,7 +56,7 @@ def segment_children(
 
 @dataclasses.dataclass(slots=True)
 class OpenDispatch:
-    """A work dispatch this execution started whose work has not landed.
+    """A work dispatch this execution started whose work has not merged.
 
     Attributes:
         record: The dispatch's record, as last written.
@@ -98,7 +98,7 @@ class ParallelDispatcher:
         stop_pending: Whether the operator asked the run to stop.
         authority: Work and harness-panel permissions from the application.
         clock: The wall clock.
-        open: The work dispatches this execution started and has not landed, by identity,
+        open: The work dispatches this execution started and has not merged, by identity,
             oldest first.
         stopping: The running children this execution asked to stop.
     """
@@ -141,10 +141,10 @@ class ParallelDispatcher:
         """Start each segment's task in the background and return what started.
 
         A segment is one task and one dispatch record, written before any launch: one child
-        lands its commits, several are attempts `parallel_rank` orders. Each child starts on a
+        merges its commits, several are attempts `parallel_rank` orders. Each child starts on a
         clone of the parent's committed HEAD under the parent's config and what it has left
         to spend, with no turn cap or deadline of its own, and runs while the parent takes
-        its turns; `settle` lands the work at a turn boundary.
+        its turns; `settle` merges the work at a turn boundary.
         Never ends the run: an unavailable spawner, a bad spec, a dirty tree, an unwritable
         record or a spawner fault each come back as the refusal for the caller to deliver.
 
@@ -349,12 +349,12 @@ class ParallelDispatcher:
         concurrent.futures.wait(self.unended())
 
     def settle(self, conversation: loop_conversation.Conversation, turn: int) -> bool:
-        """Tell the model which children ended, then land each dispatch whose children all have.
+        """Tell the model which children ended, then merge each dispatch whose children all have.
 
-        Called at a turn boundary. The finished dispatches land in the order written; one
-        with a child still running lands at a later boundary and holds no other. Attempts
+        Called at a turn boundary. The finished dispatches merge in the order written; one
+        with a child still running merges at a later boundary and holds no other. Attempts
         are ranked first: their judges start here and run in the background, and the task
-        lands at the boundary after they end.
+        merges at the boundary after they end.
 
         Args:
             conversation: The run's conversation, which takes the notices.
@@ -378,7 +378,7 @@ class ParallelDispatcher:
                 if record.ranking is None:
                     # Its judges run, or a stop holds them: a later boundary or the end settles it.
                     continue
-            result = self.land(record, results, turn=turn)
+            result = self.complete(record, results, turn=turn)
             self.deliver(conversation, result)
             del self.open[identity]
             told = True
@@ -440,7 +440,7 @@ class ParallelDispatcher:
             )
 
     def joins(self, group: str) -> list[child_records.ChildJoin]:
-        """Return the joins a dispatch has recorded, in child order; none before it landed."""
+        """Return the joins a dispatch has recorded, in child order; none before it completed."""
         if self.session_dir is None:
             return []
         record = child_dispatch.read_record(child_dispatch.record_path(self.session_dir, group))
@@ -449,8 +449,8 @@ class ParallelDispatcher:
     def close(self, turn: int) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """End the execution's children: stop each still running, wait, charge what it used.
 
-        Their work stays on their branches and their records stay unlanded. A stopped child
-        never lands; the next execution lands the task of one that had ended by itself. A
+        Their work stays on their branches and their records stay incomplete. A stopped child
+        never merges; the next execution merges the task of one that had ended by itself. A
         task's judges are stopped and charged with it.
 
         Args:
@@ -458,7 +458,7 @@ class ParallelDispatcher:
 
         Returns:
             The children this stopped, then the ones that had ended and whose task had not
-            landed.
+            merged.
         """
         stopped: list[str] = []
         ended: list[str] = []
@@ -486,7 +486,7 @@ class ParallelDispatcher:
         self.open.clear()
         return tuple(stopped), tuple(ended)
 
-    def land(
+    def complete(
         self,
         record: child_dispatch.DispatchRecord,
         results: list[child_records.ChildResult],
@@ -495,14 +495,14 @@ class ParallelDispatcher:
     ) -> child_records.DispatchResult:
         """Settle, join, stamp and complete a dispatch whose children have returned.
 
-        Work lands on a clean tree: the parent's uncommitted work is committed first. Each
+        Work merges on a clean tree: the parent's uncommitted work is committed first. Each
         boundary advances the record first, so a crash in between leaves a resume one step to
         finish, never one to repeat. A rank join comes here with its ranking written.
 
         Args:
             record: The dispatch's record.
             results: The children's results; a child without one never started.
-            turn: The turn the landing follows; None for the turn of the dispatch.
+            turn: The turn the merge follows; None for the turn of the dispatch.
 
         Returns:
             The result, its message the record's.
@@ -510,7 +510,7 @@ class ParallelDispatcher:
         by_id = {res.spec.session_id: res for res in results}
         turn = record.turn if turn is None else turn
         record = self.settled(record, by_id, turn=turn)
-        clean = record.join_policy == "record_only" or self.ensure_clean(turn, "landing children")
+        clean = record.join_policy == "record_only" or self.ensure_clean(turn, "merging children")
         record = self.joined(record, by_id, clean=clean)
         joins = [parallel_join.join_of(child) for child in record.children]
         if record.node_id is None:
@@ -536,7 +536,7 @@ class ParallelDispatcher:
         failures = [
             p
             for p, j in zip(payload, joins, strict=True)
-            # A stopped child is no failed join: nothing of it was meant to land.
+            # A stopped child is no failed join: nothing of it was meant to merge.
             if j.status not in ("joined", "no_changes", "ranked", "stopped")
         ]
         if failures:
@@ -601,7 +601,7 @@ class ParallelDispatcher:
         *,
         clean: bool = True,
     ) -> child_dispatch.DispatchRecord:
-        """Join each child not yet joined, in child order, recording each join as it lands.
+        """Join each child not yet joined, in child order, recording each join as it merges.
 
         A rank join joins its ranking's winner alone; with no winner it joins none.
         A stopped child never joins: its record names the branch that holds its commits.
@@ -678,7 +678,7 @@ class ParallelDispatcher:
     def join_child(
         self, child: child_dispatch.ChildRecord, res: child_records.ChildResult | None
     ) -> child_records.ChildJoin:
-        """Join one child, or recognise a merge that already landed on the chain.
+        """Join one child, or recognise a merge already on the chain.
 
         Args:
             child: The child's record.
@@ -803,7 +803,7 @@ class ParallelDispatcher:
         self.emit(budget_events.budget_turn(self.budget, turn))
 
     def ensure_clean(self, turn: int, what: str) -> bool:
-        """Chain-commit a changed tree, so children are cut from, and land on, committed work.
+        """Chain-commit a changed tree, so children are cut from, and merge on, committed work.
 
         With `commit_per_turn` off a changed tree cannot be captured.
 

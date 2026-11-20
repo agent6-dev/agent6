@@ -26,8 +26,8 @@ class ChildLine:
 
     Attributes:
         id: The child's session id, the handle `parallel` returned.
-        state: `running`, `stopping`, `ended, not landed`, `being ranked`, how its work
-            joined, or for a stopped child that it did not land and what holds its work.
+        state: `running`, `stopping`, `ended, not merged`, `being ranked`, how its work
+            joined, or for a stopped child that it did not merge and what holds its work.
         task: The first line of its task.
         running: Whether a wait has something to wait for: the child, or the judges ranking it.
     """

@@ -1372,8 +1372,8 @@ class Harness:
             budget_remaining=self._budget_fraction_remaining,
             operator_wait_s=lambda: self.dispatcher.operator_wait_s,
             open_subtasks=self.open_subtasks,
-            unlanded_children=lambda: (
-                child_work.unlanded(self.children) if self.children is not None else ()
+            unmerged_children=lambda: (
+                child_work.unmerged(self.children) if self.children is not None else ()
             ),
         )
 
@@ -1546,7 +1546,7 @@ class Harness:
         Returns:
             The execution's result.
         """
-        # Children end with the execution that started them; a stopped child never lands.
+        # Children end with the execution that started them; a stopped child never merges.
         stopped, ended = self.children.close(turn) if self.children is not None else ((), ())
         if stopped:
             self.log(f"LOOP: {len(stopped)} child(ren) stopped with the run: {', '.join(stopped)}")
@@ -1556,10 +1556,10 @@ class Harness:
                 " their branches hold their work",
             )
         if ended:
-            self.log(f"LOOP: {len(ended)} child(ren) had ended, not landed: {', '.join(ended)}")
+            self.log(f"LOOP: {len(ended)} child(ren) had ended, not merged: {', '.join(ended)}")
             end = dataclasses.replace(
                 end,
-                summary=f"{end.summary}; {len(ended)} child(ren) had ended, their work lands"
+                summary=f"{end.summary}; {len(ended)} child(ren) had ended, their work merges"
                 " when the run resumes",
             )
         if end.checkpoint:

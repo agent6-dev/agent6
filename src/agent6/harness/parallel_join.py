@@ -36,7 +36,7 @@ def join_child_result(
     Args:
         root: The repository root.
         res: The child's result.
-        ref: The chain ref the merge lands on.
+        ref: The chain ref that receives the merge.
         fallback_parent: The parent an unborn ref merges onto, or None.
         identity: The merge commit's identity, or None for the repo's.
         also_branch: A checked-out branch to move with the ref, or None.
@@ -100,7 +100,7 @@ def stopped_words(stopped_by: str, holder: str, commits: int) -> str:
         The words every surface of the parent uses for a stopped child.
     """
     held = f"{holder} holds {commits} commit(s)" if commits else "it made no commit"
-    return f"{stopped_by}, not landed; {held}"
+    return f"{stopped_by}, not merged; {held}"
 
 
 def segment_stamp(
@@ -147,7 +147,7 @@ def child_note(j: child_records.ChildJoin) -> str:
     if j.status == "ranked":
         return f"{j.session_id} ranked {j.detail}; not joined"
     if j.status == "stopped":
-        return f"{j.session_id} {j.detail}; not landed"
+        return f"{j.session_id} {j.detail}; not merged"
     return f"{j.session_id} failed: {j.detail}"
 
 
@@ -163,12 +163,12 @@ def started_text(children: Sequence[str]) -> str:
     if len(children) == 1:
         return (
             f"[parallel] started child {children[0]}. A notice arrives when it ends and when"
-            " its work lands; read_background reads it and stop_background stops it, by this id."
+            " its work merges; read_background reads it and stop_background stops it, by this id."
         )
     return (
         f"[parallel] started {len(children)} attempts at one task: {', '.join(children)}."
         " A notice arrives as each ends; once all have, they are ranked in the background and"
-        " the first lands. read_background reads one and stop_background stops one, by id."
+        " the first merges. read_background reads one and stop_background stops one, by id."
     )
 
 
@@ -180,7 +180,7 @@ def end_notice(res: child_records.ChildResult) -> str:
 
     Returns:
         How it ended, with its finish summary under it as its journal holds it (2,000
-        characters at most). A stopped child's line says it did not land and what holds
+        characters at most). A stopped child's line says it did not merge and what holds
         its work.
     """
     sid = res.spec.session_id
@@ -213,7 +213,7 @@ def summary_text(
     children: list[child_records.ChildJoin],
     ranking: child_dispatch.RankRecord | None = None,
 ) -> str:
-    """Return the one notice that says how each child of a landed dispatch joined.
+    """Return the one notice that says how each child of a completed dispatch joined.
 
     Args:
         group: The dispatch's group id.
@@ -222,7 +222,7 @@ def summary_text(
 
     Returns:
         One line per child, how the attempts were ranked, then what to do; a dispatch
-        whose every child stopped says nothing landed.
+        whose every child stopped says nothing merged.
     """
     lines = [f"[parallel] group {group} complete ({len(children)} child(ren)):"]
     for j in children:
@@ -239,7 +239,7 @@ def summary_text(
             # Git is agent6's in this run and `.git` is read-only in the jail: the operator merges.
             lines.append(
                 f"  - {j.session_id} ({j.branch}): CONFLICT -- {j.detail or 'merge conflict'};"
-                f" nothing landed. The branch holds its work (`git merge {j.branch}` for the"
+                f" nothing merged. The branch holds its work (`git merge {j.branch}` for the"
                 " operator); continue without it."
             )
         elif j.status == "ranked":
@@ -252,9 +252,9 @@ def summary_text(
     if ranking is not None and ranking.order:
         lines.append(ranked_by(ranking))
     if children and all(j.status == "stopped" for j in children):
-        lines.append("Every child stopped: nothing landed.")
+        lines.append("Every child stopped: nothing merged.")
     else:
-        lines.append("Review what landed and continue.")
+        lines.append("Review what merged and continue.")
     return "\n".join(lines)
 
 

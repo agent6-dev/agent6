@@ -3,9 +3,9 @@
 """Parent dispatch: `/parallel` steer dispatches children.
 
 A fake provider fires the steer once, and a fake group spawner fabricates real mergeable branches in
-the parent's tmp repo, so parse, the dirty-tree gate, the landing at the next turn boundary, DAG
+the parent's tmp repo, so parse, the dirty-tree gate, the merge at the next turn boundary, DAG
 stamping, events and the notices run end-to-end. The fake's children have ended when it returns:
-the steer lands at turn 1's boundary, their work at turn 2's, and turn 3's call reads the notices.
+the steer merges at turn 1's boundary, their work at turn 2's, and turn 3's call reads the notices.
 """
 
 from __future__ import annotations
@@ -244,7 +244,7 @@ class _FakeGroupSpawner:
                 continue
             base = self.base_by_child.get(i, _head(self.repo))
             if i in self.empty:
-                # Ended with a result and committed nothing: the import landed only its record.
+                # Ended with a result and committed nothing: the import merged only its record.
                 results.append(
                     child_records.ChildResult(
                         spec=spec,
@@ -364,7 +364,7 @@ def _build_wf(
 
 
 def _three_reads() -> list[ProviderResponse]:
-    """Three turns: the steer lands after the first, the children after the second."""
+    """Three turns: the steer arrives after the first, the children merge after the second."""
     return [_resp_tool("read_file", {"path": "README.md"}, f"t{i}") for i in (1, 2, 3)]
 
 
@@ -459,13 +459,13 @@ def test_parallel_lookalike_steer_flows_through_as_plain_steer(tmp_path: pathlib
     assert not any(t.startswith("[parallel]") for t in texts)
 
 
-def _landings(provider: mock.MagicMock) -> list[str]:
-    """Return the landing notices the last model call read, in the order they arrived."""
+def _merges(provider: mock.MagicMock) -> list[str]:
+    """Return the merge notices the last model call read, in the order they arrived."""
     return [t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel] group")]
 
 
-def test_two_tasks_land_in_the_order_written_and_stamp_their_nodes(tmp_path: pathlib.Path) -> None:
-    """Each `/parallel` in a message is a task: its own group, one child, landed in turn."""
+def test_two_tasks_merge_in_the_order_written_and_stamp_their_nodes(tmp_path: pathlib.Path) -> None:
+    """Each `/parallel` in a message is a task: its own group, one child, merged in turn."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     parent_id = "run-abc"
@@ -510,7 +510,7 @@ def test_two_tasks_land_in_the_order_written_and_stamp_their_nodes(tmp_path: pat
     ]
     assert not events.of("parallel.failed")
     texts = _user_texts(_final_messages(provider))
-    # The steer's answer says what started; each child's end and each task's landing follow.
+    # The steer's answer says what started; each child's end and each task's merge follow.
     (started,) = [t for t in texts if t.startswith("[parallel] started")]
     assert started.splitlines() == [
         parallel_join.started_text(["run-abc-p1-l1"]),
@@ -521,15 +521,15 @@ def test_two_tasks_land_in_the_order_written_and_stamp_their_nodes(tmp_path: pat
         "[parallel] child run-abc-p1-l1 finished.",
         "[parallel] child run-abc-p2-l1 finished.",
     ]
-    landings = _landings(provider)
-    assert [t.splitlines()[0] for t in landings] == [
+    merges = _merges(provider)
+    assert [t.splitlines()[0] for t in merges] == [
         "[parallel] group run-abc-p1 complete (1 child(ren)):",
         "[parallel] group run-abc-p2 complete (1 child(ren)):",
     ]
-    assert all("joined at" in t for t in landings)
+    assert all("joined at" in t for t in merges)
 
 
-def test_a_model_list_starts_one_attempt_per_model_and_lands_the_first_ranked(
+def test_a_model_list_starts_one_attempt_per_model_and_merges_the_first_ranked(
     tmp_path: pathlib.Path,
 ) -> None:
     """`/parallel a/b,c -- task` is two attempts at one task under a single node."""
@@ -574,8 +574,8 @@ def test_a_model_list_starts_one_attempt_per_model_and_lands_the_first_ranked(
     ]
 
 
-def test_a_count_above_one_ranks_its_children_and_lands_one(tmp_path: pathlib.Path) -> None:
-    """`/parallel 3 -- task` is three attempts: one lands, the others keep their branches.
+def test_a_count_above_one_ranks_its_children_and_merges_one(tmp_path: pathlib.Path) -> None:
+    """`/parallel 3 -- task` is three attempts: one merges, the others keep their branches.
 
     A live steer merged all three, one after another, as if they were three tasks.
     """
@@ -608,8 +608,8 @@ def test_a_count_above_one_ranks_its_children_and_lands_one(tmp_path: pathlib.Pa
     assert files == ["README.md", "child2.txt"]
     (record,) = child_dispatch.read_records(tmp_path / parent_id)
     assert (record.join_policy, record.spec, len(record.children)) == ("rank", "3", 3)
-    (landing,) = _landings(provider)
-    assert "run-cnt-p1-l1 (agent6/run-cnt-p1-l1): ranked 3 of 3; not joined" in landing
+    (merge,) = _merges(provider)
+    assert "run-cnt-p1-l1 (agent6/run-cnt-p1-l1): ranked 3 of 3; not joined" in merge
     (started,) = [t for t in _user_texts(_final_messages(provider)) if "started" in t]
     assert started.startswith("[parallel] started 3 attempts at one task: run-cnt-p1-l1, ")
 
@@ -636,7 +636,7 @@ def test_task_without_separator_dispatches_one_default_child(
     assert [(child.task, child.model) for child in spawner.calls[0][0]] == [(task, None)]
 
 
-def test_a_conflict_lands_nothing_and_names_the_files_and_the_branch(
+def test_a_conflict_merges_nothing_and_names_the_files_and_the_branch(
     tmp_path: pathlib.Path,
 ) -> None:
     """A conflicting child fails its node; the notice names the files and its branch."""
@@ -682,10 +682,10 @@ def test_a_conflict_lands_nothing_and_names_the_files_and_the_branch(
     # The conflicting node is marked failed (NodeStatus has no "blocked").
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert sorted(n.status for n in steering) == ["failed", "passed"]
-    _clean, conflicted = _landings(provider)
+    _clean, conflicted = _merges(provider)
     assert conflicted.splitlines()[1] == (
         "  - run-cf-p2-l1 (agent6/run-cf-p2-l1): CONFLICT -- merge conflict in conflict.txt;"
-        " nothing landed. The branch holds its work (`git merge agent6/run-cf-p2-l1` for the"
+        " nothing merged. The branch holds its work (`git merge agent6/run-cf-p2-l1` for the"
         " operator); continue without it."
     )
 
@@ -728,9 +728,9 @@ def test_tasks_whose_children_change_nothing_pass_without_merging(tmp_path: path
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert [n.status for n in steering] == ["passed", "passed"]
     assert all(not n.commit_sha for n in steering)
-    landings = _landings(provider)
-    assert [t.count("finished with no changes to join") for t in landings] == [1, 1]
-    assert all("FAILED" not in t and "CONFLICT" not in t for t in landings)
+    merges = _merges(provider)
+    assert [t.count("finished with no changes to join") for t in merges] == [1, 1]
+    assert all("FAILED" not in t and "CONFLICT" not in t for t in merges)
     # Each child's finish summary reaches the conversation once, in the notice of its end.
     texts = _user_texts(_final_messages(provider))
     assert [t for t in texts if t.startswith("[parallel] child")] == [
@@ -742,7 +742,7 @@ def test_tasks_whose_children_change_nothing_pass_without_merging(tmp_path: path
         ("child 1 found nothing to change", True),
         ("child 2 found nothing to change", True),
     ]
-    assert [record.message for record in records] == landings
+    assert [record.message for record in records] == merges
     assert all(record.delivered for record in records)
 
 
@@ -844,7 +844,7 @@ def test_failed_child_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
     assert any(item.kind == "marker" and "child boom" in item.body for item in transcript)
     texts = _user_texts(_final_messages(provider))
     assert "[parallel] child run-fl-p1-l1 ended without a result: child boom" in texts
-    assert "FAILED -- child boom" in _landings(provider)[0]
+    assert "FAILED -- child boom" in _merges(provider)[0]
 
 
 def test_spawner_raising_never_aborts_the_run(tmp_path: pathlib.Path) -> None:
@@ -1099,7 +1099,7 @@ def _opening_wf(
     return wf, provider
 
 
-def test_a_run_that_opens_with_a_ranked_dispatch_lands_the_winner_and_calls_no_model(
+def test_a_run_that_opens_with_a_ranked_dispatch_merges_the_winner_and_calls_no_model(
     tmp_path: pathlib.Path,
 ) -> None:
     """`run --parallel` is a run: its chain holds the winner's work; it ends `children_ranked`."""

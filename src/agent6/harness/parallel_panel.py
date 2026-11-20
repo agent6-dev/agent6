@@ -170,7 +170,7 @@ def execute(
         return child_records.DispatchResult(
             failed.identity, True, (), failed.message, base=failed.base
         )
-    return dispatcher.land(record, results)
+    return dispatcher.complete(record, results)
 
 
 def refusal(

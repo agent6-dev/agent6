@@ -433,12 +433,12 @@ def _records(run: _Run) -> dict[str, child_dispatch.DispatchRecord]:
     return {r.identity: r for r in child_dispatch.read_records(session_dir)}
 
 
-def test_attempts_are_ranked_by_a_reviewer_in_the_background_and_land_after_it_ends(
+def test_attempts_are_ranked_by_a_reviewer_in_the_background_and_merge_after_it_ends(
     repo: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
-    """The judges start when the attempts have ended; the task lands a boundary after they end.
+    """The judges start when the attempts have ended; the task merges a boundary after they end.
 
-    The ranking was one model call made inside the landing, with no tools, and the parent's
+    The ranking was one model call made inside the merge, with no tools, and the parent's
     turn waited for it.
     """
     run = _Run(repo, tmp_path / "state")
@@ -471,7 +471,7 @@ def test_attempts_are_ranked_by_a_reviewer_in_the_background_and_land_after_it_e
     for sid in (ONE, TWO, THREE):
         assert f"ATTEMPT {sid}\nbranch: origin/agent6/{sid} at " in judge.contract.opening
     assert "+child 2" in judge.contract.opening and "verify: passed" in judge.contract.opening
-    # Meanwhile nothing has landed, the task reads as being ranked, and it holds the end.
+    # Meanwhile nothing has merged, the task reads as being ranked, and it holds the end.
     records = _records(run)
     assert (records["root-p1"].state, records["root-p1"].ranking) == ("ranking", None)
     assert (records["root-rp1"].source, records["root-rp1"].delivered) == ("panel", True)
@@ -479,7 +479,7 @@ def test_attempts_are_ranked_by_a_reviewer_in_the_background_and_land_after_it_e
     assert [(line.id, line.state, line.running) for line in roster] == [
         (sid, "being ranked", True) for sid in (ONE, TWO, THREE)
     ]
-    assert child_work.unlanded(dispatcher) == tuple(
+    assert child_work.unmerged(dispatcher) == tuple(
         (sid, "being ranked") for sid in (ONE, TWO, THREE)
     )
     assert dispatcher.running() == 1 and git_read.chain_tip(repo, "refs/agent6/root") is None
@@ -504,7 +504,7 @@ def test_attempts_are_ranked_by_a_reviewer_in_the_background_and_land_after_it_e
         True,
     )
     said = json.dumps(conversation.to_wire())
-    assert "Ranked by the judges: two is tidier\\nReview what landed and continue." in said
+    assert "Ranked by the judges: two is tidier\\nReview what merged and continue." in said
     assert "root-rp1" not in said, "a judge's own record is never a notice"
     assert dispatcher.open == {} and dispatcher.running() == 0
     # The judge's spend is the run's: three attempts and one reviewer.
@@ -540,7 +540,7 @@ def test_a_judge_with_no_usable_order_leaves_the_mechanical_order_and_the_notice
     )
     assert (
         "Ranked by verify result, then cost: no judge gave a usable order (reviewer: no verdict"
-        " within 20 replies).\\nReview what landed and continue."
+        " within 20 replies).\\nReview what merged and continue."
     ) in json.dumps(conversation.to_wire())
     assert (repo / "a.txt").read_text(encoding="utf-8") == "child 2\n"
 
@@ -622,7 +622,7 @@ def test_the_executions_end_stops_its_judges_and_a_resume_ranks_from_what_they_l
     assert "[parallel] group root-p1 complete" in said and "root-rp1" not in said
 
 
-def test_a_task_with_one_child_lands_without_a_ranking(
+def test_a_task_with_one_child_merges_without_a_ranking(
     repo: pathlib.Path, tmp_path: pathlib.Path
 ) -> None:
     run = _Run(repo, tmp_path / "state")

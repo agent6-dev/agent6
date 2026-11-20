@@ -63,8 +63,8 @@ def reconcile(
     result never reached the conversation is delivered; an interrupted one has its
     children found by the recoverer (live ones stopped, finished ones imported) and its
     usage settled. A task is then settled as a turn boundary settles it: a stopped child is
-    told with the branch that holds its work and never lands, and a task whose children
-    ended by themselves lands, as at the boundary its execution did not reach.
+    told with the branch that holds its work and never merges, and a task whose children
+    ended by themselves merges, as at the boundary its execution did not reach.
 
     Args:
         dispatcher: The resumed execution's dispatcher.
@@ -152,10 +152,12 @@ def reconcile(
             )
             continue
         if record.source == "panel":
-            landed = dispatcher.land(dispatcher.reported(conversation, record, results), results)
+            completed = dispatcher.complete(
+                dispatcher.reported(conversation, record, results), results
+            )
             # A task's judges are written delivered: their result is the task's own notice.
             if not record.delivered:
-                dispatcher.deliver(conversation, landed)
+                dispatcher.deliver(conversation, completed)
             continue
         dispatcher.open[record.identity] = reopened(record, results)
     dispatcher.settle(conversation, turn)

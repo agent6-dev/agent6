@@ -46,8 +46,8 @@ def import_run(
 ) -> child_records.Imported:
     """Land a finished child's branch in the origin; its record is there already.
 
-    A model-controlled child lands HEAD on its chain ref and keeps a free branch name.
-    A harness-controlled child without a branch lands nothing.
+    A model-controlled child imports HEAD on its chain ref and keeps a free branch name.
+    A harness-controlled child without a branch imports nothing.
 
     Args:
         origin: The parent's repo.
@@ -57,8 +57,8 @@ def import_run(
         model_control: Import HEAD instead of a harness-owned branch.
 
     Returns:
-        The session dir and the ref the work landed in, with its tip; a child that committed
-        nothing lands no ref.
+        The session dir and the ref the work was imported into, with its tip; a child that committed
+        nothing imports no ref.
 
     Raises:
         ChildRepoError: When the branch already exists in the origin, a descendant is still

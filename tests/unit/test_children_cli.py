@@ -63,13 +63,13 @@ def _started(body: dict[str, Any]) -> list[str]:
     return ids
 
 
-def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_each_lands_as_it_ends(
+def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_each_merges_as_it_ends(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Two `parallel` calls in one turn start two real children; the parent takes turns meanwhile.
 
-    The second task's child ends first and is read; its work lands at the next boundary while
-    the first task's child still runs, and the parent finishes after reading both landings.
+    The second task's child ends first and is read; its work merges at the next boundary while
+    the first task's child still runs, and the parent finishes after reading both merges.
     """
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -100,7 +100,7 @@ def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_each_lands_as
                 [("read_background", {"id": second, "wait_s": 120})],
                 [("read_background", {"id": first, "wait_s": 120})],
                 [("read_file", {"path": "README.md"})],
-                [("finish_session", {"summary": "both tasks landed"})],
+                [("finish_session", {"summary": "both tasks merged"})],
             ][min(turn, 4)]
         name = "a.txt" if who == "CHILD-A" else "b.txt"
         if turn > 0:
@@ -147,7 +147,7 @@ def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_each_lands_as
             if line.startswith("[parallel] ")
         ]
 
-    # The parent's third call read the second task's end and its landing: the first task ran on.
+    # The parent's third call read the second task's end and its merge: the first task ran on.
     assert notices(parent[2]) == [
         f"[parallel] child {two} finished.",
         f"[parallel] group {session}-p2 complete (1 child(ren)):",
@@ -155,7 +155,7 @@ def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_each_lands_as
     assert "summary: wrote b.txt" in json.dumps(parent[2])
     order = [(who, turn) for who, turn, _body in seen]
     assert order.index(("PARENT", 2)) < order.index(("CHILD-A", 1))
-    # Its fourth call read the first task's end and its landing.
+    # Its fourth call read the first task's end and its merge.
     assert notices(parent[3]) == [
         f"[parallel] child {two} finished.",
         f"[parallel] group {session}-p2 complete (1 child(ren)):",
@@ -168,7 +168,7 @@ def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_each_lands_as
         _text(next(m for m in reversed(parent[2]["messages"]) if m["role"] == "tool"))
     )
     assert read_b["output"].splitlines() == [
-        f"[{two}] ended, not landed: CHILD-B: write b.txt",
+        f"[{two}] ended, not merged: CHILD-B: write b.txt",
         "",
         "user: CHILD-B: write b.txt",
         "",
@@ -275,7 +275,7 @@ def test_a_parent_steers_its_running_child_and_the_child_reads_it_as_its_parents
     told = [_text(m) for m in second["messages"] if m["role"] == "user"]
     assert sum(text.count(f"{heading}\nalso write c.txt") for text in told) == 1
     assert not any("OPERATOR STEERING" in text for text in told)
-    # It did what its parent asked, and the work landed with the rest of its task.
+    # It did what its parent asked, and the work merged with the rest of its task.
     assert (repo / "a.txt").exists() and (repo / "c.txt").read_text(encoding="utf-8") == "c\n"
     rows = [json.loads(line) for line in (runs / child / "logs.jsonl").read_text().splitlines()]
     (steer,) = [row for row in rows if row["type"] == "steer.parent"]
@@ -283,7 +283,7 @@ def test_a_parent_steers_its_running_child_and_the_child_reads_it_as_its_parents
     assert not [row for row in rows if row["type"] == "steer.injected"]
 
 
-def test_attempts_are_ranked_by_a_real_reviewer_child_and_the_first_lands(
+def test_attempts_are_ranked_by_a_real_reviewer_child_and_the_first_merges(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Two real attempts, then a real judge: a reviewer session whose answer is the order.
@@ -318,7 +318,7 @@ def test_attempts_are_ranked_by_a_real_reviewer_child_and_the_first_lands(
         if turn == 0:
             return [("parallel", {"task": "CHILD: write x.txt", "spec": "2"})]
         if "[parallel] group" in json.dumps(body["messages"]):
-            return [("finish_session", {"summary": "the ranked attempt landed"})]
+            return [("finish_session", {"summary": "the ranked attempt merged"})]
         return [("read_background", {"wait_s": 120})]
 
     def judge_reply(task: str, turn: int) -> launch_env.Reply:
@@ -366,7 +366,7 @@ def test_attempts_are_ranked_by_a_real_reviewer_child_and_the_first_lands(
     ran = json.loads(_text(next(m for m in reversed(judge[1]["messages"]) if m["role"] == "tool")))
     assert (ran["returncode"], ran["stdout"].strip()) == (0, "agent6 turn 1: update x.txt")
     assert (state / "sessions" / "reviewers" / f"{session}-rp1-l1" / "completion.json").is_file()
-    # Its order landed the second attempt; the first keeps its branch.
+    # Its order merged the second attempt; the first keeps its branch.
     task, judges = (
         child_dispatch.read_records(session_dir)[-1],
         child_dispatch.read_records(session_dir)[0],

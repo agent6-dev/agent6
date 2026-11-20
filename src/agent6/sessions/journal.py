@@ -408,12 +408,12 @@ class ExecutionTarget(Event):
 
 
 class FinishRefusedChildren(Event):
-    """An end declared while a child's work had not landed was returned to the model."""
+    """An end declared while a child's work had not merged was returned to the model."""
 
     TYPE: ClassVar[str] = "finish.refused.children"
     turn: int = pydantic.Field(description="The execution's turn number.")
     children: Sequence[Any] = pydantic.Field(
-        description="The session ids of the children whose task had not landed.",
+        description="The session ids of the children whose task had not merged.",
     )
     trigger: str = pydantic.Field(description="The action that triggered the gate or panel.")
 

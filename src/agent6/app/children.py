@@ -402,7 +402,7 @@ def run_child_to_completion(
             ok=False,
             error=f"{exc}; its work is kept in {res.spec.worktree}",
         )
-    return land_child(
+    return finish_import(
         res,
         imported,
         cfg=cfg,
@@ -420,7 +420,7 @@ def _stopped_by(*, overdue: bool, over_budget: bool) -> str:
     return "stopped at the run's budget" if over_budget else ""
 
 
-def land_child(
+def finish_import(
     res: child_records.ChildResult,
     imported: child_records.Imported,
     *,
@@ -434,7 +434,7 @@ def land_child(
 
     Args:
         res: The child as it ran.
-        imported: What the import landed.
+        imported: What the import retained.
         cfg: The origin's effective config.
         origin: The repository.
         group: The group the child belongs to.
@@ -489,7 +489,7 @@ def recorded_result(
         spec: The child.
         branch: Its branch.
         dest: Its imported session dir.
-        imported: What the import landed.
+        imported: What the import retained.
         origin: The repository.
         stopped_by: What ended the child when the parent stopped it, "" otherwise.
 
@@ -527,7 +527,7 @@ def recorded_result(
         report=fold_session(
             tail_events(dest / sessions_layout.LOGS_NAME, follow=False)
         ).finish_summary,
-        # A stop counts as a result, and one that never lands by itself: the child's own
+        # A stop counts as a result, and one that never merges by itself: the child's own
         # record says it was one, whoever asked.
         stopped_by=stopped_by or ("stopped" if summary.status == "stopped" else ""),
     )
@@ -610,8 +610,8 @@ def recover_children(
     """Return an interrupted group's children: the live stopped, the finished imported.
 
     A child with no session dir never started. A live one is stopped as `agent6 stop` stops
-    a run and waited for. One whose clone is still on disk is imported and landed; one
-    already landed is read as it stands.
+    a run and waited for. One whose clone is still on disk is imported and finalized; one
+    already imported is read as it stands.
 
     Args:
         group: The group id.
@@ -647,7 +647,7 @@ def recover_children(
                 results.append(dataclasses.replace(res, ok=False, error=str(exc)))
                 continue
             results.append(
-                land_child(
+                finish_import(
                     res,
                     imported,
                     cfg=cfg,
@@ -700,7 +700,7 @@ def child_has_commits(session_dir: pathlib.Path, imported: child_records.Importe
 
     Args:
         session_dir: The imported child's session dir, whose manifest records its base.
-        imported: What the import landed.
+        imported: What the import retained.
 
     Returns:
         False for a record-only import or a tip at the base; True otherwise, and when the
@@ -723,7 +723,7 @@ def child_commits(
     Args:
         origin: The repository the child was imported into.
         session_dir: The imported child's session dir, whose manifest records its base.
-        imported: What the import landed.
+        imported: What the import retained.
 
     Returns:
         The count; 0 for a record-only import, a tip at the base, or an unrecorded base.

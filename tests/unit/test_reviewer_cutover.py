@@ -275,7 +275,7 @@ def test_worker_child_schedules_its_panel_without_certifying_parent(
             cfg,
             budget.BudgetTracker(max_usd=10, max_tokens_fallback=10000, max_plan_points=20),
         )
-        result = child_env.landed(
+        result = child_env.completed(
             executor,
             loop_conversation.Conversation(),
             1,

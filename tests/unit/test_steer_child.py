@@ -252,7 +252,7 @@ def test_a_steer_reaches_a_running_child_through_its_own_steer_channel(
     with pytest.raises(tool_errors.ToolError) as ended:
         child_work.steer(dispatcher, two, "one more thing")
     assert str(ended.value) == (
-        f"child {two} has ended (ended, not landed); nothing was sent."
+        f"child {two} has ended (ended, not merged); nothing was sent."
         " parallel starts another child."
     )
     assert not (runs / two / ipc.STEER_ANSWER_FILE).exists()

@@ -314,12 +314,12 @@ class ParallelInput(_ToolInput):
         " tree, and return at once with the child's id. Call it once per task. `spec` is"
         " empty for one child; a count above one, or a comma-separated list of selectors,"
         " starts that many attempts at the same task, and once all have ended they are"
-        " ranked and the first lands. A selector that is a role name brings its model, effort"
+        " ranked and the first merges. A selector that is a role name brings its model, effort"
         " and temperature; `[provider/]model` runs with the worker's. A notice arrives when a"
-        " child ends, with its summary, and when its task lands: at the turn boundary after its"
+        " child ends, with its summary, and when its task merges: at the turn boundary after its"
         " children end, merged onto this run's work. `read_background` reads a child or waits"
         " for the next to end; `steer_child` sends a running child an instruction;"
-        " `stop_background` stops one. `finish_session` is refused until every task has landed."
+        " `stop_background` stops one. `finish_session` is refused until every task has merged."
     )
 
     task: str = pydantic.Field(min_length=1, max_length=20_000)
@@ -407,7 +407,7 @@ class StopBackgroundInput(_ToolInput):
     )
     # Appended in a run that has the `parallel` tool; every other run reads the text above.
     CHILDREN_NOTE: ClassVar[str] = (
-        " A child's id stops that child at once; a stopped child's work does not land, and"
+        " A child's id stops that child at once; a stopped child's work does not merge, and"
         " its branch holds what it committed."
     )
 

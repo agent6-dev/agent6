@@ -376,7 +376,7 @@ class Steering:
             return True
         if segments is None:
             return False
-        # The children run while the run goes on; the boundary after they end lands their work.
+        # The children run while the run goes on; the boundary after they end merges their work.
         started = self.parallel().dispatch(conversation, turn, state, segments, source="operator")
         conversation.notice(started.message)
         return True

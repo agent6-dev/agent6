@@ -37,7 +37,7 @@ def standing(
         started: The child.
 
     Returns:
-        `running`, `stopping`, `ended, not landed`, `being ranked` while its task's judges
+        `running`, `stopping`, `ended, not merged`, `being ranked` while its task's judges
         run, or a stopped child's words.
     """
     if not started.result.done():
@@ -45,26 +45,26 @@ def standing(
     res = dispatcher.result_of(task.record, started)
     if res.ok and res.stopped_by:
         return parallel_join.join_words(parallel_join.stopped_join(res))
-    return "being ranked" if task.judging is not None and res.ok else "ended, not landed"
+    return "being ranked" if task.judging is not None and res.ok else "ended, not merged"
 
 
-def unlanded(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[tuple[str, str], ...]:
-    """Return each child whose work may still land, with where it stands, oldest first.
+def unmerged(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[tuple[str, str], ...]:
+    """Return each child whose work may still merge, with where it stands, oldest first.
 
-    A stopped child is not among them: it never lands, so it holds no end.
+    A stopped child is not among them: it never merges, so it holds no end.
 
     Args:
         dispatcher: The run's dispatcher.
 
     Returns:
-        Each child's session id with `running`, `ended, not landed` or `being ranked`.
+        Each child's session id with `running`, `ended, not merged` or `being ranked`.
     """
     return tuple(
         (started.session_id, state)
         for task in dispatcher.open.values()
         for started in task.children
         if (state := standing(dispatcher, task, started))
-        in ("running", "ended, not landed", "being ranked")
+        in ("running", "ended, not merged", "being ranked")
     )
 
 
@@ -76,7 +76,7 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
 
     Returns:
         One line per child of a work dispatch: the open ones as `standing` reads them, the
-        landed ones with how their work joined.
+        merged ones with how their work joined.
     """
     if dispatcher.session_dir is None:
         return ()
@@ -93,7 +93,7 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
     for record in records:
         for child in record.children if record.source != "panel" else ():
             sid = child.session_id
-            state = open_now.get(sid, "ended, not landed")
+            state = open_now.get(sid, "ended, not merged")
             if child.join is not None:
                 state = parallel_join.join_words(parallel_join.join_of(child))
             title = next((ln.strip() for ln in child.task.splitlines() if ln.strip()), "")
@@ -134,7 +134,7 @@ def wait_for(
 
 
 def stop(dispatcher: parallel_dispatch.ParallelDispatcher, child: str) -> None:
-    """Ask a running child to stop now; its end is told and its work never lands by itself.
+    """Ask a running child to stop now; its end is told and its work never merges by itself.
 
     Args:
         dispatcher: The run's dispatcher.

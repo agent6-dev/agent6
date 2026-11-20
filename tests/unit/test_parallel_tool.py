@@ -221,7 +221,7 @@ def test_a_default_run_reads_the_background_tools_text_unchanged(tmp_path: pathl
     )
     assert "With no `id`, a `wait_s` above 0 waits for the next child to end" in read
     assert stop.endswith(
-        " A child's id stops that child at once; a stopped child's work does not land, and its"
+        " A child's id stops that child at once; a stopped child's work does not merge, and its"
         " branch holds what it committed."
     )
     # The arguments are the same either way: no new field addresses a child.
@@ -458,7 +458,7 @@ def test_the_model_starts_attempts_and_the_call_returns_their_ids_at_once(
         "children": ids,
         "message": parallel_join.started_text(ids),
     }
-    # The fake's children had ended, so the first boundary told their ends and landed the task.
+    # The fake's children had ended, so the first boundary told their ends and merged the task.
     wire = json.dumps(messages)
     assert wire.count("[parallel] child run-abc-p1-l") == 2
     assert "run-abc-p1-l1 (agent6/run-abc-p1-l1): joined at" in wire

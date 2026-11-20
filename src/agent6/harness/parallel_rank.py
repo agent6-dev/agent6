@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 # Each attempt's diff in a judge's opening; a cut is marked, and the judge's clone holds the rest.
 DIFF_CAP = 60_000
-# A judge's reason, as the record, the journal and the landing notice keep it.
+# A judge's reason, as the record, the journal and the merge notice keep it.
 _REASON_CAP = 2_000
 
 
@@ -444,7 +444,7 @@ def start(
             tools=dispatcher.reviewer_tools(),
         )
     ]
-    # Written delivered and reported: a ranking's result is its task's landing notice.
+    # Written delivered and reported: a ranking's result is its task's merge notice.
     record = child_dispatch.DispatchRecord(
         identity=identity,
         source="panel",
@@ -536,7 +536,7 @@ def rank(
     cost, partial = 0.0, False
     if task.judging is not None:
         judged = [dispatcher.result_of(task.judging.record, j) for j in task.judging.children]
-        dispatcher.land(task.judging.record, judged, turn=turn)
+        dispatcher.complete(task.judging.record, judged, turn=turn)
         cost = sum(res.usage.usd for res in judged if res.usage is not None)
         partial = any(res.usage is None or res.usage.usd_partial for res in judged)
         told = replies(dispatcher, _read(dispatcher, task.judging.record.identity), ids)

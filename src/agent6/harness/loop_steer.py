@@ -68,7 +68,7 @@ def operator_boundary(
     turn: int,
     state: loop_state.LoopState,
 ) -> loop_snapshot.SessionResult | None:
-    """Honour a pending stop, land what children finished, then poll the steer flag.
+    """Honour a pending stop, merge what children finished, then poll the steer flag.
 
     Runs after every completed turn: a stop, a child's notice or an injected instruction
     never splits a tool call from its result.
@@ -135,7 +135,7 @@ def ranked_opening(
     turn: int,
     state: loop_state.LoopState,
 ) -> loop_snapshot.SessionResult | None:
-    """Run the dispatch a run opens with, joined by rank, and end the run on what landed.
+    """Run the dispatch a run opens with, joined by rank, and end the run on what merged.
 
     The run waits for its children and then for their judges, as no turn of its own runs
     meanwhile. The ranking's winner joins the run's chain; the run's own gate then judges
@@ -172,7 +172,7 @@ def ranked_opening(
     if stopped is not None:
         return stopped
     if harness.bridge.steer_requested():
-        # A steer sent while the children ran is the run's next work, from what landed.
+        # A steer sent while the children ran is the run's next work, from what merged.
         size = len(conversation)
         asked = steer_outcome(
             harness, harness.steering.handle(conversation, turn, state), turn, state
@@ -184,8 +184,8 @@ def ranked_opening(
     summary = parallel_join.rank_summary(joins) if joins else started.message
     statuses = {join.status for join in joins}
     # Without a chain (`git.control = "model"`) a placed child is the whole outcome.
-    landed = statuses & {"joined", "no_changes"} or ("ranked" in statuses and not harness.chain.ref)
-    if not landed:
+    merged = statuses & {"joined", "no_changes"} or ("ranked" in statuses and not harness.chain.ref)
+    if not merged:
         spent = harness.budget is not None and harness.budget.is_exhausted()
         reason: loop_snapshot.SessionEndReason = (
             "no_child_passed"
@@ -427,7 +427,7 @@ def park_for_steer(
             # Injected (or a bare poke): the run continues where it parked.
             harness.emit(journal.LoopParkedResumed(turn=turn))
             return None
-        # A queued task, goal or retirement is work, and so is a child's end or landed work.
+        # A queued task, goal or retirement is work, and so is a child's end or merged work.
         if harness.operator_tasks.take(state.root_task_id) or (
             harness.children is not None and harness.children.settle(conversation, turn)
         ):

@@ -53,7 +53,7 @@ def test_the_gates_run_in_precedence_order() -> None:
     ]
 
 
-def test_an_end_is_held_while_a_childs_work_has_not_landed() -> None:
+def test_an_end_is_held_while_a_childs_work_has_not_merged() -> None:
     """The children's gate names each child and where it stands; with none it lets the end go."""
     turn, state = _finishing(), _state()
     assert finish_gates.children_finish(turn, state, turn_context()) is None
@@ -61,12 +61,12 @@ def test_an_end_is_held_while_a_childs_work_has_not_landed() -> None:
         turn,
         state,
         turn_context(
-            unlanded_children=lambda: (("run-p1-l1", "running"), ("run-p2-l1", "stopping"))
+            unmerged_children=lambda: (("run-p1-l1", "running"), ("run-p2-l1", "stopping"))
         ),
     )
     assert refusal is not None
     assert refusal.text.splitlines()[:3] == [
-        "[harness] finish_session refused: 2 child(ren) have not landed:",
+        "[harness] finish_session refused: 2 child(ren) have not merged:",
         "- run-p1-l1: running",
         "- run-p2-l1: stopping",
     ]
