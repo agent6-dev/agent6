@@ -205,7 +205,7 @@ def test_ctrl_k_opens_the_session_switcher_and_drafts_wait_in_the_composer() -> 
     assert "ta.value = recall(draftKey, '');" in composer
     assert composer.count("ta.value = '';") == 1  # inside clearDraft: every clear forgets too
     dock = client[client.index("function newWorkDock") : client.index("// The create-machine")]
-    assert "recall('a6-draft-new', '')" in dock and "forget('a6-draft-new')" in dock
+    assert "recall('a6-draft-new', '{}')" in dock and "forget('a6-draft-new')" in dock
 
 
 def test_a_run_row_names_its_checkout_and_offers_review_and_merge() -> None:

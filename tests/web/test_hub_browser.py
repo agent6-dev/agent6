@@ -583,6 +583,68 @@ def test_a_folds_chevron_keeps_to_its_first_line(
     assert not errors
 
 
+def test_a_draft_comes_back_with_its_picks(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A draft came back from a hop away with its text, but as a run with every pick reset.
+
+    A model list that failed to load stored the draft's model as the config default.
+    """
+    from playwright.sync_api import expect
+
+    _run(tmp_path, "plan-AAAAAA", "Plan it", STOP, mode="plan")
+    config = tmp_path / "config" / "agent6"
+    config.mkdir(parents=True)
+    (config / "config.toml").write_text(
+        '[providers.o]\nbackend = "openai"\nbase_url = "https://x/v1"\n'
+        '[models.worker]\nmodel = "o/vendor/configured"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config.parent))
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    mode = page.locator(".dock select").first
+    model = page.locator(".dock select[title^='the model']")
+    worktree, entry = page.locator(".dock input[type=checkbox]"), page.locator(".dock textarea")
+    seed = page.locator(".dock select[title^='seed the run']")
+    cap = page.get_by_role("textbox", name="max USD")
+    expect(model).to_be_enabled()
+    route = model.locator("option").last.get_attribute("value")
+    assert route
+    model.select_option(route)
+    worktree.check()
+    page.locator(".dock .pickers").get_by_role("button", name="advanced", exact=True).click()
+    seed.select_option("plan-AAAAAA")
+    cap.fill("2.5")
+    entry.fill("follow the plan")
+    page.evaluate("location.hash = '#/machines'")
+    expect(page.get_by_role("button", name="Create machine")).to_be_visible()
+    page.evaluate("location.hash = '#/'")
+    expect(entry).to_have_value("follow the plan")
+    expect(model).to_have_value(route)  # once the routes answer
+    expect(mode).to_have_value("run")
+    expect(worktree).to_be_checked()
+    expect(seed).to_have_value("plan-AAAAAA")
+    expect(cap).to_have_value("2.5")
+    # A model list that fails to load leaves the draft's model to the next one that answers.
+    page.route("**/api/routes*", lambda r: r.fulfill(status=503, json={"error": "down"}))
+    page.reload()
+    expect(page.locator(".toast")).to_contain_text("could not list the models")
+    page.unroute("**/api/routes*")
+    assert all("503" in e for e in errors), errors  # the refused list's console line
+    errors.clear()
+    page.reload()
+    expect(model).to_have_value(route)
+    mode.select_option("plan")
+    page.reload()
+    expect(mode).to_have_value("plan")
+    expect(worktree).to_be_disabled()
+    assert not errors
+
+
 def test_a_phones_summary_line_says_when_no_model_resolves(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

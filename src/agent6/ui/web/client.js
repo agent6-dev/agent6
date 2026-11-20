@@ -717,10 +717,11 @@ function newWorkDock(presets, presetDefault, sessions) {
   const root = el('div', 'composer dock');
   const row = el('div', 'row');
   const pending = window.pendingNewWork || {}; delete window.pendingNewWork;
+  // The draft, its text and picks together, survives a hop away and back in this browser; a hand-off replaces it.
+  let draft = {};
+  try { draft = pending.task || pending.seed_from ? {} : JSON.parse(recall('a6-draft-new', '{}')) || {}; } catch (_) {}
   const task = el('textarea', 'field'); task.placeholder = 'task / question…';
-  // A typed draft survives a switch to a session and back (this browser only).
-  task.value = pending.task || recall('a6-draft-new', '');
-  task.oninput = () => { if (task.value) remember('a6-draft-new', task.value); else forget('a6-draft-new'); };
+  task.value = pending.task || draft.task || '';
   const mode = el('select', 'field');
   for (const m of ['run', 'plan', 'ask']) { const o = el('option', null, m); o.value = m; mode.appendChild(o); }
   const worktree = el('input'); worktree.type = 'checkbox';
@@ -742,8 +743,6 @@ function newWorkDock(presets, presetDefault, sessions) {
   const advanced = el('button', 'fold', 'advanced');
   const fold = (open) => { advanced.setAttribute('aria-expanded', String(open)); more.hidden = !open; };
   advanced.onclick = () => fold(more.hidden);
-  fold(false);
-  if (pending.seed_from) { seed.value = pending.seed_from; fold(true); }
   // A worktree and a seed are run options: the other modes grey them.
   const followMode = () => { worktree.disabled = seed.disabled = mode.value !== 'run'; };
   const preset = el('select', 'field');
@@ -755,6 +754,8 @@ function newWorkDock(presets, presetDefault, sessions) {
   // The first option names the resolved route: '…' while the first answer is on its way, and
   // 'config default' when none came.
   const resolved = el('option', null, '…'); resolved.value = ''; model.appendChild(resolved);
+  // A pick the draft names is taken only while its list still offers it.
+  const restore = (select, value) => { if (value && [...select.options].some(o => o.value === value)) select.value = value; };
   let routeRequest = 0;
   const fillRoutes = async () => {
     const request = ++routeRequest;
@@ -775,9 +776,13 @@ function newWorkDock(presets, presetDefault, sessions) {
     resolved.textContent = d.default_label;
     model.replaceChildren(resolved, ...(d.routes || []).map(r => new Option(r, r)));
     model.value = '';
+    restore(model, draft.model); draft.model = ''; // the first answer takes the draft's model, if it still lists it
     model.disabled = false;
     model.dispatchEvent(new Event('input', { bubbles: true })); // the summary line names the route
   };
+  restore(mode, draft.mode); restore(preset, draft.preset); restore(seed, pending.seed_from || draft.seed);
+  worktree.checked = !!draft.worktree; cap.value = draft.cap || '';
+  fold(!!(seed.value || cap.value));
   mode.onchange = () => { followMode(); fillRoutes(); }; preset.onchange = fillRoutes; fillRoutes(); followMode();
   const go = el('button', 'primary', 'Start');
   // Start sends a task, or runs a picked plan as written. The task stays as sent while the request
@@ -796,7 +801,16 @@ function newWorkDock(presets, presetDefault, sessions) {
     task.readOnly = false;
   }, () => capOk() && (!!task.value.trim() || (!!seed.value && mode.value === 'run')));
   task.addEventListener('input', go.sync); mode.addEventListener('change', go.sync); seed.onchange = go.sync;
-  cap.oninput = () => { cap.setAttribute('aria-invalid', String(!capOk())); go.sync(); };
+  const checkCap = () => { cap.setAttribute('aria-invalid', String(!capOk())); go.sync(); };
+  cap.oninput = checkCap; checkCap();
+  const save = () => {
+    // The draft's model holds until a model list answers: one that failed offers only the default.
+    const d = { task: task.value, mode: mode.value, preset: preset.value, model: model.value || draft.model,
+      worktree: worktree.checked, seed: seed.value, cap: cap.value };
+    if (d.task || d.mode !== 'run' || d.preset || d.model || d.worktree || d.seed || d.cap) remember('a6-draft-new', JSON.stringify(d));
+    else forget('a6-draft-new');
+  };
+  root.addEventListener('input', save); root.addEventListener('change', save);
   const ac = attachParallelSuggest(task, root);
   const commands = attachCommandSuggest(task, root, () => false, ['/parallel', '/review']);
   task.onkeydown = (e) => {
