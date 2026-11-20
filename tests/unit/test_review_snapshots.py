@@ -177,7 +177,7 @@ def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Pat
     target = starts[0]["target"]
     assert isinstance(target, dict)
     assert target["base_commit"] is None
-    assert target["base_tree"] == git_read.EMPTY_TREE
+    assert target["base_tree"] == git_read.empty_tree(tmp_path)
     assert starts[0]["rules_complete"] is True and starts[0]["rule_sources"] == []
     message = provider.call.call_args.kwargs["messages"][0]["content"][0]["text"]
     assert "REVIEW RULES (base tree):\nNo base rules exist." in message

@@ -166,7 +166,7 @@ def test_resolve_commit_takes_names_and_refuses_the_unknown(tmp_path: pathlib.Pa
     assert git_history.resolve_commit(tmp_path, "-x") == ""
     assert git_history.resolve_commit(tmp_path, "--all") == ""
     assert git_history.resolve_commit(tmp_path, "no-such-rev") == ""
-    assert git_history.resolve_commit(tmp_path, git_read.EMPTY_TREE) == ""  # a tree, not a commit
+    assert git_history.resolve_commit(tmp_path, git_read.empty_tree(tmp_path)) == ""  # no commit
 
 
 def test_log_commits_walk_topologically_and_page(tmp_path: pathlib.Path) -> None:
@@ -222,7 +222,7 @@ def test_changed_files_detect_renames_binaries_and_deletions(tmp_path: pathlib.P
     dropped = {f.path: f for f in git_history.changed_files(tmp_path, shas["root"], shas["main"])}
     assert dropped["d.txt"].status == "D"
     assert dropped["dir/f.txt"].status == "A"
-    root_files = git_history.changed_files(tmp_path, git_read.EMPTY_TREE, shas["root"])
+    root_files = git_history.changed_files(tmp_path, git_read.empty_tree(tmp_path), shas["root"])
     assert sorted((f.status, f.path) for f in root_files) == [
         ("A", "a.txt"),
         ("A", "d.txt"),
@@ -260,7 +260,7 @@ def test_tree_has_entry_sees_files_only_in_that_tree(tmp_path: pathlib.Path) -> 
     assert git_history.tree_has_entry(tmp_path, shas["root"], "a.txt")
     assert git_history.tree_has_entry(tmp_path, shas["main"], "dir/f.txt")
     assert not git_history.tree_has_entry(tmp_path, shas["main"], "dir")  # a tree, not a file
-    assert not git_history.tree_has_entry(tmp_path, git_read.EMPTY_TREE, "a.txt")
+    assert not git_history.tree_has_entry(tmp_path, git_read.empty_tree(tmp_path), "a.txt")
 
 
 def test_search_log_matches_message_text_literally(tmp_path: pathlib.Path) -> None:
@@ -314,7 +314,7 @@ def test_worktree_files_read_no_file_through_a_link_swapped_in_after_the_listing
         return fields
 
     monkeypatch.setattr(git_command, "nul_fields", listed_then_swapped)
-    assert git_history.worktree_files(root, git_read.EMPTY_TREE) == ()
+    assert git_history.worktree_files(root, git_read.empty_tree(root)) == ()
 
 
 @pytest.mark.parametrize("listing", ["history", "files"])
@@ -383,7 +383,7 @@ def test_worktree_files_on_an_unborn_branch_list_against_the_empty_tree(
     (tmp_path / "s.txt").write_text("staged\n", encoding="utf-8")
     _git(tmp_path, "add", "s.txt")
     (tmp_path / "u.txt").write_text("no newline", encoding="utf-8")
-    rows = git_history.worktree_files(tmp_path, git_read.EMPTY_TREE)
+    rows = git_history.worktree_files(tmp_path, git_read.empty_tree(tmp_path))
     assert rows == (
         git_history.ChangedFile("A", "s.txt", "", 1, 0, False),
         git_history.ChangedFile("A", "u.txt", "", 1, 0, False),
@@ -452,7 +452,10 @@ def test_blob_at_reads_a_regular_files_bytes_within_the_cap(tmp_path: pathlib.Pa
     assert over == git_files.Blob(len(PNG_RED_1X1), None)
     assert git_files.blob_at(tmp_path, shas["root"], "logo.png", max_bytes=1 << 20) is None
     assert git_files.blob_at(tmp_path, shas["main"], "dir", max_bytes=1 << 20) is None
-    assert git_files.blob_at(tmp_path, git_read.EMPTY_TREE, "a.txt", max_bytes=1 << 20) is None
+    assert (
+        git_files.blob_at(tmp_path, git_read.empty_tree(tmp_path), "a.txt", max_bytes=1 << 20)
+        is None
+    )
 
 
 def test_worktree_blob_reads_only_a_regular_file_git_lists(tmp_path: pathlib.Path) -> None:
@@ -493,7 +496,7 @@ def test_tree_files_list_a_commits_files_with_size_and_kind(tmp_path: pathlib.Pa
         "d.txt",
         "img.bin",
     ]
-    assert git_files.tree_files(tmp_path, git_read.EMPTY_TREE) == ()
+    assert git_files.tree_files(tmp_path, git_read.empty_tree(tmp_path)) == ()
 
 
 def test_worktree_tree_files_list_tracked_and_unignored_untracked_files(
@@ -557,3 +560,22 @@ def test_tree_entry_reads_a_repository_path_from_a_subdirectory(tmp_path: pathli
     assert from_root.startswith("100644 blob ")
     assert git_read.tree_entry(tmp_path / "dir", "HEAD", "dir/inner.txt") == from_root
     assert git_read.tree_entry(tmp_path / "dir", "HEAD", "b.txt")
+
+
+def test_a_sha256_repository_diffs_against_its_own_empty_tree(tmp_path: pathlib.Path) -> None:
+    """The SHA-1 empty tree names no object in a SHA-256 repository: a root commit's diff failed."""
+    subprocess.run(
+        ["git", "init", "-q", "-b", "main", "--object-format=sha256", str(tmp_path)], check=True
+    )
+    _git(tmp_path, "config", "user.email", "x@y.z")
+    _git(tmp_path, "config", "user.name", "x")
+    ref = git_read.chain_ref_for("s")
+    assert not git_read.chain_dirty(tmp_path, ref, None)
+    (tmp_path / "a.txt").write_text("a\n", encoding="utf-8")
+    assert git_read.chain_dirty_paths(tmp_path, ref, None, 10) == ["a.txt"]
+    root = _commit(tmp_path, "root")
+
+    empty = git_read.empty_tree(tmp_path)
+    assert len(empty) == 64
+    assert [f.path for f in git_history.changed_files(tmp_path, empty, root)] == ["a.txt"]
+    assert git_history.resolve_commit(tmp_path, empty) == ""

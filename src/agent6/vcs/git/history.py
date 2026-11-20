@@ -382,7 +382,7 @@ def changed_files(path: pathlib.Path, base: str, head: str) -> tuple[ChangedFile
 
     Args:
         path: The repository.
-        base: The older commit or tree; `EMPTY_TREE` lists a root commit's files.
+        base: The older commit or tree; `git_read.empty_tree` lists a root commit's files.
         head: The newer commit or tree.
 
     Returns:
@@ -449,7 +449,7 @@ def worktree_files(path: pathlib.Path, base: str) -> tuple[ChangedFile, ...]:
 
     Args:
         path: The repository.
-        base: The commit or tree to diff against; `EMPTY_TREE` on an unborn branch.
+        base: The commit or tree to diff against; `git_read.empty_tree` on an unborn branch.
 
     Returns:
         One row per changed or untracked path; a file gone before it was read is left out.

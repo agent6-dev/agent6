@@ -24,7 +24,7 @@ def _commit(root: pathlib.Path, text: bytes, name: str = "code.py") -> str:
 def _target(root: pathlib.Path, base: str | None, head: str) -> review_records.ReviewTarget:
     return review_records.ReviewTarget(
         base,
-        git_read.tree_sha(root, base) if base else git_read.EMPTY_TREE,
+        git_read.tree_sha(root, base) if base else git_read.empty_tree(root),
         head,
         git_read.tree_sha(root, head),
         head,

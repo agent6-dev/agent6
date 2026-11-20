@@ -256,7 +256,9 @@ class RunChain:
         if self.ref is None:
             return ()
         parent = git_read.chain_tip(self.root, self.ref) or self.fallback_parent
-        old_tree = git_read.tree_sha(self.root, parent) if parent else git_read.EMPTY_TREE
+        old_tree = (
+            git_read.tree_sha(self.root, parent) if parent else git_read.empty_tree(self.root)
+        )
         new_tree = git_read.worktree_tree(self.root, parent, self.excluded)
         return git_read.tree_name_status(self.root, old_tree, new_tree)
 
@@ -295,9 +297,9 @@ class RunChain:
             if self.ref is not None
             else git_read.chain_tip(self.root, "HEAD")
         )
-        committed = git_read.tree_sha(self.root, tip) if tip else git_read.EMPTY_TREE
+        committed = git_read.tree_sha(self.root, tip) if tip else git_read.empty_tree(self.root)
         worktree = git_read.worktree_tree(self.root, tip, self.excluded)
-        if not tip and worktree == git_read.EMPTY_TREE:
+        if not tip and worktree == committed:
             return None
         uncommitted = worktree != committed
         return review_records.ReviewTarget(
@@ -305,7 +307,7 @@ class RunChain:
             base_tree=(
                 git_read.tree_sha(self.root, self.base_sha)
                 if self.base_sha
-                else git_read.EMPTY_TREE
+                else git_read.empty_tree(self.root)
             ),
             head_commit=None if uncommitted else tip,
             head_tree=worktree if uncommitted else committed,
@@ -339,7 +341,7 @@ class RunChain:
             and git_read.tree_sha(self.root, target.head_commit) != target.head_tree
         ):
             raise errors.GitError("review head commit does not match its tree")
-        if not base and target.base_tree != git_read.EMPTY_TREE:
+        if not base and target.base_tree != git_read.empty_tree(self.root):
             base = git_snapshots.snapshot_commit(
                 self.root,
                 target.base_tree,

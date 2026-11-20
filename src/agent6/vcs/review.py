@@ -436,7 +436,7 @@ def comparison(
     """
     base_commit, head_commit = _comparison_commits(root, base, head)
     repo = (git_read.toplevel(root) or root).resolve()
-    base_tree = git_read.tree_sha(repo, base_commit) if base_commit else git_read.EMPTY_TREE
+    base_tree = git_read.tree_sha(repo, base_commit) if base_commit else git_read.empty_tree(repo)
     head_tree = git_read.tree_sha(repo, head_commit) if head_commit else base_tree
     workspace = path_safety.host_workspace(repo, hide)
     lexical_hidden = tuple(pathlib.Path(os.path.abspath(p)) for p in hide)  # noqa: PTH100

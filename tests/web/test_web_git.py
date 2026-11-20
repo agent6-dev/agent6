@@ -187,7 +187,7 @@ def test_commit_lists_its_files_against_the_first_parent(
     repo: tuple[pathlib.Path, dict[str, str]], port: int
 ) -> None:
     """A merge's files are its diff from the first parent; a root's base is the empty tree."""
-    _, shas = repo
+    path, shas = repo
     merge = _ok(port, f"/api/git/commit/{shas['merge']}")
     assert merge["sha"] == shas["merge"] and merge["is_merge"] is True
     assert merge["base"] == shas["main"]
@@ -206,7 +206,7 @@ def test_commit_lists_its_files_against_the_first_parent(
     assert {r["name"] for r in merge["refs"]} == {"main", "origin/main", "v2"}
 
     root = _ok(port, f"/api/git/commit/{shas['root'][:8]}")
-    assert root["base"] == git_read.EMPTY_TREE and root["parents"] == []
+    assert root["base"] == git_read.empty_tree(path) and root["parents"] == []
     assert sorted(f["path"] for f in root["files"]) == ["a.txt", "d.txt", "img.bin"]
     feature = _ok(port, "/api/git/commit/feature")
     assert feature["body"] == "A second paragraph."
@@ -216,7 +216,7 @@ def test_commit_lists_its_files_against_the_first_parent(
 def test_compare_reads_like_the_commits_own_diff(
     repo: tuple[pathlib.Path, dict[str, str]], port: int
 ) -> None:
-    _, shas = repo
+    path, shas = repo
     body = _ok(port, f"/api/git/compare?base={shas['root']}&head=feature")
     assert body["base"] == {
         "rev": shas["root"],
@@ -235,7 +235,7 @@ def test_compare_reads_like_the_commits_own_diff(
         "img.bin",
         "logo.png",
     ]
-    empty = _ok(port, f"/api/git/compare?base={git_read.EMPTY_TREE}&head=v1")
+    empty = _ok(port, f"/api/git/compare?base={git_read.empty_tree(path)}&head=v1")
     assert empty["base"]["subject"] == "(empty tree)"
     assert len(empty["files"]) == 3
     assert _ok(port, "/api/git/compare?base=main&head=main")["files"] == []
@@ -322,11 +322,11 @@ def test_diff_digests_identify_each_side_including_absent_sides(
     port: int,
 ) -> None:
     """Rename digests address each path; a root or deleted side has no digest."""
-    _, shas = repo
+    path, shas = repo
     body = _ok(port, f"/api/git/diff?base={shas['root']}&head=feature&path=b.txt&old_path=a.txt")
     assert body["base_digest"] == hashlib.sha256(b"one\ntwo\n").hexdigest()
     assert body["head_digest"] == hashlib.sha256(b"one\ntwo\nthree\n").hexdigest()
-    root = _ok(port, f"/api/git/diff?base={git_read.EMPTY_TREE}&head=v1&path=a.txt")
+    root = _ok(port, f"/api/git/diff?base={git_read.empty_tree(path)}&head=v1&path=a.txt")
     assert root["base_digest"] is None and root["head_digest"] == body["base_digest"]
     deleted = _ok(port, "/api/git/diff?base=v1&head=main&path=d.txt")
     assert deleted["base_digest"] == hashlib.sha256(b"doomed\n").hexdigest()
@@ -887,7 +887,7 @@ def test_diff_shows_a_submodule_pointer_move(
 def test_a_rev_or_path_shaped_like_a_flag_is_refused(
     repo: tuple[pathlib.Path, dict[str, str]], port: int
 ) -> None:
-    _, shas = repo
+    path, shas = repo
     assert "cannot start with '-'" in _refused(port, "/api/git/commit/-x")
     assert "cannot start with '-'" in _refused(port, "/api/git/compare?base=--all&head=main")
     assert "cannot start with '-'" in _refused(port, "/api/git/diff?base=v1&head=v2&path=-x")
@@ -898,7 +898,7 @@ def test_a_rev_or_path_shaped_like_a_flag_is_refused(
     assert "unknown revision" in _refused(port, "/api/git/compare?base=main&head=nope")
     assert "a revision is required" in _refused(port, "/api/git/compare?base=&head=main")
     assert "not a commit" in _refused(
-        port, f"/api/git/compare?base=main&head={git_read.EMPTY_TREE}"
+        port, f"/api/git/compare?base=main&head={git_read.empty_tree(path)}"
     )
     assert "not a revision" in _refused(port, "/api/git/commit/a%0Ab")
     assert "no file" in _refused(port, "/api/git/diff?base=v1&head=v2&path=nope.txt")

@@ -124,7 +124,7 @@ def test_run_diff_spans_cover_renames_multiple_files_and_cumulative_base(
     assert (0, 4, "keyword") in payload["old_spans"]["code.py"][0]
     assert payload["new_spans"]["renamed.txt"] == []
     assert (0, 5, "keyword") in payload["new_spans"]["second.py"][0]
-    root = _payload(tmp_path, "run", git_read.EMPTY_TREE, base)
+    root = _payload(tmp_path, "run", git_read.empty_tree(tmp_path), base)
     assert root["old_spans"]["code.py"] == []
     assert (0, 4, "keyword") in root["new_spans"]["code.py"][0]
 

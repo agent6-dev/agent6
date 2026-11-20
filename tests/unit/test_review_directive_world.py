@@ -156,7 +156,7 @@ def test_single_root_commit_uses_the_empty_tree(repo: pathlib.Path) -> None:
     sha = git(repo, "rev-parse", "main")
     world = review_directive.build(repo, f"{sha}^..{sha}")
     assert world.target.base_commit is None
-    assert world.target.base_tree == git_read.EMPTY_TREE
+    assert world.target.base_tree == git_read.empty_tree(repo)
     assert world.target.head_commit == sha
     assert "+x = 1" in world.message
 

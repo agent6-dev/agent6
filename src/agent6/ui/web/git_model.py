@@ -134,7 +134,7 @@ def _resolve(
     Args:
         repo: The repository.
         rev: The revision as the browser sent it.
-        tree_ok: Accept `git_read.EMPTY_TREE`, the base a root commit diffs against.
+        tree_ok: Accept the repository's empty tree, the base a root commit diffs against.
         worktree_ok: Accept `git_history.WORKTREE`, the working tree as a head.
 
     Returns:
@@ -151,11 +151,11 @@ def _resolve(
             f"{rev} names the working tree: a file or tree read, or a diff or compare head,"
             " never a commit or a base"
         )
-    if rev == git_read.EMPTY_TREE:
+    sha = git_history.resolve_commit(repo, rev)
+    if not sha and rev == git_read.empty_tree(repo):
         if tree_ok:
             return rev
         raise GitRequestError(f"not a commit: {rev}")
-    sha = git_history.resolve_commit(repo, rev)
     if not sha:
         raise GitRequestError(f"unknown revision {rev!r}")
     return sha
@@ -425,7 +425,7 @@ def commit_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
     _repo(repo)
     sha = _resolve(repo, rev)
     info = git_history.commit_info(repo, sha)
-    base = info.parents[0] if info.parents else git_read.EMPTY_TREE
+    base = info.parents[0] if info.parents else git_read.empty_tree(repo)
     files, truncated = _files(repo, base, sha)
     return {
         "sha": sha,
@@ -463,7 +463,7 @@ def worktree_payload(repo: pathlib.Path) -> dict[str, Any]:
     """
     _repo(repo)
     sha, _branch = git_history.head_commit(repo)
-    base = sha or git_read.EMPTY_TREE
+    base = sha or git_read.empty_tree(repo)
     files, truncated = _files(repo, base, git_history.WORKTREE)
     return {"base": base, "files": files, "truncated": truncated}
 
@@ -690,7 +690,7 @@ def _endpoint(repo: pathlib.Path, rev: str, sha: str) -> dict[str, Any]:
     """
     if sha == git_history.WORKTREE:
         subject = "(working tree)"
-    elif sha == git_read.EMPTY_TREE:
+    elif sha == git_read.empty_tree(repo):
         subject = "(empty tree)"
     else:
         subject = git_history.commit_info(repo, sha).subject

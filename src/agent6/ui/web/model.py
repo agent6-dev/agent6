@@ -142,7 +142,7 @@ def draft_commit_diff_payload(
     return _diff_payload(
         workspace,
         sha,
-        base=git_read.EMPTY_TREE,
+        base=git_read.empty_tree(workspace),
         cumulative=cumulative,
         miss="not a commit of this draft",
     )
@@ -181,7 +181,7 @@ def _diff_payload(
         return None, f"no diff for {sha[:12]} ({miss})"
     if not whole:
         parents = git_history.commit_info(repo, sha).parents
-        base = parents[0] if parents else git_read.EMPTY_TREE
+        base = parents[0] if parents else git_read.empty_tree(repo)
     old_spans, new_spans = diff_highlight.revision_spans(repo, base, sha, patch)
     return {
         "cumulative": whole,

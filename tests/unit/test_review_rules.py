@@ -305,7 +305,7 @@ def test_dangling_base_directory_link_is_not_an_absent_rule(repo: pathlib.Path) 
 
 def test_unborn_tree_has_no_base_rules(repo: pathlib.Path) -> None:
     (repo / "AGENTS.md").write_text("uncommitted rule")
-    rules = repo_context.review_rules(repo, git_read.EMPTY_TREE)
+    rules = repo_context.review_rules(repo, git_read.empty_tree(repo))
     assert rules.complete and rules.sources == ()
     assert "No base rules exist." in review_verdict.build_user_message(
         review_panel.ReviewContext(rules=rules)

@@ -84,5 +84,5 @@ def test_unborn_uncommitted_review_has_an_exact_tree(tmp_path: pathlib.Path) -> 
     chain = run_chain.RunChain(tmp_path, ref=git_read.chain_ref_for("new"), per_turn=False)
     target = chain.review_target()
     assert target is not None
-    assert target.base_tree == git_read.EMPTY_TREE and target.head_commit is None
+    assert target.base_tree == git_read.empty_tree(tmp_path) and target.head_commit is None
     assert git_read.read_file_at(tmp_path, target.head_tree, "new.py") == "first work\n"

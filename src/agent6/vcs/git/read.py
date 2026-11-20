@@ -750,8 +750,18 @@ def worktree_tree(path: pathlib.Path, seed: str | None, exclude: Collection[str]
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-# git's empty tree, the diff base of a chain with no commits yet.
-EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+def empty_tree(path: pathlib.Path) -> str:
+    """Return the id of the repository's empty tree, the diff base where no commit exists yet.
+
+    git computes it: the id follows the repository's object format, SHA-1 or SHA-256.
+
+    Args:
+        path: The repository.
+
+    Returns:
+        The id, which git reads as a tree without the object being stored.
+    """
+    return git_command.run(path, "hash-object", "-t", "tree", "/dev/null").stdout.strip()
 
 
 def worktree_matches(path: pathlib.Path, ref: str, paths: Collection[str]) -> bool:
@@ -793,7 +803,7 @@ def chain_dirty(
         GitError: The path is not a repository; callers read that as clean.
     """
     base = chain_tip(path, ref) or fallback_parent
-    base_tree = tree_sha(path, base) if base else EMPTY_TREE
+    base_tree = tree_sha(path, base) if base else empty_tree(path)
     return base_tree != worktree_tree(path, base, exclude)
 
 
@@ -818,7 +828,7 @@ def chain_dirty_paths(
         The differing paths, at most the limit.
     """
     base = chain_tip(path, ref) or fallback_parent
-    base_tree = tree_sha(path, base) if base else EMPTY_TREE
+    base_tree = tree_sha(path, base) if base else empty_tree(path)
     return tree_diff_paths(path, base_tree, worktree_tree(path, base, exclude))[:limit]
 
 
