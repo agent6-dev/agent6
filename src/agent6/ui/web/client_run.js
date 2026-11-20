@@ -390,36 +390,36 @@ function paintDetails(cards, s, asOf) {
   // budget
   const b = s.budget || {};
   cards.budget.innerHTML = '';
-  const barRow = (label, frac, text) => {
-    const w = el('div'); w.appendChild(el('div', 'muted', `${label}: ${text}`));
-    const bar = el('div', 'bar' + (frac > 0.85 ? ' warn' : '')); const sp = el('span'); sp.style.width = (frac*100)+'%'; bar.appendChild(sp); w.appendChild(bar); return w;
+  const budgetRow = (label, value, cap, text) => {
+    const row = el('div'), name = `${label}: ${text}`;
+    if (cap > 0) {
+      const meter = el('meter', 'budget-meter');
+      meter.min = 0; meter.max = cap; meter.value = value;
+      meter.high = cap * 0.85; meter.optimum = 0;
+      row.append(fieldLabel(meter, name), meter);
+    } else row.appendChild(el('div', 'muted', name));
+    return row;
   };
   // `b.session` is the run's usage across executions; `b.execution` is this execution's
   // beside its caps (null = unknown, -1 = unlimited, 0 = refused); `b.account` is the
   // subscription account's latest reading. The usage text is the server's `usd_text`, the
   // plan reading the server's `plan_text` (percent, reset, when it was read).
   const run = b.execution || {};
-  const usdCap = run.usd_cap || 0;
-  const usdFrac = usdCap > 0 ? Math.min(1, (run.usd || 0) / usdCap) : 0;
-  cards.budget.appendChild(barRow('usage', usdFrac, b.usd_text || ''));
+  cards.budget.appendChild(budgetRow('usage', run.usd || 0, run.usd_cap, b.usd_text || ''));
   if (run.unmetered_tokens) {
     const fbCap = run.tokens_fallback_cap || 0;
-    const fbFrac = fbCap > 0 ? Math.min(1, run.unmetered_tokens / fbCap) : 0;
     const fbText = `${run.unmetered_tokens}${fbCap > 0 ? ' / ' + fbCap : (fbCap === -1 ? ' (unlimited)' : '')} tokens`;
-    cards.budget.appendChild(barRow('unmetered', fbFrac, fbText));
+    cards.budget.appendChild(budgetRow('unmetered', run.unmetered_tokens, fbCap, fbText));
   }
   const account = b.account;
   if ((account && account.used_percent > 0) || run.plan_cap > 0) {
-    // The account's window fill; the bar meters this execution's observed points against
-    // max_plan_points when one is set, else the account percent itself.
+    // The meter compares this execution's observed points with its cap.
     const usedPct = account ? account.used_percent : 0;
     const planCap = run.plan_cap || 0;
     const executionPt = run.plan_observed_points || 0;
-    const planFrac = planCap > 0 ? Math.min(1, executionPt / planCap)
-                                 : Math.min(1, usedPct / 100);
     const planText = (b.plan_text || `${usedPct}%`)
       + (planCap > 0 ? ` · moved ${executionPt.toFixed(1)} / ${planCap} pt this run` : '');
-    cards.budget.appendChild(barRow('plan', planFrac, planText));
+    cards.budget.appendChild(budgetRow('plan', executionPt, planCap, planText));
   }
   // The context-window fill at the last model call (the TUI's `ctx: N%`, the
   // pause menu's readout): the fold's one rule, served as context_used_percent.

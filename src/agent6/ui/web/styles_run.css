@@ -1,9 +1,7 @@
 /* The run view: task graph, budget, tool calls, event log, plan, conversation,
    approval and question prompts, and the details drawer. */
-/* A budget bar stands 4px under its label and 10px over the next line; its track shows when empty. */
-.bar { height: 0.5rem; margin: 0.25rem 0 0.625rem; background: var(--border); border-radius: 999px; overflow: hidden; }
-.bar > span { display: block; height: 100%; background: var(--accent); }
-.bar.warn > span { background: var(--warn); }
+.card-budget .field-label { font-size: inherit; margin: 0; }
+.budget-meter { display: block; width: 100%; height: 0.5rem; margin: 0.25rem 0 0.625rem; }
 
 .tree { font-family: var(--mono); font-size: var(--fs-m); }
 /* A task's line: its id, its glyph at its depth, then its title, which wraps under itself. */

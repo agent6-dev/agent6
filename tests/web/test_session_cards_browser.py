@@ -104,7 +104,7 @@ def test_a_live_frame_leaves_the_cards_a_reader_is_using(
     }"""
     )
     with (session / "logs.jsonl").open("a") as log:
-        log.write(json.dumps({"type": "budget.update", "usd_total": 0.5}) + "\n")
+        log.write(json.dumps({"type": "budget.update", "usd_total": 0.5, "usd_cap": 2}) + "\n")
     expect(lines).to_have_count(122)
     kept = page.evaluate(
         """() => [document.querySelector('.card-log .card-body').scrollTop,
@@ -252,20 +252,19 @@ def test_a_task_title_wraps_and_a_skipped_task_strikes_only_its_title(
     assert not errors
 
 
-def test_a_budget_bar_stands_apart_from_its_label_and_the_next_line(
+def test_a_budget_meter_stands_apart_from_its_label_and_the_next_line(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
-    """A budget bar stands 4px under its label and 10px over the line under it.
-
-    The bar touched its label above and the tokens line below.
-    """
+    """A budget meter stands 4px under its label and 10px over the next line."""
     from playwright.sync_api import expect
 
-    session_logs.write_run(tmp_path, "budget-AAA111", [{"type": "budget.update", "usd_total": 0.5}])
+    session_logs.write_run(
+        tmp_path, "budget-AAA111", [{"type": "budget.update", "usd_total": 0.5, "usd_cap": 2}]
+    )
     page, errors = open_page(port)
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(f"http://127.0.0.1:{port}/#/session/budget-AAA111")
-    bar = page.locator(".card-budget .bar")
+    bar = page.locator(".card-budget meter")
     expect(bar).to_be_visible()
     gaps = bar.evaluate(
         """b => { const r = e => e.getBoundingClientRect();
@@ -286,7 +285,7 @@ def test_the_details_cards_and_the_conversation_set_text_in_the_dense_size(
     from playwright.sync_api import expect
 
     rows = [
-        {"type": "budget.update", "usd_total": 0.5},
+        {"type": "budget.update", "usd_total": 0.5, "usd_cap": 2},
         {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a.py"}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
     ]
@@ -294,7 +293,7 @@ def test_the_details_cards_and_the_conversation_set_text_in_the_dense_size(
     page, errors = open_page(port)
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(f"http://127.0.0.1:{port}/#/session/sizes-AAA111")
-    expect(page.locator(".card-budget .bar")).to_be_visible()
+    expect(page.locator(".card-budget meter")).to_be_visible()
     expect(page.locator(".conv .ci").first).to_be_visible()
     sizes = page.evaluate(
         """() => { const sizes = {};
