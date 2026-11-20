@@ -1200,6 +1200,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def _preview_form(self, path: str) -> None:
         """Accept field data from a sandboxed form, without granting a file write.
 
+        Args:
+            path: The request path, `/preview/<key>/<file>`.
+
         Raises:
             PreviewError: The page, destination or field encoding is refused.
         """

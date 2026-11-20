@@ -110,6 +110,9 @@ class Store:
     def open(self, body: OpenPreviewBody) -> dict[str, Any]:
         """Pin the revision and check the document through the Files blob reader.
 
+        Args:
+            body: The file, revision and displayed digest the signed-in UI asks to preview.
+
         Attributes:
             key: The page's random read capability.
             url: Its frame address.
@@ -173,6 +176,9 @@ class Store:
     def allow_remote(self, key: str) -> None:
         """Grant only the remote origins captured when the signed-in UI opened the page.
 
+        Args:
+            key: The preview's key.
+
         Raises:
             PreviewError: The key is closed or the preview is not markdown.
         """
@@ -192,6 +198,9 @@ class Store:
     def allow_scripts(self, key: str) -> None:
         """Grant scripts to this HTML page until it closes.
 
+        Args:
+            key: The preview's key.
+
         Raises:
             PreviewError: The preview is closed or is not HTML.
         """
@@ -203,6 +212,11 @@ class Store:
 
     def read(self, route: str, destination: str, host: str) -> Response:
         """Return confined bytes only for an allowed browser fetch destination.
+
+        Args:
+            route: The request path, `/preview/<key>/<file>`.
+            destination: The request's `Sec-Fetch-Dest` header.
+            host: The request's `Host` header, which scopes the policy's sources.
 
         Returns:
             The resource bytes, media type and content policy.
@@ -285,6 +299,10 @@ class Store:
     def submit(self, route: str, data: bytes) -> None:
         """Keep one pending form without reading or writing the answers file.
 
+        Args:
+            route: The request path, `/preview/<key>/<file>`.
+            data: The URL-encoded form body.
+
         Raises:
             PreviewError: The form is not for this page or its fields are invalid.
         """
@@ -310,8 +328,14 @@ class Store:
     def take_answers(self, key: str) -> dict[str, Any]:
         """Return the pending Edit proposal once, only to the signed-in UI.
 
+        Args:
+            key: The preview's key.
+
         Attributes:
             pending: A sibling path, the JSON text and its current disk digest, or null.
+
+        Returns:
+            The proposal, or a null `pending` when no form was submitted.
         """
         with self._lock:
             page = self._get(key)

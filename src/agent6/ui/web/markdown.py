@@ -121,6 +121,10 @@ def _rewrite_link(item: token.Token, rev: str, path: str, prefix: str) -> str | 
 def _checkbox(item: token.Token, *, editable: bool) -> bool:
     """Replace a task marker in a list item's first paragraph with a labelled control.
 
+    Args:
+        item: The list item's inline token.
+        editable: Whether the control may be changed.
+
     Returns:
         Whether the paragraph contains a checkbox.
     """
@@ -206,6 +210,11 @@ def render(text: str, *, rev: str, path: str, prefix: str) -> Rendered:
 
 def document(rendered: Rendered, nonce: str, *, remote_allowed: bool) -> bytes:
     """Build the sandbox document with only the owned script and nonce-authorized styles.
+
+    Args:
+        rendered: The markdown snapshot.
+        nonce: This response's script and style nonce.
+        remote_allowed: Whether the operator has allowed the snapshot's remote files.
 
     Returns:
         UTF-8 HTML with the consent bar when remote images or media are blocked.
