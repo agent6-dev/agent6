@@ -806,8 +806,9 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
         if (n !== compareRun || !result.isConnected) return;
         result.innerHTML = '';
         const sum = el('div', 'gcmp-sum muted');
-        sum.appendChild(el('span', 'mono', d.base.short)); sum.appendChild(el('span', null, ' ' + d.base.subject + '  →  '));
-        sum.appendChild(el('span', 'mono', d.head.short)); sum.appendChild(el('span', null, ' ' + d.head.subject));
+        // A side names its commit, or the working tree as the picker does.
+        const endpoint = (e) => e.sha === GIT_WORKTREE ? [GIT_WORKTREE_PICK.label] : [el('span', 'mono', e.short), ' ' + e.subject];
+        sum.append(...endpoint(d.base), '  →  ', ...endpoint(d.head));
         result.appendChild(sum);
         if (reviewed) result.appendChild(reviewRules(panel.panel));
         const path = query.get('path');
@@ -890,7 +891,9 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   if (link[0] === 'commit' && link[1]) await showCommit(link[1], query);
   else if (link[0] === 'compare' && link[1]) {
     const [base, head] = link[1].split('..');
-    gitState.compare = { base: { rev: base || '', label: base || '' }, head: { rev: head || '', label: head || '' } };
+    // A revision reads as the picker would write it: the working tree by its name.
+    const pick = (rev) => rev === GIT_WORKTREE ? GIT_WORKTREE_PICK : { rev: rev || '', label: rev || '' };
+    gitState.compare = { base: pick(base), head: pick(head) };
     await showCompare();
   }
   else if (link[0] === 'worktree' && wt.files.length) showWorktree();

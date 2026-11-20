@@ -1378,3 +1378,18 @@ def test_a_side_panels_loading_and_error_lines_keep_their_contents_margins(
     expect(page.locator(".gcmp-result .err")).to_be_visible()
     assert page.locator(".gcmp .hint, .gcmp-result .err").evaluate_all(gap) == 10
     assert [e for e in errors if "status of 422" not in e] == [], errors
+
+
+def test_a_linked_compare_names_the_working_tree_as_the_picker_does(
+    open_page: OpenPage, dirty_git_port: int
+) -> None:
+    """A compare link filled the head field with 'WORKTREE' and summed it up as 'WORKTREE (...)'."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/compare/HEAD..WORKTREE")
+    expect(page.get_by_role("combobox", name="head", exact=True)).to_have_value("working tree")
+    summary = page.locator(".gcmp-sum")
+    expect(summary).to_contain_text("→ working tree")
+    expect(summary).not_to_contain_text("WORKTREE")
+    assert errors == [], errors
