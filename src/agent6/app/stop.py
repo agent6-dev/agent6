@@ -13,8 +13,8 @@ ACP cancel uses this form because its server is the worker. A stop after the ste
 the plain marker alone, so the step's command finishes and its tool results and auto-commit
 land first.
 
-A group's stop ends its live children first, then the parent, which imports and ranks what
-the children landed before it ends; that drain gets a longer wait.
+A parent's stop also stops its live children.
+The parent gets a longer wait to collect their results.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from agent6.viewmodel import listing, session_is_live, summarize_session_dir
 from agent6.viewmodel.session import status as session_status
 
 STOP_WAIT_S = 5.0  # a run that reads its requests ends within this
-CHILDREN_WAIT_S = 30.0  # a run drains its ended children and imports what landed within this
+CHILDREN_WAIT_S = 30.0  # a parent gets time to import its ended children's work
 KILL_GRACE_S = 3.0  # SIGTERM to SIGKILL
 _POLL_S = 0.1
 

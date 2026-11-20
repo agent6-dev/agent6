@@ -145,8 +145,8 @@ class Harness:
             worker's: its own system prompt and opening, a call ceiling told on every turn,
             no gates, no advisors; None for the worker's execution.
         opening: The dispatch a fresh run makes in place of its first model call, joined by
-            rank: `run --parallel`'s spec and task. The run ends when it lands. None for a
-            run that opens with the model.
+            rank: `run --parallel`'s spec and task. The run ends after the task completes.
+            None for a run that opens with the model.
         turns_reached: The turn being driven, 0 before the loop starts; the app's
             interrupt fallbacks read it for a truthful `session.stop`.
     """
