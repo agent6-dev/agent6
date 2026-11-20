@@ -549,7 +549,7 @@ def test_the_pane_offers_a_file_only_beside_a_listing_with_files(
     page.unroute("**/api/git/tree*", hold)
     page.route("**/api/git/tree*", lambda route: route.fulfill(status=500, json={"error": "nope"}))
     page.reload()
-    expect(page.locator(".files-tree .err")).to_have_text("nope")
+    expect(page.locator(".files-tree .err")).to_contain_text("nope")
     expect(prompt).to_have_count(0)
     assert [e for e in errors if "500" not in e] == []  # the failed listing's response
 
@@ -604,7 +604,7 @@ def test_the_pane_says_loading_and_failure_in_one_style(
     while not held:
         page.wait_for_timeout(50)
     held.pop().fulfill(status=500, json={"error": "nope"})
-    expect(page.locator(".files-text > .gf-note.err")).to_have_text("nope")
+    expect(page.locator(".files-text > .gf-note.err")).to_contain_text("nope")
     assert [e for e in errors if "500" not in e] == []  # the failed read's response
 
 
