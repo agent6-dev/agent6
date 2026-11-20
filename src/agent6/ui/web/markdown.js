@@ -13,6 +13,17 @@ document.getElementById('load-remote')?.addEventListener('click', () => {
   parent.postMessage({type: 'preview-remote'}, '*');
 });
 document.addEventListener('click', event => {
+  const box = event.target.closest('input[data-task-line]');
+  if (box) {
+    event.preventDefault(); // The checked state reflects the file until Save succeeds.
+    const snapshot = document.querySelector('template[data-file]');
+    if (!snapshot) return;
+    const lines = snapshot.content.textContent.split(/(\r\n|[\r\n])/);
+    const line = 2 * Number(box.dataset.taskLine);
+    lines[line] = lines[line].replace(/\[[ xX]\]/, box.checked ? '[x]' : '[ ]');
+    parent.postMessage({type: 'preview-save', name: snapshot.dataset.file, text: lines.join('')}, '*');
+    return;
+  }
   const link = event.target.closest('a[href]');
   if (!link) return;
   event.preventDefault();

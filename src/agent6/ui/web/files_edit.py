@@ -169,7 +169,8 @@ def save(repo: pathlib.Path, body: FileTextBody) -> dict[str, Any]:
             before = _read(fd)
             if body.digest is not None and hashlib.sha256(before).hexdigest() != body.digest:
                 raise FileEditError("the file changed on disk; load it again before saving", 409)
-            data = path_safety.disk_bytes(body.text, like=before)
+            # Text areas supply LF. A markdown snapshot supplies its original line endings.
+            data = encoded if b"\r\n" in encoded else path_safety.disk_bytes(body.text, like=before)
             _text(data)
             stream.seek(0)
             stream.write(data)

@@ -5,6 +5,22 @@ import pytest
 from agent6.ui.web import markdown
 
 
+def test_only_task_list_markers_render_as_native_checkboxes() -> None:
+    """Fences, prose, escaped markers and literal HTML cannot create checklist controls."""
+    source = (
+        "- [ ] Review the **notes**\n  - [X] Tests\n\n"
+        "```md\n- [ ] Example\n```\n\nNot a task: [ ] plain\n\n"
+        "- \\[ ] Escaped\n- # [ ] Heading\n\n<input type=checkbox>\n"
+    )
+    output = markdown.render(source, rev="WORKTREE", path="plan.md", prefix="/preview/k/").html
+    assert output.count('type="checkbox"') == 2
+    assert 'aria-label="Review the notes"' in output
+    assert "<strong>notes</strong>" in output
+    assert 'checked="checked"' in output
+    assert "- [ ] Example" in output and "[ ] plain" in output and "[ ] Escaped" in output
+    assert "&lt;input type=checkbox&gt;" in output
+
+
 @pytest.mark.parametrize(
     ("suffix", "tag"),
     [("mp3", "audio"), ("mp4", "video"), ("ogg", "audio"), ("wav", "audio"), ("webm", "video")],

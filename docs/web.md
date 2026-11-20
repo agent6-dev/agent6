@@ -120,6 +120,10 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - markdown remote images, video and audio stay blocked until allowed for that open file; the bar inside the frame lists every full address, and **Load** opens a signed-in confirmation ([browser network limits](security.md#5-network))
     - the confirmation lists the same addresses and warns what loading them sends; Cancel leaves them blocked, and closing the preview discards the allowance
     - an image line naming a repository `.mp4`, `.webm`, `.mp3`, `.wav` or `.ogg` file shows the browser's player, with no autoplay; media keeps the selected revision and the 20 MiB file limit
+    - **Checkboxes:** click a `- [ ]` or `- [x]` item in working-tree markdown to change its mark.
+      The dialog shows the file and byte count.
+      **Save** changes only that mark if the file still matches the displayed version.
+      Checkboxes at a commit are read-only.
     - **Edit** opens working-tree text in a dialog with **Save** and **Cancel**; it loads the complete file, up to 20 MiB, even when the source preview is cut
     - the editor checks the disk every two seconds and the server checks again at Save; a change keeps your draft and shows the disk version with **Load new file**, **Overwrite with mine**, and **Save as new file** beside the original
     - Overwrite acknowledges only the disk version shown; another change refuses it again; Save as new file never replaces an existing file

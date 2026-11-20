@@ -118,6 +118,31 @@ def _rewrite_link(item: token.Token, rev: str, path: str, prefix: str) -> str | 
     return None
 
 
+def _checkbox(item: token.Token, *, editable: bool) -> bool:
+    """Replace a task marker in a list item's first paragraph with a labelled control.
+
+    Returns:
+        Whether the paragraph contains a checkbox.
+    """
+    if not item.map or not item.children or not re.match(r"^\[[ xX]\](?=\s|$)", item.content):
+        return False
+    first = item.children[0]
+    if first.type != "text" or not first.content.startswith(item.content[:3]):
+        return False
+    first.content = first.content[3:]
+    box = token.Token("checkbox", "input", 0)
+    box.attrSet("type", "checkbox")
+    box.attrSet("data-task-line", item.map[0])
+    label = "".join(c.content for c in item.children if c.type in {"text", "image", "code_inline"})
+    box.attrSet("aria-label", label.strip() or f"Task on line {item.map[0] + 1}")
+    if item.content[1] != " ":
+        box.attrSet("checked", "checked")
+    if not editable:
+        box.attrSet("disabled", "disabled")
+    item.children.insert(0, box)
+    return True
+
+
 def render(text: str, *, rev: str, path: str, prefix: str) -> Rendered:
     """Render repository markdown with escaped HTML and revision-aware destinations.
 
@@ -142,7 +167,15 @@ def render(text: str, *, rev: str, path: str, prefix: str) -> Rendered:
     ids: dict[str, int] = {}
     images: set[str] = set()
     media: set[str] = set()
+    checklist = False
     for index, item in enumerate(tokens):
+        if (
+            item.type == "inline"
+            and index >= 2
+            and tokens[index - 1].type == "paragraph_open"
+            and tokens[index - 2].type == "list_item_open"
+        ):
+            checklist |= _checkbox(item, editable=rev == "WORKTREE")
         if item.type == "heading_open":
             title = "".join(
                 child.content
@@ -162,11 +195,13 @@ def render(text: str, *, rev: str, path: str, prefix: str) -> Rendered:
                 remote = _rewrite_link(child, rev, path, prefix)
                 if remote:
                     (media if child.type == "media" else images).add(remote)
-    return Rendered(
-        parser.renderer.render(tokens, parser.options, {}),
-        tuple(sorted(images)),
-        tuple(sorted(media)),
-    )
+    body = parser.renderer.render(tokens, parser.options, {})
+    if checklist and rev == "WORKTREE":
+        # Literal carriage returns would normalize to LF in the HTML parser.
+        source = html.escape(text, quote=False).replace("\r", "&#13;")
+        name = html.escape(posixpath.basename(path))
+        body += f'<template data-file="{name}">{source}</template>'
+    return Rendered(body, tuple(sorted(images)), tuple(sorted(media)))
 
 
 def document(rendered: Rendered, nonce: str, *, remote_allowed: bool) -> bytes:

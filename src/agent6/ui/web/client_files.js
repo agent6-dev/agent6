@@ -10,7 +10,7 @@ const MARKDOWN_MODE_KEY = 'a6-markdown-mode';
 
 function closeFilePreview() { filesState.closePreview?.(); }
 
-async function openFilePreview(host, rev, path, ignored, {digest = '', anchor = '', filesPrefix = ''} = {}) {
+async function openFilePreview(host, rev, path, ignored, {digest = '', anchor = '', filesPrefix = '', afterSave} = {}) {
   closeFilePreview();
   if (!window.isSecureContext) {
     host.replaceChildren(el('p', 'err gf-note', 'Previews need HTTPS or localhost.'));
@@ -20,7 +20,7 @@ async function openFilePreview(host, rev, path, ignored, {digest = '', anchor = 
   const frame = el('iframe'); frame.title = 'Preview of ' + path;
   frame.setAttribute('sandbox', ''); frame.referrerPolicy = 'no-referrer';
   host.replaceChildren(note);
-  let key = null, closed = false, timer, opened, grantDialog;
+  let key = null, closed = false, timer, opened, previewDialog;
   const viewState = (scroll = false) => frame.contentWindow?.postMessage({type: 'preview-state', ...(scroll ? {anchor: anchor || ''} : {}),
     theme: ['light', 'dark'].find(name => document.documentElement.classList.contains(name)) || ''}, '*');
   const theme = new MutationObserver(() => viewState());
@@ -34,29 +34,39 @@ async function openFilePreview(host, rev, path, ignored, {digest = '', anchor = 
       } else if (/^https?:\/\//i.test(href)) window.open(href, '_blank', 'noopener,noreferrer');
       return;
     }
-    if (event.data?.type !== 'preview-remote' || !(opened.images.length || opened.media.length)) return;
-    grantDialog = openDialog('Load remote files?', 'confirm');
-    if (!grantDialog) return;
-    grantDialog.appendChild(el('p', null, 'This page can send anything it can read to these servers. Loading a file sends its full address and your IP address.'));
-    const addresses = el('ul', 'files-remote-addresses');
-    for (const address of [...opened.images, ...opened.media].sort()) addresses.appendChild(el('li', null, address));
-    grantDialog.appendChild(addresses);
-    const row = el('div', 'form-row'), load = el('button', 'primary', 'Load'), cancel = el('button', null, 'Cancel');
+    const save = event.data?.type === 'preview-save';
+    if (save) {
+      if (opened.rev !== GIT_WORKTREE || event.data.name !== path.split('/').at(-1) || typeof event.data.text !== 'string') return;
+    } else if (event.data?.type !== 'preview-remote' || !(opened.images.length || opened.media.length)) return;
+    if (previewDialog?.open) return;
+    const dialog = openDialog(save ? 'Save checkbox change?' : 'Load remote files?', 'confirm');
+    if (!dialog) return;
+    previewDialog = dialog;
+    if (save) {
+      dialog.appendChild(el('p', null, `Replace ${path} (${new Blob([event.data.text]).size} bytes) in the working tree.`));
+    } else {
+      dialog.appendChild(el('p', null, 'This page can send anything it can read to these servers. Loading a file sends its full address and your IP address.'));
+      const addresses = el('ul', 'files-remote-addresses');
+      for (const address of [...opened.images, ...opened.media].sort()) addresses.appendChild(el('li', null, address));
+      dialog.appendChild(addresses);
+    }
+    const row = el('div', 'form-row'), accept = el('button', 'primary', save ? 'Save' : 'Load'), cancel = el('button', null, 'Cancel');
     const error = el('p', 'err'); error.setAttribute('role', 'status');
-    row.append(load, cancel); grantDialog.append(row, error);
-    const dialog = grantDialog;
+    row.append(accept, cancel); dialog.append(row, error);
     cancel.onclick = () => dialog.close();
-    load.onclick = async () => {
-      load.disabled = true; error.textContent = '';
+    accept.onclick = async () => {
+      accept.disabled = true; error.textContent = '';
       try {
-        await postJSON('/api/files/preview/remote', {key});
+        if (save) await postJSON('/api/files/text', {path, text: event.data.text, digest});
+        else await postJSON('/api/files/preview/remote', {key});
         if (closed) return;
-        dialog.close(); frame.src = opened.url;
-      } catch (e) { error.textContent = e.message; load.disabled = false; }
+        dialog.close();
+        if (save) await afterSave(); else frame.src = opened.url;
+      } catch (e) { error.textContent = e.message; accept.disabled = false; }
     };
   };
   const close = () => {
-    closed = true; clearTimeout(timer); frame.remove(); theme.disconnect(); grantDialog?.close();
+    closed = true; clearTimeout(timer); frame.remove(); theme.disconnect(); previewDialog?.close();
     window.removeEventListener('message', message);
     if (filesState.closePreview === close) { filesState.closePreview = null; filesState.previewScroll = null; }
     if (key) {
@@ -412,7 +422,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
       }
       if (!md) return;
       md.hidden = !rendered; sourceBox.hidden = rendered;
-      if (rendered) openFilePreview(md, rev, f.path, ignored, {digest: t.digest, anchor, filesPrefix: filesHash() + '/'});
+      if (rendered) openFilePreview(md, rev, f.path, ignored, {digest: t.digest, anchor, filesPrefix: filesHash() + '/', afterSave: () => current() && loadTree(f.path)});
       else closeFilePreview();
     };
     if (rendersMarkdown) {

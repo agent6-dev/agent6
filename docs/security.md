@@ -582,6 +582,10 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Before consent, `img-src` and `media-src` permit only that path.
   Remote images, video and audio have no fetching attribute before consent.
 - The UI accepts markdown messages only from the frame it created (`event.source`).
+  The owned checkbox script proposes `{type: "preview-save", name, text}` from the rendered snapshot.
+  The UI accepts only the displayed working-tree file's own name.
+  Every write requires confirmation and uses the Edit route with the displayed digest.
+  HTML pages have no message channel for saves.
   A Load message requests a signed-in confirmation; its contents cannot supply hosts or markup.
   The confirmation shows the server-held full addresses and warns what loading them discloses.
   The markdown frame has only `sandbox="allow-scripts"`, with no same-origin, top-navigation, form or popup permission.
