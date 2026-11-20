@@ -163,8 +163,8 @@ async function getResponse(url) {
 }
 async function getJSON(url) { return (await getResponse(url)).json(); }
 async function getBlob(url) { return (await getResponse(url)).blob(); }
-async function postJSON(url, body) {
-  const r = await serverFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+async function postJSON(url, body, {keepalive = false} = {}) {
+  const r = await serverFetch(url, { method: 'POST', keepalive, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
   const data = await r.json().catch(() => ({}));
   if (!r.ok || data.ok === false) throw new Error(data.error || r.statusText || 'HTTP ' + r.status);
   return data;
@@ -407,6 +407,7 @@ function openStream(url, onData) {
   return stream;
 }
 function closeLive() {
+  closeFilePreview();
   staleLine.remove();
   if (live) { live.close(); live = null; }
   if (hubTimer) { clearInterval(hubTimer); hubTimer = null; }

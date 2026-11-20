@@ -114,7 +114,10 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - a click on a line number in a diff quotes that line, with its path, side and revision, for the new-work composer on the Sessions page; Tab reaches the numbers, ↑ and ↓ move through them, and Enter or Space quotes; several lines queue up before you write and start the run
 - **Files page**: the files at one revision in the repository `agent6 web` was started in; a symlink shows its target, a link when the revision lists it
     - a markdown file opens rendered, with any raw HTML shown as its source; **Source** shows the text; **Show ignored** lists the files every exclude rule hides, badged `I`
-    - an HTML file opens as source; markdown remote images load without asking ([browser network limits](security.md#5-network))
+    - an HTML file opens as **Source**; **Preview** shows it in a sandboxed frame, with repository CSS and images at the listed revision
+    - HTML scripts stay off, as the bar above the frame states; previews require HTTPS or localhost, and their addresses refuse direct tabs
+    - **Source**, another file, navigation away and tab exit close the preview; an abandoned preview expires after 30 seconds without the UI's renewal
+    - markdown remote images load without asking ([browser network limits](security.md#5-network))
     - **Edit** opens working-tree text in a dialog with **Save** and **Cancel**; it loads the complete file, up to 20 MiB, even when the source preview is cut
     - the editor checks the disk every two seconds and the server checks again at Save; a change keeps your draft and shows the disk version with **Load new file**, **Overwrite with mine**, and **Save as new file** beside the original
     - Overwrite acknowledges only the disk version shown; another change refuses it again; Save as new file never replaces an existing file

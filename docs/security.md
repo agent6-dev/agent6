@@ -570,6 +570,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Fetch Metadata is browser-controlled and sent only to HTTPS or localhost; non-browser clients can forge it but still need the random key.
   This gate supplies the standalone-navigation restriction that CSP lacks ([containment probe](../bench/web-preview-containment.md)).
 - Every preview response carries CSP `sandbox`, `default-src 'none'`, `frame-ancestors 'self'`, `form-action 'none'`, `base-uri 'none'`, `object-src 'none'` and `script-src 'none'`.
+  The HTML frame also has an empty `sandbox` attribute, with no `allow-scripts` or other allowance.
   HTML scripts stay off; there is no permission to enable them.
   Styles, images, fonts and media are restricted to the key's preview path; inline styles are allowed.
   The UI's `frame-src` restricts frame navigation to the preview path.

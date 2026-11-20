@@ -35,6 +35,10 @@
 .files-head .gf-path { flex: 1 1 auto; min-height: var(--ctl-h-sm); align-content: center; }
 .files-note { margin-left: auto; min-width: 24ch; font-size: var(--fs-s); text-align: end; white-space: nowrap; }
 .files-text { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0.5rem var(--files-inset); }
+.files-text:has(> .files-preview:not([hidden])) { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+.files-preview:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.files-preview-note { flex: none; margin: 0; padding: 0.625rem var(--files-inset); color: var(--muted); border-bottom: 1px solid var(--border); }
+.files-preview iframe { flex: 1; width: 100%; min-height: 0; border: 0; background: white; color-scheme: light; }
 /* The browser makes the scrolling pane a Tab stop: its ring goes inside, where nothing clips it. */
 .files-text:focus-visible { outline-offset: -2px; }
 .files-back, .files-tree-toggle { display: none; }

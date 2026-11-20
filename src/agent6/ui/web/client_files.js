@@ -5,8 +5,52 @@
 // picked revision and the folders opened outlive a visit to another tab; the tree is fetched
 // again on return.
 // The picker's { rev, label }; each folder path → open; the page's in-place opener, if any.
-const filesState = { rev: null, folders: new Map(), open: null };
+const filesState = { rev: null, folders: new Map(), open: null, closePreview: null };
 const MARKDOWN_MODE_KEY = 'a6-markdown-mode';
+
+function closeFilePreview() { filesState.closePreview?.(); }
+
+async function openFilePreview(host, rev, path, ignored) {
+  closeFilePreview();
+  if (!window.isSecureContext) {
+    host.replaceChildren(el('p', 'err gf-note', 'Previews need HTTPS or localhost.'));
+    return;
+  }
+  const note = el('p', 'files-preview-note', 'Opening preview…');
+  const frame = el('iframe'); frame.title = 'Preview of ' + path;
+  frame.setAttribute('sandbox', ''); frame.referrerPolicy = 'no-referrer';
+  host.replaceChildren(note);
+  let key = null, closed = false, timer;
+  const close = () => {
+    closed = true; clearTimeout(timer); frame.remove();
+    if (filesState.closePreview === close) filesState.closePreview = null;
+    if (key) {
+      const expired = key; key = null;
+      postJSON('/api/files/preview/close', {key: expired}, {keepalive: true}).catch(e => toast(e.message, true));
+    }
+  };
+  filesState.closePreview = close;
+  const renew = async () => {
+    if (closed) return;
+    try {
+      await postJSON('/api/files/preview/renew', {key});
+      if (!closed) timer = setTimeout(renew, 10000);
+    } catch (e) {
+      if (closed) return;
+      close(); host.replaceChildren(el('p', 'err gf-note', e.message + ' Choose Source, then Preview to reopen.'));
+    }
+  };
+  try {
+    const opened = await postJSON('/api/files/preview', {rev, path, ignored});
+    key = opened.key;
+    if (closed) { close(); return; }
+    note.textContent = 'Scripts are off for this page.';
+    frame.src = opened.url; host.appendChild(frame);
+    timer = setTimeout(renew, 10000);
+  } catch (e) {
+    if (!closed) { close(); host.replaceChildren(el('p', 'err gf-note', e.message)); }
+  }
+}
 
 async function editFileText(path, afterSave) {
   const dialog = openDialog('Edit ' + path, 'wide files-editor');
@@ -197,6 +241,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     else tree.appendChild(treeView(buildTree(kept), fileRow, folderNote, !q && kept.length > 200, d => stateMark(treeFiles(d)), q ? null : filesState.folders));
   };
   const closeFile = () => {
+    closeFilePreview();
     pane.innerHTML = ''; if (entries.length) pane.appendChild(unopened); body.classList.remove('viewing');
     shown = null; for (const r of tree.querySelectorAll('.gf[aria-selected=true]')) r.setAttribute('aria-selected', 'false');
   };
@@ -214,6 +259,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     return loadTree(body.classList.contains('viewing') ? shown : '', true);
   };
   const loadTree = async (openPath = '', relisting = false) => {
+    closeFilePreview();
     const n = ++loading;
     ignoredToggle.hidden = filesState.rev.rev !== GIT_WORKTREE;
     pane.dataset.key = ''; shown = null; rev = ''; ignored = false; entries = [];
@@ -249,6 +295,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   // -- one file: it takes the right pane, or the whole screen on a phone -------------
   let viewing = 0;
   const showFile = async (f, whole, linked = false) => {
+    closeFilePreview();
     const key = JSON.stringify([++viewing, rev, f.path, !!whole]);
     pane.dataset.key = key;
     const current = () => pane.dataset.key === key && pane.isConnected;
@@ -264,7 +311,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     pane.innerHTML = '';
     const head = el('div', 'files-head row');
     const back = el('button', 'mini files-back'); back.append(icon('back'), ' Files');
-    back.onclick = () => { body.classList.remove('viewing'); tree.querySelector('[aria-selected=true]')?.focus(); };
+    back.onclick = () => { closeFilePreview(); body.classList.remove('viewing'); tree.querySelector('[aria-selected=true]')?.focus(); };
     head.appendChild(back);
     const refreshFile = el('button', 'mini files-refresh', 'Refresh');
     refreshFile.onclick = () => relist();
@@ -385,6 +432,25 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
         })));
       } catch (e) { if (current() && request === blameRequest) { blame.setAttribute('aria-busy', 'false'); failed(e.message); } }
     };
+    if (/\.html?$/i.test(f.path)) {
+      const preview = el('div', 'files-preview'), choices = el('span', 'gview');
+      choices.setAttribute('role', 'group'); choices.setAttribute('aria-label', 'HTML view');
+      box.appendChild(preview); head.insertBefore(choices, blame);
+      const select = mode => {
+        const active = mode === 'preview';
+        preview.hidden = !active; sourceBox.hidden = active; blame.hidden = active;
+        for (const button of choices.children) {
+          const selected = button.dataset.mode === mode;
+          button.classList.toggle('active', selected); button.setAttribute('aria-pressed', String(selected));
+        }
+        if (active) openFilePreview(preview, rev, f.path, ignored); else closeFilePreview();
+      };
+      for (const [mode, label] of [['source', 'Source'], ['preview', 'Preview']]) {
+        const button = el('button', 'mini', label); button.dataset.mode = mode;
+        button.onclick = () => select(mode); choices.appendChild(button);
+      }
+      select('source');
+    }
     if (!rendersMarkdown) return;
     // A Markdown file cut at the size cap has no rendering: its text alone shows.
     if (typeof t.rendered_html !== 'string') { modes.remove(); blame.hidden = false; return; }
@@ -428,4 +494,6 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   };
   await loadTree(path);
 }
+window.addEventListener('pagehide', closeFilePreview);
+window.addEventListener('pageshow', e => { if (e.persisted) route(); });
 boot();
