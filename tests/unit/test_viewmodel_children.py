@@ -121,7 +121,7 @@ def test_children_come_from_the_records_in_dispatch_then_child_order(
     )
     assert (
         first.launched
-        and first.status_label == "finished · unverified"
+        and first.status == "merged"
         and first.merged_into_parent == "run-abc"
         and first.outcome == "merged"
         and first.parent_merge_sha == "b" * 40
@@ -137,20 +137,6 @@ def test_children_come_from_the_records_in_dispatch_then_child_order(
     assert [d.identity for d in dispatches] == ["run-abc-p1", "run-abc-p2"]
     assert dispatches[0].state == "complete" and dispatches[1].turn == 5
     assert len(dispatches[0].children) == 2
-
-
-def test_retained_child_keeps_its_session_status(tmp_path: pathlib.Path) -> None:
-    """A retained ref does not turn the child's gate result into a dispatch error."""
-    parent = _session(tmp_path, "root")
-    child = _session(tmp_path, "root-p1-l1", parent="root", finished=False)
-    with (child / "logs.jsonl").open("a") as log:
-        log.write('{"type":"session.stop","reason":"gate_stale","verification":"failed"}\n')
-    merge = child_dispatch.MergeRecord(status="retained", branch="agent6/child")
-    child_dispatch.write_record(parent, _record("root-p1", [(child.name, merge, 0.5)]), now=1)
-    (row,) = wire.manifest_header(parent)["children"]
-    assert row["error"] == ""
-    assert row["status_label"] == "finished · gate stale"
-    assert row["outcome_label"] == "retained"
 
 
 def test_a_group_without_records_reads_its_children_from_lineage(tmp_path: pathlib.Path) -> None:
@@ -459,10 +445,5 @@ def test_stopped_and_never_started_children_stay_in_the_header(tmp_path: pathlib
     )
     child_dispatch.write_record(parent, refused, now=2)
     held, absent = wire.manifest_header(parent)["children"]
-    assert (held["status"], held["outcome"], held["commits"], held["imported_ref"]) == (
-        "finished",
-        "stopped",
-        2,
-        "agent6/child",
-    )
+    assert (held["status"], held["commits"], held["imported_ref"]) == ("stopped", 2, "agent6/child")
     assert not absent["launched"] and absent["status"] == "failed" and "no route" in absent["error"]

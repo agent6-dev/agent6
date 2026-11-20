@@ -722,7 +722,7 @@ def test_a_fan_out_keeps_twenty_children_in_details(
     page.goto(f"http://127.0.0.1:{port}/#/session/fan")
     card = page.locator(".drawer details.card-children")
     summary = card.locator(":scope > summary")
-    expect(summary).to_have_text("children: 20 passed")
+    expect(summary).to_have_text("children: 20 finished")
     box = page.locator(".card-conv").bounding_box()
     summary.click()
     expect(card.locator("details")).to_have_count(20)

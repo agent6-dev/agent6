@@ -32,15 +32,13 @@ class ChildView:
         task: Its task text; "" when unknown.
         model: Its selector, None for the worker's own settings.
         route: The `provider/model` its manifest records; "" when it never started.
-        status: The child's session status or its dispatch phase before an outcome.
-        status_label: The status with the session's reason in words.
+        status: Where the child stands in its task, including a chain merge or a ranking.
         outcome: The recorded dispatch outcome, including `stopped`, `ranked` and `retained`.
             An empty string means the parent has recorded no outcome.
-        outcome_label: The dispatch outcome with its rank, merge destination or stop detail.
         parent_merge_sha: The merge commit on the parent's chain, "" when none.
         merged_into_parent: The parent session whose chain received the merge, "" without a merge.
         imported_ref: The branch the merge read, "" when none.
-        error: A launch, merge or verdict error, or an empty string.
+        error: The status detail or the reason a child failed to start or merge.
         spend_usd: The cumulative child spend.
         usd_partial: Whether unpriced calls make the spend a lower bound.
         settled: Whether the parent charged its usage; False while it is unknown.
@@ -62,9 +60,7 @@ class ChildView:
     model: str | None
     route: str = ""
     status: str = "not started"
-    status_label: str = "not started"
     outcome: str = ""
-    outcome_label: str = ""
     parent_merge_sha: str = ""
     imported_ref: str = ""
     error: str = ""
@@ -81,19 +77,10 @@ class ChildView:
     verdict_summary: str = ""
     merged_into_parent: str = ""
 
-    def with_status(self, status: str, reason: format.StatusReason = "") -> ChildView:
-        """Return the row with its status word and the session's wording.
-
-        Args:
-            status: The status word.
-            reason: The session's status reason.
-
-        Returns:
-            The updated row.
-        """
-        return dataclasses.replace(
-            self, status=status, status_label=format.status_label(status, reason)
-        )
+    @property
+    def parent_merge_label(self) -> str:
+        """Name the recorded chain merge without implying a checkout merge."""
+        return format.parent_merge_label(self.merged_into_parent, self.parent_merge_sha)
 
     @property
     def number_label(self) -> str:
@@ -230,9 +217,7 @@ def _session_child(
     scan = session_log.scan_session_log(child_dir / layout.LOGS_NAME)
     if child is not None and not reported_start(child, scan):
         return dataclasses.replace(
-            row.with_status("starting"),
-            launched=process.worker_is_alive(child_dir),
-            commits=commits,
+            row, status="starting", launched=process.worker_is_alive(child_dir), commits=commits
         )
     status, reason = session_status.status_for_session_dir(child_dir, scan.status_facts())
     live = status in session_status.LIVE_STATUS_WORDS
@@ -257,10 +242,14 @@ def _session_child(
             task=scan.task_label.task or manifest.user_task,
         )
     return dataclasses.replace(
-        row.with_status(status, reason),
+        row,
         launched=True,
         commits=commits,
         route=format.format_model_route(manifest.models.driver) if manifest is not None else "",
+        status="finished"
+        if scan.finished and status in ("passed", "answered", "planned")
+        else status,
+        error=str(reason),
         current_tool=scan.current_tool if live else "",
         turn=scan.turn,
         elapsed_s=max(0, int(end - scan.start_ep))
@@ -284,7 +273,7 @@ def _recorded_child(
         child.session_id, child.number, record.identity, record.source, child.task, child.model
     )
     if not layout.is_safe_session_id(child.session_id):
-        return dataclasses.replace(row.with_status("failed"), error="invalid child session id")
+        return dataclasses.replace(row, status="failed", error="invalid child session id")
     child_dir = bucket / child.session_id
     row = _session_child(row, child_dir, child, version=record.version)
     if record.source == "panel" and row.launched:
@@ -316,40 +305,31 @@ def _recorded_child(
         )
     merge = child.merge
     if merge is not None:
-        if not row.launched:
-            status = {"conflict": "failed", "failed": "failed", "stopped": "stopped"}
-            row = row.with_status(status.get(merge.status, "finished"))
-        label = (
-            format.parent_merge_label(parent, merge.sha)
-            if merge.status == "merged"
-            else merge.status.replace("_", " ")
-        )
-        if merge.detail:
-            label = {
-                "ranked": f"ranked {merge.detail}",
-                "retained": f"ranked {merge.detail} · retained",
-                "stopped": f"stopped: {merge.detail}",
-                "no_changes": f"no changes: {merge.detail}",
-            }.get(merge.status, label)
+        status = {
+            "merged": "merged",
+            "conflict": "failed",
+            "failed": "failed",
+            "stopped": "stopped",
+        }.get(merge.status)
+        if not status:
+            status = row.status if row.status in ("failed", "stopped") else "finished"
         return dataclasses.replace(
             row,
+            status=status,
             outcome=merge.status,
-            outcome_label=label,
             imported_ref=merge.branch,
             parent_merge_sha=merge.sha,
             merged_into_parent=parent if merge.status == "merged" else "",
-            error=merge.detail
-            if merge.status in ("conflict", "failed") and merge.detail
-            else row.error,
+            error=merge.detail or row.error,
             current_tool="",
         )
     if record.state == "ranking" and row.status not in ("failed", "stopped"):
-        return row.with_status("being ranked")
+        return dataclasses.replace(row, status="being ranked")
     if record.state == "complete" and not row.launched:
-        return dataclasses.replace(
-            row.with_status("failed"), error=record.message or "never started"
-        )
+        return dataclasses.replace(row, status="failed", error=record.message or "never started")
     # A panel announces later batches before submitting them.
     if record.state == "running" and not row.launched and record.source != "panel":
-        return row.with_status("ended, task pending" if child.reported else "starting")
+        return dataclasses.replace(
+            row, status="ended, task pending" if child.reported else "starting"
+        )
     return row

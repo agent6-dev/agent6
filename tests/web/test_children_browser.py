@@ -233,7 +233,7 @@ def test_read_and_message_a_child_in_place(
         page.get_by_role("button", name="Children", exact=True).click()
         sync_api.expect(page.locator(".run-app .card:visible")).to_have_count(1)
     summary = card.locator(":scope > summary")
-    sync_api.expect(summary).to_have_text("children: 1 answered, 1 running, 1 stopped")
+    sync_api.expect(summary).to_have_text("children: 1 finished, 1 running, 1 stopped")
     assert not card.evaluate("e => e.open")
     assert summary.evaluate("e => e.clientHeight <= parseFloat(getComputedStyle(e).lineHeight) + 1")
     assert summary.locator("span").evaluate("e => e.scrollWidth <= e.clientWidth")
@@ -302,7 +302,7 @@ def test_read_and_message_a_child_in_place(
     assert stopped.value.ok
     sync_api.expect(entry).to_be_hidden()
     sync_api.expect(row.get_by_role("button", name="Stop", exact=True)).to_be_hidden()
-    sync_api.expect(summary).to_have_text("children: 1 answered, 2 stopped")
+    sync_api.expect(summary).to_have_text("children: 1 finished, 2 stopped")
     sync_api.expect(page).to_have_url(url)
     assert not errors
 

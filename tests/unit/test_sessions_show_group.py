@@ -894,7 +894,7 @@ def test_cli_child_roster_json(
     assert len(rows) == 7
     merged, _, live, stopped, held, absent, reviewer = rows
     assert (merged["status"], merged["outcome"], merged["merged_into_parent"]) == (
-        "passed",
+        "merged",
         "merged",
         "co",
     )

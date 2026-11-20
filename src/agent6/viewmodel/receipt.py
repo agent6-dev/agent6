@@ -432,11 +432,16 @@ def children_section(views: tuple[vm_children.ChildView, ...]) -> list[str]:
         label = f"{child.group_label}: {child.session_id}"
         if child.model:
             label += f" ({child.model})"
-        what = child.outcome_label or child.status_label
-        if child.outcome == "retained" and child.imported_ref:
-            what += f" on {child.imported_ref}"
-        if child.error:
-            what += f": {child.error}"
+        if child.outcome == "merged":
+            what = child.parent_merge_label
+        elif child.outcome == "no_changes":
+            what = "no changes"
+        elif child.outcome == "retained":
+            what = f"retained on {child.imported_ref}"
+        elif child.outcome:
+            what = f"{child.outcome}: {child.error}" if child.error else child.outcome
+        else:
+            what = child.status or "not started"
         spend = (
             f", {budget.format_usd(child.spend_usd, partial=child.usd_partial)}"
             if child.settled
