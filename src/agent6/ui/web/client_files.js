@@ -44,7 +44,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   const tree = el('div', 'files-tree'); tree.id = 'files-tree'; body.appendChild(tree);
   body.appendChild(resizeHandle(tree, {
     label: 'File tree width', key: 'a6-files-tree-w', property: '--files-tree-w',
-    min: 180, max: () => body.getBoundingClientRect().width - 246,
+    min: rem => 11.25 * rem, max: rem => body.getBoundingClientRect().width - 15.375 * rem,
   }));
   const pane = el('div', 'files-view'); body.appendChild(pane);
   // With no file open the pane says how to open one: from the tree, or by showing the tree first.

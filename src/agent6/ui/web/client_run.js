@@ -194,7 +194,7 @@ async function renderRun(id, opts, gen) {
   view.appendChild(app);
   body.insertBefore(resizeHandle(drawer, {
     label: 'Details width', key: 'a6-drawer-w', property: '--drawer-w',
-    min: 220, max: () => window.innerWidth * 0.6,
+    min: rem => 13.75 * rem, max: () => window.innerWidth * 0.6,
   }), cc.card);
   paintRun(cards, snap);
   cc.conv.refresh().then(() => {

@@ -601,6 +601,29 @@ def test_a_lane_is_one_row_tall_at_a_larger_default_font(
     assert errors == [], errors
 
 
+def test_the_graph_handle_stops_where_the_stylesheet_stops_the_graph(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """At a 20px default font the handle offered 320px of a 400px graph and stored unseen widths."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    _default_font(page, 20)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    graph = page.locator(".git-graph")
+    handle = page.get_by_role("separator", name="Graph width", exact=True)
+    handle.focus()
+    expect(handle).to_have_attribute("aria-valuemin", "400")
+    stored = "() => localStorage.getItem('a6-git-graph-w')"
+    drawn = "g => Math.round(g.getBoundingClientRect().width) + 'px'"
+    for key in ("ArrowLeft", "ArrowRight"):
+        for _ in range(40):
+            page.keyboard.press(key)
+        assert page.evaluate(stored) == graph.evaluate(drawn), key
+    expect(handle).to_have_attribute("aria-valuemax", graph.evaluate(drawn)[:-2])
+    assert errors == [], errors
+
+
 def test_the_git_toolbar_controls_share_one_height_and_fit_their_values(
     open_page: OpenPage, git_port: int
 ) -> None:

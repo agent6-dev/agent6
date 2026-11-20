@@ -6,15 +6,21 @@ function resizeHandle(pane, { label, key, property, min, max }) {
   h.setAttribute('role', 'separator');
   h.setAttribute('aria-label', label);
   h.setAttribute('aria-orientation', 'vertical');
+  // `min` and `max` at the root font size, in whole px; a min-width above the max-width wins, as in CSS.
+  const bounds = () => {
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize), low = Math.ceil(min(rem));
+    return [low, Math.max(low, Math.floor(max(rem)))];
+  };
   const describe = () => {
-    const width = Math.round(pane.getBoundingClientRect().width);
-    h.setAttribute('aria-valuemin', String(min));
-    h.setAttribute('aria-valuemax', String(Math.round(max())));
+    const width = Math.round(pane.getBoundingClientRect().width), [low, high] = bounds();
+    h.setAttribute('aria-valuemin', String(low));
+    h.setAttribute('aria-valuemax', String(high));
     h.setAttribute('aria-valuenow', String(width));
     h.setAttribute('aria-valuetext', width + ' pixels');
   };
   const resize = width => {
-    const w = Math.round(Math.min(max(), Math.max(min, width)));
+    const [low, high] = bounds();
+    const w = Math.round(Math.min(high, Math.max(low, width)));
     pane.style.setProperty(property, w + 'px');
     remember(key, w + 'px');
     describe();

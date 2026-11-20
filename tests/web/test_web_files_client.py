@@ -77,6 +77,7 @@ const history = {
   replaceState: (_, title, hash) => location.hash = hash,
 };
 const window = {addEventListener() {}, matchMedia: () => ({matches:false})};
+const getComputedStyle = () => ({fontSize: '16px'});
 const MutationObserver = class { observe() {} };
 let activeTab = '';
 const setTab = tab => activeTab = tab;
