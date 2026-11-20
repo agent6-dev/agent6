@@ -232,16 +232,17 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
     )
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Use the run's policy for the shared Compact and Fork actions.
+        """Use the run's policy for the shared Compact, Fork and Resume actions.
 
         Args:
             action: The menu or binding action.
             parameters: Arguments passed to the action.
 
         Returns:
-            False to hide group-only exclusions, None for a disabled fork, else the default.
+            False to hide group-only exclusions, None for a disabled fork or a refused resume,
+            else the default.
         """
-        if action in ("compact", "fork"):
+        if action in ("compact", "fork", "resume"):
             return cast("tui_app.Agent6TUI", self.app).check_action(action, parameters)
         return super().check_action(action, parameters)
 
@@ -642,7 +643,10 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
             if not bar.display:  # a same-value write still costs a relayout
                 bar.display = True
             mode: composer.ComposerMode = "steer" if self._host_live() else "resume"
-            self.query_one("#conv-resume", composer.ResumeOptions).show(mode == "resume")
+            refusal = self._host.resume_refusal()
+            self.query_one("#conv-resume", composer.ResumeOptions).show(
+                mode == "resume" and not refusal
+            )
             if not bar.policy:  # the manifest does not change mid-run
                 bar.policy = policy.session_policy(self._logs_path.parent).short()
             bar.set_mode(
@@ -650,6 +654,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
                 context_used_percent=self._host.context_used_percent(),
                 continue_as=self._host.continue_as,
                 needs_new_work=self._host.finished_green(),
+                refusal=refusal,
             )
 
     def refresh_liveness(self) -> None:

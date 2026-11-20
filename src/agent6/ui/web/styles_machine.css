@@ -19,13 +19,6 @@
   padding-left: var(--hang, 2ch); text-indent: calc(-1 * var(--hang, 2ch));
 }
 .machine-grid .tree .lead { white-space: pre; } /* kept whole, with no break before the first word */
-/* Why a dimmed verb in the dock is refused, in the hint's type, on every screen. An end's reason
-   runs to any length and the Path card holds it whole, so the dock shows its first two lines. */
-.composer .refusal { margin-top: 0.25rem; font-size: var(--fs-s); color: var(--muted); overflow-wrap: anywhere; }
-.composer .refusal.ended {
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
-}
-.composer .refusal:empty { display: none; }
 /* A state's name in a heading keeps its case, as in the States list. */
 .machine-grid h2 .name { text-transform: none; letter-spacing: 0; }
 /* From 781px the view is one screen tall, as the run view is: the conversation takes the height

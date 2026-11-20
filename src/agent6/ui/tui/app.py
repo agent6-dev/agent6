@@ -159,8 +159,13 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self.fallback_continued = ""
         # The session's mode (run, plan, ask), the title word; "run" for a manifest-less dir.
         self.mode = "run"
-        with contextlib.suppress(sessions_manifest.ManifestError):
+        # Why the manifest cannot be read, refusing every resume; "" if it reads or is unwritten.
+        self.unreadable = ""
+        try:
             manifest = sessions_manifest.read_manifest(session_dir)
+        except sessions_manifest.ManifestError as exc:
+            self.unreadable = listing.unreadable_reason(session_dir, exc)
+        else:
             self.fallback_task = manifest.user_task
             self.fallback_continued = manifest.continued_task
             self.mode = manifest.mode or "run"
@@ -355,13 +360,18 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         """
         status = session_status.status_for_session_dir(self.session_dir, status_facts(self.state))
         has_unmerged = self._unmerged and self.state.finished
+        unreadable = self.unreadable
         # Manifest changes are polled every five seconds, not on each repaint.
         if time.monotonic() >= self._manifest_due:
             self._manifest_due = time.monotonic() + 5.0
             if self.state.finished:
                 has_unmerged = False
-            with contextlib.suppress(sessions_manifest.ManifestError):
+            try:
                 manifest = sessions_manifest.read_manifest(self.session_dir)
+            except sessions_manifest.ManifestError as exc:
+                unreadable = listing.unreadable_reason(self.session_dir, exc)
+            else:
+                unreadable = ""
                 if (manifest.user_task, manifest.continued_task) != (
                     self.fallback_task,
                     self.fallback_continued,
@@ -373,9 +383,10 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
                     has_unmerged = listing.unmerged(
                         manifest, status[0], git_read.run_ref_tips(pathlib.Path.cwd())
                     )
-        if status != self.dir_status or has_unmerged != self._unmerged:
+        if (status, has_unmerged, unreadable) != (self.dir_status, self._unmerged, self.unreadable):
             self.dir_status = status
             self._unmerged = has_unmerged
+            self.unreadable = unreadable
             self._dirty = True
             self._conv.refresh_liveness()
 
@@ -513,6 +524,16 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         """The fork a typed follow-up resumes (an undo's or this view's), "" for this run."""
         return self.state.undone_to or self._continue_child
 
+    def resume_refusal(self) -> str:
+        """Return why every resume of this run refuses, "" when the composer resumes it.
+
+        A follow-up that continues as a fork resumes the fork, whose own record decides.
+
+        Returns:
+            Why the manifest cannot be read, or "".
+        """
+        return "" if self.continue_as else self.unreadable
+
     def _fill_composers(self, text: str) -> None:
         """Put the text in both composer bars, the covered view's too, to edit and resend."""
         for screen, bar_id in ((self._conv, "#conv-input"), (self._dash, "#dash-input")):
@@ -528,6 +549,9 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         Args:
             text: The instruction the new session injects at its first boundary.
         """
+        if refusal := self.resume_refusal():
+            self.notify(f"cannot resume {self.session_dir.name}: {refusal}", severity="warning")
+            return
         target = self.continue_as or self.session_dir.name
         self._spawn_resume(
             target,
@@ -733,16 +757,23 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self.notify(f"run started: {new_dir.name} (follow it: agent6 attach {new_dir.name})")
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Hide loop actions on groups and disable forks under model-owned git.
+        """Hide loop actions on groups; disable a refused fork or resume.
+
+        A fork reads the manifest first and needs agent6's commit chain, so it refuses an
+        unreadable manifest and model-owned git.
 
         Args:
             action: The menu or binding action.
             parameters: Arguments passed to the action.
 
         Returns:
-            None for a disabled fork, else the default.
+            None for a disabled fork or a refused resume, else the default.
         """
+        if action == "resume" and self.resume_refusal():
+            return None
         if action == "fork":
+            if self.unreadable:
+                return None
             with contextlib.suppress(sessions_manifest.ManifestError):
                 if sessions_manifest.read_manifest(self.session_dir).git_control == "model":
                     return None

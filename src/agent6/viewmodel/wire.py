@@ -150,6 +150,8 @@ def manifest_header(
     paints from cannot drift.
 
     Attributes:
+        unreadable: Why the manifest cannot be read, which refuses resume, fork and merge; such
+            a record carries no other header field.
         session_actions: Whether each session action applies to this session kind.
         git_control: The launch git-control policy.
         base_sha: The run chain's base commit.
@@ -171,14 +173,17 @@ def manifest_header(
     Returns:
         The branch facts, `unmerged` when the repo is given, `git_control`, `base_sha`,
         the fork lineage as `forked_from`,
-        the `worktree` and the child's `placement` with its `line`; empty for a
-        run with no readable manifest.
+        the `worktree` and the child's `placement` with its `line`; only `unreadable` for a
+        run whose manifest cannot be read, and nothing for one with none yet.
     """
+    header: dict[str, Any] = {}
     try:
         m = sessions_manifest.read_manifest(session_dir)
-    except sessions_manifest.ManifestError:
-        return {}
-    header: dict[str, Any] = dict(branch_facts(m, repo))
+    except sessions_manifest.ManifestError as exc:
+        if unreadable := listing.unreadable_reason(session_dir, exc):
+            header["unreadable"] = unreadable
+        return header
+    header.update(branch_facts(m, repo))
     if repo is not None:
         if not status:
             scan = session_log.scan_session_log(session_dir / layout.LOGS_NAME)

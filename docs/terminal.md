@@ -29,6 +29,8 @@ A Markdown file opens rendered, and `s` shows its source.
 Opening a run lands on its conversation: the task, the model's reasoning and every tool call, following live.
 `Esc` or `Ctrl+K` returns to the hub, the TUI's session switcher.
 The composer takes the [steer directives](usage.md#follow-and-steer-a-run).
+On an ended run whose manifest cannot be read, the composer says why and Enter resumes nothing.
+**Run > Resume this session** and **Run > Fork this session** are dimmed, as is the hub's **Merge selected run** for it.
 
 - `Ctrl+C` copies the selection, or the whole transcript when nothing is selected
 - `Ctrl+Z` leaves the view: a run started with `agent6 run --tui` detaches after its current turn (`agent6 attach` reattaches); one opened with `attach --tui` or from the hub keeps running as it was

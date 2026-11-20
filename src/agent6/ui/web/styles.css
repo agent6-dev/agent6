@@ -237,6 +237,13 @@ button.fold::before { margin-top: calc((1lh - 0.3125rem) / 2); }
 .composer .row:not(.pickers) > button { align-self: flex-end; }
 /* A hint: a line of help under a composer or the compare's pickers. */
 .hint { font-size: var(--fs-s); color: var(--muted); margin-top: 0.25rem; }
+/* Why a dimmed verb in a composer is refused, in the hint's type, on every screen. */
+.composer .refusal { margin-top: 0.25rem; font-size: var(--fs-s); color: var(--muted); overflow-wrap: anywhere; }
+/* A machine's end runs to any length and its Path card holds it whole: the dock shows two lines. */
+.composer .refusal.ended {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.composer .refusal:empty { display: none; }
 /* Picker rows (pickerRow above a composer, the Latest commit card's picker row):
    compact dropdowns sized to their value, each beside its label; on a narrow
    screen the pairs wrap whole. */

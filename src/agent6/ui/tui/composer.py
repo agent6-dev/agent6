@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
 
 from rich import markup
 from rich import text as rich_text
-from textual import app, binding, containers, events, widgets
+from textual import app, binding, containers, content, events, widgets
 from textual import message as textual_message
 from textual import screen as textual_screen
 from textual.css import query
@@ -34,7 +34,7 @@ ComposerMode = Literal["steer", "resume", "start", "draft"]
 
 
 def composer_labels(
-    mode: ComposerMode, *, continue_as: str = "", needs_new_work: bool = False
+    mode: ComposerMode, *, continue_as: str = "", needs_new_work: bool = False, refusal: str = ""
 ) -> tuple[str, str]:
     """Return the composer's border title and key hint for a mode.
 
@@ -44,6 +44,8 @@ def composer_labels(
         mode: The composer's mode.
         continue_as: The fork an undone run continues as; Enter resumes that session.
         needs_new_work: The agent finished green, so a bare resume has nothing to do.
+        refusal: Why every resume of this session refuses; the title says it cannot and
+            Enter resumes nothing.
 
     Returns:
         The border title, then the key hint.
@@ -55,6 +57,8 @@ def composer_labels(
     if mode == "resume":
         if continue_as:
             title = f"continue as {continue_as}"
+        elif refusal:
+            return ("cannot resume", "Ctrl-J newline")
         else:
             title = "what should it do next" if needs_new_work else "continue this session"
         return (title, "Enter resumes · Ctrl-J newline")
@@ -426,6 +430,7 @@ class SteerInput(widgets.TextArea):
         context_used_percent: int | None = None,
         continue_as: str = "",
         needs_new_work: bool = False,
+        refusal: str = "",
     ) -> None:
         """Relabel the bar for the session's state; a same-value write still costs a refresh.
 
@@ -434,9 +439,17 @@ class SteerInput(widgets.TextArea):
             context_used_percent: The context-window fill, when known.
             continue_as: The fork an undone run resumes as.
             needs_new_work: The run finished green, so a bare resume has nothing to do.
+            refusal: Why every resume of this session refuses; the empty bar shows it whole.
         """
         self.mode = mode
-        title, keys = composer_labels(mode, continue_as=continue_as, needs_new_work=needs_new_work)
+        title, keys = composer_labels(
+            mode, continue_as=continue_as, needs_new_work=needs_new_work, refusal=refusal
+        )
+        # A border title is cut at the bar's width; the placeholder wraps.
+        placeholder = refusal if mode == "resume" and not continue_as else ""
+        if self.placeholder != placeholder:
+            self.placeholder = placeholder
+            self._resize()
         ctx = f"ctx {context_used_percent}% · " if context_used_percent is not None else ""
         policy = f"{self.policy} · " if self.policy else ""
         # Border titles are markup: a bracket in a label or a model id would vanish unescaped.
@@ -473,9 +486,19 @@ class SteerInput(widgets.TextArea):
         """Grow or shrink with the content."""
         self._resize()
 
+    def on_resize(self, _event: events.Resize) -> None:
+        """Rewrap the placeholder at the bar's new width."""
+        self._resize()
+
     def _resize(self) -> None:
-        """Set the height to the line count plus the border, only on a real change."""
-        rows = min(max(self.document.line_count, 1), _INPUT_MAX_ROWS)
+        """Set the height to the line count plus the border, only on a real change.
+
+        An empty bar counts its placeholder's lines, wrapped at the bar's width.
+        """
+        lines = self.document.line_count
+        if self.placeholder and self.content_size.width and not self.text:
+            lines = len(content.Content.from_text(self.placeholder).wrap(self.content_size.width))
+        rows = min(max(lines, 1), _INPUT_MAX_ROWS)
         height = rows + 2
         current = self.styles.height
         if current is None or current.value != height:

@@ -1842,6 +1842,8 @@ function makeComposer(id) {
   // The emptied entry reaches every input listener: the draft is forgotten and the popups close.
   const clearDraft = () => { ta.value = ''; ta.dispatchEvent(new Event('input')); };
   const hint = el('div', 'hint');
+  // Why the box cannot resume this run, on every screen: a phone hides the hint.
+  const refusal = el('div', 'refusal');
   // The preset and the model the next execution continues under (`agent6 resume
   // --preset`, `--model`): both change only between executions, so the row shows
   // only while the composer resumes, filled once from the lists the config
@@ -1884,13 +1886,26 @@ function makeComposer(id) {
   // A run the agent ended has nothing to continue, so resume takes an
   // instruction or is refused; every other ending resumes bare.
   let needsWork = false;
+  // Why every resume of this run refuses (its manifest cannot be read): the box closes.
+  let refused = '';
   let busy = false;
   let modelGit = false;
   const offeredCommands = STEER_COMMANDS.map(([command]) => command);
   const suggest = attachCommandSuggest(ta, root, () => finished === false, offeredCommands);
   const models = attachParallelSuggest(ta, root); // the spec before `--`
   const apply = () => {
+    const closed = !!finished && !!refused;
     ta.readOnly = busy; // not disabled: the entry keeps the keyboard focus
+    ta.disabled = closed;
+    refusal.textContent = closed ? 'cannot resume: ' + refused : '';
+    ta.title = refusal.textContent;
+    hint.hidden = closed; // a closed box gives no keyboard tips
+    if (closed) {
+      presetRow.style.display = summary.style.display = 'none';
+      ta.placeholder = '';
+      rowShown = false;
+      return;
+    }
     presetRow.style.display = summary.style.display = finished ? '' : 'none';
     if (finished) fillPresets();
     if (finished && !rowShown) relabel();
@@ -2008,7 +2023,7 @@ function makeComposer(id) {
       resume(text);
     }
   };
-  root.appendChild(summary); root.appendChild(presetRow); root.appendChild(ta); root.appendChild(hint);
+  root.appendChild(summary); root.appendChild(presetRow); root.appendChild(ta); root.appendChild(refusal); root.appendChild(hint);
   // A quoted diff line lands beneath what is typed, for the words that follow it.
   root.quote = (note) => {
     const typed = ta.value.replace(/\s+$/, '');
@@ -2024,6 +2039,7 @@ function makeComposer(id) {
     modelGit = s.git_control === 'model';
     offeredCommands.splice(0, offeredCommands.length, ...STEER_COMMANDS.map(([command]) => command).filter(command => !modelGit || command !== '/undo'));
     needsWork = s.needs_new_work === true; // the server's predicate, never re-derived here
+    refused = s.unreadable || '';
     if (typeof s.live === 'boolean') { finished = !s.live; apply(); }
     else { finished = notLive(s); apply(); } // resume-style composer for any non-live run (parked/stale/ended)
   };

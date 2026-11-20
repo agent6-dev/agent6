@@ -200,16 +200,17 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         return at, f" · as of turn {at.commits[-1].turn}"
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Use the run's policy for the shared Compact and Fork actions.
+        """Use the run's policy for the shared Compact, Fork and Resume actions.
 
         Args:
             action: The menu or binding action.
             parameters: Arguments passed to the action.
 
         Returns:
-            False to hide group-only exclusions, None for a disabled fork, else the default.
+            False to hide group-only exclusions, None for a disabled fork or a refused resume,
+            else the default.
         """
-        if action in ("compact", "fork"):
+        if action in ("compact", "fork", "resume"):
             return cast("tui_app.Agent6TUI", self.app).check_action(action, parameters)
         return super().check_action(action, parameters)
 
@@ -489,13 +490,17 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         tui = self._tui
         s = tui.state
         mode: composer.ComposerMode = "steer" if tui.session_controllable() else "resume"
+        refusal = tui.resume_refusal()
         self.query_one("#dash-input", composer.SteerInput).set_mode(
             mode=mode,
             context_used_percent=tui.context_used_percent(),
             continue_as=tui.continue_as,
             needs_new_work=tui.finished_green(),
+            refusal=refusal,
         )
-        self.query_one("#dash-resume", composer.ResumeOptions).show(mode == "resume")
+        self.query_one("#dash-resume", composer.ResumeOptions).show(
+            mode == "resume" and not refusal
+        )
         self._render_approval()
         active = tui.model_call_in_flight()
         ds, as_of = self._details_state(s)

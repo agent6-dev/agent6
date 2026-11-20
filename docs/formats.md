@@ -1750,6 +1750,7 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `comparison` | `JSON` | The group record from the parent, directly or through the child's group. |
 | `placement` | `JSON` | The child's PlacementStamp when recorded. |
 | `placement.line` | `JSON` | The rendered comparison placement. |
+| `unreadable` | `JSON` | Why the manifest cannot be read, which refuses resume, fork and merge; such a record carries no other header field. |
 | `as_of` | `JSON` | The selected commit's turn and sha, or null for the current snapshot. |
 | `as_of.turn` | `JSON` | The selected commit's turn number. |
 | `as_of.sha` | `JSON` | The selected commit identifier. |

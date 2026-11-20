@@ -217,6 +217,7 @@ State is snapshotted before each model call and checkpointed per turn.
   `sessions prune` keeps a fork that has not started: its branch, chain ref and worktree stay.
 - `--at-turn 0` on a run that is itself a fork picks the seed it started from, before anything it did; the fork line says so
 - a `--parallel` child continues through `agent6 fork <child-id>`, in a worktree at the child's last commit; `resume` refuses a child from your checkout, whose tree is not the child's
+- a run whose manifest cannot be read (a newer agent6 wrote it, or it is broken) refuses `resume`, `fork` and `sessions merge`, naming the cause, and no surface offers them
 - a `run --parallel` run whose budget ended every child reads `failed · budget exhausted` and exits `3`; each stopped child continues through `agent6 fork <child-id>`
 - the first `--steer` on a fork becomes the fork's task and names its row and its merge subject; later steers are continuations
 - a resume with `--steer` keeps the original session label, with the latest steer beneath it as `continued: <steer>`; new questions in an ask REPL are not continuations

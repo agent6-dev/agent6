@@ -216,12 +216,18 @@ def test_a_menu_item_the_footer_greys_out_is_not_clickable_either() -> None:
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("control", ["model", "agent6"])
-def test_model_git_disables_fork_and_merge(tmp_path: pathlib.Path, control: str) -> None:
-    """Both session views refuse Fork; the home menu refuses Merge, not Delete."""
+@pytest.mark.parametrize("control", ["model", "agent6", "torn"])
+def test_model_git_or_a_torn_manifest_disables_fork_and_merge(
+    tmp_path: pathlib.Path, control: str
+) -> None:
+    """Both session views refuse Fork; the home menu refuses Merge, not Delete.
+
+    A manifest that cannot be read refuses both, as model-owned git does: each reads it first.
+    """
     run = tmp_path / "state" / "sessions" / "runs" / "model-run"
     run.mkdir(parents=True)
-    (run / "manifest.json").write_text(json.dumps({"version": 3, "git_control": control}))
+    text = json.dumps({"version": 3, "git_control": control})
+    (run / "manifest.json").write_text(text[: len(text) // 2] if control == "torn" else text)
     (run / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run"})
         + "\n"
@@ -240,7 +246,7 @@ def test_model_git_disables_fork_and_merge(tmp_path: pathlib.Path, control: str)
                 app.screen.query_one(menubar.MenuBar).open("r")
                 await pilot.pause()
                 dd = next(iter(app.screen.query(menubar._Dropdown)))
-                assert dd.get_option("fork").disabled == (control == "model")
+                assert dd.get_option("fork").disabled == (control != "agent6")
                 await pilot.press("escape")
         hub = home.Agent6HomeApp(tmp_path / "state", tmp_path)
         async with hub.run_test() as pilot:
@@ -249,7 +255,7 @@ def test_model_git_disables_fork_and_merge(tmp_path: pathlib.Path, control: str)
             mb.open("f")
             await pilot.pause()
             dd = next(iter(hub.screen.query(menubar._Dropdown)))
-            assert dd.get_option("merge_selected").disabled == (control == "model")
+            assert dd.get_option("merge_selected").disabled == (control != "agent6")
             assert not dd.get_option("delete_selected").disabled
 
     asyncio.run(scenario())

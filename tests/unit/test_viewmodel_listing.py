@@ -1939,6 +1939,58 @@ def test_a_review_reviewers_record_offers_no_action(
     assert actions == dict.fromkeys(("compact", "fork", "merge", "resume", "review"), offered)
 
 
+def unreadable_record(session_dir: pathlib.Path, damage: str) -> None:
+    """Write an ended run's record as agent6 does, then make its manifest unreadable.
+
+    `newer` claims the next format version, as a newer agent6 writes it; `torn` cuts the file
+    in half, as a crash in the middle of a write leaves it.
+    """
+    from agent6.app import stamps
+
+    session_dir.mkdir(parents=True, exist_ok=True)
+    path = session_dir / sessions_manifest.MANIFEST_NAME
+    stamps.write_manifest(
+        path,
+        sessions_manifest.SessionManifest(session_id=session_dir.name, mode="run", user_task="t"),
+    )
+    rows = [
+        {"type": "session.start", "session_id": session_dir.name, "mode": "run", "user_task": "t"},
+        {"type": "budget.update", "usd_total": 0.0},
+        {"type": "session.stop", "reason": "provider_error", "verification": "unverified"},
+    ]
+    (session_dir / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    (session_dir / "loop_state.json").write_text("{}")  # a turn ran: a resume has its snapshot
+    text = path.read_text(encoding="utf-8")
+    if damage == "newer":
+        record = json.loads(text)
+        record["version"] = sessions_manifest.MANIFEST_VERSION + 1
+        text = json.dumps(record, indent=2) + "\n"
+    else:
+        text = text[: len(text) // 2]
+    path.write_text(text, encoding="utf-8")
+
+
+@pytest.mark.parametrize("damage", ["newer", "torn"])
+def test_a_record_whose_manifest_cannot_be_read_refuses_resume_and_says_why(
+    tmp_path: pathlib.Path, damage: str
+) -> None:
+    """Its header was empty, so every surface offered a resume that `agent6 resume` refuses."""
+    from agent6.viewmodel import wire
+
+    session = tmp_path / "sessions" / "runs" / "stuck-run"
+    unreadable_record(session, damage)
+    reason = listing.resume_blocker(session)
+    if damage == "newer":
+        newer = sessions_manifest.MANIFEST_VERSION + 1
+        assert reason == (
+            f"unreadable manifest: newer record (manifest version {newer} >"
+            f" {sessions_manifest.MANIFEST_VERSION}): upgrade agent6"
+        )
+    assert reason.startswith("unreadable manifest: ")
+    assert wire.manifest_header(session, repo=None) == {"unreadable": reason}
+    assert wire.session_snapshot(session)["unreadable"] == reason
+
+
 @pytest.mark.parametrize("merged", [False, True])
 def test_a_merged_sessions_pruned_worktree_is_not_a_resume_problem(
     tmp_path: pathlib.Path, merged: bool

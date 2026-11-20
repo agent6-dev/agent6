@@ -9,7 +9,6 @@ every other verb shells out to the CLI the same way.
 
 from __future__ import annotations
 
-import contextlib
 import pathlib
 from collections.abc import Callable, Iterable
 from typing import Any, ClassVar
@@ -420,7 +419,8 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         """Grey unavailable actions and hide Children without a group.
 
         None greys a key where False would hide it, and a missing key reads as a
-        capability the hub lacks. Model-controlled runs cannot merge.
+        capability the hub lacks. A run under model-owned git or with an unreadable manifest
+        cannot merge.
         The CLI makes the other refusals (no commits, already merged).
         The summary's `unmerged` mark is branch-derived and
         reads False for a session whose commits live only on its chain ref.
@@ -449,8 +449,11 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         if rd is None:
             return None
         if action == "merge_selected":
-            with contextlib.suppress(manifest.ManifestError):
+            try:
                 if manifest.read_manifest(rd).git_control == "model":
+                    return None
+            except manifest.ManifestError as exc:
+                if viewmodel_listing.unreadable_reason(rd, exc):
                     return None
         s = self._summaries.get(rd.name)
         return None if s is not None and s.status in LIVE_STATUS_WORDS else True

@@ -360,6 +360,65 @@ def test_an_unreadable_run_tells_the_truth_on_the_stream_pane(tmp_path: pathlib.
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("width", [80, 60])
+@pytest.mark.parametrize("damage", ["newer", "torn"])
+def test_a_run_whose_manifest_cannot_be_read_says_why_in_its_composer(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, damage: str, width: int
+) -> None:
+    """Its composer offered "continue this session", and Enter spawned a resume that refused.
+
+    The refusal then sat in the border title, which an 80-column terminal cut before the remedy;
+    the empty bar holds it whole, wrapped. Run > Fork, which reads the manifest too, is dimmed.
+    """
+    from tests.unit import test_viewmodel_listing
+
+    spawned: list[str] = []
+    notes: list[str] = []
+
+    def _fake_resume(_cwd: pathlib.Path, rid: str, **_kw: object) -> str:
+        spawned.append(rid)
+        return ""
+
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
+    d = tmp_path / "stuck-run"
+    test_viewmodel_listing.unreadable_record(d, damage)
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(d)
+        original = app.notify
+
+        def spy(message: Any, *args: Any, **kwargs: Any) -> None:
+            notes.append(str(message))
+            original(message, *args, **kwargs)
+
+        monkeypatch.setattr(app, "notify", spy)
+        async with app.run_test(size=(width, 24)) as pilot:
+            await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)
+            await waits.wait_for(
+                pilot, lambda: str(bar.border_title) == "cannot resume", "the refusal title"
+            )
+            refusal = str(bar.placeholder)
+            assert refusal.startswith("unreadable manifest: ")
+            await pilot.pause()
+            shown = " ".join(bar.render_line(y).text for y in range(bar.content_size.height))
+            assert " ".join(shown.split()) == refusal
+            assert not app._conv.query_one("#conv-resume", composer.ResumeOptions).display
+            assert app._conv.check_action("resume", ()) is None
+            assert app._conv.check_action("fork", ()) is None
+            app.submit_instruction("carry on")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert spawned == []
+            assert f"cannot resume stuck-run: {refusal}" in notes
+            await _open_dash(app, pilot)
+            dash = app._dash.query_one("#dash-input", composer.SteerInput)
+            assert (str(dash.border_title), dash.placeholder) == ("cannot resume", refusal)
+            assert not app._dash.query_one("#dash-resume", composer.ResumeOptions).display
+
+    asyncio.run(scenario())
+
+
 def test_a_resume_from_the_composer_carries_the_picked_preset(
     tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:

@@ -1384,6 +1384,26 @@ def test_show_says_why_a_stale_run_with_no_snapshot_cannot_be_resumed(
     assert "resume:     it never reached its first turn" in out
 
 
+def test_show_names_why_a_run_whose_manifest_broke_cannot_be_resumed(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A torn manifest's run read `resume with: agent6 resume <id>`, a command that refuses it."""
+    from agent6.ui.cli import main
+    from tests.unit import test_viewmodel_listing
+
+    d = _make_run(tmp_path, monkeypatch, [])
+    test_viewmodel_listing.unreadable_record(d, "torn")
+    assert sessions_show._cmd_status("winsome-dawn") == 0
+    out = capsys.readouterr().out
+    assert "status:     failed · provider error" in out
+    assert "resume with:" not in out
+    (line,) = [ln for ln in out.splitlines() if ln.startswith("resume:")]
+    reason = line.removeprefix("resume:").strip()
+    assert reason.startswith("unreadable manifest: ")
+    assert main(["resume", "winsome-dawn-YWH5ZS"]) == 2
+    assert reason.removeprefix("unreadable manifest: ") in capsys.readouterr().err
+
+
 def test_show_json_carries_the_points_earlier_executions_banked(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

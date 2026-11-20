@@ -554,12 +554,31 @@ def finished_needs_new_work(session_dir: pathlib.Path) -> bool:
     )
 
 
+def unreadable_reason(session_dir: pathlib.Path, exc: sessions_manifest.ManifestError) -> str:
+    """Return why a session whose manifest did not read refuses the actions that need it.
+
+    Resume, fork and merge read it first, so a record a newer agent6 wrote or a broken one
+    refuses each; a manifest not written yet refuses nothing here.
+
+    Args:
+        session_dir: The session's state dir.
+        exc: The read's error.
+
+    Returns:
+        `unreadable manifest: <cause>`, or "" when the file does not exist.
+    """
+    if not (session_dir / sessions_manifest.MANIFEST_NAME).exists():
+        return ""
+    return f"unreadable manifest: {exc}"
+
+
 def resume_blocker(session_dir: pathlib.Path) -> str:
     """Return why the session's state cannot be resumed at all, or "".
 
-    A parent has no loop, a child's tree is no checkout's once its clone is gone,
-    a worktree run whose worktree is
-    gone continues through `fork`, and a run that never reached a turn has no snapshot.
+    A manifest that cannot be read refuses first, as `agent6 resume` reads it first; a parent
+    has no loop, a child's tree is no checkout's once its clone is gone, a worktree run whose
+    worktree is gone continues through `fork`, and a run that never reached a turn has no
+    snapshot.
 
     Args:
         session_dir: The session's state dir.
@@ -568,8 +587,12 @@ def resume_blocker(session_dir: pathlib.Path) -> str:
         The reason, naming the `agent6 fork` command when one continues the run; "" when
         no such state blocker applies.
     """
-    with contextlib.suppress(sessions_manifest.ManifestError):
+    try:
         m = sessions_manifest.read_manifest(session_dir)
+    except sessions_manifest.ManifestError as exc:
+        if unreadable := unreadable_reason(session_dir, exc):
+            return unreadable
+    else:
         if m.parallel is not None:
             return (
                 f"a child of the group {m.parallel.parent}, whose work is on its own"

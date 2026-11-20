@@ -366,6 +366,46 @@ def test_a_phones_resume_pickers_fold_behind_one_line_that_names_their_picks(
 
 
 @pytest.mark.parametrize("width", [1280, 390])
+@pytest.mark.parametrize("damage", ["newer", "torn"])
+def test_a_run_whose_manifest_cannot_be_read_closes_its_composer_and_says_why(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    damage: str,
+    width: int,
+) -> None:
+    """Its page offered "continue this session…", a resume `agent6 resume` refuses.
+
+    Fork and Merge, which read the manifest too, stayed enabled; Merge's tooltip said no commits.
+    """
+    from playwright.sync_api import expect
+
+    from tests.unit import test_viewmodel_listing
+
+    session = paths.state_dir(tmp_path) / "sessions" / "runs" / "stuck-AAA111"
+    test_viewmodel_listing.unreadable_record(session, damage)
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/stuck-AAA111")
+    composer = page.locator(".composer")
+    refusal = composer.locator(".refusal")
+    expect(refusal).to_have_text(re.compile("^cannot resume: unreadable manifest: "))
+    expect(refusal).to_be_visible()
+    if damage == "newer":
+        expect(refusal).to_contain_text("newer record (manifest version")
+        expect(refusal).to_contain_text("upgrade agent6")
+    expect(composer.locator("textarea")).to_be_disabled()
+    expect(composer.locator(".pickers")).to_be_hidden()
+    expect(composer.locator(".hint")).to_be_hidden()
+    reason = (refusal.text_content() or "").removeprefix("cannot resume: ")
+    for name in ("Fork", "Merge"):
+        button = page.locator(".actions button", has_text=re.compile(f"^{name}$"))
+        expect(button).to_be_disabled()
+        expect(button).to_have_attribute("title", reason)
+    assert not errors
+
+
+@pytest.mark.parametrize("width", [1280, 390])
 def test_a_question_box_spaces_its_questions_and_wraps_a_narrow_field(
     open_page: Callable[[int], tuple[Page, list[str]]],
     port: int,
