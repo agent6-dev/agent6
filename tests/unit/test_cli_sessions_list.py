@@ -651,7 +651,8 @@ def test_runs_list_folds_a_groups_children_under_it(
     assert sessions_cmds._cmd_list(children=True) == 0
     lines = capsys.readouterr().out.splitlines()
     assert "fan " in lines[1] and "(2 children)" not in lines[1]
-    assert "└ fan-l1" in lines[2] and "└ fan-l2 ★" in lines[3]
+    first, second = [line for line in lines if "└ " in line]
+    assert "└ fan-l1" in first and "└ fan-l2 ★" in second
     assert sessions_cmds._cmd_list(as_json=True) == 0
     (row,) = json.loads(capsys.readouterr().out)
     assert row["session_id"] == "fan"

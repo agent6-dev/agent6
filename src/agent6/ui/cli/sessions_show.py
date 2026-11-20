@@ -12,7 +12,6 @@ import dataclasses
 import json
 import pathlib
 import time
-from collections.abc import Mapping
 from typing import Any, TypedDict
 
 from agent6 import kinds, terminal
@@ -20,7 +19,7 @@ from agent6.app import merge, resume
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
-from agent6.ui.cli import common
+from agent6.ui.cli import common, sessions_children
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import (
     LogScan,
@@ -37,7 +36,6 @@ from agent6.viewmodel import (
     transcript,
     wire,
 )
-from agent6.viewmodel import children as vm_children
 from agent6.viewmodel.session import view as state_view
 
 
@@ -90,98 +88,6 @@ def _print_parallel_compare(
     print(f"compare:    {headline}")
     if rationale:
         print(f"  judge: {rationale}")
-
-
-def _children(
-    layout: sessions_layout.SessionLayout, tips: Mapping[str, str]
-) -> list[SessionSummary]:
-    """Return the session's children by lineage with their unmerged marks.
-
-    Args:
-        layout: The session's layout.
-        tips: The branch-tips snapshot.
-
-    Returns:
-        The children in child order; empty for a session without any.
-    """
-    return listing.children_of(layout.state_dir, layout.session_id, branch_tips=tips)
-
-
-def _won(manifest: sessions_manifest.SessionManifest | None) -> bool:
-    """Return whether the manifest's compare stamp names it the winner."""
-    return manifest is not None and manifest.placement is not None and manifest.placement.winner
-
-
-def _child_manifests(
-    state: pathlib.Path, children: list[SessionSummary]
-) -> dict[str, sessions_manifest.SessionManifest]:
-    """Return each readable child manifest, for its route and compare stamp."""
-    manifests: dict[str, sessions_manifest.SessionManifest] = {}
-    for child in children:
-        child_layout = sessions_layout.session_layout(state, child.session_id)
-        if child_layout is not None:
-            with contextlib.suppress(sessions_manifest.ManifestError):
-                manifests[child.session_id] = sessions_manifest.read_manifest(
-                    child_layout.session_dir
-                )
-    return manifests
-
-
-def _print_children(
-    manifest: sessions_manifest.SessionManifest,
-    children: list[SessionSummary],
-    child_manifests: Mapping[str, sessions_manifest.SessionManifest],
-    outcomes: Mapping[str, str],
-) -> None:
-    """Print the group line for a group, the child count otherwise, then one line per child.
-
-    Args:
-        manifest: The session's manifest.
-        children: Its children by lineage.
-        child_manifests: Each readable child manifest, for its compare stamp.
-        outcomes: How each recorded child joined, by session id.
-    """
-    if children:
-        print(f"children:      {len(children)}")
-    idents = {
-        child.session_id: child.id_cell(winner=_won(child_manifests.get(child.session_id)))
-        for child in children
-    }
-    width = max((len(ident) for ident in idents.values()), default=0)
-    for child in children:
-        child_manifest = child_manifests.get(child.session_id)
-        stamp = child_manifest.placement if child_manifest is not None else None
-        place = f"rank {stamp.rank}/{stamp.of}" if stamp is not None else f"child {child.number}"
-        model = child.model or "?"
-        cost = child.usage_cell
-        label = format.listing_status_label(
-            child.mode, child.status, child.detail, unmerged=child.unmerged
-        )
-        outcome = outcomes.get(child.session_id, "")
-        joined = f"  {outcome}" if outcome else ""
-        ident = idents[child.session_id]
-        print(f"  {place:<10} {ident:<{width}}  {model}  {label}  {cost}{joined}".rstrip())
-
-
-def child_outcomes(session_dir: pathlib.Path) -> dict[str, str]:
-    """Return each recorded child's join as one phrase, by session id.
-
-    Args:
-        session_dir: The session's dir.
-
-    Returns:
-        `joined at <sha>`, `no changes` or `<outcome>: <detail>` per child; empty without records.
-    """
-    phrases: dict[str, str] = {}
-    for child in vm_children.children_of(session_dir):
-        if child.outcome == "joined":
-            phrases[child.session_id] = f"joined at {child.join_sha[:12]}"
-        elif child.outcome == "no_changes":
-            phrases[child.session_id] = "no changes"
-        elif child.outcome:
-            detail = f": {child.error}" if child.error else ""
-            phrases[child.session_id] = f"{child.outcome}{detail}"
-    return phrases
 
 
 def _status_state(
@@ -384,7 +290,7 @@ class StatusJSON(TypedDict):
     placement: dict[str, Any] | None
     comparison: dict[str, Any] | None
     parallel: dict[str, Any] | None
-    children: list[listing.SummaryRow]
+    children: list[dict[str, Any]]
     run_branch: str | None
     base_branch: str | None
     merged_into: str | None
@@ -434,7 +340,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         placement: The child's rank and group id, or null outside a compared child.
         comparison: The group record on its parent, or null for other sessions.
         parallel: The ParallelLineage, or null outside a child.
-        children: The parent's summary_row objects.
+        children: ChildView rows in dispatch order. Lineage-only groups keep their listing fields.
         run_branch: The existing run branch, or null.
         base_branch: The base branch, or null when unknown.
         merged_into: The merge destination, or null when not merged.
@@ -478,8 +384,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     changes = _changes(target.name, manifest, undone=scan.finished and scan.stop_reason == "undone")
     tips = git_read.run_ref_tips(pathlib.Path.cwd())
     summary = summarize_session_dir(target, branch_tips=tips)
-    children = _children(layout, tips)
-    child_manifests = _child_manifests(layout.state_dir, children)
+    children = sessions_children.read_children(target, tips=tips)
     status, status_cell, status_detail = _status_state(
         summary,
         scan,
@@ -526,10 +431,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             if manifest.comparison
             else None,
             "parallel": manifest.parallel.model_dump(mode="json") if manifest.parallel else None,
-            "children": [
-                listing.summary_row(ln, winner=_won(child_manifests.get(ln.session_id)))
-                for ln in children
-            ],
+            "children": [child.as_dict() for child in children],
             "run_branch": existing_run_branch(manifest, pathlib.Path.cwd()) or None,
             "base_branch": manifest.base_branch or None,
             "merged_into": changes.merged_into or None,
@@ -560,7 +462,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         print(prefix + task.replace("\n", "\n" + " " * 12))
     _print_lineage(manifest)
     _print_parallel_compare(manifest, target)
-    _print_children(manifest, children, child_manifests, child_outcomes(target))
+    sessions_children.print_children(children)
     print(
         f"model:      {model}{' (from --model)' if model_from_flag else ''}\n"
         f"preset:     {manifest.harness.preset or '-'}"

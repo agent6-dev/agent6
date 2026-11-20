@@ -5,11 +5,13 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 
 import pytest
 
 from agent6 import paths
+from agent6.sessions import child_dispatch, completion, ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import main
 
@@ -703,7 +705,7 @@ def test_show_on_an_ordinary_parent_lists_its_children_with_their_joins(
     assert "group:" not in out
     assert "children:      2" in out
     assert "child 1" in out and "co-p1-l1" in out and "openai/child-1" in out
-    assert "joined at bbbbbbbbbbbb" in out
+    assert "merged at bbbbbbbbbbbb" in out
     assert "child 2" in out and "no changes" in out
 
 
@@ -712,3 +714,222 @@ def test_show_on_a_child_of_an_ordinary_parent_names_it(
 ) -> None:
     assert main(["sessions", "show", "co-p1-l1"]) == 0
     assert "child of:    co (child 1 of group co-p1)" in capsys.readouterr().out
+
+
+@pytest.fixture
+def child_roster(ordinary_parent: pathlib.Path) -> pathlib.Path:
+    """Record a live child, two retained refs, a launch failure and a reviewer's verdict."""
+    state = paths.state_dir(ordinary_parent)
+    root = sessions_layout.SessionLayout(state, "co").session_dir
+    for i, outcome in enumerate(("running", "stopped", "unmerged", "failed", "panel"), start=2):
+        group = f"co-p{i}"
+        sid = f"{group}-l1"
+        task = f"check {outcome} case"
+        child = child_dispatch.ChildRecord(session_id=sid, number=1, task=task, model="fast")
+        if outcome != "failed":
+            _session(
+                ordinary_parent,
+                sid,
+                {
+                    "parallel": {"group": group, "parent": "co", "number": 1},
+                    "models": {"driver": {"provider": "p", "model": "small"}},
+                    "mode": "reviewer" if outcome == "panel" else "run",
+                },
+            )
+        directory = root.parent / sid
+        if outcome == "running":
+            process.write_worker_pid(directory, os.getpid())
+            _log(
+                ordinary_parent,
+                sid,
+                [
+                    {"type": "session.start", "ts": 100, "mode": "run"},
+                    {
+                        "type": "budget.update",
+                        "input_total": 100,
+                        "output_total": 23,
+                        "usd_total": 0.25,
+                    },
+                    {"type": "tool.call", "turn": 4, "name": "read_file", "call_id": 1},
+                ],
+            )
+        elif outcome in ("stopped", "unmerged"):
+            child = child.model_copy(
+                update={
+                    "join": child_dispatch.JoinRecord(
+                        status="stopped" if outcome == "stopped" else "unmerged",
+                        branch=f"refs/heads/{outcome}-work",
+                        commits=i,
+                    )
+                }
+            )
+        elif outcome == "panel":
+            reviewer = sessions_layout.SessionLayout(state, sid, "reviewers").session_dir
+            reviewer.parent.mkdir(exist_ok=True)
+            directory.rename(reviewer)
+            completion.write_completion(
+                reviewer,
+                completion.CompletionRecord(
+                    text='{"order":["b","a"],"summary":"b checks more paths"}',
+                    stop_reason="answered",
+                    output_tokens=12,
+                    calls=1,
+                ),
+            )
+        child_dispatch.write_record(
+            root,
+            child_dispatch.DispatchRecord(
+                identity=group,
+                source="panel" if outcome == "panel" else "model",
+                owner="exec-1",
+                base="a" * 40,
+                turn=i,
+                children=(child,),
+                state="running" if outcome == "running" else "complete",
+                message="dispatch failed: route unavailable" if outcome == "failed" else "",
+            ),
+            now=i,
+        )
+    return root
+
+
+@pytest.mark.parametrize("surface", ["show", "list", "attach"])
+def test_cli_child_roster_text(
+    child_roster: pathlib.Path, capsys: pytest.CaptureFixture[str], surface: str
+) -> None:
+    """Each parent view includes children with no run row and names the retained work."""
+    args = {
+        "show": ["sessions", "show", "co"],
+        "list": ["sessions", "list", "--children"],
+        "attach": ["attach", "co"],
+    }[surface]
+    assert main(args) == 0
+    out = capsys.readouterr().out
+    for words in (
+        "child 1",
+        "co-p2-l1",
+        "check running case",
+        "p/small",
+        "fast",
+        "running",
+        "read_file",
+        "turn 4",
+        "123 tokens",
+        "$0.25",
+        "elapsed",
+        "stopped",
+        "refs/heads/stopped-work",
+        "3 commits",
+        "unmerged",
+        "refs/heads/unmerged-work",
+        "4 commits",
+        "co-p5-l1",
+        "never started",
+        "route unavailable",
+        "reviewer 1",
+        "b > a",
+        "b checks more paths",
+    ):
+        assert words in out, out
+
+
+@pytest.mark.parametrize("surface", ["show", "list", "attach"])
+def test_cli_child_roster_json(
+    child_roster: pathlib.Path, capsys: pytest.CaptureFixture[str], surface: str
+) -> None:
+    """The CLI reports the dispatch facts even when the child has no manifest."""
+    args = {
+        "show": ["sessions", "show", "co"],
+        "list": ["sessions", "list"],
+        "attach": ["attach", "co"],
+    }[surface]
+    assert main([*args, "--json"]) == 0
+    obj = json.loads(capsys.readouterr().out)
+    rows = (obj[0] if surface == "list" else obj)["children"]
+    assert len(rows) == 7
+    merged, _, live, stopped, held, absent, reviewer = rows
+    assert (merged["status"], merged["outcome"]) == ("merged", "joined")
+    assert tuple(
+        live[k]
+        for k in (
+            "number",
+            "task",
+            "session_id",
+            "route",
+            "model",
+            "status",
+            "current_tool",
+            "turn",
+            "tokens",
+            "spend_usd",
+        )
+    ) == (
+        1,
+        "check running case",
+        "co-p2-l1",
+        "p/small",
+        "fast",
+        "running",
+        "read_file",
+        4,
+        123,
+        0.25,
+    )
+    assert live["elapsed_s"] > 0
+    for row, status, commits in [(stopped, "stopped", 3), (held, "unmerged", 4)]:
+        assert (row["outcome"], row["imported_ref"], row["commits"]) == (
+            status,
+            f"refs/heads/{status}-work",
+            commits,
+        )
+    assert (
+        not absent["launched"]
+        and absent["status"] == "failed"
+        and "route unavailable" in absent["error"]
+    )
+    assert (reviewer["verdict_order"], reviewer["verdict_summary"]) == (
+        ["b", "a"],
+        "b checks more paths",
+    )
+
+
+def test_steer_and_stop_address_only_the_named_child(child_roster: pathlib.Path) -> None:
+    """An explicit child id never steers or stops the parent."""
+    sid = "co-p2-l1"
+    assert main(["steer", sid, "keep the change small"]) == 0
+    assert ipc.take_steer_answer(child_roster.parent / sid) == "keep the change small"
+    assert not ipc.steer_answer_written(child_roster)
+    assert main(["stop", sid, "--after-turn"]) == 0
+    assert ipc.stop_request_pending(child_roster.parent / sid)
+    assert not ipc.stop_request_pending(child_roster)
+
+
+def test_list_counts_recorded_children_and_nests_their_reviewers(
+    child_roster: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A reviewer of a child stays under that child at both listing depths."""
+    child = child_roster.parent / "co-p2-l1"
+    child_dispatch.write_record(
+        child,
+        child_dispatch.DispatchRecord(
+            identity="co-p2-l1-r1",
+            source="panel",
+            owner="sub",
+            base="a" * 40,
+            turn=1,
+            children=(
+                child_dispatch.ChildRecord(session_id="nested-reviewer", number=1, task="review"),
+            ),
+            state="complete",
+            message="no reviewer route",
+        ),
+        now=3,
+    )
+    assert main(["sessions", "list"]) == 0
+    assert "co (7 children)" in capsys.readouterr().out
+    assert main(["sessions", "list", "--children"]) == 0
+    out = capsys.readouterr().out
+    assert "    └ nested-reviewer" in out and "no reviewer route" in out
+    assert main(["sessions", "list", "--json"]) == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert rows[0]["children"][2]["children"][0]["session_id"] == "nested-reviewer"

@@ -16,7 +16,7 @@ from agent6 import errors, paths
 from agent6.sessions import id, ipc, journal, process
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import schema
-from agent6.ui.cli import common, console_render, interact
+from agent6.ui.cli import common, console_render, interact, sessions_children
 from agent6.viewmodel import (
     StatusFacts,
     event_epoch,
@@ -569,6 +569,7 @@ def _watch_transcript(target: pathlib.Path) -> int:
     Returns:
         The exit code; 1 when the worker died.
     """
+    sessions_children.print_children(sessions_children.read_children(target))
     events_path = target / sessions_layout.LOGS_NAME
     if not events_path.is_file():
         # Not an error: a parked submission, a `fork --no-run` or a launching run has no log yet.
