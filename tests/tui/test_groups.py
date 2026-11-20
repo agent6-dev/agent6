@@ -28,7 +28,9 @@ async def _scenario(repo: pathlib.Path) -> None:
         table = tui.screen.query_one("#children", widgets.DataTable)
         assert table.display and table.row_count == 2
         assert table.border_title == "children: 2"
-        assert {"1", "fan-l1", "openai/child-1", "finished"} <= set(map(str, table.get_row_at(0)))
+        assert {"attempt 1", "fan-l1", "openai/child-1", "finished"} <= set(
+            map(str, table.get_row_at(0))
+        )
         with child.logs_path.open("a") as log:
             log.write('{"type":"budget.update","usd_total":1.25}\n')
             log.write('{"type":"session.stop","reason":"steer_abort"}\n')
