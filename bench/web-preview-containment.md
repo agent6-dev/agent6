@@ -57,6 +57,26 @@ Chromium reported both directives as unrecognized.
 That does not prove WebRTC containment on a networked machine.
 The observed navigation exit is sufficient to reject the policy without relying on the quiet probes.
 
+## Files preview results
+
+`uv run pytest -q -n 2 tests/web/test_preview_containment_browser.py` opens repository HTML and markdown through the signed-in Files page.
+Chromium and Firefox each opened both files in the frame and each preview address in a separate tab.
+The fixture uses fixed loopback addresses and a separate TCP listener.
+The listener counts connections even when the browser sends no HTTP request.
+
+| Check | Result in both browsers |
+| --- | --- |
+| Static HTML image, script, stylesheet, font, prefetch and preconnect | No outside connection |
+| Static HTML form, frame link, top link and new-tab link, each clicked | No outside connection or new tab; the Files tab stayed in place |
+| Repository script with fetch, XMLHttpRequest, WebSocket, peer connection creation and a UI API read | Did not execute |
+| Markdown with the same raw HTML and a remote image | HTML stayed text; Load appeared; no outside connection |
+| Origin and storage | Frame reported origin `null`; accessing `localStorage` raised `SecurityError` |
+| Preview address in a separate tab | Plain 403 without repository content |
+
+These results concern the default previews.
+They show that repository code does not start a peer connection there.
+They do not measure UDP traffic from an executing script.
+
 ## Boundary
 
 The script keeps the no-egress assertion failing rather than marking the observed exits as expected passes.
