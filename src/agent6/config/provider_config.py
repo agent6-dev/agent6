@@ -425,17 +425,17 @@ class AnthropicProviderEntry(_ProviderBase):
     prompt_caching: bool = pydantic.Field(
         default=True,
         description=(
-            'Mark the system prompt and last tool for caching on `backend = "anthropic"`. '
-            "Only local compaction also moves cache marks through the messages."
+            'mark the system prompt and last tool for caching on `backend = "anthropic"`; '
+            "only local compaction also moves cache marks through the messages"
         ),
     )
     server_compaction: bool = pydantic.Field(
         default=True,
         description=(
-            "When true on a supported model, the endpoint clears old tool results and writes "
-            "the summary. agent6 changes no earlier message there. On other models or when "
-            "false, agent6 compacts by itself. Defaults to true on a direct deployment with "
-            "no configured base_url, false otherwise."
+            "true on a supported model: the endpoint clears old tool results and writes "
+            "the summary; agent6 changes no earlier message there; false or an unsupported "
+            'model: agent6 compacts by itself; default: true for `deployment = "direct"` '
+            "without a configured `base_url`, false otherwise"
         ),
     )
 

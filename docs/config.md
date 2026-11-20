@@ -124,8 +124,8 @@ A minimal block is just `backend` (plus `base_url` for a non-default host).
 | `<name>.extra_query` | `{}` | Extra URL query parameters on every request (Azure's `api-version`). |
 | `<name>.oauth` | none | a configured OAuth issuer and public-client registration: `agent6 connect <name>` signs in there and stores the grant in `secrets.toml`; requires `auth_style = "bearer"`, replaces `api_key_env` and `token_command`; a stored grant is bound to these settings and the entry's transport settings |
 | `<name>.http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is capped at 20 s. |
-| `<name>.prompt_caching` | `true` | Mark the system prompt and last tool for caching on `backend = "anthropic"`. Only local compaction also moves cache marks through the messages. |
-| `<name>.server_compaction` | `true` | When true on a supported model, the endpoint clears old tool results and writes the summary. agent6 changes no earlier message there. On other models or when false, agent6 compacts by itself. Defaults to true on a direct deployment with no configured base_url, false otherwise. |
+| `<name>.prompt_caching` | `true` | mark the system prompt and last tool for caching on `backend = "anthropic"`; only local compaction also moves cache marks through the messages |
+| `<name>.server_compaction` | `true` | true on a supported model: the endpoint clears old tool results and writes the summary; agent6 changes no earlier message there; false or an unsupported model: agent6 compacts by itself; default: true for `deployment = "direct"` without a configured `base_url`, false otherwise |
 | `<name>.binary` | `"claude"` | executable for `backend = "claude_code"` only; a name on PATH or an absolute path |
 
 ### Request headers
@@ -556,13 +556,13 @@ Only local compaction uses `summariser`, `keep_recent_chars`, `keep_thinking_tur
 
 | Field | Default | Meaning |
 |---|---|---|
-| `summariser` | `"worker"` | Only when agent6 compacts by itself. Tier-2 writer: worker continues its own request with a summary instruction; helper reads replaced history without tool output, bounded by its known window; worker falls back once to helper on rejection or unusable output; claude_code always uses helper because its live session cannot be rolled back<ul><li><code>worker</code>: Worker continues its own request</li><li><code>helper</code>: Helper reads history without tool output</li></ul> |
+| `summariser` | `"worker"` | Local compaction only: tier-2 writer: worker continues its own request with a summary instruction; helper reads replaced history without tool output, bounded by its known window; worker falls back once to helper on rejection or unusable output; claude_code always uses helper because its live session cannot be rolled back<ul><li><code>worker</code>: Worker continues its own request</li><li><code>helper</code>: Helper reads history without tool output</li></ul> |
 | `drop_at_chars` | _adaptive_ | Accumulated tool-result characters before the endpoint clears old results or agent6 replaces them with short, re-fetchable placeholders down to half the threshold where result protections allow; unset: about 45% of the model's context window; explicit thresholds: both `compaction.drop_at_chars` and `compaction.summarise_at_chars` required |
 | `summarise_at_chars` | _adaptive_ | Whole-context character threshold for a summary by the endpoint or agent6; an accepted summary restarts the conversation and preserves the task DAG; unset: model's window minus a 16k-token reserve; required above `compaction.drop_at_chars` |
-| `keep_recent_chars` | `80000` | Only when agent6 compacts by itself. Characters of newest history kept verbatim after the summary on a tier-2 restart; `compaction.keep_recent_chars = 0`: none |
-| `keep_thinking_turns` | `-1` | Only when agent6 compacts by itself. Thinking retained when tier 1 rewrites tool results for the newest N assistant turns with `compaction.keep_thinking_turns = N` (`N >= 1`); `compaction.keep_thinking_turns = -1`: all thinking; `compaction.keep_thinking_turns = 0`: invalid, newest signed thinking block needed by an in-flight tool call; less replay for Anthropic's signed blocks and ChatGPT's reasoning items; no thinking re-sent on the OpenAI wire |
+| `keep_recent_chars` | `80000` | Local compaction only: characters of newest history kept verbatim after the summary on a tier-2 restart; `compaction.keep_recent_chars = 0`: none |
+| `keep_thinking_turns` | `-1` | Local compaction only: thinking retained when tier 1 rewrites tool results for the newest N assistant turns with `compaction.keep_thinking_turns = N` (`N >= 1`); `compaction.keep_thinking_turns = -1`: all thinking; `compaction.keep_thinking_turns = 0`: invalid, newest signed thinking block needed by an in-flight tool call; less replay for Anthropic's signed blocks and ChatGPT's reasoning items; no thinking re-sent on the OpenAI wire |
 | `summary_max_tokens` | `2048` | Output-token cap for either summary writer and for gist distillation; smaller caps overridden by a reasoning model's per-call floor for reasoning tokens; no cap accepted by the chatgpt backend |
-| `elision_gists` | `true` | Only when agent6 compacts by itself. Large `read_file` results replaced at tier 1 by model-written gists before bare placeholders; gists also dropped under continued pressure to keep the byte bound; `compaction.elision_gists = false`: bare placeholders directly |
+| `elision_gists` | `true` | Local compaction only: large `read_file` results replaced at tier 1 by model-written gists before bare placeholders; gists also dropped under continued pressure to keep the byte bound; `compaction.elision_gists = false`: bare placeholders directly |
 
 ## `[skills]`
 

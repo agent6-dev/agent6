@@ -531,8 +531,8 @@ class CompactionConfig(pydantic.BaseModel):
         },
         default="worker",
         description=(
-            "Only when agent6 compacts by itself. "
-            "Tier-2 writer: worker continues its own request with a summary instruction; "
+            "Local compaction only: "
+            "tier-2 writer: worker continues its own request with a summary instruction; "
             "helper reads replaced history without tool output, bounded by its known window; "
             "worker falls back once to helper on rejection or unusable output; claude_code "
             "always uses helper because its live session cannot be rolled back"
@@ -565,16 +565,16 @@ class CompactionConfig(pydantic.BaseModel):
         ge=0,
         default=80_000,
         description=(
-            "Only when agent6 compacts by itself. "
-            "Characters of newest history kept verbatim after the summary on a tier-2 restart; "
+            "Local compaction only: "
+            "characters of newest history kept verbatim after the summary on a tier-2 restart; "
             "`compaction.keep_recent_chars = 0`: none"
         ),
     )
     keep_thinking_turns: validation.NoLimitOrPositive = pydantic.Field(
         default=-1,
         description=(
-            "Only when agent6 compacts by itself. "
-            "Thinking retained when tier 1 rewrites tool results for the newest N assistant "
+            "Local compaction only: "
+            "thinking retained when tier 1 rewrites tool results for the newest N assistant "
             "turns with "
             "`compaction.keep_thinking_turns = N` (`N >= 1`); "
             "`compaction.keep_thinking_turns = -1`: "
@@ -597,8 +597,8 @@ class CompactionConfig(pydantic.BaseModel):
     elision_gists: bool = pydantic.Field(
         default=True,
         description=(
-            "Only when agent6 compacts by itself. "
-            "Large `read_file` results replaced at tier 1 by model-written gists before bare "
+            "Local compaction only: "
+            "large `read_file` results replaced at tier 1 by model-written gists before bare "
             "placeholders; gists also dropped under continued pressure to keep the byte bound; "
             "`compaction.elision_gists = false`: bare placeholders directly"
         ),
