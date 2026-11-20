@@ -1190,7 +1190,7 @@ def unset_config_table(
     if not target.is_file():
         return UnsetResult(removed=False)
     with writing_config(target):
-        text = io.remove_leaf_text(editable_text(target), table, path=target)
+        text = io.remove_table_text(editable_text(target), table)
         if text is None:
             return UnsetResult(removed=False)
         return UnsetResult(removed=True, error=write_validated(repo_root, target, text))

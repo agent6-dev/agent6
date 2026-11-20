@@ -677,8 +677,7 @@ def _cmd_config_fix(*, machine: pathlib.Path | None) -> int:
                 if _entry_is_stale(entry):
                     continue
                 try:
-                    unset = write.unset_config_table if entry.is_table else write.unset_config_value
-                    result = unset(repo_root, entry.file_key, target=target)
+                    result = write.unset_config_value(repo_root, entry.file_key, target=target)
                     if result.error:
                         common.error(result.error)
                         return 2
