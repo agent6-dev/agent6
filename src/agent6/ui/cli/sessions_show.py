@@ -103,7 +103,7 @@ def _status_state(
         row: The listing's fold of this run.
         scan: The log scan.
         last_age: Seconds since the last event, when there is one.
-        mark_unmerged: Show the listing's mark unless a checkout line explains the landing.
+        mark_unmerged: Show the listing's mark unless a checkout line names the merge state.
 
     Returns:
         The listing's word and label, then what to do or why the word applies.
@@ -515,7 +515,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             if item.kind == "verify"
         ),
     )
-    changes.print_landing(join, chain_join=chain_join)
+    changes.print_merge(join, chain_join=chain_join)
     if mode_display == "plan" and (target / "plan.md").is_file():
         print(f"plan:       agent6 plan show {target.name}")
     for i, pin in enumerate(scan.pins):
@@ -537,8 +537,8 @@ class _Changes:
     line: str
     merged_into: str
 
-    def print_landing(self, join: child_views.ParentJoin | None, *, chain_join: bool) -> None:
-        """Print the branch landing separately from the parent's chain join.
+    def print_merge(self, join: child_views.ParentJoin | None, *, chain_join: bool) -> None:
+        """Print the checkout merge separately from the parent's chain join.
 
         Args:
             join: This child's join, when the parent recorded one.
