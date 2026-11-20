@@ -1096,8 +1096,7 @@ def test_machine_start_and_resume_share_one_begin_and_setup_source(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Resume uses the journal's commit after HEAD moves and carries setup in the IPC overlay."""
-    from agent6 import kinds
-    from agent6.config import Config
+    from agent6.app.machine import state_configs
     from agent6.machine import journal as machine_journal
     from agent6.sessions import layout
     from agent6.vcs.git import read as git_read
@@ -1130,8 +1129,8 @@ model = "anthropic/x"
     carried: list[tuple[str, ...]] = []
     real_overlay = agent.state_overlay
 
-    def capture(cfg: Config, isolation: kinds.IsolationLevel) -> agent.StateOverlay:
-        overlay = real_overlay(cfg, isolation)
+    def capture(state: state_configs.StateConfig, path: pathlib.Path) -> agent.StateOverlay:
+        overlay = real_overlay(state, path)
         carried.append(tuple(overlay.overlay["git"]["worktree"]["setup_command"]))
         return overlay
 
