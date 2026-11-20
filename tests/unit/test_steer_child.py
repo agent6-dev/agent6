@@ -150,7 +150,7 @@ def test_steer_child_answers_at_once_and_refuses_a_blank_instruction(
         "steered": "run-p1-l1",
         "message": "[parallel] child run-p1-l1: steer queued for another turn, if any.",
     }
-    assert result.summary() == result.message
+    assert result.summary() == result.to_wire()["message"]
     for bad in ({"id": "run-p1-l1", "text": "  \n"}, {"id": "", "text": "t"}, {"text": "t"}):
         with pytest.raises(tool_errors.ToolError):
             d.dispatch("steer_child", bad)

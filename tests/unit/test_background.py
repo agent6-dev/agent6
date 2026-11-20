@@ -159,7 +159,11 @@ def test_a_one_line_read_keeps_the_exit_and_not_the_shell_script(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     job = _Job()
-    monkeypatch.setattr(jail_jobs, "start_in_jail", lambda *_a, **_kw: job)
+
+    def start_in_jail(*_args: object, **_kwargs: object) -> _Job:
+        return job
+
+    monkeypatch.setattr(jail_jobs, "start_in_jail", start_in_jail)
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(
         ("sh", "-c", "cat <<EOF\nHEREDOC BODY\nEOF"),
