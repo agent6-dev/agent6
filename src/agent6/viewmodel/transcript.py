@@ -96,6 +96,8 @@ class TranscriptFold:
     def __init__(self) -> None:
         self._thinking: list[str] = []
         self._text: list[str] = []
+        # The call in flight already emitted streamed text, so its result adds none.
+        self._spoke = False
         self._calls = transcript_items.PendingItems()
         # The last gate verdict (ok, timed out), kept past the tool result that consumed it.
         self._gate: tuple[bool, bool] | None = None
@@ -241,6 +243,7 @@ class TranscriptFold:
         if etype == "model.call":
             self._thinking.clear()
             self._text.clear()
+            self._spoke = False
             return []
         # Side streams belong to the live pane, not the driving role's settled speech.
         if etype in ("model.thinking_delta", "model.text_delta") and not self._is_side_call(event):
@@ -249,8 +252,9 @@ class TranscriptFold:
             return []
         if etype == "model.result":
             # Only the driving role speaks: a side call's answer would read as the agent's.
-            settled = "" if self._is_side_call(event) else str(event.get("text", ""))
-            return self._flush_message(settled=settled)
+            # A marker inside the stream already flushed the speech this result repeats.
+            unspoken = not (self._is_side_call(event) or self._spoke)
+            return self._flush_message(settled=str(event.get("text", "")) if unspoken else "")
         if etype == "tool.call":
             out = self._flush_message()
             name = str(event.get("name", ""))
@@ -350,9 +354,10 @@ class TranscriptFold:
         self._thinking.clear()
         if thinking:
             out.append(transcript_items.TranscriptItem("thinking", body=thinking))
-        text = "".join(self._text).strip() or settled.strip()
+        streamed = "".join(self._text).strip()
         self._text.clear()
-        if text:
+        self._spoke = self._spoke or bool(streamed)
+        if text := streamed or settled.strip():
             out.append(transcript_items.TranscriptItem("text", body=text))
         return out
 

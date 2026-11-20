@@ -112,6 +112,21 @@ def test_done_line_says_why_a_stopped_run_ended() -> None:
     assert items[-1].body == "operator stopped after turn 3"
 
 
+def test_a_marker_inside_a_stream_does_not_repeat_the_speech() -> None:
+    """A child's start notice between a call's stream and its result showed the sentence twice."""
+    events: list[dict[str, object]] = [
+        {"type": "model.call", "role": "worker"},
+        {"type": "model.text_delta", "text": "Two children"},
+        {"type": "model.text_delta", "text": " are working."},
+        {"type": "parallel.child_activity", "child": "run-p2-l1", "activity": "started"},
+        {"type": "model.result", "text": "Two children are working."},
+        {"type": "tool.call", "name": "read_background", "args_preview": {"wait_s": 30}},
+    ]
+    items = fold_transcript(events)
+    assert [i.body for i in items if i.kind == "text"] == ["Two children are working."]
+    assert [i.body for i in items if i.kind == "marker"] == ["child run-p2-l1 started"]
+
+
 def test_tool_only_turn_has_no_empty_text_item() -> None:
     # A turn that reasons then calls a tool, emitting NO assistant text, must not
     # produce a blank `text` item -- the bug behind the empty response blocks.
