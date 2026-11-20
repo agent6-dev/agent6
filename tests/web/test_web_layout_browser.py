@@ -495,6 +495,22 @@ def test_a_placeholder_reads_at_4_5_to_1(
     assert not errors
 
 
+def test_a_checkbox_comes_first_6px_before_its_label(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """The worktree box came after its label, and a Config dialog's box stood 10px from its text."""
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    gap = """label => label.querySelector('span').getBoundingClientRect().left
+      - label.querySelector('input').getBoundingClientRect().right"""
+    worktree = page.locator(".dock .pick", has=page.locator("input[type=checkbox]"))
+    assert worktree.evaluate(gap) == 6
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    page.locator('[data-key="budget.max_usd"]').click()
+    assert page.get_by_role("dialog").locator("label.cfg-check").evaluate(gap) == 6
+    assert not errors
+
+
 def test_every_expand_control_draws_the_folds_chevron(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

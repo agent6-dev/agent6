@@ -679,9 +679,10 @@ function attachParallelSuggest(task, root) {
 // preset and model over new work, preset and model over a resume.
 function pickerRow(pairs) {
   const row = el('div', 'row pickers');
-  for (const [text, select] of pairs) {
+  for (const [text, control] of pairs) {
     const pick = el('label', 'pick'); // wraps as one piece: a label never strands from its dropdown
-    pick.appendChild(el('span', 'muted', text)); pick.appendChild(select);
+    const label = el('span', 'muted', text);
+    if (control.type === 'checkbox') pick.append(control, label); else pick.append(label, control); // a box comes first
     row.appendChild(pick);
   }
   return row;
