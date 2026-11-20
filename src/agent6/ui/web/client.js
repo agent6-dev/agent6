@@ -586,8 +586,8 @@ function runOnce(button, action, ready = () => true, home = null) {
     busy = true; button.sync();
     try { await action(...args); } finally {
       busy = false; button.sync();
-      // A button that ends disabled drops its focus to the page: hand it to `home`.
-      if (focused && document.activeElement === document.body) (button.disabled && home || button).focus();
+      // A button that ends disabled loses its focus: hand it to `home`.
+      if (focused && button.disabled && home && [button, document.body].includes(document.activeElement)) home.focus();
     }
   };
   button.onclick = () => run();
