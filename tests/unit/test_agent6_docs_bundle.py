@@ -35,10 +35,13 @@ def test_the_sdist_carries_every_file_the_wheel_force_includes() -> None:
     """
     data = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     carried = data["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
+    root_entries = [entry.removeprefix("/") for entry in carried]
     missing = [
         src
         for src in _bundled()
-        if not any(src == entry or src.startswith(entry.rstrip("/") + "/") for entry in carried)
+        if not any(
+            src == entry or src.startswith(entry.rstrip("/") + "/") for entry in root_entries
+        )
     ]
     assert not missing, f"force-included in the wheel but absent from the sdist: {missing}"
 
