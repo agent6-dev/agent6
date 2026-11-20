@@ -231,3 +231,32 @@ The endpoint's `cleared_tool_uses` equalled agent6's count on every request.
 A comparison of each consecutive pair of request bodies in the three runs (40 pairs) found the earlier system text, tools and messages unchanged in every later request.
 
 **Limits:** n = 1 per case, one small model, conversations under 30,000 tokens.
+
+## Verbatim tail after a restart, 0 against 6,000 characters
+
+Ten headless runs used `chatgpt/gpt-6.2-sol` at `medium` effort, five per arm, interleaved two at a time.
+The task extends six small modules in a fixed order, with one test per rule and a test run after each module.
+`drop_at_chars = 8000` and `summarise_at_chars = 34000` forced restarts, and the worker wrote each summary.
+A separate check of the twelve new functions and their error rules, in six groups, ran on each final tree.
+
+| | `keep_recent_chars = 0` | `keep_recent_chars = 6000` |
+| --- | ---: | ---: |
+| Finished with the gate green | 5 of 5 | 5 of 5 |
+| Separate check, groups passed | 6 of 6 in every run | 6 of 6 in every run |
+| Restarts per run | 1, 1, 1, 1, 1 | 1, 2, 1, 2, 2 |
+| Turns, mean (range) | 25.2 (24 to 27) | 28.4 (25 to 32) |
+| Tool calls, mean (range) | 32.0 (31 to 34) | 34.8 (32 to 37) |
+| Reads of a file already read, mean (range) | 4.4 (1 to 6) | 7.2 (2 to 10) |
+| Of those, within six tool calls after a restart | 0 in every run | 1.4 (0 to 2) |
+| Uncached input tokens, mean (range) | 72,701 (61,557 to 82,807) | 87,897 (67,327 to 96,087) |
+| Cached input tokens, mean | 97,946 | 107,827 |
+| Output tokens, mean | 4,094 | 4,598 |
+
+- Every run passed in both arms.
+- Three of the five kept-tail runs restarted a second time: the tail leaves the context larger after a restart.
+- No run without a tail read a file again within six tool calls after its restart.
+
+**Limits:** n = 5 per arm, one model, one task of about 25 turns.
+The tail is 18% of the restart limit here and 8% with the defaults on a 272,000-token window, so the extra restarts overstate the tail's cost at the default sizes.
+The ranges of turns and of uncached input overlap between the arms.
+
