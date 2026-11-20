@@ -697,12 +697,9 @@ def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
 
     wf.run("start")
 
-    # The read of a running child: both rosters, its line, and no transcript yet.
+    # Only the requested child and its transcript are in this read.
     read = _tool_answers(provider.seen[2])[-1]
-    assert read["children"] == [
-        f"[{one}] attempt 1 · running: write a",
-        f"[{two}] attempt 1 · running: b",
-    ]
+    assert read["children"] == [f"[{one}] attempt 1 · running: write a"]
     assert read["output"] == f"[{one}] attempt 1 · running: write a\n\n(no transcript yet)"
     # The stop answers at once; the child ends in the background and never merges.
     assert children.stopped == [two]
@@ -720,7 +717,7 @@ def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
     # The wait for the next child to end returned with the first task's child ended.
     waited = _tool_answers(provider.seen[4])[-1]
     assert waited["children"] == [
-        f"[{one}] attempt 1 · ended, not merged: write a",
+        f"[{one}] attempt 1 · ended, task pending: write a",
         f"[{two}] attempt 1 · {words} · 1 commit beyond start: b",
     ]
     assert "[parallel] group run-p1 complete" in provider.seen[4]
@@ -780,7 +777,7 @@ def test_wait_for_returns_when_the_child_ends_the_wait_runs_out_or_a_stop_cuts_i
     timer.join()
     assert time.monotonic() - started < 5.0
     assert [(line.state, line.running) for line in child_work.roster(dispatcher)] == [
-        ("ended, not merged", False)
+        ("ended, task pending", False)
     ]
     child_work.stop(dispatcher, "root-p1-l1")
     assert children.stopped == [], "an ended child is left as it is"
@@ -896,7 +893,7 @@ def test_a_finish_in_the_turn_a_child_ended_waits_for_its_work_to_merge(
     result = wf.run("start")
 
     assert (result.reason, result.summary) == ("finish_session", "after the merge")
-    assert f"- {child}: ended, not merged" in provider.seen[2]
+    assert f"- {child}: ended, task pending" in provider.seen[2]
     assert "[parallel] group run-p1 complete" in provider.seen[2]
 
 

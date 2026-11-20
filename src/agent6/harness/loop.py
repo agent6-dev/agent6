@@ -1632,10 +1632,10 @@ class Harness:
                 " their branches hold their work",
             )
         if ended:
-            self.log(f"LOOP: {len(ended)} child(ren) had ended, not merged: {', '.join(ended)}")
+            self.log(f"LOOP: {len(ended)} child(ren) ended with pending tasks: {', '.join(ended)}")
             end = dataclasses.replace(
                 end,
-                summary=f"{end.summary}; {len(ended)} child(ren) had ended, their work merges"
+                summary=f"{end.summary}; {len(ended)} child(ren) ended, their tasks complete"
                 " when the run resumes",
             )
         if end.checkpoint:

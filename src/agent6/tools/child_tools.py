@@ -27,8 +27,7 @@ class ChildLine:
     Attributes:
         id: The child's session id, the handle `parallel` returned.
         attempt: Its number within this task.
-        state: `running`, `in review`, `stopping`, `ended, not merged`, `being ranked`, how its work
-            joined, or for a stopped child that it did not merge and what holds its work.
+        state: Where the child stands, including its review, ranking or recorded result.
         task: The first line of its task.
         running: Whether a wait has something to wait for: the child, or the judges ranking it.
         mergeable: Whether it is stopped with unmerged work.

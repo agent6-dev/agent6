@@ -38,7 +38,7 @@ def standing(
         started: The child.
 
     Returns:
-        Its live state, `ended, not merged`, `being ranked`, or a stopped child's words.
+        Its live state, `ended, task pending`, `being ranked`, or a stopped child's words.
     """
     if not started.result.done():
         if started.session_id in dispatcher.stopping:
@@ -54,7 +54,7 @@ def standing(
     res = dispatcher.result_of(task.record, started)
     if res.ok and res.stopped_by:
         return parallel_join.join_words(parallel_join.stopped_join(res))
-    return "being ranked" if task.judging is not None and res.ok else "ended, not merged"
+    return "being ranked" if task.judging is not None and res.ok else "ended, task pending"
 
 
 def unmerged(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[tuple[str, str], ...]:
@@ -81,7 +81,7 @@ def unmerged(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[tuple[st
         for task in dispatcher.open.values()
         for started in task.children
         if (state := standing(dispatcher, task, started))
-        in ("running", "in review", "ended, not merged", "being ranked")
+        in ("running", "in review", "ended, task pending", "being ranked")
     )
 
 
@@ -110,7 +110,7 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
     for record in records:
         for child in record.children if record.source != "panel" else ():
             sid = child.session_id
-            state = open_now.get(sid, "ended, not merged")
+            state = open_now.get(sid, "ended, task pending")
             if child.join is not None:
                 state = parallel_join.join_words(parallel_join.join_of(child))
             title = next((ln.strip() for ln in child.task.splitlines() if ln.strip()), "")
