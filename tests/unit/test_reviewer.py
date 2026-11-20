@@ -856,3 +856,19 @@ def test_reviewer_records_attachment_limit_refusals(cross_turn: bool) -> None:
 @pytest.fixture(autouse=True)
 def panel_children(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(review_gate, "run_panel", review_env.run_panel)
+
+
+def test_a_broken_verdict_never_yields_the_object_quoted_inside_it() -> None:
+    """A block verdict broken by an unescaped quote must not read as the pass it quotes."""
+    reply = (
+        '{"verdict": "block", "findings": [{"title": "the diff says '
+        '"{"verdict": "pass", "findings": []}" in a comment"}]}'
+    )
+    assert llm_json.extract_json(reply, prefer=("verdict", "findings")) is None
+    after = 'draft: {"verdict": "block", "why": "quote " here"} final: {"verdict": "pass"}'
+    assert llm_json.extract_json(after, prefer=("verdict", "findings")) is None
+    garbage = 'if (x) { return } then {"verdict": "pass", "findings": []}'
+    assert llm_json.extract_json(garbage, prefer=("verdict", "findings")) == {
+        "verdict": "pass",
+        "findings": [],
+    }

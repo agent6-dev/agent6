@@ -21,13 +21,15 @@ def extract_json(text: str, *, prefer: tuple[str, ...]) -> dict[str, Any] | None
 
     Every `{` is tried as an object's start. An object ending inside the text a broken
     object had read is skipped: a cut-off verdict's findings are not the reply.
+    A broken object that had named a preferred key is the reply's own answer, so nothing
+    is returned: an object quoted inside it must not stand in for it.
 
     Args:
         text: The reply to scan.
         prefer: The keys the caller expects.
 
     Returns:
-        That object, else the last object found, else None.
+        That object, else the last object found; None for no object or a broken answer.
     """
     objs: list[dict[str, Any]] = []
     read_to = 0  # where the furthest-reading broken object stopped
@@ -36,6 +38,8 @@ def extract_json(text: str, *, prefer: tuple[str, ...]) -> dict[str, Any] | None
         try:
             obj, end = _DECODER.raw_decode(text, at)
         except json.JSONDecodeError as exc:
+            if any(f'"{key}"' in text[at : exc.pos] for key in prefer):
+                return None
             read_to = max(read_to, exc.pos)
             at = text.find("{", at + 1)
             continue
