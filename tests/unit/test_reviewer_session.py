@@ -272,7 +272,9 @@ def test_a_reviewer_compacts_and_keeps_its_opening(tmp_path: pathlib.Path) -> No
         provider.call.call_args_list[1].kwargs,
         provider.call.call_args_list[2].kwargs,
     )
-    assert summarise["tools"] == [] and "TRANSCRIPT" in json.dumps(summarise["messages"])
+    # The reviewer writes its own summary: the request keeps its tools and ends on the instruction.
+    assert [tool.name for tool in summarise["tools"]] == ["read_file"]
+    assert summarise["messages"][-1]["content"].startswith("Write the summary now.")
     sent = json.dumps(final["messages"])
     assert "SUMMARY: read big.txt" in sent and sent.count(opening) == 1
     # The count is said after the restart too: it is told each turn, not kept in the history.

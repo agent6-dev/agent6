@@ -694,23 +694,22 @@ class Harness:
             if parked is not None:
                 return parked
             self._turn_before_call(conversation, state, ctx)
-        else:
-            # A reviewer reads which reply this is, and on the last that it decides now.
-            conversation.notice(review_prompts.reply_notice(ctx.turn, self.contract.max_turns))
         for call_id, reason in conversation.limit_attachments():
             self.emit(journal.MediaRefused(provider_tool_call_id=call_id, reason=reason))
         conversation.roll_cache_marks()
         restarted = self.compactor.compact(self.compaction_context(conversation, state, tools))
-        if restarted:
-            if self.contract is None:
-                state.focus.surfaced_task_id = None
-                state.plan_injected = ""
-                parked = self._maybe_inject_plan(conversation, state, turn=ctx.turn)
-                if parked is not None:
-                    return parked
-                self._maybe_surface_current_task(conversation, state)
-            else:
-                conversation.notice(review_prompts.reply_notice(ctx.turn, self.contract.max_turns))
+        if self.contract is not None:
+            # A reviewer reads which reply this is, and on the last that it decides now.
+            # Said after compaction: a restart's kept tail would otherwise repeat it.
+            conversation.notice(review_prompts.reply_notice(ctx.turn, self.contract.max_turns))
+        elif restarted:
+            state.focus.surfaced_task_id = None
+            state.plan_injected = ""
+            parked = self._maybe_inject_plan(conversation, state, turn=ctx.turn)
+            if parked is not None:
+                return parked
+            self._maybe_surface_current_task(conversation, state)
+        if restarted or self.contract is not None:
             conversation.roll_cache_marks()
         wire = conversation.to_wire()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
