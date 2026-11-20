@@ -34,12 +34,12 @@ async function openFilePreview(host, rev, path, ignored, {digest = '', anchor = 
       } else if (/^https?:\/\//i.test(href)) window.open(href, '_blank', 'noopener,noreferrer');
       return;
     }
-    if (event.data?.type !== 'preview-images' || !opened.images.length) return;
-    grantDialog = openDialog('Load remote images?', 'confirm');
+    if (event.data?.type !== 'preview-remote' || !(opened.images.length || opened.media.length)) return;
+    grantDialog = openDialog('Load remote files?', 'confirm');
     if (!grantDialog) return;
-    grantDialog.appendChild(el('p', null, 'This page can send anything it can read to these servers. Loading an image sends its full address and your IP address.'));
-    const addresses = el('ul', 'files-image-addresses');
-    for (const address of opened.images) addresses.appendChild(el('li', null, address));
+    grantDialog.appendChild(el('p', null, 'This page can send anything it can read to these servers. Loading a file sends its full address and your IP address.'));
+    const addresses = el('ul', 'files-remote-addresses');
+    for (const address of [...opened.images, ...opened.media].sort()) addresses.appendChild(el('li', null, address));
     grantDialog.appendChild(addresses);
     const row = el('div', 'form-row'), load = el('button', 'primary', 'Load'), cancel = el('button', null, 'Cancel');
     const error = el('p', 'err'); error.setAttribute('role', 'status');
@@ -49,7 +49,7 @@ async function openFilePreview(host, rev, path, ignored, {digest = '', anchor = 
     load.onclick = async () => {
       load.disabled = true; error.textContent = '';
       try {
-        await postJSON('/api/files/preview/images', {key});
+        await postJSON('/api/files/preview/remote', {key});
         if (closed) return;
         dialog.close(); frame.src = opened.url;
       } catch (e) { error.textContent = e.message; load.disabled = false; }

@@ -9,8 +9,8 @@ window.addEventListener('message', event => {
     if (heading) heading.scrollIntoView(); else window.scrollTo(0, 0);
   }
 });
-document.getElementById('load-images')?.addEventListener('click', () => {
-  parent.postMessage({type: 'preview-images'}, '*');
+document.getElementById('load-remote')?.addEventListener('click', () => {
+  parent.postMessage({type: 'preview-remote'}, '*');
 });
 document.addEventListener('click', event => {
   const link = event.target.closest('a[href]');
@@ -18,6 +18,11 @@ document.addEventListener('click', event => {
   event.preventDefault();
   parent.postMessage({type: 'preview-link', href: link.getAttribute('href')}, '*');
 });
+if (document.body.dataset.remoteAllowed === 'true') {
+  for (const player of document.querySelectorAll('video[data-remote-src], audio[data-remote-src]')) {
+    player.src = player.dataset.remoteSrc;
+  }
+}
 for (const image of document.querySelectorAll('.md-view img')) {
   const missing = reason => {
     const box = document.createElement('span'); box.className = 'md-missing';
@@ -26,7 +31,7 @@ for (const image of document.querySelectorAll('.md-view img')) {
     box.append(name, detail); image.replaceWith(box);
   };
   if (image.dataset.missing) { missing(image.dataset.missing); continue; }
-  if (image.dataset.remoteSrc && document.body.dataset.imagesAllowed !== 'true') {
+  if (image.dataset.remoteSrc && document.body.dataset.remoteAllowed !== 'true') {
     missing('Remote image blocked.'); continue;
   }
   const failed = async () => {

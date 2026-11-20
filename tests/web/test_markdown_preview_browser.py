@@ -138,12 +138,12 @@ def test_remote_images_wait_for_ui_confirmation_and_forget_on_close(
     assert page.context.browser
     captures.save(page, "files-markdown-blocked-" + page.context.browser.browser_type.name)
     page.evaluate(
-        "async () => { window.postMessage({type: 'preview-images'}, '*');"
+        "async () => { window.postMessage({type: 'preview-remote'}, '*');"
         " await new Promise(r => setTimeout(r, 50)); }"
     )
     sync_api.expect(page.get_by_role("dialog")).to_have_count(0)
     frame.get_by_role("button", name="Load", exact=True).click()
-    dialog = page.get_by_role("dialog", name="Load remote images?")
+    dialog = page.get_by_role("dialog", name="Load remote files?")
     sync_api.expect(dialog).to_be_visible()
     assert reads == []
     for address in addresses:
@@ -161,7 +161,9 @@ def test_remote_images_wait_for_ui_confirmation_and_forget_on_close(
     sync_api.expect(frame.get_by_role("button", name="Load", exact=True)).to_have_count(0)
     url = page.locator(".files-preview iframe").get_attribute("src")
     assert url
-    page.get_by_role("button", name="Source", exact=True).click()
+    with page.expect_response("**/api/files/preview/close") as closing:
+        page.get_by_role("button", name="Source", exact=True).click()
+    assert closing.value.ok
     assert test_files_preview.get(port, url, "iframe")[0] == 403
     page.get_by_role("button", name="Rendered", exact=True).click()
     sync_api.expect(frame.get_by_role("button", name="Load", exact=True)).to_be_visible()

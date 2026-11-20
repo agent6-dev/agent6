@@ -25,14 +25,15 @@ MEDIA_TYPES = {
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Rendered:
-    """A markdown snapshot and the remote image addresses it asks to load."""
+    """A markdown snapshot and its remote image and media addresses."""
 
     html: str
     images: tuple[str, ...]
+    media: tuple[str, ...]
 
 
-def image_origin(url: str) -> str:
-    """Return a CSP-safe HTTP image origin, or an empty string."""
+def remote_origin(url: str) -> str:
+    """Return a CSP-safe HTTP resource origin, or an empty string."""
     try:
         parts = parse.urlsplit(url)
         if parts.scheme not in {"http", "https"} or not parts.hostname:
@@ -62,10 +63,14 @@ def _raw_inline(_renderer: object, tokens: Sequence[token.Token], idx: int, *_: 
 def _media(_renderer: object, tokens: Sequence[token.Token], idx: int, *_: object) -> str:
     item = tokens[idx]
     label = utils.escapeHtml(item.content)
-    source = utils.escapeHtml(str(item.attrs["src"]))
+    source = " ".join(
+        f'{name}="{utils.escapeHtml(str(value))}"'
+        for name, value in item.attrs.items()
+        if name in {"src", "data-remote-src"}
+    )
     inline = " playsinline" if item.tag == "video" else ""
     return (
-        f'<{item.tag} src="{source}" controls preload="metadata" aria-label="{label}"{inline}>'
+        f'<{item.tag} {source} controls preload="metadata" aria-label="{label}"{inline}>'
         f"{label}</{item.tag}>"
     )
 
@@ -74,11 +79,19 @@ def _rewrite_link(item: token.Token, rev: str, path: str, prefix: str) -> str | 
     image = item.type == "image"
     attribute = "src" if image else "href"
     url = str(item.attrs[attribute])
+    if image:
+        try:
+            suffix = parse.unquote(parse.urlsplit(url).path).rsplit(".", 1)[-1].lower()
+        except ValueError:
+            suffix = ""
+        media = MEDIA_TYPES.get(suffix)
+        if media:
+            item.type, item.tag = "media", media[0]
     if re.match(r"^(?:[a-zA-Z][a-zA-Z0-9+.-]*:|//)", url):
         url = "https:" + url if url.startswith("//") else url
         if image:
             item.attrs.pop("src")
-            if image_origin(url):
+            if remote_origin(url):
                 item.attrSet("data-remote-src", url)
                 return url
             item.attrSet("data-missing", "Unsupported image address.")
@@ -97,9 +110,6 @@ def _rewrite_link(item: token.Token, rev: str, path: str, prefix: str) -> str | 
         return None
     if image:
         href = prefix + parse.quote(target, safe="/")
-        media = MEDIA_TYPES.get(target.rsplit(".", 1)[-1].lower())
-        if media:
-            item.type, item.tag = "media", media[0]
     else:
         href = f"#/files/{parse.quote(rev, safe='')}/{parse.quote(target, safe='/')}"
         if fragment:
@@ -120,7 +130,7 @@ def render(text: str, *, rev: str, path: str, prefix: str) -> Rendered:
         prefix: The preview capability's repository resource path.
 
     Returns:
-        HTML with heading ids, Files links, confined media paths and remote image addresses.
+        HTML with heading ids, Files links, confined paths and remote resource addresses.
     """
     parser = markdown_it.MarkdownIt("commonmark", {"html": True}).enable(["table", "strikethrough"])
     parser.validateLink = _valid_link
@@ -131,6 +141,7 @@ def render(text: str, *, rev: str, path: str, prefix: str) -> Rendered:
     tokens = parser.parse(text)
     ids: dict[str, int] = {}
     images: set[str] = set()
+    media: set[str] = set()
     for index, item in enumerate(tokens):
         if item.type == "heading_open":
             title = "".join(
@@ -150,15 +161,19 @@ def render(text: str, *, rev: str, path: str, prefix: str) -> Rendered:
             if child.type in {"link_open", "image"}:
                 remote = _rewrite_link(child, rev, path, prefix)
                 if remote:
-                    images.add(remote)
-    return Rendered(parser.renderer.render(tokens, parser.options, {}), tuple(sorted(images)))
+                    (media if child.type == "media" else images).add(remote)
+    return Rendered(
+        parser.renderer.render(tokens, parser.options, {}),
+        tuple(sorted(images)),
+        tuple(sorted(media)),
+    )
 
 
-def document(rendered: Rendered, nonce: str, *, images_allowed: bool) -> bytes:
+def document(rendered: Rendered, nonce: str, *, remote_allowed: bool) -> bytes:
     """Build the sandbox document with only the owned script and nonce-authorized styles.
 
     Returns:
-        UTF-8 HTML with the image-consent bar when remote images are blocked.
+        UTF-8 HTML with the consent bar when remote images or media are blocked.
     """
     assets = resources.files(__package__)
     style = (
@@ -167,19 +182,21 @@ def document(rendered: Rendered, nonce: str, *, images_allowed: bool) -> bytes:
     )
     script = assets.joinpath("markdown.js").read_text()
     blocked = ""
-    if rendered.images and not images_allowed:
-        addresses = "".join(f"<li>{html.escape(url)}</li>" for url in rendered.images)
-        blocked = (
-            '<section class="md-images" aria-label="Remote images">'
-            "<p>Remote images are blocked.</p><ul>" + addresses + "</ul>"
-            '<button id="load-images" type="button">Load</button></section>'
+    if (rendered.images or rendered.media) and not remote_allowed:
+        addresses = "".join(
+            f"<li>{html.escape(url)}</li>" for url in sorted((*rendered.images, *rendered.media))
         )
-    allowed = "true" if images_allowed else "false"
+        blocked = (
+            '<section class="md-remote" aria-label="Remote files">'
+            "<p>Remote files are blocked.</p><ul>" + addresses + "</ul>"
+            '<button id="load-remote" type="button">Load</button></section>'
+        )
+    allowed = "true" if remote_allowed else "false"
     return (
         '<!doctype html><html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f'<style nonce="{nonce}">{style}</style><title>Markdown preview</title></head>'
-        f'<body data-images-allowed="{allowed}">{blocked}'
+        f'<body data-remote-allowed="{allowed}">{blocked}'
         f'<main class="md-view">{rendered.html}</main>'
         f'<script nonce="{nonce}">{script}</script></body></html>'
     ).encode()

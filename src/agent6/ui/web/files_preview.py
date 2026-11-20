@@ -53,7 +53,7 @@ class OpenPreviewBody(pydantic.BaseModel):
 
 
 class PreviewKeyBody(pydantic.BaseModel):
-    """The signed-in UI renews, closes or grants images for one preview capability."""
+    """The signed-in UI renews, closes or grants remote loads for one preview capability."""
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
     key: str = pydantic.Field(description="The key returned when this preview opened.")
@@ -68,7 +68,7 @@ class Preview:
     ignored: bool
     expires: float
     rendered: markdown.Rendered | None = None
-    images_allowed: bool = False
+    remote_allowed: bool = False
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -109,6 +109,7 @@ class Store:
             rev: The resolved commit, or WORKTREE.
             kind: The preview document kind.
             images: The full remote image addresses in this markdown snapshot.
+            media: The full remote video and audio addresses in this markdown snapshot.
 
         Returns:
             The frame address and its lease key.
@@ -148,6 +149,7 @@ class Store:
             "rev": rev,
             "kind": "markdown" if rendered is not None else "html",
             "images": list(rendered.images) if rendered is not None else [],
+            "media": list(rendered.media) if rendered is not None else [],
         }
 
     def close(self, key: str) -> None:
@@ -161,8 +163,8 @@ class Store:
             page = self._get(key)
             self._pages[key] = dataclasses.replace(page, expires=time.monotonic() + LEASE_SECONDS)
 
-    def allow_images(self, key: str) -> None:
-        """Grant only the image origins captured when the signed-in UI opened the page.
+    def allow_remote(self, key: str) -> None:
+        """Grant only the remote origins captured when the signed-in UI opened the page.
 
         Raises:
             PreviewError: The key is closed or the preview is not markdown.
@@ -170,8 +172,8 @@ class Store:
         with self._lock:
             page = self._get(key)
             if page.rendered is None:
-                raise PreviewError("Only markdown previews can load remote images.")
-            self._pages[key] = dataclasses.replace(page, images_allowed=True)
+                raise PreviewError("Only markdown previews can load remote files.")
+            self._pages[key] = dataclasses.replace(page, remote_allowed=True)
 
     def _get(self, key: str) -> Preview:
         page = self._pages.get(key)
@@ -207,19 +209,19 @@ class Store:
         allowed = sources(host, f"/preview/{key}/")
         if destination == "iframe" and page.rendered is not None and path == page.path:
             nonce = secrets.token_urlsafe(32)
-            remote = (
-                " ".join(sorted({markdown.image_origin(url) for url in page.rendered.images}))
-                if page.images_allowed
-                else ""
-            )
+            remote = {"img": "", "media": ""}
+            if page.remote_allowed:
+                for kind, urls in (("img", page.rendered.images), ("media", page.rendered.media)):
+                    remote[kind] = " ".join(sorted({markdown.remote_origin(url) for url in urls}))
             policy = (
                 "sandbox allow-scripts; default-src 'none'; frame-ancestors 'self'; "
                 "form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'; "
                 f"script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
-                f"img-src {allowed} {remote}; connect-src {allowed}; media-src {allowed}"
+                f"img-src {allowed} {remote['img']}; connect-src {allowed}; "
+                f"media-src {allowed} {remote['media']}"
             )
             return Response(
-                markdown.document(page.rendered, nonce, images_allowed=page.images_allowed),
+                markdown.document(page.rendered, nonce, remote_allowed=page.remote_allowed),
                 "text/html; charset=utf-8",
                 policy,
             )

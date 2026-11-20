@@ -2225,6 +2225,7 @@ Source: [`ui.web.files_preview.Store.open`](https://github.com/agent6-dev/agent6
 | `rev` | `JSON` | The resolved commit, or WORKTREE. |
 | `kind` | `JSON` | The preview document kind. |
 | `images` | `JSON` | The full remote image addresses in this markdown snapshot. |
+| `media` | `JSON` | The full remote video and audio addresses in this markdown snapshot. |
 
 ### `/api/git/refs` ref row
 
@@ -2627,7 +2628,7 @@ Source: [`agent6.ui.web.files_preview.OpenPreviewBody`](https://github.com/agent
 
 ### PreviewKeyBody
 
-**Support: public.** The signed-in UI renews, closes or grants images for one preview capability.
+**Support: public.** The signed-in UI renews, closes or grants remote loads for one preview capability.
 
 Source: [`agent6.ui.web.files_preview.PreviewKeyBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/files_preview.py).
 

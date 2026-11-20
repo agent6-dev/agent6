@@ -7,6 +7,25 @@ from agent6.ui.web import markdown
 
 @pytest.mark.parametrize(
     ("suffix", "tag"),
+    [("mp3", "audio"), ("mp4", "video"), ("ogg", "audio"), ("wav", "audio"), ("webm", "video")],
+)
+def test_remote_media_has_no_fetching_source_until_consent(suffix: str, tag: str) -> None:
+    """Remote players and images keep separate consent addresses without a src attribute."""
+    address = f"https://media.example.test/clip.{suffix.upper()}?detail=whole#part"
+    rendered = markdown.render(
+        f"![Clip]({address})\n\n![Picture](https://images.example.test/pic.png)",
+        rev="WORKTREE",
+        path="docs/plan.md",
+        prefix="/preview/key/",
+    )
+    assert f'<{tag} data-remote-src="{address}" controls' in rendered.html
+    assert " src=" not in rendered.html
+    assert rendered.images == ("https://images.example.test/pic.png",)
+    assert rendered.media == (address,)
+
+
+@pytest.mark.parametrize(
+    ("suffix", "tag"),
     [("mp4", "video"), ("webm", "video"), ("mp3", "audio"), ("wav", "audio"), ("ogg", "audio")],
 )
 def test_repository_media_uses_native_controls(suffix: str, tag: str) -> None:
@@ -111,9 +130,9 @@ def test_heading_ids_follow_visible_text_and_do_not_collide() -> None:
         "ftp://example.test/a",
     ],
 )
-def test_invalid_image_origins_cannot_become_policy_sources(url: str) -> None:
+def test_invalid_remote_origins_cannot_become_policy_sources(url: str) -> None:
     """CSP delimiters, credentials and unsupported image schemes cannot widen a grant."""
-    assert markdown.image_origin(url) == ""
+    assert markdown.remote_origin(url) == ""
 
 
 def test_remote_images_are_listed_without_a_fetching_attribute() -> None:

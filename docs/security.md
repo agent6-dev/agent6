@@ -561,7 +561,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - Review comparison and file routes read Git objects by recorded tree ID.
   Paths and sides pass `ReviewLocation` validation; regular-file reads do not follow stored symlinks.
   Finding text and resolution reasons enter the browser as text, not HTML.
-- Preview creation, renewal, image grants and close require the sign-in header.
+- Preview creation, renewal, remote-load grants and close require the sign-in header.
   A random 256-bit key grants read access through the Files blob reader at one resolved revision and ignored-file permission, capped at 20 MiB per file.
   Hidden paths and symlinks are refused.
   The server holds at most 128 live keys; close revokes a key, and its lease expires after 30 seconds without signed-in renewal.
@@ -579,17 +579,18 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - Markdown requires the displayed source digest and keeps one rendered snapshot per capability.
   Its CSP adds `sandbox allow-scripts` and permits only the owned nonce-authorized script and styles; raw HTML stays escaped.
   Repository images, native video and audio, and error reads use the confined preview path.
-  Markdown media sources are restricted to that path by `media-src`.
-  Remote images have no fetching attribute before consent, and `img-src` also blocks their origins.
+  Before consent, `img-src` and `media-src` permit only that path.
+  Remote images, video and audio have no fetching attribute before consent.
 - The UI accepts markdown messages only from the frame it created (`event.source`).
   A Load message requests a signed-in confirmation; its contents cannot supply hosts or markup.
   The confirmation shows the server-held full addresses and warns what loading them discloses.
   The markdown frame has only `sandbox="allow-scripts"`, with no same-origin, top-navigation, form or popup permission.
-- The image grant route accepts only a preview key, never a host list.
-  The server grants the snapshot's HTTP image origins, not addresses from a frame message, URL parameter or later disk contents.
+- The remote-load grant route accepts only a preview key, never a host list.
+  The server grants the snapshot's HTTP image origins in `img-src` and video/audio origins in `media-src`.
+  A frame message, URL parameter or later disk contents cannot add origins.
   Origin serialization rejects credentials, malformed ports and CSP delimiters.
   Closing the key discards its grant.
-  Loading an image sends the full address and the browser's IP address to that server; `sandbox.network` does not constrain the browser.
+  Loading an image, video or audio sends the full address and the browser's IP address to that server; `sandbox.network` does not constrain the browser.
 - PWA assets are static and the service worker is a no-op passthrough (no Web Push, no VAPID).
   Telemetry requires an operator-started export or the opt-in scrape route ([Telemetry export](cli.md#telemetry-export)); no auto-update, no remote control plane.
 

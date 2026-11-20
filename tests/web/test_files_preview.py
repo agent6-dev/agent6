@@ -60,7 +60,7 @@ def test_markdown_images_need_a_signed_in_snapshot_grant(served: tuple[pathlib.P
     assert "sandbox allow-scripts;" in policy
     nonce = re.search(r"script-src 'nonce-([^']+)'", policy)
     assert nonce and f'<script nonce="{nonce[1]}">'.encode() in content
-    assert b"Remote images are blocked" in content and b">Load</button>" in content
+    assert b"Remote files are blocked" in content and b">Load</button>" in content
     assert b"https://images.example.test/pic.svg?text=private" in content
     assert "images.example.test" not in policy
     assert (
@@ -73,7 +73,7 @@ def test_markdown_images_need_a_signed_in_snapshot_grant(served: tuple[pathlib.P
     try:
         conn.request(
             "POST",
-            "/api/files/preview/images",
+            "/api/files/preview/remote",
             json.dumps({"key": opened["key"]}),
             {"Content-Type": "application/json", "Origin": "null"},
         )
@@ -82,15 +82,15 @@ def test_markdown_images_need_a_signed_in_snapshot_grant(served: tuple[pathlib.P
         response.read()
     finally:
         conn.close()
-    assert api(port, "/images", key=opened["key"], hosts=["https://other.test"])[0] == 400
+    assert api(port, "/remote", key=opened["key"], hosts=["https://other.test"])[0] == 400
     (repo / "plan.md").write_text("# Replaced\n\n![New](https://other.test/pic.png)\n")
-    assert api(port, "/images", key=opened["key"])[0] == 200
+    assert api(port, "/remote", key=opened["key"])[0] == 200
     _, headers, content = get(port, opened["url"], "iframe")
     assert "img-src" in headers["Content-Security-Policy"]
     assert "https://images.example.test" in headers["Content-Security-Policy"]
     assert "other.test" not in headers["Content-Security-Policy"]
     assert b"Replaced" not in content
-    assert b"Remote images are blocked" not in content
+    assert b"Remote files are blocked" not in content
     assert nonce[1] not in headers["Content-Security-Policy"]
     (repo / "plan.md").write_text(source)
     _, separate = api(
@@ -102,7 +102,7 @@ def test_markdown_images_need_a_signed_in_snapshot_grant(served: tuple[pathlib.P
     )
     assert get(port, opened["url"], "document")[0] == 403
     assert api(port, "/close", key=opened["key"])[0] == 200
-    assert api(port, "/images", key=opened["key"])[0] == 403
+    assert api(port, "/remote", key=opened["key"])[0] == 403
 
 
 def test_markdown_open_refuses_a_changed_source_snapshot(served: tuple[pathlib.Path, int]) -> None:
@@ -113,6 +113,44 @@ def test_markdown_open_refuses_a_changed_source_snapshot(served: tuple[pathlib.P
         api(port, rev="WORKTREE", path="plan.md", digest=hashlib.sha256(b"# Plan\n").hexdigest())[0]
         == 409
     )
+
+
+def test_remote_consent_keeps_image_and_media_origins_separate(
+    served: tuple[pathlib.Path, int],
+) -> None:
+    """The server grants only the snapshot's origins in their matching CSP directives."""
+    repo, port = served
+    source = (
+        "![Picture](https://images.example.test/pic.png)\n\n"
+        "![Video](https://video.example.test/clip.webm)\n\n"
+        "![Audio](https://audio.example.test/sound.wav)\n"
+    )
+    (repo / "media.md").write_text(source)
+    status, opened = api(
+        port, rev="WORKTREE", path="media.md", digest=hashlib.sha256(source.encode()).hexdigest()
+    )
+    assert status == 200, opened
+    assert opened["media"] == [
+        "https://audio.example.test/sound.wav",
+        "https://video.example.test/clip.webm",
+    ]
+    assert ".example.test" not in get(port, opened["url"], "iframe")[1]["Content-Security-Policy"]
+    assert api(port, "/remote", key=opened["key"], hosts=["https://extra.test"])[0] == 400
+    (repo / "media.md").write_text("![Other](https://extra.test/other.mp4)\n")
+    assert api(port, "/remote", key=opened["key"])[0] == 200
+    _, headers, content = get(port, opened["url"], "iframe")
+    policy = headers["Content-Security-Policy"]
+    directives = dict(part.strip().split(" ", 1) for part in policy.split(";"))
+    assert "https://images.example.test" in directives["img-src"]
+    assert "https://audio.example.test" in directives["media-src"]
+    assert "https://video.example.test" in directives["media-src"]
+    assert "images.example.test" not in directives["media-src"]
+    assert "audio.example.test" not in directives["img-src"]
+    assert "video.example.test" not in directives["img-src"]
+    assert ".example.test" not in directives["connect-src"]
+    assert "extra.test" not in policy and b"extra.test" not in content
+    assert api(port, "/close", key=opened["key"])[0] == 200
+    assert api(port, "/remote", key=opened["key"])[0] == 403
 
 
 @pytest.mark.parametrize(

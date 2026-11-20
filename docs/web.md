@@ -117,7 +117,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - an HTML file opens as **Source**; **Preview** shows it in a sandboxed frame, with repository CSS and images at the listed revision
     - HTML scripts stay off, as the bar above the frame states; previews require HTTPS or localhost, and their addresses refuse direct tabs
     - **Source**, another file, navigation away and tab exit close the preview; an abandoned preview expires after 30 seconds without the UI's renewal
-    - markdown remote images stay blocked until allowed for that open file; the bar inside the frame lists every full address, and **Load** opens a signed-in confirmation ([browser network limits](security.md#5-network))
+    - markdown remote images, video and audio stay blocked until allowed for that open file; the bar inside the frame lists every full address, and **Load** opens a signed-in confirmation ([browser network limits](security.md#5-network))
     - the confirmation lists the same addresses and warns what loading them sends; Cancel leaves them blocked, and closing the preview discards the allowance
     - an image line naming a repository `.mp4`, `.webm`, `.mp3`, `.wav` or `.ogg` file shows the browser's player, with no autoplay; media keeps the selected revision and the 20 MiB file limit
     - **Edit** opens working-tree text in a dialog with **Save** and **Cancel**; it loads the complete file, up to 20 MiB, even when the source preview is cut
@@ -218,7 +218,7 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
     - missing metadata, standalone documents, objects, embeds and scripts receive a plain 403; browser previews need HTTPS or localhost for Fetch Metadata
     - every preview response carries a sandbox CSP and `Referrer-Policy: no-referrer`; HTML scripts are disabled
     - markdown runs only its nonce-authorized owned script and escapes raw HTML
-    - signed-in `POST /api/files/preview/images` accepts only `{key}` and permits the snapshot's remote origins in `img-src` until close; it accepts no host list
+    - signed-in `POST /api/files/preview/remote` accepts only `{key}` and permits the snapshot's remote image origins in `img-src` and video/audio origins in `media-src` until close; it accepts no host list
     - other resource types gain no remote permission; scheme-relative image addresses use HTTPS
 - writes, small JSON `POST`s: `/api/git/{stage,unstage,discard,commit,branch,switch}` (409 while a session is live in the checkout, 422 for git's own refusal), `/api/git/fetch`, `/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,review,stop,compact,rm}`, `/api/session/<id>/findings/<fid>/{fix,resolve,reopen}`, `/api/session/<id>/findings/fix`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/entry`, `/api/config/entry/remove`, `/api/config/reviewer`, `/api/config/reviewer/remove`, `/api/machine/{create,run}`
 - session rows, session snapshots and machine snapshots list their fields, the operator's words and the spend among them, on [Formats](formats.md#cli-json)
