@@ -287,7 +287,7 @@ def test_tool_entries_show_bounded_arguments_and_structured_outcomes(
     assert not sessions.roster(tmp_path, "private").briefs
 
 
-def test_fetch_previews_share_only_the_host_port_and_path(tmp_path: pathlib.Path) -> None:
+def test_fetch_previews_share_only_the_origin(tmp_path: pathlib.Path) -> None:
     """A rejected call reaches the journal before URL validation."""
     from agent6.config import Config
     from agent6.tools import dispatch, tool_errors
@@ -300,7 +300,7 @@ def test_fetch_previews_share_only_the_host_port_and_path(tmp_path: pathlib.Path
         events=event_log.EventSink(d / "logs.jsonl"),
     )
     for url in (
-        "https://marker-a:marker-b@[2001:db8::1]:8443/guide?label=marker-c#marker-d",
+        "https://marker-a:marker-b@[2001:db8::1]:8443/marker-path?label=marker-c#marker-d",
         "https://example.invalid:marker-port/guide",
         # The recorded preview ends in the userinfo, before the authority is known.
         f"https://marker-{'a' * 220}@example.invalid/guide",
@@ -309,7 +309,7 @@ def test_fetch_previews_share_only_the_host_port_and_path(tmp_path: pathlib.Path
             dispatcher.dispatch("fetch", {"url": url})
 
     page = dispatcher.dispatch("read_session", {"id": d.name, "kinds": ["tool"]}).to_wire()
-    assert "fetch url=https://[2001:db8::1]:8443/guide" in page["conversation"]
+    assert "fetch url=https://[2001:db8::1]:8443" in page["conversation"]
     assert "marker-" not in page["conversation"]
     assert page["conversation"].count("url=") == 1
     assert page["conversation"].count("fetch result: refused") == 3

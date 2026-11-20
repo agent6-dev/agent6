@@ -429,7 +429,7 @@ def _arg_preview(key: str, value: Any) -> str | None:
         authority = f"[{host}]" if ":" in host else host
         if port is not None:
             authority += f":{port}"
-        text = parse.urlunsplit((parts.scheme, authority, parts.path, "", ""))
+        text = f"{parts.scheme}://{authority}"
     else:
         if not _plain_values(value, _PLAIN_LABEL if key == "questions" else _LOCAL_NAME):
             return None

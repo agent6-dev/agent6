@@ -229,7 +229,7 @@ def test_a_headless_fetch_wait_names_the_requester_and_target(
     capsys: pytest.CaptureFixture[str],
     relayed: bool,
 ) -> None:
-    """A fetch still parks under approve, naming the requester and path without the query."""
+    """A fetch still parks under approve, naming the requester and origin without the path."""
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "approve")
     cfg = Config()
@@ -264,9 +264,9 @@ def test_a_headless_fetch_wait_names_the_requester_and_target(
         requester = f"[session {tmp_path.name}]"
 
     waiting, answer = capsys.readouterr().err.splitlines()
-    assert f"waiting on approval-1 ({requester} fetch: docs.example:8443 /guide/" in waiting
+    assert f"waiting on approval-1 ({requester} fetch: docs.example:8443)" in waiting
     assert waiting.endswith(f"); answer it with: agent6 attach {tmp_path.name}")
-    assert ("…);" if relayed else "index);") in waiting
+    assert "/guide/" not in waiting
     assert "p" * 120 not in waiting and "?" not in waiting and "private" not in waiting
     assert answer == "[agent6] approval-1 denied (await-frontend)"
 

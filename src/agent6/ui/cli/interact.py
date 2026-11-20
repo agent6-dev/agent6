@@ -148,8 +148,10 @@ def build_approver(
             requester, allow, tool = head.partition("Allow ")
             requester = requester if allow and requester else f"[session {session_dir.name}] "
             if request.scope is None and tool == "fetch":
-                # Checked.prompt() supplies the vetted host and path, then the private query.
-                tool += f": {payload.partition('?')[0]}"
+                # The approval shows the complete path and query. The notice names only the host.
+                host, sep, path = payload.partition(" ")
+                if sep and path.startswith("/") and re.fullmatch(r"[\w.:[\]-]+", host):
+                    tool += f": {host}"
             elif request.scope == ipc.COMMAND_SCOPE and (
                 executable := re.fullmatch(r"[\w./+-]+", payload.partition(" ")[0], re.ASCII)
             ):

@@ -92,6 +92,7 @@ The model sees the fixed tool set in `src/agent6/tools/schema.py`, plus the tool
 A child can also read its own journal by its full id, without listing or searching its parent's other sessions.
 Tool entries show selected built-in arguments and recorded outcomes, up to 200 characters per value.
 Command entries show the program name, not its operands.
+Fetch entries show the origin without a path or query.
 Search ignores opaque results and the reader's own calls.
 Session speech, paths and displayed labels are shared text, not a place for credentials.
 
@@ -633,6 +634,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - `sandbox.isolation = "none"` with auto-approved `run_command` adds a one-time gate: `Continue? [y/N]` interactively, a warning in CI and `machine run`.
 - A prompt with no operator to answer it: a headless run refuses to start under `ask` unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park it for a front-end) or `approve` (grant every standing scope).
   Under `approve`, a fetch outside `sandbox.fetch_approved_hosts` still waits for an answer.
+  Its headless wait notice shows only the host and optional port.
+  The approval prompt shows the requested path and query.
   An unattended machine auto-denies.
 - A child or reviewer a run dispatched puts its approval, or the question it waits on, to that run's operator: the prompt shows on the run, named for the child, and the answer goes back over the session's file bridge, which no jail can reach.
   An "allow all" or "deny all" given on the run covers its children for that scope.
