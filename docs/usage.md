@@ -152,7 +152,8 @@ With `git.control = "agent6"`, every entry merges a task once: one child's work 
 With `git.control = "model"`, a finished child completes its task without a merge; its row names the retained ref.
 The model can merge that ref with git.
 `run --parallel` waits for its children without a model call of its own: [`harness.parallel.judges`](config.md#harnessparallel) rank several children, the first-ranked child follows this merge policy, and the run ends `finished · children ranked`.
-If a child passed the parent's full verify command on content identical to the parent's final tree, the parent can cite that pass instead of rerunning the gate.
+The parent's gate still runs when its policy calls for it.
+Without a parent result, a child can supply the pass if its full verify command and final tree match the parent's.
 `sessions show` and `sessions receipt` name the child that verified it.
 A different tree or command, or a scoped check, leaves verification to the parent's own gate policy.
 A judge is a reviewer child of the run, one per entry: its clone is cut at the commit the attempts started from and holds every attempt, its opening lists each attempt with its verify result, cost, finish summary and diff, and it has the tools a reviewer is handed (the reading tools, and `run_command` and `run_verify_command` where the run may run commands).

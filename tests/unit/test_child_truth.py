@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Read verification, task completion and landing from a real detached child's run."""
+"""Read verification, task completion and merges from a real detached child's run."""
 
 from __future__ import annotations
 
@@ -20,7 +20,9 @@ from tests import launch_env
 from tests.unit import test_children_cli as children_cli
 
 
-def _run(tmp: pathlib.Path, monkeypatch: pytest.MonkeyPatch, control: str) -> pathlib.Path:
+def _run(
+    tmp: pathlib.Path, monkeypatch: pytest.MonkeyPatch, control: str, *, when: str = "never"
+) -> pathlib.Path:
     repo = tmp / "repo"
     repo.mkdir()
     git = children_cli._git
@@ -49,7 +51,7 @@ def _run(tmp: pathlib.Path, monkeypatch: pytest.MonkeyPatch, control: str) -> pa
                 "models": {"default": {"model": "p/m"}},
                 "git": {"control": control, "worktree": {"base_dir": str(tmp / "clones")}},
                 "sandbox": {"isolation": "none", "run_commands": "allow"},
-                "harness": {"verify": {"command": ["test", "-f", "answer"], "when": "never"}},
+                "harness": {"verify": {"command": ["test", "-f", "answer"], "when": when}},
                 "review": {"when": "never"},
             }
         )
@@ -100,6 +102,18 @@ def test_parent_names_the_child_that_verified_its_exact_tree(
             )
         )
         assert child_verify.covering_pass(parent, tree, command) is None, changes
+
+
+def test_a_child_pass_does_not_cancel_the_parents_finish_gate(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A child's result cannot stand in for a gate the parent must run."""
+    parent = _run(tmp_path, monkeypatch, "agent6", when="finish")
+    capsys.readouterr()
+    assert cli_main(["sessions", "receipt", parent.name, "--json"]) == 0
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt["final_verify_id"]
+    assert receipt["child_verification"] is None
 
 
 def test_model_git_completed_task_passes_with_its_retained_ref(

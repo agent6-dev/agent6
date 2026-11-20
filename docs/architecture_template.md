@@ -623,7 +623,8 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
     - under `rank` the dispatcher ranks once the children settle (`harness.parallel_rank.rank`), writes the order on the dispatch record before any join, joins the first child onto the run's chain and records each other child as `ranked` with its place; the opening waits for the judges as it waited for the children
     - the journal: the dispatch, the judges' own dispatch and return (`source = "panel"`), `parallel.compared` with the ranking and rationale, `parallel.joined`, the end (`children_ranked`, `no_child_result` or `budget_exhausted`)
     - a manifest comparison record: the group id, ranking, method, rationale and judge cost; child manifests keep only their placement and group id
-    - a full child pass over the parent's final tree by the same gate is recorded as `session.stop.child_verification` (child, attempt id, argv and tree); otherwise `VerifyGate.after_rank_join` applies the parent's gate policy to the joined tree
+    - `VerifyGate.after_rank_join` applies the parent's gate policy to the joined tree
+    - without a parent result, `session.stop.child_verification` can cite a child's full pass on the same tree by the same command (child, attempt id, argv and tree)
     - `git.auto_merge` merges the run as it does any run (`finalize.LANDING_ENDS`)
     - under `git.control = "model"` the run has no chain: every child is placed and none is joined
     - a resume with a steer continues from the joined work with the worker model
