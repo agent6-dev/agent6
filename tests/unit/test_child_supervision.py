@@ -4,9 +4,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import pathlib
+import signal
 import subprocess
 import sys
 import threading
@@ -177,6 +179,53 @@ def test_spawn_child_ties_the_child_to_its_parent(tmp_path: pathlib.Path) -> Non
     finally:
         parent.kill()
         parent.wait(timeout=5)
+
+
+_FRONT_END = """
+import os, sys, time
+from pathlib import Path
+from agent6.ui import spawn
+home = Path(sys.argv[1])
+session = (
+    "import json, os, time, pathlib; d = pathlib.Path(%r) / 'session'; d.mkdir();"
+    " (d / 'pid').write_text(str(os.getpid()));"
+    " (d / 'logs.jsonl').write_text(json.dumps("
+    "{'type': 'session.start', 'worker_pid': os.getpid()}) + chr(10)); time.sleep(60)"
+) % str(home)
+found, err = spawn.spawn_and_locate(
+    [sys.executable, "-c", session], home, before=set(),
+    list_dirs=lambda: [d for d in home.iterdir() if d.is_dir()],
+)
+print(found, err, flush=True)
+time.sleep(60)
+"""
+
+
+def test_a_session_a_front_end_starts_outlives_the_front_end(tmp_path: pathlib.Path) -> None:
+    """A run started from the web UI or the hub ended when that front-end's process died.
+
+    The parent tie is for a run's own children; a front-end's launch carried it too.
+    """
+    front_end = subprocess.Popen(
+        [sys.executable, "-c", _FRONT_END, str(tmp_path)],
+        stdout=subprocess.PIPE,
+        start_new_session=True,
+    )
+    assert front_end.stdout is not None
+    session_pid = 0
+    try:
+        assert front_end.stdout.readline().decode().split()[0] == str(tmp_path / "session")
+        session_pid = int((tmp_path / "session" / "pid").read_text())
+        front_end.kill()
+        front_end.wait(timeout=5)
+        time.sleep(1.0)
+        assert process.pid_alive(session_pid), "the session ended with its front-end"
+    finally:
+        front_end.kill()
+        front_end.wait(timeout=5)
+        if session_pid:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(session_pid, signal.SIGKILL)
 
 
 def _spec(tmp_path: pathlib.Path, name: str) -> child_records.ChildSpec:

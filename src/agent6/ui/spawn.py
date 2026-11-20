@@ -477,6 +477,8 @@ def spawn_and_locate(
 ) -> tuple[pathlib.Path | None, str]:
     """Spawn the argv detached and locate the session dir it creates.
 
+    The session carries no parent tie: it outlives the front-end that started it.
+
     Args:
         argv: The command.
         cwd: The checkout.
@@ -494,7 +496,6 @@ def spawn_and_locate(
         ready=lambda pid: _located(list_dirs, before, pid),
         env=env,
         timeout_s=timeout_s,
-        preexec=jail.die_with_parent(os.getpid(), signal.SIGTERM),
     )
     return found, err
 

@@ -24,6 +24,7 @@ agent6 web <draft>      # open a `machine create` draft on load (read-only)
 
 `--host` / `--port` override the [`[web]`](config.md#web) config for one invocation.
 Stop it with Ctrl-C.
+A session started from the page keeps running after the server stops.
 
 ## Browsers
 
