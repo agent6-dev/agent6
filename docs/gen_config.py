@@ -42,6 +42,7 @@ _RUNTIME_DEFAULTS = {
     "compaction.drop_at_chars": "_adaptive_",
     "compaction.summarise_at_chars": "_adaptive_",
     "providers.<name>.base_url": "per (format, deployment)",
+    "providers.<name>.idle_compact_s": "per backend",
     "providers.<name>.auth_style": "per (format, deployment)",
 }
 

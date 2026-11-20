@@ -48,6 +48,28 @@ def test_config_show_uses_compaction_keys(
     assert "[compaction]" in capsys.readouterr().out
 
 
+def test_provider_idle_compaction_defaults_and_origins(tmp_path: pathlib.Path) -> None:
+    cfg = tmp_path / "routes.toml"
+    cfg.write_text(
+        '[providers.a]\nbackend = "anthropic"\n'
+        '[providers.o]\nbackend = "openai"\n'
+        '[providers.r]\nbackend = "responses"\nbase_url = "https://example.invalid/v1"\n'
+        '[providers.g]\nbackend = "chatgpt"\n'
+        '[providers.c]\nbackend = "claude_code"\n'
+    )
+    data = json.loads(config_view.render_show(layer.load_effective(tmp_path, (cfg,)), as_json=True))
+    for name, seconds in (("a", 240), ("r", 240), ("o", 0), ("g", 0)):
+        for key, expected in (("idle_compact_s", seconds), ("idle_compact_min_chars", 240000)):
+            row = data[f"providers.{name}.{key}"]
+            assert (row["value"], row["source"]) == (expected, "default")
+    assert not any(key.startswith("providers.c.idle_compact") for key in data)
+    cfg.write_text('[providers.a]\nbackend = "anthropic"\nidle_compact_s = 0\n')
+    changed = json.loads(
+        config_view.render_show(layer.load_effective(tmp_path, (cfg,)), as_json=True)
+    )["providers.a.idle_compact_s"]
+    assert changed["value"] == 0 and changed["source"] != "default"
+
+
 def test_config_presets_reads_the_explicit_config_file(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

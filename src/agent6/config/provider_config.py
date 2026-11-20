@@ -122,6 +122,20 @@ def _require_json_shaped(value: Any, path: str) -> None:
     )
 
 
+IdleCompactSeconds = Annotated[
+    float,
+    pydantic.Field(
+        ge=0,
+        allow_inf_nan=False,
+        description=(
+            "Seconds from the start of the last worker request to compact during a wait. "
+            "0 turns idle compaction off. Defaults: 240 for anthropic and responses, "
+            "0 for openai and chatgpt. Claude Code owns its session and has neither idle setting."
+        ),
+    ),
+]
+
+
 class _ProviderBase(pydantic.BaseModel):
     """The transport and auth fields every HTTP provider shares.
 
@@ -134,6 +148,12 @@ class _ProviderBase(pydantic.BaseModel):
 
     # Declared here so backend leads every subclass's model_fields; each subclass narrows it.
     backend: Backend
+    idle_compact_s: IdleCompactSeconds = 0
+    idle_compact_min_chars: int = pydantic.Field(
+        default=240000,
+        ge=0,
+        description=("Character floor for idle compaction, including the system text and tools."),
+    )
     deployment: Deployment = pydantic.Field(
         json_schema_extra={
             "choice_meanings": {
@@ -396,6 +416,7 @@ class AnthropicProviderEntry(_ProviderBase):
             description=_BACKEND_DESCRIPTION,
         )
     )
+    idle_compact_s: IdleCompactSeconds = 240
     prompt_caching: bool = pydantic.Field(
         default=True,
         description=(
@@ -518,6 +539,7 @@ class ResponsesProviderEntry(_ProviderBase):
     its usage meters tokens like any keyed endpoint.
     """
 
+    idle_compact_s: IdleCompactSeconds = 240
     backend: Literal["responses"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
         pydantic.Field(
             json_schema_extra={"choice_meanings": _BACKEND_MEANINGS},
