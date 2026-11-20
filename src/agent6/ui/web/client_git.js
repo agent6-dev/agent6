@@ -726,12 +726,12 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     // The head stays while the commit loads, so the focus its heading takes stays too.
     const refocus = keepFocus();
     side.innerHTML = ''; side.appendChild(sideHead('Commit'));
-    const wait = el('div', 'muted page-pad', 'loading…'); side.appendChild(wait);
+    const wait = el('div', 'muted page-pad gd-status', 'loading…'); side.appendChild(wait);
     openSide();
     refocus();
     let c;
     try { c = await getJSON('/api/git/commit/' + encodeURIComponent(sha)); }
-    catch (e) { if (selected === sha && wait.isConnected && gen === routeGen) { wait.remove(); side.appendChild(el('div', 'err page-pad', e.message)); } return; }
+    catch (e) { if (selected === sha && wait.isConnected && gen === routeGen) { wait.remove(); side.appendChild(el('div', 'err page-pad gd-status', e.message)); } return; }
     if (selected !== sha || !wait.isConnected || gen !== routeGen) return;
     selected = c.sha;
     setViewHash('#/git/commit/' + encodeURIComponent(c.sha) + suffix, true);
@@ -794,7 +794,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       if (!base || !h) { setViewHash('#/git'); result.appendChild(el('div', 'empty', 'pick a base and a head: a branch, a tag, a commit, or text from a commit message')); return; }
       const n = ++compareRun;
       setViewHash('#/git/compare/' + encodeURIComponent(base.rev) + '..' + encodeURIComponent(h.rev) + (query.size ? '?' + query : ''));
-      result.appendChild(el('div', 'muted', 'comparing…'));
+      result.appendChild(el('div', 'muted gcmp-status', 'comparing…'));
       try {
         const panel = query.has('panel') ? await getJSON('/api/reviews/' + encodeURIComponent(query.get('panel'))) : null;
         const target = panel?.panel.target;
@@ -818,7 +818,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
         const ctx = {base: d.base.sha, head: d.head.sha, files: d.files, panel: reviewed ? query.get('panel') : '', query};
         result.appendChild(fileList(d.files, d.truncated, (i) => showDiff(ctx, i)));
         if (path && selectedFile >= 0) await showDiff(ctx, selectedFile);
-      } catch (e) { if (n === compareRun) { result.innerHTML = ''; result.appendChild(el('div', 'err', e.message)); } }
+      } catch (e) { if (n === compareRun) { result.innerHTML = ''; result.appendChild(el('div', 'err gcmp-status', e.message)); } }
     };
     const listHost = el('div', 'gpick-host');
     const pickBase = gitPicker('base', gitState.compare.base, (v) => { query = new URLSearchParams(); gitState.compare.base = v; run(); }, listHost);

@@ -1221,3 +1221,21 @@ def test_a_long_revision_ends_its_compare_field_with_an_ellipsis(
     cut = "i => [i.scrollWidth > i.clientWidth, getComputedStyle(i).textOverflow]"
     assert head.evaluate(cut) == [True, "ellipsis"]
     assert errors == [], errors
+
+
+def test_a_side_panels_loading_and_error_lines_keep_their_contents_margins(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """A failed commit's error sat on the head's border and a failed compare's on the hint."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    gap = "([a, b]) => b.getBoundingClientRect().top - a.getBoundingClientRect().bottom"
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/{'0' * 40}")
+    expect(page.locator(".git-side .err")).to_be_visible()
+    above = page.locator(".git-side-head, .git-side .err")
+    assert above.evaluate_all(gap) == 8
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/compare/nope..main")
+    expect(page.locator(".gcmp-result .err")).to_be_visible()
+    assert page.locator(".gcmp .hint, .gcmp-result .err").evaluate_all(gap) == 10
+    assert [e for e in errors if "status of 422" not in e] == [], errors
