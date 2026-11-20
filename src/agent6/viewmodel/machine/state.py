@@ -259,21 +259,42 @@ class InstanceProbes:
 
     Attributes:
         alive: The worker pid is live.
-        parked: A wait record is armed for the current state.
+        wait: The wait armed for the current state, None when none is.
         execution: The newest agent execution, folded only for a live, unended machine.
         wait_error: The corrupt wait record's error; such a machine reads as parked.
     """
 
     alive: bool
-    parked: bool
+    wait: journal.PendingWait | None
     execution: machine_logs.AgentExecution
     wait_error: str = ""
+
+    @property
+    def parked(self) -> bool:
+        """A wait is armed for the current state, or its record is corrupt."""
+        return self.wait is not None or bool(self.wait_error)
 
     def status_word(self, ms: MachineState) -> str:
         """Return `machine_status_word` fed these probes."""
         return machine_status_word(
             ms, parked=self.parked, alive=self.alive, blocked=bool(self.execution.blocked_in)
         )
+
+    def reason(self, ms: MachineState) -> str:
+        """Return the reason every label shows beside the status word.
+
+        Args:
+            ms: The folded state.
+
+        Returns:
+            A failed end's reason, the state a live worker waits on an answer in, or "no
+            worker" for a parked instance nothing drives; else "".
+        """
+        if ms.ended is not None:
+            return ms.ended.reason if ms.ended.status == "failed" else ""
+        if self.alive and self.execution.blocked_in:
+            return f"waiting on an answer in {self.execution.blocked_in}"
+        return "no worker" if self.parked and not self.alive else ""
 
     def refusals(self, name: str, ms: MachineState) -> dict[MachineVerb, str]:
         """Return `verb_refusals` fed these probes.
@@ -323,10 +344,10 @@ def probe_instance(
             else machine_logs.AgentExecution()
         )
     try:
-        parked = armed_wait(machine_dir, ms) is not None
+        wait = armed_wait(machine_dir, ms)
     except journal.JournalError as exc:
-        return InstanceProbes(alive=alive, parked=True, execution=execution, wait_error=str(exc))
-    return InstanceProbes(alive=alive, parked=parked, execution=execution)
+        return InstanceProbes(alive=alive, wait=None, execution=execution, wait_error=str(exc))
+    return InstanceProbes(alive=alive, wait=wait, execution=execution)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -388,17 +409,12 @@ def summarize_machine_dir(machine_dir: pathlib.Path) -> MachineSummary:
         first_line = str(exc).split("\n", 1)[0]
         return MachineSummary(machine_dir.name, "", "", "unreadable", first_line, mtime)
     probes = probe_instance(machine_dir, ms)
-    reason = ms.ended.reason if ms.ended is not None and ms.ended.status == "failed" else ""
-    if probes.execution.blocked_in:
-        reason = f"waiting on an answer in {probes.execution.blocked_in}"
-    elif ms.ended is None and probes.parked and not probes.alive:
-        reason = "no worker"
     return MachineSummary(
         name=machine_dir.name,
         machine=ms.machine,
         current=ms.current,
         status=probes.status_word(ms),
-        reason=reason,
+        reason=probes.reason(ms),
         mtime=mtime,
     )
 
@@ -570,7 +586,9 @@ def machine_state_as_dict(
 
     Attributes:
         status: The directory-aware machine status when a directory is supplied.
+        status_label: The rendered status, with its reason when it has one.
         status_level: The status presentation level.
+        wait_line: Where a parked machine waits and when it wakes, while a wait is armed.
         refusals: Reasons keyed by machine verb, with an empty reason for an allowed verb.
         worker_lost: The missing-worker diagnostic for a stopped machine.
         worker_lost.reason: The reason the machine reads stopped.
@@ -584,14 +602,24 @@ def machine_state_as_dict(
         execution: The newest execution from a caller's `machine_logs.NewestExecutionFold`.
 
     Returns:
-        The state's fields, plus `status`, `status_level`, `refusals` and, for a stopped
-        machine, `worker_lost`.
+        The state's fields, plus `status`, `status_label`, `status_level`, `refusals`, for a
+        parked machine `wait_line` and for a stopped machine `worker_lost`.
     """
     d = dataclasses.asdict(ms)
     if machine_dir is not None:
         probes = probe_instance(machine_dir, ms, execution=execution)
         d["status"] = probes.status_word(ms)
+        d["status_label"] = format.status_label(d["status"], probes.reason(ms))
         d["status_level"] = format.status_level(d["status"])
+        if probes.wait is not None:
+            # The page's Message is the poke, so the line leaves out the poke command.
+            d["wait_line"] = wait_line(
+                machine_dir.name,
+                probes.wait.state,
+                probes.wait.wake_at,
+                alive=probes.alive,
+                include_poke=False,
+            )
         if d["status"] == "stopped":
             # Resumable, and the wire says so; `ended` stays a durable MachineEnd.
             d["worker_lost"] = {"reason": "no worker running", "state": ms.current}

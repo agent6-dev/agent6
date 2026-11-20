@@ -1796,8 +1796,10 @@ A machine's `attach --json` and `/api/machine/<name>` read `MachineState` with t
 | `ended` | `MachineResult \| None` | The end record, None while the machine has not ended. |
 | `notifications` | `tuple[NotificationView, ...]` | The recent `machine.notify` events, oldest first. |
 | `status` | `JSON` | The directory-aware machine status when a directory is supplied. |
+| `status_label` | `JSON` | The rendered status, with its reason when it has one. |
 | `status_level` | `JSON` | The status presentation level. |
 | `refusals` | `JSON` | Reasons keyed by machine verb, with an empty reason for an allowed verb. |
+| `wait_line` | `JSON` | Where a parked machine waits and when it wakes, while a wait is armed. |
 | `worker_lost` | `JSON` | The missing-worker diagnostic for a stopped machine. |
 | `worker_lost.reason` | `JSON` | The reason the machine reads stopped. |
 | `worker_lost.state` | `JSON` | The state where the worker was lost. |

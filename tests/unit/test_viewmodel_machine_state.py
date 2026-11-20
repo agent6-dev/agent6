@@ -588,6 +588,41 @@ def test_the_wire_form_carries_the_status_level(tmp_path: pathlib.Path) -> None:
     assert (ended["status"], ended["status_level"]) == ("failed", format.status_level("failed"))
 
 
+def test_the_wire_form_carries_the_rows_label_and_when_a_parked_machine_wakes(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The machine page reads the listing row's label and the wait line `machine status` prints.
+
+    It showed a bare "waiting" where the row read "waiting · no worker", and nothing said when a
+    parked machine wakes; the wake time showed the record's microseconds.
+    """
+    from agent6.viewmodel import format
+
+    d = tmp_path / "inst"
+    d.mkdir()
+    (d / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    journal = machine_journal.MachineJournal(d)
+    journal.begin(machine="tiny", version=1)
+    journal.write_pending_wait(machine_journal.PendingWait(state="route", wake_epoch=4102444800.5))
+    ms = machine_state.fold_machine(_spec(tmp_path), journal.read())
+
+    parked = machine_state.machine_state_as_dict(ms, d)
+    row = machine_state.summarize_machine_dir(d)
+    assert parked["status_label"] == format.status_label(row.status, row.reason)
+    assert parked["status_label"] == "waiting · no worker"
+    assert parked["wait_line"] == (
+        "parked in 'route' with no worker running (due at 2100-01-01T00:00:00+00:00):"
+        " resume with `agent6 machine run inst`"
+    )
+    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    live = machine_state.machine_state_as_dict(ms, d)
+    assert live["status_label"] == "waiting"
+    assert live["wait_line"] == "waiting in 'route': wakes at 2100-01-01T00:00:00+00:00"
+    journal.clear_pending_wait()
+    running = machine_state.machine_state_as_dict(ms, d)
+    assert running["status_label"] == "running" and "wait_line" not in running
+
+
 def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: pathlib.Path) -> None:
     """The held fold reads appended bytes only, follows a newer state, restarts on a rewrite."""
     from agent6.viewmodel import tail

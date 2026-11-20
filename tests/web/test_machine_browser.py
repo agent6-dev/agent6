@@ -598,6 +598,25 @@ def test_a_closed_entry_says_why_it_takes_no_input(
     assert not errors
 
 
+def test_the_status_names_its_reason_and_a_parked_machine_says_when_it_wakes(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """The page read a bare "waiting" where the list read "waiting · no worker".
+
+    Nothing on the page said when a parked machine wakes; the Path's end says it, as
+    `machine status` does.
+    """
+    from playwright.sync_api import expect
+
+    _parked(tmp_path)
+    page, errors = _open(open_page, port, "parked")
+    expect(page.locator(".machine-grid .pill")).to_have_text("waiting · no worker")
+    path = page.locator(".machine-grid > .card").nth(1)
+    expect(path).to_contain_text("parked in 'rest' with no worker running (due at ")
+    expect(path.locator("code")).to_have_text("agent6 machine run parked")
+    assert not errors
+
+
 def test_an_ended_machines_dock_stays_short_on_a_phone(
     open_page: OpenPage, port: int, tmp_path: pathlib.Path
 ) -> None:
@@ -656,6 +675,52 @@ def test_a_phone_opens_a_machine_at_its_waiting_prompt(
     else:
         assert page.evaluate("window.scrollY") == 0
     assert not errors
+
+
+def test_a_long_status_reason_leaves_the_states_list_its_room(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """A long reason wrapped without limit over the States list and pushed it out of its card.
+
+    The status shows the reason's first two lines and the whole label in its title; on a phone
+    it keeps within the card's width.
+    """
+    from playwright.sync_api import expect
+
+    reason = (
+        "the collector exited nonzero three times: HTTPSConnectionPool(host='forge.example',"
+        " port=443): Max retries exceeded with url: /api/v4/projects/platform%2Finfra"
+        "/merge-requests?state=merged (Caused by NewConnectionError: Failed to establish a new"
+        " connection: [Errno 111] Connection refused)"
+    )
+    end = {
+        "type": "machine.end",
+        "ts": TS,
+        "status": "failed",
+        "reason": reason,
+        "state": "done",
+        "transitions": 1,
+    }
+    _machine(tmp_path, "ended", LOOP, [_step(0, "work", "budget_exhausted", "done", AGENT), end])
+    shape = """() => {
+      const pill = document.querySelector('.machine-grid .pill');
+      const card = pill.closest('.card'), body = card.querySelector('.card-body');
+      const at = body.querySelector('.cursor').getBoundingClientRect();
+      const box = body.getBoundingClientRect(), p = pill.getBoundingClientRect();
+      return {inView: at.top >= box.top && at.bottom <= box.bottom,
+              lines: Math.round(p.height / parseFloat(getComputedStyle(pill).lineHeight)),
+              inside: p.right <= card.getBoundingClientRect().right};
+    }"""
+    for width, height, font in ((1024, 768, 16), (1440, 900, 20), (390, 844, 16)):
+        page, errors = open_page(port)
+        fonts = {"standard": font, "fixed": font * 13 // 16}
+        page.context.new_cdp_session(page).send("Page.setFontSizes", {"fontSizes": fonts})
+        page.set_viewport_size({"width": width, "height": height})
+        page.goto(f"http://127.0.0.1:{port}/#/machine/ended")
+        expect(page.locator(".machine-grid .pill")).to_have_attribute("title", f"failed · {reason}")
+        got = page.evaluate(shape)
+        assert got == {"inView": True, "lines": 2, "inside": True}, (width, font, got)
+        assert not errors
 
 
 def test_an_error_view_stands_under_the_name_it_is_about(

@@ -187,9 +187,10 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // `spend` is the instance total, as `machine status` reports it, rendered server-side.
   const sp = m.spend || {};
   const cost = sp.text ? ' · ' + sp.text : '';
+  const status = pill(m.status_level, m.status_label);
+  status.title = m.status_label; // the pill shows two lines of a long reason
   cards._summary.replaceChildren(
-    el('div', 'muted', `${esc(m.machine)} v${esc(m.version)} · current: ${esc(m.current)}${cost}`),
-    pill(m.status_level, m.status));
+    el('div', 'muted', `${esc(m.machine)} v${esc(m.version)} · current: ${esc(m.current)}${cost}`), status);
   // Each line leads with its mark, or its `[seq] `; a wrapped line continues under the text
   // after the lead (--hang: the lead's width).
   structBody.innerHTML = '';
@@ -216,9 +217,10 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
     path.appendChild(line);
   }
   if (!transitions.length) path.appendChild(el('div', 'muted', 'no transitions yet'));
-  // How the path ends, in the list's own type: a journaled end, or a stop it resumes from.
+  // How the path ends or pauses, in the list's own type: an end, a stop it resumes from or a wait.
   if (m.ended) path.appendChild(el('div', 'muted', `ended: ${m.ended.status} (${m.ended.reason}) at ${m.ended.state}`));
   if (m.worker_lost) path.appendChild(el('div', 'muted', `stopped: ${esc(m.worker_lost.reason)} at ${esc(m.worker_lost.state)}; resumable`));
+  if (m.wait_line) path.appendChild(el('div', 'muted')).append(withCode(m.wait_line));
   pathBody.appendChild(path);
   if (ctx.pathAtEnd) pathToEnd(pathBody, ctx);
   // States brings the current state into view when the machine moves; a phone's cards flow, so

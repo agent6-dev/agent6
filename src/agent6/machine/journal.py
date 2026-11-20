@@ -309,10 +309,11 @@ class PendingWait(pydantic.BaseModel):
 
     @property
     def wake_at(self) -> str:
-        """The wake instant as an ISO-8601 UTC timestamp, or "" for a timerless wait."""
+        """The wake instant as an ISO-8601 UTC time to the second, or "" for a timerless wait."""
         if self.wake_epoch is None:
             return ""
-        return datetime.datetime.fromtimestamp(self.wake_epoch, tz=datetime.UTC).isoformat()
+        wake = datetime.datetime.fromtimestamp(self.wake_epoch, tz=datetime.UTC)
+        return wake.isoformat(timespec="seconds")
 
 
 def scrub_lone_surrogates(value: Any) -> Any:

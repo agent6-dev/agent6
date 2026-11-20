@@ -5,6 +5,12 @@
 .machine-app > .actions { margin-block: var(--page-top); }
 /* A long name or reason wraps: in the summary line and in the States and Path lists. */
 .machine-grid :is(.sub, .tree) { overflow-wrap: anywhere; }
+/* A long reason shows its first two lines, as the dock's does; the Path's end note holds it whole. */
+.machine-grid .row > .pill {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  white-space: normal; overflow-wrap: anywhere;
+}
+.machine-grid .row > .pill::before { display: inline-block; margin-right: 0.4375rem; vertical-align: 1px; }
 /* Every name and transition shows whole: a long one wraps, and a wrapped line continues under the
    text after its lead, a state's mark or a transition's `[seq] ` (--hang: the lead's width). The
    node is a block: a hanging indent needs one, and the run view's task tree lays its nodes out flex. */
