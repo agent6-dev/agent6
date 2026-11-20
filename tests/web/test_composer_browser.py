@@ -270,6 +270,7 @@ def test_enter_sends_from_a_keyboard_and_types_a_new_line_on_a_touch_screen(
         with page.expect_request(f"**{endpoint}"):
             entry.press("Enter")
         expect(hint).to_contain_text("Shift+Enter newline", use_inner_text=True)
+        expect(hint.locator(".on-touch")).to_be_hidden()
         assert sent == [endpoint]
 
 
