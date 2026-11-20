@@ -254,7 +254,7 @@ def test_cold_notice_uses_only_reported_worker_usage(
         assert deadline.result()
     cold = [e for e in events if e.TYPE == "compact.idle.cache_cold"]
     assert len(cold) == expected
-    assert sum("longer than the cache lasts" in line for line in log) == expected
+    assert sum("may be longer than the cache lasts" in line for line in log) == expected
     if cold:
         assert (cold[0].uncached_tokens, cold[0].cached_tokens) == (600, cached)
         assert cold[0].setting == "providers.p.idle_compact_s" and cold[0].gap_s >= 2

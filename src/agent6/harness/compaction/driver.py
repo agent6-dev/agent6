@@ -232,10 +232,11 @@ class Tiered:
             return
         self.cold_notice_execution = context.execution_id
         setting = f"providers.{idle.provider}.idle_compact_s"
+        # One cold call does not prove the cause: a provider can miss its cache inside the lifetime.
         message = (
-            f"{setting} = {idle.seconds:g} is longer than the cache lasts. "
-            f"Idle summary {gap_s:.1f}s after the last request began: "
-            f"{uncached:,} uncached, {cached:,} cached input tokens."
+            f"Idle summary {gap_s:.1f}s after the last request began:"
+            f" {uncached:,} uncached, {cached:,} cached input tokens."
+            f" {setting} = {idle.seconds:g} may be longer than the cache lasts."
         )
         context.log(message)
         context.emit(

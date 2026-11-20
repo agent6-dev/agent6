@@ -188,8 +188,8 @@ def test_responses_usage_keeps_absent_cache_counts_absent() -> None:
 
 def test_cold_idle_notice_is_part_of_the_receipt(tmp_path: pathlib.Path) -> None:
     message = (
-        "providers.p.idle_compact_s = 240 is longer than the cache lasts. "
         "Idle summary 241.0s after the last request began: 600 uncached, 0 cached input tokens."
+        " providers.p.idle_compact_s = 240 may be longer than the cache lasts."
     )
     session = layout.SessionLayout(state_dir=tmp_path, session_id="cold")
     session.session_dir.mkdir(parents=True)
