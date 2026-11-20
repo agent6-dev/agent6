@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 
+from agent6 import terminal
 from agent6.config import Config
 from agent6.sessions import event_log, ipc, journal
 from agent6.tools import dispatch, operator_prompts, schema, tool_errors
@@ -403,3 +404,60 @@ def test_a_late_answer_is_journaled_before_its_file_goes(tmp_path: pathlib.Path)
         prompts.collect_answers()
     assert ipc.question_answers_written(session_dir, "question-1")
     assert [p.id for p in prompts.pending()] == ["question-1"]
+
+
+def test_an_approval_shows_hidden_characters_as_escapes(tmp_path: pathlib.Path) -> None:
+    """An argv with a right-to-left override or a zero-width space reached every surface raw.
+
+    A bidi-aware terminal or a browser drew the command reordered, or with a character nobody
+    sees. The approver's request and the journal row are the text every surface shows.
+    """
+    session_dir = tmp_path / "run"
+    events = _sink(session_dir)
+    asked: list[str] = []
+
+    def deny(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
+        asked.append(request.prompt)
+        return operator_prompts.ApprovalAnswer(False, "stdin")
+
+    d = _dispatcher(session_dir, events, _prompts(session_dir, events, approver=deny))
+    with pytest.raises(tool_errors.ToolDeniedError):
+        d.dispatch(
+            "run_command", {"argv": ["cat", "note\u202etxt.sh", "a\u200bb", "x\x1b[8my", "é 🙂"]}
+        )
+
+    journaled = _of(session_dir, "approval.prompt")[0]["prompt"]
+    assert asked == [journaled]
+    assert journaled == (
+        "Allow run_command: cat 'note\\u202etxt.sh' 'a\\u200bb' 'x\\x1b[8my' 'é 🙂'"
+    )
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Allow fetch: example.com /a\u202eb?q=\u2066x\u2069",
+        'Allow mcp__notes__add: {"text": "a\u200db\ufeffc\u00a0d"}',
+        "[child] Allow run_command: printf 'a\u2028b\rc'\n  second line\tkept",
+    ],
+)
+def test_every_approval_line_is_printable_when_asked(tmp_path: pathlib.Path, prompt: str) -> None:
+    """A fetch URL, an MCP payload and a child's relayed approval take the same escapes."""
+    session_dir = tmp_path / "run"
+    events = _sink(session_dir)
+    _prompts(session_dir, events, approver=_deny).approve(prompt)
+
+    shown = _of(session_dir, "approval.prompt")[0]["prompt"]
+    assert all(ch.isprintable() or ch in "\n\t" for ch in shown), shown
+    assert "second line\tkept" in shown or "\n" not in prompt
+    assert terminal.escape_unprintable(shown) == shown, "a relayed prompt is not escaped twice"
+
+
+def test_conversation_text_keeps_its_format_characters() -> None:
+    """The escapes are for text under judgment: prose keeps a joined emoji and a bidi mark."""
+    family = "\U0001f468\u200d\U0001f469\u200d\U0001f467 \u200f\u05e9\u05dc\u05d5\u05dd"
+    assert terminal.scrub_terminal_controls(family) == family
+    assert terminal.scrub_terminal_output(family) == family
+    assert terminal.escape_unprintable(family) == (
+        "\U0001f468\\u200d\U0001f469\\u200d\U0001f467 \\u200f\u05e9\u05dc\u05d5\u05dd"
+    )

@@ -47,6 +47,26 @@ def scrub_terminal_output(text: str) -> str:
     return _TERMINAL_RE.sub(lambda m: m.group("own") or "", text)
 
 
+def escape_unprintable(text: str) -> str:
+    r"""Return text an operator judges with each character that does not print shown escaped.
+
+    `str.isprintable` decides. A bidi override (U+202E), a zero-width character (U+200B), a
+    control byte and a space other than U+0020 each read as their Python escape (`\u202e`), so
+    the text cannot draw reordered or hold a character nobody sees. Newline and tab stay.
+    Idempotent: an escape is printable.
+
+    Args:
+        text: Model-written text an approval shows.
+
+    Returns:
+        The text, each character printable, a newline or a tab.
+    """
+    return "".join(
+        ch if ch.isprintable() or ch in "\n\t" else ch.encode("unicode_escape").decode("ascii")
+        for ch in text
+    )
+
+
 def printable_name(name: str) -> str:
     """Return a file name to print on one line: as it is, else quoted with its escapes shown."""
     return name if name.isprintable() else json.dumps(name)

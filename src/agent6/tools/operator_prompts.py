@@ -17,7 +17,7 @@ import sys
 import time
 from typing import Literal, Protocol
 
-from agent6 import portable
+from agent6 import portable, terminal
 from agent6.sessions import ipc, journal, process
 from agent6.tools import schema
 
@@ -246,6 +246,8 @@ class OperatorPrompts:
         The answer slot is cleared before the prompt is journaled: ids are predictable
         counters, so an answer written ahead of its prompt must never be the one consumed.
         The prompt's `standing` tells a front-end whether to offer an "allow all".
+        The prompt carries text a model wrote (an argv, a URL, an MCP payload), so the journal
+        row and the approver's request hold it with each non-printable character escaped.
 
         Args:
             prompt: The line shown.
@@ -255,6 +257,7 @@ class OperatorPrompts:
         Returns:
             Whether the call was approved.
         """
+        prompt = terminal.escape_unprintable(prompt)
         request = ApprovalRequest(
             id=f"approval-{next(self._approvals)}", prompt=prompt, scope=scope, call_id=call_id
         )

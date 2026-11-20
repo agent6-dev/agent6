@@ -95,7 +95,10 @@ The binary holds the operator's Claude login exactly as an interactive `claude` 
 Every line the CLI prints to the operator's terminal, on stdout, stderr or `/dev/tty`, passes one scrubber (`terminal.scrub_terminal_output`).
 It drops a control sequence inside text the model influenced (a file name, a commit subject, a summary, a task a plan wrote), so the model cannot write the clipboard (OSC 52), retitle the window or forge a line.
 
-- SGR styling is the allowlist, conceal excepted; an approval prompt drops every sequence from the text under judgment
+- SGR styling is the allowlist, conceal excepted
+- an approval's text (the argv, the URL, the MCP payload) is journaled with each non-printable character as its escape (`\u202e`, `\x1b`), and every surface shows that text: a bidi override cannot reorder the command under judgment, and a zero-width character shows
+    - `str.isprintable` decides, so a blank character Unicode classes as a letter or a symbol (U+3164, U+2800) still prints, and right-to-left letters still draw right to left
+    - conversation text keeps its format characters, so a joined emoji renders
 - the spinners and the interactive composer write their own erase and cursor sequences under the wrapper, the composer with its rows scrubbed
 - the ACP and MCP stdio transports write protocol bytes to their peer, not a terminal; the TUI and the web render text as text
 - `agent6 exec` is the exception: the operator's own command writes the terminal unscrubbed, so `agent6 exec cat FILE` prints whatever sequences a model-written file holds
