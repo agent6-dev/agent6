@@ -1,6 +1,6 @@
 // --- run dashboard -----------------------------------------------------------
 async function stopRun(base, label) {
-  if (!await confirmDialog('Stop ' + label + '?', 'Its model call is cut and a running command handed back; it ends now and can be resumed later. A worker that does not answer within 5 s is killed.', 'Stop now', true)) return;
+  if (!await confirmDialog('Stop ' + label + '?', 'This stops the session and its live descendants. A worker that does not stop within 5 seconds is killed.', 'Stop now', true)) return;
   try { const d = await postJSON(base + '/stop', {}); toast(d.message || 'stopped'); } catch (e) { toast(e.message, true); }
 }
 
@@ -127,12 +127,9 @@ async function renderRun(id, opts, gen) {
     cards._plan_btn = planBtn;
   }
   app.appendChild(actions);
-  const children = mk("children", "Children", "", app);
-  delete children.parentElement.dataset.w;
-  children.parentElement.style.display = "none";
-
   // The heading states the mode; paintRun fills it in from the snapshot.
   mk('head', opts.title || 'Session', ''); // status/summary leads the drawer
+  cards.children = childrenCard(drawer, readOnly);
   // A planning run's deliverable (plan.md), shown only when there is one.
   mk('plan', 'plan.md', 'scroll');
   // The run review, shown once Review run has filled it.
@@ -215,10 +212,7 @@ async function renderRun(id, opts, gen) {
     min: rem => 13.75 * rem, max: () => window.innerWidth * 0.6,
   }), cc.card);
   paintRun(cards, snap);
-  cc.conv.refresh().then(() => {
-    // The view opens at the conversation's tail, where its prompts wait; a phone's fan-out with none waiting opens on its children.
-    if (cc.conv.prompts.childElementCount || children.parentElement.style.display === 'none') cc.conv.toTail();
-  });
+  cc.conv.refresh().then(() => cc.conv.toTail());
 
   // The stream stays open across a finish: a resume from any surface logs into
   // the same file and painting continues (the TUI follows the same way).
@@ -452,48 +446,9 @@ function paintDetails(cards, s, asOf) {
   if (asOf) for (const c of [cards.budget, cards.tasks]) c.prepend(el('div', 'sub muted', `as of turn ${asOf.turn} · ${String(asOf.sha).slice(0, 7)}`));
 }
 
-// One phrase per recorded child: how it joined, from the session's dispatch records.
-function childOutcomes(dispatches) {
-  const out = {};
-  for (const d of dispatches) {
-    for (const c of d.children || []) {
-      if (c.outcome === 'joined') out[c.session_id] = `joined at ${String(c.join_sha).slice(0, 12)}`;
-      else if (c.outcome === 'no_changes') out[c.session_id] = 'no changes';
-      else if (c.outcome) out[c.session_id] = c.error ? `${c.outcome}: ${c.error}` : c.outcome;
-    }
-  }
-  return out;
-}
-
 function paintRun(cards, s) {
-  // Rows come from the session's children by lineage.
   const children = s.children || [];
-  if (cards.children && cardChanged(cards, 'children', [children, s.dispatches])) {
-    cards.children.parentElement.style.display = children.length ? "" : "none";
-    cards.children.replaceChildren();
-    if (children.length) {
-      cards.children.previousSibling.textContent = `children: ${children.length}`;
-      const outcomes = childOutcomes(s.dispatches || []);
-      const rows = children.map(child => {
-        const link = el('a', null, child.session_id);
-        link.href = '#/session/' + encodeURIComponent(child.session_id);
-        return { id: link, model: child.model || '', status: pill(child.status_level, child.status_label),
-                 usage: child.usage || '', join: outcomes[child.session_id] || '' };
-      });
-      // A column shows only when some child has a value: model and join are often ''.
-      const columns = ['id', 'model', 'status', 'usage', 'join'].filter(key => rows.some(row => row[key]));
-      const table = el('table');
-      const head = el('tr');
-      for (const key of columns) head.appendChild(el('th', null, key));
-      table.appendChild(head);
-      for (const row of rows) {
-        const tr = el('tr');
-        for (const key of columns) tr.appendChild(el('td')).append(row[key]);
-        table.appendChild(tr);
-      }
-      cards.children.appendChild(table);
-    }
-  }
+  if (cardChanged(cards, 'children', children)) cards.children(children);
   paintFindings(cards, s);
   // Stop/compact/answers only mean something on a live run; a finished run
   // ignores the bridge markers. The composer flips to resume mode instead of

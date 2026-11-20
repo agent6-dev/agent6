@@ -533,8 +533,7 @@ def test_a_phone_opens_a_run_at_its_tail_where_a_prompt_waits(
 ) -> None:
     """A phone opens a long conversation at its end, where a waiting prompt sits over the composer.
 
-    With a prompt waiting the page opened at its top, about 2,500px above the conversation's end,
-    and a fan-out's did still. A fan-out with no prompt waiting opens at its top, on its children.
+    Children in Overview do not change where Conversation opens.
     """
     from playwright.sync_api import expect
 
@@ -558,11 +557,8 @@ def test_a_phone_opens_a_run_at_its_tail_where_a_prompt_waits(
     page.goto(f"http://127.0.0.1:{port}/#/session/long-AAA111")
     expect(page.locator(".card-conv .ci").filter(has_text="f39.py")).to_be_attached()
     if children:
-        expect(page.locator(".card-children tr")).to_have_count(3)
-    if children and not asks:
-        assert page.evaluate("window.scrollY") == 0
-    else:
-        page.wait_for_function("window.scrollY > 0")
+        expect(page.locator("details.card-children")).to_be_attached()
+    page.wait_for_function("window.scrollY > 0")
     if asks:
         prompt = page.locator(".card-conv .prompt-box")
         expect(prompt).to_be_in_viewport(ratio=1)
@@ -708,14 +704,10 @@ def test_the_run_card_lines_up_the_judge_settings_and_last_call_with_its_rows(
     assert not errors
 
 
-def test_a_fan_outs_children_table_leaves_the_conversation_its_share(
+def test_a_fan_out_keeps_twenty_children_in_details(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
-    """Twenty children take at most 30% of the view, under left-aligned names, empty columns gone.
-
-    The browser-default table centred bold names over left-aligned cells, kept model, usage and
-    join columns no child filled, and grew until the conversation had no height left.
-    """
+    """Twenty children do not take any height from the conversation."""
     from playwright.sync_api import expect
 
     stop = {"type": "session.stop", "verification": "passed", "reason": "finish_session"}
@@ -728,28 +720,20 @@ def test_a_fan_outs_children_table_leaves_the_conversation_its_share(
     page, errors = open_page(port)
     page.set_viewport_size({"width": 1440, "height": 900})
     page.goto(f"http://127.0.0.1:{port}/#/session/fan")
-    card = page.locator(".card-children")
-    expect(card.locator("tr")).to_have_count(21)
-    expect(card.locator("th")).to_have_text(["id", "status", "usage"])
-    name = card.locator("th").first.evaluate(
-        "e => [getComputedStyle(e).textAlign, getComputedStyle(e).fontWeight]"
-    )
-    box = card.bounding_box()
-    conversation = page.locator(".card-conv .conv-box").bounding_box()
-    assert box and conversation
-    assert name == ["left", "600"]  # the card-label style
-    assert box["height"] <= 900 * 0.3
-    assert conversation["height"] > 300
+    card = page.locator(".drawer details.card-children")
+    summary = card.locator(":scope > summary")
+    expect(summary).to_have_text("children: 20 finished")
+    box = page.locator(".card-conv").bounding_box()
+    summary.click()
+    expect(card.locator("details")).to_have_count(20)
+    assert page.locator(".card-conv").bounding_box() == box
     assert not errors
 
 
-def test_a_phones_children_table_wider_than_its_card_scrolls_inside_it(
+def test_a_long_child_model_wraps_on_a_phone(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
-    """On a phone with a 20px text size a Children table wider than its card was cut at its edge.
-
-    It scrolls sideways inside its card, and the page does not.
-    """
+    """A long model route fits the card at a 20px text size."""
     from playwright.sync_api import expect
 
     stop = {"type": "session.stop", "verification": "passed", "reason": "finish_session"}
@@ -765,14 +749,13 @@ def test_a_phones_children_table_wider_than_its_card_scrolls_inside_it(
     page.set_viewport_size({"width": 390, "height": 844})
     page.context.new_cdp_session(page).send("Page.setFontSizes", {"fontSizes": {"standard": 20}})
     page.goto(f"http://127.0.0.1:{port}/#/session/{fan}")
-    body = page.locator(".card-children .card-body")
-    expect(body.locator("tr")).to_have_count(4)
-    reach = body.evaluate(
-        """b => { b.scrollLeft = b.scrollWidth;
-        const table = b.querySelector('table').getBoundingClientRect();
-        return [b.scrollWidth > b.clientWidth, table.right <= b.getBoundingClientRect().right]; }"""
-    )
-    assert reach == [True, True]
+    page.get_by_role("button", name="Widgets").click()
+    page.get_by_role("button", name="Overview", exact=True).click()
+    card = page.locator("details.card-children")
+    card.locator(":scope > summary").click()
+    route = card.get_by_text("openrouter/" + model, exact=False).first
+    expect(route).to_be_visible()
+    assert card.evaluate("e => e.scrollWidth <= e.clientWidth")
     assert page.evaluate("document.scrollingElement.scrollWidth") == 390
     assert not errors
 

@@ -1412,7 +1412,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             )
             self._send_json(payload, status=status)
         elif sub == "conversation":
-            self._send_json(model.conversation_payload(session_dir))
+            query = parse.parse_qs(parse.urlsplit(self.path).query)
+            self._send_json(
+                model.recent_conversation(session_dir)
+                if query.get("recent") == ["1"]
+                else model.conversation_payload(session_dir)
+            )
         elif sub == "restate":
             self._send_json(model.restate_payload(session_dir))
         elif sub == "diff":

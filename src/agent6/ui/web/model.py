@@ -40,6 +40,8 @@ from agent6.viewmodel import (
     transcript_style,
 )
 from agent6.viewmodel.machine import logs as machine_logs
+from agent6.viewmodel.session import status as session_status
+from agent6.viewmodel.session import view as session_view
 
 
 def session_dir_for(cwd: pathlib.Path, session_id: str) -> pathlib.Path | None:
@@ -420,6 +422,36 @@ def conversation_payload(session_dir: pathlib.Path) -> dict[str, Any]:
         "items": conversation_items(events, worker_dead=not process.worker_is_alive(session_dir)),
         "operator_inputs": operator_inputs(events),
     }
+
+
+def recent_conversation(session_dir: pathlib.Path) -> dict[str, str | bool]:
+    """Return a child's conversation tail, including the reply in progress.
+
+    Attributes:
+        live: Whether the session is live.
+        text: The tail of the last six items and the reply in progress.
+
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        The live flag and the conversation text.
+    """
+    events = list(tail_events(session_dir / layout.LOGS_NAME, follow=False))
+    state = fold_session(events)
+    word, _ = session_status.status_for_session_dir(session_dir, session_view.status_facts(state))
+    live = word in session_status.LIVE_STATUS_WORDS
+    items = fold_transcript(events, worker_dead=not process.worker_is_alive(session_dir))
+    lines = [
+        "".join(text for text, _ in line)
+        for item in items[-6:]
+        if item.kind != "task"
+        for line in transcript_style.item_lines(item, detail="collapsed")
+    ]
+    if live and (call := state.last_model_call) and call.in_flight and call.streamed_text:
+        lines.append(call.streamed_text)
+    text = "\n".join(lines)
+    return {"live": live, "text": "…" + text[-1600:] if len(text) > 1600 else text}
 
 
 def restate_payload(session_dir: pathlib.Path) -> dict[str, Any]:

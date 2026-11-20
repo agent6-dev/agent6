@@ -524,6 +524,30 @@ def test_run_conversation_endpoint(
     assert "read_file" in flat and "12 bytes" in flat
 
 
+def test_recent_conversation_includes_the_unfinished_reply_without_replaying_the_log(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
+    """The inline child view needs the tail before a model result closes the turn."""
+    from tests.web import session_logs
+
+    child = session_logs.write_run(
+        tmp_path,
+        "live-child",
+        [{"type": "model.result", "text": f"Checking row {i}"} for i in range(15)]
+        + [
+            {"type": "model.call", "role": "worker", "model": "reader"},
+            {"type": "model.text_delta", "text": "Still checking"},
+        ],
+        live=True,
+    )
+    status, body, _ = _get(server[1], f"/api/session/{child.name}/conversation?recent=1")
+    assert status == 200
+    recent = json.loads(body)
+    assert recent["live"]
+    assert "Checking row 0" not in recent["text"]
+    assert recent["text"].endswith("Checking row 14\nStill checking")
+
+
 def test_config_endpoint(server: tuple[web_server.WebServer, int]) -> None:
     _srv, port = server
     status, body, _ = _get(port, "/api/config")

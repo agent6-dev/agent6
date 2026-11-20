@@ -18,6 +18,7 @@ _ASSETS = resources.files(__package__)
 _CLIENT_FILES = (
     "client.js",
     "client_layout.js",
+    "client_children.js",
     "client_run.js",
     "client_machine.js",
     "client_config.js",

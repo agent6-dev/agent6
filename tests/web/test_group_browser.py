@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from agent6 import paths
-from agent6.sessions import layout
+from agent6.sessions import child_dispatch, layout
 from tests.unit import test_sessions_show_group
 from tests.web import test_web_browser
 
@@ -37,8 +37,11 @@ def test_group_children_refresh_and_link(
     page.goto(f"http://127.0.0.1:{fan_port}/#/session/fan")
     block = page.locator(".card-children")
     expect(block).to_be_visible()
-    expect(block.locator("h2")).to_have_text("children: 2")
-    expect(block.locator("tr")).to_have_count(3)
+    summary = block.locator(":scope > summary")
+    expect(summary).to_have_text("children: 2 finished")
+    summary.focus()
+    summary.press("Enter")
+    expect(block.locator("details")).to_have_count(2)
     expect(block).to_contain_text("openai/child-1")
     child = layout.SessionLayout(state_dir=paths.state_dir(group), session_id="fan-l1")
     with child.logs_path.open("a") as log:
@@ -46,8 +49,8 @@ def test_group_children_refresh_and_link(
         log.write('{"type":"session.stop","reason":"steer_abort"}\n')
     expect(block).to_contain_text("$1.25", timeout=10000)
     expect(block).to_contain_text("stopped")
-    page.set_viewport_size({"width": 390, "height": 844})
-    expect(block).to_be_visible()
+    expect(summary).to_be_focused()
+    block.locator("details > summary").first.press("Space")
     block.get_by_role("link", name="fan-l1", exact=True).click()
     expect(page).to_have_url(f"http://127.0.0.1:{fan_port}/#/session/fan-l1")
     expect(block).to_be_hidden()
@@ -65,39 +68,38 @@ def test_an_ordinary_parent_shows_its_children_and_the_receipt_links_them(
     open_page: Callable[[int], tuple[Page, list[str]]],
 ) -> None:
     """A `/parallel` run's page lists its children with their joins and keeps its own actions."""
-    import json
-
     from playwright.sync_api import expect
 
     page, errors = open_page(parent_port)
     page.goto(f"http://127.0.0.1:{parent_port}/#/session/co")
     block = page.locator(".card-children")
     expect(block).to_be_visible()
-    expect(block.locator("h2")).to_have_text("children: 2")
-    expect(block).to_contain_text("joined at bbbbbbbbbbbb")
+    summary = block.locator(":scope > summary")
+    expect(summary).to_have_text("children: 1 merged, 1 finished")
+    summary.click()
+    expect(block).to_contain_text("merged at bbbbbbbbbbbb")
     expect(block).to_contain_text("no changes")
     expect(page.get_by_role("button", name="Fork", exact=True)).to_be_enabled()
-    # A third child appears on disk while the page is open: the card follows it.
-    third = layout.SessionLayout(state_dir=paths.state_dir(ordinary_parent), session_id="co-p2-l1")
-    third.ensure()
-    third.manifest_path.write_text(
-        json.dumps(
-            {
-                "version": 3,
-                "session_id": "co-p2-l1",
-                "mode": "run",
-                "models": {"driver": {"provider": "openai", "model": "child-3"}},
-                "parallel": {"group": "co-p2", "number": 1, "parent": "co"},
-            }
-        ),
-        encoding="utf-8",
+    parent = layout.SessionLayout(state_dir=paths.state_dir(ordinary_parent), session_id="co")
+    failed = child_dispatch.ChildRecord(session_id="co-p2-l1", number=1, task="Check dates")
+    record = child_dispatch.DispatchRecord(
+        identity="co-p2",
+        source="model",
+        owner="exec",
+        turn=3,
+        base="a" * 40,
+        children=(failed,),
+        state="complete",
+        message="no model route",
     )
-    third.logs_path.write_text(
-        json.dumps({"type": "session.start", "mode": "run", "user_task": "more"}) + "\n",
-        encoding="utf-8",
-    )
-    expect(block.locator("h2")).to_have_text("children: 3", timeout=20000)
-    expect(block).to_contain_text("openai/child-3")
+    child_dispatch.write_record(parent.session_dir, record, now=2.0)
+    expect(summary).to_have_text("children: 1 merged, 1 finished, 1 failed")
+    last = block.locator("details").last
+    last.locator("summary").click()
+    expect(last).to_contain_text("never started")
+    expect(last).to_contain_text("no model route")
+    expect(last.get_by_role("link")).to_have_count(0)
+    expect(last.get_by_role("button")).to_have_count(0)
     # The receipt names each child and links it through the session navigation.
     page.get_by_role("button", name="Receipt", exact=True).click()
     receipt = page.locator(".receipt")

@@ -33,11 +33,19 @@
 
 .plan { font-family: var(--mono); font-size: var(--fs-s); white-space: pre-wrap; word-break: break-word; margin: 0; }
 
-/* A fan-out's children, one row each at the run card's text size, under muted column names. */
-.card-children table { border-collapse: collapse; font-size: var(--fs-m); }
-.card-children th, .card-children td { text-align: left; padding: 0.25rem 1.5rem 0.25rem 0; border-bottom: 1px solid var(--border); }
-/* A table wider than its card, as on a phone, scrolls sideways inside the card. */
-.run-app > .card-children > .card-body { overflow: auto; }
+/* Child rows wrap inside the drawer, including refs and model routes without spaces. */
+.card-children { overflow-wrap: anywhere; }
+.card-children summary { list-style: none; cursor: pointer; }
+.card-children > summary { display: flex; align-items: center; gap: 0.375rem; }
+.card-children:not([open]) > summary > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.child-row > summary::before { vertical-align: 0.15em; }
+.child-row > summary > strong { margin-inline-start: 0.25rem; }
+.child-row { margin-top: 0.5rem; border-top: 1px solid var(--border); padding-top: 0.5rem; }
+.child-facts { display: block; white-space: pre-line; }
+.child-body { display: grid; gap: 0.5rem; padding-block: 0.5rem; }
+.child-body > * { min-width: 0; }
+.child-prompt { font: inherit; }
+.child-body textarea { display: block; width: 100%; margin-block: 0.25rem; resize: vertical; }
 
 /* conversation: the folded transcript, the same items (and semantic span
    styles) the CLI stream and the TUI conversation view render. */
@@ -132,11 +140,6 @@
   /* controls / status keep their natural height; only the body pane
      flexes (without this the column shrinks them and clips the status kv) */
   .run-app > * { flex: none; }
-  /* The children stop at 30% of the view and scroll under their names: the conversation keeps its share. */
-  .run-app > .card-children { display: flex; flex-direction: column; max-height: 30vh; }
-  .run-app > .card-children > .card-body { min-height: 0; }
-  /* A collapsed table's borders stay behind when a cell sticks; the shadow is the names' rule. */
-  .card-children th { position: sticky; top: 0; background: var(--bg); box-shadow: inset 0 -1px var(--border); }
   .run-app .run-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
   .run-app .drawer {
     /* block, not grid: a definite-height grid distributes its rows and
