@@ -200,26 +200,35 @@ class LogTail:
     end, rereading a partial line at EOF until it is completed or repaired.
 
     Attributes:
-        rewound: The last read found the file shorter than its last complete line's end
-            and started over from its head, so a holder folding the events starts over too.
+        position: Byte offset after the last complete line read.
+        rewound: The last read found the file shorter than the prior position and restarted
+            at `start_at`, so a holder folding the events starts over too.
     """
 
     def __init__(self, path: pathlib.Path) -> None:
         self._path = path
-        self._pos = 0
+        self.position = 0
         self.rewound = False
 
-    def read(self) -> list[dict[str, Any]]:
-        """Return the events appended since the last read, none when the file is unreadable."""
+    def read(self, *, start_at: int = 0) -> list[dict[str, Any]]:
+        """Read complete events added since the last poll.
+
+        Args:
+            start_at: Exclude bytes before this offset, even if the file shrinks.
+
+        Returns:
+            The new rows, none when the file is unreadable.
+        """
         self.rewound = False
         try:
             with self._path.open("rb") as fh:
-                if fh.seek(0, os.SEEK_END) < self._pos:
-                    self._pos, self.rewound = 0, True
-                fh.seek(self._pos)
+                if fh.seek(0, os.SEEK_END) < self.position:
+                    self.position, self.rewound = 0, True
+                self.position = max(start_at, self.position)
+                fh.seek(self.position)
                 chunk = fh.read()
         except OSError:
             return []
-        lines, pending = _complete_lines(chunk, self._pos)
-        self._pos += len(chunk) - len(pending)
+        lines, pending = _complete_lines(chunk, self.position)
+        self.position += len(chunk) - len(pending)
         return [evt for _end, raw in lines if (evt := _parse_event_line(raw)) is not None]

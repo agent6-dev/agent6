@@ -199,7 +199,7 @@ def test_a_slow_child_is_waited_for_until_its_report_or_exit(
         child_launch.bootstrap_argv(),
         tmp_path,
         ready=lambda _: directory if directory.exists() else None,
-        stop_reason=lambda: "",
+        stop_reason=lambda _: "",
         env={},
     )
     assert pid == 4242
@@ -228,7 +228,7 @@ def test_spawn_child_returns_the_pid_with_a_failure(
         child_launch.bootstrap_argv(),
         tmp_path,
         ready=lambda _: None,
-        stop_reason=lambda: "",
+        stop_reason=lambda _: "",
         env={},
     )
     assert (found, pid) == (None, 4242)
@@ -242,7 +242,7 @@ def test_spawn_child_returns_the_pid_with_a_failure(
         child_launch.bootstrap_argv(),
         tmp_path,
         ready=lambda _: None,
-        stop_reason=lambda: "",
+        stop_reason=lambda _: "",
         env={},
     )
     assert (found, pid) == (None, 0)

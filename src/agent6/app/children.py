@@ -17,7 +17,15 @@ from typing import Any, Protocol
 
 from agent6 import budget as agent6_budget
 from agent6 import child_records, errors, kinds, paths
-from agent6.app import child_launch, child_resume, child_wait, parallel_results, stop, worktrees
+from agent6.app import (
+    child_launch,
+    child_resume,
+    child_wait,
+    child_watch,
+    parallel_results,
+    stop,
+    worktrees,
+)
 from agent6.app import compare as app_compare
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError
@@ -47,7 +55,9 @@ class ParallelError(Exception):
     """The group could not be set up: over the child cap, or a route that names nothing."""
 
 
-type PollChild = Callable[[pathlib.Path, str, str, Callable[[], bool]], bool]
+type PollChild = Callable[
+    [pathlib.Path, str, str | child_watch.ChildStartup, Callable[[], bool]], bool
+]
 
 
 class SpawnRun(Protocol):
@@ -59,7 +69,7 @@ class SpawnRun(Protocol):
         cwd: pathlib.Path,
         *,
         ready: Callable[[int], pathlib.Path | None],
-        stop_reason: Callable[[], str],
+        stop_reason: Callable[[int], str],
         env: dict[str, str],
     ) -> tuple[pathlib.Path | None, int, str]:
         """Spawn the command on its watch thread.
@@ -137,7 +147,10 @@ class ChildRuntime:
                     listener(row)
 
         def poll(
-            directory: pathlib.Path, label: str, status: str, interrupted: Callable[[], bool]
+            directory: pathlib.Path,
+            label: str,
+            status: str | child_watch.ChildStartup,
+            interrupted: Callable[[], bool],
         ) -> bool:
             drain()
             return watch(directory, label, status, interrupted) if watch is not None else False
@@ -188,7 +201,7 @@ def bridge_spawner(
     contract: kinds.ConversationContract | None = None,
     continuation: str = "",
     runtime: ChildRuntime,
-    stop_reason: Callable[[], str] = lambda: "",
+    stop_reason: Callable[[child_watch.ChildStartup], str] = lambda _: "",
 ) -> child_records.ChildResult:
     """Clone the origin and start the child bootstrap detached in the clone.
 
@@ -278,12 +291,14 @@ def bridge_spawner(
     child_dir = child_wait.child_dir(record_state, spec.session_id, mode=spec.mode)
     reader = tail.LogTail(child_dir / sessions_layout.LOGS_NAME)
     reader.read()  # A continuation appends to the stopped execution's journal.
+    start_at = reader.position
     report = journal.SessionResume.TYPE if continuation else journal.SessionStart.TYPE
 
     def ready(pid: int) -> pathlib.Path | None:
         if process.read_worker_pid(child_dir) not in (None, pid):
             return None
-        return child_dir if any(row.get("type") == report for row in reader.read()) else None
+        rows = reader.read(start_at=start_at)
+        return child_dir if any(row.get("type") == report for row in rows) else None
 
     # A child's model cannot dispatch work; only the harness may dispatch reviewers.
     markers = {
@@ -295,7 +310,7 @@ def bridge_spawner(
         child_launch.bootstrap_argv(),
         spec.worktree,
         ready=ready,
-        stop_reason=stop_reason,
+        stop_reason=lambda pid: stop_reason(child_watch.ChildStartup(pid, start_at)),
         env={**os.environ, **markers},
     )
     if session_dir is None:
@@ -410,12 +425,12 @@ def run_child_to_completion(
     def interrupted() -> bool:
         return bool(parent_stop_reason())
 
-    def stop_before_start() -> str:
+    def stop_before_start(startup: child_watch.ChildStartup) -> str:
         nonlocal startup_stop
         startup_stop = parent_stop_reason()
         if not startup_stop and watch is not None:
             directory = child_wait.child_dir(record_state, spec.session_id, mode=spec.mode)
-            if watch(directory, label, "starting", interrupted):
+            if watch(directory, label, startup, interrupted):
                 startup_stop = "stopped at the run's budget"
         return startup_stop
 

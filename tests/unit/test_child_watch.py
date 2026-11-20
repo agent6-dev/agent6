@@ -119,8 +119,21 @@ def test_a_prompt_before_the_start_report_reaches_the_parent(tmp_path: pathlib.P
     child = _child(tmp_path)
     (child / "logs.jsonl").write_text(json.dumps(_prompt()) + "\n")
     parent = _Parent(tmp_path, "no")
-    parent.watch()(child, "attempt 1 child", "starting")
+    parent.watch()(child, "attempt 1 child", child_watch.ChildStartup(os.getpid(), 0))
     assert _answer(child) == "no"
+
+
+def test_preflight_does_not_rewind_into_a_stopped_executions_prompt(tmp_path: pathlib.Path) -> None:
+    """A short journal cannot supply a prompt from before the launch offset."""
+    child = _child(tmp_path, _prompt())
+    log = child / "logs.jsonl"
+    previous = log.read_bytes()
+    log.write_bytes(previous + b'{"type":"session.stop","reason":"interrupted"}\n')
+    startup = child_watch.ChildStartup(os.getpid(), log.stat().st_size)
+    log.write_bytes(previous)
+    parent = _Parent(tmp_path)
+    parent.watch()(child, "attempt 1 child", startup)
+    assert not parent.asked and _answer(child) is None
 
 
 def test_a_standing_answer_at_the_parent_is_handed_down(tmp_path: pathlib.Path) -> None:

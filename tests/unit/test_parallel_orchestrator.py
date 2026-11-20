@@ -30,6 +30,7 @@ from agent6 import child_records, directive, kinds, paths, portable
 from agent6.app import (
     child_launch,
     child_wait,
+    child_watch,
     compare,
     parallel_results,
     reporter,
@@ -824,7 +825,7 @@ def test_child_setup_output_survives_import_and_a_failed_one_reaches_the_operato
         cwd: pathlib.Path,
         *,
         ready: Callable[[int], pathlib.Path | None],
-        stop_reason: Callable[[], str],
+        stop_reason: Callable[[int], str],
         env: dict[str, str],
     ) -> tuple[pathlib.Path, int, str]:
         del ready, stop_reason
@@ -2232,11 +2233,11 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
         cwd: pathlib.Path,
         *,
         ready: Callable[[int], pathlib.Path | None],
-        stop_reason: Callable[[], str],
+        stop_reason: Callable[[int], str],
         env: dict[str, str],
     ) -> tuple[pathlib.Path | None, int, str]:
         assert cwd == children[0].worktree
-        assert ready(1) is None and not stop_reason()
+        assert ready(1) is None and not stop_reason(1)
         envelope = _launch_of(env)
         assert (envelope.parent, envelope.group, envelope.number) == ("failed11", "failed11", 1)
         assert worktrees.sweep_group_clones(origin, cfg) == (0, 1)
@@ -2779,7 +2780,10 @@ def test_parent_reads_commits_beyond_start_while_the_child_runs(
         )
 
     def watch(
-        _dir: pathlib.Path, _label: str, _status: str, _interrupted: Callable[[], bool]
+        _dir: pathlib.Path,
+        _label: str,
+        _status: str | child_watch.ChildStartup,
+        _interrupted: Callable[[], bool],
     ) -> bool:
         (view,) = vm_children.children_of(parent)
         assert view.status == "running" and view.commits is not None

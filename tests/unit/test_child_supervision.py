@@ -150,7 +150,7 @@ from agent6.ui import spawn
 found, pid, err = spawn.spawn_child(
     [sys.executable, "-c", "import time; time.sleep(60)"],
     Path(sys.argv[1]), ready=lambda pid: Path(sys.argv[1]),
-    stop_reason=lambda: "", env=dict(os.environ),
+    stop_reason=lambda _: "", env=dict(os.environ),
 )
 print(pid, flush=True)
 time.sleep(60)
@@ -235,7 +235,10 @@ def test_a_child_is_stopped_once_the_runs_budget_is_spent(
         return child_records.ChildResult(spec, d, "agent6/x", True, "", pid=deaf.pid)
 
     def watch(
-        child_dir: pathlib.Path, label: str, _status: str, _interrupted: Callable[[], bool]
+        child_dir: pathlib.Path,
+        label: str,
+        _status: str | child_watch.ChildStartup,
+        _interrupted: Callable[[], bool],
     ) -> bool:
         polled.append((child_dir, label))
         return True
@@ -279,9 +282,12 @@ def test_a_child_can_be_stopped_before_its_start_report(
     waiting, spent = threading.Event(), threading.Event()
 
     def watch(
-        _directory: pathlib.Path, _label: str, status: str, _interrupted: Callable[[], bool]
+        _directory: pathlib.Path,
+        _label: str,
+        status: str | child_watch.ChildStartup,
+        _interrupted: Callable[[], bool],
     ) -> bool:
-        assert status == "starting"
+        assert isinstance(status, child_watch.ChildStartup)
         waiting.set()
         return spent.is_set()
 
@@ -383,7 +389,7 @@ Path('logs.jsonl').write_text('{"type":"session.start"}\\n')
 time.sleep(10)
 """
 
-    def stop_reason() -> str:
+    def stop_reason(_pid: int) -> str:
         (tmp_path / "report").touch()
         until = time.monotonic() + 5
         while not log.exists() and time.monotonic() < until:

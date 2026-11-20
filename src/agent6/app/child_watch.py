@@ -14,6 +14,7 @@ so far, its own running children included, and the parent's tracker bounds the s
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 import threading
 import time
@@ -29,6 +30,14 @@ from agent6.viewmodel.session import state as session_fold
 
 # The least time between two budget rows the watch writes for running children.
 ROW_INTERVAL_S = 10.0
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ChildStartup:
+    """The spawned pid and the end of the child's complete journal rows before launch."""
+
+    pid: int
+    start_at: int
 
 
 class ChildWatch:
@@ -62,7 +71,7 @@ class ChildWatch:
         self,
         child_dir: pathlib.Path,
         label: str,
-        status: str,
+        status: str | ChildStartup,
         interrupted: Callable[[], bool] = operator_prompts.never_interrupted,
     ) -> bool:
         """Count the child's spend so far, and relay its prompt when it waits on one.
@@ -70,37 +79,49 @@ class ChildWatch:
         Args:
             child_dir: The child's session dir, named for its session id.
             label: How the parent's operator reads the child, such as `attempt 2 <session id>`.
-            status: The child's status word at this poll.
+            status: The launch being watched, or the status after its start report.
             interrupted: Ends a relay on a stop or deadline.
 
         Returns:
             Whether the parent's budget is spent, which ends the child.
         """
+        startup = status if isinstance(status, ChildStartup) else None
+        worker = process.read_live_worker_identity(child_dir)
+        owned = startup is None or (worker is not None and worker[0] == startup.pid)
         if self._budget is not None:
-            self._budget.note_running(child_dir.name, running_usage(child_dir))
+            if owned:
+                self._budget.note_running(child_dir.name, running_usage(child_dir))
             over = self._budget.is_exhausted()
             self._journal_meter(self._budget, now=over)
             if over:
                 return True
-        # A live worker can ask a preflight question before it reports its start or resume.
-        if status == "waiting" or (
-            status == "starting"
-            and process.worker_is_alive(child_dir)
-            and session_log.scan_session_log(child_dir / layout.LOGS_NAME).operator_blocked
-        ):
+        if not owned or worker is None or (startup is None and status != "waiting"):
+            return False
+        # Retry next poll rather than block supervision behind a sibling's prompt.
+        if not self._prompts.one_at_a_time.acquire(blocking=False):
+            return False
+        try:
+            start_at = startup.start_at if startup is not None else 0
+            prompt = _open_prompt(child_dir, start_at)
+            if prompt is None:
+                return False
 
             def cancelled() -> bool:
                 return (
                     interrupted()
-                    or not process.worker_is_alive(child_dir)
                     or ipc.stop_request_pending(child_dir)
                     or (self._budget is not None and self._budget.is_exhausted())
-                    or not session_log.scan_session_log(
-                        child_dir / layout.LOGS_NAME
-                    ).operator_blocked
+                    or _open_prompt(child_dir, start_at) != prompt
+                    or process.read_live_worker_identity(child_dir) != worker
                 )
 
-            self._relay(child_dir, label, cancelled)
+            if not cancelled():
+                if isinstance(prompt, state_types.ApprovalPrompt):
+                    self._approval(child_dir, label, prompt, cancelled)
+                else:
+                    self._question(child_dir, label, prompt, cancelled)
+        finally:
+            self._prompts.one_at_a_time.release()
         return False
 
     def _journal_meter(self, budget: agent6_budget.BudgetTracker, *, now: bool) -> None:
@@ -120,34 +141,6 @@ class ChildWatch:
                 return
             self._journaled, self._journaled_at = moved, at
         self._emit(journal.BudgetUpdate(**budget_events.budget_update_fields(budget)))
-
-    def _relay(self, child_dir: pathlib.Path, label: str, cancelled: Callable[[], bool]) -> None:
-        """Relay the prompt the child is paused on, if nobody answered it yet.
-
-        A queued question pauses nothing and stays on the child's own row.
-
-        Args:
-            child_dir: The child's session dir.
-            label: The child, as the operator reads it.
-            cancelled: Ends the relay without writing to the child.
-        """
-        # Held from the check to the answer: no prompt answered meanwhile is asked again.
-        # Retry next poll rather than block supervision behind a sibling's prompt.
-        if not self._prompts.one_at_a_time.acquire(blocking=False):
-            return
-        try:
-            state = session_fold.fold_session(
-                tail.tail_events(child_dir / layout.LOGS_NAME, follow=False)
-            )
-            approval = session_fold.open_approval_of(state)
-            if approval is not None and not ipc.answer_written(child_dir, approval.id):
-                self._approval(child_dir, label, approval, cancelled)
-                return
-            question = next((q for q in state.questions if q.blocking and not q.answered), None)
-            if question is not None and not ipc.question_answers_written(child_dir, question.id):
-                self._question(child_dir, label, question, cancelled)
-        finally:
-            self._prompts.one_at_a_time.release()
 
     def _approval(
         self,
@@ -169,20 +162,19 @@ class ChildWatch:
         """
         scope = prompt.scope
         if scope and ipc.session_deny_set(self._parent_dir, scope):
-            ipc.write_answer(child_dir, prompt.id, "session-deny")
-            return
-        approved = self._prompts.approve(
-            f"[{label}] {prompt.prompt}", scope=scope, interrupted=cancelled
-        )
-        if cancelled():
-            return
-        if scope and approved and ipc.session_allow_set(self._parent_dir, scope):
-            answer = "session"
-        elif scope and not approved and ipc.session_deny_set(self._parent_dir, scope):
             answer = "session-deny"
         else:
-            answer = "yes" if approved else "no"
-        ipc.write_answer(child_dir, prompt.id, answer)
+            approved = self._prompts.approve(
+                f"[{label}] {prompt.prompt}", scope=scope, interrupted=cancelled
+            )
+            if scope and approved and ipc.session_allow_set(self._parent_dir, scope):
+                answer = "session"
+            elif scope and not approved and ipc.session_deny_set(self._parent_dir, scope):
+                answer = "session-deny"
+            else:
+                answer = "yes" if approved else "no"
+        if not cancelled():
+            ipc.write_answer(child_dir, prompt.id, answer)
 
     def _question(
         self,
@@ -210,6 +202,29 @@ class ChildWatch:
             ipc.write_question_answers(child_dir, prompt.id, answer.answers)
         else:
             ipc.write_question_unanswered(child_dir, prompt.id, answer.note)
+
+
+def _open_prompt(
+    child_dir: pathlib.Path, start_at: int
+) -> state_types.ApprovalPrompt | state_types.QuestionPrompt | None:
+    """Read a prompt from this launch's journal rows.
+
+    Args:
+        child_dir: The child's session directory.
+        start_at: The first byte to fold.
+
+    Returns:
+        The unanswered blocking prompt, or None while there is none to relay.
+    """
+    rows = tail.LogTail(child_dir / layout.LOGS_NAME).read(start_at=start_at)
+    state = session_fold.fold_session(rows)
+    approval = session_fold.open_approval_of(state)
+    if approval is not None and not ipc.answer_written(child_dir, approval.id):
+        return approval
+    question = next((q for q in state.questions if q.blocking and not q.answered), None)
+    if question is not None and not ipc.question_answers_written(child_dir, question.id):
+        return question
+    return None
 
 
 def running_usage(child_dir: pathlib.Path) -> agent6_budget.UsageSettlement:

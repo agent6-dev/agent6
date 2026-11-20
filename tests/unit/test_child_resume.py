@@ -12,12 +12,13 @@ from typing import Any
 import pytest
 
 from agent6 import child_records, paths
-from agent6.app import child_launch, child_resume, child_wait
+from agent6.app import child_launch, child_resume, child_wait, child_watch
 from agent6.app import children as app_children
 from agent6.config import Config, layer
 from agent6.harness import child_repo
-from agent6.sessions import child_dispatch, event_log, journal, process
+from agent6.sessions import child_dispatch, event_log, ipc, journal, process
 from agent6.sessions import manifest as sessions_manifest
+from agent6.tools import operator_prompts
 from agent6.ui.cli import cli_main
 from tests import launch_env
 from tests.unit import test_children_background as background
@@ -179,12 +180,9 @@ def test_a_private_launch_cannot_continue_another_child(
     )
 
 
-@pytest.mark.parametrize("control", ["agent6", "model"])
-@pytest.mark.parametrize("phase", ["unstarted", "live", "finished"])
-def test_continuation_readiness_distinguishes_executions(
-    tmp_path: pathlib.Path, control: str, phase: str
-) -> None:
-    """A new execution stays recognizable after its worker pid disappears."""
+@pytest.fixture
+def retained_child(tmp_path: pathlib.Path) -> child_records.ChildSpec:
+    """Keep the stopped child's clone, private launch and journal for a continuation."""
     repo = tmp_path / "repo"
     background._init_repo(repo)
     state = paths.state_dir(repo)
@@ -208,20 +206,56 @@ def test_continuation_readiness_distinguishes_executions(
     sink = event_log.EventSink(directory / "logs.jsonl")
     sink.emit(journal.SessionStart(user_task="work", mode="run", execution_id="original"))
     sink.emit(journal.SessionStop(execution_id="original", reason="interrupted", turns=1))
+    sink.emit(
+        journal.SessionResume(
+            session_id=spec.session_id,
+            execution_id="earlier",
+            steer="work",
+            mode="run",
+            user_task="work",
+            turn=1,
+            messages=2,
+        )
+    )
+    sink.emit(
+        journal.ApprovalPrompt(
+            id="approval-1", prompt="Previous setup?", standing=True, scope="command"
+        )
+    )
+    sink.emit(journal.SessionStop(execution_id="earlier", reason="interrupted", turns=1))
+    return spec
+
+
+@pytest.mark.parametrize("control", ["agent6", "model"])
+@pytest.mark.parametrize("phase", ["unstarted", "short", "live", "finished"])
+def test_continuation_readiness_distinguishes_executions(
+    tmp_path: pathlib.Path, retained_child: child_records.ChildSpec, control: str, phase: str
+) -> None:
+    """A new execution stays recognizable after its worker pid disappears."""
+    spec = retained_child
+    repo = tmp_path / "repo"
+    state = paths.state_dir(repo)
+    directory = child_wait.child_dir(state, spec.session_id, mode=spec.mode)
+    sink = event_log.EventSink(directory / "logs.jsonl")
 
     def spawn(
         argv: list[str],
         cwd: pathlib.Path,
         *,
         ready: Callable[[int], pathlib.Path | None],
-        stop_reason: Callable[[], str],
+        stop_reason: Callable[[int], str],
         env: dict[str, str],
     ) -> tuple[pathlib.Path | None, int, str]:
         assert argv == child_launch.bootstrap_argv() and cwd == spec.worktree
-        assert not stop_reason()
+        assert not stop_reason(os.getpid())
         process.write_worker_pid(directory, os.getpid())
         assert ready(os.getpid()) is None, "a live pid with the old journal is not a new start"
         assert child_launch.read_file(pathlib.Path(env[child_launch.ENV])).continuation == "finish"
+        if phase == "short":
+            lines = sink.path.read_bytes().splitlines(keepends=True)
+            sink.path.write_bytes(b"".join(lines[:-1]))
+            assert ready(os.getpid()) is None, "an earlier resume is not this launch's report"
+            return None, 0, "no new execution"
         if phase == "unstarted":
             return None, 0, "no new execution"
         process.emit_session_start(
@@ -261,4 +295,66 @@ def test_continuation_readiness_distinguishes_executions(
         continuation="finish",
         runtime=app_children.ChildRuntime(spawn=spawn),
     )
-    assert result.ok is (phase != "unstarted")
+    assert result.ok is (phase in {"live", "finished"})
+
+
+@pytest.mark.parametrize("owner", ["ours", "other", "changed"])
+def test_only_the_current_workers_preflight_can_receive_an_answer(
+    tmp_path: pathlib.Path, retained_child: child_records.ChildSpec, owner: str
+) -> None:
+    """Only this launch's prompt can be relayed, while the same worker still owns it."""
+    repo = tmp_path / "repo"
+    state = paths.state_dir(repo)
+    directory = child_wait.child_dir(state, retained_child.session_id, mode=retained_child.mode)
+    parent = directory.with_name("root")
+    parent.mkdir()
+    if owner == "other":
+        assert ipc.record_answer(parent, "session", "command")
+    asked: list[str] = []
+
+    def approve(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
+        asked.append(request.prompt)
+        if owner == "changed":
+            process.write_worker_pid(directory, os.getppid())
+        return operator_prompts.ApprovalAnswer(approved=True, source="frontend")
+
+    prompts = operator_prompts.OperatorPrompts(session_dir=parent, approver=approve)
+
+    def spawn(
+        argv: list[str],
+        cwd: pathlib.Path,
+        *,
+        ready: Callable[[int], pathlib.Path | None],
+        stop_reason: Callable[[int], str],
+        env: dict[str, str],
+    ) -> tuple[pathlib.Path | None, int, str]:
+        pid = os.getpid()
+        process.write_worker_pid(directory, os.getppid() if owner == "other" else pid)
+        assert ready(pid) is None
+        if owner == "ours":
+            assert not stop_reason(pid)
+            assert not asked and not ipc.answer_written(directory, "approval-1")
+        event_log.EventSink(directory / "logs.jsonl").emit(
+            journal.ApprovalPrompt(
+                id="approval-1", prompt="Current setup?", standing=True, scope="command"
+            )
+        )
+        assert not stop_reason(pid)
+        return None, pid, "exited before start"
+
+    result = app_children.run_child_to_completion(
+        retained_child,
+        "work",
+        cfg=Config(),
+        explicit_leaves=frozenset(),
+        origin=repo,
+        record_state=state,
+        group="root-p1",
+        parent="root",
+        continuation="finish",
+        runtime=app_children.ChildRuntime(spawn=spawn),
+        watch=child_watch.ChildWatch(prompts, parent),
+    )
+    assert not result.ok and result.error == "exited before start"
+    assert ipc.answer_written(directory, "approval-1") is (owner == "ours")
+    assert asked == ([] if owner == "other" else ["[attempt 1 root-p1-l1] Current setup?"])

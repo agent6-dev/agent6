@@ -502,7 +502,7 @@ def spawn_child(
     *,
     ready: Callable[[int], pathlib.Path | None],
     env: dict[str, str],
-    stop_reason: Callable[[], str],
+    stop_reason: Callable[[int], str],
 ) -> tuple[pathlib.Path | None, int, str]:
     """Wait on the watch thread for its child's start report, exit or requested stop.
 
@@ -533,7 +533,7 @@ def _spawn_and_wait[T](
     ready: Callable[[int], T | None],
     env: dict[str, str] | None,
     timeout_s: float | None = None,
-    stop_reason: Callable[[], str] | None = None,
+    stop_reason: Callable[[int], str] | None = None,
     clean_exit: T | None = None,
     preexec: Callable[[], None] | None = None,
 ) -> tuple[T | None, int, str]:
@@ -589,7 +589,7 @@ def _spawn_and_wait[T](
                     return clean_exit, proc.pid, ""
                 error = _child_exit_message(label, rc, _stderr_tail(err))
                 break
-            if stop_reason is not None and (reason := stop_reason()):
+            if stop_reason is not None and (reason := stop_reason(proc.pid)):
                 if (found := ready(proc.pid)) is None:
                     how = child_wait.stop_child(proc.pid)
                     proc.wait()

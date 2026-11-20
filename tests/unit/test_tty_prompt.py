@@ -18,6 +18,7 @@ import select
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -204,7 +205,8 @@ def test_a_headless_park_names_the_prompt_and_the_attach_command_on_stderr(
     """
     tty_lines = _no_terminal(monkeypatch, away="wait")
 
-    def _reply(_d: object, _r: object) -> str:
+    def _reply(_d: object, _r: object, *, interrupted: Callable[[], bool]) -> str:
+        assert not interrupted()
         return "yes"
 
     monkeypatch.setattr(sessions_ipc, "await_frontend_reply", _reply)
@@ -346,7 +348,10 @@ def test_a_headless_question_park_says_where_to_answer_and_that_it_was(
     """
     tty_lines = _no_terminal(monkeypatch, away="wait")
 
-    def _reply(_d: object, _r: object) -> sessions_ipc.QuestionReply:
+    def _reply(
+        _d: object, _r: object, *, interrupted: Callable[[], bool]
+    ) -> sessions_ipc.QuestionReply:
+        assert not interrupted()
         return sessions_ipc.QuestionReply(("yes",))
 
     monkeypatch.setattr(sessions_ipc, "await_frontend_reply", _reply)
