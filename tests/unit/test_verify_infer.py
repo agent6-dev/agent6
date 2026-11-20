@@ -420,6 +420,8 @@ def test_parse_llm_verify() -> None:
         "cargo",
         "test",
     )
+    # A bracket in the prose after the array hid it from a first-`[`-to-last-`]` match.
+    assert verify_infer.parse_llm_verify('["pytest","-q"] (see [the docs])') == ("pytest", "-q")
     assert verify_infer.parse_llm_verify("[]") is None
     assert verify_infer.parse_llm_verify("I cannot tell") is None
     assert verify_infer.parse_llm_verify("[1, 2]") is None

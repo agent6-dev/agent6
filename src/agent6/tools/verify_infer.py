@@ -533,14 +533,12 @@ def gather_repo_manifests(
 
 
 def parse_llm_verify(text: str) -> tuple[str, ...] | None:
-    """Return the JSON argv array in the model's reply, or None."""
-    if not text:
-        return None
-    match = re.search(r"\[.*\]", text, re.DOTALL)
-    if match is None:
+    """Return the JSON argv array that starts at the first `[` of the model's reply, or None."""
+    start = text.find("[")
+    if start < 0:
         return None
     try:
-        data = json.loads(match.group(0))
+        data, _ = json.JSONDecoder().raw_decode(text, start)
     except ValueError:
         return None
     if not isinstance(data, list) or not data:

@@ -568,6 +568,30 @@ def test_extract_json_prefers_the_verdict_object_over_a_stray_preamble() -> None
     assert obj is not None and obj["verdict"] == "pass" and obj["summary"] == "ok"
 
 
+@pytest.mark.parametrize(
+    "prose", ['The 12" screen note aside, verdict:', "The template opens a { it never closes."]
+)
+def test_extract_json_finds_the_verdict_past_a_stray_quote_or_brace(prose: str) -> None:
+    """One unpaired quote or brace in the prose before a verdict hid it from the brace scanner."""
+    obj = llm_json.extract_json(f'{prose} {{"verdict": "pass"}}', prefer=("verdict", "findings"))
+    assert obj == {"verdict": "pass"}
+
+
+def test_a_verdict_cut_off_after_a_finding_names_the_truncation() -> None:
+    """A cut-off verdict's complete findings are not read as the reply.
+
+    Read as one, a finding failed as an invalid verdict and hid the output cap.
+    """
+    cut = _FakeProvider("")
+    cut_resp = _Resp(_BLOCK_JSON[:-2] + ',{"categ', stop_reason="length", output_tokens=1500)
+    cut.call = lambda **_kw: cut_resp  # type: ignore[method-assign]
+    v = review_env.single_verdict(
+        cast(Provider, cut), _ctx(), reviewer_index=0, focus="s", model_route="m1"
+    )
+    assert v.verdict == "abstain"
+    assert v.error is not None and "before the verdict JSON completed" in v.error
+
+
 def test_extract_json_ignores_braces_inside_strings() -> None:
     obj = llm_json.extract_json(
         '{"verdict": "block", "summary": "a } brace { in text", "findings": []}',

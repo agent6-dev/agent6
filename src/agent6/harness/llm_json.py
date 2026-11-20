@@ -13,63 +13,35 @@ from __future__ import annotations
 import json
 from typing import Any
 
-
-def balanced_objects(text: str) -> list[str]:
-    """Return every top-level balanced `{...}` span in the text.
-
-    Brace depth honours string literals and escapes.
-
-    Args:
-        text: The reply to scan.
-
-    Returns:
-        The spans in order of appearance.
-    """
-    spans: list[str] = []
-    depth = 0
-    start: int | None = None
-    in_str = esc = False
-    for i, ch in enumerate(text):
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}" and depth > 0:
-            depth -= 1
-            if depth == 0 and start is not None:
-                spans.append(text[start : i + 1])
-                start = None
-    return spans
+_DECODER = json.JSONDecoder()
 
 
 def extract_json(text: str, *, prefer: tuple[str, ...]) -> dict[str, Any] | None:
-    """Return the last balanced object carrying any preferred key.
+    """Return the last JSON object in the text carrying any preferred key.
+
+    Every `{` is tried as an object's start. An object ending inside the text a broken
+    object had read is skipped: a cut-off verdict's findings are not the reply.
 
     Args:
         text: The reply to scan.
         prefer: The keys the caller expects.
 
     Returns:
-        That object, else the last parseable dict, else None.
+        That object, else the last object found, else None.
     """
     objs: list[dict[str, Any]] = []
-    for span in balanced_objects(text):
+    read_to = 0  # where the furthest-reading broken object stopped
+    at = text.find("{")
+    while at != -1:
         try:
-            obj = json.loads(span)
-        except (json.JSONDecodeError, ValueError):
+            obj, end = _DECODER.raw_decode(text, at)
+        except json.JSONDecodeError as exc:
+            read_to = max(read_to, exc.pos)
+            at = text.find("{", at + 1)
             continue
-        if isinstance(obj, dict):
+        if end > read_to:
             objs.append(obj)
+        at = text.find("{", end)
     for obj in reversed(objs):
         if any(key in obj for key in prefer):
             return obj
