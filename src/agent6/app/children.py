@@ -12,7 +12,7 @@ import os
 import pathlib
 import threading
 import time
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from typing import Protocol
 
 from agent6 import budget as agent6_budget
@@ -97,7 +97,7 @@ class ChildRuntime:
         state: pathlib.Path,
         continuing: bool,
         watch: Callable[[pathlib.Path, str, str], bool] | None,
-    ) -> Iterator[Callable[[pathlib.Path, str, str], bool] | None]:
+    ) -> Generator[Callable[[pathlib.Path, str, str], bool] | None]:
         """Give the observer a last read before the parent can join the child.
 
         Args:
