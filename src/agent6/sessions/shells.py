@@ -12,7 +12,9 @@ from __future__ import annotations
 import contextlib
 import json
 import pathlib
+import re
 
+from agent6 import path_safety
 from agent6.sessions import process
 
 SHELLS_DIR = "shells"  # under the session dir
@@ -63,6 +65,33 @@ def shell_host_processes(root: pathlib.Path) -> list[process.ProcessIdentity]:
     return processes
 
 
+def result_record(root: pathlib.Path, shell_id: str) -> dict[str, object] | None:
+    """Read a background command's last result without following links.
+
+    Args:
+        root: The run's shells directory.
+        shell_id: The recorded job id.
+
+    Returns:
+        The result fields, an empty record for an unreadable ending, or None without an ending.
+    """
+    if not re.fullmatch(r"bg[0-9]+", shell_id):
+        return None
+    try:
+        entry = path_safety.contain(root.parent, pathlib.Path(root.name) / shell_id / RESULT_NAME)
+        raw = path_safety.read_contained(entry, errors="replace", limit_chars=65537)
+    except (OSError, path_safety.ContainmentError):
+        return None
+    if not raw.strip():
+        return None
+    if len(raw) <= 65536:
+        with contextlib.suppress(ValueError, IndexError):
+            value = json.loads(raw.rstrip().splitlines()[-1])
+            if isinstance(value, dict):
+                return value
+    return {}
+
+
 def roster_from_dir(root: pathlib.Path) -> list[str]:
     """Return the run's background commands as lines, read off disk.
 
@@ -93,18 +122,9 @@ def roster_from_dir(root: pathlib.Path) -> list[str]:
         if not isinstance(meta, dict):
             continue
         command = str(meta.get("command", ""))
-        try:
-            raw = (d / RESULT_NAME).read_text(errors="replace").strip()
-        except OSError:
-            raw = ""
-        if not raw:
+        record = result_record(root, d.name)
+        if record is None:
             lines.append(f"[{d.name}] still running (or the run that owns it ended): {command}")
-            continue
-        record: object = None
-        with contextlib.suppress(ValueError, IndexError):
-            record = json.loads(raw.splitlines()[-1])
-        if not isinstance(record, dict):
-            lines.append(f"[{d.name}] ended without a result: {command}")
             continue
         errors = "; ".join(
             dict.fromkeys(str(record[key]) for key in ("error", "capture_error") if record.get(key))

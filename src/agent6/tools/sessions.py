@@ -17,7 +17,7 @@ import shlex
 from typing import Any
 
 from agent6 import kinds, terminal
-from agent6.sessions import journal, manifest
+from agent6.sessions import journal, manifest, shells
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import schema
 
@@ -137,7 +137,7 @@ def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> st
         said = _SPEAKER.get(etype)
         if said is None:
             if etype in ("tool.call", "tool.result", "verify.start", "metric.start"):
-                _tool_line(event, lines, commands)
+                _tool_line(event, lines, commands, layout.session_dir)
             continue
         if etype == "model.result" and kinds.is_side_role(
             str(event.get("role", "")), mode=kinds.bucket_mode(layout.subdir)
@@ -157,7 +157,10 @@ def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> st
 
 
 def _tool_line(
-    event: dict[str, Any], lines: list[str], commands: dict[tuple[str, str, int | None], int]
+    event: dict[str, Any],
+    lines: list[str],
+    commands: dict[tuple[str, str, int | None], int],
+    session_dir: pathlib.Path,
 ) -> None:
     """Add the call, then settle a command on that same line when its result arrives.
 
@@ -165,13 +168,12 @@ def _tool_line(
         event: The tool call or result from the journal.
         lines: The conversation so far.
         commands: The unsettled command line positions in this execution.
+        session_dir: The session whose shell records hold observed exits.
     """
     etype = event["type"]
-    name = str(event.get("name", ""))
-    if etype == "verify.start":
-        name = "run_verify_command"
-    elif etype == "metric.start":
-        name = "run_metric_command"
+    name = {"verify.start": "run_verify_command", "metric.start": "run_metric_command"}.get(
+        etype, str(event.get("name", ""))
+    )
     call_id = event.get("call_id")
     key = (str(event.get("execution_id") or ""), name, call_id if type(call_id) is int else None)
     if etype in ("verify.start", "metric.start"):
@@ -195,8 +197,13 @@ def _tool_line(
     elif (index := commands.pop(key, None)) is not None:
         if type(code := event.get("exit_code")) is int:
             lines[index] += f" (exit {code})"
-        elif event.get("background_id"):
-            lines[index] += f" (running as {terminal.line_preview(str(event['background_id']))})"
+        elif isinstance(job := event.get("background_id"), str) and job:
+            record = shells.result_record(session_dir / shells.SHELLS_DIR, job) or {}
+            label = terminal.line_preview(job)
+            if type(code := record.get("returncode")) is int:
+                lines[index] += f" ({label}, exit {code})"
+            else:
+                lines[index] += f" (handed off as {label})"
         elif event.get("ok") is False:
             lines[index] += " (refused)"
 

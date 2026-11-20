@@ -1022,7 +1022,7 @@ depends_on = ["agent6.kinds", "agent6.sandbox", "agent6.sandbox.jail_protocol"]
 
 [[modules]]
 path = "agent6.sessions.shells"
-depends_on = ["agent6.sessions.process"]
+depends_on = ["agent6.path_safety", "agent6.sessions.process"]
 
 [[modules]]
 # The start-family emitter records the worker pid before emitting the event.

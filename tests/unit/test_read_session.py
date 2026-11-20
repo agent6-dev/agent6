@@ -67,6 +67,31 @@ def test_the_conversation_reads_oldest_first(tmp_path: pathlib.Path) -> None:
     assert text.startswith("user: how do I convert")
 
 
+@pytest.mark.parametrize(("code", "ending"), [(None, "handed off as bg1"), (7, "bg1, exit 7")])
+def test_a_handoff_only_reports_a_recorded_exit(
+    tmp_path: pathlib.Path, code: int | None, ending: str
+) -> None:
+    layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="proof-p1-l1")
+    shell = layout.session_dir / "shells" / "bg1"
+    shell.mkdir(parents=True)
+    (shell / "meta.json").write_text(json.dumps({"command": "make check"}))
+    if code is not None:
+        (shell / "result.json").write_text(json.dumps({"returncode": code}))
+    rows = [
+        {
+            "type": "tool.call",
+            "name": "run_command",
+            "call_id": 1,
+            "args": {"argv": ["make", "check"]},
+        },
+        {"type": "tool.result", "name": "run_command", "call_id": 1, "background_id": "bg1"},
+    ]
+    layout.logs_path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    assert (
+        sessions.conversation(layout, max_chars=300) == f"[tool] run_command make check ({ending})"
+    )
+
+
 def test_truncation_keeps_the_tail(tmp_path: pathlib.Path) -> None:
     """Truncation keeps the tail.
 
