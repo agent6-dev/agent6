@@ -21,7 +21,7 @@
 .files-tree :is(.gtree-name, .gf-path) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @container files-tree (width < 20rem) { .gtree-note, .gf-counts { display: none; } }
 /* The count heads the tree, in line with the sizes under it; the first row's line sets it off. */
-.files-counts { padding: 0.375rem var(--files-inset); font-size: 0.75rem; text-align: end; font-variant-numeric: tabular-nums; }
+.files-counts { padding: 0.375rem var(--files-inset); font-size: var(--fs-s); text-align: end; font-variant-numeric: tabular-nums; }
 /* The cut-list note keeps the rows' inset; loading and errors sit as the file pane's empty state. */
 .files-tree > .gf-note { margin: 0; padding: 0.5rem var(--files-inset); }
 .files-tree > :is(.gf-note, .empty) { overflow-wrap: anywhere; }
