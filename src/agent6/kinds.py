@@ -521,23 +521,6 @@ class ExecutionTargetStamp:
     lifecycle_ref: str | None = None
 
 
-def read_target_stamp(data: object) -> object:
-    """Read a stamp record written before `launcher_version` became `launcher_digest`.
-
-    Args:
-        data: The record as persisted.
-
-    Returns:
-        The record under the current field names; any other input unchanged.
-    """
-    if isinstance(data, dict) and "launcher_version" in data:
-        renamed = dict(data)
-        version = renamed.pop("launcher_version")
-        renamed.setdefault("launcher_digest", version)
-        return renamed
-    return data
-
-
 @dataclasses.dataclass(frozen=True, slots=True)
 class CallContext:
     """Identify one logical model call across its request attempts.

@@ -606,8 +606,8 @@ def test_tui_header_reads_recorded_environment(resumed: layout.SessionLayout) ->
     asyncio.run(scenario())
 
 
-def test_a_target_record_written_as_launcher_version_reads_as_the_digest() -> None:
-    """The field was renamed; records from before the rename keep their value."""
+def test_an_unknown_target_field_does_not_supply_the_launcher_digest() -> None:
+    """Only the digest field identifies the launcher binary."""
     stamp = {
         "transport": "container",
         "host_root": "/w",
@@ -620,7 +620,4 @@ def test_a_target_record_written_as_launcher_version_reads_as_the_digest() -> No
     record = evidence.TARGET.validate_python(
         {"target_id": "t1", "execution_id": "e1", "target": stamp}
     )
-    assert record.target.launcher_digest == "sha256:ab"
-    assert (
-        evidence.TARGET.dump_python(record, mode="json")["target"]["launcher_digest"] == "sha256:ab"
-    )
+    assert record.target.launcher_digest is None

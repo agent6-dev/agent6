@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 import pydantic
 
@@ -84,7 +84,7 @@ class ExecutionTargetEvidence:
 
     target_id: str
     execution_id: str | None = None
-    target: Annotated[kinds.ExecutionTargetStamp, pydantic.BeforeValidator(kinds.read_target_stamp)]
+    target: kinds.ExecutionTargetStamp
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
