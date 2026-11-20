@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import pathlib
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING
@@ -8,7 +9,7 @@ import pytest
 
 from agent6 import paths
 from agent6.sessions import child_dispatch, layout
-from tests.unit import test_sessions_show_group
+from tests.unit import test_git_history, test_sessions_show_group
 from tests.web import test_web_browser
 
 if TYPE_CHECKING:
@@ -60,6 +61,45 @@ def test_group_children_refresh_and_link(
 @pytest.fixture
 def parent_port(ordinary_parent: pathlib.Path) -> Iterator[int]:
     yield from test_web_browser._serve(ordinary_parent)
+
+
+@pytest.mark.parametrize("width, height", [(1440, 900), (390, 844)])
+def test_the_footer_distinguishes_own_checkpoints_from_a_joined_childs_commits(
+    ordinary_parent: pathlib.Path,
+    parent_port: int,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    width: int,
+    height: int,
+) -> None:
+    """A parent's zero counts its own checkpoints even when its child contributed a commit."""
+    from playwright import sync_api
+
+    child = layout.SessionLayout(state_dir=paths.state_dir(ordinary_parent), session_id="co-p1-l1")
+    subject = "List the last 2 commits"
+    git = test_git_history._git
+    git(ordinary_parent, "init", "-q")
+    (ordinary_parent / "log.txt").write_text("log\n", encoding="utf-8")
+    git(ordinary_parent, "add", "log.txt")
+    git(ordinary_parent, "commit", "-qm", subject)
+    sha = git(ordinary_parent, "rev-parse", "HEAD")
+    events = [
+        {"type": "session.start", "mode": "run"},
+        {"type": "checkpoint.committed", "sha": sha, "subject": subject},
+        {"type": "diff.updated", "sha": sha, "patch": "+log"},
+        {"type": "session.stop", "reason": "finish_session"},
+    ]
+    child.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    page, errors = open_page(parent_port)
+    page.set_viewport_size({"width": width, "height": height})
+    for sid, count in (
+        ("co", "0 checkpoint commits from this execution"),
+        (child.session_id, f"1 checkpoint commit from this execution · {subject}"),
+    ):
+        page.goto(f"http://127.0.0.1:{parent_port}/#/session/{sid}")
+        sync_api.expect(page.locator(".card-conv .s-done-detail")).to_have_text(
+            f"$0 · 0 tools · {count}"
+        )
+    assert not errors
 
 
 def test_an_ordinary_parent_shows_its_children_and_the_receipt_links_them(

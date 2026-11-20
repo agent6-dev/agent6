@@ -1378,7 +1378,13 @@ function makeConv(url, box, body, empty = {}) {
       div.dataset.i = i;
       for (const line of lines) {
         const ln = el('div');
-        for (const [text, style] of line) ln.appendChild(el('span', 's-' + style, text));
+        for (const [text, style] of line) {
+          // Qualify the receipt's count after the tool tally; its trailing commit subject is free text.
+          const label = style === 'done-detail' && box.closest('.card-conv')
+            ? text.replace(/( · \d+ tools? · \d+ )(commits?)(?= · |$)/, '$1checkpoint $2 from this execution')
+            : text;
+          ln.appendChild(el('span', 's-' + style, label));
+        }
         if (!line.length) ln.appendChild(document.createTextNode(' '));
         // A wrapped line continues under its own text, past its indent and its marker ("└ ").
         const hang = /^\s*(?:[\p{P}\p{S}]\s+)?/u.exec(ln.textContent)[0].length;

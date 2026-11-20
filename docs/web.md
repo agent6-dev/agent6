@@ -87,6 +87,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - on a phone, **Maintenance** folds the notification, prune and clear-saved-asks controls
 - **State machines page**: instances, `machine create` drafts, and authored machine files listed by name and path with a **Run** button; the composer creates a new one; its lists take the same keys and clicks as the Sessions list
 - **Session view** (live over SSE): the conversation, the same folded transcript the CLI and TUI render, with the turn in flight streaming underneath; a detail toggle cycles collapsed, expanded, hidden, and a click on an item with more to show, or Enter on its first line, opens or closes it; the conversation is one Tab stop, and the arrow keys, Home and End move between those items
+    - the conversation footer counts only the checkpoint commits recorded by that execution, not its children's commits or earlier executions' checkpoints
     - on a phone, **Stop now** stays visible and **More** holds the other run actions
     - **Tool calls** rows open to selectable arguments and recorded output
     - **Budget** shows labelled meters for capped usage and plain text for uncapped usage
