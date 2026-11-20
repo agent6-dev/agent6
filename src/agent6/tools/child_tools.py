@@ -110,25 +110,25 @@ def read(
     Args:
         args: The read's arguments, which `addressed` took for the children's.
         children: The run's children.
-        shells: The command roster, which rides on every background result.
+        shells: The command roster for a read without an id.
         wait_s: The resolved maximum seconds to wait for the child to end.
         interrupted: Cuts the wait short.
         state_dir: The project's state dir, where a child's journal is; None renders none.
 
     Returns:
-        Both rosters; for one child, its line and the tail of its transcript.
+        Both rosters without an id. With an id, only that child's row and transcript tail.
     """
     with waits.during(wait_s):
         children.wait(args.id, wait_s, interrupted)
     roster = children.roster()
-    lines = tuple(child.line() for child in roster)
     if not args.id:
         running = any(child.running for child in roster)
+        lines = tuple(child.line() for child in roster)
         return results.BackgroundResult(shells=shells, children=lines, running=running)
     child = next(child for child in roster if child.id == args.id)
     return results.BackgroundResult(
         shells=shells,
-        children=lines,
+        children=(child.line(),),
         output=f"{child.line()}\n\n{_transcript(state_dir, child.id, args.tail_lines)}",
         running=child.running,
     )

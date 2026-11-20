@@ -969,7 +969,9 @@ class ToolDispatcher:
             result = child_tools.read(
                 args,
                 self.children,
-                shells=tuple(view.line() for view in self._background().roster()),
+                shells=()
+                if args.id
+                else tuple(view.line() for view in self._background().roster()),
                 wait_s=wait_s,
                 interrupted=self._background_wait_interrupted,
                 state_dir=self._state_dir,

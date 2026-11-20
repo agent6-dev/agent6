@@ -733,7 +733,7 @@ class SteeredResult(ToolResult):
 class BackgroundResult(ToolResult):
     """A background tool's result.
 
-    The roster rides on every one, so the model also learns that a command it started has died.
+    A read without an id lists the full roster. A read of a child lists only that child.
 
     Attributes:
         shells: The formatted command roster.

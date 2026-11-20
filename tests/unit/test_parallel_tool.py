@@ -28,7 +28,7 @@ from agent6.harness import (
 )
 from agent6.providers import ProviderResponse
 from agent6.sessions import child_dispatch, journal
-from agent6.tools import child_tools, dispatch, schema, tool_errors
+from agent6.tools import background, child_tools, dispatch, schema, tool_errors
 from agent6.tools import results as tools_results
 from tests import child_env
 
@@ -280,6 +280,24 @@ def test_read_background_reads_a_child_by_its_id_and_waits_for_the_next(
     assert len(work.waits) == 3
     with pytest.raises(tool_errors.ToolError, match="no background command 'run-p9-l1'"):
         d.dispatch("read_background", {"id": "run-p9-l1"})
+
+
+def test_a_targeted_child_read_excludes_other_children_and_shells(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A one-line child read must not repeat unrelated jobs from the run."""
+    work = _Work()
+    d = _dispatcher(tmp_path, _config(tool=True), work=work)
+    shell = background.ShellView("bg1", "true", "exited", 0, "")
+    monkeypatch.setattr(background.BackgroundShells, "roster", lambda _self: [shell])
+    d.dispatch("parallel", {"task": "first"})
+    d.dispatch("parallel", {"task": "second"})
+    roster = d.dispatch("read_background", {}).to_wire()
+    assert roster["shells"] and len(roster["children"]) == 2
+
+    tail = d.dispatch("read_background", {"id": "run-p1-l1", "wait_s": 0, "tail_lines": 1})
+    assert tail.to_wire()["shells"] == []
+    assert tail.to_wire()["children"] == [roster["children"][0]]
 
 
 @pytest.mark.parametrize("reader", ["read_background", "read_session"])
