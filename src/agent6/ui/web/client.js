@@ -580,12 +580,14 @@ function runOnce(button, action, ready = () => true) {
     button.disabled = !ready();
     if (busy) button.setAttribute('aria-disabled', 'true'); else button.removeAttribute('aria-disabled');
   };
-  button.onclick = async () => {
-    if (busy) return;
+  const run = async (...args) => {
+    if (busy || !ready()) return;
     busy = true; button.sync();
-    try { await action(); } finally { busy = false; button.sync(); }
+    try { await action(...args); } finally { busy = false; button.sync(); }
   };
+  button.onclick = () => run();
   button.sync();
+  return run; // a key calls this to press the button with an argument (makeComposer's Ctrl+Enter)
 }
 // Two popups share an entry: one closing leaves the references the other set.
 let suggestLists = 0; // numbers each popup's id
@@ -1824,21 +1826,21 @@ function openKeys() {
   dialog.onkeydown = (e) => { if (e.key === '?') { e.preventDefault(); e.stopPropagation(); dialog.close(); } };
 }
 
-// The composer bar under a run's conversation. On a live run Enter sends the
-// text as a steer (injected at the run's next safe boundary); on a finished
-// run Enter resumes the run with the text as the follow-up instruction (empty
-// = plain resume), then waits for the resumed worker to take over and
-// re-renders. Shift+Enter inserts a newline. setState(s) keeps the mode in
-// sync with each SSE frame. Ctrl+R (composer-focused only, so the browser
-// keeps its reload elsewhere) opens the past-message search above.
+// The paper plane a phone's session composer button shows in place of its word, drawn as page.py's rail icons.
+const SEND_ICON = '<svg class="ic" viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="currentColor" aria-hidden="true"><path d="M4 4 21.5 12 4 20l3-8z"/><path d="M7 12h7"/></svg>';
+// The composer under a run's conversation: its button steers a live run (Send) or resumes an ended one (Resume).
 function makeComposer(id) {
   const root = el('div', 'composer');
+  const row = el('div', 'row');
   const ta = el('textarea', 'field');
+  const sendBtn = el('button', 'primary send');
+  sendBtn.innerHTML = SEND_ICON;
+  const verb = sendBtn.appendChild(el('span'));
   // A typed draft survives a switch to another session and back (this browser only);
   // a sent or discarded line forgets it.
   const draftKey = 'a6-draft-' + id;
   ta.value = recall(draftKey, '');
-  ta.oninput = () => { if (ta.value) remember(draftKey, ta.value); else forget(draftKey); };
+  ta.oninput = () => { if (ta.value) remember(draftKey, ta.value); else forget(draftKey); sendBtn.sync(); };
   // The emptied entry reaches every input listener: the draft is forgotten and the popups close.
   const clearDraft = () => { ta.value = ''; ta.dispatchEvent(new Event('input')); };
   const hint = el('div', 'hint');
@@ -1900,6 +1902,11 @@ function makeComposer(id) {
     refusal.textContent = closed ? 'cannot resume: ' + refused : '';
     ta.title = refusal.textContent;
     hint.hidden = closed; // a closed box gives no keyboard tips
+    // A phone shows the icon in place of the word, so the button carries the word as its name.
+    const word = finished ? 'Resume' : 'Send';
+    verb.textContent = sendBtn.title = word;
+    sendBtn.setAttribute('aria-label', word);
+    sendBtn.sync();
     if (closed) {
       presetRow.style.display = summary.style.display = 'none';
       ta.placeholder = '';
@@ -1959,24 +1966,25 @@ function makeComposer(id) {
     }
     if (e.key !== 'Enter' || e.shiftKey) return;
     e.preventDefault();
-    if (finished === null || busy) return;
+    send(e.ctrlKey);
+  };
+  // Enter and the button run one action, once at a time; it waits for the first frame and any resume.
+  const send = runOnce(sendBtn, (now) => {
     // Ctrl+Enter is the `/now` directive: the steer aborts the call in flight.
     const typed = ta.value.trim();
-    const text = e.ctrlKey && !finished && typed && !typed.startsWith('/') ? '/now ' + typed : typed;
+    const text = now && !finished && typed && !typed.startsWith('/') ? '/now ' + typed : typed;
     if (text === '/stop') {
       // Typed, so no confirm; the stop `agent6 stop` does.
       if (finished) { toast('nothing to stop: the session is not live', true); return; }
-      postJSON('/api/session/' + encodeURIComponent(id) + '/stop', {})
+      return postJSON('/api/session/' + encodeURIComponent(id) + '/stop', {})
         .then(d => { toast(d.message || 'stopped'); clearDraft(); })
         .catch(err => toast(err.message, true));
-      return;
     }
     if (text === '/restate') {
       // Local and free: rendered from the journal, nothing reaches the model.
-      getJSON('/api/session/' + encodeURIComponent(id) + '/restate')
+      return getJSON('/api/session/' + encodeURIComponent(id) + '/restate')
         .then(d => { openRestate(d.text || ''); clearDraft(); })
         .catch(err => toast(err.message, true));
-      return;
     }
     if (text === '/shells') {
       // The view is the Background shells card: bring it up (the phone menu
@@ -1998,32 +2006,29 @@ function makeComposer(id) {
       // it at its next boundary (the steer channel); the SSE paint follows
       // the session.undone the loop emits. A finished run forks right here.
       if (!finished) {
-        postJSON('/api/session/' + encodeURIComponent(id) + '/steer', { text })
+        return postJSON('/api/session/' + encodeURIComponent(id) + '/steer', { text })
           .then(() => { toast('undo requested; applies at the next step'); clearDraft(); })
           .catch(err => toast(err.message, true));
-        return;
       }
-      postJSON('/api/session/' + encodeURIComponent(id) + '/undo', {})
+      return postJSON('/api/session/' + encodeURIComponent(id) + '/undo', {})
         .then(d => {
           toast('undone: forked to ' + d.new_session_id + (d.notice ? '\n' + d.notice : ''));
           pendingComposerFill = d.undone_text || '';
           location.hash = '#/session/' + encodeURIComponent(d.new_session_id);
         })
         .catch(err => toast(err.message, true));
-      return;
     }
     if (!finished) {
-      if (!text) return;
       // The server decides what the text was: `/compact [focus]` is an
       // out-of-band request, not a steer, and it says so.
-      postJSON('/api/session/' + encodeURIComponent(id) + '/steer', { text })
+      return postJSON('/api/session/' + encodeURIComponent(id) + '/steer', { text })
         .then(r => { toast((r && r.message) || 'steer sent'); clearDraft(); })
         .catch(err => toast(err.message, true));
-    } else {
-      resume(text);
     }
-  };
-  root.appendChild(summary); root.appendChild(presetRow); root.appendChild(ta); root.appendChild(refusal); root.appendChild(hint);
+    return resume(text);
+  }, () => finished !== null && !busy && !(finished && refused) && (!!ta.value.trim() || (finished && !needsWork))); // text, or a bare resume
+  row.appendChild(ta); row.appendChild(sendBtn);
+  root.appendChild(summary); root.appendChild(presetRow); root.appendChild(row); root.appendChild(refusal); root.appendChild(hint);
   // A quoted diff line lands beneath what is typed, for the words that follow it.
   root.quote = (note) => {
     const typed = ta.value.replace(/\s+$/, '');

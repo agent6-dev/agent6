@@ -246,7 +246,8 @@ def test_the_pickers_sit_in_a_row_above_each_composer() -> None:
     assert picks < dock.index("root.appendChild(row);")
     composer = client[client.index("function makeComposer") :]
     assert "pickerRow([['continue under preset', preset], ['model', model]])" in composer
-    assert "root.appendChild(presetRow); root.appendChild(ta);" in composer
+    assert "row.appendChild(ta); row.appendChild(sendBtn);" in composer
+    assert "root.appendChild(presetRow); root.appendChild(row);" in composer
 
 
 def test_the_policy_line_breaks_only_between_its_settings() -> None:
