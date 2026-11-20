@@ -39,8 +39,9 @@ Only its modules import the runner, `git_command.py`.
 - per-repo state lives out of the workspace at `$XDG_STATE_HOME/agent6/<repo-id>/`, written `<state-dir>` below, keyed on the repository (a subdirectory reaches the same runs, memory and config, and so does a linked worktree, through its `.git` file)
 - `pack.py` copies and imports portable workspace state; `pack_manifest.py` validates its trust boundary without importing path resolution.
   `pack --repo-config` folds inherited global leaves into repo config through `config.write` before copying, using `config.layer_data`'s merge rules.
-  `ui/cli/pack_cmds.py` owns the two command surfaces and shares init's `.gitignore` writer.
+  `ui/cli/pack_cmds.py` owns the two command surfaces; `unpack` prints `pack.preview` and asks before it imports.
   `paths.project_root` refuses any pack until `unpack` imports it or the operator deletes it.
+  A pack that a session of the checkout wrote is moved to `.agent6/pack.invalid/`: by `pack.check_start` where a command begins, by `pack.quarantine_tree` where a session, machine or `exec` ends.
 - every config edit goes through [config/write.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py): one lock-held cycle that edits the file's text, validates it and only then writes the file, so a refused edit writes nothing
 
 Every model call requires `models.default`.

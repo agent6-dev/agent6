@@ -283,6 +283,8 @@ agent6 skills install|update|list                    # skills from a repo, a dir
 agent6 skills enable NAME [--always]                 # a skill the model may use, or one it always gets; disable, remove
 agent6 mcp add NAME [--url URL | -- COMMAND...]      # an MCP server; --pass-env VAR passes an environment variable to a local server; list, remove, serve
 agent6 machine ...                                   # state machines over runs (see state-machines.md)
+agent6 pack [--repo-config]                          # copy this checkout's agent6 state into .agent6/ (see usage.md)
+agent6 unpack [--yes]                                # list what a pack would install, ask, then import it
 agent6 system apparmor install                       # the AppArmor profile that full sandbox.isolation needs on some hosts; status, remove
 agent6 completions [bash|zsh|fish|xonsh] [--print]
 agent6 config fill [--force]                         # write the defaults + global layers as one explicit global config
