@@ -140,7 +140,7 @@ def test_dashboard_child_rows(family: pathlib.Path, size: tuple[int, int]) -> No
             assert 0 < table.region.height <= 9
             live = list(map(str, table.get_row("atlas-p1-l1")))
             assert {
-                "1",
+                "attempt 1",
                 "atlas-p1-l1",
                 "Check [flags]",
                 "local/swift",
@@ -155,7 +155,7 @@ def test_dashboard_child_rows(family: pathlib.Path, size: tuple[int, int]) -> No
                 ("atlas-p1-l2", ("stopped", "1 commit", "agent6/atlas-p1-l2", "12s")),
                 ("atlas-p1-l3", ("retained", "2 commits", "agent6/atlas-p1-l3")),
                 ("atlas-p1-l4", ("failed", "not started", "no matching provider", "alternate")),
-                ("atlas-rpanel-l1", ("reviewer", "B > A", "B checks both flags")),
+                ("atlas-rpanel-l1", ("reviewer 1", "B > A", "B checks both flags")),
             ):
                 row = " ".join(map(str, table.get_row(sid)))
                 assert all(word in row for word in words), row

@@ -43,13 +43,12 @@ class ChildRow:
             The lines, including any nested children.
         """
         c = self.view
-        who = f"{'reviewer' if c.source == 'panel' else 'child'} {c.number}"
         ident = self.lineage["id_cell"] if self.lineage is not None else c.session_id
         rank = f"rank {self.placement.rank}/{self.placement.of}  " if self.placement else ""
         heading = (
-            f"{format.child_id_cell(ident, depth)}  {rank}{who}"
+            f"{format.child_id_cell(ident, depth)}  {rank}{c.number_label}"
             if depth
-            else f"  {rank}{who}  {ident}"
+            else f"  {rank}{c.number_label}  {ident}"
         )
         route = c.route or c.model or "?"
         if c.model and c.route and c.model != c.route:

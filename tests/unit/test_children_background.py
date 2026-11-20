@@ -666,6 +666,15 @@ def test_close_stops_what_runs_charges_each_child_once_and_forgets_it(
     assert [r.state for r in child_dispatch.read_records(repo.parent / "root")] == ["settling"] * 2
 
 
+def _tool_answers(seen: str) -> list[dict[str, Any]]:
+    return [
+        json.loads(block["content"])
+        for message in json.loads(seen)
+        for block in message["content"]
+        if isinstance(block, dict) and block.get("type") == "tool_result"
+    ]
+
+
 def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -688,33 +697,31 @@ def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
 
     wf.run("start")
 
-    def answers(seen: str) -> list[dict[str, Any]]:
-        return [
-            json.loads(block["content"])
-            for message in json.loads(seen)
-            for block in message["content"]
-            if isinstance(block, dict) and block.get("type") == "tool_result"
-        ]
-
     # The read of a running child: both rosters, its line, and no transcript yet.
-    read = answers(provider.seen[2])[-1]
-    assert read["children"] == [f"[{one}] running: write a", f"[{two}] running: b"]
-    assert read["output"] == f"[{one}] running: write a\n\n(no transcript yet)"
+    read = _tool_answers(provider.seen[2])[-1]
+    assert read["children"] == [
+        f"[{one}] attempt 1 · running: write a",
+        f"[{two}] attempt 1 · running: b",
+    ]
+    assert read["output"] == f"[{one}] attempt 1 · running: write a\n\n(no transcript yet)"
     # The stop answers at once; the child ends in the background and never merges.
     assert children.stopped == [two]
-    stopped = answers(provider.seen[3])[-1]
+    stopped = _tool_answers(provider.seen[3])[-1]
     words = (
         f"stopped by its parent, not merged; agent6/{two} holds 1 commit(s);"
         " conversation at last call: unknown; last ran: unknown"
     )
-    assert stopped["children"][1] in (f"[{two}] stopping: b", f"[{two}] {words}: b")
+    assert stopped["children"][1] in (
+        f"[{two}] attempt 1 · stopping: b",
+        f"[{two}] attempt 1 · {words}: b",
+    )
     assert f"[parallel] child {two} {words}." in provider.seen[3]
     assert "Every child stopped: nothing merged." in provider.seen[3]
     # The wait for the next child to end returned with the first task's child ended.
-    waited = answers(provider.seen[4])[-1]
+    waited = _tool_answers(provider.seen[4])[-1]
     assert waited["children"] == [
-        f"[{one}] ended, not merged: write a",
-        f"[{two}] {words}: b",
+        f"[{one}] attempt 1 · ended, not merged: write a",
+        f"[{two}] attempt 1 · {words} · 1 commit beyond start: b",
     ]
     assert "[parallel] group run-p1 complete" in provider.seen[4]
     assert (repo / "a.txt").exists() and not (repo / f"{two}.txt").exists()
@@ -811,7 +818,9 @@ def test_a_pending_steer_ends_a_child_wait_without_consuming_it(
 
     wf.run("start")
 
-    assert "[run-p1-l1] running: write a" in provider.seen[2]
+    assert _tool_answers(provider.seen[2])[-1]["children"] == [
+        "[run-p1-l1] attempt 1 · running: write a"
+    ]
     assert ipc.read_steer_answer(session_dir) == "inspect the output"
 
 

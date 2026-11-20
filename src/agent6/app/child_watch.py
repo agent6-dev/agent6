@@ -63,7 +63,7 @@ class ChildWatch:
 
         Args:
             child_dir: The child's session dir, named for its session id.
-            label: How the parent's operator reads the child, such as `child 2 <session id>`.
+            label: How the parent's operator reads the child, such as `attempt 2 <session id>`.
             status: The child's status word at this poll.
 
         Returns:

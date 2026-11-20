@@ -124,7 +124,11 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
                 if sessions_layout.is_safe_session_id(sid)
                 else None
             )
-            lines.append(child_tools.ChildLine(sid, state, title[:80], running, mergeable, commits))
+            lines.append(
+                child_tools.ChildLine(
+                    sid, child.number, state, title[:80], running, mergeable, commits
+                )
+            )
     return tuple(lines)
 
 

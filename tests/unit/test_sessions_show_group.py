@@ -204,7 +204,7 @@ def test_show_on_a_child_names_its_parent(
 ) -> None:
     assert main(["sessions", "show", "fan-l1"]) == 0
     out = capsys.readouterr().out
-    assert "child of:    fan (child 1 of group fan)" in out
+    assert "child of:    fan (attempt 1 of group fan)" in out
     assert main(["sessions", "show", "fan-l1", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
     assert data["parallel"] == {
@@ -704,16 +704,16 @@ def test_show_on_an_ordinary_parent_lists_its_children_with_their_joins(
     out = capsys.readouterr().out
     assert "group:" not in out
     assert "children:      2" in out
-    assert "child 1" in out and "co-p1-l1" in out and "openai/child-1" in out
+    assert "attempt 1" in out and "co-p1-l1" in out and "openai/child-1" in out
     assert "joined co's chain at bbbbbbbbbbbb" in out
-    assert "child 2" in out and "no changes" in out
+    assert "attempt 2" in out and "no changes" in out
 
 
 def test_show_on_a_child_of_an_ordinary_parent_names_it(
     ordinary_parent: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["sessions", "show", "co-p1-l1"]) == 0
-    assert "child of:    co (child 1 of group co-p1)" in capsys.readouterr().out
+    assert "child of:    co (attempt 1 of group co-p1)" in capsys.readouterr().out
 
 
 @pytest.fixture
@@ -806,7 +806,7 @@ def test_cli_child_roster_text(
     assert main(args) == 0
     out = capsys.readouterr().out
     for words in (
-        "child 1",
+        "attempt 1",
         "co-p2-l1",
         "check running case",
         "p/small",

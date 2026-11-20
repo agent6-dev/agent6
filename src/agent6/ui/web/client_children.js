@@ -68,8 +68,9 @@ function childRow(sid, card, readOnly) {
       }
     }
     child = c;
-    const role = c.source === 'panel' ? 'reviewer' : 'child';
-    const title = `${role} ${c.number} · ${c.status} · ${firstLine(c.task, 60) || sid}`;
+    const role = c.source === 'panel' ? 'reviewer' : 'attempt';
+    const place = c.number > 0 ? `${role} ${c.number}` : role;
+    const title = `${place} · ${c.status} · ${firstLine(c.task, 60) || sid}`;
     if (headline.textContent !== title) headline.textContent = title;
     const meta = childFacts(c);
     if (facts.textContent !== meta) facts.textContent = meta;

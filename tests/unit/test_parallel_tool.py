@@ -91,7 +91,7 @@ class _Work:
     def start(self, task: str, spec: str) -> tools_results.StartedResult:
         self.started.append((task, spec))
         child = f"run-p{len(self.started)}-l1"
-        self.lines.append(child_tools.ChildLine(child, "running", task, True))
+        self.lines.append(child_tools.ChildLine(child, 1, "running", task, True))
         return tools_results.StartedResult((child,), f"[parallel] started child {child}.")
 
     def roster(self) -> tuple[child_tools.ChildLine, ...]:
@@ -256,9 +256,9 @@ def test_read_background_reads_a_child_by_its_id_and_waits_for_the_next(
     read = d.dispatch("read_background", {"id": "run-p1-l1", "wait_s": 3}).to_wire()
 
     assert work.waits == [("run-p1-l1", 3.0)]
-    assert read["children"] == ["[run-p1-l1] running: write a"]
+    assert read["children"] == ["[run-p1-l1] attempt 1 · running: write a"]
     assert read["output"].splitlines() == [
-        "[run-p1-l1] running: write a",
+        "[run-p1-l1] attempt 1 · running: write a",
         "",
         "user: write a",
         "",
@@ -274,7 +274,7 @@ def test_read_background_reads_a_child_by_its_id_and_waits_for_the_next(
     # No id and a wait: the next child to end, whichever it is.
     waited = d.dispatch("read_background", {"wait_s": 5}).to_wire()
     assert work.waits[-1] == ("", 5.0)
-    assert waited == {"shells": [], "children": ["[run-p1-l1] running: write a"]}
+    assert waited == {"shells": [], "children": ["[run-p1-l1] attempt 1 · running: write a"]}
     # No id and no wait is the roster at once, as it always was.
     assert d.dispatch("read_background", {}).to_wire() == waited
     assert len(work.waits) == 3
@@ -331,7 +331,7 @@ def test_stop_background_stops_a_child_even_where_commands_are_denied(
     stopped = d.dispatch("stop_background", {"id": "run-p1-l1"}).to_wire()
 
     assert work.stopped == ["run-p1-l1"]
-    assert stopped == {"shells": [], "children": ["[run-p1-l1] stopping: write a"]}
+    assert stopped == {"shells": [], "children": ["[run-p1-l1] attempt 1 · stopping: write a"]}
     without = _dispatcher(tmp_path, _config(tool=False, extra=denied), work=_Work())
     assert "stop_background" not in _names(without)
 

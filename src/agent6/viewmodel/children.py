@@ -12,7 +12,7 @@ import dataclasses
 import pathlib
 import time
 
-from agent6 import llm_json
+from agent6 import child_records, llm_json
 from agent6.sessions import child_dispatch, completion, layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import format, listing
@@ -94,6 +94,11 @@ class ChildView:
     def join_label(self) -> str:
         """Name the recorded chain join without implying a checkout merge."""
         return ParentJoin(self.joined_to, self.join_sha).label
+
+    @property
+    def number_label(self) -> str:
+        """Return the attempt or reviewer number, independent of the model selector."""
+        return child_records.number_label(self.number, reviewer=self.source == "panel")
 
     @property
     def commit_count_text(self) -> str:

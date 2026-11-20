@@ -26,6 +26,12 @@ JoinPolicy = Literal["merge", "record_only", "rank"]
 JoinStatus = Literal["joined", "no_changes", "conflict", "failed", "ranked", "stopped", "retained"]
 
 
+def number_label(number: int, *, reviewer: bool) -> str:
+    """Return the child's place within its task or panel, when recorded."""
+    role = "reviewer" if reviewer else "attempt"
+    return f"{role} {number}" if number > 0 else role
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class ChildLimits:
     """The ceiling a child runs under.
@@ -128,6 +134,11 @@ class ChildSpec:
     worktree: pathlib.Path
     settings: kinds.ModelSettings | None
     mode: kinds.LoopMode = "run"
+
+    @property
+    def number_label(self) -> str:
+        """Return the attempt or reviewer number for this launch."""
+        return number_label(self.number, reviewer=self.mode == "reviewer")
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

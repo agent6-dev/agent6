@@ -247,7 +247,7 @@ def test_a_child_is_stopped_once_the_runs_budget_is_spent(
         poll_interval_s=0.01,
         watch=watch,
     )
-    assert polled == [(d, "child 1 spent-l1")]
+    assert polled == [(d, "attempt 1 spent-l1")]
     assert not res.ok
     assert res.error.startswith("stopped at the run's budget; child") and "killed" in res.error
     assert ipc.stop_request_is_now(d)

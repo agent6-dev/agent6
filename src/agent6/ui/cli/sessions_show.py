@@ -14,7 +14,7 @@ import pathlib
 import time
 from typing import Any, TypedDict
 
-from agent6 import kinds, terminal
+from agent6 import child_records, kinds, terminal
 from agent6.app import merge, resume
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -79,7 +79,8 @@ def _print_parallel_compare(
         session_dir: The run's directory, used to read its parent.
     """
     if (lineage := manifest.parallel) is not None:
-        print(f"child of:    {lineage.parent} (child {lineage.number} of group {lineage.group})")
+        place = child_records.number_label(lineage.number, reviewer=manifest.mode == "reviewer")
+        print(f"child of:    {lineage.parent} ({place} of group {lineage.group})")
     formatted = format.format_compare(
         manifest.placement, comparison.session_comparison(session_dir)
     )

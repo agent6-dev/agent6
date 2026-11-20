@@ -39,8 +39,6 @@ def child_cells(child: children.ChildView) -> tuple[text.Text, ...]:
     result: list[str] = []
     if child.outcome == "joined":
         result.append(child.join_label)
-    if child.source == "panel":
-        status = f"reviewer: {status}"
     if not child.launched and child.status == "failed":
         result.append("not started")
     if child.commit_count_text:
@@ -57,7 +55,7 @@ def child_cells(child: children.ChildView) -> tuple[text.Text, ...]:
     if child.verdict_summary:
         result.append(child.verdict_summary)
     return (
-        text.Text(str(child.number)),
+        text.Text(child.number_label),
         text.Text(child.session_id),
         text.Text(status, style=theme.status_style(child.status)),
         text.Text(session_status.task_snippet(child.task, max_chars=28)),
@@ -93,7 +91,7 @@ class ChildTable(widgets.DataTable[text.Text]):
     def on_mount(self) -> None:
         """Start polling for children, including the first dispatch after mount."""
         self.add_columns(
-            "#",
+            "child",
             "id",
             "status",
             "task",

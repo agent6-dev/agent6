@@ -591,7 +591,11 @@ def test_carry_back_lands_a_children_use_record(tmp_path: pathlib.Path) -> None:
     memory.record_use(child, session="child-1", wrote=("child-fact",), read={"child-fact": 2})
     said: list[str] = []
     parallel_results.carry_back(
-        child, origin, dest, number=1, reporter=reporter.Reporter(out=said.append, err=said.append)
+        child,
+        origin,
+        dest,
+        label="attempt 1",
+        reporter=reporter.Reporter(out=said.append, err=said.append),
     )
     use = memory.read_use(origin)
     assert use["child-fact"].writers == ("operator", "child-1")
@@ -617,7 +621,7 @@ def test_carry_back_deletion_drops_provenance_before_recreation(tmp_path: pathli
         child,
         origin,
         tmp_path / "imported",
-        number=1,
+        label="attempt 1",
         reporter=reporter.Reporter(out=print, err=print),
     )
     assert "fact" not in memory.read_use(origin)
@@ -629,7 +633,7 @@ def test_carry_back_deletion_drops_provenance_before_recreation(tmp_path: pathli
         child,
         origin,
         tmp_path / "imported-2",
-        number=2,
+        label="attempt 2",
         reporter=reporter.Reporter(out=print, err=print),
     )
     assert memory.read_use(origin)["fact"].writers == ("child-2",)

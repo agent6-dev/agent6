@@ -933,7 +933,7 @@ def test_a_children_memory_files_are_carried_into_the_origin_at_import(
     assert "BUILD_NO" in held.read_text(encoding="utf-8")
     err = capsys.readouterr().err
     assert (
-        "child 1: memory 1 carried, held back (changed here too, or the name is taken):"
+        "attempt 1: memory 1 carried, held back (changed here too, or the name is taken):"
         f" repo-fact, kept at {held.parent}"
     ) in err
 
@@ -1299,7 +1299,7 @@ def test_run_child_to_completion_imports_and_stamps(
     # The child's memory came back before its state dir went (the parent
     # path cleaned up with no carry at all).
     assert "The flaky test is test_clock." in memory.show(origin_state, "child-fact")
-    assert "child 1: memory 1 carried" in capsys.readouterr().err
+    assert "attempt 1: memory 1 carried" in capsys.readouterr().err
     imported = origin_state / "sessions" / "runs" / "co-p1-l1"
     assert imported.is_dir() and res.session_dir == imported
     manifest = json.loads((imported / "manifest.json").read_text(encoding="utf-8"))
@@ -2397,10 +2397,10 @@ def test_carry_back_names_the_kept_dir_only_when_it_holds_something(
     (memory.memory_dir(origin_state) / "d-fact.md").write_text("D per the origin.\n")
     dest = tmp_path / "dest"
     parallel_results.carry_back(
-        child_state, origin_state, dest, number=2, reporter=reporter.STDIO_REPORTER
+        child_state, origin_state, dest, label="attempt 2", reporter=reporter.STDIO_REPORTER
     )
     err = capsys.readouterr().err
-    assert "child 2: memory held back (changed here too, or the name is taken): d-fact" in err
+    assert "attempt 2: memory held back (changed here too, or the name is taken): d-fact" in err
     assert "kept at" not in err and not (dest / "memory-held").exists()
 
 

@@ -140,7 +140,8 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 A child belongs to the run that dispatched it: the parent hands down, the child pushes up, and the root is the one owner.
 The child gets its config, task and remaining budget from its parent; its approvals, questions and spend go up to the parent while it runs; its work and memory reach the repository only when the parent imports it at its end.
 Inspect the parent with `agent6 sessions list --children`, `agent6 sessions show <parent>` or `agent6 attach <parent>`.
-The children list gives each child's task, model, status, current tool, turn, tokens, spend and elapsed time.
+The children list labels each work child by its attempt number within its task: two separate tasks each start with `attempt 1`.
+It gives each child's task, model, status, current tool, turn, tokens, spend and elapsed time.
 The parent reports when a child starts, reads an operator message, stops or finishes.
 A join records the commit on the parent's chain, not a merge into the checkout branch.
 `sessions show <child>` names the parent it joined; `sessions show <parent>` shows the parent's recorded checkout merge or how to land its work.

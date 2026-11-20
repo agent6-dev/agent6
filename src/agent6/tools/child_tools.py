@@ -26,7 +26,8 @@ class ChildLine:
 
     Attributes:
         id: The child's session id, the handle `parallel` returned.
-        state: `running`, `stopping`, `ended, not merged`, `being ranked`, how its work
+        attempt: Its number within this task.
+        state: `running`, `in review`, `stopping`, `ended, not merged`, `being ranked`, how its work
             joined, or for a stopped child that it did not merge and what holds its work.
         task: The first line of its task.
         running: Whether a wait has something to wait for: the child, or the judges ranking it.
@@ -35,6 +36,7 @@ class ChildLine:
     """
 
     id: str
+    attempt: int
     state: str
     task: str
     running: bool
@@ -48,7 +50,7 @@ class ChildLine:
             if self.commits is None
             else (f" · {self.commits} commit{'' if self.commits == 1 else 's'} beyond start")
         )
-        return f"[{self.id}] {self.state}{count}: {self.task}"
+        return f"[{self.id}] attempt {self.attempt} · {self.state}{count}: {self.task}"
 
 
 class Children(Protocol):

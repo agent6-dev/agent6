@@ -50,9 +50,7 @@ def parent_spawner(
 
     def observe(spec: child_records.ChildSpec) -> Callable[[dict[str, Any]], None]:
         fold = transcript.TranscriptFold()
-        label = (
-            f"{'reviewer' if spec.mode == 'reviewer' else 'child'} {spec.number} {spec.session_id}"
-        )
+        label = f"{spec.number_label} {spec.session_id}"
 
         def report(row: dict[str, Any]) -> None:
             kind = row.get("type")

@@ -249,7 +249,7 @@ def test_read_and_message_a_child_in_place(
     row.locator("summary").press("Space")
     sync_api.expect(row.get_by_text(PROMPT, exact=True)).to_be_visible()
     for fact in (
-        "child 1",
+        "attempt 1",
         "local/reader",
         "turn 2",
         "124 tokens",

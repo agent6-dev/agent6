@@ -106,7 +106,7 @@ def carry_back(
     origin_state: pathlib.Path,
     dest: pathlib.Path,
     *,
-    number: int,
+    label: str,
     reporter: app_reporter.Reporter,
 ) -> None:
     """Carry a child's recorded decisions and memory into the origin's store.
@@ -118,14 +118,14 @@ def carry_back(
         child_state: The child's state dir.
         origin_state: The origin's state dir.
         dest: The child's imported session dir.
-        number: The child number the note names.
+        label: The attempt or reviewer number the note names.
         reporter: Receives the note.
     """
-    finalize.print_child_config_notes(dest, reporter=reporter, prefix=f"child {number}: ")
+    finalize.print_child_config_notes(dest, reporter=reporter, prefix=f"{label}: ")
     carried, known = memory.merge_decisions(child_state, origin_state)
     if carried or known:
         already = f", {known} already recorded" if known else ""
-        reporter.note(f"child {number}: {carried} recorded decision(s) carried over{already}")
+        reporter.note(f"{label}: {carried} recorded decision(s) carried over{already}")
     held_dir = dest / "memory-held"
     merge = memory.merge_memory(child_state, origin_state, held_dir=held_dir)
     used, read = memory.merge_use(
@@ -148,7 +148,7 @@ def carry_back(
     if used or read:
         parts.append(f"use record carried for {max(used, read)}")
     if parts:
-        reporter.note(f"child {number}: memory {', '.join(parts)}")
+        reporter.note(f"{label}: memory {', '.join(parts)}")
 
 
 def import_child(

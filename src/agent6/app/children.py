@@ -428,7 +428,7 @@ def run_child_to_completion(
         )
     deadline_at = limits.deadline_at if limits is not None else None
     overdue = over_budget = False
-    label = f"{'reviewer' if contract is not None else 'child'} {spec.number} {spec.session_id}"
+    label = f"{spec.number_label} {spec.session_id}"
 
     def on_poll(status: str) -> bool:
         nonlocal over_budget
@@ -538,7 +538,7 @@ def finish_import(
         paths.state_dir(res.spec.worktree),
         own_state,
         dest,
-        number=res.spec.number,
+        label=res.spec.number_label,
         reporter=reporter,
     )
     result = recorded_result(
@@ -560,7 +560,7 @@ def finish_import(
     )
     scan = session_log.scan_session_log(dest / sessions_layout.LOGS_NAME)
     if scan.stop_reason == "setup_command_failed" and scan.setup_output:
-        reporter.note(f"child {res.spec.number} [{res.spec.session_id}]: {scan.setup_output}")
+        reporter.note(f"{res.spec.number_label} [{res.spec.session_id}]: {scan.setup_output}")
     return result
 
 
