@@ -901,13 +901,7 @@ def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs
 def test_resume_of_a_child_from_the_origin_checkout_refuses(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A child resumed from the origin ran on the checkout's tree, not the child's.
-
-    Its record is imported into the origin's state and its work is on its branch. The resume
-    ran in the checkout: the gate certified the wrong tree, the next commit started a chain
-    off the base branch, and a merge landed that commit alone while the child read merged.
-    `agent6 fork` continues a child in a worktree at its tip, and the refusal names it.
-    """
+    """Direct child resume refuses before execution and offers parent continuation or a fork."""
     from agent6.app import execution
     from agent6.app import resume as resume_mod
     from agent6.config import secret_store
@@ -965,8 +959,10 @@ def test_resume_of_a_child_from_the_origin_checkout_refuses(
 
     assert rc == 2 and ran == []
     err = capsys.readouterr().err
-    assert "fan-AAAA11-l1 is a child of the group fan-AAAA11" in err
-    assert "agent6 fork fan-AAAA11-l1" in err
+    assert "fan-AAAA11-l1 is a child of fan-AAAA11" in err
+    assert "its parent can continue it with steer_child after it stops" in err
+    assert "Direct child resume is unavailable" in err
+    assert '`agent6 fork fan-AAAA11-l1 --steer "..."` starts independent work.' in err
 
 
 def test_a_run_started_in_a_subdirectory_shares_the_checkouts_lock(tmp_path: pathlib.Path) -> None:

@@ -537,17 +537,17 @@ def test_show_offers_resume_for_a_run_that_stopped_short(
 def test_show_offers_fork_for_a_child_that_stopped_short(
     group: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A stopped child names `fork`: the resume command it printed was one resume refuses."""
+    """A stopped child offers parent continuation or independent work, not direct resume."""
     _stopped_short(group, "fan-l1", "steer_abort")
 
     assert main(["sessions", "show", "fan-l1"]) == 0
 
     out = capsys.readouterr().out
     assert "resume with:" not in out
-    assert (
-        "resume:     a child of the group fan, whose work is on its own branch; `agent6 fork" in out
-    )
-    assert 'fan-l1 --steer "..."` continues it in a worktree of its own' in out
+    assert "resume:     fan-l1 is a child of fan" in out
+    assert "its parent can continue it with steer_child after it stops" in out
+    assert "Direct child resume is unavailable" in out
+    assert '`agent6 fork fan-l1 --steer "..."` starts independent work.' in out
 
 
 def test_show_json_and_the_listing_name_the_stop_reason_alike(
