@@ -34,11 +34,13 @@ class CritiqueResult:
         satisfied: False only when a blocking block_on mode rejects.
         capped: The panel blocked but the run's rejected finishes reached the cap, so the end
             stands with the findings.
+        blocking: The reviewers that returned the verdict block.
     """
 
     text: str
     satisfied: bool
     capped: bool = False
+    blocking: int = 0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -415,6 +417,13 @@ class ReviewGate:
                 "The review panel flagged issues but the rejection cap was"
                 " reached; the end stands. Findings:\n\n" + critique.text
             )
+        elif critique.blocking:
+            # An advising panel never rejects: the log says what it returned.
+            self.log(
+                f"  review did not reject {ending}: {critique.blocking} of"
+                f" {len(self.settings.reviewers)} reviewers returned block;"
+                f' review.block_on = "{self.settings.block_on}", the end stands'
+            )
         else:
             self.log(f"  review approved {ending}")
         return False
@@ -698,4 +707,5 @@ class ReviewGate:
             text=text,
             satisfied=not effective_blocked,
             capped=result.blocked and disarmed and trigger == "finish",
+            blocking=result.n_block,
         )
