@@ -719,6 +719,10 @@ def gitlinks(
     return tuple(sorted({e.partition("\t")[2] for e in entries if e.startswith("160000 ")}))
 
 
+# The line `git add` prints, at exit status 1, above the ignored paths its pathspecs name.
+_IGNORED_NOTICE = "The following paths are ignored by one of your .gitignore files:\n"
+
+
 def add_to_index(
     path: pathlib.Path,
     *flags: str,
@@ -731,7 +735,9 @@ def add_to_index(
 
     `git add` runs `git status` inside each gitlink it visits, under that repository's own
     config, and has no switch for it. A pathspec leaves each gitlink out, and `update-index`
-    records the commit it is at, which git reads in process.
+    records the commit it is at, which git reads in process. git has no pathspec that leaves
+    a path out in silence: it names each ignored path at or above one and exits 1, the add
+    done, which passes where it names nothing else.
 
     Args:
         path: Any directory of the checkout.
@@ -749,17 +755,28 @@ def add_to_index(
     if not specs:
         return  # exclude pathspecs alone would select the whole tree
     links = gitlinks(path, specs, env_extra=env_extra)
-    lines = [*specs, *(f":(top,exclude,literal){rel}" for rel in (*exclude, *links))]
-    git_command.run(
+    left_out = (*exclude, *links)
+    # Unwarned: git's warning for a repository it adds would follow the notice compared below.
+    unwarned = "--no-warn-embedded-repo"
+    args = ("add", *flags, unwarned, "--pathspec-from-file=-", "--pathspec-file-nul")
+    added = git_command.run(
         path,
-        "add",
-        *flags,
-        "--pathspec-from-file=-",
-        "--pathspec-file-nul",
-        check=check,
-        env_extra=env_extra,
-        stdin_text="\0".join(lines),
+        *args,
+        check=False,
+        # No advice: the notice is compared whole, without git's hint lines.
+        env_extra={**(env_extra or {}), "GIT_ADVICE": "0"},
+        stdin_text="\0".join([*specs, *(f":(top,exclude,literal){rel}" for rel in left_out)]),
     )
+    named = added.stderr.removeprefix(_IGNORED_NOTICE).splitlines()
+    done = added.ok or (
+        added.returncode == 1
+        and added.stderr.startswith(_IGNORED_NOTICE)
+        and bool(named)
+        and all(any(f"{rel}/".startswith(f"{name}/") for rel in left_out) for name in named)
+    )
+    if check and not done:
+        error = git_command.failure(args, added.returncode, added.stdout, added.stderr)
+        raise error
     recorded = [rel for rel in links if not excluded(rel, exclude)]
     if recorded:
         # `update-index` names its paths from the directory it runs in.

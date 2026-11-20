@@ -2347,6 +2347,27 @@ def test_an_excluded_path_that_git_now_ignores_does_not_fail_the_tree(
     assert held == {"README.md", ".gitignore", "calc.py"}
 
 
+def test_an_excluded_tracked_path_under_an_ignored_directory_does_not_fail_the_tree(
+    tmp_path: pathlib.Path,
+) -> None:
+    """`git add` exits 1 naming the ignored directory above an exclude pathspec's tracked path.
+
+    A hidden file the base commit tracks under an ignored directory failed every tree.
+    """
+    _init_repo(tmp_path)
+    (tmp_path / "deps").mkdir()
+    (tmp_path / "deps" / "key.txt").write_text("the operator's\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text("deps/\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-f", "deps/key.txt"], check=True)
+    head = _commit_file(tmp_path, "calc.py", "x = 1\n", "tracked under an ignored directory")
+    (tmp_path / "deps" / "key.txt").write_text("changed\n", encoding="utf-8")
+    (tmp_path / "calc.py").write_text("x = 2\n", encoding="utf-8")
+
+    tree = git_read.worktree_tree(tmp_path, head, {"deps/key.txt"})
+
+    assert git_read.tree_diff_paths(tmp_path, head, tree) == ["calc.py"]
+
+
 def test_a_name_handed_to_git_is_the_file_and_never_a_glob(tmp_path: pathlib.Path) -> None:
     """`commit_paths` and `paths_dirty` take `a*.txt` as that one file, not as a pattern."""
     _init_repo(tmp_path)

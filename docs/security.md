@@ -661,7 +661,9 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - agent6's own status, diff, branch switch, staging, stash and commit run no git inside one.
     - a status or a diff compares the commit the nested repository is at (`--ignore-submodules=dirty`), so one whose own files changed reads unchanged
     - `checkout`, `switch` and `stash apply` run quiet, without their list of local changes
-    - `git add` (the per-turn commit, a run's diff, the Git page's stage) leaves out, by pathspec, each nested repository the index records; `git update-index` then records the commit it is at, which git reads without running there
+    - `git add` (the per-turn commit, a run's diff, the Git page's stage) leaves out, by pathspec, each nested repository the index records; `git update-index` then records the commit it is at, which git reads without running there.
+      Where a directory above one is ignored, git names the directory and exits 1 with the add done: agent6 takes the add as done when git's error output is that notice alone.
+      Where a directory above one becomes a symbolic link, git refuses the pathspec (`beyond a symbolic link`) and the per-turn commit fails
     - `git stash push` (the auto-stash) leaves them out the same way, and no stash moves a nested checkout
     - git refuses an empty commit by printing a status, which runs git there: agent6 refuses an empty commit itself, and tells git to allow one (`--allow-empty`).
       A change undone between that check and the commit lands as an empty commit
