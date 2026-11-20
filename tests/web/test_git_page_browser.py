@@ -1204,3 +1204,20 @@ def test_an_svgs_caption_leaves_out_a_pixel_size_it_lacks(
     page.wait_for_selector(".git-img img")
     expect(page.locator(".git-img figcaption")).to_have_text(f"after · {len(svg)} B")
     assert errors == [], errors
+
+
+def test_a_long_revision_ends_its_compare_field_with_an_ellipsis(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """A compare field cut a long branch name mid-glyph, where the toolbar's fields end in '…'."""
+    from playwright.sync_api import expect
+
+    name = "topic/a-really-long-branch-name-that-explains-the-whole-change"
+    _git(tmp_path, "branch", name)
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/compare/main..{name.replace('/', '%2F')}")
+    head = page.get_by_role("combobox", name="head", exact=True)
+    expect(head).to_have_value(name)
+    cut = "i => [i.scrollWidth > i.clientWidth, getComputedStyle(i).textOverflow]"
+    assert head.evaluate(cut) == [True, "ellipsis"]
+    assert errors == [], errors

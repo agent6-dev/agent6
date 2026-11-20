@@ -74,6 +74,8 @@
 .git-img img { display: block; max-width: 100%; max-height: 60vh; margin: 0 auto; background: repeating-conic-gradient(var(--surface2) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
 .git-img.one { grid-template-columns: 1fr; }
 .gpick { flex: 1 1 0; min-width: 0; }
+/* A revision longer than its field ends in an ellipsis until the field takes the focus. */
+.gpick input.field { text-overflow: ellipsis; }
 .gpick-host { position: relative; }
 .gpick-list {
   position: absolute; top: 0; left: 0; right: 0; z-index: 40; margin-top: 2px; padding: 0.25rem;
