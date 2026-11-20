@@ -11,11 +11,7 @@
   position: absolute; z-index: 40; position-anchor: --files-revision;
   top: anchor(bottom); left: anchor(left); right: 0; max-width: max(30rem, anchor-size(width));
 }
-/* The count sits in the filter's end, where the typed text stops (--count-w): it moves no field. */
-.files-filter { flex: 1 1 10rem; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
-.files-filter > * { grid-area: 1 / 1; }
-.files-filter > input.filter { min-width: 0; padding-inline-end: calc(var(--count-w, 0rem) + 2 * var(--ctl-px)); }
-.files-counts { justify-self: end; align-self: center; margin-inline-end: var(--ctl-px); font-size: var(--fs-s); white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none; }
+.files-bar input.filter { flex: 1 1 10rem; width: auto; min-width: 0; }
 /* The tree toggle holds the width of "Show tree", so toggling the tree moves nothing on the bar. */
 .files-tree-toggle { min-width: 7em; }
 /* Each name keeps to one line, ending in an ellipsis where it does not fit; the row's title
@@ -24,6 +20,8 @@
 .files-tree { container: files-tree / inline-size; --tree-inset: var(--files-inset); }
 .files-tree :is(.gtree-name, .gf-path) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @container files-tree (width < 20rem) { .gtree-note, .gf-counts { display: none; } }
+/* The count heads the tree, in line with the sizes under it; the first row's line sets it off. */
+.files-counts { padding: 0.375rem var(--files-inset); font-size: 0.75rem; text-align: end; font-variant-numeric: tabular-nums; }
 /* The cut-list note keeps the rows' inset; loading and errors sit as the file pane's empty state. */
 .files-tree > .gf-note { margin: 0; padding: 0.5rem var(--files-inset); }
 .files-tree > :is(.gf-note, .empty) { overflow-wrap: anywhere; }
@@ -79,7 +77,6 @@
   .files-app { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
   .files-app > .files-bar { flex: none; }
   .files-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
-  .files-tree > .gtree:first-child > :first-child { border-top: 0; } /* the body's edge is the line above it */
   /* The tree's edge is the divider, so a hidden tree leaves the rail's edge alone. The handle
      straddles it and takes no width: the tree's rows and the file's head both meet the line. */
   .files-tree { flex: none; width: var(--files-tree-w, 36%); min-width: 11.25rem; max-width: calc(100% - 15.375rem); overflow: auto; border-right: 1px solid var(--border); }

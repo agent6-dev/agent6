@@ -32,10 +32,6 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   const pick = gitPicker('revision', filesState.rev, (v) => { filesState.rev = v; setViewHash(filesHash()); relist(); }, listHost, [GIT_WORKTREE_PICK]);
   pick.root.appendChild(listHost); // the list opens under the field it searches
   const filter = el('input', 'filter'); filter.type = 'search'; filter.placeholder = 'filter files…'; filter.setAttribute('aria-label', 'filter files');
-  // The count sits in the filter's end: its arrival moves no field, and typed text stops short of it.
-  const counts = el('span', 'muted files-counts'), filterBox = el('span', 'files-filter');
-  filterBox.append(filter, counts);
-  const count = (text) => { counts.textContent = text; filter.style.setProperty('--count-w', counts.offsetWidth + 'px'); };
   let showIgnored = recall('a6-files-ignored', 'off') === 'on';
   const ignoredToggle = el('button', 'files-ignored', 'Show ignored');
   ignoredToggle.title = 'Include files excluded by any Git ignore source';
@@ -45,7 +41,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     ignoredToggle.setAttribute('aria-pressed', String(showIgnored));
     return relist();
   };
-  bar.appendChild(pick.root); bar.appendChild(filterBox); bar.appendChild(ignoredToggle);
+  bar.appendChild(pick.root); bar.appendChild(filter); bar.appendChild(ignoredToggle);
   const body = el('div', 'files-body'); app.appendChild(body);
   const tree = el('div', 'files-tree'); tree.id = 'files-tree'; body.appendChild(tree);
   body.appendChild(resizeHandle(tree, {
@@ -73,6 +69,8 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
 
   // -- the tree ----------------------------------------------------------------------
   let entries = [], truncated = false, rev = '', ignored = false, loading = 0, shown = null, markdown = null;
+  // The count heads the tree it counts, so its arrival neither moves nor narrows a field on the bar.
+  const counts = el('div', 'muted files-counts');
   // A working-tree row's mark says how it differs from HEAD: M modified, A untracked, I ignored. A
   // clean row keeps an empty slot, so the names stay in line; a commit's rows have no marks.
   const stateMark = (files) => {
@@ -101,11 +99,12 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     const q = filter.value.trim().toLowerCase();
     const kept = q ? entries.filter(f => f.path.toLowerCase().includes(q)) : entries;
     unopened.hidden = !kept.length;
+    counts.textContent = (q ? kept.length + ' of ' : '') + fileCount(entries.length) + (truncated ? '+' : '');
+    if (entries.length) tree.appendChild(counts);
     if (truncated) tree.appendChild(el('div', 'err gf-note', 'the list is cut: more files than are shown'));
     // A large tree starts folded and keeps the folders opened by hand; a filter opens every folder holding a match.
     if (!kept.length) tree.appendChild(el('div', 'empty', entries.length ? 'no file matches' : 'no files'));
     else tree.appendChild(treeView(buildTree(kept), fileRow, folderNote, !q && kept.length > 200, d => stateMark(treeFiles(d)), q ? null : filesState.folders));
-    count((q ? kept.length + ' of ' : '') + fileCount(entries.length) + (truncated ? '+' : ''));
   };
   const closeFile = () => {
     pane.innerHTML = ''; if (entries.length) pane.appendChild(unopened); body.classList.remove('viewing');
@@ -129,7 +128,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     ignoredToggle.hidden = filesState.rev.rev !== GIT_WORKTREE;
     pane.dataset.key = ''; shown = null; rev = ''; ignored = false; entries = [];
     if (!relisting) closeFile();
-    tree.innerHTML = ''; tree.appendChild(el('div', 'empty', 'loading…')); count('');
+    tree.innerHTML = ''; tree.appendChild(el('div', 'empty', 'loading…'));
     try {
       const d = await getJSON('/api/git/tree?rev=' + encodeURIComponent(filesState.rev.rev) + (showIgnored && !ignoredToggle.hidden ? '&ignored=1' : ''));
       if (n !== loading || !app.isConnected) return;

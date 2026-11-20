@@ -387,17 +387,22 @@ def test_the_tree_and_the_file_meet_at_one_hairline(
     assert not errors
 
 
-@pytest.mark.parametrize(("width", "line"), [(1280, "0px"), (390, "1px")])
+@pytest.mark.parametrize("width", [1280, 390])
 def test_one_hairline_tops_the_tree(
-    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int, width: int, line: str
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int, width: int
 ) -> None:
     """The first row drew its own line under the body's edge, a 2px line over the tree."""
     page, errors = open_page(big_tree)
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
     page.wait_for_selector(_row("deep"))
-    top = page.locator(_row("deep")).evaluate("e => getComputedStyle(e).borderTopWidth")
-    assert top == line
+    # The count heads the tree with no line of its own, and the first row's line sets it off.
+    count = page.locator(".files-tree > .files-counts:first-child")
+    assert count.evaluate("e => getComputedStyle(e).borderTopWidth") == "0px"
+    first = page.locator(_row("deep"))
+    top = first.evaluate("e => e.getBoundingClientRect().top")
+    assert top == pytest.approx(count.evaluate("e => e.getBoundingClientRect().bottom"), abs=0.5)
+    assert first.evaluate("e => getComputedStyle(e).borderTopWidth") == "1px"
     assert not errors
 
 
@@ -440,7 +445,7 @@ def test_a_failed_listing_shows_no_count(
     page.get_by_role("combobox", name="revision").fill("zz-unknown")
     page.keyboard.press("Enter")
     expect(page.locator(".files-tree .err")).to_contain_text("unknown revision")
-    expect(counts).to_have_text("")
+    expect(counts).to_have_count(0)
     assert [e for e in errors if "422" not in e] == []  # the unknown revision's response
 
 
@@ -467,7 +472,10 @@ def test_the_bar_holds_still_while_filtering_and_toggling(
 def test_the_bar_holds_still_when_the_listing_arrives(
     open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
 ) -> None:
-    """The fields shrank 54px when the count arrived beside them, on every load."""
+    """The fields shrank 54px when the count arrived beside them, on every load.
+
+    In the filter's end, the count took the typed text's room: 73px of 178px stayed at 820 wide.
+    """
     from playwright.sync_api import Route
 
     page, errors = open_page(big_tree)
@@ -489,14 +497,14 @@ def test_the_bar_holds_still_when_the_listing_arrives(
     held[0].continue_()
     page.wait_for_selector(_row("deep"))
     assert page.evaluate(boxes) == pytest.approx(loading, abs=0.5)
-    page.locator(".files-bar input.filter").fill("f1")
-    gap = page.evaluate(
-        "() => { const f = document.querySelector('.files-bar input.filter');"
-        " const end = f.getBoundingClientRect().right"
-        " - parseFloat(getComputedStyle(f).paddingRight);"
-        " return document.querySelector('.files-counts').getBoundingClientRect().left - end; }"
+    search = page.locator(".files-bar input.filter")
+    search.fill("f1")
+    pads = search.evaluate(
+        "f => [getComputedStyle(f).paddingLeft, getComputedStyle(f).paddingRight]"
     )
-    assert gap > 0, "the typed text runs under the count"
+    assert pads[0] == pads[1], "the count takes the filter's typing room"
+    count = page.locator(".files-counts").evaluate("e => e.getBoundingClientRect().top")
+    assert count >= page.locator(".files-bar").evaluate("e => e.getBoundingClientRect().bottom")
     assert not errors
 
 
