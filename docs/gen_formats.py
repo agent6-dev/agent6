@@ -423,6 +423,7 @@ WEB = (
     Producer("viewmodel.config_view", "_leaf_json", "`/api/config` setting"),
     Producer("ui.web.model", "config_payload", "`/api/config` editing fields", "setting"),
     Producer("ui.web.files_edit", "_snapshot", "`/api/files/text` snapshot"),
+    Producer("ui.web.files_preview", "Store.open", "`/api/files/preview` opened page"),
     Producer("ui.web.git_model", "_ref_row", "`/api/git/refs` ref row"),
     Producer("ui.web.git_model", "_file_row", "Git changed-file row"),
     Producer("ui.web.git_model", "_log_row", "`/api/git/graph` commit row"),
@@ -449,6 +450,8 @@ WEB = (
 )
 MODELS = (
     ("ui.web.files_edit", "FileTextBody"),
+    ("ui.web.files_preview", "OpenPreviewBody"),
+    ("ui.web.files_preview", "PreviewKeyBody"),
     ("app.child_launch", "ChildLaunch"),
     ("sessions.completion", "CompletionRecord"),
     ("sessions.child_dispatch", "DispatchRecord"),

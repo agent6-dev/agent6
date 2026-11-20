@@ -2212,6 +2212,19 @@ Source: [`ui.web.files_edit._snapshot`](https://github.com/agent6-dev/agent6/blo
 | `text` | `JSON` | The complete text with CRLF normalized to LF, or null if absent. |
 | `digest` | `JSON` | SHA-256 of the exact bytes on disk, or null if absent. |
 
+### `/api/files/preview` opened page
+
+**Support: public.** Pin the revision and check the document through the Files blob reader.
+
+Source: [`ui.web.files_preview.Store.open`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/files_preview.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `key` | `JSON` | The page's random read capability. |
+| `url` | `JSON` | Its frame address. |
+| `rev` | `JSON` | The resolved commit, or WORKTREE. |
+| `kind` | `JSON` | The preview document kind. |
+
 ### `/api/git/refs` ref row
 
 **Support: public.** Return one Git ref for the picker.
@@ -2598,6 +2611,28 @@ Source: [`agent6.ui.web.files_edit.FileTextBody`](https://github.com/agent6-dev/
 | `path` | `str` | The repository-relative file path. |
 | `text` | `str` | Complete UTF-8 text to save, at most 20 MiB after encoding. |
 | `digest` | `str \| None` | SHA-256 of the loaded bytes; null creates a file only if absent. |
+
+### OpenPreviewBody
+
+**Support: public.** The signed-in UI opens a file at the revision its Files tree shows.
+
+Source: [`agent6.ui.web.files_preview.OpenPreviewBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/files_preview.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `rev` | `str` | The Files revision, or WORKTREE. |
+| `path` | `str` | The repository-relative file to preview. |
+| `ignored` | `bool` | Include ignored working-tree files. |
+
+### PreviewKeyBody
+
+**Support: public.** The signed-in UI renews or closes one preview capability.
+
+Source: [`agent6.ui.web.files_preview.PreviewKeyBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/files_preview.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `key` | `str` | The key returned when this preview opened. |
 
 ### ChildLaunch
 

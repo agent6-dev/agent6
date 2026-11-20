@@ -32,7 +32,17 @@ from agent6.machine import MachineError
 from agent6.sessions import process
 from agent6.ui import spawn
 from agent6.ui.telemetry import export
-from agent6.ui.web import actions, auth, files_edit, git_model, model, page, review_routes, sse
+from agent6.ui.web import (
+    actions,
+    auth,
+    files_edit,
+    files_preview,
+    git_model,
+    model,
+    page,
+    review_routes,
+    sse,
+)
 from agent6.viewmodel import machine_snapshot, wire
 
 # The typed bodies are a few strings; an uncapped Content-Length would buffer arbitrary bytes.
@@ -391,6 +401,7 @@ class WebServer(http.server.ThreadingHTTPServer):
         self.target = target
         self.config_paths = config_paths
         self.session_token = auth.session_token(secret)
+        self.previews = files_preview.Store(cwd)
         self._pid_lock = threading.Lock()
         self._watch_counts: dict[str, int] = {}
 
@@ -524,6 +535,16 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self._body_length = int(raw)
         return True
 
+    def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:
+        """Keep preview refusals sandboxed even for unsupported HTTP methods."""
+        if parse.unquote(parse.urlsplit(getattr(self, "path", "")).path).startswith("/preview/"):
+            self.close_connection = True
+            self._send_bytes(
+                files_preview.REFUSAL.encode(), "text/plain; charset=utf-8", status=403
+            )
+        else:
+            super().send_error(code, message, explain)
+
     def do_GET(self) -> None:
         """Route a GET; the method name is the stdlib's dispatch contract.
 
@@ -540,7 +561,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": "a GET carries no body"}, status=400)
             return
         try:
-            if path == "/metrics":
+            if path.startswith("/preview/"):
+                self._route_preview(path)
+            elif path == "/metrics":
                 self._send_metrics()
             elif path not in PUBLIC_GET and not self._signed_in():
                 self._send_sign_in_required()
@@ -674,6 +697,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         parts = path.strip("/").split("/")
         if path == "/api/login":
             self._login()
+            return
+        if path in ("/api/files/preview", "/api/files/preview/close", "/api/files/preview/renew"):
+            self._preview_action(path)
             return
         if path == "/api/files/text":
             self._route_file_text(write=True)
@@ -1021,6 +1047,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 "text/html; charset=utf-8",
                 # A browser that signed in before the token kept a cookie it sends to every port.
                 headers=(("Set-Cookie", auth.expired_cookie(self.server.server_port)),),
+                csp="frame-ancestors 'none'; frame-src "
+                + files_preview.sources(self.headers.get("Host", ""), "/preview/"),
             )
             return
         if path == "/manifest.webmanifest":
@@ -1128,6 +1156,39 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._route_draft(parts[2], parts[3] if len(parts) > 3 else "")
             return
         self._send_json({"error": f"not found: {path}"}, status=404)
+
+    def _preview_action(self, path: str) -> None:
+        """Let only signed-in UI requests open, renew or close a preview."""
+        try:
+            if path == "/api/files/preview":
+                body = files_preview.OpenPreviewBody.model_validate(self._read_body())
+                self._send_json(self.server.previews.open(body))
+            else:
+                key = files_preview.PreviewKeyBody.model_validate(self._read_body()).key
+                if path.endswith("/close"):
+                    self.server.previews.close(key)
+                else:
+                    self.server.previews.renew(key)
+                self._send_json({"ok": True})
+        except git_model.BlobTooLargeError as exc:
+            self._send_json({"error": str(exc)}, status=413)
+        except files_preview.READ_ERRORS as exc:
+            self._send_json({"error": str(exc)}, status=getattr(exc, "status", 422))
+
+    def _route_preview(self, path: str) -> None:
+        """Serve a read capability with browser metadata and an opaque origin."""
+        try:
+            response = self.server.previews.read(
+                path, self.headers.get("Sec-Fetch-Dest", ""), self.headers.get("Host", "")
+            )
+        except git_model.BlobTooLargeError as exc:
+            self._send_bytes(str(exc).encode(), "text/plain; charset=utf-8", status=413)
+        except files_preview.READ_ERRORS as exc:
+            self._send_bytes(
+                str(exc).encode(), "text/plain; charset=utf-8", status=getattr(exc, "status", 422)
+            )
+        else:
+            self._send_bytes(response.data, response.content_type, csp=response.csp)
 
     def _route_file_text(self, *, write: bool) -> None:
         """Read or save working-tree text for the signed-in operator."""
@@ -1379,7 +1440,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         headers: tuple[tuple[str, str], ...] = (),
         csp: str = "frame-ancestors 'none'",
     ) -> None:
-        """Send one uncached response that no other page may frame.
+        """Send one uncached response with UI or preview frame restrictions.
 
         Args:
             body: The response bytes.
@@ -1395,13 +1456,22 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         for name, value in headers:
             self.send_header(name, value)
+        if parse.unquote(parse.urlsplit(self.path).path).startswith("/preview/"):
+            if csp == "frame-ancestors 'none'":
+                csp = files_preview.DENY_CSP
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("X-DNS-Prefetch-Control", "off")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Access-Control-Allow-Origin", "null")
         self.send_header("Content-Security-Policy", csp)
-        self.send_header("X-Frame-Options", "DENY")
+        if "frame-ancestors 'none'" in csp:
+            self.send_header("X-Frame-Options", "DENY")
         if self.close_connection:
             # Without the header a keep-alive client reuses the socket about to shut.
             self.send_header("Connection", "close")
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     # -- SSE ------------------------------------------------------------------
 

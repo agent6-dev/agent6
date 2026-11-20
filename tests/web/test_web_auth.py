@@ -162,7 +162,12 @@ def test_the_page_frames_nowhere(port: int) -> None:
     for path, token in (("/", ""), ("/api/hub", signin.token(port))):
         status, headers, _body = _request(port, "GET", path, token=token)
         assert status == 200
-        assert headers["Content-Security-Policy"] == "frame-ancestors 'none'"
+        policy = "frame-ancestors 'none'"
+        if path == "/":
+            policy += (
+                f"; frame-src http://127.0.0.1:{port}/preview/ https://127.0.0.1:{port}/preview/"
+            )
+        assert headers["Content-Security-Policy"] == policy
         assert headers["X-Frame-Options"] == "DENY"
 
 
@@ -333,7 +338,7 @@ def test_only_the_page_shell_and_login_answer_without_a_token(port: int) -> None
     """A new route is gated unless someone adds it to the public list on purpose.
 
     The lists hold the page, the assets a browser fetches to show it, and the login itself;
-    every other path the routers name, and any path they do not, answers 401.
+    API routes require the token; previews require a capability and Fetch Metadata.
     """
     assert {"GET": web_server.PUBLIC_GET, "POST": web_server.PUBLIC_POST} == _PUBLIC
     routed = _routed_paths()
@@ -343,6 +348,9 @@ def test_only_the_page_shell_and_login_answer_without_a_token(port: int) -> None
         status, _headers, body = _request(port, "GET", path)
         if path in _PUBLIC["GET"]:
             assert (status, bool(body)) == (200, True), path
+        elif path == "/preview/":
+            assert status == 403
+            assert b"Previews open inside the Files page" in body
         else:
             assert status == 401, path
     for path in sorted(routed["POST"] | {"/", "/nope", "/api/session/x/steer"}):
