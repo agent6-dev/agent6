@@ -191,7 +191,7 @@ def parallel_compared_body(event: dict[str, Any]) -> str:
 
 
 def parallel_joined_body(event: dict[str, Any]) -> str:
-    """Word a joined group: one line per child with its status, id, branch and sha.
+    """Describe a completed dispatch without implying that anything merged.
 
     Args:
         event: The `parallel.joined` event.
@@ -209,17 +209,23 @@ def parallel_joined_body(event: dict[str, Any]) -> str:
     head = (
         f"reviewers returned ({parallel_group_label(event)}): {len(children)}"
         if panel
-        else f"joined {parallel_group_label(event)}: {len(children)} child(ren)"
+        else f"{parallel_group_label(event)} complete: {format.child_count(len(children))}"
     )
     rows: list[str] = []
     for ln in children:
         status = str(ln.get("status", "?"))
         if panel and status == "no_changes":
             status = "returned"  # a reviewer has no work to join; its verdict follows in the panel
+        elif status == "joined":
+            status = "merged"
+        elif status == "no_changes":
+            status = "no changes"
         parts = [str(ln.get("session_id", "?"))]
         branch = str(ln.get("branch", "")).strip()
         if branch:
             parts.append(branch)
+        if status in ("stopped", "unmerged") and isinstance(count := ln.get("commits"), int):
+            parts.append(f"{count} {'commit' if count == 1 else 'commits'}")
         sha = str(ln.get("sha", "")).strip()
         if sha:
             parts.append(sha[:12])

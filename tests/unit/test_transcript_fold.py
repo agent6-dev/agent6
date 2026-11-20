@@ -273,8 +273,8 @@ def test_parallel_joined_names_child_ids_branches_shas() -> None:
     )  # fmt: skip
     (item,) = items
     assert item.kind == "marker"
-    assert "joined group p1: 2 child(ren)" in item.body
-    assert "joined  co-p1-l1  agent6/co-p1-l1  abcdef123456" in item.body  # sha clipped to 12
+    assert "group p1 complete: 2 children" in item.body
+    assert "merged  co-p1-l1  agent6/co-p1-l1  abcdef123456" in item.body  # sha clipped to 12
     assert "conflict  co-p1-l2  agent6/co-p1-l2" in item.body
 
 
