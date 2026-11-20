@@ -282,3 +282,16 @@ def test_a_real_pack_round_trips_into_a_clean_home(
     assert (there / "memory/note.md").read_text() == "carried\n"
     assert not (repo / ".agent6").exists()
     assert cli_main(["config", "show", "harness.max_turns"]) == 0
+
+    # A pack this home already holds in full installs nothing, so nothing is asked.
+    assert cli_main(["pack"]) == 0
+    capsys.readouterr()
+    assert cli_main(["unpack"]) == 0
+    assert capsys.readouterr().out.splitlines()[1:] == [
+        "It would install 0 files into this home:",
+        "It would keep 2 files this home already has.",
+        "Unpacked: 0 moved, 2 kept.",
+        "No global config.toml or ui.toml written.",
+        f"State re-keyed: {repo} -> {repo}",
+    ]
+    assert not (repo / ".agent6").exists()

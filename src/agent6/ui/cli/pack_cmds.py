@@ -59,7 +59,7 @@ def _preview_lines(root: pathlib.Path, preview: pack.Preview) -> list[str]:
 
     Returns:
         Every file to install with its destination and, under a config file, every setting
-        it sets; then the files this home already holds.
+        it sets; then how many files this home already holds.
     """
     origin = preview.origin
     moves = [file for file in preview.files if file.outcome == "move"]
@@ -78,8 +78,7 @@ def _preview_lines(root: pathlib.Path, preview: pack.Preview) -> list[str]:
             value = setting.value or "(a secret, not shown)"
             lines.append(f"      {_shown(setting.key)} = {value}{mark}")
     if keeps:
-        lines.append(f"It would keep {common.plural(len(keeps), 'file')} this home already has:")
-        lines.extend(f"  {_shown(file.name)} = {_shown(file.home)}" for file in keeps)
+        lines.append(f"It would keep {common.plural(len(keeps), 'file')} this home already has.")
     if marked:
         lines.append(
             f"{common.plural(marked, 'setting')} marked [operator-only]: a key under `sandbox`,"
