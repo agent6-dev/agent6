@@ -27,11 +27,13 @@ class Layer:
         name: The layer name.
         path: The file it was read from; None for a preset or an in-memory overlay.
         data: The raw parsed table.
+        definitions: For a selected user preset, the file layer that defined each leaf.
     """
 
     name: LayerName
     path: pathlib.Path | None
     data: dict[str, Any]
+    definitions: dict[str, Layer] = dataclasses.field(default_factory=dict)
 
     @property
     def source(self) -> str:
@@ -63,6 +65,31 @@ class EffectiveConfig:
     sources: dict[str, str]
     layers: tuple[Layer, ...]
     presets: tuple[str, ...] = ()
+
+    def origin(self, leaf: str) -> Layer | None:
+        """Return the layer that supplied the effective leaf, including a preset definition.
+
+        Args:
+            leaf: An effective setting's dotted key.
+
+        Returns:
+            The defining layer, or None for a default.
+        """
+        source = self.sources.get(leaf)
+        winning = next((lyr for lyr in reversed(self.layers) if lyr.source == source), None)
+        if winning is None or not winning.definitions:
+            return winning
+        parts = io.split_key(leaf)
+        if len(parts) == 3 and parts[0] == "models" and parts[1] in kinds.MODEL_ROLES:
+            role = self.config.models.source_role(parts[1], parts[2])
+            leaf = io.render_key(("models", role, parts[2]))
+        if defined := winning.definitions.get(leaf):
+            return defined
+        # A mapping-valued setting takes its origin from the highest contributing file.
+        sources = {
+            lyr.source for key, lyr in winning.definitions.items() if key.startswith(leaf + ".")
+        }
+        return next((lyr for lyr in reversed(self.layers) if lyr.source in sources), winning)
 
     @property
     def explicit_leaves(self) -> frozenset[str]:

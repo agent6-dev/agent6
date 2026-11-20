@@ -375,7 +375,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             table.clear()
             for s in rows:
                 leaf = _leaf(s)
-                src = s.source + (" *" if s.modified else "")
+                src = s.source_label + (" *" if s.modified else "")
                 # Text, never markup: a value or key may carry brackets.
                 table.add_row(
                     text.Text(leaf),

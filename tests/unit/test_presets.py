@@ -158,6 +158,22 @@ def global_config(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pa
     return gdir / "agent6" / "config.toml"
 
 
+def test_a_split_preset_names_the_defining_file_of_each_value(
+    repo: pathlib.Path, global_config: pathlib.Path
+) -> None:
+    """Selecting a preset in one file does not make it the author of every leaf."""
+    from agent6.viewmodel import config_view
+
+    global_config.write_text("[presets.t.review]\nconcurrency = 5\n", encoding="utf-8")
+    _write_repo_config(repo, '[agent6]\npreset = "t"\n[presets.t.review]\nwhen = "finish"\n')
+    view = config_view.build_config_view(layer.load_effective(repo))
+    settings = {s.key: s for s in view.settings}
+    assert settings["review.concurrency"].source_label == f"preset t ({global_config})"
+    chosen = settings["review.when"]
+    assert chosen.source_label == f"preset t ({paths.repo_config_path(repo)})"
+    assert chosen.edit_layer == "repo" and settings["review.concurrency"].edit_layer == "global"
+
+
 def test_repo_none_stops_the_global_preset(repo: pathlib.Path, global_config: pathlib.Path) -> None:
     """A repo can turn off a global preset without erasing the global config's own settings."""
     global_config.write_text(

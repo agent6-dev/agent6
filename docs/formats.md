@@ -2259,6 +2259,8 @@ Source: [`viewmodel.config_view._leaf_json`](https://github.com/agent6-dev/agent
 | `effective` | `JSON` | The resolved config value, masked when secret. |
 | `default` | `JSON` | The built-in config default. |
 | `source` | `JSON` | The layer that supplied the value. |
+| `source_label` | `JSON` | The source for display, with the name and defining file of a preset. |
+| `edit_layer` | `JSON` | The global or repo config an editor selects for Save. |
 | `modified` | `JSON` | Whether a config layer set the value. |
 | `adaptive` | `JSON` | Whether the effective value was resolved from an automatic setting. |
 | `type` | `JSON` | The config editor's type name. |

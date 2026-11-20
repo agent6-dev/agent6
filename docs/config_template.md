@@ -62,6 +62,8 @@ It can be empty or absent when the global config supplies a provider and model.
 A preset fills many settings at once.
 `agent6 config presets` lists them; select with `--preset <name>`, `agent6 config set agent6.preset <name>` (`--repo`), or the preset picker of the TUI and web new-task composers.
 A preset overrides config at the layer that selected it (most-specific source wins, presets never stack); a more-specific config layer, `--config FILE`, or an individual flag still beats it.
+`agent6 config show` names the preset and the file that supplied each value.
+For a preset value from the global or repo config, the web and terminal editors select that file for Save.
 A `--config FILE` or machine overlay cannot select one.
 
 The default `agent6.preset = "none"` selects no preset.

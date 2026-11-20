@@ -814,6 +814,37 @@ def test_each_config_table_is_named_by_its_section(
     assert not errors
 
 
+@pytest.mark.parametrize("width,height", [(1440, 900), (390, 844)])
+def test_a_preset_edit_defaults_to_the_defining_file(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    width: int,
+    height: int,
+) -> None:
+    """A repo preset's budget change belongs to the same preset in the same file."""
+    config = paths.repo_config_path(tmp_path)
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text('[agent6]\npreset = "bounded"\n[presets.bounded.budget]\nmax_usd = 3\n')
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": height})
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    row = page.locator('[data-key="budget.max_usd"]')
+    assert str(config) in row.inner_text() and "preset bounded" in row.inner_text()
+    row.click()
+    dialog = page.get_by_role("dialog")
+    assert dialog.get_by_role("checkbox").is_checked()
+    dialog.locator(".field").fill("4")
+    with page.expect_response("**/api/config"):
+        dialog.get_by_role("button", name="Save", exact=True).click()
+    import tomllib
+
+    saved = tomllib.loads(config.read_text())
+    assert saved["presets"]["bounded"]["budget"]["max_usd"] == 4
+    assert "budget" not in saved
+    assert not errors
+
+
 def test_a_config_editor_reads_its_key_whole_to_a_screen_reader(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

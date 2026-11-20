@@ -339,4 +339,14 @@ def apply_preset(layers: list[layer_data.Layer], preset_override: str) -> list[l
         cleaned.append(layer_data.Layer("flag", None, {"agent6": {"preset": name}}))
     if not overrides:
         return cleaned
-    return insert_preset(cleaned, layer_data.Layer("preset", None, overrides), source)
+    fragments: list[layer_data.Layer] = []
+    for lyr in layers:
+        table = lyr.data.get("presets", {})
+        definition = table.get(name) if isinstance(table, dict) else None
+        if isinstance(definition, dict):
+            fragments.append(layer_data.Layer(lyr.name, lyr.path, definition))
+    _, origins = layer_data.merge_layers(fragments)
+    by_source = {lyr.source: lyr for lyr in fragments}
+    definitions = {leaf: by_source[origin] for leaf, origin in origins.items()}
+    selected = layer_data.Layer("preset", None, overrides, definitions=definitions)
+    return insert_preset(cleaned, selected, source)

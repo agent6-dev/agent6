@@ -209,14 +209,18 @@ def test_config_page_edit_persists(repo: pathlib.Path) -> None:
     asyncio.run(scenario())
 
 
-def test_edit_defaults_to_the_setting_source_layer(repo: pathlib.Path) -> None:
+@pytest.mark.parametrize("preset", ["", "bounded"])
+def test_edit_defaults_to_the_setting_source_layer(repo: pathlib.Path, preset: str) -> None:
     """Editing a repo-sourced value targets the repo config by default.
 
     Otherwise the repo layer masks the global write and Save appears to do nothing.
     """
     from agent6.config import write
 
-    assert write.set_config_value(repo, "sandbox.run_commands", "deny", to_repo=True) is None
+    key = write.preset_key(preset, "sandbox.run_commands")
+    if preset:
+        assert write.add_preset(repo, preset, to_repo=True) is None
+    assert write.set_config_value(repo, key, "deny", to_repo=True) is None
 
     async def scenario() -> None:
         from agent6.ui.tui import forms

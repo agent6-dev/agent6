@@ -144,7 +144,7 @@ class EditModal(FormModal[tuple[str, str, bool] | None]):
                     classes="edit-input edit-gap",
                 )
             yield textual_widgets.Static("save to", classes="edit-label")
-            target = "repo config" if s.source == "repo" else "global config"
+            target = "repo config" if s.edit_layer == "repo" else "global config"
             yield forms.ChoiceField(("global config", "repo config"), target, id="edit-target")
             with containers.Horizontal(id="edit-actions"):
                 yield forms.ActionItem("Save", "save")

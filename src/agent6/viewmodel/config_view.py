@@ -33,6 +33,8 @@ class ConfigSetting:
         effective_value: The resolved value; equal to `value` unless a caller resolved it.
         default: The built-in default; None when unknown or not static.
         source: The layer that set it: default, preset, global, repo, flag or machine.
+        source_label: The source for display, with the preset name and file where applicable.
+        edit_layer: The layer an editor selects for this setting.
         modified: A layer set it, so `source` is not "default".
         is_adaptive: `effective_value` was resolved away from the raw value.
         py_type: str, int, bool, float, choice, list or table.
@@ -59,6 +61,8 @@ class ConfigSetting:
     choice_meanings: dict[str, str] = dataclasses.field(default_factory=dict)
     # The role whose model picker the leaf opens; "" for every other leaf.
     model_role: str = ""
+    source_label: str = ""
+    edit_layer: str = "global"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -291,6 +295,11 @@ def build_config_view(
         for leaf in sorted(by_section[section]):
             value = leaves[leaf]
             source = eff.sources.get(leaf, "default")
+            origin = eff.origin(leaf)
+            label = source
+            if source == "preset":
+                file = origin.path if origin and origin.path else "built-in"
+                label = f"preset {eff.config.agent6.preset} ({file})"
             schema = field_schema(eff.config.__class__, io.split_key(leaf)) or FieldSchema()
             py_type, choices = schema.py_type, schema.choices
             if py_type == "Any":
@@ -308,6 +317,8 @@ def build_config_view(
                     effective_value=eff_val,
                     default=schema.default,
                     source=source,
+                    source_label=label,
+                    edit_layer="repo" if origin and origin.name == "repo" else "global",
                     # Provenance, not "differs from the default": a layer may pin that value.
                     modified=source != "default",
                     is_adaptive=leaf in resolved and eff_val != value,
@@ -424,6 +435,8 @@ def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
         effective: The resolved config value, masked when secret.
         default: The built-in config default.
         source: The layer that supplied the value.
+        source_label: The source for display, with the name and defining file of a preset.
+        edit_layer: The global or repo config an editor selects for Save.
         modified: Whether a config layer set the value.
         adaptive: Whether the effective value was resolved from an automatic setting.
         type: The config editor's type name.
@@ -449,6 +462,8 @@ def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
         else display_mapping(s.effective_value, display_safe=s.display_safe),
         "default": display_mapping(s.default, display_safe=s.display_safe),
         "source": s.source,
+        "source_label": s.source_label,
+        "edit_layer": s.edit_layer,
         "modified": s.modified,
         "adaptive": s.is_adaptive,
         "type": s.py_type,
@@ -502,7 +517,7 @@ def render_key_detail(
         lines.append(f"    value:   {value}")
         if s.modified:
             lines.append(f"    default: {format_value(s.default, display_safe=s.display_safe)}")
-        lines.append(f"    source:  {s.source}")
+        lines.append(f"    source:  {s.source_label}")
         if s.choices:
             lines.append(f"    choices: {', '.join(str(c) for c in s.choices)}")
         for value in s.choices or ():
@@ -554,7 +569,7 @@ def render_show(
         value = display_value(s)
         mark = "*" if s.modified else " "
         key, val = _truncate(s.key, key_w), value
-        row = f"{mark} {key:<{key_w}} {val:<{val_w}} {s.source}"
+        row = f"{mark} {key:<{key_w}} {val:<{val_w}} {s.source_label}"
         lines.append(f"\x1b[2m{row}\x1b[0m" if color and not s.modified else row)
         if descriptions and s.description:
             for line in _description_lines(s.description, "      "):

@@ -100,8 +100,8 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     const value = breakable(el('td', 'val'), s.display, '/');
     value.setAttribute('aria-label', s.display); // Inline blocks must not add spaces to the cell's name.
     tr.appendChild(value);
-    const source = tr.appendChild(el('td', 'source', esc(s.source)));
-    if (s.source.includes(' (')) source.title = s.source; // a file (`flag (FILE)`) the column cuts short
+    const source = tr.appendChild(el('td', 'source', esc(s.source_label)));
+    if (s.source_label.includes(' (')) source.title = s.source_label; // a file (`flag (FILE)`) the column cuts short
     // Hover text: the leaf's meaning (the docs table cell), from the same
     // per-key payload the editor dialog shows it in. The edit button, which takes the focus,
     // carries it as its description.
@@ -400,7 +400,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   if (!dialog) return;
   const close = () => dialog.close();
   const meta = el('div', 'sub muted cfg-meta');
-  meta.textContent = `${esc(s.type)} · default: ${s.default_display} · set from: ${esc(s.source)}` + (s.adaptive ? ' · adaptive' : '');
+  meta.textContent = `${esc(s.type)} · default: ${s.default_display} · set from: ${esc(s.source_label)}` + (s.adaptive ? ' · adaptive' : '');
   dialog.appendChild(meta);
   let desc, field, combo, meaning, unpicked = false;
   if (s.description) {
@@ -457,7 +457,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   // Default the target layer to the value's origin: editing a repo-sourced value
   // must write the repo config, or the repo overlay keeps masking the edit and it
   // looks like the save vanished.
-  repoCb.checked = (s.source === 'repo');
+  repoCb.checked = (s.edit_layer === 'repo');
   repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'muted', 'set for this repo only (not the global config)'));
   dialog.appendChild(repoRow);
   const row = el('div', 'form-row cfg-actions');
