@@ -14,8 +14,12 @@ from agent6.viewmodel import execution_settings, receipt, telemetry
 from agent6.viewmodel.session import log
 
 
-def test_settings_record_origins_without_freeform_secrets(tmp_path: pathlib.Path) -> None:
-    """A flag, a preset and an override file keep distinct origins."""
+def test_settings_record_the_rows_config_show_prints(tmp_path: pathlib.Path) -> None:
+    """A flag, a preset and an override file keep distinct origins.
+
+    The record masked every free-form string, so a commit name read `***` beside a
+    `config show` that printed it.
+    """
     cfg = paths.repo_config_path(tmp_path)
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text('[agent6]\npreset = "small"\n[presets.small.models.default]\neffort="high"\n')
@@ -24,14 +28,18 @@ def test_settings_record_origins_without_freeform_secrets(tmp_path: pathlib.Path
         '[providers.p]\nbackend="openai"\nbase_url="http://localhost:1"\n'
         'token_command=["echo", "private-token"]\n[providers.p.extra_body]\n'
         'field="private-body"\n[models.default]\nmodel="p/example"\n[budget]\nmax_usd=9\n'
+        '[git.commit]\nname="smoke"\n'
     )
     eff = setup.load_session_config(
         tmp_path, (extra,), mode="run", budget_overrides=setup.BudgetOverrides(max_usd=3)
     )
     settings = execution_settings.observations(eff.config, eff)
     record = journal.ExecutionSettings(execution_id="one", settings=settings)
-    assert "private-" not in record.model_dump_json()
+    assert "private-body" not in record.model_dump_json()
     rows = {r.key: r for r in record.settings}
+    assert rows["providers.p.extra_body.field"].value == "***"
+    assert rows["providers.p.token_command"].value == '["echo", "private-token"]'
+    assert rows["git.commit.name"].value == "smoke"
     assert rows["budget.max_usd"].value == 3 and rows["budget.max_usd"].source == "flag"
     assert rows["budget.max_usd"].file is None
     assert rows["models.default.effort"].source == "preset small"

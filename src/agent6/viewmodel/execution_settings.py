@@ -19,14 +19,24 @@ _Value = str | float | int | bool | None
 _SOURCES = frozenset((*get_args(layer_data.LayerName), "execution", "mode"))
 
 
-def _disclosed_value(
-    schema: config_view.FieldSchema, value: object, *, local_name: bool = False
-) -> _Value:
+def _recorded_value(schema: config_view.FieldSchema, value: object) -> _Value:
+    """Return the value as `agent6 config show` prints it: masked where that masks it."""
+    if schema.mask_value:
+        return "***"
+    if value is None or isinstance(value, (int, str)):
+        return value
+    if isinstance(value, float) and math.isfinite(value):
+        return value
+    return config_view.format_value(value, display_safe=schema.display_safe)
+
+
+def _exported_value(schema: config_view.FieldSchema, value: object) -> _Value:
+    """Return the value telemetry may carry off the machine: numbers and the schema's choices."""
     if not schema.mask_value and (
         value is None
         or isinstance(value, int)
         or (isinstance(value, float) and math.isfinite(value))
-        or (isinstance(value, str) and (local_name or value in (schema.choices or ())))
+        or (isinstance(value, str) and value in (schema.choices or ()))
     ):
         return value
     return "***"
@@ -35,14 +45,14 @@ def _disclosed_value(
 def observations(
     cfg: Config, effective: layer_data.EffectiveConfig | None
 ) -> tuple[journal.SettingObservation, ...]:
-    """Select settings for the journal without copying credentials or free-form text.
+    """Select the non-default settings for the journal, as `agent6 config show` prints them.
 
     Args:
         cfg: The config this execution uses.
         effective: The config before execution policy and the origins of its values.
 
     Returns:
-        One observation per non-default setting. Arbitrary strings and maps stay masked.
+        One observation per non-default setting; a value `config show` masks stays masked.
     """
     defaults = layer_data.config_leaves(Config())
     original = layer_data.config_leaves(effective.config) if effective else {}
@@ -65,8 +75,7 @@ def observations(
             source, file = "execution", None
         if key not in defaults and source == "default" and key not in original:
             source = "execution"
-        local_name = key == "agent6.preset" or (parts[0] == "models" and parts[-1] == "model")
-        shown = _disclosed_value(schema, value, local_name=local_name)
+        shown = _recorded_value(schema, value)
         rows.append(journal.SettingObservation(key=key, value=shown, source=source, file=file))
     return tuple(rows)
 
@@ -128,7 +137,7 @@ def export_settings(rows: list[object]) -> list[dict[str, _Value]]:
         schema = config_view.field_schema(Config, row.key.split("."))
         if schema is None:
             continue
-        value = _disclosed_value(schema, row.value)
+        value = _exported_value(schema, row.value)
         if value != "***":
             try:
                 checked = fields[row.key].validate_python(value, strict=True)

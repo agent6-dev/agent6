@@ -1461,7 +1461,7 @@ class SettingObservation(pydantic.BaseModel, frozen=True, extra="forbid"):
 
     key: str = pydantic.Field(description="The dotted config key.")
     value: str | float | int | bool | None = pydantic.Field(
-        description="The observed value, or *** for text that could contain credentials."
+        description="The value as `agent6 config show` prints it; *** where that masks it."
     )
     source: str = pydantic.Field(description="The winning layer, preset, flag or runtime policy.")
     file: str | None = pydantic.Field(default=None, description="The defining config file, if any.")

@@ -387,7 +387,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `execution_id` | `str` | The execution whose settings were observed. |
 | `settings` | `list` | The observed settings. |
 | `settings[].key` | `str` | The dotted config key. |
-| `settings[].value` | `str or float or int or bool or null` | The observed value, or *** for text that could contain credentials. |
+| `settings[].value` | `str or float or int or bool or null` | The value as `agent6 config show` prints it; *** where that masks it. |
 | `settings[].source` | `str` | The winning layer, preset, flag or runtime policy. |
 | `settings[].file` | `str, optional` | The defining config file, if any. |
 
@@ -4304,7 +4304,7 @@ Source: [`agent6.sessions.journal.SettingObservation`](https://github.com/agent6
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `key` | `str` | The dotted config key. |
-| `value` | `str \| float \| int \| bool \| None` | The observed value, or *** for text that could contain credentials. |
+| `value` | `str \| float \| int \| bool \| None` | The value as `agent6 config show` prints it; *** where that masks it. |
 | `source` | `str` | The winning layer, preset, flag or runtime policy. |
 | `file` | `str \| None` | The defining config file, if any. |
 
