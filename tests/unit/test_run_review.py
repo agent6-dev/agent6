@@ -142,6 +142,35 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: pathlib.Path) -> None:
         assert heading in text
 
 
+def test_digest_lists_operator_directives_in_journal_order(repo: pathlib.Path) -> None:
+    """The reviewer sees queued work beside the steers that preceded and followed it."""
+    layout = _write_session(
+        repo,
+        events=[
+            {"type": "metric.set", "revision": 1, "spec": "min time -- measure"},
+            _EVENTS[0],
+            {"type": "steer.injected", "text": "Keep the API"},
+            {"type": "task.queued", "task_id": "0002", "title": "Add perimeter_rectangle"},
+            {"type": "task.retired", "task_id": "0002", "title": "Add perimeter_rectangle"},
+            {"type": "standing.set", "task_id": "0003", "title": "Check more rectangles"},
+            {"type": "pin.added", "text": "Use integers"},
+            {"type": "metric.set", "revision": 2, "spec": "max score -- measure"},
+            {"type": "metric.set", "revision": 3, "spec": None},
+            {"type": "steer.injected", "text": "Stop after the tests"},
+        ],
+    )
+    assert review_session.run_digest(layout).steers == (
+        "Keep the API",
+        "/task Add perimeter_rectangle",
+        "/retire 0002",
+        "/standing Check more rectangles",
+        "/pin Use integers",
+        "/metric max score -- measure",
+        "/metric off",
+        "Stop after the tests",
+    )
+
+
 def test_digest_lists_questions_nobody_answered(repo: pathlib.Path) -> None:
     """The questions nobody could answer are listed by text, across executions."""
     from agent6.sessions import event_log

@@ -39,6 +39,14 @@ _NOTICE_EVENTS = (
     "nudge.memory_flip",
     "jail.tool_unreachable",
 )
+# Each directive's words come from its accepted journal event.
+_DIRECTIVES = {
+    "task.queued": ("/task", "title"),
+    "task.retired": ("/retire", "task_id"),
+    "standing.set": ("/standing", "title"),
+    "pin.added": ("/pin", "text"),
+    "metric.set": ("/metric", "spec"),
+}
 # The caps that keep the digest within any configured model's window.
 _STEERS_MAX = 20
 _STEER_CHARS = 500
@@ -100,7 +108,7 @@ class RunDigest:
         tool_calls: The tool calls made.
         tool_errors: The tool calls that failed.
         cost_usd: The session's cost.
-        steers: The operator's steers.
+        steers: The operator's instructions and task directives in journal order.
         decisions: The (question, answer) rulings recorded.
         unanswered_questions: The questions nobody saw, across executions.
         verify_runs: The last verify runs.
@@ -255,6 +263,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         raw = layout.logs_path.read_text(errors="replace")
     except OSError:
         raw = ""
+    started = False
     for line in raw.splitlines():
         try:
             event = json.loads(line)
@@ -264,7 +273,19 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
             continue
         unanswered.extend(_clip(q, _QUESTION_CHARS) for q in _unseen_questions(event, prompts))
         etype = str(event.get("type", ""))
-        if etype == "steer.injected":
+        if etype in journal.SESSION_START_EVENTS:
+            started = True
+        if directive := _DIRECTIVES.get(etype):
+            verb, field = directive
+            value = event.get(field)
+            # A fork can carry its source's metric before its own first execution.
+            if etype == "metric.set" and (not started or field not in event):
+                continue
+            if etype == "metric.set" and value is None:
+                value = "off"
+            if isinstance(value, str) and value:
+                steers.append(_clip(f"{verb} {value}", _STEER_CHARS))
+        elif etype == "steer.injected":
             steers.append(_clip(str(event.get("text", "")), _STEER_CHARS))
         elif etype == "decision.recorded":
             decisions.append((str(event.get("question", "")), str(event.get("answer", ""))))
