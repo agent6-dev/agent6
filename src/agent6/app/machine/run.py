@@ -718,10 +718,14 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                     base_commit=base_commit,
                 )
             finally:
-                process.clear_worker_pid(root)
-                if agent_states or has_tool_state:
-                    # Under the lease: a tool state's command can write a pack.json in the checkout.
-                    pack.quarantine_tree(paths.checkout_root(cwd), warn=reporter.warn)
+                try:
+                    if agent_states or has_tool_state:
+                        # Under the lease: a tool state's command can write a pack.json in the
+                        # checkout. Before the pid goes: a kill here leaves the start check its
+                        # evidence that this machine wrote it.
+                        pack.quarantine_tree(paths.checkout_root(cwd), warn=reporter.warn)
+                finally:
+                    process.clear_worker_pid(root)
     except (JournalError, EngineError) as exc:
         reporter.error(str(exc))
         return 1

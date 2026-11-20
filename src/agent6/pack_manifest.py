@@ -16,6 +16,9 @@ Hash = Annotated[str, pydantic.Field(pattern=r"^[0-9a-f]{64}$")]
 CONFIG_FILES = ("config.toml", "secrets.toml", "ui.toml")
 # A pack is `pack.json` and these directories inside `.agent6/`; every other name there is not its.
 AREAS = ("config", "repo", "skills")
+# The state a pack never carries, so no manifest may name it: this home's locks, its record
+# of the last unpack, and the sessions' own worktrees.
+REPO_LEFT_OUT = ("locks", "pack-base.json", "worktrees")
 
 
 class Origin(pydantic.BaseModel):
@@ -73,11 +76,12 @@ def _pack_name(value: str) -> str:
     valid = valid and (
         (parts[0] == "config" and len(parts) == 2 and parts[1] in CONFIG_FILES)
         or (parts[0] == "skills")
-        or (parts[0] == "repo" and parts[1] != "locks")
+        or (parts[0] == "repo" and parts[1] not in REPO_LEFT_OUT)
     )
     if not valid:
         raise ValueError(
-            "must name config/{config,ui,secrets}.toml, skills/* or repo/* (not locks)"
+            "must name config/{config,ui,secrets}.toml, skills/* or repo/*"
+            f" (not {', '.join(REPO_LEFT_OUT)})"
         )
     return value
 

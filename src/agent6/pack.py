@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import datetime
-import errno
 import hashlib
 import json
 import os
@@ -310,8 +309,7 @@ def _sources(
             {
                 f"{area}/{file.relative_to(source).as_posix()}": file
                 for file in _files(
-                    source,
-                    exclude=("locks", "pack-base.json", "worktrees") if area == "repo" else (),
+                    source, exclude=pack_manifest.REPO_LEFT_OUT if area == "repo" else ()
                 )
             }
         )
@@ -514,28 +512,42 @@ def _preflight(root: pathlib.Path, manifest: pack_manifest.Manifest) -> tuple[Fi
     return tuple(facts)
 
 
-def _move(file: FileFacts) -> None:
-    """Move a file, copying across filesystems and recreating secrets as the importer.
+def _install(file: FileFacts) -> None:
+    """Write a packed file's bytes into a fresh file in the home, then remove the packed one.
+
+    Never a rename: a packed file can be a hard link to a workspace file, and the same
+    inode in the home would stay writable from the workspace. The bytes are the ones the
+    plan hashed. A secret is private; any other file keeps its mode without the set-id bits
+    and without write access for anyone but its owner.
 
     Args:
         file: The preflight file decision.
 
     Raises:
-        OSError: The filesystem cannot complete the move.
+        PackError: The packed file changed since the plan hashed it.
+        OSError: The filesystem cannot complete the copy.
     """
     paths.mkdir_for_real_user(file.home.parent)
-    if file.name == "config/secrets.toml":
-        _copy(file.packed, file.home, secret=True)
-        file.packed.unlink()
-    else:
-        try:
-            file.packed.rename(file.home)
-        except OSError as exc:
-            if exc.errno != errno.EXDEV:
-                raise
-            _copy(file.packed, file.home, secret=False)
-            file.packed.unlink()
-        paths.chown_to_real_user(file.home)
+    fd, name = tempfile.mkstemp(dir=file.home.parent)
+    temp = pathlib.Path(name)
+    try:
+        digest = hashlib.sha256()
+        source = os.open(file.packed, os.O_RDONLY | os.O_NOFOLLOW)
+        with os.fdopen(fd, "wb") as dest, os.fdopen(source, "rb") as src:
+            info = os.fstat(src.fileno())
+            while chunk := src.read(1 << 20):
+                digest.update(chunk)
+                dest.write(chunk)
+            if file.name != "config/secrets.toml":
+                os.fchmod(dest.fileno(), stat.S_IMODE(info.st_mode) & 0o755)
+        if digest.hexdigest() != file.sha256:
+            raise errors.PackError(f"{file.packed}: changed while unpack read it; not installed")
+        os.utime(temp, ns=(info.st_atime_ns, info.st_mtime_ns))
+        paths.chown_to_real_user(temp)
+        temp.replace(file.home)
+    finally:
+        temp.unlink(missing_ok=True)
+    file.packed.unlink()
 
 
 def _settings(file: FileFacts) -> tuple[Setting, ...]:
@@ -650,7 +662,7 @@ def unpack(root: pathlib.Path, *, shown: Preview | None = None) -> ImportResult:
                 )
             for file in facts:
                 if file.outcome == "move":
-                    _move(file)
+                    _install(file)
                 elif file.name == "config/secrets.toml":
                     _copy(file.home, file.home, secret=True)
             state = paths.state_dir(root, allow_pack=True)
@@ -676,6 +688,23 @@ def unpack(root: pathlib.Path, *, shown: Preview | None = None) -> ImportResult:
             lock.release_single_writer(fd)
 
 
+def _take_back(name: str | pathlib.Path, *, dir_fd: int | None = None) -> None:
+    """Give a directory its owner's access again, following no link.
+
+    A jailed `chmod` on `.agent6` or on an area inside it would otherwise pin the pack in
+    place: the move needs to search and write the first and to write the second.
+
+    Args:
+        name: The directory.
+        dir_fd: The directory `name` is relative to; None for a path of its own.
+    """
+    # NotImplementedError: a link took the directory's place, or this libc has no such chmod.
+    with contextlib.suppress(OSError, NotImplementedError):
+        mode = os.lstat(name, dir_fd=dir_fd).st_mode
+        if stat.S_ISDIR(mode) and mode & 0o700 != 0o700:
+            os.chmod(name, stat.S_IMODE(mode) | 0o700, dir_fd=dir_fd, follow_symlinks=False)
+
+
 def _set_aside(directory: pathlib.Path) -> tuple[str, list[str], list[str]]:
     """Move a pack's names out of `.agent6` into a new `pack.invalid` directory there.
 
@@ -693,6 +722,7 @@ def _set_aside(directory: pathlib.Path) -> tuple[str, list[str], list[str]]:
     Raises:
         OSError: `.agent6` is a link, or the manifest is gone or cannot be moved.
     """
+    _take_back(directory)
     fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         os.lstat("pack.json", dir_fd=fd)
@@ -719,11 +749,12 @@ def _set_aside(directory: pathlib.Path) -> tuple[str, list[str], list[str]]:
             stuck: list[str] = []
             for area in pack_manifest.AREAS:
                 try:
+                    # A directory moves only when it is writable: its `..` entry changes.
+                    _take_back(area, dir_fd=fd)
                     os.rename(area, area, src_dir_fd=fd, dst_dir_fd=aside)
                 except FileNotFoundError:
                     continue
                 except OSError as exc:
-                    # A directory moves only when it is writable: its `..` entry changes.
                     stuck.append(f"`{area}/` ({exc})")
                 else:
                     moved.append(f"`{area}/`")
@@ -770,9 +801,13 @@ def quarantine(
     """
     directory = root / ".agent6"
     found = directory / "pack.json"
-    # The start check's own view, through a linked `.agent6` too; a stat writes nothing there.
-    if not os.path.lexists(found):
-        return
+    try:
+        # The start check's own view, through a linked `.agent6` too; a stat writes nothing.
+        found.lstat()
+    except PermissionError:
+        pass  # `.agent6` refuses a search: the move below takes the access back
+    except OSError:
+        return  # no pack: nothing there, or `.agent6` is a file
     renamed: pathlib.Path | None = None
     try:
         name, moved, stuck = _set_aside(directory)
@@ -828,7 +863,14 @@ def quarantine_tree(
         warn: Receives each warning no journal takes.
         events: The session's journal; None outside a session.
     """
-    for directory in pack_manifest.pack_dirs(root, onerror=lambda _exc: None):
+
+    def unread(exc: OSError) -> None:
+        warn(
+            f"could not look for a pack under {exc.filename}: {exc.strerror}. Look there for"
+            " an `.agent6/pack.json` before you run `agent6 unpack` in that directory."
+        )
+
+    for directory in pack_manifest.pack_dirs(root, onerror=unread):
         quarantine(directory, warn=warn, events=events)
 
 

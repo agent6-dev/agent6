@@ -91,6 +91,45 @@ def test_a_pack_json_left_behind_moves_to_the_next_free_name(tmp_path: pathlib.P
     assert _names(tmp_path / ".agent6") == ["pack.invalid", "pack.invalid.1", "pack.invalid.2"]
 
 
+@pytest.mark.parametrize("mode", [0o000, 0o555])
+def test_a_pack_pinned_by_a_chmod_is_still_set_aside(tmp_path: pathlib.Path, mode: int) -> None:
+    """A jailed `chmod` on `.agent6` kept the pack in place for the next start to offer.
+
+    Without search the end check saw no pack and said nothing; without write the move failed
+    and the warning told the operator to delete what the next start then offered to unpack.
+    """
+    if os.geteuid() == 0:
+        pytest.skip("root ignores directory modes")
+    said: list[str] = []
+    _forge(tmp_path)
+    (tmp_path / ".agent6/config").mkdir()
+    (tmp_path / ".agent6/config").chmod(0o500)
+    (tmp_path / ".agent6").chmod(mode)
+
+    pack.quarantine(tmp_path, warn=said.append)
+
+    assert _names(tmp_path / ".agent6") == ["pack.invalid"]
+    assert _names(tmp_path / ".agent6/pack.invalid") == ["config", "pack.json.invalid"]
+    assert len(said) == 1 and "agent6 moved it to" in said[0]
+    pack_manifest.check_origin(tmp_path)  # the next start is not refused
+
+
+def test_a_directory_the_end_walk_cannot_read_is_named(tmp_path: pathlib.Path) -> None:
+    """A nested checkout made unreadable hid its pack from the end check, in silence."""
+    if os.geteuid() == 0:
+        pytest.skip("root ignores directory modes")
+    said: list[str] = []
+    nested = tmp_path / "sub"
+    (nested / ".git").mkdir(parents=True)
+    _forge(nested)
+    nested.chmod(0o311)
+    try:
+        pack.quarantine_tree(tmp_path, warn=said.append)
+    finally:
+        nested.chmod(0o755)
+    assert len(said) == 1 and f"could not look for a pack under {nested}" in said[0]
+
+
 def test_pack_names_the_areas_left_without_a_manifest(tmp_path: pathlib.Path) -> None:
     """`agent6 pack` answered a `config/` with no manifest with "expected a regular file"."""
     (tmp_path / ".agent6/config").mkdir(parents=True)
@@ -133,19 +172,22 @@ def test_the_forged_files_move_with_the_manifest_and_a_real_pack_follows(
     assert _names(aside) == ["config", "pack.json.invalid", "repo", "skills"]
 
 
-def test_an_area_that_will_not_move_is_named_for_deletion(tmp_path: pathlib.Path) -> None:
-    """A directory moves only when it is writable, so a model can pin its `repo/` in place."""
+def test_an_area_that_will_not_move_is_named_for_deletion(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An area the move cannot take stays, and the warning names it for deletion."""
     forged = _forge(tmp_path)
-    pinned = tmp_path / ".agent6/repo"
-    pinned.mkdir()
-    pinned.chmod(0o500)
+    (tmp_path / ".agent6/repo").mkdir()
     said: list[str] = []
-    try:
-        pack.quarantine(tmp_path, warn=said.append)
-    finally:
-        pinned.chmod(0o700)
-    if os.geteuid() == 0:
-        pytest.skip("root moves a read-only directory")
+    rename = os.rename
+
+    def refuse_the_area(src: Any, dst: Any, **kw: Any) -> None:
+        if src == "repo":
+            raise PermissionError(13, "Permission denied")
+        rename(src, dst, **kw)
+
+    monkeypatch.setattr(os, "rename", refuse_the_area)
+    pack.quarantine(tmp_path, warn=said.append)
     assert _names(tmp_path / ".agent6") == ["pack.invalid", "repo"]
     (warning,) = said
     assert f"found {forged}." in warning

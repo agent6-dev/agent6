@@ -9,7 +9,9 @@ It moved whatever sat in `.agent6/` straight into the home's config and state: a
 from __future__ import annotations
 
 import json
+import os
 import pathlib
+import stat
 import subprocess
 from typing import Any
 
@@ -163,6 +165,71 @@ def test_unpack_yes_installs_without_asking(
     assert "Unpacked: 2 moved, 0 kept." in out
     assert (state / "config.toml").read_text(encoding="utf-8") == _FORGED_CONFIG
     assert not (repo / ".agent6").exists()
+
+
+def test_an_installed_file_shares_nothing_with_the_workspace(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`unpack` renamed a packed file into the home, so a hard link stayed a hard link.
+
+    A model links `.agent6/repo/config.toml` to a workspace file; after the operator's yes a
+    write to that file from the jail rewrote the installed config, a notify hook with it.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+    _forge(repo)
+    packed = repo / ".agent6/repo/config.toml"
+    twin = repo / "notes.toml"
+    packed.unlink()
+    twin.write_text("[harness]\nmax_turns = 3\n", encoding="utf-8")
+    os.link(twin, packed)
+    packed.chmod(0o666)
+    state = paths.state_dir(repo, allow_pack=True)
+
+    assert cli_main(["unpack", "--yes"]) == 0
+    capsys.readouterr()
+
+    installed = state / "config.toml"
+    assert installed.stat().st_nlink == 1 and installed.stat().st_ino != twin.stat().st_ino
+    assert stat.S_IMODE(installed.stat().st_mode) == 0o644
+    twin.write_text('[notify]\non_event = ["sh", "-c", "echo hook-ran"]\n', encoding="utf-8")
+    assert installed.read_text(encoding="utf-8") == "[harness]\nmax_turns = 3\n"
+
+
+def test_a_manifest_cannot_name_state_a_pack_never_carries(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A forged manifest listed `repo/worktrees/x/hook`, and `unpack` offered to install it.
+
+    `pack` leaves the sessions' worktrees, the locks and `pack-base.json` out of a pack.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+    _forge(repo)
+    hook = repo / ".agent6/repo/worktrees/x/hook"
+    hook.parent.mkdir(parents=True)
+    hook.write_text("#!/bin/sh\n", encoding="utf-8")
+    manifest = json.loads((repo / ".agent6/pack.json").read_text(encoding="utf-8"))
+    manifest["files"]["repo/worktrees/x/hook"] = manifest["files"]["repo/config.toml"]
+    (repo / ".agent6/pack.json").write_text(json.dumps(manifest), encoding="utf-8")
+    _terminal(monkeypatch, None)
+
+    assert cli_main(["unpack", "--yes"]) == 2
+    assert "not locks, pack-base.json, worktrees" in capsys.readouterr().err
+    assert not (paths.state_dir(repo, allow_pack=True) / "worktrees").exists()
+
+
+def test_a_container_command_is_marked_operator_only(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`container.start` is an argv run on the host, and the listing left it unmarked."""
+    repo = _repo(tmp_path, monkeypatch)
+    _forge(repo)
+    packed = repo / ".agent6/repo/config.toml"
+    packed.write_text('[container]\nstart = ["sh", "-c", "echo up"]\n', encoding="utf-8")
+    _terminal(monkeypatch, None)
+
+    assert cli_main(["unpack"]) == 2
+    out = capsys.readouterr().out
+    assert '      container.start = ["sh", "-c", "echo up"]  [operator-only]' in out.splitlines()
 
 
 def test_unpack_refuses_while_the_checkouts_lease_is_held(

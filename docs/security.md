@@ -681,6 +681,8 @@ A model can write a pack of its own there.
 So it shows them first: every file with its destination and every setting of each packed config file with its value, the ones under `sandbox` or closed to a machine file (`PROTECTED_OVERLAY_TABLES`, `PROTECTED_OVERLAY_LEAVES`) marked `[operator-only]`.
 Then it asks for a yes; `--yes` answers ahead, and with no terminal and no `--yes` it refuses.
 It refuses a pack or a home that changed after the listing, and while a run, exec or machine of the checkout is live.
+Each file is installed as a new file from the bytes the listing hashed, never by a rename: a packed file that is a hard link to a workspace file leaves nothing in the home that the workspace can write.
+A manifest that names state `pack` never carries (`worktrees/`, `locks/`, `pack-base.json`) is refused.
 No run, resume, machine or exec starts beside a pack, and `pack` writes only while none of them is live in the checkout.
 A `.agent6/pack.json` found when one of them ends is therefore not `agent6 pack`'s: agent6 moves it to `.agent6/pack.invalid/pack.json.invalid`, with the `config/`, `repo/` and `skills/` beside it, and warns against unpacking it.
 A taken name is left alone: the directory is then `pack.invalid.1`, `.2` and so on.
@@ -688,6 +690,7 @@ The end of a session, a machine or an exec walks the checkout's tree as the run 
 A session journals the warning as `pack.quarantined`, which the terminal, the TUI, the web and an ACP editor show.
 A merge sets aside a pack whose `pack.json` its landing writes into the repository's checkout.
 The move follows no link: a link named `pack.json` or `repo` moves as a link, and a symlinked `.agent6` is reported and left alone; the start check and `unpack` refuse a pack behind a link.
+It first gives `.agent6` and each area its owner's access again, so a `chmod` from a jailed command pins nothing in place.
 
 One rule covers a session that has not reached its end: a pack beside a session of the checkout that is live, or that died without an end, was written by that session.
 Every `agent6` command applies it as it starts, with the same move and warning, and then runs: the CLI, `agent6 web` and `agent6 tui` at launch, a run a hub starts, and a child in its clone.
