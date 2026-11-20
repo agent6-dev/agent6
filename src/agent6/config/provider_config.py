@@ -128,9 +128,9 @@ IdleCompactSeconds = Annotated[
         ge=0,
         allow_inf_nan=False,
         description=(
-            "Seconds from the start of the last worker request to compact during a wait. "
-            "0 turns idle compaction off. Defaults: 240 for anthropic and responses, "
-            "0 for openai and chatgpt. Claude Code owns its session and has neither idle setting."
+            "Seconds from the start of the last worker request to compact during a wait; "
+            "0 disables idle compaction; defaults: 240 for anthropic and responses, "
+            "0 for openai and chatgpt; neither idle setting applies to claude_code"
         ),
     ),
 ]
