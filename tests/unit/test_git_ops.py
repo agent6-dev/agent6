@@ -1268,6 +1268,23 @@ def test_fetch_branch_refuses_non_ff_update(tmp_path: pathlib.Path) -> None:
     assert kept == origin_sha  # origin's branch untouched
 
 
+def test_fetch_branch_leaves_a_checked_out_branch_alone(tmp_path: pathlib.Path) -> None:
+    """A fetch into the branch a checkout is on would leave its index and files behind the ref."""
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _init_repo(origin)
+    clone = tmp_path / "clone"
+    git_ops.clone_repo(origin, clone)
+    _commit_file(clone, "feat.txt", "x\n", "add feat")
+    origin_sha = git_read.status(origin).head_sha
+    with pytest.raises(errors.GitError, match="checked out"):
+        git_ops.fetch_branch(origin, clone, "main:main")
+    assert git_read.status(origin).head_sha == origin_sha
+    # A session's mirror moves its own branch wherever it is checked out.
+    git_ops.mirror_session(origin, clone, "refs/agent6/s/head", "main")
+    assert git_read.status(origin).head_sha == git_read.status(clone).head_sha
+
+
 def test_list_run_commits_oldest_first(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
     base = git_read.status(tmp_path).head_sha

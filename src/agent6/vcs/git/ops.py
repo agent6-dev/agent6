@@ -20,6 +20,7 @@ from collections.abc import Collection, Sequence
 
 from agent6 import errors
 from agent6.vcs.git import command as git_command
+from agent6.vcs.git import fetch as git_fetch
 from agent6.vcs.git import read as git_read
 
 
@@ -828,7 +829,7 @@ def mirror_session(
     specs = [f"+HEAD:{ref}"] if head else [f"+{space}/*:{space}/*"]
     if branch and git_read.branch_exists(clone, branch):
         specs.append(f"+refs/heads/{branch}:refs/heads/{branch}")
-    _fetch_local(path, clone, specs, "--quiet", "--update-head-ok")
+    _fetch_local(path, clone, specs, update_head_ok=True)
 
 
 def fetch_branch(path: pathlib.Path, remote_path: pathlib.Path, refspec: str) -> None:
@@ -836,38 +837,61 @@ def fetch_branch(path: pathlib.Path, remote_path: pathlib.Path, refspec: str) ->
     _fetch_local(path, remote_path, [refspec])
 
 
-# A fetch between two repositories on this machine. git refuses every transport but a local
-# path, whatever `url.<base>.insteadOf` rewrites the source to, and lists an alternate's refs
-# with `true` (none) in place of the receiving config's `core.alternateRefsCommand`.
-_LOCAL_FETCH_ENV = {
-    "GIT_ALLOW_PROTOCOL": "file",
-    "GIT_CONFIG_COUNT": "1",
-    "GIT_CONFIG_KEY_0": "core.alternateRefsCommand",
-    "GIT_CONFIG_VALUE_0": "true",
-}
-
-
 def _fetch_local(
-    path: pathlib.Path, source: pathlib.Path, refspecs: Sequence[str], *options: str
+    path: pathlib.Path, source: pathlib.Path, refspecs: list[str], *, update_head_ok: bool = False
 ) -> None:
-    """Fetch from a repository on this machine, running no program the receiving config names.
+    """Fetch from a repository on this machine, reading no key of the receiving config.
+
+    The transport runs in `git_fetch.scratch_fetch`'s scratch repository, which has neither
+    the receiving repository's refs nor its checkouts. So git's two rules for a fetched
+    branch are applied here: one checked out somewhere is left alone, and an update that
+    no `+` forces must fast-forward.
 
     Args:
         path: The repository fetched into.
         source: The repository fetched from.
-        refspecs: What to fetch.
-        *options: Further `git fetch` options.
+        refspecs: What to fetch; a refspec with no destination brings objects alone.
+        update_head_ok: Move a branch that is checked out.
+
+    Raises:
+        GitError: The fetch failed, or a rule refused a branch; no ref moves then.
     """
-    git_command.run(
-        path,
-        "fetch",
-        "--no-recurse-submodules",
-        *options,
-        # Absolute: git reads no `remote.<name>` section whose name starts with `/`.
-        str(source.absolute()),
-        *refspecs,
-        env_extra=_LOCAL_FETCH_ENV,
+    # Absolute, and local only: git refuses every other transport a global URL rewrite yields.
+    fetched = git_fetch.scratch_fetch(
+        path, str(source.absolute()), refspecs, protocols="file", source=str(source)
     )
+    forced = all(spec.startswith("+") for spec in refspecs)
+    held = git_fetch.refs(path, *fetched) if fetched else {}
+    updates: list[str] = []
+    for ref, sha in fetched.items():
+        old = held.get(ref, "")
+        if old == sha:
+            continue
+        branch = ref.removeprefix("refs/heads/")
+        if branch != ref:
+            checkout = None if update_head_ok else git_read.worktree_of_branch(path, branch)
+            if checkout is not None:
+                raise errors.GitError(
+                    f"refusing to fetch into branch {branch!r}, checked out at {checkout}"
+                )
+            if old and not forced and not git_read.is_ancestor(path, old, sha):
+                raise errors.GitError(
+                    f"branch {branch!r} is at {old[:12]}, which {sha[:12]} from {source} does"
+                    " not contain; refusing to move it"
+                )
+        # An unforced update names the value it was checked against: a ref that moved
+        # meanwhile fails the whole update.
+        expected = "" if forced else f" {old or '0' * len(sha)}"
+        updates.append(f"update {ref} {sha}{expected}\n")
+    if updates:
+        git_command.run(
+            path,
+            "update-ref",
+            "-m",
+            f"agent6: fetch {source}",
+            "--stdin",
+            stdin_text="".join(updates),
+        )
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

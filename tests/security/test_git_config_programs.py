@@ -132,22 +132,14 @@ def test_a_commit_runs_no_maintenance_of_the_repository(tmp_path: pathlib.Path) 
 
 
 @pytest.mark.parametrize(
-    ("route", "arrives"),
-    [
-        ("ext", False),
-        ("ssh", False),
-        ("git", False),
-        ("alternate", True),
-        ("remote-section", True),
-        ("maintenance", True),
-    ],
+    "route", ["ext", "ssh", "git", "alternate", "remote-section", "maintenance"]
 )
 def test_a_local_fetch_runs_no_program_the_receiving_config_names(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, route: str, arrives: bool
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, route: str
 ) -> None:
     """A fetch from a session's clone ran the transport programs of the receiving config.
 
-    A rewritten URL is refused by git; every other route fetches and runs nothing.
+    The fetch reads no key of that config: every route fetches from the clone and runs nothing.
     """
     root = _repo(tmp_path / "r")
     ref = "refs/agent6/s1/head"
@@ -174,18 +166,53 @@ def test_a_local_fetch_runs_no_program_the_receiving_config_names(
     for key, value in config.items():
         _git(root, "config", key, value)
 
-    for fetch in (
-        lambda: git_ops.mirror_session(root, source, ref, None),
-        lambda: git_ops.fetch_branch(root, source, f"{ref}:refs/agent6/s2/head"),
-    ):
-        refusal = ""
-        try:
-            fetch()
-        except errors.GitError as exc:
-            refusal = str(exc)
-        assert not marker.exists(), f"the {route} program of the receiving config ran on the host"
-        assert ("not allowed" in refusal) is not arrives, refusal
-    assert (git_read.chain_tip(root, ref) is not None) is arrives
+    git_ops.mirror_session(root, source, ref, None)
+    git_ops.fetch_branch(root, source, f"{ref}:refs/agent6/s2/head")
+    assert not marker.exists(), f"the {route} program of the receiving config ran on the host"
+    tip = _git(clone, "rev-parse", ref)
+    assert git_read.chain_tip(root, ref) == tip
+    assert git_read.chain_tip(root, "refs/agent6/s2/head") == tip
+
+
+def test_a_local_fetch_follows_no_url_rewrite_to_another_repository(
+    tmp_path: pathlib.Path,
+) -> None:
+    """`url.<base>.insteadOf` sent the fetch to another local repository, whose HEAD it imported."""
+    root = _repo(tmp_path / "r")
+    ref = "refs/agent6/s1/head"
+    clone = _clone_with_work(root, tmp_path / "clone", ref)
+    private = _repo(tmp_path / "private")
+    (private / "secret.txt").write_text("another repository's file\n", encoding="utf-8")
+    _git(private, "add", "-A")
+    _git(private, "commit", "-qm", "private")
+    secret = _git(private, "rev-parse", "HEAD")
+    _git(root, "config", f"url.{private}.insteadOf", str(clone))
+
+    git_ops.mirror_session(root, clone, ref, None, head=True)
+    git_ops.fetch_branch(root, clone, "HEAD:refs/agent6/s2/head")
+    assert git_read.chain_tip(root, ref) == _git(clone, "rev-parse", "HEAD")
+    assert git_read.chain_tip(root, "refs/agent6/s2/head") == _git(clone, "rev-parse", "HEAD")
+    assert not git_read.object_exists(root, secret), "another repository's commit was imported"
+
+
+@pytest.mark.parametrize("name", ["..", ".git"])
+def test_a_local_fetch_refuses_a_tree_git_would_not_check_out(
+    tmp_path: pathlib.Path, name: str
+) -> None:
+    """A fetch from a session's clone took a tree entry named `..` or `.git` unchecked."""
+    root = _repo(tmp_path / "r")
+    ref = "refs/agent6/s1/head"
+    clone = _clone_with_work(root, tmp_path / "clone", ref)
+    blob = _git(clone, "hash-object", "-w", "--stdin", stdin="planted\n")
+    inner = _git(clone, "mktree", stdin=f"100644 blob {blob}\tplanted\n")
+    tree = _git(clone, "mktree", stdin=f"040000 tree {inner}\t{name}\n")
+    bad = _git(clone, "commit-tree", tree, "-p", "HEAD", stdin="bad\n")
+    _git(clone, "update-ref", ref, bad)
+
+    with pytest.raises(errors.GitError, match=r"fetch from .* failed"):
+        git_ops.mirror_session(root, clone, ref, None)
+    assert git_read.chain_tip(root, ref) is None
+    assert not git_read.object_exists(root, bad)
 
 
 def test_a_local_fetch_downloads_no_bundle(tmp_path: pathlib.Path) -> None:

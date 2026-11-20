@@ -10,8 +10,10 @@ import subprocess
 
 import pytest
 
-from agent6 import errors
+from agent6 import errors, paths
+from agent6.vcs.git import command as git_command
 from agent6.vcs.git import fetch as git_fetch
+from agent6.vcs.git import ops as git_ops
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -60,7 +62,7 @@ def test_a_fetch_moves_only_the_remotes_tracking_refs(
     assert _git(work, "rev-parse", "main") == local
     assert _git(work, "tag", "--list") == ""
     assert not (work / ".git" / "FETCH_HEAD").exists()
-    assert not list((work / ".git").glob("agent6-fetch-*"))
+    assert not list((paths.state_base() / "fetch").iterdir())
     assert _git(work, "fsck", "--no-dangling") == ""
     assert _git(work, "reflog", "show", "--format=%gs", "-1", "origin/main") == (
         "agent6: fetch origin"
@@ -182,7 +184,7 @@ def test_a_failed_fetch_and_the_remote_list_name_no_http_credentials(
     with pytest.raises(errors.GitError, match="fetch from origin failed: ") as caught:
         git_fetch.fetch_remote(work, "origin")
     assert "s3cret-token" not in str(caught.value)
-    assert not list((work / ".git").glob("agent6-fetch-*"))
+    assert not list((paths.state_base() / "fetch").iterdir())
 
 
 def test_a_fetch_works_from_a_linked_worktree_and_in_a_shallow_clone(
@@ -233,3 +235,28 @@ def test_a_fetch_refuses_a_tree_git_would_not_check_out(
 
     assert sorted((work / ".git" / "objects" / "pack").iterdir()) == packs
     assert "bad" not in _git(work, "for-each-ref", "refs/remotes/origin")
+
+
+def test_the_scratch_repository_is_out_of_a_jailed_commands_reach(
+    pair: tuple[pathlib.Path, pathlib.Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The scratch repository sat under `.git`, where a jailed command could write its config."""
+    upstream, work = pair
+    _commit(upstream, "b.txt")
+    scratches: set[pathlib.Path] = set()
+    real = git_command.subprocess.Popen
+
+    def spy(*args: object, **kwargs: object) -> object:
+        env = kwargs.get("env")
+        if isinstance(env, dict) and "GIT_DIR" in env:
+            scratches.add(pathlib.Path(env["GIT_DIR"]))  # pyright: ignore[reportUnknownArgumentType]
+        return real(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(git_command.subprocess, "Popen", spy)
+    git_fetch.fetch_remote(work, "origin")
+    git_ops.fetch_branch(work, upstream, "refs/heads/main:refs/agent6/s/head")
+
+    for scratch in scratches:
+        assert not scratch.is_relative_to(work)
+        assert scratch.parent == paths.state_base() / "fetch"
+    assert len(scratches) == 2

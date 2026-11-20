@@ -1,14 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Fetch a remote's branches, or one pull request, without the repository's own config.
+"""Fetch a remote's branches, one pull request, or a local repository's refs.
 
-The fetch is the operator's click, and it runs on the host over a `.git/config` a jailed
-command can write below `full` `sandbox.isolation`. The network step therefore runs in a
-scratch repository made for it, where git reads the operator's global and system config
-alone: no key of the project's `.git/config` names a transport command, a proxy, a
-credential helper or a URL rewrite. The project lends its objects (an alternate, so only
-new history travels) and the remote's URL. The new pack and the remote-tracking refs are
-then copied in.
+A fetch runs on the host over a `.git/config` a jailed command can write below `full`
+`sandbox.isolation`. Its transport step therefore runs in a scratch repository made for it
+in agent6's state base, which no jail reaches. There git reads the operator's global and
+system config alone: no key of the project's `.git/config` names a transport command, a
+proxy, a credential helper or a URL rewrite. The project lends its objects (an alternate, so
+only new history travels). The new pack is then copied in, and the caller writes the refs.
 """
 
 from __future__ import annotations
@@ -19,9 +18,8 @@ import re
 import shutil
 import tempfile
 
-from agent6 import errors
+from agent6 import errors, paths
 from agent6.vcs.git import command as git_command
-from agent6.vcs.git import read as git_read
 
 # The transports a fetch may use; `ext::`, `fd::`, `git://`, plain http and every remote
 # helper are refused by git itself under this list, whatever a URL rewrite yields.
@@ -133,7 +131,8 @@ def fetch_remote(path: pathlib.Path, name: str, *, pull: int | None = None) -> s
 
     Raises:
         GitError: No such remote, a refused transport, a failed or unanswered fetch, or a
-            `.git` this process cannot write. The reason carries no http(s) credentials.
+            state base or `.git` this process cannot write. The reason carries no http(s)
+            credentials.
     """
     remote = next((r for r in list_remotes(path) if r.name == name), None)
     tracking = f"refs/remotes/{name}/"
@@ -150,65 +149,8 @@ def fetch_remote(path: pathlib.Path, name: str, *, pull: int | None = None) -> s
         if pull is None
         else f"+refs/pull/{pull}/head:{tracking}pr/{pull}"
     )
-    objects = pathlib.Path(
-        git_command.run(
-            path, "rev-parse", "--path-format=absolute", "--git-path", "objects"
-        ).stdout.strip()
-    )
-    before = _tracking_refs(path, tracking)
-    common = git_read.git_common_dir(path)
-    try:
-        scratch = pathlib.Path(tempfile.mkdtemp(prefix="agent6-fetch-", dir=common))
-    except OSError as exc:
-        raise errors.GitError(f"cannot write under the repository's .git: {exc}") from exc
-    try:
-        env = {"GIT_DIR": str(scratch), "GIT_ALLOW_PROTOCOL": ALLOWED_PROTOCOLS}
-        hashes = git_command.run(path, "rev-parse", "--show-object-format").stdout.strip()
-        git_command.run(
-            scratch,
-            "init",
-            "--quiet",
-            "--bare",
-            "--template=",
-            f"--object-format={hashes}",
-            str(scratch),
-        )
-        (scratch / "objects" / "info" / "alternates").write_text(f"{objects}\n", encoding="utf-8")
-        if (common / "shallow").is_file():
-            # A shallow clone's boundary: without it git walks into history the clone lacks.
-            shutil.copyfile(common / "shallow", scratch / "shallow")
-        try:
-            # unpackLimit 1 keeps every fetch as one pack, the unit copied in below; git checks
-            # the pack's objects first, and refuses a tree holding a `..` or `.git` entry.
-            fetched = git_command.run(
-                scratch,
-                "-c",
-                "fetch.unpackLimit=1",
-                "-c",
-                "fetch.fsckObjects=true",
-                "fetch",
-                "--quiet",
-                "--no-tags",
-                "--no-recurse-submodules",
-                "--no-write-fetch-head",
-                "--no-auto-maintenance",
-                "--end-of-options",
-                url,
-                refspec,
-                check=False,
-                env_extra=env,
-            )
-        except errors.GitError as exc:  # with check off, only the timeout raises
-            raise errors.GitError(
-                f"fetch from {name} got no answer within {git_command.GIT_TIMEOUT_S:.0f}s"
-            ) from exc
-        if not fetched.ok:
-            said = redact(fetched.stderr.strip()) or f"git fetch exited {fetched.returncode}"
-            raise errors.GitError(f"fetch from {name} failed: {said}")
-        after = _tracking_refs(scratch, tracking, env)
-        _adopt_packs(scratch / "objects" / "pack", objects / "pack")
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
+    before = refs(path, tracking)
+    after = scratch_fetch(path, url, [refspec], protocols=ALLOWED_PROTOCOLS, source=name)
     moved = {ref: sha for ref, sha in after.items() if before.get(ref) != sha}
     if moved:
         git_command.run(
@@ -228,21 +170,109 @@ def fetch_remote(path: pathlib.Path, name: str, *, pull: int | None = None) -> s
     return f"fetched {name}: {', '.join(names[:3])}{more}"
 
 
-def _tracking_refs(
-    path: pathlib.Path, prefix: str, env: dict[str, str] | None = None
+def scratch_fetch(
+    path: pathlib.Path, url: str, refspecs: list[str], *, protocols: str, source: str
 ) -> dict[str, str]:
-    """Return each ref under a prefix with its tip.
+    """Fetch from a URL in a scratch repository and copy the new objects into the repository.
+
+    No ref of the repository moves: the caller applies the refs returned.
+
+    Args:
+        path: The repository.
+        url: The URL or absolute path fetched from.
+        refspecs: What to fetch; a destination names a ref returned.
+        protocols: The transports git may use, as `GIT_ALLOW_PROTOCOL` lists them.
+        source: What a failure calls the other side.
+
+    Returns:
+        The full name and sha of each ref the fetch wrote in the scratch repository.
+
+    Raises:
+        GitError: A failed or unanswered fetch, or a state base or `.git` this process
+            cannot write. The reason carries no http(s) credentials.
+    """
+    objects, common, hashes = git_command.run(
+        path,
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-path",
+        "objects",
+        "--git-common-dir",
+        "--show-object-format",
+    ).stdout.splitlines()
+    try:
+        base = paths.state_base() / "fetch"
+        paths.mkdir_for_real_user(base)
+        scratch = pathlib.Path(tempfile.mkdtemp(prefix="agent6-fetch-", dir=base))
+    except OSError as exc:
+        raise errors.GitError(f"cannot make a scratch repository to fetch in: {exc}") from exc
+    try:
+        env = {"GIT_DIR": str(scratch), "GIT_ALLOW_PROTOCOL": protocols}
+        git_command.run(
+            scratch,
+            "init",
+            "--quiet",
+            "--bare",
+            "--template=",
+            f"--object-format={hashes}",
+            str(scratch),
+        )
+        (scratch / "objects" / "info" / "alternates").write_text(f"{objects}\n", encoding="utf-8")
+        shallow = pathlib.Path(common, "shallow")
+        if shallow.is_file():
+            # A shallow clone's boundary: without it git walks into history the clone lacks.
+            shutil.copyfile(shallow, scratch / "shallow")
+        try:
+            # unpackLimit 1 keeps every fetch as one pack, the unit copied in below; git checks
+            # the pack's objects first, and refuses a tree holding a `..` or `.git` entry.
+            fetched = git_command.run(
+                scratch,
+                "-c",
+                "fetch.unpackLimit=1",
+                "-c",
+                "fetch.fsckObjects=true",
+                "fetch",
+                "--quiet",
+                "--no-tags",
+                "--no-recurse-submodules",
+                "--no-write-fetch-head",
+                "--no-auto-maintenance",
+                "--end-of-options",
+                url,
+                *refspecs,
+                check=False,
+                env_extra=env,
+            )
+        except errors.GitError as exc:  # with check off, only the timeout raises
+            raise errors.GitError(
+                f"fetch from {source} got no answer within {git_command.GIT_TIMEOUT_S:.0f}s"
+            ) from exc
+        if not fetched.ok:
+            said = redact(fetched.stderr.strip()) or f"git fetch exited {fetched.returncode}"
+            raise errors.GitError(f"fetch from {source} failed: {said}")
+        written = refs(scratch, env=env)
+        try:
+            _adopt_packs(scratch / "objects" / "pack", pathlib.Path(objects, "pack"))
+        except OSError as exc:
+            raise errors.GitError(f"cannot write under the repository's .git: {exc}") from exc
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    return written
+
+
+def refs(path: pathlib.Path, *patterns: str, env: dict[str, str] | None = None) -> dict[str, str]:
+    """Return each ref with its tip.
 
     Args:
         path: The repository git runs in.
-        prefix: The ref namespace, ending in `/`.
+        *patterns: Ref names or namespaces, as `git for-each-ref` matches them; none lists all.
         env: Environment entries naming another git directory.
 
     Returns:
         The refs' full names and shas.
     """
     out = git_command.run(
-        path, "for-each-ref", "--format=%(refname) %(objectname)", prefix, env_extra=env
+        path, "for-each-ref", "--format=%(refname) %(objectname)", *patterns, env_extra=env
     ).stdout
     return dict(line.split(" ", 1) for line in out.splitlines() if " " in line)
 

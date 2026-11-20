@@ -587,7 +587,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - The web Git page's writes go through the same package, under the sign-in: stage and unstage by file, restore one tracked file from the index after a confirm, commit the index under the repository's own identity, create a branch at HEAD, switch branches.
   Each is refused while a session is live in the checkout; the page never deletes an untracked file, pushes, pulls, rebases, amends or resets.
 - The Git page's **Fetch** brings a remote's branches, or one pull request, into `refs/remotes/<name>/` and merges nothing; tags, submodules and `FETCH_HEAD` are left alone.
-    - The network step runs in a scratch repository under `.git`, where git reads the operator's global and system config and no key of the project's `.git/config`: a jailed command can write that file below `full` `sandbox.isolation`.
+    - The network step runs in a scratch repository in agent6's state base (`$XDG_STATE_HOME/agent6/fetch/`), which no jail reaches.
+      There git reads the operator's global and system config and no key of the project's `.git/config`: a jailed command can write that file below `full` `sandbox.isolation`.
     - The project lends its object store and the remote's URL; the page shows that URL, and the fetch connects wherever it points with the operator's own credentials for that host.
     - The transport is https, ssh or a local path, checked on the URL and again by git (`GIT_ALLOW_PROTOCOL`).
     - A fetch with no answer in 120 s is stopped, and a failure's reason carries no http(s) user or password.
@@ -629,8 +630,10 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - `gpg.program` and the other signing programs never run: agent6's git signs no commit (`commit.gpgSign`) and verifies no signature (`log.showSignature`).
 - `gc.recentObjectsHook` never runs: agent6's git starts no automatic maintenance (`maintenance.auto`).
 - `core.sshCommand`, `core.gitProxy` and a credential helper never run.
-    - a fetch between the repository and a session's clone takes a local path only (`GIT_ALLOW_PROTOCOL`), whatever `url.<base>.insteadOf` rewrites the path to
-    - that fetch downloads no bundle (`fetch.bundleURI`), runs no `core.alternateRefsCommand` and fetches no submodule
+    - a fetch between the repository and a session's clone runs in the same scratch repository as the Git page's Fetch and reads no key of the receiving config: no `url.<base>.insteadOf` sends it to another repository, and it takes a local path only (`GIT_ALLOW_PROTOCOL`)
+    - git checks the fetched objects before they are copied in (`fetch.fsckObjects`), and refuses a tree that holds a `..` or `.git` entry
+    - that fetch downloads no bundle, runs no `core.alternateRefsCommand`, fetches no submodule and no tag
+    - agent6 applies git's two rules for a fetched branch itself: one checked out somewhere is left alone, and an update no `+` forces must fast-forward
     - a missing object is never fetched from a promisor remote (`GIT_NO_LAZY_FETCH`): in a partial clone, agent6's git fails on an object the clone lacks
 - `core.worktree` never sends agent6's git to another directory: every call names its checkout (`GIT_WORK_TREE`), the directory whose `.git` is the git dir git found.
     - a linked worktree's or a submodule's git dir keeps no other record of its checkout: there, a `core.worktree` that names another directory refuses the call
