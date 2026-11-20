@@ -69,9 +69,14 @@ class _StubDispatcher:
     """
 
     allowed_tools = None
+    config = Config()
 
     def parallel_available(self) -> bool:
         """A stub offers the model no `parallel` tool."""
+        return False
+
+    def merge_child_available(self) -> bool:
+        """A stub has no stopped child to merge."""
         return False
 
     session_id = ""  # the tool set reads the run's id; a bare double has none
