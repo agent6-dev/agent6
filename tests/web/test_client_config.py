@@ -21,7 +21,10 @@ def test_entry_forms_and_removal_use_the_live_registry(tmp_path: pathlib.Path) -
     web = resources.files("agent6.ui.web")
     core = web.joinpath("client.js").read_text(encoding="utf-8")
     dialogs = core[core.index("// --- dialogs") : core.index("// --- sign-in")]
-    client = web.joinpath("client_config.js").read_text(encoding="utf-8")
+    client = "\n".join(
+        web.joinpath(name).read_text(encoding="utf-8")
+        for name in ("client_layout.js", "client_config.js")
+    )
     scenario = r"""
 const assert = require('node:assert/strict');
 class Element {
@@ -116,7 +119,7 @@ async function run() {
   await renderConfig();
   const bar = all(view).find(e => e.className === 'toolbar cfg-bar');
   assert.deepEqual(bar.children.map(e => e.textContent), [
-    '', 'Modified only', 'Preset…', 'Add preset…',
+    '', 'Modified only', 'Preset: none', 'Add preset…',
     'Add provider…', 'Add MCP server…', 'Add skill…', 'Add reviewer…', 'Remove preset',
   ]);
   assert.equal(button('Remove preset').disabled, true);  // preset = none
@@ -307,7 +310,7 @@ async function run() {
   await renderConfig();
   assert.equal(button('Remove preset').disabled, false);
   assert.equal(button('Add provider…').disabled, false);
-  button('Preset…').onclick();
+  button('Preset: fast').onclick();
   assert.equal(all(dialog()).find(e => e.tag === 'select').value, 'fast');
   await button('Cancel', dialog()).onclick();
   row('sandbox.network').onclick();

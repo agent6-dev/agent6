@@ -45,9 +45,16 @@ def test_config_marks_required_fields_and_pending_saves(
     page.get_by_role("button", name="Add preset…", exact=True).click()
     expect(page.get_by_label("name (required)", exact=True)).to_have_attribute("required", "")
     page.keyboard.press("Escape")
+    page.get_by_role("button", name="Add provider…", exact=True).click()
+    expect(page.get_by_label("name (required)", exact=True)).to_have_attribute("name", "name")
+    page.keyboard.press("Escape")
     page.get_by_role("button", name="edit web.port", exact=True).click()
     held: list[Route] = []
-    page.route("**/api/config", held.append)
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    page.route("**/api/config", hold)
     page.get_by_role("button", name="Save", exact=True).click()
     expect(page.get_by_role("button", name="Saving…", exact=True)).to_be_disabled()
     captures.save(page, "config-saving")

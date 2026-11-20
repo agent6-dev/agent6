@@ -34,10 +34,10 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
       folded: folds(),
       key: rows.find(row => row.edit === document.activeElement)?.key,
       filtering: document.activeElement === filter,
-      action: [...bar.children].includes(document.activeElement) && document.activeElement.textContent,
+      action: [...bar.children].indexOf(document.activeElement),
     }));
   };
-  // Preset… opens the `agent6.preset` row's editor; the rows are the config under the selected preset.
+  // The preset button opens `agent6.preset`; the rows are the config under that preset.
   const presetBtn = el('button', null, 'Preset: ' + (selected || 'none'));
   presetBtn.onclick = () => editConfig('agent6.preset', data['agent6.preset'], registry.tables, refresh, data);
   bar.appendChild(presetBtn);
@@ -59,7 +59,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     : 'No preset is selected';
   removePresetBtn.onclick = async () => {
     if (!await confirmDialog('Remove [presets.' + selected + ']?', 'This removes every value under it from the global and repo config, and resets preset to none.', 'Remove', true)) return;
-    presetBtn.focus(); // Preset… takes the focus: this button stays disabled with no preset left
+    presetBtn.focus(); // Remove stays disabled with no preset left.
     removePresetBtn.disabled = true;
     try {
       const d = await postJSON('/api/config/preset/remove', {name: selected});
@@ -156,7 +156,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     const top = Math.min(...[...document.querySelectorAll('#toasts .toast')].map(t => t.getBoundingClientRect().top));
     const over = focused.tr.getBoundingClientRect().bottom + 8 - top;
     if (over > 0) window.scrollBy(0, over);
-  } else if (state.action) [...bar.children].find(b => b.textContent === state.action)?.focus({preventScroll: true});
+  } else if (state.action >= 0) bar.children[state.action]?.focus({preventScroll: true});
 }
 // The preset the page edits, read off the payload's `agent6.preset` row; '' for none.
 function selectedPreset(data) {
@@ -222,7 +222,7 @@ function addEntry(table, refresh) {
   if (!dialog) return;
   dialog.appendChild(el('div', 'sub muted', table.path + '.<name>. A blank field keeps an existing value or uses the default.'));
   const labelled = (text, field) => { const l = el('label', 'muted cfg-label', text); field.name = text; l.appendChild(field); dialog.appendChild(l); return field; };
-  const name = labelled('name (required)', el('input', 'field')); name.required = true;
+  const name = labelled('name (required)', el('input', 'field')); name.name = 'name'; name.required = true;
   const fields = {};
   for (const spec of table.fields) {
     const field = el(spec.choices.length ? 'select' : 'input', 'field cfg-value'); // a value, as in an editor

@@ -450,7 +450,7 @@ def test_a_write_from_the_config_bar_returns_the_focus_to_the_bar(
     page.get_by_role("alertdialog").get_by_role("button", name="Remove").click()
     stale.wait_for(state="detached")
     expect(remove).to_be_disabled()
-    expect(page.get_by_role("button", name="Preset…", exact=True)).to_be_focused()
+    expect(page.get_by_role("button", name="Preset: none", exact=True)).to_be_focused()
     assert not [error for error in errors if "400 (Bad Request)" not in error]
 
 
