@@ -7,10 +7,13 @@ from __future__ import annotations
 import datetime
 import os
 import pathlib
+import shutil
 import subprocess
+from typing import Any
 
 import pytest
 
+from agent6.vcs.git import command as git_command
 from agent6.vcs.git import files as git_files
 from agent6.vcs.git import history as git_history
 from agent6.vcs.git import read as git_read
@@ -279,6 +282,39 @@ def test_history_reads_never_take_a_rev_as_an_option(tmp_path: pathlib.Path, rev
     build_history(tmp_path)
     assert git_history.resolve_commit(tmp_path, rev) == ""
     assert git_history.log_commits(tmp_path, [rev], limit=5) == ()
+
+
+def test_commit_diff_never_takes_its_commit_as_an_option(tmp_path: pathlib.Path) -> None:
+    """`git show` read an option-shaped commit id as `--output` and wrote the patch to that file."""
+    root = tmp_path / "r"
+    root.mkdir()
+    build_history(root)
+    written = tmp_path / "written"
+    assert git_read.commit_diff(root, f"--output={written}") == ""
+    assert not written.exists()
+
+
+def test_worktree_files_read_no_file_through_a_link_swapped_in_after_the_listing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An untracked file's lines were counted by name, through a directory swapped for a link."""
+    root, outside = tmp_path / "r", tmp_path / "outside"
+    (root / "d").mkdir(parents=True)
+    outside.mkdir()
+    _git(root, "init", "-q", "-b", "main")
+    (root / "d" / "u.txt").write_text("one\n", encoding="utf-8")
+    (outside / "u.txt").write_text("1\n2\n3\n", encoding="utf-8")
+    listed = git_command.nul_fields
+
+    def listed_then_swapped(cwd: pathlib.Path, *args: str, **kwargs: Any) -> list[str]:
+        fields = listed(cwd, *args, **kwargs)
+        if "--others" in args:
+            shutil.rmtree(root / "d")
+            (root / "d").symlink_to(outside, target_is_directory=True)
+        return fields
+
+    monkeypatch.setattr(git_command, "nul_fields", listed_then_swapped)
+    assert git_history.worktree_files(root, git_read.EMPTY_TREE) == ()
 
 
 @pytest.mark.parametrize("listing", ["history", "files"])

@@ -1049,7 +1049,9 @@ def commit_diff(path: pathlib.Path, sha: str, *, max_bytes: int = 16384) -> str:
     Returns:
         The patch text; "" when git fails.
     """
-    res = git_command.run(path, "show", "--format=", "--no-color", sha, "--", ".", check=False)
+    res = git_command.run(
+        path, "show", "--format=", "--no-color", "--end-of-options", sha, "--", ".", check=False
+    )
     if not res.ok:
         return ""
     return res.stdout[:max_bytes]

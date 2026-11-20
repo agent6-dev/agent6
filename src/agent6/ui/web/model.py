@@ -172,7 +172,8 @@ def _diff_payload(
     Returns:
         The payload (saying which it holds) and "", or None and the reason.
     """
-    if not re.fullmatch(r"[0-9a-f]{7,40}", sha):
+    # The shape of one object id, for the page's own message; git refuses an option-shaped rev.
+    if not re.fullmatch(r"[0-9a-f]{7,64}", sha):
         return None, f"not a commit sha: {sha!r}"
     whole = cumulative and bool(base)
     patch = git_read.diff_range(repo, base, sha) if whole else git_read.commit_diff(repo, sha)

@@ -590,7 +590,7 @@ depends_on = ["agent6.errors", "agent6.path_safety", "agent6.vcs.git.command", "
 
 [[modules]]
 path = "agent6.vcs.git.history"
-depends_on = ["agent6.errors", "agent6.vcs.git.command", "agent6.vcs.git.read"]
+depends_on = ["agent6.errors", "agent6.path_safety", "agent6.vcs.git.command", "agent6.vcs.git.read"]
 
 [[modules]]
 path = "agent6.vcs.git.ops"

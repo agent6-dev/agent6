@@ -203,3 +203,33 @@ def test_a_fetch_works_from_a_linked_worktree_and_in_a_shallow_clone(
     assert git_fetch.fetch_remote(shallow, "origin") == "fetched origin: dev, main"
     assert _git(shallow, "rev-parse", "origin/main") == tip
     assert _git(shallow, "fsck", "--no-dangling") == ""
+
+
+@pytest.mark.parametrize("name", ["..", ".git"])
+def test_a_fetch_refuses_a_tree_git_would_not_check_out(
+    pair: tuple[pathlib.Path, pathlib.Path], name: str
+) -> None:
+    """The fetched pack was copied in unchecked, a tree entry named `..` or `.git` with it."""
+    upstream, work = pair
+
+    def made(*args: str, stdin: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(upstream), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            input=stdin,
+        ).stdout.strip()
+
+    blob = made("hash-object", "-w", "--stdin", stdin="planted\n")
+    inner = made("mktree", stdin=f"100644 blob {blob}\tplanted\n")
+    tree = made("mktree", stdin=f"040000 tree {inner}\t{name}\n")
+    commit = made("commit-tree", tree, "-p", "main", stdin="bad\n")
+    _git(upstream, "update-ref", "refs/heads/bad", commit)
+    packs = sorted((work / ".git" / "objects" / "pack").iterdir())
+
+    with pytest.raises(errors.GitError, match="fetch from origin failed"):
+        git_fetch.fetch_remote(work, "origin")
+
+    assert sorted((work / ".git" / "objects" / "pack").iterdir()) == packs
+    assert "bad" not in _git(work, "for-each-ref", "refs/remotes/origin")

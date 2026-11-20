@@ -198,3 +198,18 @@ def test_diff_parse_timeout_leaves_the_patch_available(
     payload = _payload(tmp_path, producer, base, head)
     assert payload["old_spans"]["code.py"] == payload["new_spans"]["code.py"] == []
     assert "+def f():" in payload["patch"]
+
+
+def test_a_run_diff_takes_a_sha256_commit_id(tmp_path: pathlib.Path) -> None:
+    """The run diff's shape check stopped at 40 hex digits, the length of a SHA-1 id."""
+    test_git_history._git(tmp_path, "init", "-q", "--object-format=sha256")
+    (tmp_path / "notes.txt").write_text("one\n", encoding="utf-8")
+    test_git_history._commit(tmp_path, "base")
+    (tmp_path / "notes.txt").write_text("one\ntwo\n", encoding="utf-8")
+    head = test_git_history._commit(tmp_path, "head")
+    assert len(head) == 64
+    payload, reason = model._diff_payload(  # pyright: ignore[reportPrivateUsage]
+        tmp_path, head, base="", cumulative=False, miss="missing"
+    )
+    assert payload is not None, reason
+    assert "+two" in payload["patch"]

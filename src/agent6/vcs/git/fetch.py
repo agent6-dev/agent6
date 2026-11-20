@@ -178,11 +178,14 @@ def fetch_remote(path: pathlib.Path, name: str, *, pull: int | None = None) -> s
             # A shallow clone's boundary: without it git walks into history the clone lacks.
             shutil.copyfile(common / "shallow", scratch / "shallow")
         try:
-            # unpackLimit 1 keeps every fetch as one pack, the unit copied in below.
+            # unpackLimit 1 keeps every fetch as one pack, the unit copied in below; git checks
+            # the pack's objects first, and refuses a tree holding a `..` or `.git` entry.
             fetched = git_command.run(
                 scratch,
                 "-c",
                 "fetch.unpackLimit=1",
+                "-c",
+                "fetch.fsckObjects=true",
                 "fetch",
                 "--quiet",
                 "--no-tags",

@@ -929,6 +929,16 @@ def test_search_finds_refs_and_messages(
     assert _ok(port, "/api/git/search?q=-x") == {"refs": [], "commits": [], "truncated": False}
 
 
+def test_search_takes_a_dash_led_query_as_text(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """A query starting with a dash found nothing, though git takes it as `--grep=<text>`."""
+    root, _ = repo
+    _git(root, "commit", "-q", "--allow-empty", "-m", "refuse --force on a shared branch")
+    body = _ok(port, "/api/git/search?q=--force")
+    assert [c["subject"] for c in body["commits"]] == ["refuse --force on a shared branch"]
+
+
 def test_search_caps_its_lists_and_says_so(
     repo: tuple[pathlib.Path, dict[str, str]], port: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:

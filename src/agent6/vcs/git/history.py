@@ -10,13 +10,14 @@ Repository state stays unchanged; working-tree listings use a temporary index co
 from __future__ import annotations
 
 import dataclasses
+import os
 import pathlib
 import re
 import shutil
 import tempfile
 from collections.abc import Sequence
 
-from agent6 import errors
+from agent6 import errors, path_safety
 from agent6.vcs.git import command as git_command
 from agent6.vcs.git import read as git_read
 
@@ -402,26 +403,32 @@ def looks_binary(data: bytes) -> bool:
     return b"\0" in data[:_BINARY_PROBE]
 
 
-def _added_counts(full: pathlib.Path) -> tuple[int | None, bool]:
+def _added_counts(path: pathlib.Path, name: str) -> tuple[int | None, bool]:
     """Return an untracked file's line count and whether git calls it binary.
 
     A symlink is its one-line target, as `git diff` shows it; a file that is neither a
-    symlink nor a regular file gets no counts.
+    symlink nor a regular file gets no counts. The file is opened through a descriptor
+    walk that follows no link, so a link swapped in after the listing is never read.
 
     Args:
-        full: The file's path on disk.
+        path: The repository.
+        name: The file's path in it.
 
     Returns:
         The lines `git diff --no-index` would add, or None with True for a binary file.
 
     Raises:
         OSError: The file cannot be read.
+        ContainmentError: A component of the path is a link.
     """
-    if full.is_symlink():
+    contained = path_safety.contain(path, name)
+    if contained.abs_path.is_symlink():
         return 1, False
-    if not full.is_file():
+    try:
+        fd = path_safety.open_contained(contained, os.O_RDONLY)
+    except path_safety.NotRegularFileError:
         return None, True
-    with full.open("rb") as fh:
+    with os.fdopen(fd, "rb") as fh:
         chunk = fh.read(_BINARY_PROBE)
         if looks_binary(chunk):
             return None, True
@@ -466,8 +473,8 @@ def worktree_files(path: pathlib.Path, base: str) -> tuple[ChangedFile, ...]:
         if not name:
             continue
         try:
-            added, binary = _added_counts(path / name)
-        except OSError:
+            added, binary = _added_counts(path, name)
+        except (OSError, path_safety.ContainmentError):
             continue
         rows.append(ChangedFile("A", name, "", added, None if binary else 0, binary))
     return tuple(rows)

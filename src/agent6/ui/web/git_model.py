@@ -856,8 +856,6 @@ def search_payload(repo: pathlib.Path, query: str) -> dict[str, Any]:
     """
     _repo(repo)
     q = query.strip()
-    if q.startswith("-"):
-        return {"refs": [], "commits": [], "truncated": False}
     needle = q.lower()
     refs = [r for r in _refs_by_kind(repo) if needle in r.name.lower()]
     commits = list(git_history.search_log(repo, q, limit=SEARCH_MAX + 1))
