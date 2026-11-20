@@ -52,6 +52,8 @@ from agent6.providers import (
 )
 from agent6.sandbox import jail
 
+ENDPOINT_COMPACTION = provider_types.EndpointCompaction(keeps_session=True)
+
 # A reading follows message_stop within milliseconds (4 ms measured on CLI 2.1.251), so one
 # tick covers it; a process's first round always gets one, inside the grace or not meterable.
 _PLAN_READING_DRAIN_S = stream_lifecycle.STREAM_WATCHDOG_TICK_S
@@ -155,6 +157,7 @@ class ClaudeCodeProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
+        compaction: provider_types.CompactionRequest | None = None,
         context: request_headers.RequestContext | None = None,
     ) -> provider_types.ProviderResponse:
         """Run one round on the worker's process, or one process for a tool-less call.
@@ -170,6 +173,7 @@ class ClaudeCodeProvider:
             thinking_delta_callback: Receives reasoning text as it streams.
             should_abort: Polled each tick; True abandons the turn.
             should_interrupt: Polled each tick; True ends the turn to steer.
+            compaction: The history operation on a supporting endpoint.
             context: The application's context for the call; None outside a conversation.
 
         Returns:

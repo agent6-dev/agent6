@@ -104,7 +104,10 @@ def test_adaptive_models_use_adaptive_effort_and_summary(
         max_tokens=8192,
     )
     body = bodies[0]
-    assert body["thinking"] == {"type": "adaptive", "display": "summarized"}
+    expected: dict[str, Any] = {"type": "adaptive", "display": "summarized"}
+    if model == "claude-haiku-5-5":
+        expected["block_binding"] = {"prefix_mismatch_behavior": "drop_block"}
+    assert body["thinking"] == expected
     assert body["output_config"] == {"effort": "high"}
     assert "temperature" not in body
     assert body["max_tokens"] > anthropic._THINKING_BUDGET_TOKENS["high"]

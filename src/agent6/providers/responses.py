@@ -26,6 +26,8 @@ from agent6.providers import (
     wire,
 )
 
+ENDPOINT_COMPACTION = provider_types.EndpointCompaction()
+
 DEFAULT_MAX_TOKENS = 8192
 _LABEL = "Responses"
 
@@ -170,6 +172,7 @@ class ResponsesProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
+        compaction: provider_types.CompactionRequest | None = None,
         context: request_headers.RequestContext | None = None,
     ) -> provider_types.ProviderResponse:
         """Make one Responses call, streaming when a delta callback is set.
@@ -186,6 +189,7 @@ class ResponsesProvider:
             thinking_delta_callback: Receives reasoning summaries as they stream.
             should_abort: Polled during a stream; True abandons the turn.
             should_interrupt: Polled during a stream; True ends the turn to steer.
+            compaction: The history operation on a supporting endpoint.
             context: The application's context for the call; None outside a conversation.
 
         Returns:

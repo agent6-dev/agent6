@@ -83,6 +83,34 @@ def response_string(value: Any, field_name: str, *, empty: bool = True) -> str:
     return value
 
 
+def billed_usage(value: Any) -> Mapping[str, Any]:
+    """Read the billed input and output counts.
+
+    Args:
+        value: The reply's usage object.
+
+    Returns:
+        The compaction iterations' counts or the ordinary message usage.
+    """
+    usage = usage_mapping(value)
+    iterations = usage.get("iterations") or []
+    parts = [
+        part for part in iterations if isinstance(part, dict) and part.get("type") == "compaction"
+    ]
+    if not parts:
+        return usage
+    return {
+        key: sum(usage_count(part, key) for part in parts)
+        for key in (
+            "input_tokens",
+            "output_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+        )
+        if any(key in part for part in parts)
+    }
+
+
 def require_metered_usage(usage: object, *, source: str) -> None:
     """Refuse a budgeted call whose usage cannot be metered.
 
@@ -99,6 +127,7 @@ def require_metered_usage(usage: object, *, source: str) -> None:
             gateway integrity failure, not a request defect).
     """
     if isinstance(usage, Mapping):
+        usage = billed_usage(usage)
         total_input = (
             usage_count(usage, "input_tokens")
             + usage_count(usage, "cache_read_input_tokens")
@@ -133,6 +162,7 @@ def parse_response(data: dict[str, Any]) -> provider_types.ProviderResponse:
     text_parts: list[str] = []
     tool_uses: list[dict[str, Any]] = []
     tool_use_ids: set[str] = set()
+    summary_block: dict[str, Any] | None = None
     for block in content:
         if not isinstance(block, dict):
             raise provider_types.ProviderError(
@@ -166,9 +196,17 @@ def parse_response(data: dict[str, Any]) -> provider_types.ProviderResponse:
         elif block_type == "thinking":
             response_string(block.get("thinking", ""), "content thinking")
             response_string(block.get("signature", ""), "content signature", empty=False)
+        elif block_type == "compaction" and len(content) == 1:
+            response_string(block.get("signature"), "compaction signature", empty=False)
+            text_parts.append(
+                response_string(block.get("content"), "compaction content", empty=False)
+            )
+            summary_block = block
         elif block_type == "redacted_thinking":
             response_string(block.get("data", ""), "content redacted_thinking data", empty=False)
-    usage = usage_mapping(data.get("usage"))
+    usage = billed_usage(data.get("usage"))
+    transformations = data.get("input_transformations") or []
+    edits = (data.get("context_management") or {}).get("applied_edits", [])
     return provider_types.ProviderResponse(
         text="\n\n".join(text_parts),
         tool_uses=tuple(tool_uses),
@@ -178,4 +216,13 @@ def parse_response(data: dict[str, Any]) -> provider_types.ProviderResponse:
         cache_read_tokens=usage_count(usage, "cache_read_input_tokens"),
         cache_write_tokens=usage_count(usage, "cache_creation_input_tokens"),
         raw=data,
+        summary_block=summary_block,
+        thinking_blocks_dropped=sum(
+            item.get("type") == "thinking_dropped" for item in transformations
+        ),
+        tool_results_cleared=sum(
+            usage_count(edit, "cleared_tool_uses")
+            for edit in edits
+            if edit.get("type") == "clear_tool_uses_20250919"
+        ),
     )

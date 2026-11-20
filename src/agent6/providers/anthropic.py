@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import json
+import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -87,6 +88,83 @@ _SUMMARISE_DISPLAY_MARKERS = (
     "opus-5",
     "sonnet-5",
 )
+
+
+_PREFIX_CHECK_MODELS = frozenset(
+    {
+        "claude-fable-5-1",
+        "claude-fable-5-2",
+        "claude-haiku-5-5",
+        "claude-mythos-5-1",
+        "claude-mythos-5-2",
+        "claude-opus-5-5",
+        "claude-sonnet-5-5",
+    }
+)
+
+
+def _model_id(model: str) -> str:
+    """Return the model id without a direct or Vertex release date."""
+    return re.sub(r"[-@][0-9]{8}$", "", model)
+
+
+def endpoint_compaction(
+    model: str, *, server_compaction: bool
+) -> provider_types.EndpointCompaction:
+    """Return the compaction operations enabled on this Messages route."""
+    enabled = server_compaction and _model_id(model) in _PREFIX_CHECK_MODELS
+    return provider_types.EndpointCompaction(clears_tool_results=enabled, writes_summary=enabled)
+
+
+def _history_options(
+    body: dict[str, Any],
+    operation: provider_types.CompactionRequest | None,
+    *,
+    model: str,
+    deployment: str,
+) -> tuple[str, ...]:
+    """Set the Messages history options and return the betas the request needs.
+
+    Args:
+        body: The request after merging operator tuning.
+        operation: The compaction operation, if any.
+        model: The model on this route.
+        deployment: The URL profile.
+
+    Returns:
+        Required beta headers, including the beta for replaying a summary.
+    """
+    betas: list[str] = []
+    if isinstance(operation, provider_types.Summarise):
+        body.pop("context_management", None)
+        body["compaction"] = {"type": "summarize", "instructions": operation.instructions}
+    elif isinstance(operation, provider_types.ClearToolResults):
+        body["context_management"] = {
+            "edits": [
+                {
+                    "type": "clear_tool_uses_20250919",
+                    "trigger": {"type": "input_tokens", "value": 1000},
+                    "keep": {"type": "tool_uses", "value": 1},
+                    "exclude_tools": list(operation.exclude_tools),
+                }
+            ]
+        }
+        betas.append("context-management-2025-06-27")
+    first = body["messages"][0].get("content")
+    if isinstance(operation, provider_types.Summarise) or (
+        isinstance(first, list) and first and first[0].get("type") == "compaction"
+    ):
+        betas.append("compact-2026-09-04")
+    thinking = body.get("thinking")
+    if (
+        deployment in ("direct", "vertex")
+        and _model_id(model) in _PREFIX_CHECK_MODELS
+        and isinstance(thinking, dict)
+        and thinking.get("type") in ("enabled", "adaptive")
+    ):
+        body["thinking"] = {**thinking, "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
+        betas.append("thinking-binding-controls-2026-08-01")
+    return tuple(betas)
 
 
 def _is_adaptive_thinking(model: str) -> bool:
@@ -180,6 +258,27 @@ def shape_anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, A
     return shaped
 
 
+def _check_budget(body: dict[str, Any], thinking_budget: int | None, level: str | None) -> None:
+    """Refuse a configured output cap that leaves no room after thinking.
+
+    Raises:
+        ProviderError: The cap is not an integer above the thinking budget.
+    """
+    if thinking_budget is not None:
+        # The operator must fix an extra_body max_tokens under the budget.
+        configured_max = body.get("max_tokens")
+        if not isinstance(configured_max, int) or isinstance(configured_max, bool):
+            raise provider_types.ProviderError(
+                "Anthropic request max_tokens was not an integer", fatal=True
+            )
+        if configured_max <= thinking_budget:
+            raise provider_types.ProviderError(
+                f"extra_body.max_tokens {configured_max} is not above the thinking budget"
+                f" {thinking_budget} (effort {level}); raise it or lower the effort",
+                fatal=True,
+            )
+
+
 def _is_temperature_400(status: int | None, text: str, body: dict[str, Any]) -> bool:
     """Return whether a 400 rejects a `temperature` the body still carries."""
     return status == 400 and "temperature" in body and "temperature" in (text or "").lower()
@@ -248,12 +347,15 @@ class AnthropicProvider:
         body.pop("temperature", None)
         return True
 
-    def _build_headers(self, token: str, facts: request_headers.RequestFacts) -> dict[str, str]:
+    def _build_headers(
+        self, token: str, facts: request_headers.RequestFacts, required: tuple[str, ...] = ()
+    ) -> dict[str, str]:
         """Build one attempt's request headers from its token.
 
         Args:
             token: The attempt's credential.
             facts: The request's facts.
+            required: The betas required by the body.
 
         Returns:
             The headers, with an operator `anthropic-beta` merged into the built one.
@@ -266,7 +368,9 @@ class AnthropicProvider:
         if version_placement == "header":
             headers["anthropic-version"] = version_value
         if self.prompt_caching:
-            headers["anthropic-beta"] = "prompt-caching-2024-07-31"
+            required = ("prompt-caching-2024-07-31", *required)
+        if required:
+            headers["anthropic-beta"] = ",".join(required)
         for key, v in self.extra_headers.render(facts).items():
             if key == "anthropic-beta" and key in headers:
                 betas = [part.strip() for part in f"{headers[key]},{v}".split(",")]
@@ -288,6 +392,7 @@ class AnthropicProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
+        compaction: provider_types.CompactionRequest | None = None,
         context: request_headers.RequestContext | None = None,
     ) -> provider_types.ProviderResponse:
         """Make one Messages call, streaming when a delta callback is set.
@@ -303,6 +408,7 @@ class AnthropicProvider:
             thinking_delta_callback: Receives reasoning text as it streams.
             should_abort: Polled during a stream; True abandons the turn.
             should_interrupt: Polled during a stream; True ends the turn to steer.
+            compaction: The history operation on a supporting endpoint.
             context: The application's context for the call; None outside a conversation.
 
         Returns:
@@ -388,20 +494,8 @@ class AnthropicProvider:
                 "tool_choice",
             }
             body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
-        if thinking_budget is not None:
-            # The operator must fix an extra_body max_tokens under the budget.
-            configured_max = body.get("max_tokens")
-            if not isinstance(configured_max, int) or isinstance(configured_max, bool):
-                raise provider_types.ProviderError(
-                    "Anthropic request max_tokens was not an integer", fatal=True
-                )
-            if configured_max <= thinking_budget:
-                raise provider_types.ProviderError(
-                    f"extra_body.max_tokens {configured_max} is not above the thinking budget"
-                    f" {thinking_budget} (effort {level}); raise it or lower the effort",
-                    fatal=True,
-                )
-
+        _check_budget(body, thinking_budget, level)
+        betas = _history_options(body, compaction, model=self.model, deployment=self.deployment)
         return transport.ProviderCall(
             api_label="Anthropic",
             backend="anthropic",
@@ -417,7 +511,7 @@ class AnthropicProvider:
             facts=request_headers.call_facts(
                 self.model, request_headers.anthropic_body_facts(body), context
             ),
-            build_headers=self._build_headers,
+            build_headers=lambda token, facts: self._build_headers(token, facts, betas),
             adapt_400=self._adapt_body_for_400,
             adapt_attempts=int("temperature" in body),
             require_metered=lambda data: anthropic_parse.require_metered_usage(
@@ -500,6 +594,8 @@ class AnthropicProvider:
         usage_cache_read = 0
         usage_cache_write = 0
         reported_cache: dict[str, int] = {}
+        history_fields: dict[str, Any] = {}
+        iteration_usage: dict[str, Any] = {}
         saw_usage = False
         saw_input_usage = False
         saw_output_usage = False
@@ -552,7 +648,12 @@ class AnthropicProvider:
                         raise provider_types.ProviderError(
                             "Anthropic response message_start.message was not an object"
                         )
+                    for key in ("input_transformations", "context_management"):
+                        if key in msg:
+                            history_fields[key] = msg[key]
                     u = anthropic_parse.usage_mapping(msg.get("usage"))
+                    if "iterations" in u:
+                        iteration_usage["iterations"] = u["iterations"]
                     saw_usage = saw_usage or bool(u)
                     if "input_tokens" in u and u.get("input_tokens") is not None:
                         saw_input_usage = True
@@ -616,6 +717,7 @@ class AnthropicProvider:
                                 "Anthropic response content tool_use.input was not an object"
                             )
                         tool_acc[idx] = {
+                            **cb,
                             "type": "tool_use",
                             "id": anthropic_parse.response_string(
                                 cb.get("id"), "content tool_use.id", empty=False
@@ -727,7 +829,12 @@ class AnthropicProvider:
                         stop_reason = anthropic_parse.response_string(
                             d.get("stop_reason"), "stop_reason", empty=False
                         )
+                    for key in ("input_transformations", "context_management"):
+                        if key in d or key in evt:
+                            history_fields[key] = d.get(key, evt.get(key))
                     u = anthropic_parse.usage_mapping(evt.get("usage"))
+                    if "iterations" in u:
+                        iteration_usage["iterations"] = u["iterations"]
                     saw_usage = saw_usage or bool(u)
                     if u.get("output_tokens") is not None:
                         saw_output_usage = True
@@ -807,10 +914,12 @@ class AnthropicProvider:
                 "role": "assistant",
                 "content": content_blocks,
                 "stop_reason": stop_reason,
+                **history_fields,
                 "usage": {
                     "input_tokens": usage_input,
                     "output_tokens": usage_output,
                     **reported_cache,
+                    **iteration_usage,
                 },
             }
             call.record(status=200, response=synthesised)

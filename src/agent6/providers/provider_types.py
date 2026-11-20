@@ -25,6 +25,32 @@ from agent6.sessions import objects, retention
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class EndpointCompaction:
+    """Describe the history the endpoint manages for one model."""
+
+    clears_tool_results: bool = False
+    writes_summary: bool = False
+    keeps_session: bool = False
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Summarise:
+    """Ask for a replayable summary of the request's messages."""
+
+    instructions: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ClearToolResults:
+    """Clear old tool output except for results of the named tools."""
+
+    exclude_tools: tuple[str, ...]
+
+
+type CompactionRequest = Summarise | ClearToolResults
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class ProviderUsage:
     """The usage one provider call reported, even if the call failed.
 
@@ -576,6 +602,9 @@ class ProviderResponse:
         cost_usd: The gateway-reported cost of this call (OpenRouter's `usage.cost`);
             None means unreported, so the price table estimates instead; zero means a free call.
         raw: The response body as received.
+        summary_block: The block to replay verbatim after an endpoint summary.
+        thinking_blocks_dropped: The number of thinking blocks the endpoint dropped.
+        tool_results_cleared: The number of tool results the endpoint cleared.
         refused: Tool-use ids the provider's own front-end answered with an error
             before agent6 could run them, with its text; the loop records the error
             as the result and runs nothing.
@@ -591,6 +620,9 @@ class ProviderResponse:
     cost_usd: float | None = None
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
     refused: dict[str, str] = dataclasses.field(default_factory=dict)
+    summary_block: dict[str, Any] | None = None
+    thinking_blocks_dropped: int = 0
+    tool_results_cleared: int = 0
 
     @property
     def usage(self) -> ProviderUsage:

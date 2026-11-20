@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
-from agent6.providers import request_headers
+from agent6.providers import provider_types, request_headers
 from agent6.providers.anthropic import AnthropicProvider  # re-export
 from agent6.providers.chatgpt import ChatGPTProvider  # re-export
 from agent6.providers.claude_code import ClaudeCodeProvider  # re-export
@@ -56,6 +56,7 @@ class Provider(Protocol):
         thinking_delta_callback: Callable[[str], None] | None = ...,
         should_abort: Callable[[], bool] | None = ...,
         should_interrupt: Callable[[], bool] | None = ...,
+        compaction: provider_types.CompactionRequest | None = ...,
         context: request_headers.RequestContext | None = ...,
     ) -> ProviderResponse:
         """Make one model call.
@@ -72,6 +73,7 @@ class Provider(Protocol):
             should_abort: Polled during the call; True abandons it with `ProviderAborted`.
             should_interrupt: Polled during the call; True ends it early with
                 `ProviderInterrupted`.
+            compaction: The history operation on a supporting endpoint.
             context: The application's context for the call: the conversation id, the turn
                 state and the initiator; None outside a conversation.
 
