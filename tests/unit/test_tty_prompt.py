@@ -253,6 +253,7 @@ def test_a_headless_fetch_wait_names_the_requester_and_target(
                 standing=False,
             )
         )
+        process.write_worker_pid(child, os.getpid())
         child_watch.ChildWatch(prompts, tmp_path)(child, "reviewer 1 run-p1-l1", "waiting")
         requester = "[reviewer 1 run-p1-l1]"
     else:
