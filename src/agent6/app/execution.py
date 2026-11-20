@@ -98,8 +98,7 @@ class ExecutionInputs:
         base_rules: A review session's base-tree AGENTS.md, in place of the checkout's.
         review_target: A review session's comparison and its diff, for the panel.
         contract: The bounded conversation a `reviewer` session drives; None for a worker's.
-        opening: `run --parallel`'s spec and task: the dispatch a fresh run makes in place of
-            its first model call, joined by rank; None for a run that opens with the model.
+        opening: The tasks a fresh run dispatches instead of a first model call.
     """
 
     session_id: str
@@ -133,7 +132,7 @@ class ExecutionInputs:
     base_rules: str | None = None
     review_target: tuple[review_records.ReviewTarget, str] | None = None
     contract: kinds.ConversationContract | None = None
-    opening: directive.Segment | None = None
+    opening: tuple[directive.Segment, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

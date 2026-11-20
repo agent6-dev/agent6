@@ -155,8 +155,7 @@ def ranked_opening(
         budget ended every child, `no_child_result` otherwise, or the operator's stop; None
         when a steer gives the run more work.
     """
-    assert harness.opening is not None
-    started = harness.parallel.dispatch(conversation, turn, state, [harness.opening])
+    started = harness.parallel.dispatch(conversation, turn, state, list(harness.opening))
     while True:
         harness.parallel.wait()
         stopped = operator_stop(harness, turn, state)
@@ -179,23 +178,27 @@ def ranked_opening(
         )
         if asked is not None or len(conversation) > size:
             return asked
-    joins = [join for group in started.groups for join in harness.parallel.joins(group)]
-    # A dispatch that started no child has none to word: its own message is the summary.
-    summary = parallel_join.rank_summary(joins) if joins else started.message
-    statuses = {join.status for join in joins}
-    # Without a chain (`git.control = "model"`) a placed child is the whole outcome.
-    merged = statuses & {"joined", "no_changes"} or ("ranked" in statuses and not harness.chain.ref)
-    if not merged:
+    groups = [harness.parallel.joins(group) for group in started.groups]
+    missing = len(groups) != len(harness.opening)
+    summaries = [parallel_join.rank_summary(group) for group in groups if group]
+    if missing:
+        summaries.insert(0, started.message)
+    summary = "\n".join(summaries) or started.message
+    # A task needs one successful attempt of its own. Model-owned git keeps the ranked ref.
+    accepted = {"joined", "no_changes"} if harness.chain.ref else {"joined", "no_changes", "ranked"}
+    statuses = [{join.status for join in group} for group in groups]
+    failed = [group for group in statuses if not group.intersection(accepted)]
+    if missing or failed:
         spent = harness.budget is not None and harness.budget.is_exhausted()
         reason: loop_snapshot.SessionEndReason = (
             "no_child_passed"
-            if "ranked" in statuses
+            if any("ranked" in group for group in failed)
             else "budget_exhausted"
             if spent
             else "no_child_result"
         )
         return harness.finish(state, loop_snapshot.End(reason, summary, roots=False), turn=turn)
-    if "joined" in statuses:
+    if any("joined" in group for group in statuses):
         try:
             harness.gate.after_rank_join(state)
         except tool_errors.OperatorCommandUnexecutableError as exc:
@@ -335,7 +338,7 @@ def execution_opening(
     """
     if not resuming:
         operator_state(harness, conversation, state)
-        if harness.opening is not None:
+        if harness.opening:
             return ranked_opening(harness, conversation, turn, state)
         return None
     resume_opening(harness, conversation, state)

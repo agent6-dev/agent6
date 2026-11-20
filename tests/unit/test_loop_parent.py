@@ -1098,7 +1098,7 @@ def _opening_wf(
         events=events,
         verify_command=verify_command,
     )
-    wf.opening = directive.Segment(task="add a child file", spec="3")
+    wf.opening = (directive.Segment(task="add a child file", spec="3"),)
     _rank_as(spawner, order, crowns=crowns)
     return wf, provider
 
@@ -1169,6 +1169,21 @@ def test_an_opening_whose_children_all_fail_ends_with_no_child_result(
     assert provider.call.call_count == 0
     assert (result.reason, result.completed) == ("no_child_result", False)
     assert git_read.chain_tip(repo, "refs/agent6/parent") is None
+
+
+def test_each_opening_task_needs_a_result(tmp_path: pathlib.Path) -> None:
+    """A successful first task cannot hide a failed second task."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    spawner = _FakeGroupSpawner(repo, "session", tmp_path / "wt", fail={2})
+    events = _FakeEvents(tmp_path / "session" / "logs.jsonl")
+    wf, provider = _opening_wf(repo, spawner, events, order=(1,))
+    wf.opening = (directive.Segment("1", "first task"), directive.Segment("1", "second task"))
+
+    result = wf.run("two tasks")
+
+    assert provider.call.call_count == 0
+    assert (result.reason, result.completed) == ("no_child_result", False)
 
 
 def test_an_opening_the_budget_ended_reads_budget_exhausted(tmp_path: pathlib.Path) -> None:

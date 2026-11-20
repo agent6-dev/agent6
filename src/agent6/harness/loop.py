@@ -200,7 +200,7 @@ class Harness:
     mode: kinds.LoopMode = "run"
     plan_output_path: pathlib.Path | None = None
     contract: kinds.ConversationContract | None = None
-    opening: directive.Segment | None = None
+    opening: tuple[directive.Segment, ...] = ()
     # A snapshot write fault warns once, not every turn; it disables resume, never the run.
     snapshot_write_failed: bool = dataclasses.field(default=False, init=False)
     turns_reached: int = dataclasses.field(default=0, init=False)
@@ -632,7 +632,7 @@ class Harness:
             The end when the operator's verify command cannot execute, else None.
         """
         # A run that opens with a ranked dispatch leaves the baseline to its children.
-        if self.contract is None and self.opening is None:
+        if self.contract is None and not self.opening:
             try:
                 for notice in self.gate.start_baseline(state):
                     conversation.notice(notice.text)
