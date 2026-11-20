@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py or an asset file moves it in the same commit.
-PAGE_SHA256 = "22a04548fc3850fb419401fb299c671c17f6df656bfdaa6342f503afe1c5f9bb"
+PAGE_SHA256 = "96c7a1c8d3e059389ab9fe761b8c0469ed84b604001144e820c30ba4bbf25988"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -275,7 +275,7 @@ def test_the_commit_step_row_is_a_picker_row() -> None:
 def test_a_tool_call_clips_its_args_instead_of_breaking_words() -> None:
     """Each call in the details drawer is its name over one clipped line of args.
 
-    The full text is on hover; a narrow args column broke a path mid-word.
+    Opening the row shows the recorded text; the summary clips long paths.
     """
     run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "const calls = el('div', 'calls');" in run and "const a = el('div', 'args');" in run

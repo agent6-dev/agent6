@@ -210,7 +210,7 @@ def test_a_submitted_prompt_disables_its_controls_until_repaint() -> None:
 
 def test_the_web_tool_row_counts_the_args_lines_it_drops() -> None:
     """The web row folds every args line, as the TUI row does."""
-    start = page.CLIENT_JS.index("// tools: one clipped line per call")
+    start = page.CLIENT_JS.index("// Tool rows open")
     body = page.CLIENT_JS[start : page.CLIENT_JS.index("// shells:", start)]
     extra = body[body.index("const extra") : body.index("\n", body.index("const extra"))]
     assert "args_preview" in extra, extra

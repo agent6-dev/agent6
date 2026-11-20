@@ -603,24 +603,24 @@ function paintRun(cards, s) {
   };
   hbTick();
 
-  // tools: one clipped line per call (hover shows the full args + result; the
-  // conversation carries the whole story), so a long error dump can't flood it.
+  // Tool rows open to the recorded arguments and result without flooding the drawer.
   const shownCalls = (s.tool_calls || []).slice(-30);
   if (cardChanged(cards, 'tools', shownCalls)) {
     cards.tools.innerHTML = '';
     const calls = el('div', 'calls');
     for (const tc of shownCalls) {
-      const call = el('div', 'call');
+      const call = el('details', 'call');
+      const summary = el('summary');
       const head = el('div', 'call-head');
       head.appendChild(el('span', 'dot ' + (tc.ok === null ? '' : tc.ok ? 'ok' : 'bad')));
       head.appendChild(el('span', 'name', tc.name));
       const extra = String(tc.args_preview || '').split('\n').length - 1 + String(tc.result_summary || '').split('\n').length - 1;
       if (extra > 0) head.appendChild(el('span', 'more-note', `+${extra} more line${extra === 1 ? '' : 's'}`));
-      call.appendChild(head);
+      summary.appendChild(head);
       const a = el('div', 'args');
       a.textContent = firstLine(tc.args_preview, 90) + (tc.result_summary ? '  → ' + firstLine(tc.result_summary, 90) : '');
-      a.title = tc.args_preview + (tc.result_summary ? '\n→ ' + tc.result_summary : '');
-      call.appendChild(a);
+      summary.appendChild(a);
+      call.append(summary, el('pre', 'call-full', tc.args_full + (tc.result_summary ? '\n→ ' + tc.result_summary : '')));
       calls.appendChild(call);
     }
     if (!shownCalls.length) cards.tools.appendChild(el('div', 'muted', 'no tool calls yet'));

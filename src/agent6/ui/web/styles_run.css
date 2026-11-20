@@ -15,10 +15,10 @@
 /* A skipped or obsolete task's title is struck through. */
 .st-skipped + .task > .title, .st-obsolete + .task > .title { color: var(--muted); text-decoration: line-through; }
 
-/* Tool calls: each call's name over one clipped line of its args and result
-   (the full text on hover), so the narrow details drawer never breaks a path
-   mid-word. */
+/* A tool summary clips long paths; its open details wrap the recorded text. */
 .calls .call { padding: 0.375rem 0; border-bottom: 1px solid var(--border); }
+.calls summary { cursor: pointer; }
+.calls .call-full { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-s); }
 .calls .call-head { display: flex; align-items: center; gap: 0.5rem; }
 .calls .name { font-family: var(--mono); }
 .calls .call-head .more-note { margin-left: auto; }
