@@ -55,6 +55,7 @@ class LogScan:
         cache_usage: Session-wide worker cache use and post-compaction input.
         executions: One plus the completed resume executions.
         turn: The last event's turn.
+        current_tool: The latest tool call without a result in this execution.
         start_ep: session.start's epoch, else the first event's (a fork's log has none).
         last_ep: The last event's epoch.
         last_type: The last event's type.
@@ -110,6 +111,7 @@ class LogScan:
     budget_seen: bool = False
     executions: int = 1
     turn: int | None = None
+    current_tool: str = ""
     start_ep: float | None = None
     last_ep: float | None = None
     last_type: str | None = None
@@ -333,6 +335,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     end_tree = ""
     saw_budget = False
     turn: int | None = None
+    open_tools: dict[object, str] = {}
     start_ep: float | None = None
     first_ep: float | None = None
     last_ep: float | None = None
@@ -389,6 +392,12 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                 # Journals written before the turn rename stamp `iteration` and `iterations`.
                 if isinstance(ev_turn := ev.get("turn", ev.get("iteration")), int):
                     turn = ev_turn
+                if etype in ("session.start", "session.resume", "session.stop"):
+                    open_tools.clear()
+                elif etype == "tool.call":
+                    open_tools[str(ev.get("call_id") or ev.get("name"))] = str(ev.get("name") or "")
+                elif etype == "tool.result":
+                    open_tools.pop(str(ev.get("call_id") or ev.get("name")), None)
                 if etype in session_status.OPERATOR_PROMPT_EVENTS:
                     # Keyed by str(id) like the answer side, so an int id still clears. A queued
                     # question (`wait` false) pauses nothing.
@@ -512,6 +521,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
             (ep for ep in open_questions.values() if ep is not None), default=None
         ),
         turn=turn,
+        current_tool=next(reversed(open_tools.values()), ""),
         start_ep=start_ep if start_ep is not None else first_ep,
         last_ep=last_ep,
         last_type=last_type,

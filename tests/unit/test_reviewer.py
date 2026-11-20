@@ -12,8 +12,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import kinds
-from agent6.harness import llm_json
+from agent6 import kinds, llm_json
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import panel as review_panel
 from agent6.harness.review import verdict as review_verdict

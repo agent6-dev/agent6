@@ -161,8 +161,7 @@ def manifest_header(
         unmerged: Whether the run holds unmerged work, when a repository is supplied.
         forked_from: The rendered fork lineage when recorded.
         worktree: The linked worktree path when recorded.
-        children: The session's children by lineage, from the same listing as `sessions show`,
-            for every session that has any.
+        children: ChildView rows in dispatch order, including launch failures and reviewers.
         dispatches: The session's dispatch records, each with its children's outcomes.
         placement: The child's PlacementStamp when recorded.
         placement.line: The rendered comparison placement.
@@ -194,14 +193,10 @@ def manifest_header(
                 session_dir, scan.status_facts()
             )
         header["unmerged"] = listing.unmerged(m, status, git_read.run_ref_tips(repo))
-    nested = listing.children_of(
-        layout.layout_of(session_dir).state_dir,
-        session_dir.name,
-        branch_tips=git_read.run_ref_tips(repo) if repo is not None else None,
-    )
-    if nested:
-        header["children"] = [listing.summary_row(child) for child in nested]
     dispatches = children.dispatches_of(session_dir)
+    nested = children.children_of(session_dir, dispatches)
+    if nested:
+        header["children"] = [dataclasses.asdict(child) for child in nested]
     if dispatches:
         header["dispatches"] = [dataclasses.asdict(view) for view in dispatches]
     # A reviewer's record is read, never acted on.

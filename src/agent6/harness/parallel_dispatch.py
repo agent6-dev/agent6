@@ -253,7 +253,7 @@ class ParallelDispatcher:
         """  # noqa: DOC501  # the spawner's ChildRepoError is caught below
         assert self.child_spawner is not None
         group = record.identity.removeprefix(f"{self.session_id}-")
-        record = self.announce(record, children, group)
+        record = self.announce(record, children)
         # The children start under what the run has left now, and share it.
         ceiling = self.budget.available() if self.budget is not None else None
         started: list[child_records.StartedChild] = []
@@ -284,14 +284,12 @@ class ParallelDispatcher:
         self,
         record: child_dispatch.DispatchRecord,
         children: list[child_records.ChildTask],
-        group: str,
     ) -> child_dispatch.DispatchRecord:
         """Log and journal a dispatch about to launch, and record it running.
 
         Args:
             record: The durable prepared dispatch.
             children: Its tasks, in child order.
-            group: The group suffix the event names.
 
         Returns:
             The record in the `running` state.
@@ -300,7 +298,7 @@ class ParallelDispatcher:
         self.log(f"PARALLEL: dispatching group {record.identity} ({len(children)} {what})")
         self.emit(
             journal.ParallelDispatched(
-                group=group,
+                group=record.identity,
                 children=len(children),
                 tasks=[child.task[:200] for child in children],
                 source=record.source,

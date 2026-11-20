@@ -15,9 +15,9 @@ import pathlib
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
-from agent6 import child_records, errors, kinds
+from agent6 import child_records, errors, kinds, llm_json
 from agent6.config import Config, ConfigError
-from agent6.harness import child_repo, llm_json, parallel_panel
+from agent6.harness import child_repo, parallel_panel
 from agent6.harness.review import verdict as review_verdict
 from agent6.prompts import review
 from agent6.sessions import child_dispatch, completion
@@ -469,7 +469,7 @@ def start(
         dispatcher.write(record)
     except OSError as exc:
         return f"the judges' record could not be written ({exc})"
-    record = dispatcher.announce(record, children, group)
+    record = dispatcher.announce(record, children)
     ceiling = dispatcher.budget.available() if dispatcher.budget is not None else None
     started: list[child_records.StartedChild] = []
     try:

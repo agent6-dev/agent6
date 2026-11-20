@@ -5,9 +5,11 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
+import time
 
-from agent6.sessions import child_dispatch
+from agent6.sessions import child_dispatch, completion, process
 from agent6.viewmodel import children as vm_children
 from agent6.viewmodel import listing, receipt, wire
 
@@ -118,11 +120,14 @@ def test_children_come_from_the_records_in_dispatch_then_child_order(
         "reviewer",
     )
     assert (
-        first.launched and first.status and first.outcome == "joined" and first.join_sha == "b" * 40
+        first.launched
+        and first.status == "merged"
+        and first.outcome == "joined"
+        and first.join_sha == "b" * 40
     )
     assert first.imported_ref == "agent6/x" and first.spend_usd == 0.5 and first.settled
     assert first.route == "p/m"
-    assert not missing.launched and missing.status == "" and missing.outcome == "failed"
+    assert not missing.launched and missing.status == "failed" and missing.outcome == "failed"
     assert missing.error == "never started" and not missing.settled and missing.spend_usd == 0.0
     assert quiet.outcome == "no_changes" and quiet.join_sha == "" and quiet.spend_usd == 0.25
     dispatches = vm_children.dispatches_of(parent)
@@ -235,7 +240,7 @@ def test_an_unpriced_childs_spend_reads_unknown_on_the_receipt(tmp_path: pathlib
     assert "spend includes the children's ~$0.20" in text
 
 
-def test_a_panel_reviewer_is_evidence_of_its_panel_and_no_child(tmp_path: pathlib.Path) -> None:
+def test_a_reviewer_has_a_child_row_and_its_verdict(tmp_path: pathlib.Path) -> None:
     """A reviewed run read `(2 children)` and listed its passing reviewers as unchanged children."""
     state = tmp_path / "state"
     parent = _session(state, "run-abc", usd=1.0)
@@ -259,9 +264,70 @@ def test_a_panel_reviewer_is_evidence_of_its_panel_and_no_child(tmp_path: pathli
     (row,) = listing.nested_rows(summaries)
     assert row.summary.session_id == "run-abc" and row.children == ()
     assert listing.children_of(state, "run-abc") == []
-    assert "children" not in wire.manifest_header(parent)
+    completion.write_completion(
+        reviewer_dir,
+        completion.CompletionRecord(
+            text='```json\n{"order":["b","a"],"summary":"b covers both cases"}\n```',
+            stop_reason="answered",
+            output_tokens=10,
+            calls=1,
+        ),
+    )
+    (row,) = wire.manifest_header(parent)["children"]
+    assert tuple(row["verdict_order"]) == ("b", "a")
+    assert row["verdict_summary"] == "b covers both cases"
     # The record still names the reviewer, found in its own bucket, for the panel's surfaces.
     (child,) = vm_children.children_of(parent)
     assert child.source == "panel" and child.launched and child.settled
     text = receipt.render(receipt.read_receipt(parent, tmp_path))
     assert "Children" not in text and "child 1" not in text
+
+
+def test_the_parent_header_reads_a_live_tool_and_usage_from_the_child(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Unsettled spend and a tool still running come from the child's journal."""
+    state = tmp_path / "state"
+    parent = _session(state, "root")
+    sid = "root-p1-l1"
+    child = _session(state, sid, parent="root", finished=False)
+    process.write_worker_pid(child, os.getpid())
+    start = time.time() - 40
+    rows = [
+        {"type": "session.start", "user_task": "audit", "ts": start},
+        {"type": "budget.update", "input_total": 10, "output_total": 2, "usd_total": 0.2},
+        {"type": "tool.call", "name": "read_file", "call_id": 1, "turn": 2},
+        {"type": "tool.call", "name": "run_command", "call_id": 2, "turn": 2},
+        {"type": "tool.result", "name": "read_file", "call_id": 1},
+    ]
+    (child / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    rec = _record("root-p1", [(sid, None, None)]).advanced("running")
+    child_dispatch.write_record(parent, rec, now=start)
+    (row,) = wire.manifest_header(parent)["children"]
+    assert row["status"] == "running" and row["spend_usd"] == 0.2
+    assert row["turn"] == 2 and row["tokens"] == 12 and row["current_tool"] == "run_command"
+    assert 40 <= row["elapsed_s"] < 60
+    with (child / "logs.jsonl").open("a") as log:
+        log.write(
+            json.dumps({"type": "session.stop", "reason": "finish_session", "ts": start + 12})
+            + "\n"
+        )
+    child_dispatch.write_record(parent, rec.advanced("ranking"), now=start + 12)
+    (ended,) = vm_children.children_of(parent)
+    assert (ended.status, ended.elapsed_s, ended.current_tool) == ("being ranked", 12, "")
+
+
+def test_stopped_and_never_started_children_stay_in_the_header(tmp_path: pathlib.Path) -> None:
+    """A stopped branch keeps its commit count and a launch refusal keeps its diagnostic."""
+    state = tmp_path / "state"
+    parent = _session(state, "root")
+    child = _session(state, "root-p1-l1", parent="root")
+    join = child_dispatch.JoinRecord(status="stopped", branch="agent6/child", commits=2)
+    child_dispatch.write_record(parent, _record("root-p1", [(child.name, join, 0.5)]), now=1)
+    refused = _record("root-p2", [("root-p2-l1", None, None)]).advanced(
+        "complete", message="dispatch failed: no route"
+    )
+    child_dispatch.write_record(parent, refused, now=2)
+    held, absent = wire.manifest_header(parent)["children"]
+    assert (held["status"], held["commits"], held["imported_ref"]) == ("stopped", 2, "agent6/child")
+    assert not absent["launched"] and absent["status"] == "failed" and "no route" in absent["error"]

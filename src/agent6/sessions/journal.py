@@ -990,6 +990,17 @@ class ParallelFailed(Event):
     error: str | None = pydantic.Field(default=None, description="The failure diagnostic.")
 
 
+class ParallelChildActivity(Event):
+    """A child started, ended or received a steer."""
+
+    TYPE: ClassVar[str] = "parallel.child_activity"
+    child: str = pydantic.Field(description="The child's session id.")
+    activity: Literal["started", "finished", "failed", "stopped", "steered"] = pydantic.Field(
+        description="What happened to the child."
+    )
+    detail: str = pydantic.Field(default="", description="The steer, summary or failure reason.")
+
+
 class ParallelChildContinued(Event):
     """A parent started another execution of its stopped child."""
 
@@ -1944,6 +1955,9 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "nudge.went_quiet": NudgeWentQuiet,
     "operator.presence": OperatorPresence,
     "pack.quarantined": PackQuarantined,
+    "parallel.child_activity": ParallelChildActivity,
+    "parallel.child_continued": ParallelChildContinued,
+    "parallel.child_merged": ParallelChildMerged,
     "parallel.compared": ParallelCompared,
     "parallel.dispatched": ParallelDispatched,
     "parallel.failed": ParallelFailed,

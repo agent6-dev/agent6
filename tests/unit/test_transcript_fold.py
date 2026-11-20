@@ -1276,3 +1276,39 @@ def test_media_result_renders_metadata_on_shared_and_acp_surfaces() -> None:
     )
     assert "image: page.png, 2 KiB" in rendered
     assert "image: page.png, 2 KiB" in str(updates._tool_content(item))  # pyright: ignore[reportPrivateUsage]
+
+
+def test_child_activity_names_the_child_and_the_merge_result() -> None:
+    """A refused finish, steer, continuation and explicit merge remain in the conversation."""
+    actions = [
+        {
+            "type": "parallel.child_activity",
+            "child": "c",
+            "activity": "steered",
+            "detail": "inspect the diff",
+        },
+        {"type": "steer.parent", "text": "inspect the diff"},
+        {"type": "finish.refused.children", "trigger": "finish_session", "children": ["a", "c"]},
+        {"type": "parallel.child_continued", "child": "c", "sequence": 2},
+        {
+            "type": "parallel.child_merged",
+            "child": "c",
+            "status": "joined",
+            "sha": "123456789012345",
+        },
+        {
+            "type": "parallel.child_merged",
+            "child": "c",
+            "status": "conflict",
+            "ref": "agent6/c",
+            "detail": "merge conflict in a.py",
+        },
+    ]
+    assert [i.body for i in fold_transcript(actions)] == [
+        "child c steered: inspect the diff",
+        "parent: inspect the diff",
+        "finish_session refused: pending children: a, c",
+        "child c continued (2)",
+        "child c merged at 123456789012",
+        "child c not merged (agent6/c): merge conflict in a.py",
+    ]

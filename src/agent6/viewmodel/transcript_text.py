@@ -230,6 +230,15 @@ def parallel_joined_body(event: dict[str, Any]) -> str:
     return "\n".join([head, *rows])
 
 
+def child_merge_body(event: dict[str, Any]) -> str:
+    """Return the result of a requested child merge."""
+    child = event.get("child", "?")
+    if event.get("status") == "joined":
+        return f"child {child} merged at {str(event.get('sha', ''))[:12]}"
+    why = event.get("detail") or str(event.get("status", "")).replace("_", " ")
+    return f"child {child} not merged ({event.get('ref', '?')}): {why}"
+
+
 def parallel_failed_body(event: dict[str, Any]) -> str | None:
     """Word a dispatch failure.
 
@@ -320,6 +329,19 @@ MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
     "mcp.server_unavailable": mcp_unavailable_body,
     "jail.degraded": jail_degraded_body,
     "pack.quarantined": lambda event: f"WARNING: {event.get('warning', '')}",
+    "steer.parent": lambda e: f"parent: {e.get('text', '')}",
+    "finish.refused.children": lambda e: (
+        f"{e.get('trigger', 'finish_session')} refused: pending children: "
+        + ", ".join(str(s) for s in (e.get("children") or ()))
+    ),
+    "parallel.child_activity": lambda e: (
+        f"child {e.get('child', '?')} {e.get('activity', '?')}"
+        + (f": {e['detail']}" if e.get("detail") else "")
+    ),
+    "parallel.child_merged": child_merge_body,
+    "parallel.child_continued": lambda e: (
+        f"child {e.get('child', '?')} continued ({e.get('sequence', '?')})"
+    ),
     "parallel.dispatched": parallel_dispatched_body,
     "parallel.joined": parallel_joined_body,
     "parallel.failed": parallel_failed_body,

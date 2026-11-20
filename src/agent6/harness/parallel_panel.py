@@ -142,7 +142,7 @@ def execute(
         The completed result, or a diagnosed spawner failure with unresolved holds.
     """  # noqa: DOC501  # the spawner's ChildRepoError is caught below
     assert dispatcher.child_spawner is not None
-    record = dispatcher.announce(record, children, group)
+    record = dispatcher.announce(record, children)
     started: list[child_records.StartedChild] = []
     try:
         results: list[child_records.ChildResult] = []

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 from agent6 import child_records, directive, kinds
 from agent6.harness import child_continue, child_merge, operator_bridge, parallel_join
-from agent6.sessions import child_dispatch, ipc
+from agent6.sessions import child_dispatch, ipc, journal
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import child_tools, results, tool_errors
 
@@ -204,6 +204,7 @@ def steer(dispatcher: parallel_dispatch.ParallelDispatcher, child: str, text: st
             f"child {child} has not started yet; nothing was sent. Send it again once"
             " read_background shows its transcript."
         )
+    dispatcher.emit(journal.ParallelChildActivity(child=child, activity="steered", detail=text))
     return f"[parallel] child {child} reads this at its next turn boundary."
 
 

@@ -498,10 +498,10 @@ def test_two_tasks_merge_in_the_order_written_and_stamp_their_nodes(tmp_path: pa
     assert all(n.status == "passed" and n.commit_sha for n in steering)
     assert all(n.rationale == "dispatched through /parallel by the operator" for n in steering)
     assert len(graph.commit_calls) == 2
-    # One dispatched row and one joined row per task; joined names the group's full id.
+    # The dispatch and merge rows name the same group.
     assert events.of("parallel.dispatched") == [
-        {"group": "p1", "children": 1, "tasks": ["task one"], "source": "operator"},
-        {"group": "p2", "children": 1, "tasks": ["task two"], "source": "operator"},
+        {"group": "run-abc-p1", "children": 1, "tasks": ["task one"], "source": "operator"},
+        {"group": "run-abc-p2", "children": 1, "tasks": ["task two"], "source": "operator"},
     ]
     joined = events.of("parallel.joined")
     assert [(row["group"], [ln["status"] for ln in row["children"]]) for row in joined] == [
