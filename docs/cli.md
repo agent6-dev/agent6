@@ -279,7 +279,7 @@ agent6 config show telemetry            # every key with its origin
 - A cursor per endpoint and session keeps a re-run from re-sending delivered spans and log records; the metrics reading is always the whole cumulative snapshot, and the Prometheus file is rewritten whole.
 - A model-call span identifies the caller with the `agent6.actor` attribute.
   Metadata capture identifies a reviewer by role and, for a panel call, by index.
-  Content capture includes the review focus in the actor.
+  Content capture exports up to 1,024 characters of the reviewer's actor, including the focus.
 - The default `capture = "metadata"` exports outcomes, counts, timings and the journal's ids, never the task, arguments, outputs or diffs; `capture = "content"` adds the capped excerpts `telemetry.capture` lists ([config](config.md#telemetry)).
 - `--follow` posts what it holds every five seconds while events arrive and once more on Ctrl-C; a live run's unfinished work is sent when the run finishes it, not at the export's end.
   A crashed run's unfinished work is sent once, marked incomplete.
