@@ -358,7 +358,7 @@ def test_the_page_meets_a_401_in_one_place() -> None:
     """
     js = page.CLIENT_JS
     assert js.count("fetch(") == 1, "one fetch, in serverFetch, which hands a 401 to the form"
-    assert js.count("await serverFetch(") == 3  # getResponse, postJSON and openStream
+    assert js.count("await serverFetch(") == 4  # getResponse, postJSON, openStream, editFileText
     assert js.count("headers: authHeaders(") == 1, "every fetch carries the token"
     assert "EventSource" not in js, "a native stream could not carry the token"
     assert js.count("openStream(base + '/events'") == 2
