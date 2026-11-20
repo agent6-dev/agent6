@@ -312,7 +312,9 @@ def test_run_family_help_explains_actions_in_user_terms() -> None:
     assert (_option(run, "--decompose").help or "").startswith(
         "Make the agent split the task into ordered subtasks before editing"
     )
-    assert (_option(run, "--parallel").help or "").startswith("Run the task in isolated children")
+    parallel = _option(run, "--parallel").help or ""
+    assert parallel.startswith("Run the task in isolated children")
+    assert 'git.control = "model"' in parallel and "refs" in parallel
     assert (_option(run, "--max-plan-points").help or "").startswith(
         "Limit the plan percentage points this command uses"
     )

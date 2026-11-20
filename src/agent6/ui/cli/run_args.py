@@ -97,9 +97,11 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         default="",
         metavar="N|SELECTOR,...",
         help=(
-            "Run the task in isolated children, then join the child [harness.parallel].judges"
-            " rank first onto this run's branch. N runs N children on the worker model; a list"
-            " runs one child per SELECTOR (a role name, or [provider/]model)."
+            "Run the task in isolated children. [harness.parallel].judges rank the attempts."
+            ' With git.control = "model", the commits stay on the children\'s refs.'
+            " Otherwise agent6 merges the first-ranked attempt onto this run's chain."
+            " N starts N attempts on the worker model. A list starts one attempt per"
+            " SELECTOR (a role name or [provider/]model)."
         ),
     )
     run_parallel_flag.completer = completers._complete_parallel_models  # type: ignore[attr-defined]
