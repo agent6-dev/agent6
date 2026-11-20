@@ -149,6 +149,10 @@ class BudgetUpdate(Event):
             "settles, inside the cap."
         ),
     )
+    usd_settled_children: float = pydantic.Field(
+        default=0.0,
+        description="USD the settled children spent; inside `usd_total`.",
+    )
     tokens_unmetered: int | None = pydantic.Field(
         default=None,
         description="Tokens with no known price.",

@@ -357,6 +357,7 @@ class BudgetSnapshot:
         usd_running_children: What the children still running have spent so far; outside every
             total here until each settles.
         tokens_running_children: Their fallback tokens so far, the same way.
+        usd_settled_children: What the settled children spent, inside the USD total.
         available: What is left to spend in each currency, running children taken out, with the
             cap's meaning.
         settled_children: Child sessions charged to this execution's cumulative totals.
@@ -376,6 +377,7 @@ class BudgetSnapshot:
     per_model: dict[kinds.ModelRoute, ModelUsage]
     usd_running_children: float
     tokens_running_children: int
+    usd_settled_children: float
     available: BudgetAllowance
     settled_children: frozenset[str] = frozenset()
 
@@ -836,6 +838,7 @@ class BudgetTracker:
                 per_model=per_model,
                 usd_running_children=self._running_usd_locked(),
                 tokens_running_children=self._running_tokens_locked(),
+                usd_settled_children=self._children_usd,
                 available=self._available_locked(),
                 settled_children=frozenset(self._charged_children),
             )

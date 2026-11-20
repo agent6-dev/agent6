@@ -160,7 +160,7 @@ def test_the_prometheus_exposition_follows_the_text_format() -> None:
     assert buckets[-1] == 'agent6_verify_duration_seconds_bucket{le="+Inf"} 1'
     assert "agent6_verify_duration_seconds_sum 30" in lines
     assert "agent6_verify_duration_seconds_count 1" in lines
-    assert "agent6_plan_used_ratio 0.12" in lines
+    assert 'agent6_plan_used_ratio{provider="unknown"} 0.12' in lines
     assert text.endswith("\n") and not any(" 1793" in line for line in lines)
     odd = telemetry_metrics.MetricsSnapshot(
         {("agent6_tool_calls_total", (("outcome", "ok"), ("tool", 'a"b\\c\nd'))): 2.0}, {}, {}

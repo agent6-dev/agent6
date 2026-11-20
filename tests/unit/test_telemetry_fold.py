@@ -284,7 +284,7 @@ def test_the_metrics_count_what_the_journal_records() -> None:
         == 1
     )
     snapshot = fold.metrics()
-    assert snapshot.gauges[("agent6_plan_used_ratio", ())] == 0.12
+    assert snapshot.gauges[("agent6_plan_used_ratio", (("provider", "unknown"),))] == 0.12
     assert snapshot.gauges[("agent6_cost_partial", ())] == 0.0
     assert snapshot.gauges[("agent6_open_findings", (("severity", "block"),))] == 1
     verify = snapshot.histograms[("agent6_verify_duration_seconds", ())]
@@ -339,6 +339,26 @@ def test_what_follows_an_end_still_folds_against_it() -> None:
     assert fold.metrics().gauges[("agent6_open_findings", (("severity", "block"),))] == 0
     assert [s.name for s in spans].count(telemetry_records.SPAN_TURN) == 2
     assert start["type"] == "review.start" and panel["type"] == "review.panel"
+
+
+def test_each_providers_plan_reading_is_its_own_series() -> None:
+    """A budget row carries one provider's reading; unlabelled, the last row hid the other's."""
+    rows: list[dict[str, Any]] = [
+        {"type": "session.start", "ts": _ts(0), "execution_id": "e"},
+        *(
+            {
+                "type": "budget.update",
+                "ts": _ts(second),
+                "usd_total": 0.0,
+                "account": {"provider": provider, "used_percent": used},
+            }
+            for second, (provider, used) in enumerate((("a", 10), ("b", 70), ("a", 40)), start=1)
+        ),
+    ]
+    fold, _spans, _logs = _run(rows)
+    gauges = fold.metrics().gauges
+    assert gauges[("agent6_plan_used_ratio", (("provider", "a"),))] == 0.4
+    assert gauges[("agent6_plan_used_ratio", (("provider", "b"),))] == 0.7
 
 
 def test_the_ask_repls_repeated_starts_share_one_cumulative_tracker() -> None:
@@ -500,7 +520,8 @@ def test_merged_snapshots_add_counts_and_keep_the_latest_reading() -> None:
     one = telemetry_metrics.MetricsSnapshot(
         {("agent6_sessions_total", ()): 1.0},
         {
-            ("agent6_plan_used_ratio", ()): 0.1,
+            ("agent6_plan_used_ratio", (("provider", "a"),)): 0.1,
+            ("agent6_plan_used_ratio", (("provider", "b"),)): 0.7,
             ("agent6_open_findings", (("severity", "block"),)): 1,
         },
         {
@@ -512,7 +533,7 @@ def test_merged_snapshots_add_counts_and_keep_the_latest_reading() -> None:
     two = telemetry_metrics.MetricsSnapshot(
         {("agent6_sessions_total", ()): 1.0},
         {
-            ("agent6_plan_used_ratio", ()): 0.4,
+            ("agent6_plan_used_ratio", (("provider", "a"),)): 0.4,
             ("agent6_open_findings", (("severity", "block"),)): 2,
         },
         {
@@ -523,7 +544,8 @@ def test_merged_snapshots_add_counts_and_keep_the_latest_reading() -> None:
     )
     merged = telemetry_metrics.merge_snapshots([one, two])
     assert merged.counters[("agent6_sessions_total", ())] == 2.0
-    assert merged.gauges[("agent6_plan_used_ratio", ())] == 0.4
+    assert merged.gauges[("agent6_plan_used_ratio", (("provider", "a"),))] == 0.4
+    assert merged.gauges[("agent6_plan_used_ratio", (("provider", "b"),))] == 0.7
     assert merged.gauges[("agent6_open_findings", (("severity", "block"),))] == 3
     histogram = merged.histograms[("agent6_verify_duration_seconds", ())]
     assert (histogram.counts, histogram.total, histogram.count) == ((1, 1), 9.5, 2)

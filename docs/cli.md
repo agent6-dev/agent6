@@ -265,7 +265,10 @@ agent6 config show telemetry            # every key with its origin
 - `--follow` posts what it holds every five seconds while events arrive and once more on Ctrl-C; a live run's unfinished work is sent when the run finishes it, not at the export's end.
   A crashed run's unfinished work is sent once, marked incomplete.
 - A request the collector answers with 429, 502, 503 or 504 is tried three times with backoff; any other refusal turns the endpoint off for that export, and the command exits 1 naming it.
+- `agent6_cost_usd_total` counts each session's own spend; a child's spend counts in the child's session, not again in its parent's.
 - `agent6_plan_observed_points_total` counts the plan-window movement a run observed, which is the account's whole window; it is not this run's billing.
+  Sessions that ran at the same time, a parent and its children among them, each count the movement they saw.
+- `agent6_plan_used_ratio` carries a `provider` label: each provider's latest reading is its own series.
 
 ## Other commands
 

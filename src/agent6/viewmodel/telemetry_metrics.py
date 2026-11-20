@@ -64,7 +64,7 @@ METRICS: tuple[MetricDef, ...] = (
     MetricDef(
         "agent6_cost_usd_total",
         "counter",
-        "Priced spend from the journal's cumulative budget readings.",
+        "Each session's own priced spend, from its journal's cumulative budget readings.",
         "USD",
     ),
     MetricDef(
@@ -83,7 +83,7 @@ METRICS: tuple[MetricDef, ...] = (
     MetricDef(
         "agent6_plan_used_ratio",
         "gauge",
-        "The latest plan-window reading, 0 to 1.",
+        "The latest plan-window reading by provider, 0 to 1.",
         "1",
         merge="last",
     ),

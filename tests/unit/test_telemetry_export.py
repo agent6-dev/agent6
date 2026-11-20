@@ -16,12 +16,15 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6 import paths
+from agent6 import budget as agent6_budget
+from agent6 import kinds, paths
+from agent6.app import children
 from agent6.config import TelemetryConfig
-from agent6.sessions import process
+from agent6.sessions import budget_events, event_log, journal, process
 from agent6.ui.cli import main
 from agent6.ui.telemetry import export
 from agent6.viewmodel import telemetry_records
+from agent6.viewmodel.session import log as session_log
 from tests.unit import test_telemetry_fold as fold_tests
 from tests.unit import test_telemetry_machine as machine_tests
 
@@ -476,6 +479,43 @@ def test_machine_exports_parent_workers_and_do_not_double_count_spend(
     report = export.export(repo, _config(), session_id=selected, post=again.post)
     assert (report.spans, report.logs) == (0, 0)
     assert again.paths() == ["metrics"]
+
+
+def test_a_settled_childs_spend_is_exported_once(repo: pathlib.Path) -> None:
+    """A parent's budget rows include its settled child, whose own journal is exported too."""
+    runs = paths.state_dir(repo) / "sessions" / "runs"
+
+    def started(session_id: str, usd: float) -> tuple[agent6_budget.BudgetTracker, pathlib.Path]:
+        tracker = agent6_budget.BudgetTracker(
+            max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1
+        )
+        tracker.record(
+            route=kinds.ModelRoute("p", "m"),
+            input_tokens=1,
+            output_tokens=1,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+            cost_usd=usd,
+        )
+        log = runs / session_id / "logs.jsonl"
+        sink = event_log.EventSink(log)
+        sink.emit(journal.SessionStart(user_task="t", mode="run", execution_id="e1"))
+        sink.emit(journal.BudgetUpdate(**budget_events.budget_update_fields(tracker)))
+        return tracker, log
+
+    _child, child_log = started("child", 0.30)
+    parent, parent_log = started("parent", 0.20)
+    usage = children.child_usage(child_log.parent)
+    assert usage is not None and usage.usd == pytest.approx(0.30)
+    parent.settle_child("child", usage)
+    event_log.EventSink(parent_log).emit(
+        journal.BudgetUpdate(**budget_events.budget_update_fields(parent))
+    )
+    # The parent's own views keep the child's spend.
+    assert session_log.scan_session_log(parent_log).budget.session.usd == pytest.approx(0.50)
+    lines = export.prometheus_text(repo).splitlines()
+    cost = next(line for line in lines if line.startswith("agent6_cost_usd_total "))
+    assert float(cost.split()[1]) == pytest.approx(0.50)
 
 
 def test_machine_follow_discovers_workers_before_the_next_transition(

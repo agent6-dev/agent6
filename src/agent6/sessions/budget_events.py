@@ -59,6 +59,7 @@ def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
         usd_partial=usd_partial,
         usd_cap=snap.max_usd,
         usd_running_children=snap.usd_running_children,
+        usd_settled_children=snap.usd_settled_children,
         tokens_unmetered=snap.unmetered_tokens,
         tokens_running_children=snap.tokens_running_children,
         tokens_fallback_cap=snap.max_tokens_fallback,

@@ -410,7 +410,7 @@
                   "unit": "{token}"
                 },
                 {
-                  "description": "Priced spend from the journal's cumulative budget readings.",
+                  "description": "Each session's own priced spend, from its journal's cumulative budget readings.",
                   "name": "agent6_cost_usd_total",
                   "sum": {
                     "aggregationTemporality": 2,
@@ -1111,7 +1111,7 @@
                 "unit": "{token}"
               },
               {
-                "description": "Priced spend from the journal's cumulative budget readings.",
+                "description": "Each session's own priced spend, from its journal's cumulative budget readings.",
                 "name": "agent6_cost_usd_total",
                 "sum": {
                   "aggregationTemporality": 2,
@@ -1160,12 +1160,19 @@
                 "unit": "1"
               },
               {
-                "description": "The latest plan-window reading, 0 to 1.",
+                "description": "The latest plan-window reading by provider, 0 to 1.",
                 "gauge": {
                   "dataPoints": [
                     {
                       "asDouble": 0.12,
-                      "attributes": [],
+                      "attributes": [
+                        {
+                          "key": "provider",
+                          "value": {
+                            "stringValue": "unknown"
+                          }
+                        }
+                      ],
                       "startTimeUnixNano": "1792922400000000000",
                       "timeUnixNano": "1792922460000000000"
                     }
