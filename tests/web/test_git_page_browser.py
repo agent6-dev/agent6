@@ -1186,3 +1186,21 @@ def test_an_added_images_one_side_takes_the_whole_width(
     figure = page.locator(".git-img figure").bounding_box()
     assert wrap and figure and figure["width"] > 0.9 * wrap["width"]
     assert errors == [], errors
+
+
+def test_an_svgs_caption_leaves_out_a_pixel_size_it_lacks(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """A viewBox-only SVG's caption gave the browser's default box, 150x150 (300x300 in Firefox)."""
+    from playwright.sync_api import expect
+
+    _git(tmp_path, "init", "-q", "-b", "main")
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><circle r="9"/></svg>\n'
+    (tmp_path / "logo.svg").write_text(svg, encoding="utf-8")
+    _git(tmp_path, "add", "logo.svg")
+    _git(tmp_path, "commit", "-q", "-m", "add the logo")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/git/commit/main?path=logo.svg")
+    page.wait_for_selector(".git-img img")
+    expect(page.locator(".git-img figcaption")).to_have_text(f"after · {len(svg)} B")
+    assert errors == [], errors

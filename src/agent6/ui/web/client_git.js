@@ -187,7 +187,9 @@ async function blobImage(rev, path, fig, cap, ignored = false) {
   if (!fig.isConnected) return;
   const img = el('img'); img.alt = path;
   const size = cap.dataset.label + ' · ' + fmtBytes(image.size);
-  img.onload = () => { cap.textContent = size + ' · ' + img.naturalWidth + '\u00d7' + img.naturalHeight; };
+  // An SVG may set no size, and then the browser's default box would read as the file's.
+  const svg = path.toLowerCase().endsWith('.svg');
+  img.onload = () => { cap.textContent = svg ? size : size + ' · ' + img.naturalWidth + '\u00d7' + img.naturalHeight; };
   img.onerror = () => { cap.textContent = size + ' · the browser cannot show this image'; };
   img.src = image.url;
   fig.appendChild(img);
