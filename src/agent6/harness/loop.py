@@ -64,14 +64,17 @@ from agent6.harness import (
     tool_effects,
     toolset,
 )
-from agent6.harness.compaction import driver as compaction_driver
+from agent6.harness import compaction as harness_compaction
+from agent6.harness.compaction import calls as compaction_calls
 from agent6.harness.compaction import elision as compaction_elision
+from agent6.harness.compaction import strategy
 from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import history as review_history
 from agent6.harness.review import panel as review_panel
 from agent6.harness.verify import gate as verify_gate
 from agent6.harness.verify import verdict as verify_verdict
+from agent6.prompts import compaction as compaction_prompts
 from agent6.prompts import review as review_prompts
 from agent6.providers import (
     Provider,
@@ -121,6 +124,7 @@ class Harness:
             finish_session payload; None leaves finishes ungated.
         bridge: What the operator can do to the run, as the front-end injects it.
         call: The worker call's knobs: retries, temperature, output caps.
+        compactor: The in-process compaction strategy.
         compaction: The compaction tiers' thresholds, the tail kept, the summariser.
         review: The in-loop review panel's trigger, reviewers and decision rule.
         initial_pins: Pins seeded before the first turn (a child inherits the parent's);
@@ -172,6 +176,9 @@ class Harness:
     call: provider_call.CallSettings = dataclasses.field(default_factory=provider_call.CallSettings)
     compaction: compaction_window.CompactionSettings = dataclasses.field(
         default_factory=compaction_window.CompactionSettings
+    )
+    compactor: strategy.Strategy = dataclasses.field(
+        default_factory=harness_compaction.default_strategy
     )
     review: review_gate.ReviewSettings = dataclasses.field(
         default_factory=review_gate.ReviewSettings
@@ -693,12 +700,7 @@ class Harness:
         for call_id, reason in conversation.limit_attachments():
             self.emit(journal.MediaRefused(provider_tool_call_id=call_id, reason=reason))
         conversation.roll_cache_marks()
-        restarted = self.compactor.compact(
-            conversation,
-            state,
-            prefix_chars=compaction_window.request_prefix_chars(state.system, tools),
-            tools=tools,
-        )
+        restarted = self.compactor.compact(self.compaction_context(conversation, state, tools))
         if restarted:
             if self.contract is None:
                 state.focus.surfaced_task_id = None
@@ -1898,26 +1900,59 @@ class Harness:
             emit=self.emit,
         )
 
-    @functools.cached_property
-    def compactor(self) -> compaction_driver.Compactor:
-        """Return the context compaction driver."""
-        return compaction_driver.Compactor(
+    def compaction_context(
+        self,
+        conversation: loop_conversation.Conversation,
+        state: loop_state.LoopState,
+        tools: list[ToolDefinition],
+    ) -> strategy.Context:
+        """Bind the strategy's services to this turn.
+
+        Args:
+            conversation: The history prepared for the worker.
+            state: The run's task, pins and call identity.
+            tools: This turn's tool list.
+
+        Returns:
+            The context for one strategy call.
+        """
+        calls = compaction_calls.Calls(
+            self.provider,
+            self.compaction,
+            conversation,
+            state.system,
+            tools,
+            self.call.temperature,
+            state.execution_id,
+            state.call_context,
+            self.budget.check if self.budget is not None else lambda: None,
+            self.bridge.should_abort,
+            self.bridge.should_interrupt,
+        )
+        return strategy.Context(
+            conversation=conversation,
             settings=self.compaction,
-            provider=self.provider,
-            curator=self.curator,
-            mode=self.mode,
-            dag_available=self.dispatcher.dag_available,
-            decisions=self._load_decisions,
-            verify_fact=self.verify_fact,
+            prefix_chars=compaction_window.request_prefix_chars(state.system, tools),
+            task=state.original_task,
+            pins=state.pins,
+            restart_notice=lambda: compaction_prompts.context_restart_notice(
+                self.mode,
+                pins=state.pins,
+                decisions=self._load_decisions(),
+                dag_available=self.dispatcher.dag_available,
+                verification=self.verify_fact(state),
+            ),
+            call_worker=calls.call_worker,
+            call_helper=calls.call_helper,
+            check_stop=calls.check_stop,
+            check_budget=calls.check_budget,
             compact_requested=self.bridge.compact_requested,
             compact_clear=self.bridge.compact_clear,
+            curator=self.curator,
+            root_task_id=state.root_task_id,
             log=self.log,
             emit=self.emit,
             emit_graph_snapshot=self._emit_graph_snapshot,
-            should_abort=self.bridge.should_abort,
-            should_interrupt=self.bridge.should_interrupt,
-            check_budget=self.budget.check if self.budget is not None else lambda: None,
-            temperature=self.call.temperature,
         )
 
     @functools.cached_property

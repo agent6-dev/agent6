@@ -741,7 +741,7 @@ def test_snapshot_written_after_tool_dispatch_advances_turn(tmp_path: pathlib.Pa
     )
     orig_save = loop_resume.save_resume_snapshot
     orig_call = provider.call
-    orig_compact = compaction_driver.Compactor.compact
+    orig_compact = compaction_driver.Tiered.compact
 
     def _spy_save(
         harness: loop.Harness, state: Any, messages: list[dict[str, Any]], **kw: Any
@@ -759,16 +759,14 @@ def test_snapshot_written_after_tool_dispatch_advances_turn(tmp_path: pathlib.Pa
         events.append({"kind": "provider_call"})
         return orig_call(**kw)
 
-    def _spy_compact(
-        compactor: compaction_driver.Compactor, msgs: Any, state: Any, **kw: Any
-    ) -> bool:
+    def _spy_compact(compactor: compaction_driver.Tiered, context: Any) -> bool:
         events.append({"kind": "compact"})
-        return orig_compact(compactor, msgs, state, **kw)
+        return orig_compact(compactor, context)
 
     save_spy = mock.patch.object(loop_resume, "save_resume_snapshot", _spy_save)
     save_spy.start()
     provider.call = _spy_call
-    compact_spy = mock.patch.object(compaction_driver.Compactor, "compact", _spy_compact)
+    compact_spy = mock.patch.object(compaction_driver.Tiered, "compact", _spy_compact)
     compact_spy.start()
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",

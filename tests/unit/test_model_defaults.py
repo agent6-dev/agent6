@@ -14,6 +14,7 @@ from agent6.app import preflight, role_providers
 from agent6.app.session import runtime as session_runtime
 from agent6.app.session import setup as session_setup
 from agent6.config import layer, layer_data, model, validation
+from agent6.harness import loop_conversation, loop_state
 from agent6.harness.compaction import driver as compaction_driver
 from agent6.harness.compaction import elision as compaction_elision
 from agent6.harness.compaction import window as compaction_window
@@ -22,7 +23,7 @@ from agent6.providers import provider_types
 from agent6.sessions import event_log
 from agent6.ui.cli import entry
 from agent6.viewmodel import config_view
-from tests.unit import test_machine_cli, test_machine_model, test_run_review
+from tests.unit import test_harness, test_machine_cli, test_machine_model, test_run_review
 
 
 @pytest.mark.parametrize("role", ["worker", "planner", "reviewer", "helper"])
@@ -262,23 +263,18 @@ def test_helper_jobs_do_not_use_the_reviewer_route(
         cfg, role="worker", events=events, transcript_sink=sink, stream_text=False
     )
     assert session.summariser_provider is not None
-    compactor = compaction_driver.Compactor(
-        settings=compaction_window.CompactionSettings(
+    harness = test_harness._wf(
+        provider=session.provider,
+        compaction=compaction_window.CompactionSettings(
             summariser="helper", helper_context_tokens=200000, helper=session.summariser_provider
         ),
-        provider=session.provider,
-        curator=None,
-        mode="run",
-        dag_available=False,
-        decisions=lambda: "",
-        verify_fact=lambda _state: "",
-        compact_requested=lambda: None,
-        compact_clear=lambda: None,
-        log=lambda _: None,
-        emit=lambda *_a, **_kw: None,
-        emit_graph_snapshot=lambda: None,
     )
-    compactor.distill_gists((compaction_elision.GistRequest(path="a.py", content="print(1)"),))
+    ctx = harness.compaction_context(
+        loop_conversation.Conversation(), loop_state.LoopState("task", 0), []
+    )
+    compaction_driver.distill_gists(
+        ctx, (compaction_elision.GistRequest(path="a.py", content="print(1)"),)
+    )
     assert provider.call.call_count == 1
     (tmp_path / "AGENTS.md").write_text("Tests use the project's custom runner.\n")
     preflight.infer_verify_if_unset(

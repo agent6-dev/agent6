@@ -121,7 +121,7 @@ What the turn leans on sits beside it, one module each:
 - `operator_tasks` (the operator's writes to the task graph: the root, the goal, `/task` and `/retire`)
 - `parallel_dispatch` (a run's children: the dispatch, the merge at a turn boundary), `parallel_rank` (the judges of a task's attempts and the order they give), `parallel_panel` (a panel's reviewers, in batches through the same dispatcher), `parallel_recovery` (a resumed execution settling the dispatches left behind) and `child_work` (the children as the run's tools reach them)
 - `run_checkpoint` (the per-turn commit and the final one)
-- `compaction_driver` (the compaction driver over `compaction_rules`'s tier-1 rules, `compaction_elision`'s markers and caps, and `compaction_window`'s sizing and restart rules)
+- `compaction/strategy.py` (the strategy interface) and `compaction/driver.py` (the built-in tiered strategy)
 - `memory_touch` (what a tool call did to the memory store)
 - the settings each sibling owns (`review_gate`, `compaction_window`, `provider_call`)
 
@@ -229,6 +229,21 @@ A resume after a death there runs none of the turn's calls again: the model gets
 - the DAG survives the restart: the current task re-surfaces, the summariser reports finished/new tasks (finished marked `passed`, new queued)
 - `/compact [focus]` compacts on demand
 - `/pin <text>` survives every restart verbatim and persists in the snapshot; over the 4000-char total cap the pinning is refused loudly and the text still lands as an ordinary steer
+
+**Writing a compaction strategy.** Pass an object with `compact(self, context: strategy.Context) -> bool` as `Harness(compactor=...)`.
+Import `strategy` from `agent6.harness.compaction`.
+The harness calls it once after preparing the turn and before saving the worker request.
+The context supplies the live conversation, settings, task, pins, restart notice, graph, journal emitter, and stop and budget checks.
+`call_worker(instruction, call_id)` appends an instruction to the prepared request.
+`call_helper(system, prompt, call_id)` asks the helper without tools.
+Both calls use the run's metering and cancellation signals.
+
+Keep the original task and complete tool exchanges.
+Keep signed reasoning with its assistant message.
+Use `conversation.restart(context.restart_notice() + summary, keep=tail)` with a tail that does not start with a tool result.
+Return `True` after a restart so the loop restores focus notices.
+Return `False` for edits in place or no change.
+The strategy is supplied by Python code, not loaded from a configuration file.
 
 **Repo memory**: one fact per markdown file under `<state-dir>/memory/`, with an index rendered from each file's first non-empty line.
 A fact file is `<name>.md` under the name rule, a regular file; any other entry in the store is ignored, and `agent6 memory list` names it.

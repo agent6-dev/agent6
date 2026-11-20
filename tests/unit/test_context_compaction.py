@@ -12,7 +12,8 @@ import pydantic
 import pytest
 
 from agent6 import kinds
-from agent6.harness import loop_conversation, run_chain
+from agent6.harness import loop_conversation, loop_state, run_chain
+from agent6.harness.compaction import driver
 from agent6.harness.compaction import elision as compaction_elision
 from agent6.harness.compaction import rules as compaction_rules
 from agent6.harness.compaction import window as compaction_window
@@ -281,7 +282,9 @@ def test_thinking_is_not_stripped_without_a_tool_result_rewrite(tmp_path: pathli
         conv.assistant([{"type": "thinking", "thinking": "reasoning" * 1000}])
         _reads(conv, "small")
     before = conv.to_wire()
-    wf.compactor.compact(conv, loop_state.LoopState(original_task="task", tool_calls=3))
+    wf.compactor.compact(
+        wf.compaction_context(conv, loop_state.LoopState(original_task="task", tool_calls=3), [])
+    )
     assert conv.to_wire() == before
 
 
@@ -870,7 +873,11 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
         )
 
     assert (
-        wf.compactor.compact(conv, loop_state.LoopState(original_task="task", tool_calls=3))
+        wf.compactor.compact(
+            wf.compaction_context(
+                conv, loop_state.LoopState(original_task="task", tool_calls=3), []
+            )
+        )
         is False
     )
     assert "elided" in _result_contents(conv)[0], "tier 1 must fire"
@@ -1002,7 +1009,15 @@ def test_a_refused_checkoff_id_does_not_drop_the_rest(tmp_path: pathlib.Path) ->
         ' "new_tasks": ["a newly discovered task"]}\n```\n'
     )
 
-    wf.compactor.apply_checkoff(summary, valid_ids=valid, root_id=root.id)
+    driver.apply_checkoff(
+        wf.compaction_context(
+            loop_conversation.Conversation(),
+            loop_state.LoopState("task", 0, root_task_id=root.id),
+            [],
+        ),
+        summary,
+        valid_ids=valid,
+    )
 
     nodes = curator.nodes()
     assert nodes[container.id].status != "passed"  # the container refusal stands

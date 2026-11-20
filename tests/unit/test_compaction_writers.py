@@ -6,11 +6,12 @@ from typing import Any
 
 import pytest
 
-from agent6 import budget
+from agent6 import budget, providers
 from agent6.config import harness_config
 from agent6.harness import loop_conversation, loop_state
-from agent6.harness.compaction import driver, window
+from agent6.harness.compaction import driver, strategy, window
 from agent6.providers import provider_types, responses_codec
+from tests.unit import test_harness
 
 
 class Writer:
@@ -72,30 +73,31 @@ def history() -> loop_conversation.Conversation:
     return conv
 
 
-def compactor(
-    worker: Writer, helper: Writer, events: list[Any], **settings: Any
-) -> driver.Compactor:
-    return driver.Compactor(
-        settings=window.CompactionSettings(
+def context(
+    worker: providers.Provider,
+    helper: providers.Provider,
+    events: list[Any],
+    *,
+    conversation: loop_conversation.Conversation | None = None,
+    tools: list[provider_types.ToolDefinition] | None = None,
+    helper_context_tokens: int = 200000,
+    **settings: Any,
+) -> strategy.Context:
+    harness = test_harness._wf(
+        provider=worker,
+        compaction=window.CompactionSettings(
             helper=helper,
-            helper_context_tokens=200000,
+            helper_context_tokens=helper_context_tokens,
             keep_recent_chars=0,
             drop_at_chars=1000,
             summarise_at_chars=2000,
             **settings,
         ),
-        provider=worker,
-        curator=None,
-        mode="run",
-        dag_available=False,
-        decisions=lambda: "",
-        verify_fact=lambda _: "",
-        compact_requested=lambda: None,
-        compact_clear=lambda: None,
-        log=lambda _: None,
-        emit=events.append,
-        emit_graph_snapshot=lambda: None,
     )
+    turn = harness.compaction_context(
+        conversation or history(), loop_state.LoopState("task", 1, system="system"), tools or []
+    )
+    return dataclasses.replace(turn, emit=events.append)
 
 
 def test_worker_is_the_default() -> None:
@@ -105,11 +107,10 @@ def test_worker_is_the_default() -> None:
 def test_worker_preserves_request_and_skips_tier_one() -> None:
     worker, helper = Writer(response()), Writer(response())
     events: list[Any] = []
-    comp = compactor(worker, helper, events)
     conv = history()
     before = conv.to_wire()
     tools = [provider_types.ToolDefinition("read_file", "Read a file", {"type": "object"})]
-    assert comp.compact(conv, loop_state.LoopState("task", 1, system="system"), tools=tools)
+    assert driver.Tiered().compact(context(worker, helper, events, conversation=conv, tools=tools))
     sent = worker.calls[0]
     assert sent["system"] == "system"
     assert sent["tools"] == tools
@@ -138,9 +139,9 @@ def test_unusable_worker_summary_falls_back_once(
 ) -> None:
     worker, helper = Writer(reply), Writer(response("helper summary"))
     events: list[Any] = []
-    comp = compactor(worker, helper, events)
-    conv = history()
-    assert comp.compact(conv, loop_state.LoopState("task", 1))
+    turn = context(worker, helper, events)
+    conv = turn.conversation
+    assert driver.Tiered().compact(turn)
     assert len(worker.calls) == len(helper.calls) == 1
     assert events[-1].writer == "helper"
     assert reason in events[-1].fallback_reason
@@ -162,29 +163,29 @@ def test_unusable_worker_summary_falls_back_once(
 )
 def test_terminal_failure_never_calls_helper(failure: Exception) -> None:
     worker, helper = Writer(failure), Writer(response())
-    comp = compactor(worker, helper, [])
-    conv = history()
+    turn = context(worker, helper, [])
+    conv = turn.conversation
     before = conv.to_wire()
     with pytest.raises(type(failure)):
-        comp.compact(conv, loop_state.LoopState("task", 1))
+        driver.Tiered().compact(turn)
     assert helper.calls == []
     assert conv.to_wire() == before
 
 
 def test_both_rejections_leave_history_unchanged() -> None:
     worker, helper = Writer(response("")), Writer(response(stop_reason="length"))
-    comp = compactor(worker, helper, [])
-    conv = history()
+    turn = context(worker, helper, [])
+    conv = turn.conversation
     before = conv.to_wire()
-    assert not comp.compact(conv, loop_state.LoopState("task", 1))
+    assert not driver.Tiered().compact(turn)
     assert conv.to_wire() == before
     assert len(worker.calls) == len(helper.calls) == 1
 
 
 def test_helper_reads_full_text_without_tool_output() -> None:
     worker, helper = Writer(response()), Writer(response())
-    comp = compactor(worker, helper, [], summariser="helper")
-    assert comp.compact(history(), loop_state.LoopState("task", 1))
+    turn = context(worker, helper, [], summariser="helper")
+    assert driver.Tiered().compact(turn)
     sent = helper.calls[0]["messages"][0]["content"]
     assert "EARLY " + "a" * 80000 in sent
     assert "NEWEST " + "z" * 2000 in sent
@@ -194,11 +195,11 @@ def test_helper_reads_full_text_without_tool_output() -> None:
 
 def test_helper_bounds_input_and_marks_missing_beginning() -> None:
     worker, helper = Writer(response()), Writer(response())
-    comp = compactor(worker, helper, [], summariser="helper")
-    comp = dataclasses.replace(
-        comp, settings=dataclasses.replace(comp.settings, helper_context_tokens=40000)
+    turn = context(worker, helper, [], summariser="helper")
+    turn = dataclasses.replace(
+        turn, settings=dataclasses.replace(turn.settings, helper_context_tokens=40000)
     )
-    assert comp.compact(history(), loop_state.LoopState("task", 1))
+    assert driver.Tiered().compact(turn)
     sent = helper.calls[0]["messages"][0]["content"]
     assert "beginning is missing" in sent
     assert "NEWEST " + "z" * 2000 in sent
@@ -209,8 +210,8 @@ def test_helper_bounds_input_and_marks_missing_beginning() -> None:
 def test_claude_code_uses_helper_without_advancing_worker() -> None:
     worker, helper = Writer(response()), Writer(response())
     events: list[Any] = []
-    comp = compactor(worker, helper, events, worker_backend="claude_code")
-    assert comp.compact(history(), loop_state.LoopState("task", 1))
+    turn = context(worker, helper, events, worker_backend="claude_code")
+    assert driver.Tiered().compact(turn)
     assert worker.calls == []
     assert len(helper.calls) == 1
     assert "claude_code" in events[-1].fallback_reason

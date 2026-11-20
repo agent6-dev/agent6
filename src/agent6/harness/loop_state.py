@@ -45,8 +45,6 @@ class LoopState:
             goal's spin guard counts only these as work since the last re-entry.
         decisions_recorded: Rulings this execution appended to decisions.md, for
             the finish-time check.
-        tier2_floor_chars: The context size at the last tier-2 restart; the next
-            fires only once the context grew 25% past it. Execution-local.
         verify: The verify verdict every "is the run green" consumer reads.
         ever_edited: True once any edit landed.
         command_cut: An immediate stop ended a running command this execution.
@@ -80,7 +78,6 @@ class LoopState:
     tool_calls: int
     ok_tool_calls: int = 0
     decisions_recorded: list[str] = dataclasses.field(default_factory=list)
-    tier2_floor_chars: int = 0
     verify: verify_verdict.VerifyVerdict = dataclasses.field(
         default_factory=verify_verdict.VerifyVerdict
     )

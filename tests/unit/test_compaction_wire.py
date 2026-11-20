@@ -15,6 +15,7 @@ from agent6 import budget, config
 from agent6.app import conversation_state, role_providers
 from agent6.config import secret_store
 from agent6.harness import loop_snapshot, loop_state
+from agent6.harness.compaction import driver
 from agent6.providers import (
     anthropic,
     chatgpt,
@@ -43,9 +44,7 @@ def test_summary_signals_end_the_harness_without_another_call(
 ) -> None:
     worker = fixtures.Writer(signal)
     helper = fixtures.Writer(fixtures.response())
-    wf = test_harness._wf(
-        provider=worker, compaction=fixtures.compactor(worker, helper, []).settings
-    )
+    wf = test_harness._wf(provider=worker, compaction=fixtures.context(worker, helper, []).settings)
     state = loop_state.LoopState("task", 1, system="system")
     conv = fixtures.history()
     result = wf._turn_provider_call(
@@ -65,17 +64,17 @@ def test_summary_signals_end_the_harness_without_another_call(
 def test_shared_budget_stops_the_fallback_before_it_spends() -> None:
     worker = fixtures.Writer(fixtures.response(""))
     helper = fixtures.Writer(fixtures.response())
-    comp = fixtures.compactor(worker, helper, [])
+    comp = fixtures.context(worker, helper, [])
 
     def check() -> None:
         if worker.calls:
             raise budget.BudgetExceededError("spent by the worker summary")
 
     comp = dataclasses.replace(comp, check_budget=check)
-    conv = fixtures.history()
+    conv = comp.conversation
     before = conv.to_wire()
     with pytest.raises(budget.BudgetExceededError):
-        comp.compact(conv, loop_state.LoopState("task", 1))
+        driver.Tiered().compact(comp)
     assert helper.calls == []
     assert conv.to_wire() == before
 
@@ -220,11 +219,12 @@ def test_worker_summary_keeps_the_wire_prefix_and_bills_the_same_tracker(
     conv.roll_cache_marks()
     context_before = worker.conversations.context("worker", "test", initiator="agent")
     contexts.append(context_before.conversation_id)
-    comp = fixtures.compactor(
-        fixtures.Writer(fixtures.response()), fixtures.Writer(fixtures.response()), []
+    turn = fixtures.context(
+        worker, fixtures.Writer(fixtures.response()), [], conversation=conv, tools=tools
     )
-    comp = dataclasses.replace(comp, provider=worker, emit=events.emit, check_budget=tracker.check)
-    assert comp.compact(conv, loop_state.LoopState("task", 1, system="system"), tools=tools)
+    assert driver.Tiered().compact(
+        dataclasses.replace(turn, emit=events.emit, check_budget=tracker.check)
+    )
     contexts.append(
         worker.conversations.context("worker", "test", initiator="agent").conversation_id
     )

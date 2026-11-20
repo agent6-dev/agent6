@@ -40,6 +40,7 @@ from agent6.harness import (
     run_chain,
     tool_effects,
 )
+from agent6.harness.compaction import driver as compaction_driver
 from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as review_gate
 from agent6.harness.verify import verdict as verify_verdict
@@ -3635,7 +3636,9 @@ def _restart_via_wire(
     wf: loop.Harness, messages: list[dict[str, Any]], *, state: Any = None
 ) -> None:
     conversation = loop_conversation.Conversation.from_wire(messages)
-    wf.compactor.summarise_and_restart(conversation, state if state is not None else _state())
+    compaction_driver.Tiered().summarise_and_restart(
+        wf.compaction_context(conversation, state if state is not None else _state(), [])
+    )
     messages[:] = conversation.to_wire()
 
 
@@ -3643,7 +3646,9 @@ def _compact_via_wire(
     wf: loop.Harness, messages: list[dict[str, Any]], *, state: Any = None
 ) -> bool:
     conversation = loop_conversation.Conversation.from_wire(messages)
-    out = wf.compactor.compact(conversation, state if state is not None else _state())
+    out = wf.compactor.compact(
+        wf.compaction_context(conversation, state if state is not None else _state(), [])
+    )
     messages[:] = conversation.to_wire()
     return out
 
@@ -4523,11 +4528,21 @@ def test_a_restart_does_not_re_fire_on_the_next_turn() -> None:
     prefix = 100_000
 
     conversation = loop_conversation.Conversation.from_wire(msgs)
-    assert wf.compactor.compact(conversation, st, prefix_chars=prefix) is True
+    assert (
+        wf.compactor.compact(
+            dataclasses.replace(wf.compaction_context(conversation, st, []), prefix_chars=prefix)
+        )
+        is True
+    )
     assert summariser.call.call_count == 1
 
     # Same conversation, one turn later, nothing added.
-    assert wf.compactor.compact(conversation, st, prefix_chars=prefix) is False
+    assert (
+        wf.compactor.compact(
+            dataclasses.replace(wf.compaction_context(conversation, st, []), prefix_chars=prefix)
+        )
+        is False
+    )
     assert summariser.call.call_count == 1
 
 
@@ -4814,7 +4829,9 @@ def test_summarise_and_restart_rejects_checkoff_without_a_summary() -> None:
     conversation = loop_conversation.Conversation.from_wire(_long_history(5))
     before = conversation.to_wire()
 
-    restarted = wf.compactor.summarise_and_restart(conversation, _state())
+    restarted = compaction_driver.Tiered().summarise_and_restart(
+        wf.compaction_context(conversation, _state(), [])
+    )
 
     assert restarted is False
     assert conversation.to_wire() == before
