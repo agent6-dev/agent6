@@ -590,9 +590,13 @@ def _spawn_and_wait[T](
                 error = _child_exit_message(label, rc, _stderr_tail(err))
                 break
             if stop_reason is not None and (reason := stop_reason()):
-                how = child_wait.stop_child(proc.pid)
-                error = f"{reason} before reporting its start; its process {how}"
-                break
+                if (found := ready(proc.pid)) is None:
+                    how = child_wait.stop_child(proc.pid)
+                    proc.wait()
+                    if (found := ready(proc.pid)) is None:
+                        error = f"{reason} before reporting its start; its process {how}"
+                        break
+                return found, proc.pid, ""
             if timeout_s is not None and time.monotonic() - started >= timeout_s:
                 error = _not_started_message(label, timeout_s, _stderr_tail(err))
                 break

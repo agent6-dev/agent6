@@ -241,7 +241,7 @@ def test_a_child_cannot_dispatch_work_through_acp(
         None,
         False,
         event_log.EventSink(tmp_path / "logs.jsonl"),
-        lambda _child, _label, _status: False,
+        lambda _child, _label, _status, _interrupted: False,
     )
     assert spawner is None
 

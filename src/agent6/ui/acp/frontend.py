@@ -123,7 +123,7 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
                 request.prompt,
                 scope=request.scope,
                 call_id=request.call_id,
-                until=lambda: ipc.answer_written(session_dir, request.id),
+                until=lambda: request.interrupted() or ipc.answer_written(session_dir, request.id),
             )
             if answer is None:
                 filed = ipc.read_answer(session_dir, request.id, timeout_s=0.0)
@@ -173,7 +173,8 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
                     None,
                     request.call_id,
                     lambda: (
-                        ipc.question_answers_written(session_dir, request.id)
+                        request.interrupted()
+                        or ipc.question_answers_written(session_dir, request.id)
                         or time.monotonic() >= deadline
                     ),
                 )

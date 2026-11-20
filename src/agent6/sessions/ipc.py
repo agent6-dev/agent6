@@ -288,6 +288,7 @@ def _await_answer(
     timeout_s: float,
     poll_s: float,
     dead_grace_s: float,
+    interrupted: Callable[[], bool] | None = None,
 ) -> str | None:
     """Poll for an answer file, consume it, and return its text.
 
@@ -300,6 +301,7 @@ def _await_answer(
         timeout_s: The most to wait.
         poll_s: The poll interval.
         dead_grace_s: How long the front-end may stay dead before the wait ends.
+        interrupted: Ends a relayed child prompt without waiting for its answer.
 
     Returns:
         The text; None on a stop, a dead front-end past the grace, or the timeout.
@@ -307,6 +309,8 @@ def _await_answer(
     deadline = time.monotonic() + timeout_s
     dead_since: float | None = None
     while time.monotonic() < deadline:
+        if interrupted is not None and interrupted():
+            return None
         if (txt := _consume_answer(target)) is not None:
             return txt
         if steer_answer_is_abort(live) or stop_request_pending(live):
@@ -324,7 +328,10 @@ def _await_answer(
 
 
 def await_frontend_reply[T](
-    session_dir: pathlib.Path, read_once: Callable[[], T | None]
+    session_dir: pathlib.Path,
+    read_once: Callable[[], T | None],
+    *,
+    interrupted: Callable[[], bool] | None = None,
 ) -> T | None:
     """Block in the detach `wait` mode until an answer arrives or a stop ends the run.
 
@@ -335,12 +342,17 @@ def await_frontend_reply[T](
     Args:
         session_dir: The session directory.
         read_once: One bounded read of the answer, None when none arrived.
+        interrupted: Ends a relayed child prompt without waiting for its answer.
 
     Returns:
         The reply; None on a steer abort or a stop marker.
     """
     while True:
-        if steer_answer_is_abort(session_dir) or stop_request_pending(session_dir):
+        if (
+            (interrupted is not None and interrupted())
+            or steer_answer_is_abort(session_dir)
+            or stop_request_pending(session_dir)
+        ):
             return None
         reply = read_once()
         if reply is not None:
@@ -643,6 +655,7 @@ def read_answer(
     poll_s: float = 0.2,
     live_dir: pathlib.Path | None = None,
     dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
+    interrupted: Callable[[], bool] | None = None,
 ) -> str | None:
     """Wait for the operator's answer to an approval prompt, from the harness.
 
@@ -654,6 +667,7 @@ def read_answer(
         live_dir: The dir the liveness gate probes for claims; a machine agent state reads
             answers from its per-state dir while the front-end registers on the instance dir.
         dead_grace_s: How long the front-end may stay dead before the wait ends.
+        interrupted: Ends a relayed child prompt without waiting for its answer.
 
     Returns:
         The lower-cased choice; None on a stop, a dead front-end, or a timeout given.
@@ -668,6 +682,7 @@ def read_answer(
         timeout_s=timeout_s,
         poll_s=poll_s,
         dead_grace_s=dead_grace_s,
+        interrupted=interrupted,
     )
     return None if txt is None else txt.strip().lower()
 
@@ -811,6 +826,7 @@ def read_question_reply(
     poll_s: float = 0.2,
     live_dir: pathlib.Path | None = None,
     dead_grace_s: float = FRONTEND_DEAD_GRACE_S,
+    interrupted: Callable[[], bool] | None = None,
 ) -> QuestionReply | None:
     """Wait for a question prompt's outcome, from the harness.
 
@@ -821,6 +837,7 @@ def read_question_reply(
         poll_s: The poll interval.
         live_dir: The dir the liveness gate probes, as in `read_answer`.
         dead_grace_s: How long the front-end may stay dead before the wait ends.
+        interrupted: Ends a relayed child prompt without waiting for its answer.
 
     Returns:
         The operator's answers, or the note that nobody will answer. None on a stop, a
@@ -836,6 +853,7 @@ def read_question_reply(
         timeout_s=timeout_s,
         poll_s=poll_s,
         dead_grace_s=dead_grace_s,
+        interrupted=interrupted,
     )
     return None if raw is None else _question_reply(raw)
 

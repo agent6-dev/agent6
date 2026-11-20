@@ -11,16 +11,19 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 import pytest
 
 from agent6 import child_records, paths
-from agent6.app import child_launch, child_wait
+from agent6.app import child_launch, child_wait, child_watch
 from agent6.app import children as app_children
 from agent6.config import Config
-from agent6.sessions import ipc, process
-from agent6.ui.cli import child_agent, parallel
+from agent6.sessions import ipc, journal, process
+from agent6.tools import operator_prompts
+from agent6.ui import spawn
+from agent6.ui.cli import child_agent, interact, parallel
 
 # Each child reports ready through a file, so a test never signals it before its handler is in.
 _DEAF = (
@@ -231,7 +234,9 @@ def test_a_child_is_stopped_once_the_runs_budget_is_spent(
     def spawner(spec: child_records.ChildSpec, task: str) -> child_records.ChildResult:
         return child_records.ChildResult(spec, d, "agent6/x", True, "", pid=deaf.pid)
 
-    def watch(child_dir: pathlib.Path, label: str, _status: str) -> bool:
+    def watch(
+        child_dir: pathlib.Path, label: str, _status: str, _interrupted: Callable[[], bool]
+    ) -> bool:
         polled.append((child_dir, label))
         return True
 
@@ -273,7 +278,9 @@ def test_a_child_can_be_stopped_before_its_start_report(
     )
     waiting, spent = threading.Event(), threading.Event()
 
-    def watch(_directory: pathlib.Path, _label: str, status: str) -> bool:
+    def watch(
+        _directory: pathlib.Path, _label: str, status: str, _interrupted: Callable[[], bool]
+    ) -> bool:
         assert status == "starting"
         waiting.set()
         return spent.is_set()
@@ -305,6 +312,97 @@ def test_a_child_can_be_stopped_before_its_start_report(
     assert not res.ok and reason in res.error
     assert res.pid > 0 and not process.pid_alive(res.pid) and _reaped(res.pid)
     assert not res.session_dir.exists() and res.spec.worktree.is_dir()
+
+
+def test_stop_does_not_wait_for_a_preflight_approval(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A child parked at setup must stop without anyone answering its parent's prompt."""
+    from tests.unit import test_children_background as background
+
+    repo = tmp_path / "repo"
+    background._init_repo(repo)
+    state = paths.state_dir(repo)
+    parent = child_wait.child_dir(state, "co", mode="run")
+    parent.mkdir(parents=True)
+    ipc.set_away_mode(parent, "wait")
+    directory = parent.with_name("co-p1-l1")
+    bootstrap = """\
+import json, os, sys, time
+from pathlib import Path
+child = Path(sys.argv[1]); child.mkdir()
+(child / 'worker.pid').write_text(str(os.getpid()))
+row = {'type': 'approval.prompt', 'id': 'approval-1', 'prompt': 'Allow setup?', 'scope': 'command'}
+(child / 'logs.jsonl').write_text(json.dumps(row) + '\\n')
+time.sleep(60)
+"""
+    monkeypatch.setattr(
+        child_launch, "bootstrap_argv", lambda: [sys.executable, "-c", bootstrap, str(directory)]
+    )
+    opened = threading.Event()
+
+    def emit(row: journal.Event) -> None:
+        if isinstance(row, journal.ApprovalPrompt):
+            opened.set()
+
+    prompts = operator_prompts.OperatorPrompts(
+        session_dir=parent, approver=interact.build_approver(parent), journal=emit
+    )
+    group = app_children.build_child_spawner(
+        Config.model_validate({"git": {"worktree": {"base_dir": str(tmp_path / "clones")}}}),
+        repo,
+        state,
+        explicit_leaves=frozenset(),
+        parent_session_id=parent.name,
+        runtime=parallel.child_runtime(),
+        watch=child_watch.ChildWatch(prompts, parent),
+    )
+    (child,) = group([child_records.ChildTask(task="t", model=None)], "p1")
+    try:
+        assert opened.wait(5)
+        child.stop()
+        result = child.result.result(timeout=5)
+        assert not result.ok and "stopped by its parent" in result.error
+        assert not process.pid_alive(result.pid) and _reaped(result.pid)
+        assert not ipc.answer_written(directory, "approval-1")
+    finally:
+        if not child.result.done():
+            ipc.write_answer(parent, "approval-1", "no")
+        group.close()
+        child.result.result(timeout=5)
+
+
+def test_a_report_during_a_stop_poll_still_starts_the_child(tmp_path: pathlib.Path) -> None:
+    """A start reported while checking for a stop belongs to the normal result path."""
+    log = tmp_path / "logs.jsonl"
+    bootstrap = """\
+from pathlib import Path
+import time
+while not Path('report').exists(): time.sleep(0.01)
+Path('logs.jsonl').write_text('{"type":"session.start"}\\n')
+time.sleep(10)
+"""
+
+    def stop_reason() -> str:
+        (tmp_path / "report").touch()
+        until = time.monotonic() + 5
+        while not log.exists() and time.monotonic() < until:
+            time.sleep(0.01)
+        assert log.exists()
+        return "stopped by its parent"
+
+    found, pid, error = spawn.spawn_child(
+        [sys.executable, "-c", bootstrap],
+        tmp_path,
+        ready=lambda _: tmp_path if log.exists() and log.read_text() else None,
+        stop_reason=stop_reason,
+        env=dict(os.environ),
+    )
+    try:
+        assert found == tmp_path and not error
+        assert process.pid_alive(pid)
+    finally:
+        child_wait.stop_child(pid)
 
 
 def test_arm_deadline_writes_the_stop_at_the_deadline(tmp_path: pathlib.Path) -> None:

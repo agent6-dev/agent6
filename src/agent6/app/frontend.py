@@ -196,7 +196,7 @@ class SessionFrontend:
             float | None,
             bool,
             event_log.EventSink,
-            Callable[[pathlib.Path, str, str], bool],
+            children.PollChild,
         ],
         children.GroupSpawner | None,
     ]

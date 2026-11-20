@@ -16,6 +16,7 @@ import pathlib
 import sys
 import threading
 import time
+from collections.abc import Callable
 from typing import Literal, Protocol
 
 from agent6 import portable, terminal
@@ -47,6 +48,11 @@ Source = Literal[
 QuestionStatus = Literal["answered", "pending", "unanswered"]
 
 
+def never_interrupted() -> bool:
+    """Return False for a prompt that waits for its operator."""
+    return False
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class ApprovalRequest:
     """One approval put to the operator, as journaled in `approval.prompt`.
@@ -58,12 +64,14 @@ class ApprovalRequest:
             the operator is asked every time (`fetch`). One scope's grant is never consent for
             another.
         call_id: The dispatched tool call the prompt gates; None for a verify the harness runs.
+        interrupted: Ends a relay when its child no longer needs an answer.
     """
 
     id: str
     prompt: str
     scope: str | None
     call_id: int | None
+    interrupted: Callable[[], bool] = never_interrupted
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -75,12 +83,14 @@ class QuestionRequest:
         questions: The questions put.
         call_id: The dispatched tool call the prompt gates; None for a pre-run question.
         wait: Whether the call waits for the answers; a queued prompt is answered later.
+        interrupted: Ends a relay when its child no longer needs an answer.
     """
 
     id: str
     questions: tuple[schema.UserQuestion, ...]
     call_id: int | None
     wait: bool = True
+    interrupted: Callable[[], bool] = never_interrupted
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -243,7 +253,14 @@ class OperatorPrompts:
         # A child's watch relays its prompts while the loop asks its own: one at a time.
         self.one_at_a_time = threading.RLock()
 
-    def approve(self, prompt: str, *, scope: str | None = None, call_id: int | None = None) -> bool:
+    def approve(
+        self,
+        prompt: str,
+        *,
+        scope: str | None = None,
+        call_id: int | None = None,
+        interrupted: Callable[[], bool] = never_interrupted,
+    ) -> bool:
         """Ask, unless a standing grant for the scope already answers.
 
         The answer slot is cleared before the prompt is journaled: ids are predictable
@@ -256,13 +273,18 @@ class OperatorPrompts:
             prompt: The line shown.
             scope: What a standing answer grants; None offers none.
             call_id: The tool call the prompt gates.
+            interrupted: Ends a relayed prompt without an operator answer.
 
         Returns:
             Whether the call was approved.
         """
         prompt = terminal.escape_unprintable(prompt)
         request = ApprovalRequest(
-            id=f"approval-{next(self._approvals)}", prompt=prompt, scope=scope, call_id=call_id
+            id=f"approval-{next(self._approvals)}",
+            prompt=prompt,
+            scope=scope,
+            call_id=call_id,
+            interrupted=interrupted,
         )
         if (
             scope
@@ -301,6 +323,7 @@ class OperatorPrompts:
         *,
         call_id: int | None = None,
         wait: bool = True,
+        interrupted: Callable[[], bool] = never_interrupted,
     ) -> QuestionAnswer:
         """Put questions to the operator.
 
@@ -310,6 +333,7 @@ class OperatorPrompts:
         Args:
             questions: The questions.
             call_id: The tool call the prompt gates.
+            interrupted: Ends a relayed prompt without an operator answer.
             wait: Whether the call waits for the answers.
 
         Returns:
@@ -320,7 +344,11 @@ class OperatorPrompts:
             ValueError: The questioner returned more answers than questions.
         """
         request = QuestionRequest(
-            id=f"question-{next(self._questions)}", questions=questions, call_id=call_id, wait=wait
+            id=f"question-{next(self._questions)}",
+            questions=questions,
+            call_id=call_id,
+            wait=wait,
+            interrupted=interrupted,
         )
         if not wait:
             self._open(request)

@@ -294,6 +294,8 @@ def test_a_steer_reaches_a_running_child_through_its_own_steer_channel(
     process.write_worker_pid(runs / one, os.getpid())
     log = runs / one / "logs.jsonl"
     log.touch()
+    view = vm_children.children_of(dispatcher.session_dir)[0]
+    assert view.status == "starting" and view.launched
     with pytest.raises(tool_errors.ToolError, match="has not started yet"):
         child_work.steer(dispatcher, one, "wait for the report")
     assert not ipc.steer_request_pending(runs / one)

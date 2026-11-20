@@ -175,7 +175,7 @@ def build_approver(
         if process.frontend_is_live(session_dir):
             if headless:
                 park()
-            answer = ipc.read_answer(session_dir, request.id)
+            answer = ipc.read_answer(session_dir, request.id, interrupted=request.interrupted)
             if answer is not None:
                 return answered(ipc.record_answer(session_dir, answer, request.scope), "frontend")
         # Nothing attached: the detached run's away-mode governs.
@@ -187,7 +187,14 @@ def build_approver(
             park()
             reply = ipc.await_frontend_reply(
                 session_dir,
-                lambda: ipc.read_answer(session_dir, request.id, timeout_s=20.0, dead_grace_s=8.0),
+                lambda: ipc.read_answer(
+                    session_dir,
+                    request.id,
+                    timeout_s=20.0,
+                    dead_grace_s=8.0,
+                    interrupted=request.interrupted,
+                ),
+                interrupted=request.interrupted,
             )
             approved = reply is not None and ipc.record_answer(session_dir, reply, request.scope)
             return answered(approved, "await-frontend")
@@ -199,7 +206,7 @@ def build_approver(
             answer_s = default_stdin_approver(
                 request.prompt,
                 standing=bool(request.scope),
-                until=lambda: ipc.answer_written(session_dir, request.id),
+                until=lambda: request.interrupted() or ipc.answer_written(session_dir, request.id),
             )
         source: operator_prompts.Source = "stdin"
         if answer_s is None:
@@ -254,7 +261,14 @@ def _await_front_end(
     """
     reply = ipc.await_frontend_reply(
         session_dir,
-        lambda: ipc.read_question_reply(session_dir, request.id, timeout_s=20.0, dead_grace_s=8.0),
+        lambda: ipc.read_question_reply(
+            session_dir,
+            request.id,
+            timeout_s=20.0,
+            dead_grace_s=8.0,
+            interrupted=request.interrupted,
+        ),
+        interrupted=request.interrupted,
     )
     if reply is not None:
         answer = _bridged(request, reply)
@@ -305,7 +319,9 @@ def build_questioner(
             # A run with no terminal says on stderr what it waits on and that it was answered.
             if not portable.has_controlling_tty():
                 park()
-            reply = ipc.read_question_reply(session_dir, request.id)
+            reply = ipc.read_question_reply(
+                session_dir, request.id, interrupted=request.interrupted
+            )
             if reply is not None:
                 answer = _bridged(request, reply)
                 if parked:
@@ -332,7 +348,10 @@ def build_questioner(
             return _await_front_end(session_dir, request)
         with _pause(console_cell[0] if console_cell else None):
             stdin_answers = default_stdin_questioner(
-                questions, until=lambda: ipc.question_answers_written(session_dir, request.id)
+                questions,
+                until=lambda: (
+                    request.interrupted() or ipc.question_answers_written(session_dir, request.id)
+                ),
             )
         if stdin_answers is None:
             filed = ipc.read_question_reply(session_dir, request.id, timeout_s=0.0)

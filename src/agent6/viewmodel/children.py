@@ -13,7 +13,7 @@ import pathlib
 import time
 
 from agent6 import child_records, llm_json
-from agent6.sessions import child_dispatch, completion, layout, lineage
+from agent6.sessions import child_dispatch, completion, layout, lineage, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import format, listing
 from agent6.viewmodel.session import log as session_log
@@ -55,8 +55,7 @@ class ChildView:
         spend_usd: The cumulative child spend.
         usd_partial: Whether unpriced calls make the spend a lower bound.
         settled: Whether the parent charged its usage; False while it is unknown.
-        launched: Whether the child reported this execution's start, or a lineage-only
-            child has a session record or live worker.
+        launched: Whether the child has a session to inspect, including a live preflight worker.
         current_tool: The tool running now, or an empty string.
         turn: Its latest recorded turn, or None before one.
         tokens: Input, cache and output tokens in its current execution, or None if unreported.
@@ -230,7 +229,9 @@ def _session_child(
         return dataclasses.replace(row, commits=commits)
     scan = session_log.scan_session_log(child_dir / layout.LOGS_NAME)
     if child is not None and not reported_start(child, scan):
-        return dataclasses.replace(row, commits=commits)
+        return dataclasses.replace(
+            row, status="starting", launched=process.worker_is_alive(child_dir), commits=commits
+        )
     status, reason = session_status.status_for_session_dir(child_dir, scan.status_facts())
     live = status in session_status.LIVE_STATUS_WORDS
     end = time.time() if live else scan.end_ep or scan.last_ep

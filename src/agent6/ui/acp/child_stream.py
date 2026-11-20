@@ -25,7 +25,7 @@ def parent_spawner(
     max_usd: float | None,
     auto_approve: bool,
     parent_events: event_log.EventSink,
-    watch: Callable[[pathlib.Path, str, str], bool],
+    watch: children.PollChild,
     *,
     say: Callable[[str], None],
 ) -> children.GroupSpawner | None:

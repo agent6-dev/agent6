@@ -58,13 +58,20 @@ class ChildWatch:
         self._journaled: tuple[float, int, float] = (0.0, 0, 0.0)
         self._journaled_at = 0.0
 
-    def __call__(self, child_dir: pathlib.Path, label: str, status: str) -> bool:
+    def __call__(
+        self,
+        child_dir: pathlib.Path,
+        label: str,
+        status: str,
+        interrupted: Callable[[], bool] = operator_prompts.never_interrupted,
+    ) -> bool:
         """Count the child's spend so far, and relay its prompt when it waits on one.
 
         Args:
             child_dir: The child's session dir, named for its session id.
             label: How the parent's operator reads the child, such as `attempt 2 <session id>`.
             status: The child's status word at this poll.
+            interrupted: Ends a relay on a stop or deadline.
 
         Returns:
             Whether the parent's budget is spent, which ends the child.
@@ -81,7 +88,19 @@ class ChildWatch:
             and process.worker_is_alive(child_dir)
             and session_log.scan_session_log(child_dir / layout.LOGS_NAME).operator_blocked
         ):
-            self._relay(child_dir, label)
+
+            def cancelled() -> bool:
+                return (
+                    interrupted()
+                    or not process.worker_is_alive(child_dir)
+                    or ipc.stop_request_pending(child_dir)
+                    or (self._budget is not None and self._budget.is_exhausted())
+                    or not session_log.scan_session_log(
+                        child_dir / layout.LOGS_NAME
+                    ).operator_blocked
+                )
+
+            self._relay(child_dir, label, cancelled)
         return False
 
     def _journal_meter(self, budget: agent6_budget.BudgetTracker, *, now: bool) -> None:
@@ -102,7 +121,7 @@ class ChildWatch:
             self._journaled, self._journaled_at = moved, at
         self._emit(journal.BudgetUpdate(**budget_events.budget_update_fields(budget)))
 
-    def _relay(self, child_dir: pathlib.Path, label: str) -> None:
+    def _relay(self, child_dir: pathlib.Path, label: str, cancelled: Callable[[], bool]) -> None:
         """Relay the prompt the child is paused on, if nobody answered it yet.
 
         A queued question pauses nothing and stays on the child's own row.
@@ -110,22 +129,32 @@ class ChildWatch:
         Args:
             child_dir: The child's session dir.
             label: The child, as the operator reads it.
+            cancelled: Ends the relay without writing to the child.
         """
         # Held from the check to the answer: no prompt answered meanwhile is asked again.
-        with self._prompts.one_at_a_time:
+        # Retry next poll rather than block supervision behind a sibling's prompt.
+        if not self._prompts.one_at_a_time.acquire(blocking=False):
+            return
+        try:
             state = session_fold.fold_session(
                 tail.tail_events(child_dir / layout.LOGS_NAME, follow=False)
             )
             approval = session_fold.open_approval_of(state)
             if approval is not None and not ipc.answer_written(child_dir, approval.id):
-                self._approval(child_dir, label, approval)
+                self._approval(child_dir, label, approval, cancelled)
                 return
             question = next((q for q in state.questions if q.blocking and not q.answered), None)
             if question is not None and not ipc.question_answers_written(child_dir, question.id):
-                self._question(child_dir, label, question)
+                self._question(child_dir, label, question, cancelled)
+        finally:
+            self._prompts.one_at_a_time.release()
 
     def _approval(
-        self, child_dir: pathlib.Path, label: str, prompt: state_types.ApprovalPrompt
+        self,
+        child_dir: pathlib.Path,
+        label: str,
+        prompt: state_types.ApprovalPrompt,
+        cancelled: Callable[[], bool],
     ) -> None:
         """Ask the parent's operator a child's approval and write the verdict down.
 
@@ -135,13 +164,18 @@ class ChildWatch:
         Args:
             child_dir: The child's session dir.
             label: The child, as the operator reads it.
+            cancelled: Ends the relay without writing to the child.
             prompt: The child's open approval.
         """
         scope = prompt.scope
         if scope and ipc.session_deny_set(self._parent_dir, scope):
             ipc.write_answer(child_dir, prompt.id, "session-deny")
             return
-        approved = self._prompts.approve(f"[{label}] {prompt.prompt}", scope=scope)
+        approved = self._prompts.approve(
+            f"[{label}] {prompt.prompt}", scope=scope, interrupted=cancelled
+        )
+        if cancelled():
+            return
         if scope and approved and ipc.session_allow_set(self._parent_dir, scope):
             answer = "session"
         elif scope and not approved and ipc.session_deny_set(self._parent_dir, scope):
@@ -151,20 +185,27 @@ class ChildWatch:
         ipc.write_answer(child_dir, prompt.id, answer)
 
     def _question(
-        self, child_dir: pathlib.Path, label: str, prompt: state_types.QuestionPrompt
+        self,
+        child_dir: pathlib.Path,
+        label: str,
+        prompt: state_types.QuestionPrompt,
+        cancelled: Callable[[], bool],
     ) -> None:
         """Ask the parent's operator a child's questions and write the outcome down.
 
         Args:
             child_dir: The child's session dir.
             label: The child, as the operator reads it.
+            cancelled: Ends the relay without writing to the child.
             prompt: The question prompt the child is paused on.
         """
         asked = tuple(
             schema.UserQuestion(question=_labelled(label, q.question), options=q.options)
             for q in prompt.questions
         )
-        answer = self._prompts.ask(asked)
+        answer = self._prompts.ask(asked, interrupted=cancelled)
+        if cancelled():
+            return
         if answer.status == "answered":
             ipc.write_question_answers(child_dir, prompt.id, answer.answers)
         else:

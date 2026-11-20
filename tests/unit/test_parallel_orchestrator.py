@@ -2778,7 +2778,9 @@ def test_parent_reads_commits_beyond_start_while_the_child_runs(
             spec=spec, session_dir=runs / sid, branch="work", ok=True, error=""
         )
 
-    def watch(_dir: pathlib.Path, _label: str, _status: str) -> bool:
+    def watch(
+        _dir: pathlib.Path, _label: str, _status: str, _interrupted: Callable[[], bool]
+    ) -> bool:
         (view,) = vm_children.children_of(parent)
         assert view.status == "running" and view.commits is not None
         assert view.commits == len(seen)

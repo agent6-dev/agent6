@@ -47,6 +47,9 @@ class ParallelError(Exception):
     """The group could not be set up: over the child cap, or a route that names nothing."""
 
 
+type PollChild = Callable[[pathlib.Path, str, str, Callable[[], bool]], bool]
+
+
 class SpawnRun(Protocol):
     """Spawn an owned child and wait for its start report, exit or requested stop."""
 
@@ -94,8 +97,8 @@ class ChildRuntime:
         state: pathlib.Path,
         continuing: bool,
         parent_events: event_log.EventSink | None,
-        watch: Callable[[pathlib.Path, str, str], bool] | None,
-    ) -> Generator[Callable[[pathlib.Path, str, str], bool] | None]:
+        watch: PollChild | None,
+    ) -> Generator[PollChild | None]:
         """Give the observer a last read before the parent can join the child.
 
         Args:
@@ -133,9 +136,11 @@ class ChildRuntime:
                 if listener is not None:
                     listener(row)
 
-        def poll(directory: pathlib.Path, label: str, status: str) -> bool:
+        def poll(
+            directory: pathlib.Path, label: str, status: str, interrupted: Callable[[], bool]
+        ) -> bool:
             drain()
-            return watch(directory, label, status) if watch is not None else False
+            return watch(directory, label, status, interrupted) if watch is not None else False
 
         try:
             yield poll
@@ -336,7 +341,7 @@ def run_child_to_completion(
     contract: kinds.ConversationContract | None = None,
     continuation: str = "",
     clock: Callable[[], float] = time.time,
-    watch: Callable[[pathlib.Path, str, str], bool] | None = None,
+    watch: PollChild | None = None,
     parent_events: event_log.EventSink | None = None,
 ) -> child_records.ChildResult:
     """Run one child to its end and import it into the origin.
@@ -393,15 +398,26 @@ def run_child_to_completion(
     deadline_at = limits.deadline_at if limits is not None else None
     label = f"{spec.number_label} {spec.session_id}"
 
-    def stop_before_start() -> str:
+    startup_stop = ""
+
+    def parent_stop_reason() -> str:
         if deadline_at is not None and clock() >= deadline_at:
             return "ended at its deadline"
         if (hard_stop is not None and hard_stop.is_set()) or (should_stop and should_stop()):
             return "stopped by its parent"
-        directory = child_wait.child_dir(record_state, spec.session_id, mode=spec.mode)
-        return (
-            "stopped at the run's budget" if watch and watch(directory, label, "starting") else ""
-        )
+        return ""
+
+    def interrupted() -> bool:
+        return bool(parent_stop_reason())
+
+    def stop_before_start() -> str:
+        nonlocal startup_stop
+        startup_stop = parent_stop_reason()
+        if not startup_stop and watch is not None:
+            directory = child_wait.child_dir(record_state, spec.session_id, mode=spec.mode)
+            if watch(directory, label, "starting", interrupted):
+                startup_stop = "stopped at the run's budget"
+        return startup_stop
 
     if spawner is None:
         spawner = functools.partial(
@@ -438,7 +454,7 @@ def run_child_to_completion(
 
     def on_poll(status: str) -> bool:
         nonlocal over_budget
-        over_budget = watch is not None and watch(res.session_dir, label, status)
+        over_budget = watch is not None and watch(res.session_dir, label, status, interrupted)
         return over_budget
 
     if not child_wait.await_child(
@@ -501,7 +517,8 @@ def run_child_to_completion(
         origin=origin,
         group=group,
         reporter=reporter,
-        stopped_by=_stopped_by(overdue=overdue, over_budget=over_budget)
+        stopped_by=startup_stop
+        or _stopped_by(overdue=overdue, over_budget=over_budget)
         or ("stopped by its parent" if should_stop is not None and should_stop() else ""),
     )
 
@@ -1010,7 +1027,7 @@ def build_child_spawner(
     auto_approve: bool = False,
     child_away: ipc.AwayMode = "wait",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-    watch: Callable[[pathlib.Path, str, str], bool] | None = None,
+    watch: PollChild | None = None,
     parent_events: event_log.EventSink | None = None,
 ) -> GroupSpawner:
     """Build the group dispatcher the loop calls at a `/parallel` boundary.
@@ -1202,7 +1219,7 @@ def build_parent_spawner(
     auto_approve: bool = False,
     child_away: ipc.AwayMode = "wait",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-    watch: Callable[[pathlib.Path, str, str], bool] | None = None,
+    watch: PollChild | None = None,
     parent_events: event_log.EventSink | None = None,
 ) -> GroupSpawner | None:
     """Build the `/parallel` dispatcher for a run's loop, or None when dispatch is unavailable.

@@ -857,6 +857,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - a detached child has no terminal: its `run_commands = "ask"` prompt is asked on its parent, whose operator answers it; with no parent watching, the launch file's away mode parks it (`wait`) or answers it empty (`deny`), never approves it
     - the kernel ties a child to its parent's watch thread with PDEATHSIG (SIGTERM)
     - the watch keeps the spawned pid while waiting for the start report; a stop, an exhausted budget or a reviewer's deadline can end that wait
+    - cancelling a relayed preflight prompt gives the child no approval and leaves the watch free to stop it
     - on a stop before the start report, or if a running child ignores its stop request, the watch sends TERM to the child's process group, escalates to KILL after the grace and reaps it
     - a reviewer also enforces its deadline inside its own process
     - a work child runs while its parent takes turns and ends with the parent's execution at the latest: the execution's end stops it and charges what it used; a child's commits merge automatically only when it ended by itself and its parent, or its parent's resume, merges its task, and a stopped child's commits stay on its branch
