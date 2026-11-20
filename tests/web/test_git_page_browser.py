@@ -780,6 +780,34 @@ def test_the_fetch_row_hides_in_a_repository_without_a_remote(
     assert errors == [], errors
 
 
+def test_a_detached_head_reads_as_detached(
+    open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
+) -> None:
+    """The branch list named the first branch, with Switch on, and the commit panel lost HEAD."""
+    from playwright.sync_api import expect
+
+    sha = _git(tmp_path, "rev-parse", "main^1")
+    _git(tmp_path, "checkout", "-q", "--detach", sha)
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/commit/{sha}")
+    branch = page.locator(".git-branch select").first
+    expect(branch.locator("option:checked")).to_have_text(f"HEAD (detached at {sha[:7]})")
+    switch = page.get_by_role("button", name="Switch", exact=True)
+    review = page.get_by_role("button", name="Review", exact=True)
+    expect(switch).to_be_disabled()
+    expect(review).to_be_disabled()
+    for badges in (
+        page.locator(f'.gc-row[data-sha="{sha}"] .gref'),
+        page.locator(".gd-subject .gref"),
+    ):
+        expect(badges.first).to_have_text("HEAD")
+        expect(badges.first).to_have_attribute("title", "HEAD · detached HEAD")
+    branch.select_option("main")
+    expect(switch).to_be_enabled()
+    expect(review).to_be_enabled()
+    assert errors == [], errors
+
+
 def test_the_refs_filter_hangs_under_its_button_and_escape_refocuses_it(
     open_page: OpenPage, git_port: int
 ) -> None:

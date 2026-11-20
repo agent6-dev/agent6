@@ -15,7 +15,7 @@ const DIFF_MODES = ['inline', 'split', 'old', 'new'];
 const GIT_WORKTREE_PICK = { rev: GIT_WORKTREE, label: 'working tree' };
 // Lane n draws in class `l<n mod 8>`, one of the theme's eight colours (styles_git.css).
 const GIT_LANE_COLORS = 8;
-const GIT_KIND_TITLE = { branch: 'branch', remote: 'remote-tracking branch', tag: 'tag', agent6: 'agent6 run ref', head: 'HEAD' };
+const GIT_KIND_TITLE = { branch: 'branch', remote: 'remote-tracking branch', tag: 'tag', agent6: 'agent6 run ref', head: 'detached HEAD' };
 const gitState = {
   groupOn: { branch: true, remote: true, tag: true, agent6: false }, // agent6 chain refs are off until asked for
   refOff: new Set(),                 // refs unticked one by one, by full name
@@ -409,9 +409,17 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   // them) reviews only. `keep` names the ref to leave selected after a re-read.
   const gateCreate = () => { createBtn.disabled = !newName.value.trim(); };
   const isLocal = () => branchSel.selectedOptions[0]?.dataset.kind === 'branch';
-  const gateSwitch = () => { switchBtn.disabled = !branchSel.value || !isLocal() || branchSel.value === head.branch; };
+  const gateBranch = () => {
+    switchBtn.disabled = !branchSel.value || !isLocal() || branchSel.value === head.branch;
+    reviewBtn.disabled = !branchSel.value;
+  };
   const paintBranches = (keep) => {
     branchSel.textContent = '';
+    // A detached HEAD leads the list, so it never names a branch you are not on.
+    if (head.sha && !head.branch) {
+      const o = el('option', null, 'HEAD (detached at ' + head.sha.slice(0, 7) + ')'); o.value = '';
+      branchSel.appendChild(o);
+    }
     for (const [kind, label] of [['branch', 'branches'], ['remote', 'remote-tracking']]) {
       const rows = refs.filter(r => r.kind === kind && !r.name.endsWith('/HEAD'));
       if (!rows.length) continue;
@@ -423,10 +431,9 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
       }
       branchSel.appendChild(group);
     }
-    gateSwitch();
-    reviewBtn.disabled = !branchSel.value;
+    gateBranch();
   };
-  branchSel.onchange = gateSwitch;
+  branchSel.onchange = gateBranch;
   reviewBtn.onclick = () => { handToNewWork({ task: '/review ' + branchSel.value }); location.hash = '#/'; };
   branchRow.appendChild(together(branchSel, switchBtn, reviewBtn));
   branchRow.appendChild(together(newName, createBtn));
@@ -468,6 +475,8 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
   const {closeDiff, showDiff} = gitDiffViewer(body);
 
   // -- the graph -------------------------------------------------------------------
+  // A commit's refs as its row and its panel badge them; a detached HEAD's commit reads HEAD.
+  const commitRefs = (c) => orderedRefs((c.sha === head.sha && !head.branch ? [{ name: 'HEAD', kind: 'head', head: true }] : []).concat(c.refs));
   let commits = [], tips = null, hasMore = false, selected = null, loading = 0, loadError = '';
   const settle = rovingRows(graph, '.gc-row');
   // The selected row reads current, and Tab enters the graph there.
@@ -508,11 +517,10 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     commits.forEach((c, i) => {
       const row = el('div', 'gc-row');
       row.dataset.sha = c.sha;
-      const isHead = c.sha === head.sha;
-      row.appendChild(gitLanesSvg(lays[i], cols, c.is_merge ? 'merge' : '', isHead));
+      row.appendChild(gitLanesSvg(lays[i], cols, c.is_merge ? 'merge' : '', c.sha === head.sha));
       const subj = el('div', 'gc-subj');
       // The row shows its first ref and counts the rest; its name and the commit panel list them all.
-      const named = orderedRefs((isHead && !c.refs.some(r => r.head) ? [{ name: 'HEAD', kind: 'head', head: true }] : []).concat(c.refs));
+      const named = commitRefs(c);
       if (named.length) subj.appendChild(refBadge(named[0]));
       if (named.length > 1) {
         const more = el('span', 'gref more', '+' + (named.length - 1)); more.title = named.slice(1).map(r => r.name).join(', ');
@@ -728,7 +736,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     wait.remove();
     const pad = el('div', 'gd page-pad'); side.appendChild(pad);
     const title = el('div', 'gd-subject');
-    for (const r of orderedRefs(c.refs)) title.appendChild(refBadge(r));
+    for (const r of commitRefs(c)) title.appendChild(refBadge(r));
     title.appendChild(el('span', null, c.subject));
     pad.appendChild(title);
     const kv = el('div', 'kv gd-meta');
