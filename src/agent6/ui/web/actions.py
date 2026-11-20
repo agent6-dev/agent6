@@ -10,6 +10,7 @@ arbitrary input. The browser is trusted as far as the operator behind the bind.
 
 from __future__ import annotations
 
+import contextlib
 import pathlib
 from typing import Any
 
@@ -26,6 +27,7 @@ from agent6.machine import (
     write_stop_request,
 )
 from agent6.sessions import ipc, layout, process
+from agent6.sessions import manifest as sessions_manifest
 from agent6.ui import directive_actions, spawn
 from agent6.ui.web import model
 from agent6.viewmodel import listing, open_approval, pending_questions, session_is_live
@@ -276,13 +278,19 @@ def resume_run(
         config_paths: The `--config` files in command-line order.
 
     Returns:
-        Whether it started, and the note or the refusal; a live run is refused.
+        Whether it started, and the note or the refusal; a live run and a run whose manifest
+        refuses every resume are refused.
     """
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return False, f"no session {session_id!r}"
     if session_is_live(session_dir):
         return False, "the session is still live; steer it instead"
+    # The resume itself reads the manifest first and refuses one it cannot read.
+    with contextlib.suppress(sessions_manifest.ManifestError):
+        manifest = sessions_manifest.read_manifest(session_dir)
+        if blocker := listing.manifest_resume_blocker(manifest, session_dir.name):
+            return False, f"cannot resume {session_dir.name}: {blocker}"
     if not text.strip() and listing.finished_needs_new_work(session_dir):
         return False, (
             f"run {session_id!r} already finished (the agent called finish_session);"

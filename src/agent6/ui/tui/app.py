@@ -161,6 +161,8 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self.mode = "run"
         # Why the manifest cannot be read, refusing every resume; "" if it reads or is unwritten.
         self.unreadable = ""
+        # Why the manifest that reads refuses every resume, as `sessions show` words it, or "".
+        self.manifest_resume_blocker = ""
         try:
             manifest = sessions_manifest.read_manifest(session_dir)
         except sessions_manifest.ManifestError as exc:
@@ -168,6 +170,9 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         else:
             self.fallback_task = manifest.user_task
             self.fallback_continued = manifest.continued_task
+            self.manifest_resume_blocker = listing.manifest_resume_blocker(
+                manifest, session_dir.name
+            )
             self.mode = manifest.mode or "run"
         # A run is silent for a whole reasoning turn; the ~1/s repaint tells thinking from hung.
         self.last_event_arrival = time.monotonic()
@@ -361,6 +366,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         status = session_status.status_for_session_dir(self.session_dir, status_facts(self.state))
         has_unmerged = self._unmerged and self.state.finished
         unreadable = self.unreadable
+        blocker = self.manifest_resume_blocker
         # Manifest changes are polled every five seconds, not on each repaint.
         if time.monotonic() >= self._manifest_due:
             self._manifest_due = time.monotonic() + 5.0
@@ -370,8 +376,10 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
                 manifest = sessions_manifest.read_manifest(self.session_dir)
             except sessions_manifest.ManifestError as exc:
                 unreadable = listing.unreadable_reason(self.session_dir, exc)
+                blocker = ""
             else:
                 unreadable = ""
+                blocker = listing.manifest_resume_blocker(manifest, self.session_dir.name)
                 if (manifest.user_task, manifest.continued_task) != (
                     self.fallback_task,
                     self.fallback_continued,
@@ -383,10 +391,12 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
                     has_unmerged = listing.unmerged(
                         manifest, status[0], git_read.run_ref_tips(pathlib.Path.cwd())
                     )
-        if (status, has_unmerged, unreadable) != (self.dir_status, self._unmerged, self.unreadable):
+        seen = (self.dir_status, self._unmerged, self.unreadable, self.manifest_resume_blocker)
+        if (status, has_unmerged, unreadable, blocker) != seen:
             self.dir_status = status
             self._unmerged = has_unmerged
             self.unreadable = unreadable
+            self.manifest_resume_blocker = blocker
             self._dirty = True
             self._conv.refresh_liveness()
 
@@ -530,9 +540,9 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         A follow-up that continues as a fork resumes the fork, whose own record decides.
 
         Returns:
-            Why the manifest cannot be read, or "".
+            Why the manifest cannot be read or refuses every resume, or "".
         """
-        return "" if self.continue_as else self.unreadable
+        return "" if self.continue_as else self.unreadable or self.manifest_resume_blocker
 
     def _fill_composers(self, text: str) -> None:
         """Put the text in both composer bars, the covered view's too, to edit and resend."""

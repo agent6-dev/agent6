@@ -722,6 +722,30 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
     assert spawned == ["do more"]
 
 
+def test_resume_refuses_an_ended_child_without_spawning(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The action spawned a resume that `agent6 resume` refuses for a child's record."""
+    from agent6.viewmodel import listing
+    from tests.unit import test_viewmodel_listing
+
+    session = paths.state_dir(tmp_path) / "sessions" / "runs" / "child-AAA111"
+    test_viewmodel_listing.ended_record(session, child_of="parent-BBB222")
+    spawned: list[str] = []
+
+    def _spawn(_cwd: pathlib.Path, session_id: str, **_kw: object) -> str:
+        spawned.append(session_id)
+        return ""
+
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _spawn)
+
+    ok, msg = actions.resume_run(tmp_path, "child-AAA111", "carry on")
+
+    assert (ok, spawned) == (False, [])
+    assert msg == f"cannot resume child-AAA111: {listing.resume_blocker(session)}"
+    assert "agent6 fork child-AAA111" in msg
+
+
 def test_machine_stop_notes_ended_and_marks_a_live_one(tmp_path: pathlib.Path) -> None:
     """The stop verb plants a marker only for a live worker.
 

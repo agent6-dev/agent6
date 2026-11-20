@@ -1939,19 +1939,20 @@ def test_a_review_reviewers_record_offers_no_action(
     assert actions == dict.fromkeys(("compact", "fork", "merge", "resume", "review"), offered)
 
 
-def unreadable_record(session_dir: pathlib.Path, damage: str) -> None:
-    """Write an ended run's record as agent6 does, then make its manifest unreadable.
-
-    `newer` claims the next format version, as a newer agent6 writes it; `torn` cuts the file
-    in half, as a crash in the middle of a write leaves it.
-    """
+def ended_record(session_dir: pathlib.Path, *, child_of: str = "") -> None:
+    """Write an ended run's record as agent6 does; with `child_of`, a child's imported record."""
     from agent6.app import stamps
 
     session_dir.mkdir(parents=True, exist_ok=True)
-    path = session_dir / sessions_manifest.MANIFEST_NAME
+    lineage = sessions_manifest.ParallelLineage(group=f"{child_of}-p1", number=1, parent=child_of)
     stamps.write_manifest(
-        path,
-        sessions_manifest.SessionManifest(session_id=session_dir.name, mode="run", user_task="t"),
+        session_dir / sessions_manifest.MANIFEST_NAME,
+        sessions_manifest.SessionManifest(
+            session_id=session_dir.name,
+            mode="run",
+            user_task="t",
+            parallel=lineage if child_of else None,
+        ),
     )
     rows = [
         {"type": "session.start", "session_id": session_dir.name, "mode": "run", "user_task": "t"},
@@ -1960,6 +1961,16 @@ def unreadable_record(session_dir: pathlib.Path, damage: str) -> None:
     ]
     (session_dir / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     (session_dir / "loop_state.json").write_text("{}")  # a turn ran: a resume has its snapshot
+
+
+def unreadable_record(session_dir: pathlib.Path, damage: str) -> None:
+    """Write an ended run's record as agent6 does, then make its manifest unreadable.
+
+    `newer` claims the next format version, as a newer agent6 writes it; `torn` cuts the file
+    in half, as a crash in the middle of a write leaves it.
+    """
+    ended_record(session_dir)
+    path = session_dir / sessions_manifest.MANIFEST_NAME
     text = path.read_text(encoding="utf-8")
     if damage == "newer":
         record = json.loads(text)
@@ -1989,6 +2000,23 @@ def test_a_record_whose_manifest_cannot_be_read_refuses_resume_and_says_why(
     assert reason.startswith("unreadable manifest: ")
     assert wire.manifest_header(session, repo=None) == {"unreadable": reason}
     assert wire.session_snapshot(session)["unreadable"] == reason
+
+
+def test_the_session_header_carries_the_resume_blocker_of_an_ended_child(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Its header named no blocker, so the web and the TUI offered a resume that always refuses."""
+    from agent6.viewmodel import wire
+
+    child = tmp_path / "sessions" / "runs" / "child-AAA111"
+    ended_record(child, child_of="parent-BBB222")
+    reason = listing.resume_blocker(child)
+    assert '`agent6 fork child-AAA111 --steer "..."`' in reason
+    assert wire.manifest_header(child, repo=None)["manifest_resume_blocker"] == reason
+    assert wire.session_snapshot(child)["manifest_resume_blocker"] == reason
+    plain = tmp_path / "sessions" / "runs" / "plain-CCC333"
+    ended_record(plain)
+    assert "manifest_resume_blocker" not in wire.session_snapshot(plain)
 
 
 @pytest.mark.parametrize("merged", [False, True])

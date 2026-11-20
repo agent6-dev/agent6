@@ -419,6 +419,60 @@ def test_a_run_whose_manifest_cannot_be_read_says_why_in_its_composer(
     asyncio.run(scenario())
 
 
+def test_an_ended_child_closes_its_composer_with_the_reason_sessions_show_prints(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Its composer offered "continue this session", and Enter spawned a resume that refused.
+
+    Run > Fork, which the reason names, stays offered.
+    """
+    from agent6.viewmodel import listing
+    from tests.unit import test_viewmodel_listing
+
+    spawned: list[str] = []
+    notes: list[str] = []
+
+    def _fake_resume(_cwd: pathlib.Path, rid: str, **_kw: object) -> str:
+        spawned.append(rid)
+        return ""
+
+    monkeypatch.setattr(spawn, "spawn_detached_resume", _fake_resume)
+    d = tmp_path / "child-run"
+    test_viewmodel_listing.ended_record(d, child_of="parent-run")
+    blocker = listing.resume_blocker(d)
+    assert '`agent6 fork child-run --steer "..."`' in blocker
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(d)
+        original = app.notify
+
+        def spy(message: Any, *args: Any, **kwargs: Any) -> None:
+            notes.append(str(message))
+            original(message, *args, **kwargs)
+
+        monkeypatch.setattr(app, "notify", spy)
+        async with app.run_test(size=(120, 24)) as pilot:
+            await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            bar = app._conv.query_one("#conv-input", composer.SteerInput)
+            await waits.wait_for(
+                pilot, lambda: str(bar.border_title) == "cannot resume", "the refusal title"
+            )
+            assert bar.placeholder == blocker
+            assert not app._conv.query_one("#conv-resume", composer.ResumeOptions).display
+            assert app._conv.check_action("resume", ()) is None
+            assert app._conv.check_action("fork", ())
+            app.submit_instruction("carry on")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert spawned == []
+            assert f"cannot resume child-run: {blocker}" in notes
+            await _open_dash(app, pilot)
+            dash = app._dash.query_one("#dash-input", composer.SteerInput)
+            assert (str(dash.border_title), dash.placeholder) == ("cannot resume", blocker)
+
+    asyncio.run(scenario())
+
+
 def test_the_palette_leaves_out_an_action_the_menu_dims(tmp_path: pathlib.Path) -> None:
     """Ctrl+P offered Run > Resume this session, dimmed on a record whose resume refuses."""
     from tests.unit import test_viewmodel_listing

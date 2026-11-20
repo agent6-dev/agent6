@@ -1900,7 +1900,7 @@ function makeComposer(id) {
   // A run the agent ended has nothing to continue, so resume takes an
   // instruction or is refused; every other ending resumes bare.
   let needsWork = false;
-  // Why every resume of this run refuses (its manifest cannot be read): the box closes.
+  // Why every resume of this run refuses (an unreadable manifest, a child's record): the box closes.
   let refused = '';
   let busy = false;
   let modelGit = false;
@@ -2060,7 +2060,7 @@ function makeComposer(id) {
     modelGit = s.git_control === 'model';
     offeredCommands.splice(0, offeredCommands.length, ...STEER_COMMANDS.map(([command]) => command).filter(command => !modelGit || command !== '/undo'));
     needsWork = s.needs_new_work === true; // the server's predicate, never re-derived here
-    refused = s.unreadable || '';
+    refused = s.unreadable || s.manifest_resume_blocker || '';
     if (typeof s.live === 'boolean') { finished = !s.live; apply(); }
     else { finished = notLive(s); apply(); } // resume-style composer for any non-live run (parked/stale/ended)
   };

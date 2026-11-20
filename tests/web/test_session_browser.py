@@ -406,6 +406,41 @@ def test_a_run_whose_manifest_cannot_be_read_closes_its_composer_and_says_why(
 
 
 @pytest.mark.parametrize("width", [1280, 390])
+def test_an_ended_child_closes_its_composer_with_the_reason_sessions_show_prints(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    port: int,
+    tmp_path: pathlib.Path,
+    width: int,
+) -> None:
+    """Its page offered "continue this session…", a resume `agent6 resume` refuses for a child.
+
+    Fork, which the reason names, stays enabled.
+    """
+    from playwright.sync_api import expect
+
+    from agent6.viewmodel import listing
+    from tests.unit import test_viewmodel_listing
+
+    session = paths.state_dir(tmp_path) / "sessions" / "runs" / "child-AAA111"
+    test_viewmodel_listing.ended_record(session, child_of="parent-BBB222")
+    blocker = listing.resume_blocker(session)
+    assert '`agent6 fork child-AAA111 --steer "..."`' in blocker
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": width, "height": 844})
+    page.goto(f"http://127.0.0.1:{port}/#/session/child-AAA111")
+    composer = page.locator(".composer")
+    refusal = composer.locator(".refusal")
+    expect(refusal).to_have_text("cannot resume: " + blocker)
+    expect(refusal).to_be_visible()
+    expect(composer.locator("textarea")).to_be_disabled()
+    expect(composer.locator(".pickers")).to_be_hidden()
+    expect(composer.locator(".hint")).to_be_hidden()
+    fork = page.locator(".actions button", has_text=re.compile("^Fork$"))
+    expect(fork).to_be_enabled()
+    assert not errors
+
+
+@pytest.mark.parametrize("width", [1280, 390])
 def test_a_question_box_spaces_its_questions_and_wraps_a_narrow_field(
     open_page: Callable[[int], tuple[Page, list[str]]],
     port: int,

@@ -153,6 +153,9 @@ def manifest_header(
         unreadable: Why the manifest cannot be read, which refuses resume, fork and merge; such
             a record carries no other header field.
         session_actions: Whether each session action applies to this session kind.
+        manifest_resume_blocker: Why the manifest refuses every resume (a child's record, a
+            worktree that is gone), naming the `agent6 fork` command when one continues the
+            run; absent when it refuses none.
         git_control: The launch git-control policy.
         base_sha: The run chain's base commit.
         unmerged: Whether the run holds unmerged work, when a repository is supplied.
@@ -205,6 +208,8 @@ def manifest_header(
     header["session_actions"] = dict.fromkeys(
         ("compact", "fork", "merge", "resume", "review"), m.mode != "reviewer"
     )
+    if blocker := listing.manifest_resume_blocker(m, session_dir.name):
+        header["manifest_resume_blocker"] = blocker
     header["git_control"] = m.git_control
     header["base_sha"] = m.base_sha
     lineage = format.format_lineage(m.parent_session_id, m.forked_from_turn, m.forked_from_sha)

@@ -572,6 +572,28 @@ def unreadable_reason(session_dir: pathlib.Path, exc: sessions_manifest.Manifest
     return f"unreadable manifest: {exc}"
 
 
+def manifest_resume_blocker(manifest: sessions_manifest.SessionManifest, session_id: str) -> str:
+    """Return why a session's manifest refuses every resume, or "".
+
+    A child's tree is no checkout's once its clone is gone, and a worktree run whose worktree
+    is gone continues through `fork`.
+
+    Args:
+        manifest: The session's manifest.
+        session_id: The session's id.
+
+    Returns:
+        The reason, naming the `agent6 fork` command when one continues the run, or "".
+    """
+    if manifest.parallel is not None:
+        return (
+            f"a child of the group {manifest.parallel.parent}, whose work is on its own"
+            f' branch; `agent6 fork {session_id} --steer "..."` continues it in a'
+            " worktree of its own"
+        )
+    return sessions_manifest.worktree_blocker(manifest.worktree)
+
+
 def resume_blocker(session_dir: pathlib.Path) -> str:
     """Return why the session's state cannot be resumed at all, or "".
 
@@ -593,14 +615,8 @@ def resume_blocker(session_dir: pathlib.Path) -> str:
         if unreadable := unreadable_reason(session_dir, exc):
             return unreadable
     else:
-        if m.parallel is not None:
-            return (
-                f"a child of the group {m.parallel.parent}, whose work is on its own"
-                f' branch; `agent6 fork {session_dir.name} --steer "..."` continues it in a'
-                " worktree of its own"
-            )
-        if missing := sessions_manifest.worktree_blocker(m.worktree):
-            return missing
+        if blocker := manifest_resume_blocker(m, session_dir.name):
+            return blocker
     if not (session_dir / "loop_state.json").is_file():
         return (
             "it never reached its first turn, so there is nothing to resume; start the task again"
