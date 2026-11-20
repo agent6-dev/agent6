@@ -235,7 +235,7 @@ def test_read_and_message_a_child_in_place(
     captures.save(page, "children-folded")
     summary.press("Enter")
     reviewer, row, held = card.locator("details").all()
-    sync_api.expect(held).to_contain_text("2 unmerged commits")
+    sync_api.expect(held).to_contain_text("2 commits beyond start")
     sync_api.expect(held).to_contain_text("agent6/line-endings")
     sync_api.expect(held).to_contain_text("stopped after the newline check")
     sync_api.expect(reviewer).to_contain_text("reviewer 1")

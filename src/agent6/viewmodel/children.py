@@ -60,7 +60,7 @@ class ChildView:
         turn: Its latest recorded turn, or None before one.
         tokens: Input, cache and output tokens in its current execution, or None if unreported.
         elapsed_s: Seconds since the child started, frozen at its last event when it ends.
-        commits: The commits its imported ref holds beyond the task's base, when recorded.
+        commits: Its measured commits beyond its start, None when unknown.
         verdict_order: A reviewer's order of attempts, best first.
         verdict_summary: The summary from the reviewer's verdict.
     """
@@ -85,7 +85,7 @@ class ChildView:
     turn: int | None = None
     tokens: int | None = None
     elapsed_s: int | None = None
-    commits: int = 0
+    commits: int | None = None
     verdict_order: tuple[str, ...] = ()
     verdict_summary: str = ""
     joined_to: str = ""
@@ -94,6 +94,13 @@ class ChildView:
     def join_label(self) -> str:
         """Name the recorded chain join without implying a checkout merge."""
         return ParentJoin(self.joined_to, self.join_sha).label
+
+    @property
+    def commit_count_text(self) -> str:
+        """Return the measured count for the roster, or no label without a measurement."""
+        if self.commits is None:
+            return ""
+        return f"{self.commits} commit{'' if self.commits == 1 else 's'} beyond start"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -199,9 +206,12 @@ def children_of(
     )
 
 
-def _session_child(row: ChildView, child_dir: pathlib.Path) -> ChildView:
+def _session_child(
+    row: ChildView, child_dir: pathlib.Path, join: child_dispatch.JoinRecord | None = None
+) -> ChildView:
+    commits = None if row.source == "panel" else child_dispatch.read_commit_count(child_dir, join)
     if listing.is_session_husk(child_dir):
-        return row
+        return dataclasses.replace(row, commits=commits)
     scan = session_log.scan_session_log(child_dir / layout.LOGS_NAME)
     status, reason = session_status.status_for_session_dir(child_dir, scan.status_facts())
     live = status in session_status.LIVE_STATUS_WORDS
@@ -223,6 +233,7 @@ def _session_child(row: ChildView, child_dir: pathlib.Path) -> ChildView:
     return dataclasses.replace(
         row,
         launched=True,
+        commits=commits,
         group=group,
         route=format.format_model_route(manifest.models.driver) if manifest is not None else "",
         status="finished"
@@ -281,7 +292,7 @@ def _recorded_child(
     if not layout.is_safe_session_id(child.session_id):
         return dataclasses.replace(row, status="failed", error="invalid child session id")
     child_dir = bucket / child.session_id
-    row = _session_child(row, child_dir)
+    row = _session_child(row, child_dir, child.join)
     if record.source == "panel" and row.launched:
         try:
             verdict = completion.read_completion(child_dir)
@@ -326,7 +337,6 @@ def _recorded_child(
             imported_ref=join.branch,
             join_sha=join.sha,
             joined_to=parent if join.status == "joined" else "",
-            commits=join.commits,
             error=join.detail or row.error,
             current_tool="",
         )

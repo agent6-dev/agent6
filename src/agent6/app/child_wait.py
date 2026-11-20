@@ -16,10 +16,11 @@ import threading
 import time
 from collections.abc import Callable
 
-from agent6 import child_records, kinds
+from agent6 import child_records, errors, kinds
 from agent6.app import stop
 from agent6.sandbox import jail
-from agent6.sessions import layout, process
+from agent6.sessions import child_dispatch, layout, manifest, process
+from agent6.vcs.git import read as git_read
 from agent6.viewmodel import summarize_session_dir
 
 # How often the await loop polls child liveness.
@@ -27,6 +28,28 @@ POLL_INTERVAL_S = 2.0
 
 # How long a stop waits for a child to finish its in-flight step before giving up on it.
 STOP_GRACE_S = 30.0
+
+
+def observe_commits(res: child_records.ChildResult) -> None:
+    """Measure the work child's own commit line before import or clone cleanup."""
+    if res.spec.mode != "run":
+        return
+    try:
+        saved = manifest.read_manifest(res.session_dir)
+        if not saved.base_sha:
+            return
+        tree = res.spec.worktree
+        tip = (
+            "HEAD"
+            if saved.git_control == "model"
+            else (git_read.chain_tip(tree, git_read.chain_ref_for(res.spec.session_id)) or "HEAD")
+        )
+        count = git_read.commit_count(tree, saved.base_sha, tip)
+        if count is not None:
+            child_dispatch.write_commit_count(res.session_dir, count)
+    except (errors.GitError, manifest.ManifestError, OSError):
+        # A missing observation must not stop the child or affect its join.
+        return
 
 
 def child_terminal(
@@ -74,6 +97,7 @@ def await_child(
     """
     while True:
         summary = summarize_session_dir(res.session_dir)
+        observe_commits(res)
         if child_terminal(res.session_dir, summary.status, process.worker_is_alive):
             return True
         if should_stop is not None and should_stop():
@@ -153,6 +177,7 @@ def drain_child(
             return False
         summary = summarize_session_dir(res.session_dir)
         if child_terminal(res.session_dir, summary.status, process.worker_is_alive):
+            observe_commits(res)
             return True
         if hard_stop is not None:
             if hard_stop.wait(poll_interval_s):

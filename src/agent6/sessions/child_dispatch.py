@@ -19,7 +19,25 @@ from agent6 import child_records, portable
 
 RECORD_VERSION = 13
 DIR_NAME = "dispatch"
+_COMMIT_COUNT = "commits_beyond_start"
 DispatchState = Literal["prepared", "running", "settling", "ranking", "joining", "complete"]
+
+
+def read_commit_count(child_dir: pathlib.Path, join: JoinRecord | None = None) -> int | None:
+    """Return a work child's measured count beyond start, including an older join's count."""
+    if join is not None and join.status in ("ranked", "stopped", "unmerged"):
+        return join.commits
+    try:
+        count = int((child_dir / _COMMIT_COUNT).read_text(encoding="ascii"))
+    except (OSError, ValueError):
+        return 0 if join is not None and join.status == "no_changes" else None
+    return count if count >= 0 else None
+
+
+def write_commit_count(child_dir: pathlib.Path, count: int) -> None:
+    """Keep the parent's observation with the child's session, outside its clone."""
+    if count != read_commit_count(child_dir):
+        portable.atomic_write(child_dir / _COMMIT_COUNT, f"{count}\n")
 
 
 class DispatchRecordError(Exception):

@@ -180,7 +180,7 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
         _text(next(m for m in reversed(parent[2]["messages"]) if m["role"] == "tool"))
     )
     expected_read = [
-        f"[{two}] ended, not merged: CHILD-B: write b.txt",
+        f"[{two}] ended, not merged · 1 commit beyond start: CHILD-B: write b.txt",
         "",
         "user: CHILD-B: write b.txt",
         "",
@@ -193,7 +193,9 @@ def test_a_parent_reads_two_tasks_and_each_completes_as_it_ends(
         assert command.startswith("[tool] run_command sh -c") and command.endswith(" (exit 0)")
         expected_read[-2:-2] = ["", command]
     assert read_b["output"].splitlines() == expected_read
-    assert read_b["children"][0] == f"[{one}] running: CHILD-A: write a.txt"
+    assert (
+        read_b["children"][0] == f"[{one}] running · 0 commits beyond start: CHILD-A: write a.txt"
+    )
     # Agent6-owned git merges; model-owned git retains each ref without changing the checkout.
     assert (repo / "a.txt").exists() is (control == "agent6")
     assert (repo / "b.txt").exists() is (control == "agent6")

@@ -43,7 +43,9 @@ def standing(
     if not started.result.done():
         if started.session_id in dispatcher.stopping:
             return "stopping"
-        if dispatcher.session_dir is not None:
+        if dispatcher.session_dir is not None and sessions_layout.is_safe_session_id(
+            started.session_id
+        ):
             directory = dispatcher.session_dir.with_name(started.session_id)
             scan = session_log.scan_session_log(directory / sessions_layout.LOGS_NAME)
             if not scan.finished and scan.review.in_review(scan.execution_id):
@@ -117,7 +119,12 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
             mergeable = child.join is not None and child.join.status == "stopped"
             if child_merge.pending(child):
                 state = "merge requested"
-            lines.append(child_tools.ChildLine(sid, state, title[:80], running, mergeable))
+            commits = (
+                child_dispatch.read_commit_count(dispatcher.session_dir.with_name(sid), child.join)
+                if sessions_layout.is_safe_session_id(sid)
+                else None
+            )
+            lines.append(child_tools.ChildLine(sid, state, title[:80], running, mergeable, commits))
     return tuple(lines)
 
 

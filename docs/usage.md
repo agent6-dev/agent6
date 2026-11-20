@@ -145,7 +145,8 @@ The parent reports when a child starts, reads an operator message, stops or fini
 A join records the commit on the parent's chain, not a merge into the checkout branch.
 `sessions show <child>` names the parent it joined; `sessions show <parent>` shows the parent's recorded checkout merge or how to land its work.
 A failed launch has a row with its reason even when there is no child session to open.
-A stopped child shows the ref and commits it holds.
+A work child shows its measured number of commits beyond start, including while it runs.
+A stopped child also shows the ref that holds its work.
 A reviewer shows its order and summary when it returns a verdict.
 To act on one running child, use `agent6 steer <child-id> "<message>"` or `agent6 stop <child-id>`.
 With `git.control = "agent6"`, every entry merges a task once: one child's work is merged onto the run's chain, and several children on one task are attempts, of which the first-ranked merges.

@@ -31,6 +31,7 @@ class ChildLine:
         task: The first line of its task.
         running: Whether a wait has something to wait for: the child, or the judges ranking it.
         mergeable: Whether it is stopped with unmerged work.
+        commits: Its measured commits beyond start, None when unknown.
     """
 
     id: str
@@ -38,10 +39,16 @@ class ChildLine:
     task: str
     running: bool
     mergeable: bool = False
+    commits: int | None = None
 
     def line(self) -> str:
         """Return the roster line."""
-        return f"[{self.id}] {self.state}: {self.task}"
+        count = (
+            ""
+            if self.commits is None
+            else (f" · {self.commits} commit{'' if self.commits == 1 else 's'} beyond start")
+        )
+        return f"[{self.id}] {self.state}{count}: {self.task}"
 
 
 class Children(Protocol):

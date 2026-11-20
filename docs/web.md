@@ -95,6 +95,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
       Open the card to see each task, its status, and its recorded model, tool, turn, tokens, spend and elapsed time.
       A joined child names the parent's chain and the join commit.
       A stopped child shows the commits its ref holds; a model-owned child names its retained ref.
+      A work child shows the measured number of commits beyond its start, including while it runs.
       A child that never started shows the reason.
       A reviewer shows its verdict when available.
       Open a row to read the prompt and recent conversation in place.

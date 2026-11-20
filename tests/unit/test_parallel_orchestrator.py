@@ -48,6 +48,7 @@ from agent6.ui.cli import child_agent, cli_main, interact, main
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
+from agent6.viewmodel import children as vm_children
 from agent6.viewmodel import listing
 from tests import child_env
 
@@ -2740,3 +2741,92 @@ def test_a_parent_stop_keeps_the_clone_before_the_result_returns(
     assert result.stopped_by == "stopped by its parent"
     assert spec.worktree.is_dir()
     assert git_read.branch_exists(origin, result.branch)
+
+
+@pytest.mark.parametrize("control", ["agent6", "model"])
+def test_parent_reads_commits_beyond_start_while_the_child_runs(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runtime: app_children.ChildRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+    control: str,
+) -> None:
+    state = paths.state_dir(origin)
+    runs = state / "sessions" / "runs"
+    parent = runs / "parent"
+    parent.mkdir(parents=True)
+    sid = "parent-p1-l1"
+    spec = child_records.ChildSpec(1, sid, tmp_path / "clone", None)
+    base = git_read.chain_tip(origin, "HEAD")
+    assert base
+
+    def spawn(spec: child_records.ChildSpec, task: str) -> child_records.ChildResult:
+        child_repo.clone_worktree(origin, spec.worktree)
+        _write_fake_run(runs / sid, task, parent="parent", status="finished", cost=0, base_sha=base)
+        saved = sessions_manifest.read_manifest(runs / sid)
+        stamps.write_manifest(
+            runs / sid / "manifest.json", saved.model_copy(update={"git_control": control})
+        )
+        (runs / sid / "logs.jsonl").write_text(
+            json.dumps(
+                {"type": "session.start", "mode": "run", "execution_id": "e", "user_task": task}
+            )
+            + "\n"
+        )
+        process.write_worker_pid(runs / sid, os.getpid())
+        return child_records.ChildResult(
+            spec=spec, session_dir=runs / sid, branch="work", ok=True, error=""
+        )
+
+    def watch(_dir: pathlib.Path, _label: str, _status: str) -> bool:
+        (view,) = vm_children.children_of(parent)
+        assert view.status == "running" and view.commits is not None
+        assert view.commits == len(seen)
+        seen.append(view.commits)
+        if len(seen) < 3:
+            if control == "model":
+                _git(
+                    spec.worktree,
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "commit",
+                    "--allow-empty",
+                    "-m",
+                    "work",
+                )
+            else:
+                (spec.worktree / "work").write_text(str(len(seen)))
+                git_ops.chain_commit(
+                    spec.worktree, "work", ref=git_read.chain_ref_for(sid), fallback_parent=base
+                )
+        else:
+            (runs / sid / "worker.pid").unlink()
+            with (runs / sid / "logs.jsonl").open("a") as log:
+                log.write(json.dumps({"type": "session.stop", "reason": "finish_session"}) + "\n")
+        return False
+
+    seen: list[int] = []
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "t")
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "t@t")
+    monkeypatch.setenv("GIT_COMMITTER_NAME", "t")
+    monkeypatch.setenv("GIT_COMMITTER_EMAIL", "t@t")
+    app_children.run_child_to_completion(
+        spec,
+        "work",
+        cfg=Config.model_validate({"git": {"control": control}}),
+        explicit_leaves=frozenset(),
+        origin=origin,
+        record_state=state,
+        group="parent-p1",
+        parent="parent",
+        runtime=runtime,
+        spawner=spawn,
+        poll_interval_s=0,
+        at=base,
+        watch=watch,
+        parent_events=event_log.EventSink(parent / "logs.jsonl"),
+    )
+    assert seen == [0, 1, 2]
+    assert vm_children.children_of(parent)[0].commits == 2

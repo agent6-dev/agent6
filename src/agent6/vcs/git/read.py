@@ -971,6 +971,23 @@ def tree_diff_paths(path: pathlib.Path, old_tree: str, new_tree: str) -> list[st
     )
 
 
+def commit_count(path: pathlib.Path, base: str, tip: str) -> int | None:
+    """Return the number of commits reachable from the tip but not the base.
+
+    Args:
+        path: The repository.
+        base: The starting commit.
+        tip: The tip commit or ref.
+
+    Returns:
+        The count, or None for an unreadable range.
+    """
+    result = git_command.run(
+        path, "rev-list", "--count", "--end-of-options", f"{base}..{tip}", "--", check=False
+    )
+    return int(result.stdout) if result.ok else None
+
+
 def list_run_commits(
     path: pathlib.Path, base_sha: str, run_branch: str
 ) -> tuple[commit_message.CommitRow, ...]:

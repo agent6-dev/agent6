@@ -71,6 +71,8 @@ class ChildRow:
         meter = [f"turn {c.turn}" if c.turn is not None else "turn ?"]
         if c.current_tool:
             meter.append(c.current_tool)
+        if c.commit_count_text:
+            meter.append(c.commit_count_text)
         meter += [
             f"{c.tokens if c.tokens is not None else '?'} tokens",
             spend,
@@ -78,12 +80,7 @@ class ChildRow:
         ]
         lines.append(indent + " · ".join(meter))
         if c.imported_ref or c.outcome in ("stopped", "retained"):
-            count = (
-                f" · {c.commits} {'commit' if c.commits == 1 else 'commits'}"
-                if c.outcome in ("stopped", "retained")
-                else ""
-            )
-            lines.append(f"{indent}ref: {c.imported_ref or '?'}{count}")
+            lines.append(f"{indent}ref: {c.imported_ref or '?'}")
         if c.verdict_order or c.verdict_summary:
             verdict = ": ".join(filter(None, (" > ".join(c.verdict_order), c.verdict_summary)))
             lines.append(f"{indent}verdict: {verdict}")
