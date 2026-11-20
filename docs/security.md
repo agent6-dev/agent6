@@ -704,8 +704,9 @@ A run's preflight applies it to each pack its walk finds.
 
 A pack beside no such session stays where it is.
 The start check refuses, quotes the origin and time as what the pack says, and names both remedies: plain `git` or the web Git page can check out a commit that holds a forged `pack.json`.
-A run keeps `.agent6/` out of its own commits: when it starts it adds the directory to the repository's exclude file (`.git/info/exclude`) unless git already ignores it, as `agent6 pack` does, and says so once.
-A `.gitignore` rule such as `!.agent6/` outranks that file, and under `git.control = "model"` the model commits for itself, so a commit can still hold a pack.
+A run keeps `.agent6/` out of its own commits: every tree it writes leaves the directory out, whatever the ignore rules say.
+When it starts it also adds the directory to the repository's exclude file (`.git/info/exclude`) unless git already ignores it, as `agent6 pack` does, and says so once.
+Under `git.control = "model"` the model commits for itself, so a commit can still hold a pack.
 Delete a pack you did not make.
 
 The secrets copy is created through a `0600` descriptor in a `0700` directory.

@@ -83,8 +83,12 @@ class RunChain:
 
     @property
     def excluded(self) -> frozenset[str]:
-        """Return the paths every tree the chain writes or compares leaves out."""
-        return self.untracked_at_start | self.hidden
+        """Return the paths every tree the chain writes or compares leaves out.
+
+        agent6's own workspace directory is one: a `.gitignore` rule such as `!.agent6/`
+        outranks the exclude file a run writes, and a pack a model wrote would be committed.
+        """
+        return self.untracked_at_start | self.hidden | {".agent6"}
 
     def commit(self, subject: str, *, task_id: str | None = None) -> str:
         """Commit the worktree onto the chain.

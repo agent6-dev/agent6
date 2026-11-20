@@ -52,4 +52,4 @@ def test_the_chain_keeps_hidden_paths_out_of_its_commits_diffs_and_dirty_checks(
     diff = chain.diff_since_base()
     assert "x = 2" in diff
     assert "hunter2" not in diff and "TOKEN" not in diff
-    assert chain.excluded == hidden
+    assert chain.excluded == hidden | {".agent6"}

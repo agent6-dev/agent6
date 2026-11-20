@@ -349,6 +349,27 @@ _FINISH: _Turn = (
 )
 
 
+def _commit_a_pack_onto(repo: pathlib.Path, ref: str) -> None:
+    """Add `.agent6/pack.json` to a session's tip, as a commit the model makes for itself can."""
+    index = {"GIT_INDEX_FILE": str(repo / ".git/pack-test-index")}
+
+    def git(*args: str, stdin: str | None = None) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), "-c", "user.name=m", "-c", "user.email=m@example.com", *args],
+            input=stdin,
+            env={**os.environ, **index},
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    blob = git("hash-object", "-w", "--stdin", stdin=_MANIFEST)
+    git("read-tree", ref)
+    git("update-index", "--add", "--cacheinfo", f"100644,{blob},.agent6/pack.json")
+    commit = git("commit-tree", git("write-tree"), "-p", ref, "-m", "the model's own commit")
+    git("update-ref", ref, commit)
+
+
 def _script(monkeypatch: pytest.MonkeyPatch, *steps: _Turn | BaseException) -> None:
     provider = _Scripted(list(steps))
 
@@ -447,7 +468,7 @@ def test_a_runs_commits_leave_a_forged_pack_out(
     """The per-turn commit staged `.agent6/pack.json` with the rest of the tree.
 
     A merge then landed it, and a restore or a branch switch put it back beside no session.
-    A run now excludes `.agent6/` as `agent6 pack` does, in the repository's own exclude file.
+    A run excludes `.agent6/` as `agent6 pack` does, in the repository's own exclude file.
     """
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _FORGE, _create("made.txt", "by the run\n"), _FINISH)
@@ -472,14 +493,17 @@ def test_a_runs_commits_leave_a_forged_pack_out(
 def test_a_merge_that_lands_a_tracked_pack_json_leaves_it_renamed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The run's commits hold the forged file, so `sessions merge` wrote it back into the checkout.
+    """A session's commits held the forged file, so `sessions merge` wrote it into the checkout.
 
+    A run's own commits leave `.agent6/` out; a commit the model makes for itself can hold it.
     The session's own end took the first name; the merge's copy gets the next free one.
     """
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _UNIGNORE, _FORGE, _FINISH)
     assert cli_main(["run", "--session-id", "pk-MERG01", "tidy the repo"]) == 0
-    tip = git_read.chain_tip(repo, git_read.chain_ref_for("pk-MERG01"))
+    ref = git_read.chain_ref_for("pk-MERG01")
+    _commit_a_pack_onto(repo, ref)
+    tip = git_read.chain_tip(repo, ref)
     assert tip is not None and ".agent6/pack.json" in git_read.tree_paths(repo, tip)
     assert _names(repo / ".agent6") == ["pack.invalid"]
     capsys.readouterr()
@@ -497,12 +521,13 @@ def test_a_merge_that_lands_a_tracked_pack_json_leaves_it_renamed(
     _next_start_is_not_refused(capsys)
 
 
-def test_an_automatic_merge_from_a_worktree_run_renames_what_it_lands(
+def test_an_automatic_merge_from_a_worktree_run_lands_no_pack(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A `--worktree` run under `git.auto_merge` put the forged file in the checkout unseen.
 
-    The run's own checkout is its worktree, so only the landing reaches the operator's.
+    A `!.agent6/` rule in a `.gitignore` the model wrote outranked the exclude file, so the
+    run's commits held the pack and the landing wrote it. No tree of a run holds `.agent6/`.
     """
     repo = _repo(tmp_path, monkeypatch, config=_CONFIG + "\n[git]\nauto_merge = true\n")
     _script(monkeypatch, _UNIGNORE, _FORGE, _FINISH)
@@ -512,11 +537,10 @@ def test_an_automatic_merge_from_a_worktree_run_renames_what_it_lands(
 
     worktree = sessions_manifest.read_manifest(_run_dir(repo, "pk-AUTO01")).worktree
     assert worktree is not None
-    assert ".agent6/pack.json" in git_read.tree_paths(repo, "main")
-    assert _names(repo / ".agent6") == ["pack.invalid"]
+    assert git_read.tree_paths(repo, "main") == {".gitignore", "a.py"}
+    assert not (repo / ".agent6/pack.json").exists()
     assert _names(worktree / ".agent6") == ["pack.invalid"]
     assert {row["path"] for row in _quarantined(_run_dir(repo, "pk-AUTO01"))} == {
-        str(repo / ".agent6/pack.json"),
         str(worktree / ".agent6/pack.json"),
     }
     assert _UNPACK_IT not in out + err
