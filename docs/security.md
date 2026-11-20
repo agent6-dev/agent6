@@ -57,7 +57,7 @@ The holds below describe the local jail, `full` and `partial` `sandbox.isolation
 
 **Does not hold**
 
-- Under `none` `sandbox.isolation`, a command runs with the operator's own access: the filesystem and persistence bounds above do not apply, though agent6 still sets `HOME` to its own directory ([Sandbox](#2-sandbox))
+- Under `none` `sandbox.isolation`, a command runs with the operator's own access: the filesystem and persistence bounds above do not apply ([Sandbox](#2-sandbox))
 - The agent process's own egress is unbounded
     - agent6 reaches the configured providers (each `[providers.*].base_url` host, plus the fixed ChatGPT OAuth authority and each `[providers.*].oauth` issuer for token grants); nothing stops the process reaching elsewhere
     - a jailed command's egress is bounded under `full` `sandbox.isolation` unless `sandbox.network = "host"` ([Network](#5-network))

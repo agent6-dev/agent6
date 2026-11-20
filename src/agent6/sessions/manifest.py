@@ -225,7 +225,7 @@ class ParallelLineage(pydantic.BaseModel):
     """A child's place.
 
     Attributes:
-        group: The group it was dispatched in: the parent's id for `run --parallel`,
+        group: The group it was dispatched in: `<parent>-p1` for `run --parallel`,
             `<parent>-p<n>` for a `/parallel` group.
         number: Its number in the group.
         parent: The session that dispatched it, which every listing nests it under.

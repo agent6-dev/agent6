@@ -106,7 +106,7 @@ The repository stays at its real path, and the jail sees your system toolchains 
 `sandbox.isolation` names the command mode; `auto`, the default, picks the strongest of `full`, `partial` and `none` the host allows and warns when it falls back:
 
 - `full`: commands cannot read your provider keys or the secrets file, `.git` is read-only to them (`sandbox.protect_git = "auto"`, `git.control = "agent6"`), and they get a private network (`sandbox.network = "auto"`).
-- `partial`: commands cannot read your keys or the secrets file, but they share agent6's network and can write `.git`.
+- `partial`: commands cannot read your keys or the secrets file unless a path you grant contains it, but they share agent6's network and can write `.git`.
 - `none`: no confinement.
 - `container`: commands run inside the dev container that mounts your workspace, found by its labels or named in `[container]`; the runtime is the boundary, and agent6 adds no confinement there.
 

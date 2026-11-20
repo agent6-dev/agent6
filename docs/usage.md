@@ -78,7 +78,7 @@ agent6 edits your working tree and commits each editing turn to the run's own ch
 Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#git) lands the work; `sessions merge` lands it by hand.
 
 - commands ask for approval by default (`sandbox.run_commands = "ask"`): allow one call or the whole session
-- without a terminal (CI, cron, a hub-spawned run) a prompt parks the run until a front-end answers it or an away-mode decides it ([approvals](security.md#6-approvals))
+- without a terminal (CI, cron) a run refuses to start under `ask` unless an away-mode is set; a hub-spawned run parks at a prompt until a front-end answers it ([approvals](security.md#6-approvals))
 - the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`) or a ceiling (budget, turns) stops it
 - at a terminal it then asks for the next input: type to continue, `/exit` to finish
 - `agent6 resume <id> --steer "<what to do next>"` continues a run that ended by `finish_session`

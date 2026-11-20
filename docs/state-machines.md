@@ -605,7 +605,7 @@ Unset keys read straight through to the lower layers, so a machine only states w
 
 - `providers.*`, `presets.*`, `mcp.*`, `telemetry.*`, `agent6.preset`, `budget.allow_plan_overage`, `git.run_repo_hooks`, `git.run_repo_drivers`, `machine.pass_env`, `notify.on_event`, `git.worktree.base_dir`, `harness.prompt.system_prompt_file`, `skills.extra_dirs`
     - endpoints, key-env names, and secrets live in the global/repo config and the secrets store; presets, MCP servers, host-argv hooks, host-side read and work dirs, and paid credits are operator decisions in the global/repo config
-- a state's table also refuses `machine.*`, `parallel.*`, `workspace.*` and `git.commit.*`, which are read once for the whole machine: set them in `[config]`
+- a state's table also refuses `machine.*`, `harness.parallel.*`, `git.worktree.*` and `git.commit.*`, which are read once for the whole machine: set them in `[config]`
 
 **Sandbox keys: never wider than your own config.** An overlay may set any `sandbox` key, bounded by your own layers alone (defaults, global, repo, preset, `--config FILE`).
 
@@ -715,7 +715,7 @@ Sizing for long-running machines:
 
 - the journal grows one line per transition; a 10-minute-interval machine makes ~150k transitions a year (3 per idle tick)
     - a `wait` or `branch` line is ~200 B; a `tool` line carries the command's full stdout and stderr; an `agent` line carries its payload
-- snapshots keep only the most recent `[machine] keep_snapshots` (default 5, `0` = all)
+- snapshots keep only the most recent `[machine] keep_snapshots` (default 5, `-1` = all)
     - `machine status` reads the newest readable one, falling back through the retained tail when the newest is corrupt
     - replay and recovery fold the whole journal and never read a snapshot
 - the journal has no rotation: archive or delete an instance dir when replay no longer needs it; `[budget] max_transitions` is the primary runaway guard
