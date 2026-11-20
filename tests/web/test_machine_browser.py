@@ -490,6 +490,39 @@ def test_the_current_state_and_the_newest_transition_open_in_view(
     assert not errors
 
 
+def test_an_ended_machines_current_state_opens_in_view_under_its_dock_note(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """States scrolled to its current state before the dock took its end note.
+
+    The note's second line shrank the cards after the scroll and cut the current state's row.
+    """
+    from playwright.sync_api import expect
+
+    end = {
+        "type": "machine.end",
+        "ts": TS,
+        "status": "failed",
+        "reason": "stage_12 exited nonzero: the smoke test could not reach the staging host",
+        "state": "finished",
+        "transitions": 13,
+    }
+    last = _step(12, STAGES[12], "nonzero", "finished", {**TOOL, "exit_code": 1})
+    _machine(tmp_path, "chain", _chain(), [*[_chain_step(seq) for seq in range(12)], last, end])
+    page, errors = open_page(port)
+    page.set_viewport_size({"width": 1024, "height": 768})
+    page.goto(f"http://127.0.0.1:{port}/#/machine/chain")
+    expect(page.locator(".dock .refusal")).to_contain_text("already ended")
+    in_view = """() => {
+      const node = document.querySelector('.tree .cursor'), body = node.closest('.card-body');
+      const a = node.getBoundingClientRect(), b = body.getBoundingClientRect();
+      return a.top >= b.top && a.bottom <= b.bottom;
+    }"""
+    expect(page.locator(".tree .cursor")).to_contain_text("finished")
+    assert page.evaluate(in_view)
+    assert not errors
+
+
 @pytest.mark.parametrize("font", [16, 20])
 def test_path_stays_at_its_end_when_a_prompt_or_the_entry_shrinks_it(
     open_page: OpenPage, port: int, tmp_path: pathlib.Path, font: int

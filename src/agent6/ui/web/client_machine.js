@@ -223,13 +223,6 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   if (m.wait_line) path.appendChild(el('div', 'muted')).append(withCode(m.wait_line));
   pathBody.appendChild(path);
   if (ctx.pathAtEnd) pathToEnd(pathBody, ctx);
-  // States brings the current state into view when the machine moves; a phone's cards flow, so
-  // nothing scrolls there.
-  if (cursor && ctx.shownCurrent !== m.current) {
-    ctx.shownCurrent = m.current;
-    const box = structBody.getBoundingClientRect(), at = cursor.getBoundingClientRect();
-    if (at.top < box.top || at.bottom > box.bottom) structBody.scrollTop += (at.top + at.bottom - box.top - box.bottom) / 2;
-  }
   // The conversation is the newest agent state's. Its dir is `<seq>-<state>`, seq being the
   // transition that execution makes, so the current state's own execution has the path's length.
   const [, seq, ran] = /^(\d+)-(.+)$/.exec(cards._state) || [];
@@ -267,6 +260,12 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
     cards._input.title = cards._input.disabled ? why : '';
     cards._input.placeholder = cards._input.disabled ? '' : 'steer or message the machine…';
     cards._hint.hidden = cards._input.disabled;
+  }
+  // After the dock takes its height, States scrolls a new current state into view (a phone's cards do not scroll).
+  if (cursor && ctx.shownCurrent !== m.current) {
+    ctx.shownCurrent = m.current;
+    const box = structBody.getBoundingClientRect(), at = cursor.getBoundingClientRect();
+    if (at.top < box.top || at.bottom > box.bottom) structBody.scrollTop += (at.top + at.bottom - box.top - box.bottom) / 2;
   }
 
   // The current state's conversation: live turn from this frame, completed
