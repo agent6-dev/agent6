@@ -225,6 +225,37 @@ def test_a_relay_writes_only_to_the_same_open_slot(tmp_path: pathlib.Path, chang
     assert _answer(child) == ("no" if change == "answered" else None)
 
 
+@pytest.mark.parametrize("startup", [False, True], ids=["waiting", "startup"])
+def test_regrowth_cannot_hide_a_consumed_answer(tmp_path: pathlib.Path, startup: bool) -> None:
+    """The same inode can outgrow the cursor with an answer already behind it."""
+    child = _child(tmp_path)
+    log = child / "logs.jsonl"
+    prefix = log.read_bytes()
+    status = child_watch.ChildStartup(os.getpid(), len(prefix)) if startup else "waiting"
+    prompt = json.dumps(_prompt()).encode() + b"\n"
+    note = b'{"type":"loop.note","text":"unrelated"}\n'
+    log.write_bytes(prefix + prompt + note * 12)
+    offers = 0
+
+    def approve(request: operator_prompts.ApprovalRequest, /) -> operator_prompts.ApprovalAnswer:
+        nonlocal offers
+        offers += 1
+        assert not request.interrupted()
+        assert ipc.write_answer(child, "approval-1", "no")
+        assert ipc.read_answer(child, "approval-1", timeout_s=0) == "no"
+        answer = b'{"type":"approval.answer","id":"approval-1","approved":false}\n'
+        # Even the original prompt row and the last note match at the retained offsets.
+        log.write_bytes(prefix + prompt + answer.ljust(len(note) * 3 - 1) + b"\n" + note * 15)
+        request.interrupted()  # poll the new suffix before the final check
+        return operator_prompts.ApprovalAnswer(True, "frontend")
+
+    watch = child_watch.ChildWatch(operator_prompts.OperatorPrompts(approver=approve), tmp_path)
+    watch(child, "child", status)
+    assert _answer(child) is None
+    watch(child, "child", status)  # the next poll no longer offers the closed prompt
+    assert offers == 1
+
+
 def test_a_standing_answer_at_the_parent_is_handed_down(tmp_path: pathlib.Path) -> None:
     """An "allow all" given on the parent stops the child asking; a "deny all" asks nobody."""
     child = _child(tmp_path, _prompt())

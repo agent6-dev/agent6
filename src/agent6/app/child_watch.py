@@ -15,12 +15,14 @@ so far, its own running children included, and the parent's tracker bounds the s
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import os
 import pathlib
 import threading
 import time
 from collections.abc import Callable
+from typing import BinaryIO
 
 from agent6 import budget as agent6_budget
 from agent6.sessions import budget_events, ipc, journal, layout, process
@@ -48,15 +50,19 @@ class _PromptJournal:
         self, directory: pathlib.Path, worker: process.ProcessIdentity, start_at: int
     ) -> None:
         self.binding = directory, worker, start_at
+        self.log = directory / layout.LOGS_NAME
         self.position = start_at
         self.seen: os.stat_result | None = None
         self.state = session_fold.initial_state()
+        self.digest = hashlib.sha256()
 
-    def pending(self) -> state_types.ApprovalPrompt | state_types.QuestionPrompt | None:
+    def pending(
+        self, *, confirm: bool = False
+    ) -> state_types.ApprovalPrompt | state_types.QuestionPrompt | None:
         """Return the same prompt object only while its journal slot stays open."""
         directory, _, start_at = self.binding
         try:
-            with (directory / layout.LOGS_NAME).open("rb") as fh:
+            with self.log.open("rb") as fh:
                 # An unreadable or replaced file cannot confirm a cached slot. Stamp the open fd.
                 stamp = os.fstat(fh.fileno())
                 if self.seen is None or (
@@ -68,6 +74,7 @@ class _PromptJournal:
                     )
                 ):
                     self.position, self.state = start_at, session_fold.initial_state()
+                    self.digest = hashlib.sha256()
                 self.seen = stamp
                 fh.seek(self.position)
                 while self.position < stamp.st_size:
@@ -75,12 +82,16 @@ class _PromptJournal:
                     if not line.endswith(b"\n"):
                         break
                     self.position += len(line)
+                    self.digest.update(line)
                     try:
                         event = json.loads(line.decode("utf-8"))
                     except (UnicodeDecodeError, json.JSONDecodeError):
                         continue
                     if isinstance(event, dict):
                         self.state = session_fold.apply_event(self.state, event)
+                if confirm and not self._confirms_fold(fh, stamp):
+                    self.seen = None
+                    return None
         except OSError:
             self.seen = None
             return None
@@ -93,6 +104,24 @@ class _PromptJournal:
         if question is not None and not ipc.question_answers_written(directory, question.id):
             return question
         return None
+
+    def _confirms_fold(self, fh: BinaryIO, stamp: os.stat_result) -> bool:
+        """Return whether the folded bytes still match after possible truncation and regrowth."""
+        _, _, start_at = self.binding
+        fh.seek(start_at)
+        actual = hashlib.sha256()
+        while (left := self.position - fh.tell()) > 0:
+            block = fh.read(min(left, 256 * 1024))
+            if not block:
+                return False
+            actual.update(block)
+        current = self.log.stat()
+        return (
+            actual.digest() == self.digest.digest()
+            and os.path.samestat(stamp, current)
+            and stamp.st_size == current.st_size
+            and stamp.st_ctime_ns == current.st_ctime_ns
+        )
 
 
 class _WatchThread(threading.local):
@@ -167,29 +196,7 @@ class ChildWatch:
             reader = self._thread.journal
             if reader is None or reader.binding != (child_dir, worker, start_at):
                 reader = self._thread.journal = _PromptJournal(child_dir, worker, start_at)
-            prompt = reader.pending()
-            if prompt is None:
-                return False
-
-            ended = False
-
-            def cancelled() -> bool:
-                nonlocal ended
-                ended = (
-                    ended
-                    or interrupted()
-                    or ipc.stop_request_pending(child_dir)
-                    or (self._budget is not None and self._budget.is_exhausted())
-                    or reader.pending() is not prompt
-                    or process.read_live_worker_identity(child_dir) != worker
-                )
-                return ended
-
-            if not cancelled():
-                if isinstance(prompt, state_types.ApprovalPrompt):
-                    self._approval(child_dir, label, prompt, cancelled)
-                else:
-                    self._question(child_dir, label, prompt, cancelled)
+            self._relay(reader, label, interrupted)
         finally:
             self._prompts.one_at_a_time.release()
         return False
@@ -212,66 +219,63 @@ class ChildWatch:
             self._journaled, self._journaled_at = moved, at
         self._emit(journal.BudgetUpdate(**budget_events.budget_update_fields(budget)))
 
-    def _approval(
+    def _relay(self, reader: _PromptJournal, label: str, interrupted: Callable[[], bool]) -> None:
+        """Publish a reply only to the open slot the parent offered to its operator."""
+        child_dir, worker, _ = reader.binding
+        prompt = reader.pending()
+        if prompt is None:
+            return
+        ended = False
+
+        def cancelled(*, confirm: bool = False) -> bool:
+            nonlocal ended
+            ended = (
+                ended
+                or reader.pending(confirm=confirm) is not prompt
+                or process.read_live_worker_identity(child_dir) != worker
+                or interrupted()
+                or ipc.stop_request_pending(child_dir)
+                or (self._budget is not None and self._budget.is_exhausted())
+            )
+            return ended
+
+        if cancelled():
+            return
+        if isinstance(prompt, state_types.ApprovalPrompt):
+            verdict = self._verdict(label, prompt, cancelled)
+            if not cancelled(confirm=True):
+                ipc.write_answer(child_dir, prompt.id, verdict)
+        else:
+            asked = tuple(
+                schema.UserQuestion(question=_labelled(label, q.question), options=q.options)
+                for q in prompt.questions
+            )
+            reply = self._prompts.ask(asked, interrupted=cancelled)
+            if cancelled(confirm=True):
+                return
+            if reply.status == "answered":
+                ipc.write_question_answers(child_dir, prompt.id, reply.answers)
+            else:
+                ipc.write_question_unanswered(child_dir, prompt.id, reply.note)
+
+    def _verdict(
         self,
-        child_dir: pathlib.Path,
         label: str,
         prompt: state_types.ApprovalPrompt,
         cancelled: Callable[[], bool],
-    ) -> None:
-        """Ask the parent's operator a child's approval and write the verdict down.
-
-        A standing answer the parent holds for the prompt's scope goes down with the verdict,
-        so the child stops asking.
-
-        Args:
-            child_dir: The child's session dir.
-            label: The child, as the operator reads it.
-            cancelled: Ends the relay without writing to the child.
-            prompt: The child's open approval.
-        """
+    ) -> str:
+        """Return the parent's verdict, including a standing answer for the prompt's scope."""
         scope = prompt.scope
         if scope and ipc.session_deny_set(self._parent_dir, scope):
-            answer = "session-deny"
-        else:
-            approved = self._prompts.approve(
-                f"[{label}] {prompt.prompt}", scope=scope, interrupted=cancelled
-            )
-            if scope and approved and ipc.session_allow_set(self._parent_dir, scope):
-                answer = "session"
-            elif scope and not approved and ipc.session_deny_set(self._parent_dir, scope):
-                answer = "session-deny"
-            else:
-                answer = "yes" if approved else "no"
-        if not cancelled():
-            ipc.write_answer(child_dir, prompt.id, answer)
-
-    def _question(
-        self,
-        child_dir: pathlib.Path,
-        label: str,
-        prompt: state_types.QuestionPrompt,
-        cancelled: Callable[[], bool],
-    ) -> None:
-        """Ask the parent's operator a child's questions and write the outcome down.
-
-        Args:
-            child_dir: The child's session dir.
-            label: The child, as the operator reads it.
-            cancelled: Ends the relay without writing to the child.
-            prompt: The question prompt the child is paused on.
-        """
-        asked = tuple(
-            schema.UserQuestion(question=_labelled(label, q.question), options=q.options)
-            for q in prompt.questions
+            return "session-deny"
+        approved = self._prompts.approve(
+            f"[{label}] {prompt.prompt}", scope=scope, interrupted=cancelled
         )
-        answer = self._prompts.ask(asked, interrupted=cancelled)
-        if cancelled():
-            return
-        if answer.status == "answered":
-            ipc.write_question_answers(child_dir, prompt.id, answer.answers)
-        else:
-            ipc.write_question_unanswered(child_dir, prompt.id, answer.note)
+        if scope and approved and ipc.session_allow_set(self._parent_dir, scope):
+            return "session"
+        if scope and not approved and ipc.session_deny_set(self._parent_dir, scope):
+            return "session-deny"
+        return "yes" if approved else "no"
 
 
 def running_usage(child_dir: pathlib.Path) -> agent6_budget.UsageSettlement:
