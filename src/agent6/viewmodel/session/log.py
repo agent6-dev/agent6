@@ -47,6 +47,7 @@ class LogScan:
             when none was recorded.
         end_tree: The worktree's tree id that end recorded; "" when it recorded none or a
             later execution began.
+        index_tree: The staged tree at that stop, or an empty id without a measurement.
         undone_to: The fork `/undo` continues the session as; "" when it was never undone.
         provider_error: The last failed driving call's error, the reason behind a
             `provider_error` end; "" when none failed.
@@ -103,6 +104,7 @@ class LogScan:
     baseline_ok: bool | None = None
     gate_swapped: bool = False
     end_tree: str = ""
+    index_tree: str = ""
     undone_to: str = ""
     provider_error: str = ""
     budget: state_types.BudgetView = dataclasses.field(default_factory=state_types.BudgetView)
@@ -336,6 +338,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     baseline_ok: bool | None = None
     gate_swapped = False
     end_tree = ""
+    index_tree = ""
     saw_budget = False
     turn: int | None = None
     open_tools: dict[object, str] = {}
@@ -427,6 +430,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                 if etype == "session.start":
                     end_ep = None
                     end_tree = ""
+                    index_tree = ""
                     # A new execution re-asks with restarted ids; a held-over prompt waits forever.
                     pending_prompts.clear()
                     if start_ep is None:
@@ -437,12 +441,14 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     if core.lifecycle.stop_reason == "setup_command_failed" and ev.get("summary"):
                         setup_output = terminal.scrub_terminal_controls(str(ev["summary"]))
                     end_tree = str(ev.get("tree") or "")
+                    index_tree = str(ev.get("index_tree") or "")
                     final_verify_id = ev.get("final_verify_id")
                     child_verification = journal.ChildVerification.from_stop(ev)
                     end_ep = ep
                 elif etype == "session.resume":
                     end_ep = None
                     end_tree = ""
+                    index_tree = ""
                     pending_prompts.clear()
                 elif etype == "worktree.setup":
                     setup_output = format.setup_output(ev)
@@ -516,6 +522,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         gate_swapped=gate_swapped,
         setup_output=setup_output,
         end_tree=end_tree,
+        index_tree=index_tree,
         undone_to=life.undone_to,
         provider_error=life.provider_error,
         budget=core.budget,

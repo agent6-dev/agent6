@@ -2438,6 +2438,13 @@ def test_worktree_matches_reads_repo_relative_paths_from_a_subdirectory(
     assert not git_read.worktree_matches(tmp_path / "sub", "HEAD", ["README.md"])
 
 
+def test_tree_paths_use_repo_root_names_from_a_subdirectory(tmp_path: pathlib.Path) -> None:
+    _init_repo(tmp_path)
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    assert git_read.tree_paths(sub, "HEAD") == {"README.md"}
+
+
 def test_an_excluded_path_that_git_now_ignores_does_not_fail_the_tree(
     tmp_path: pathlib.Path,
 ) -> None:

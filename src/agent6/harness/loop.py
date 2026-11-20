@@ -1648,7 +1648,7 @@ class Harness:
         roots = end.roots if end.roots is not None else end.verdict != "failed"
         if roots:
             self._pass_pending_root_tasks()
-        tree = self.chain.tree_sha() if end.event and self.mode == "run" else ""
+        tree, staged = self.chain.tree_ids() if end.event and self.mode == "run" else ("", "")
         verification = self.gate.verification(state.verify)
         child_pass = (
             self.child_verification(state, tree)
@@ -1666,6 +1666,8 @@ class Harness:
             left["child_verification"] = child_pass
         if tree:
             left["tree"] = tree
+            if staged:
+                left["index_tree"] = staged
         if end.event:
             self.emit(
                 journal.SessionStop(

@@ -572,6 +572,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     ),
                 ),
                 per_turn=cfg.git.commit_per_turn,
+                model_git=mode == "run" and cfg.git.control == "model",
                 base_sha=inputs.base_sha,
                 mirror_into=inputs.mirror_into,
             ),

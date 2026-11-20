@@ -944,8 +944,16 @@ def tree_paths(path: pathlib.Path, ref: str) -> frozenset[str]:
     if git_command.run(path, "rev-parse", "--verify", "--quiet", ref, check=False).returncode != 0:
         return frozenset()
     return frozenset(
-        filter(None, git_command.nul_fields(path, "ls-tree", "-r", "--name-only", "-z", ref))
+        filter(
+            None,
+            git_command.nul_fields(path, "ls-tree", "--full-tree", "-r", "--name-only", "-z", ref),
+        )
     )
+
+
+def index_tree(path: pathlib.Path) -> str:
+    """Return the tree id of the staged content without staging the working copy."""
+    return git_command.run(path, "write-tree").stdout.strip()
 
 
 def tree_diff_paths(path: pathlib.Path, old_tree: str, new_tree: str) -> list[str]:

@@ -68,6 +68,7 @@ class RunChain:
             the gate's scope; "" when unknown.
         mirror_into: The repository a session in a clone copies each commit into; None in
             the repository itself or a linked worktree of it.
+        model_git: Whether the model's index determines which working files are tracked.
     """
 
     root: pathlib.Path
@@ -80,6 +81,7 @@ class RunChain:
     per_turn: bool = True
     base_sha: str = ""
     mirror_into: pathlib.Path | None = None
+    model_git: bool = False
 
     @property
     def excluded(self) -> frozenset[str]:
@@ -222,17 +224,22 @@ class RunChain:
         return f"; worktree left dirty ({len(paths)}{more} {noun} uncommitted, not checkpointed)"
 
     def tree_sha(self) -> str:
-        """Return the tree sha of the worktree's content, minus the excluded paths.
+        """Return the measured working tree, or an empty id without a measurement."""
+        return self.tree_ids()[0]
+
+    def tree_ids(self) -> tuple[str, str]:
+        """Measure the working copy with the index that defines its tracked files.
 
         Returns:
-            The sha, seeded on the record's head like a chain commit; "" when git cannot say.
+            The working tree and, under model-controlled git, the staged tree used as its seed.
+            An empty id means no measurement.
         """
         try:
-            return git_read.worktree_tree(
-                self.root, self.checkpoint_head_sha() or self.fallback_parent, self.excluded
-            )
+            staged = git_read.index_tree(self.root) if self.model_git else ""
+            seed = staged or self.checkpoint_head_sha() or self.fallback_parent
+            return git_read.worktree_tree(self.root, seed, self.excluded), staged
         except (errors.GitError, OSError):
-            return ""
+            return "", ""
 
     def checkpoint_head_sha(self) -> str:
         """Return the sha the per-turn checkpoint records.

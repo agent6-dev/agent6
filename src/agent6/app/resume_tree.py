@@ -60,10 +60,9 @@ def outside_edits(
 
     Args:
         cwd: The checkout.
-        end_tree: The tree the run left: the one its last end recorded, or HEAD's once its
-            work landed there; "" when none was recorded.
-        seed: The commit to stage over: HEAD for a model-controlled run with a recorded end,
-            otherwise the chain tip or the run's base.
+        end_tree: The tree the run left, or HEAD's tree after a recorded merge into HEAD.
+            An empty id means no tree was recorded.
+        seed: The recorded index or commit whose tracked paths define the working tree.
         exclude: The operator's untracked files and the run's hidden paths, left out of
             both trees.
         written: The paths the run's own tools wrote, which stay its own when no tree was

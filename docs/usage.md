@@ -322,6 +322,8 @@ State is snapshotted before each model call and checkpointed per turn.
 - a `sessions merge` that conflicts names `agent6 resume <id> --merge <branch>` for a run with its own worktree: the resume merges the branch into the run's work there, leaves each conflict's markers in the file for the run to resolve as its first task, and the next `sessions merge` lands cleanly
 - files you changed between executions follow `[git].dirty_tree` on resume, as uncommitted changes do at a run's start: `ask` asks, `stash` sets them aside (a change under `[sandbox].hide_paths` stays in place), `include` leaves them in place, named to the model before its first call, for the run's next commit to take ([Config](config.md#git))
   Under `git.control = "model"`, resume names the uncommitted files that still match the run's last stop and leaves committing them to the model.
+  It compares both working and staged contents.
+  For a stop without a staged-tree record, a difference from the recorded commit remains unconfirmed.
 - when `stash` refuses over a file the run also changed, its printed `git restore --source ...` command discards only your edit and keeps the run's last tree; plain `git restore FILE` returns to HEAD, which can remove the run's work
 - a new untracked file is left out of the run's commits as yours, unless the last execution died mid-turn (a kill, a crash): a command of that turn may have written it, so the run keeps it, and the resume names up to four files either way
 

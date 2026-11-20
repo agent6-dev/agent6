@@ -642,6 +642,84 @@ def test_model_git_resume_leaves_hidden_changes_out(
     assert resume_tree.outside_edits(repo, end_tree, "HEAD", hidden) == []
 
 
+@pytest.mark.parametrize("change", ["directory", "tracked-pack-name", "index"])
+def test_model_git_resume_refuses_unrecorded_changes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    """A matching working-copy path cannot authorize a changed directory or staged content."""
+    repo = _setup(tmp_path, monkeypatch, 'control = "model"\n')
+    path = repo / (".agent6" if change == "tracked-pack-name" else "pkg") / "file.py"
+    path.parent.mkdir()
+    path.write_text("committed\n")
+    _git(repo, "add", "-f", "--", str(path))
+    _git(repo, "commit", "-qm", "Track file")
+    sid = "tree-BND001"
+    _stopped_run(repo, monkeypatch, sid, _edit("a.py", "run edit\n"))
+    if change == "directory":
+        path.unlink()
+        path.parent.rmdir()
+        path.parent.write_text("replacement\n")
+    elif change == "index":
+        path.write_text("operator staged\n")
+        _git(repo, "add", "--", str(path))
+        path.write_text("committed\n")
+    else:
+        path.write_text("operator\n")
+    rc, provider = _resume_recording(monkeypatch, sid, [_finish()])
+    assert rc == 2 and not provider.calls
+
+
+def test_model_git_resume_names_a_missing_stage_measurement(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _setup(tmp_path, monkeypatch, 'control = "model"\n')
+    sid = "tree-OLD001"
+    _stopped_run(repo, monkeypatch, sid, _edit("a.py", "run edit\n"))
+    log = _session_dir(repo, sid) / "logs.jsonl"
+    rows = [json.loads(line) for line in log.read_text().splitlines()]
+    for row in rows:
+        row.pop("index_tree", None)
+    log.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    _git(repo, "add", "a.py")
+    capsys.readouterr()
+    rc, provider = _resume_recording(monkeypatch, sid, [_finish()])
+    assert rc == 2 and not provider.calls
+    err = capsys.readouterr().err
+    assert "no staged-tree record" in err and "a.py" in err
+    assert "changed outside this run" not in err
+
+
+def test_model_git_resume_distinguishes_staged_and_working_content(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _setup(tmp_path, monkeypatch, 'control = "model"\n', run_commands="allow")
+    (repo / ".gitignore").write_text("*.log\n")
+    _git(repo, "add", ".gitignore")
+    _git(repo, "commit", "-qm", "Ignore logs")
+    sid = "tree-STG001"
+    stage = {
+        "type": "tool_use",
+        "name": "run_command",
+        "id": "stage",
+        "input": {
+            "argv": [
+                "sh",
+                "-c",
+                "echo first > draft.log && git add -f draft.log && echo second > draft.log",
+            ]
+        },
+    }
+    _stopped_run(repo, monkeypatch, sid, ("", (stage,)))
+    draft = repo / "draft.log"
+    draft.write_text("outside\n")
+    rc, provider = _resume_recording(monkeypatch, sid, [_finish()])
+    assert rc == 2 and not provider.calls
+    draft.write_text("second\n")
+    assert _resume(monkeypatch, sid, [_finish()]) == 0
+    assert _git(repo, "show", ":draft.log") == "first\n"
+    assert draft.read_text() == "second\n"
+
+
 @pytest.mark.parametrize(("policy", "rc"), [("", 2), ('dirty_tree = "include"\n', 0)])
 def test_a_run_killed_before_it_recorded_a_tree_treats_unwritten_changes_as_outside(
     tmp_path: pathlib.Path,

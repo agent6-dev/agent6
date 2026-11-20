@@ -12,7 +12,7 @@ import contextlib
 import json
 import os
 import pathlib
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 
 from agent6 import budget, directive, errors, kinds, terminal
 from agent6 import paths as agent6_paths
@@ -90,7 +90,7 @@ def _paths_the_run_wrote(logs_path: pathlib.Path) -> frozenset[str]:
     return frozenset(paths)
 
 
-def _first_four(paths: frozenset[str]) -> str:
+def _first_four(paths: Collection[str]) -> str:
     """Return the first four paths in order, then how many more there are."""
     named = sorted(paths)
     more = f", +{len(named) - 4} more" if len(named) > 4 else ""
@@ -587,7 +587,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             return cfg
 
         untracked_at_start = sessions_layout.read_untracked_at_start(layout.session_dir)
-        hidden = git_read.hidden_in_repo(cwd, cfg.sandbox.hide_paths) | {".agent6"}
+        hidden = git_read.hidden_in_repo(cwd, cfg.sandbox.hide_paths)
         outside: list[str] = []
         carried_edits: frozenset[str] = frozenset()
         end_tree = ""
@@ -606,22 +606,35 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             died_in_turn = flight is not None and flight.turn == snapshot.next_turn
             chain_ref = git_read.chain_ref_for(session_id)
             end_tree = scan.end_tree
-            # The model's commits track files even when the run's starting commit ignored them.
             model_end = manifest.git_control == "model" and bool(end_tree)
-            record_ref = "HEAD" if model_end else chain_ref
-            seed = git_read.chain_tip(cwd, record_ref) or resume_base_sha or None
+            record_ref = (
+                (scan.index_tree or snapshot.head_sha or end_tree) if model_end else chain_ref
+            )
+            seed = (
+                record_ref
+                if model_end
+                else git_read.chain_tip(cwd, chain_ref) or resume_base_sha or None
+            )
             written = _paths_the_run_wrote(layout.logs_path)
             if landed is not None:
                 # The run's work is in HEAD, so what differs from HEAD is the operator's.
                 end_tree, seed = f"{landed.head}^{{tree}}", landed.head
             try:
+                stopped_paths = git_read.tree_paths(cwd, end_tree) if end_tree else frozenset()
                 arrived = (
                     git_read.untracked_paths(cwd)
                     - untracked_at_start
                     - git_read.tree_paths(cwd, record_ref)
-                    - (git_read.tree_paths(cwd, end_tree) if end_tree else frozenset())
+                    - stopped_paths
                     - written
                 )
+                if arrived:
+                    # A file replacing a recorded directory is a change to that tree.
+                    arrived -= {
+                        str(p)
+                        for name in stopped_paths
+                        for p in pathlib.PurePosixPath(name).parents
+                    }
                 shown = _first_four(arrived)
                 if arrived and died_in_turn:
                     them = "it" if len(arrived) == 1 else "them"
@@ -640,13 +653,42 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 # Tracked content that changed since the last end is the operator's too; a
                 # file taken as the run's above stays its own.
                 runs_own = written | arrived if died_in_turn else written
-                exclude = untracked_at_start | hidden
+                exclude = untracked_at_start | hidden | {".agent6"}
                 outside = resume_tree.outside_edits(cwd, end_tree, seed, exclude, written=runs_own)
                 if model_end:
-                    committed = seed or git_read.empty_tree(cwd)
-                    carried_edits = frozenset(
-                        resume_tree.visible_changes(cwd, committed, end_tree, exclude)
-                    ).difference(outside)
+                    committed = snapshot.head_sha or git_read.empty_tree(cwd)
+                    staged = git_read.index_tree(cwd)
+                    if any(
+                        code != "??"
+                        and code[1] != " "
+                        and git_read.excluded(p, {".agent6"})
+                        and not git_read.excluded(p, hidden)
+                        for code, p in git_read.porcelain_entries(cwd)
+                    ):
+                        reporter.refuse(
+                            "a tracked file under .agent6 has working-copy edits."
+                            " The run did not measure this directory."
+                        )
+                        return 2
+                    staged_changes = resume_tree.visible_changes(
+                        cwd, scan.index_tree or committed, staged, hidden
+                    )
+                    if staged_changes and not scan.index_tree:
+                        note = (
+                            "the run's last stop has no staged-tree record."
+                            f" Unconfirmed staged edits: {_first_four(staged_changes)}"
+                        )
+                        if cfg.git.dirty_tree != "include":
+                            reporter.refuse(note)
+                            return 2
+                        reporter.note(note)
+                    else:
+                        outside = sorted(set(outside).union(staged_changes))
+                    carried_edits = (
+                        frozenset(resume_tree.visible_changes(cwd, committed, end_tree, exclude))
+                        .union(resume_tree.visible_changes(cwd, committed, staged, exclude))
+                        .difference(outside, staged_changes)
+                    )
                 unsettled = resume_tree.refusal(
                     cwd,
                     policy=cfg.git.dirty_tree,

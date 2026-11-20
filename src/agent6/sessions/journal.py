@@ -1506,6 +1506,9 @@ class SessionStop(Event):
         default=None,
         description="The child's full gate pass covering this tree, when used instead.",
     )
+    index_tree: str | None = pydantic.Field(
+        default=None, description="The staged tree at a model-controlled stop, when available."
+    )
     tree: str | None = pydantic.Field(
         default=None,
         description="The final working-tree content identifier.",
