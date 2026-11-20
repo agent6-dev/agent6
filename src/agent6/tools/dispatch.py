@@ -958,8 +958,8 @@ class ToolDispatcher:
             raw: The tool call's arguments.
 
         Returns:
-            The rosters, with the command's output or the child's transcript when the call
-            gives an `id`.
+            The rosters; with an `id`, that command's row and output or that child's row and
+            transcript.
         """
         args = schema.ReadBackgroundInput.model_validate(raw)
         checkin = self._config.harness.command_checkin_s
@@ -987,7 +987,9 @@ class ToolDispatcher:
                 wait_s=wait_s,
                 interrupted=self._background_wait_interrupted,
             )
-            result = dataclasses.replace(result, children=tuple(child.line() for child in roster))
+            if not args.id:
+                lines = tuple(child.line() for child in roster)
+                result = dataclasses.replace(result, children=lines)
         if (
             limited
             and result.running
@@ -1001,24 +1003,20 @@ class ToolDispatcher:
         return result
 
     def _stop_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
-        """Return the background rosters after stopping a command or a child.
+        """Stop a command or a child.
 
         Args:
             raw: The tool call's arguments, naming the command or the child by its `id`.
 
         Returns:
-            The rosters after the stop.
+            The row of the command or the child after the stop.
         """
         args = schema.StopBackgroundInput.model_validate(raw)
         if self.children is not None and any(c.id == args.id for c in self.children.roster()):
             self.children.stop(args.id)
-            result = results.BackgroundResult(
-                shells=tuple(view.line() for view in self._background().roster())
-            )
-        else:
-            result = command_tools.stop_background(raw, get_background=self._background)
-        roster = self.children.roster() if self.children is not None else ()
-        return dataclasses.replace(result, children=tuple(child.line() for child in roster))
+            rows = tuple(c.line() for c in self.children.roster() if c.id == args.id)
+            return results.BackgroundResult(shells=(), children=rows)
+        return command_tools.stop_background(raw, get_background=self._background)
 
     def _background(self) -> background.BackgroundShells:
         """Return the background roster.

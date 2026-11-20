@@ -101,6 +101,27 @@ def test_a_command_outliving_the_checkin_comes_back_as_a_background_job(
         d.close()
 
 
+def test_a_read_or_stop_of_one_command_lists_only_that_command(tmp_path: pathlib.Path) -> None:
+    """Each read or stop of one command carried the row of every command the run had started.
+
+    A long run paid for its whole roster on every call: 104 rows after eight hours.
+    """
+    d = _dispatcher(tmp_path, checkin=30.0)
+    try:
+        for word in ("one", "two"):
+            d.dispatch("run_command", {"argv": ["sh", "-c", f"echo {word}"], "background": True})
+
+        read = d.dispatch("read_background", {"id": "bg2", "wait_s": 10}).to_wire()
+        stopped = d.dispatch("stop_background", {"id": "bg1"}).to_wire()
+        roster = d.dispatch("read_background", {}).to_wire()
+    finally:
+        d.close()
+    assert [line.split("]")[0] for line in read["shells"]] == ["[bg2"]
+    assert "two" in read["output"]
+    assert [line.split("]")[0] for line in stopped["shells"]] == ["[bg1"]
+    assert [line.split("]")[0] for line in roster["shells"]] == ["[bg1", "[bg2"]
+
+
 def test_a_zero_checkin_waits_for_the_command(tmp_path: pathlib.Path) -> None:
     """`0` disables the hand-back.
 

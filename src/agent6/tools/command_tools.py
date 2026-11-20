@@ -69,11 +69,6 @@ class JailAccess:
         return kinds.EnvironmentOutcome("unknown", "No lifecycle observation recorded.")
 
 
-def _roster(shells: background.BackgroundShells) -> tuple[str, ...]:
-    """Return the background roster as lines."""
-    return tuple(v.line() for v in shells.roster())
-
-
 def start_detached(
     argv: tuple[str, ...],
     *,
@@ -200,14 +195,14 @@ def read_background(
         interrupted: Cuts the wait short.
 
     Returns:
-        The roster, with the output when an id was given.
+        The roster; with an id, that command's row and output.
 
     Raises:
         ToolError: No session directory was wired, or the id is unknown.
     """
     shells = get_background()
     if not args.id:
-        return results.BackgroundResult(shells=_roster(shells))
+        return results.BackgroundResult(shells=tuple(v.line() for v in shells.roster()))
     try:
         with waits.during(wait_s):
             view, output = shells.read(
@@ -219,7 +214,7 @@ def read_background(
     except background.BackgroundError as exc:
         raise tool_errors.ToolError(str(exc)) from exc
     return results.BackgroundResult(
-        shells=_roster(shells), output=output, running=view.state == "running"
+        shells=(view.line(),), output=output, running=view.state == "running"
     )
 
 
@@ -235,18 +230,17 @@ def stop_background(
         get_background: Returns the run's background roster.
 
     Returns:
-        The roster after the stop.
+        The command's row after the stop.
 
     Raises:
         ToolError: No session directory was wired, or the id is unknown.
     """
     args = schema.StopBackgroundInput.model_validate(raw)
-    shells = get_background()
     try:
-        shells.stop(args.id)
+        view = get_background().stop(args.id)
     except background.BackgroundError as exc:
         raise tool_errors.ToolError(str(exc)) from exc
-    return results.BackgroundResult(shells=_roster(shells))
+    return results.BackgroundResult(shells=(view.line(),))
 
 
 def run_argv_raw(

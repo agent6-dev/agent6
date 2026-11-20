@@ -733,7 +733,8 @@ class SteeredResult(ToolResult):
 class BackgroundResult(ToolResult):
     """A background tool's result.
 
-    A read without an id lists the full roster. A read of a child lists only that child.
+    A read without an id lists the full roster. A read or stop with an id lists only that
+    command or child.
 
     Attributes:
         shells: The formatted command roster.
