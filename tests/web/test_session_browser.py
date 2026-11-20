@@ -694,7 +694,7 @@ def test_the_run_card_lines_up_the_judge_settings_and_last_call_with_its_rows(
     page, errors = open_page(port)
     page.goto(f"http://127.0.0.1:{port}/#/session/child")
     keys = page.locator(".card-head .kv .k")
-    expect(keys).to_have_text(["task", "id", "status", "compare", "judge", "settings", "last call"])
+    expect(keys).to_have_text(["task", "id", "status", "compare", "judge", "settings", "actor"])
     values = page.locator(".card-head .kv .v")
     expect(values.nth(4)).to_have_text("covers it")
     expect(values.nth(6)).to_have_text("worker / m1")
