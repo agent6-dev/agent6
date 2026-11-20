@@ -889,7 +889,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `steers/` | the instructions queued behind the steer in flight, one file each in the order sent; the worker moves the oldest into the slot when it clears |
 | `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between executions and it cannot show it wrote; left out of every chain commit and dirty check; a fork records its own checkout's set, and an `/undo` fork the set of the checkout it keeps |
 
-Session manifest version 15 identifies the journal that records dispatch outcomes as `parallel.merged` (`ParallelMerged`).
+The journal writer records dispatch outcomes as `parallel.merged` (`ParallelMerged`).
 The journal and provider transcripts record the [actor](usage.md#model-call-actors) of each model call.
 Transcript callers supply the object directory explicitly: sessions use the layout's `objects/`, and `sessions review` uses `<state-dir>/reviews/objects/`.
 The [Formats reference](formats.md#provider-transcripts) describes provider attempt records, their pre-send write and finalization, and their call and request ids.
