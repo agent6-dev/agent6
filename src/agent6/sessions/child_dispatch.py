@@ -25,7 +25,7 @@ DispatchState = Literal["prepared", "running", "settling", "ranking", "joining",
 
 def read_commit_count(child_dir: pathlib.Path, join: JoinRecord | None = None) -> int | None:
     """Return a work child's measured count beyond start, including an older join's count."""
-    if join is not None and join.status in ("ranked", "stopped", "unmerged"):
+    if join is not None and join.status in ("ranked", "stopped", "retained"):
         return join.commits
     try:
         count = int((child_dir / _COMMIT_COUNT).read_text(encoding="ascii"))

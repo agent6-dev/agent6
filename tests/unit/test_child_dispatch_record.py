@@ -49,6 +49,13 @@ def test_a_session_without_records_reads_as_none(tmp_path: pathlib.Path) -> None
     assert child_dispatch.read_records(tmp_path) == ()
 
 
+def test_a_retained_ref_keeps_its_recorded_commit_count(tmp_path: pathlib.Path) -> None:
+    """An older dispatch has a join count but no live count file."""
+    join = child_dispatch.JoinRecord.model_validate({"status": "unmerged", "commits": 3})
+    assert join.status == "retained"
+    assert child_dispatch.read_commit_count(tmp_path, join) == 3
+
+
 def test_records_read_in_dispatch_order(tmp_path: pathlib.Path) -> None:
     for identity in ("run-p10", "run-p2", "run-p1"):
         child_dispatch.write_record(tmp_path, _record(identity), now=1.0)
