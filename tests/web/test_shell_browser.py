@@ -834,7 +834,7 @@ def test_a_long_switcher_row_ends_in_an_ellipsis_and_its_ids_line_up(
 ) -> None:
     """A long row ran past the switcher's edge, cut mid-word, and each id started after its status.
 
-    The status now ends the line, as on a Sessions row.
+    The status ends the line, as on a Sessions row.
     """
     page, errors = open_page(port)
     rows = _sessions(2)

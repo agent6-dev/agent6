@@ -628,7 +628,7 @@ def test_merge_action_confirms_then_merges(
 ) -> None:
     """`m` opens a confirm modal; confirming merges the selected run.
 
-    A conflict in a run with its own worktree named a terminal command; the hub now offers the
+    A conflict in a run with its own worktree named a terminal command; the hub offers the
     resume that merges the base into the run's work.
     """
     import asyncio
