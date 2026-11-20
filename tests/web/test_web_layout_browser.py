@@ -472,6 +472,29 @@ def test_a_dock_at_the_pages_end_covers_no_height(
     assert not errors
 
 
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_a_placeholder_reads_at_4_5_to_1(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, theme: str
+) -> None:
+    """A placeholder, a composer's or filter's only label, read at 4.1:1 in the browser's grey."""
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.evaluate(f"document.documentElement.classList.add('{theme}')")
+    ratio = page.locator(".dock textarea").evaluate("""e => {
+      const rgba = c => c.match(/[\\d.]+/g).map(Number);
+      const [r, g, b, a = 1] = rgba(getComputedStyle(e, '::placeholder').color);
+      const back = rgba(getComputedStyle(e).backgroundColor);
+      const seen = [r, g, b].map((v, i) => v * a + back[i] * (1 - a));
+      const lum = ([R, G, B]) => [R, G, B].map(v => v / 255)
+        .map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+        .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+      const [hi, lo] = [lum(seen), lum(back)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    }""")
+    assert ratio >= 4.5, ratio
+    assert not errors
+
+
 def test_every_expand_control_draws_the_folds_chevron(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
