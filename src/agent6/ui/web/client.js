@@ -1139,8 +1139,7 @@ function machineFilesCard() {
   card.appendChild(el('h2', null, 'Run a machine'));
   const frow = el('div', 'form-row machine-files');
   const run = (mf) => {
-    const b = el('button');
-    b.append(glyph('▶'), '\u00a0' + mf.name); // the mark keeps to the name's first line
+    const b = el('button', null, '▶\u00a0' + mf.name); // the mark keeps to the name's first line
     b.setAttribute('aria-label', 'Run ' + mf.name);
     runOnce(b, async () => {
       // A machine run spends against your provider from this one click, so
