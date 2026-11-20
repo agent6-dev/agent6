@@ -461,9 +461,10 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
 
         if mode == "run":
             # One run-mode worker per checkout, taken before any tree mutation.
-            repo_lock_fd = lock.acquire_repo_writer(layout.state_dir, cwd, effective_session_id)
+            checkout_state = paths.state_dir(cwd)
+            repo_lock_fd = lock.acquire_repo_writer(checkout_state, cwd, effective_session_id)
             if repo_lock_fd is None:
-                holder = lock.repo_writer_holder(layout.state_dir, cwd) or "another run"
+                holder = lock.repo_writer_holder(checkout_state, cwd) or "another run"
                 return _park(
                     "checkout busy",
                     f"run {holder!r} is already driving this checkout, and a second run-mode"

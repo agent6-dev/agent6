@@ -400,9 +400,10 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
 
         # One run-mode worker per checkout; a fork's worktree never contends with the repo's.
         if mode == "run":
-            repo_lock_fd = lock.acquire_repo_writer(layout.state_dir, cwd, session_id)
+            checkout_state = agent6_paths.state_dir(cwd)
+            repo_lock_fd = lock.acquire_repo_writer(checkout_state, cwd, session_id)
             if repo_lock_fd is None:
-                holder = lock.repo_writer_holder(layout.state_dir, cwd) or "another run"
+                holder = lock.repo_writer_holder(checkout_state, cwd) or "another run"
                 reporter.refuse(
                     f"run {holder!r} is already driving this checkout; a"
                     " second run-mode worker would interleave auto-commits on the"

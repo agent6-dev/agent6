@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import subprocess
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -16,11 +17,11 @@ from agent6.app import child_launch, child_resume, child_wait, child_watch
 from agent6.app import children as app_children
 from agent6.config import Config, layer
 from agent6.harness import child_repo
-from agent6.sessions import child_dispatch, event_log, ipc, journal, process
+from agent6.sessions import child_dispatch, event_log, ipc, journal, lock, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts
 from agent6.ui.cli import cli_main
-from tests import launch_env
+from tests import child_env, launch_env
 from tests.unit import test_children_background as background
 from tests.unit import test_children_cli as children_cli
 
@@ -137,6 +138,41 @@ def test_the_cli_continues_the_same_child_and_refuses_direct_resume(
     assert cli_main(["--config", str(config), "resume", child.session_id]) == 2
     output = capsys.readouterr()
     assert "steer_child" in output.out + output.err
+
+
+@pytest.mark.parametrize("continued", [False, True], ids=["start", "resume"])
+def test_a_child_cannot_share_its_clone_with_another_writer(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, continued: bool
+) -> None:
+    repo, clone = tmp_path / "repo", tmp_path / "clone"
+    child_env.init_repo(repo)
+    with launch_env.scripted_provider() as (url, calls):
+        path, launch = child_env.launch_worker(repo, clone, child_env.config(url), monkeypatch)
+
+        def run() -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                child_launch.bootstrap_argv(),
+                cwd=clone,
+                capture_output=True,
+                text=True,
+                timeout=90,
+                check=False,
+            )
+
+        if continued:
+            first = run()
+            assert first.returncode == 0, first.stdout + first.stderr
+            child_launch.write(path.parent, launch.model_copy(update={"continuation": "finish"}))
+
+        fd = lock.acquire_repo_writer(paths.state_dir(clone), clone, "standalone")
+        assert fd is not None
+        try:
+            child = run()
+        finally:
+            lock.release_single_writer(fd)
+        assert child.returncode == 2, child.stdout + child.stderr
+        assert "run 'standalone' is already driving this checkout" in child.stdout + child.stderr
+        assert len(calls) == int(continued)
 
 
 @pytest.mark.parametrize("foreign", ["parent", "group", "number", "session", "clone", "reviewer"])
