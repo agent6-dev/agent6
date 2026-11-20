@@ -84,6 +84,7 @@ def test_runs_list_json_carries_the_row_facts(
         "status_label",
         "status_level",
         "unmerged",
+        "retained_ref",
         "verification",
         "cost_usd",
         "usage",
