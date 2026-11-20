@@ -7,7 +7,7 @@ from __future__ import annotations
 import contextlib
 import os
 import pathlib
-import shlex
+import re
 import sys
 from collections.abc import Callable, Sequence
 
@@ -145,20 +145,22 @@ def build_approver(
             if parked:
                 return
             head, payload = approval_parts(request.prompt)
-            requester, _, tool = head.rpartition("Allow ")
-            label = (requester or f"[session {session_dir.name}] ") + tool
-            target = ""
-            if tool == "fetch":
+            requester, allow, tool = head.partition("Allow ")
+            requester = requester if allow and requester else f"[session {session_dir.name}] "
+            if request.scope is None and tool == "fetch":
                 # Checked.prompt() supplies the vetted host and path, then the private query.
-                target = payload.partition("?")[0]
-            elif request.scope == ipc.COMMAND_SCOPE and payload:
-                target = shlex.split(payload)[0]
-            # An MCP tool's qualified name already names its server. Keep its arguments private.
-            if target:
-                label += f": {terminal.line_preview(target)}"
+                tool += f": {payload.partition('?')[0]}"
+            elif request.scope == ipc.COMMAND_SCOPE and (
+                executable := re.fullmatch(r"[\w./+-]+", payload.partition(" ")[0], re.ASCII)
+            ):
+                # shlex.join leaves a simple executable path unquoted, even before private args.
+                tool += f": {executable[0]}"
+            elif not re.fullmatch(r"[\w.-]+", tool, re.ASCII):
+                # MCP asks before checking the advertised name. Only its scope is known here.
+                tool = request.scope or "approval"
             _note(
-                f"waiting on {request.id} ({label}); answer it with:"
-                f" agent6 attach {session_dir.name}"
+                f"waiting on {request.id} ({requester}{terminal.line_preview(tool)});"
+                f" answer it with: agent6 attach {session_dir.name}"
             )
             parked = True
 

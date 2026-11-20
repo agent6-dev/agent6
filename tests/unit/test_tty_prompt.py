@@ -291,6 +291,41 @@ def test_a_headless_park_behind_a_live_front_end_prints_too(
     assert err[1] == "[agent6] approval-1 denied (frontend)"
 
 
+@pytest.mark.parametrize(
+    ("scope", "prompt", "label"),
+    [
+        ("mcp.docs", 'Allow mcp__docs__Allow fetch: {"token": "private"}', "mcp.docs"),
+        ("mcp.docs", 'Allow mcp__docs__search: {"token": "private"}', "mcp__docs__search"),
+        (
+            sessions_ipc.COMMAND_SCOPE,
+            "Allow run_command: 'client https://user:private@example.invalid/?token=private'",
+            "run_command",
+        ),
+    ],
+    ids=["unadvertised-mcp-name", "mcp-arguments", "url-in-executable"],
+)
+def test_a_headless_wait_keeps_private_payloads_off_stderr(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    scope: str,
+    prompt: str,
+    label: str,
+) -> None:
+    """Neither an MCP tool name nor a URL in argv[0] can expose private arguments."""
+    _no_terminal(monkeypatch, away="wait")
+    request = operator_prompts.ApprovalRequest(
+        id="approval-1", prompt=prompt, scope=scope, call_id=1
+    )
+    assert sessions_ipc.write_answer(tmp_path, request.id, "no")
+    assert not interact.build_approver(tmp_path)(request).approved
+    waiting, _answer = capsys.readouterr().err.splitlines()
+    assert waiting == (
+        f"[agent6] waiting on approval-1 ([session {tmp_path.name}] {label});"
+        f" answer it with: agent6 attach {tmp_path.name}"
+    )
+
+
 def test_a_headless_away_deny_prints_its_source(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
