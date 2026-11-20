@@ -266,8 +266,10 @@ def test_in_loop_records_base_rules_and_sends_exact_text(repo: pathlib.Path, lin
         loop_state.LoopState(original_task="t", tool_calls=0), trigger="periodic", turn=1
     )
     assert result is not None
-    (message,) = provider.call.call_args.kwargs["messages"]
+    # The opening, then the turn's reply count.
+    message, count = provider.call.call_args.kwargs["messages"]
     assert message["role"] == "user"
+    assert count["content"][0]["text"].startswith("[harness] reply 1 of ")
     assert message["content"][0]["text"] == (
         f"TASK:\nt\n\nREVIEW RULES (base tree):\nAGENTS.md (blob {blob}):\nbase rule\n"
         f"\n\nVERIFY: not run.\n\nDIFF:\n{diff}"
