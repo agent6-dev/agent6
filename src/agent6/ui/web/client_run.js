@@ -155,7 +155,7 @@ async function renderRun(id, opts, gen) {
   applyDrawer(saved ? saved === 'open' : matchMedia('(width >= 64em)').matches);
 
   // The phone widget menu picks the one widget shown; a popover, it closes on Esc or a tap outside.
-  const entries = [['conv', 'Conversation'], ['head', 'Overview'], ['plan', 'plan.md'],
+  const entries = [['conv', 'Conversation'], ['head', 'Overview'], ['children', 'Children'], ['plan', 'plan.md'],
                    ['review', 'Run review'], ['findings', 'Findings'],
                    ['tasks', 'Task graph'], ['budget', 'Budget'], ['tools', 'Tool calls'],
                    ['shells', 'Background shells'], ['diff', 'Latest commit'], ['log', 'Event log']];

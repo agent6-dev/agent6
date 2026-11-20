@@ -91,7 +91,7 @@ When the server stops answering, the Sessions and State machines lists, a sessio
     - **Tool calls** rows open to selectable arguments and recorded output
     - **Budget** shows labelled meters for capped usage and plain text for uncapped usage
     - **Children** folds to one line in Details, such as `children: 3 running, 1 joined`.
-      On a phone, choose **Overview** from **Widgets**.
+      On a phone, choose **Children** from **Widgets**.
       Open the card to see each task, its status, and its recorded model, tool, turn, tokens, spend and elapsed time.
       A joined child names the parent's chain and the join commit.
       A stopped child shows the commits its ref holds; a model-owned child names its retained ref.

@@ -183,7 +183,7 @@ def test_a_long_prompt_leaves_the_conversation_and_controls_in_view(
     page.goto(f"http://127.0.0.1:{port}/#/session/{PARENT}")
     if width == 390:
         page.get_by_role("button", name="Widgets").click()
-        page.get_by_role("button", name="Overview", exact=True).click()
+        page.get_by_role("button", name="Children", exact=True).click()
     card = page.locator(".drawer .card-children")
     card.locator(":scope > summary").click()
     row = card.locator(".child-row").filter(
@@ -223,10 +223,15 @@ def test_read_and_message_a_child_in_place(
         )
     url = f"http://127.0.0.1:{port}/#/session/{PARENT}"
     page.goto(url)
-    if width == 390:
-        page.get_by_role("button", name="Widgets").click()
-        page.get_by_role("button", name="Overview", exact=True).click()
     card = page.locator(".drawer details.card-children")
+    if width == 390:
+        widgets = page.get_by_role("button", name="Widgets")
+        widgets.click()
+        page.get_by_role("button", name="Overview", exact=True).click()
+        sync_api.expect(card).to_be_hidden()
+        widgets.click()
+        page.get_by_role("button", name="Children", exact=True).click()
+        sync_api.expect(page.locator(".run-app .card:visible")).to_have_count(1)
     summary = card.locator(":scope > summary")
     sync_api.expect(summary).to_have_text("children: 1 finished, 1 running, 1 stopped")
     assert not card.evaluate("e => e.open")

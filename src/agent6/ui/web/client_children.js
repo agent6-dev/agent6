@@ -105,7 +105,7 @@ function childRow(sid, card, readOnly) {
 
 function childrenCard(drawer, readOnly) {
   const card = drawer.appendChild(el('details', 'card card-children'));
-  card.dataset.w = 'head'; // On a phone the card belongs to Overview.
+  card.dataset.w = 'children';
   const summary = card.appendChild(el('summary', 'chevron'));
   const countsText = summary.appendChild(el('span'));
   const rows = card.appendChild(el('div'));

@@ -533,7 +533,7 @@ def test_a_phone_opens_a_run_at_its_tail_where_a_prompt_waits(
 ) -> None:
     """A phone opens a long conversation at its end, where a waiting prompt sits over the composer.
 
-    Children in Overview do not change where Conversation opens.
+    A parent's children do not change where Conversation opens.
     """
     from playwright.sync_api import expect
 
@@ -750,7 +750,7 @@ def test_a_long_child_model_wraps_on_a_phone(
     page.context.new_cdp_session(page).send("Page.setFontSizes", {"fontSizes": {"standard": 20}})
     page.goto(f"http://127.0.0.1:{port}/#/session/{fan}")
     page.get_by_role("button", name="Widgets").click()
-    page.get_by_role("button", name="Overview", exact=True).click()
+    page.get_by_role("button", name="Children", exact=True).click()
     card = page.locator("details.card-children")
     card.locator(":scope > summary").click()
     route = card.get_by_text("openrouter/" + model, exact=False).first
