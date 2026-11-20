@@ -10,8 +10,8 @@
   --accent: light-dark(#1b5bc9, #6ea8fe); --accent2: light-dark(#7036da, #b48ead);
   --ok: light-dark(#156b4f, #4ec9a5); --warn: light-dark(#7d5800, #e2c08d); --err: light-dark(#af2a36, #f07178);
   --on-accent: light-dark(#ffffff, #05121f); /* text on an accent fill */
-  --border-strong: light-dark(#b9c0ca, #3a4354); /* field outlines, hovered buttons */
-  --scrollbar: light-dark(#7d8794, #626d80); /* the thumb: 3:1 on every surface */
+  --border-strong: light-dark(#b9c0ca, #3a4354); /* hovered buttons */
+  --scrollbar: light-dark(#7d8794, #626d80); /* the thumb and a field's outline: 3:1 on every surface */
   /* Controls: a button, a field and a select of one size are exactly this tall; a touch
      screen gets larger targets. */
   --ctl-h: 2rem; --ctl-h-sm: 1.625rem; --ctl-px: 0.75rem; --ctl-px-sm: 0.5rem;
@@ -315,7 +315,7 @@ button.mini { min-height: var(--ctl-h-sm); min-width: var(--ctl-h-sm); padding: 
    select draws one chevron in both browsers. */
 textarea.field, select.field, input.field, input.filter {
   width: 100%; font: inherit; color: var(--text); background-color: var(--bg);
-  border: 1px solid var(--border-strong); border-radius: var(--r); padding: 0 var(--ctl-px);
+  border: 1px solid var(--scrollbar); border-radius: var(--r); padding: 0 var(--ctl-px);
   min-height: var(--ctl-h);
 }
 textarea.field { min-height: 4.5rem; padding-block: 0.375rem; line-height: 1.5; resize: vertical; }
@@ -324,7 +324,7 @@ textarea.field { min-height: 4.5rem; padding-block: 0.375rem; line-height: 1.5; 
 .field:disabled, input.filter:disabled, input[type=checkbox]:disabled { opacity: var(--disabled); cursor: not-allowed; }
 select, select.field {
   appearance: none; font: inherit; color: var(--text); background-color: var(--bg);
-  border: 1px solid var(--border-strong); border-radius: var(--r); min-height: var(--ctl-h);
+  border: 1px solid var(--scrollbar); border-radius: var(--r); min-height: var(--ctl-h);
 }
 /* A dropdown's chevron: a select's, and that of Git's Refs, a button that opens a menu. */
 select, select.field, button.git-refs {

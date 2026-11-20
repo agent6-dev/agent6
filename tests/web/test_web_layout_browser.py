@@ -844,3 +844,26 @@ def test_every_pages_first_row_stands_one_gap_under_the_top_bar(
     )
     assert gaps == [14, 14]
     assert not errors
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_a_field_and_a_select_draw_their_outline_in_the_scrollbar_colour(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, theme: str
+) -> None:
+    """A field's and a select's outline stood at 1.7 to 1.9:1 against the page, under WCAG's 3:1."""
+    page, errors = open_page(port)
+    page.add_init_script(f"localStorage.setItem('a6-theme', '{theme}')")
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    page.locator(".dock select.field").first.wait_for()
+    edges = page.evaluate("""() => {
+      const probe = document.createElement('span'); probe.style.color = 'var(--scrollbar)';
+      document.body.appendChild(probe);
+      const sides = e => { const s = getComputedStyle(e);
+        return [s.borderTopColor, s.borderRightColor, s.borderBottomColor, s.borderLeftColor]; };
+      return {scrollbar: getComputedStyle(probe).color,
+        field: sides(document.querySelector('.dock textarea.field')),
+        select: sides(document.querySelector('.dock select.field'))};
+    }""")
+    assert edges["field"] == [edges["scrollbar"]] * 4, edges
+    assert edges["select"] == [edges["scrollbar"]] * 4, edges
+    assert not errors
