@@ -185,6 +185,16 @@ def test_summary_text_names_every_outcome() -> None:
     assert text.endswith("Review what merged and continue.")
 
 
+def test_retained_notice_names_the_ref_without_claiming_a_merge() -> None:
+    """The recorded ref says where the work is, not what the model must do next."""
+    retained = child_records.ChildJoin("one", "refs/agent6/one/head", "retained", "", "", commits=1)
+    notice = parallel_join.summary_text("p1", [retained])
+    assert notice.splitlines()[1:] == [
+        "  - one: retained on refs/agent6/one/head (1 commit).",
+        "Agent6 made no merge.",
+    ]
+
+
 def test_child_note_wordings() -> None:
     assert (
         parallel_join.child_note(_join("joined", sha="abc123def4567"))

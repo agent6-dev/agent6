@@ -147,7 +147,8 @@ def join_words(j: child_records.ChildJoin) -> str:
         return f"ranked {j.detail}; not merged; {j.branch} holds its work"
     if j.status == "retained":
         rank = f"ranked {j.detail}; " if j.detail else ""
-        return f"{rank}retained on {j.branch} ({j.commits} commit(s))"
+        noun = "commit" if j.commits == 1 else "commits"
+        return f"{rank}retained on {j.branch} ({j.commits} {noun})"
     if j.status == "stopped":
         return stopped_words(j.detail, j.branch, j.commits, j.context)
     return "no changes" if j.status == "no_changes" else j.status
@@ -252,9 +253,7 @@ def summary_text(
             ended = j.detail or "finished"
             lines.append(f"  - {j.session_id} ({j.branch}): {ended} with no changes to join.")
         elif j.status == "retained":
-            lines.append(
-                f"  - {j.session_id}: {join_words(j)}. git.control = model: merge with git."
-            )
+            lines.append(f"  - {j.session_id}: {join_words(j)}.")
         elif j.status == "stopped":
             words = stopped_words(j.detail, "the branch", j.commits, j.context)
             lines.append(f"  - {j.session_id} ({j.branch}): {words}.")

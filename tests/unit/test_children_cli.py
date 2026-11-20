@@ -473,7 +473,7 @@ def _commit() -> launch_env.Reply:
 def test_child_tool_text_and_notices_state_both_git_policies() -> None:
     """A model-owned run is never promised an automatic child merge."""
     text = schema.ParallelInput.TOOL_DESCRIPTION
-    assert 'git.control = "model"' in text and "merge with git" in text
+    assert 'git.control = "model"' in text and "names the ref" in text
     for ids in (["one"], ["one", "two"]):
         notice = parallel_join.started_text(ids)
         assert "task completes" in notice

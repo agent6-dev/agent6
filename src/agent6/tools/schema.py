@@ -315,7 +315,7 @@ class ParallelInput(_ToolInput):
         " empty for one child; a count above one, or a comma-separated list of selectors,"
         " starts that many attempts at the same task, ranked once all have ended."
         ' With `git.control = "agent6"` the first merges onto this run at a turn boundary;'
-        ' with `git.control = "model"` each ref stays unmerged for you to merge with git.'
+        ' with `git.control = "model"` the result names the ref that holds each child\'s commits.'
         " A selector that is a role name brings its model, effort and temperature;"
         " `[provider/]model` runs with the worker's. A notice arrives when a child ends,"
         " with its summary, and when its task completes. `read_background` reads a child"
