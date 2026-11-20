@@ -21,7 +21,8 @@
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
 }
 .receipt-text > div { padding-left: 2ch; text-indent: -2ch; }
-.receipt summary { cursor: pointer; font: var(--fs-s)/1.45 var(--mono); }
+/* A check's output fold: the fold's chevron in place of the browser's marker. */
+.receipt summary { display: flex; align-items: center; gap: 0.375rem; cursor: pointer; font: var(--fs-s)/1.45 var(--mono); }
 .receipt details > pre { margin-top: 0.375rem; }
 .card-findings .pickers { margin-bottom: 0; }
 .finding-head { justify-content: space-between; }

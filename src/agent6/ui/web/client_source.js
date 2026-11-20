@@ -48,14 +48,12 @@ function treeView(root, fileRow, folderNote, folded, folderMark, opened) {
   const paint = (node, host, depth) => {
     for (const d of node.dirs.values()) {
       const row = el('div', 'gtree-dir'); row.dataset.path = d.path;
-      const caret = el('span', 'gtree-caret');
-      row.appendChild(caret);
+      row.appendChild(el('span', 'gtree-caret chevron'));
       if (folderMark) { const mark = folderMark(d); if (mark) row.appendChild(mark); }
       row.appendChild(el('span', 'gtree-name', d.name)); row.appendChild(el('span', 'muted gtree-note', folderNote(d)));
       const kids = el('div', 'gtree-kids'); kids.setAttribute('role', 'group');
       let open = opened?.has(d.path) ? opened.get(d.path) : !folded;
-      caret.textContent = '▾'; // one glyph; the stylesheet turns it for a folded folder
-      const apply = () => { kids.hidden = !open; caret.classList.toggle('folded', !open); row.setAttribute('aria-expanded', String(open)); };
+      const apply = () => { kids.hidden = !open; row.setAttribute('aria-expanded', String(open)); };
       actionable(row, () => { open = !open; opened?.set(d.path, open); apply(); }, 'folder ' + d.path);
       item(row, depth);
       apply();

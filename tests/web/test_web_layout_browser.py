@@ -574,28 +574,43 @@ def test_an_empty_drawer_line_reads_lower_case_in_the_cards_type(
     assert not errors
 
 
-def test_every_expand_control_draws_the_folds_chevron(
-    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+def test_a_config_heading_and_a_files_folder_draw_the_folds_chevron(
+    open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:
     """A fold, a Config section heading and a Files folder drew three kinds of arrow.
 
-    The class .chevron gives any of them the fold's, turned down while it, its row or its details
-    is open.
+    Each draws the fold's chevron, turned down while it, its row or its details is open.
     """
-    page, errors = open_page(port)
-    page.goto(f"http://127.0.0.1:{port}/#/")
-    page.wait_for_selector(".dock .pickers button.fold")
-    page.evaluate("""() => document.body.insertAdjacentHTML('beforeend',
-      '<details open><summary class="chevron">open</summary></details>'
-      + '<details><summary class="chevron">closed</summary></details>'
-      + '<div aria-expanded="true"><span class="chevron"></span></div>'
-      + '<div aria-expanded="false"><span class="chevron"></span></div>')""")
-    drawn = """es => es.map(e => { const s = getComputedStyle(e, '::before');
-      return [s.width, s.height, s.borderRightWidth, s.rotate]; })"""
-    fold = page.locator(".dock .pickers button.fold").evaluate(f"e => ({drawn})([e])[0]")
-    assert fold[3] == "-45deg"
-    turns = ["45deg", "-45deg", "45deg", "-45deg"]
-    assert page.locator(".chevron").evaluate_all(drawn) == [[*fold[:3], t] for t in turns]
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    drawn = """e => { const s = getComputedStyle(e, '::before');
+      return [s.width, s.height, s.borderRightWidth]; }"""
+
+    def turns_to(control: Locator, rotate: str) -> None:
+        page.wait_for_function(
+            "([e, r]) => getComputedStyle(e, '::before').rotate === r",
+            arg=[control.element_handle(), rotate],
+        )
+
+    page.goto(f"http://127.0.0.1:{git_port}/#/")
+    fold = page.locator(".dock .pickers button.fold")
+    turns_to(fold, "-45deg")
+    shape = fold.evaluate(drawn)
+    page.goto(f"http://127.0.0.1:{git_port}/#/config")
+    heading = page.locator("details.cfg-section > summary").first
+    assert heading.evaluate(drawn) == shape
+    turns_to(heading, "45deg")
+    heading.click()
+    turns_to(heading, "-45deg")
+    page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD")
+    folder = page.locator(".files-tree .gtree-dir[data-path='dir']")
+    caret = folder.locator(".gtree-caret")
+    expect(caret).to_have_text("")
+    assert caret.evaluate(drawn) == shape
+    turns_to(caret, "45deg")
+    folder.click()
+    turns_to(caret, "-45deg")
     assert not errors
 
 

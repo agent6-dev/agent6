@@ -334,7 +334,20 @@ def test_the_back_buttons_read_in_sentence_case_with_their_glyphs_unread(
     expect(files).to_have_text("\u2039 Files")
     files.click()
     expect(page.get_by_role("button", name="Graph", exact=True)).to_have_text("\u2039 Graph")
-    expect(page.get_by_role("button", name="Refs", exact=True)).to_have_text("Refs \u25be")
+    assert errors == [], errors
+
+
+def test_refs_draws_the_selects_chevron(open_page: OpenPage, git_port: int) -> None:
+    """Refs ended in a ▾ glyph in the text colour, beside selects drawing a muted chevron."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    refs = page.get_by_role("button", name="Refs", exact=True)
+    expect(refs).to_have_text("Refs")
+    marker = """e => ['background-image', 'background-position', 'background-size', 'padding-right']
+      .map(name => getComputedStyle(e).getPropertyValue(name))"""
+    assert refs.evaluate(marker) == page.locator(".git-bar select").first.evaluate(marker)
     assert errors == [], errors
 
 

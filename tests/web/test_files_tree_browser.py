@@ -24,7 +24,7 @@ files_port = test_web_browser.files_port
 
 DEEP = "deep/alpha-folder-name/beta-folder-name/gamma"
 LEAF = DEEP + "/a-long-file-name-for-a-narrow-tree.txt"
-# Where a row's first item, the caret, starts: a folded caret is turned, so its own box is not.
+# Where a row's first item, the caret, starts.
 _CONTENT_LEFT = "r => r.getBoundingClientRect().left + parseFloat(getComputedStyle(r).paddingLeft)"
 
 

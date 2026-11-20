@@ -628,6 +628,30 @@ def test_a_config_section_headings_focus_ring_lies_on_the_tables_edges(
     assert not errors
 
 
+def test_a_config_section_headings_ring_is_rounded_clear_of_its_chevron(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A section heading's square focus ring touched its open chevron.
+
+    The ring is rounded as a fold's, and a gap parts it from the chevron's arm.
+    """
+    page, errors = open_page(port)
+    _config(page, port)
+    page.get_by_role("button", name="Add reviewer…").focus()
+    page.keyboard.press("Tab")
+    # The open chevron is a square turned 45deg: its arm reaches half a diagonal from its centre.
+    ring = """e => { const s = getComputedStyle(e), c = getComputedStyle(e, '::before');
+      const w = parseFloat(c.width), inset = -parseFloat(s.outlineOffset);
+      const arm = parseFloat(s.paddingLeft) + parseFloat(c.marginLeft) + w / 2 - w * Math.SQRT1_2;
+      return [e.matches(':focus-visible'), s.borderTopLeftRadius, arm - inset];
+    }"""
+    focused, radius, gap = page.evaluate(f"({ring})(document.activeElement)")
+    assert focused
+    assert radius == "6px"
+    assert gap >= 2
+    assert not errors
+
+
 def test_the_command_palette_offers_the_config_bar_actions(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:

@@ -48,8 +48,8 @@
 .gtree .gf { padding-left: calc(var(--tree-inset, 0.25rem) + (var(--depth, 0) + 1) * var(--tree-step)); }
 .gtree-dir { display: flex; align-items: center; border-top: 1px solid var(--border); cursor: pointer; font-size: var(--fs-m); }
 @media (hover: hover) { .gtree-dir:hover { background: var(--surface2); } }
-.gtree-caret { flex: none; width: 0.625rem; text-align: center; color: var(--muted); }
-.gtree-caret.folded { transform: rotate(-90deg); }
+.gtree-caret { flex: none; display: flex; justify-content: center; width: 0.625rem; color: var(--muted); }
+.gtree-caret.chevron::before { margin: 0; } /* centred in the caret, which with its gap makes one step */
 .gtree-name { font-family: var(--mono); font-weight: 600; overflow-wrap: anywhere; }
 .gtree-note { flex: none; margin-left: auto; font-family: var(--mono); font-size: var(--fs-s); white-space: nowrap; }
 .gf-note { font-size: var(--fs-s); margin: 0.25rem 0; }

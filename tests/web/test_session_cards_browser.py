@@ -372,21 +372,9 @@ def test_a_finding_card_on_its_session_links_away_and_sizes_its_submit(
     assert not errors
 
 
-def test_the_receipt_hangs_its_wrapped_lines_in_a_box_and_folds_only_output(
-    open_page: Callable[[int], tuple[Page, list[str]]],
-    evidence: tuple[int, dict[str, Any]],
-    tmp_path: pathlib.Path,
-) -> None:
-    """The receipt's lines sit in a bordered 12px box, a wrapped line hanging under its start.
-
-    The receipt was 14px text with no box, its wrapped lines restarting at column 0, and a
-    check's empty stream still had a fold that opened onto nothing.
-    """
-    from playwright.sync_api import expect
-
-    sink = event_log.EventSink(
-        layout.SessionLayout(paths.state_dir(tmp_path), "review-run").logs_path
-    )
+def _record_failed_check(cwd: pathlib.Path) -> None:
+    """Log a failed check on review-run: nothing on stdout, `1 failed` on stderr."""
+    sink = event_log.EventSink(layout.SessionLayout(paths.state_dir(cwd), "review-run").logs_path)
     sink.emit(
         journal.VerifyEnd(
             command=["pytest"],
@@ -404,6 +392,21 @@ def test_the_receipt_hangs_its_wrapped_lines_in_a_box_and_folds_only_output(
             reason="",
         )
     )
+
+
+def test_the_receipt_hangs_its_wrapped_lines_in_a_box_and_folds_only_output(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    evidence: tuple[int, dict[str, Any]],
+    tmp_path: pathlib.Path,
+) -> None:
+    """The receipt's lines sit in a bordered 12px box, a wrapped line hanging under its start.
+
+    The receipt was 14px text with no box, its wrapped lines restarting at column 0, and a
+    check's empty stream still had a fold that opened onto nothing.
+    """
+    from playwright.sync_api import expect
+
+    _record_failed_check(tmp_path)
     port, _ = evidence
     page, errors = open_page(port)
     page.set_viewport_size({"width": 1280, "height": 900})
@@ -428,6 +431,33 @@ def test_the_receipt_hangs_its_wrapped_lines_in_a_box_and_folds_only_output(
     assert hangs
     assert all(gap == pytest.approx(2 * 7.2, abs=1.5) for gap in hangs)  # 2ch of 12px mono
     assert page.locator(".receipt summary").inner_text().endswith("stderr")
+    assert not errors
+
+
+def test_a_receipts_output_fold_draws_the_folds_chevron(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    evidence: tuple[int, dict[str, Any]],
+    tmp_path: pathlib.Path,
+) -> None:
+    """A check's output fold in the receipt drew the browser's triangle, not the fold's chevron."""
+    _record_failed_check(tmp_path)
+    port, _ = evidence
+    page, errors = open_page(port)
+    drawn = """e => { const s = getComputedStyle(e, '::before');
+      return [s.width, s.height, s.borderRightWidth]; }"""
+    marked = """e => getComputedStyle(e).display === 'list-item'
+      && getComputedStyle(e).listStyleType !== 'none'"""
+    turned = "([e, r]) => getComputedStyle(e, '::before').rotate === r"
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    shape = page.locator(".dock .pickers button.fold").evaluate(drawn)
+    page.goto(f"http://127.0.0.1:{port}/#/session/review-run")
+    page.get_by_role("button", name="Receipt", exact=True).click()
+    output = page.locator(".receipt summary")
+    assert not output.evaluate(marked)
+    assert output.evaluate(drawn) == shape
+    page.wait_for_function(turned, arg=[output.element_handle(), "-45deg"])
+    output.click()
+    page.wait_for_function(turned, arg=[output.element_handle(), "45deg"])
     assert not errors
 
 

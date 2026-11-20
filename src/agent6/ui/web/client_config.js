@@ -86,7 +86,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     if (name !== section) {
       section = name;
       const box = el('details', 'cfg-section'); box.open = !state.folded?.includes(section);
-      const summary = box.appendChild(el('summary', null, section)); summary.id = 'cfg-section-' + section;
+      const summary = box.appendChild(el('summary', 'chevron', section)); summary.id = 'cfg-section-' + section;
       tbl = el('table', 'cfg'); tbl.setAttribute('aria-labelledby', summary.id); // named by its section
       const head = el('tr'); ['setting', 'value', 'source'].forEach(h => head.appendChild(el('th', null, h)));
       tbl.appendChild(el('thead')).appendChild(head);

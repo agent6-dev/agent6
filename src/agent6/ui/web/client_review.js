@@ -333,7 +333,7 @@ function drawReceipt(host, receipt) {
       if (!v[stream + '_tail']) continue; // a stream that wrote nothing has no fold to open
       const output = el('details'); host.appendChild(output);
       // The check's id at the twelve characters the panel lines use, then its stream.
-      output.appendChild(el('summary', null, (v.verify_id ? v.verify_id.slice(0, 12) : 'unrecorded id') + ' ' + stream));
+      output.appendChild(el('summary', 'chevron', (v.verify_id ? v.verify_id.slice(0, 12) : 'unrecorded id') + ' ' + stream));
       output.appendChild(el('pre', null, v[stream + '_tail']));
     }
   }

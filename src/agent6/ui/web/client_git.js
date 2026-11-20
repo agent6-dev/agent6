@@ -390,8 +390,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
 
   // -- toolbar: the ref filter, the compare toggle, the refresh, the counts -----------
   const bar = el('div', 'git-bar page-pad row wrap'); app.appendChild(bar);
-  const refsBtn = el('button', 'git-refs', 'Refs ');
-  refsBtn.appendChild(el('span', null, '▾')).setAttribute('aria-hidden', 'true'); // a dropdown's marker
+  const refsBtn = el('button', 'git-refs', 'Refs');
   const compareBtn = el('button', null, 'Compare');
   const reloadBtn = el('button', null, '↻'); reloadBtn.title = 'refresh: re-read the refs, the graph and the working tree';
   reloadBtn.setAttribute('aria-label', 'refresh');
