@@ -149,7 +149,7 @@ def _read_command(
     Returns:
         The command to handle. A submitted steer continues the run.
     """
-    directory = layout.SessionLayout(paths.state_dir(root), session_id).session_dir
+    directory = layout.SessionLayout(paths.state_dir(root), session_id, subdir="runs").session_dir
     pending = ""
     while True:
         raw = input("agent6> ").strip()
