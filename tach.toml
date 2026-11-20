@@ -55,6 +55,7 @@ depends_on = [
   "agent6.models.registry",
   "agent6.models.validate",
   "agent6.pack_manifest",
+  "agent6.path_safety",
   "agent6.paths",
   "agent6.portable",
   "agent6.prompts",

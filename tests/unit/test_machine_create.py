@@ -1165,6 +1165,72 @@ def test_create_publish_validates_the_destination_before_claiming_success(
     assert "OK: wrote draft" not in err
 
 
+def test_create_writes_no_script_through_a_linked_scripts_directory(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `scripts` symlink in the checkout carried the published script out of the bundle.
+
+    The write followed the link, and the bundle check ran only after it.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (repo / "scripts").symlink_to(outside)
+    monkeypatch.chdir(repo)
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            (
+                {"greeter.asm.toml": SCRIPT_MACHINE, "scripts/run.py": SCRIPT_BODY},
+                AgentExecResult(payload=None, reason="finish_session", usd=0.01),
+            )
+        ],
+    )
+    assert main(["machine", "create", "Run a script", "--max-attempts", "1"]) == 1
+    assert list(outside.iterdir()) == [], "nothing lands behind the link"
+    assert not (repo / "scripted.asm.toml").exists()
+    err = capsys.readouterr().err
+    assert "could not write the bundle" in err and "scripts/run.py" in err
+
+
+def test_bundle_scripts_follow_no_linked_directory_below_scripts(tmp_path: pathlib.Path) -> None:
+    """A symlinked directory under `scripts/` carried a script out; a linked name is replaced."""
+    from agent6 import path_safety
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    victim = outside / "victim.py"
+    victim.write_text("KEEP = 1\n", encoding="utf-8")
+    bundle = tmp_path / "bundle"
+    (bundle / "scripts").mkdir(parents=True)
+    (bundle / "scripts" / "lib").symlink_to(outside)
+    (bundle / "scripts" / "run.py").symlink_to(victim)
+
+    _create._write_scripts(bundle, {"scripts/run.py": "VALUE = 1"})  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(path_safety.ContainmentError):
+        _create._write_scripts(bundle, {"scripts/lib/mod.py": "VALUE = 2"})  # pyright: ignore[reportPrivateUsage]
+
+    assert not (bundle / "scripts" / "run.py").is_symlink()
+    assert (bundle / "scripts" / "run.py").read_text(encoding="utf-8") == "VALUE = 1\n"
+    assert victim.read_text(encoding="utf-8") == "KEEP = 1\n"
+    assert sorted(p.name for p in outside.iterdir()) == ["victim.py"]
+    assert sorted(p.name for p in (bundle / "scripts").iterdir()) == ["lib", "run.py"]
+
+
+def test_reading_a_draft_follows_no_linked_scripts_directory(tmp_path: pathlib.Path) -> None:
+    """A draft whose `scripts` is a symlink had the files behind the link read as its scripts."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "host.py").write_text("SECRET = 1\n", encoding="utf-8")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "scripts").symlink_to(outside)
+
+    assert _create._read_scripts(workspace) == {}  # pyright: ignore[reportPrivateUsage]
+
+
 def test_create_writes_scripts_before_the_machine_file(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

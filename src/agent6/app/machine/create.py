@@ -10,11 +10,12 @@ uses, over a drafting workspace of its own; agent6 validates what is on disk bet
 from __future__ import annotations
 
 import contextlib
+import os
 import pathlib
 import shutil
 import uuid
 
-from agent6 import budget, errors, kinds, paths, portable
+from agent6 import budget, errors, kinds, path_safety, paths, portable
 from agent6.app import preflight, worktrees
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import agent, bundle, check, scriptcheck
@@ -39,19 +40,49 @@ _CREATE_STOP_REASONS = frozenset({"budget_exhausted", "timeout", "provider_error
 def _write_scripts(base_dir: pathlib.Path, scripts: dict[str, str]) -> None:
     """Write the bundle's scripts, keyed by bundle-relative path.
 
-    A pre-existing symlink at a target is unlinked first, so a planted link cannot redirect the
-    write out of the bundle; `validate_bundle` is the backstop for symlinks anywhere in the tree.
+    Each script is written beside its target and renamed over it, owner-only like a new machine
+    file. Both steps walk descriptors from the bundle's root (`path_safety.open_contained`), so
+    a symlink at `scripts` or at a directory below it refuses the write; a symlink at a script's
+    own name is replaced.
 
     Args:
         base_dir: The bundle's root, the directory the machine file goes in.
         scripts: Each script's source, written ending in a newline.
+
+    Raises:
+        ContainmentError: A directory on a script's path is a symlink or a file.
     """
     for rel, content in scripts.items():
-        p = base_dir / rel
-        p.parent.mkdir(parents=True, exist_ok=True)
-        if p.is_symlink():
-            p.unlink()
-        portable.atomic_write(p, content if content.endswith("\n") else content + "\n")
+        target = pathlib.Path(rel)
+        tmp = path_safety.contain(
+            base_dir, target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+        )
+        try:
+            # Opening the temp file creates the missing directories on the same walk.
+            fd = path_safety.open_contained(
+                tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, create_parents=True
+            )
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                os.fchmod(fd, 0o600)
+                fh.write(content if content.endswith("\n") else content + "\n")
+                fh.flush()
+                os.fsync(fd)
+            dir_fd = path_safety.open_contained(
+                path_safety.contain(base_dir, target.parent), os.O_RDONLY | os.O_DIRECTORY
+            )
+            try:
+                os.replace(tmp.rel_path.name, target.name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except path_safety.ContainmentError as exc:
+            raise path_safety.ContainmentError(
+                f"{rel}: a directory on its path is a symlink or a file"
+            ) from exc
+        finally:
+            # After the rename the temp name is gone; a failure before it leaves one to remove.
+            with contextlib.suppress(OSError, path_safety.ContainmentError):
+                path_safety.unlink_contained(tmp)
 
 
 def _machine_file(workspace: pathlib.Path) -> tuple[pathlib.Path | None, str]:
@@ -78,16 +109,15 @@ def _read_scripts(workspace: pathlib.Path) -> dict[str, str]:
         workspace: The drafting workspace, the bundle's root.
 
     Returns:
-        The sources; a file that is not plain readable text is left out.
+        The sources; a file that is not plain readable text is left out, and so is one
+        reached through a symlink.
     """
     out: dict[str, str] = {}
     for path in sorted((workspace / "scripts").rglob("*")):
         rel = str(path.relative_to(workspace))
-        if path.is_symlink() or not path.is_file():
-            continue
         try:
-            out[rel] = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+            out[rel] = path_safety.read_contained(path_safety.contain(workspace, rel))
+        except (OSError, UnicodeDecodeError, path_safety.ContainmentError):
             continue
     return out
 
@@ -440,7 +470,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         # Scripts first, the machine file last: a death mid-publish leaves inert scripts.
         _write_scripts(target.parent, valid_scripts)
         portable.atomic_write(target, payload)
-    except OSError as exc:
+    except (OSError, path_safety.ContainmentError) as exc:
         events.emit(
             journal.SessionStop(
                 execution_id=execution_id,
