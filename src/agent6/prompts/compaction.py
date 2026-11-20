@@ -112,6 +112,7 @@ def context_restart_notice(
     dag_available: bool = True,
     verification: str = "",
     endpoint_task: str | None = None,
+    session_id: str = "",
 ) -> str:
     """Build the post-compaction restart preamble.
 
@@ -122,6 +123,7 @@ def context_restart_notice(
         dag_available: The run has a curator, so `list_tasks` exists.
         endpoint_task: The task to repeat after a signed summary instead of adding prose.
         verification: The verify fact (`VerifyVerdict.fact`), or "" for a run without a gate.
+        session_id: The id of the journal this turn can read, or "".
 
     Returns:
         The preamble, ending with the "PROGRESS SUMMARY:" label the summary follows.
@@ -134,6 +136,8 @@ def context_restart_notice(
             f"TASK (the goal, verbatim):\n{endpoint_task}",
         ]
     )
+    if session_id:
+        parts.append(f'Earlier entries are available from read_session with id "{session_id}".')
     if dag_available and mode in ("run", "plan"):
         parts.append(
             _CONTEXT_RESTART_DAG

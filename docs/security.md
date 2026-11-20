@@ -88,6 +88,11 @@ The model sees the fixed tool set in `src/agent6/tools/schema.py`, plus the tool
 - no `shell`, no `write_file`, no `eval`
 - adding a tool needs a security review note ([AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md))
 
+With a session id, `read_session` reads only that journal under the project's state directory.
+Tool entries show declared built-in arguments and recorded result summaries, capped at 200 characters per value.
+They omit opaque objects, MCP arguments and raw tool output.
+Other sessions in the project can read the visible text; keep credentials out of messages and tool arguments.
+
 Under `backend = "claude_code"` the model runs inside the operator's installed Claude Code binary, unjailed, as the operator, with every built-in tool off (`--tools ""`).
 Its only reach into the machine is agent6's tools served over the sdk MCP tunnel, so the dispatcher, the jail, and the approval gates are unchanged.
 The binary holds the operator's Claude login exactly as an interactive `claude` does, and agent6 never reads it.

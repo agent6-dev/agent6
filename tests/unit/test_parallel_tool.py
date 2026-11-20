@@ -306,7 +306,7 @@ def test_a_targeted_child_read_excludes_other_children_and_shells(
 
 @pytest.mark.parametrize("reader", ["read_background", "read_session"])
 @pytest.mark.parametrize("name", ["run_command", "run_verify_command", "run_metric_command"])
-def test_a_child_command_and_its_exit_fit_on_one_transcript_line(
+def test_child_reads_show_the_command_and_its_exit_without_output(
     tmp_path: pathlib.Path, reader: str, name: str
 ) -> None:
     state = tmp_path / "state"
@@ -338,11 +338,14 @@ def test_a_child_command_and_its_exit_fit_on_one_transcript_line(
         out = d.dispatch(reader, {"id": child.name, "tail_lines": 1, "wait_s": 0}).to_wire()
         text = out["output"]
         assert "user: write a" not in text
+        line = text.splitlines()[-1]
+        assert name in line and "sh -c" in line and "cat <<" in line and "exit 7" in line
+        assert len(line) <= 180 and "…" in line
     else:
         text = d.dispatch(reader, {"id": child.name}).to_wire()["conversation"]
-    line = text.splitlines()[-1]
-    assert name in line and "sh -c" in line and "cat <<" in line and "exit 7" in line
-    assert len(line) <= 180 and "…" in line
+        command, result = text.splitlines()[-2:]
+        assert name in command and "sh -c" in command and "cat <<" in command
+        assert command.endswith("…") and f"{name} result: exit 7" in result
     assert "HEREDOC BODY" not in text and "OUTPUT" not in text
 
 

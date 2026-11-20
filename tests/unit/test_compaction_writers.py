@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import pathlib
 from typing import Any
 
 import pytest
@@ -11,6 +12,8 @@ from agent6.config import harness_config
 from agent6.harness import loop_conversation, loop_state
 from agent6.harness.compaction import driver, strategy, window
 from agent6.providers import provider_types, responses_codec
+from agent6.sessions import event_log
+from agent6.sessions import layout as sessions_layout
 from tests.unit import test_harness
 
 
@@ -106,6 +109,25 @@ def context(
 
 def test_worker_is_the_default() -> None:
     assert harness_config.CompactionConfig().summariser == "worker"
+
+
+@pytest.mark.parametrize("offered", [True, False])
+def test_restart_names_its_readable_journal(tmp_path: pathlib.Path, offered: bool) -> None:
+    layout = sessions_layout.SessionLayout(tmp_path, "calm-owl-AAAAAA")
+    harness = test_harness._wf(
+        provider=Writer(response("short summary")),
+        events=event_log.EventSink(layout.logs_path),
+        state_dir=tmp_path,
+        compaction=window.CompactionSettings(keep_recent_chars=0, summarise_at_chars=2000),
+    )
+    conv = history()
+    tools = [provider_types.ToolDefinition("read_session", "Read entries", {})] if offered else []
+    turn = harness.compaction_context(conv, loop_state.LoopState("task", 1), tools)
+    assert driver.Tiered().compact(turn)
+    request = str(conv.to_wire())
+    assert "short summary" in request and "operator direction" not in request
+    assert ("read_session" in request) == offered
+    assert (layout.session_id in request) == offered
 
 
 def test_worker_preserves_request_and_skips_tier_one() -> None:

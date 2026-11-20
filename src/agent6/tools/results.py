@@ -765,21 +765,36 @@ class BackgroundResult(ToolResult):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class SessionsResult(ToolResult):
-    """The project's sessions, and one session's conversation when asked for."""
+    """The project's session roster."""
 
     sessions: tuple[str, ...]
-    conversation: str | None = None
 
     def to_wire(self) -> dict[str, Any]:
         """Return the wire dict."""
-        wire: dict[str, Any] = {"sessions": list(self.sessions)}
-        if self.conversation is not None:
-            wire["conversation"] = self.conversation
-        return wire
+        return {"sessions": list(self.sessions)}
 
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"{len(self.sessions)} session{'' if len(self.sessions) == 1 else 's'}"
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class SessionEntriesResult(ToolResult):
+    """One page of numbered journal entries and the next matching entry, if any."""
+
+    conversation: str
+    next_start: int | None = None
+
+    def to_wire(self) -> dict[str, Any]:
+        """Return the wire dict."""
+        wire: dict[str, Any] = {"conversation": self.conversation}
+        if self.next_start is not None:
+            wire["next_start"] = self.next_start
+        return wire
+
+    def summary(self) -> str:
+        """Return the one-line summary."""
+        return "1 session"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

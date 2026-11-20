@@ -106,6 +106,13 @@ Saved sessions retain metadata, not pixels or PDF payloads; resume and fork need
 Attachments can disclose credentials in screenshots or documents.
 See [Media retention](security.md#media-retention) for containment and the upstream boundary.
 
+`read_session` without an id lists the project's sessions; `query` searches their tasks and journals.
+With an id it returns numbered entries in journal order, such as `#41 12:31 operator: Use the blue label.`
+`query` matches a literal substring regardless of case; `kinds` selects `operator`, `model` or `tool` entries without changing their numbers.
+`start` is the first eligible entry number (default 1); `limit` caps matches and `max_chars` caps their combined text.
+An entry too long to fit on its own ends in `…`; `next_start` gives the first match on the next page, if any.
+After compaction the restart notice names the session id when the model can use `read_session`.
+
 ## Follow and steer a run
 
 Every surface follows a run and sends it the same steers; the command-line verbs are on [Command line](cli.md#follow-and-steer-a-run).
@@ -214,7 +221,7 @@ Its finished work follows the [parallel merge policy](#parallel-directive).
 A child runs under the parent's own config and the run's remaining budget, with no turn cap or deadline of its own.
 `read_background` with a child's id returns only its state and transcript tail.
 With no id it lists the rosters; a positive `wait_s` waits for the next child to end.
-In both `read_background` and `read_session`, a command in the child's transcript shows the start of its command line and its recorded exit code, without its output or the rest of a multiline script.
+In `read_background`, a command in the child's transcript shows the start of its command line and its recorded exit code, without its output or the rest of a multiline script.
 Without a recorded exit, a background command shows its handoff id.
 Other sessions in the project can read these previews, so keep credentials out of command arguments.
 Every background wait uses the shorter of `wait_s` and [`harness.command_checkin_s`](config.md#harness); a check-in of 0 disables this cap.

@@ -5,21 +5,24 @@
 A run, a plan and an ask are all sessions, and their journals sit side by side under the
 project's state dir. Read-only, and confined to the state dir by construction: a session is
 named by id, resolved against the buckets on disk, so no path from the model reaches the
-filesystem. The journals hold conversations, not credentials.
+filesystem. Entry reads open the journal, not provider transcripts or credentials.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import json
+import os
 import pathlib
 import shlex
+from collections.abc import Iterator
 from typing import Any
 
-from agent6 import kinds, terminal
+from agent6 import kinds, path_safety, terminal
 from agent6.sessions import journal, manifest, shells
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import schema
+from agent6.tools import results, schema
 
 # Who said what, from which field; settled events only (deltas repeat them), and every steer.
 _SPEAKER = {
@@ -27,6 +30,17 @@ _SPEAKER = {
     "session.start": ("user", "user_task"),
     "steer.injected": ("user", "text"),
     "steer.parent": ("parent", "text"),
+}
+
+# The journal also records rejected calls. Only declared arguments belong in another session.
+_ARG_FIELDS = {
+    cls.TOOL_NAME: cls.model_fields.keys()
+    for cls in (
+        *schema.ALL_TOOLS,
+        *schema.LOOP_EXTRA_TOOLS,
+        *schema.PLAN_EXTRA_TOOLS,
+        *schema.ASK_EXTRA_TOOLS,
+    )
 }
 
 
@@ -105,6 +119,33 @@ def session_briefs(state_dir: pathlib.Path) -> list[SessionBrief]:
     return [brief for _mtime, brief in sorted(found, key=lambda pair: -pair[0])]
 
 
+def _journal(layout: sessions_layout.SessionLayout) -> Iterator[dict[str, Any]]:
+    """Yield journal objects in append order without following a link out of state."""
+    path = layout.logs_path
+    location = path_safety.SafePath(layout.state_dir, path.relative_to(layout.state_dir), path)
+    with os.fdopen(path_safety.open_contained(location, os.O_RDONLY), errors="replace") as rows:
+        for row in rows:
+            try:
+                event = json.loads(row)
+            except ValueError:
+                continue  # a torn line in a live journal
+            if isinstance(event, dict):
+                yield event
+
+
+def _speech(event: dict[str, Any], mode: str) -> tuple[str, str] | None:
+    """Return settled speech, excluding side calls and streaming deltas."""
+    etype = str(event.get("type", ""))
+    if said := _SPEAKER.get(etype):
+        speaker, field = said
+        if etype == "model.result" and kinds.is_side_role(str(event.get("role", "")), mode=mode):
+            return None
+        body = event.get(field)
+        if isinstance(body, str) and body.strip():
+            return speaker, body.strip()
+    return None
+
+
 def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> str:
     """Return a session's conversation as plain text, oldest first.
 
@@ -120,33 +161,18 @@ def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> st
     """
     lines: list[str] = []
     commands: dict[tuple[str, str, int | None], int] = {}
+    mode = kinds.bucket_mode(layout.subdir)
     try:
-        raw = layout.logs_path.read_text(errors="replace")
-    except OSError as exc:
-        return f"(no readable journal: {exc})"
-    for line in raw.splitlines():
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue  # a torn last line on a live session
-        if not isinstance(event, dict):
-            continue
-        etype = str(event.get("type", ""))
-        if etype in journal.SESSION_START_EVENTS:
-            commands.clear()
-        said = _SPEAKER.get(etype)
-        if said is None:
-            if etype in ("tool.call", "tool.result", "verify.start", "metric.start"):
+        for event in _journal(layout):
+            etype = str(event.get("type", ""))
+            if etype in journal.SESSION_START_EVENTS:
+                commands.clear()
+            if said := _speech(event, mode):
+                lines.append(f"{said[0]}: {said[1]}")
+            elif etype in ("tool.call", "tool.result", "verify.start", "metric.start"):
                 _tool_line(event, lines, commands, layout.session_dir)
-            continue
-        if etype == "model.result" and kinds.is_side_role(
-            str(event.get("role", "")), mode=kinds.bucket_mode(layout.subdir)
-        ):
-            continue  # a side call's answer, not this session's own
-        speaker, field = said
-        body = str(event.get(field, "")).strip()
-        if body:
-            lines.append(f"{speaker}: {body}")
+    except (OSError, path_safety.ContainmentError) as exc:
+        return f"(no readable journal: {exc})"
     text = "\n\n".join(lines)
     if len(text) > max_chars:
         # The header counts against the cap.
@@ -214,6 +240,107 @@ def _command_line(name: str, argv: object) -> str:
     if isinstance(argv, list) and argv and all(isinstance(a, str) for a in argv):
         return f"{label} {terminal.line_preview(shlex.join(argv))}"
     return label
+
+
+def _declared_value(key: str, value: Any) -> Any:
+    """Return only the declared fields of nested arguments."""
+    if isinstance(value, list):
+        return [_declared_value(key, item) for item in value]
+    if isinstance(value, dict):
+        nested = {"edits": schema.EditPair, "questions": schema.UserQuestion}.get(key)
+        if nested is None:
+            return "(object)"
+        return {k: _declared_value(k, v) for k, v in value.items() if k in nested.model_fields}
+    return value
+
+
+def _arg_preview(key: str, value: Any) -> str:
+    """Return one line of a declared argument, without opaque object fields."""
+    if key == "argv" and isinstance(value, list) and all(isinstance(v, str) for v in value):
+        text = shlex.join(value)
+    elif key == "result":
+        # A machine's structured result has its own schema, not a tool argument schema.
+        return "(object)"
+    else:
+        plain = _declared_value(key, value)
+        text = plain if isinstance(plain, str) else json.dumps(plain, ensure_ascii=False)
+    return terminal.line_preview(text, limit=200)
+
+
+def _entry(event: dict[str, Any], mode: str) -> tuple[str, str] | None:
+    """Return the kind and visible text of one numbered journal entry."""
+    if said := _speech(event, mode):
+        speaker, body = said
+        if speaker == "parent":
+            body = f"parent: {body}"
+        return "operator" if speaker == "user" else "model", body
+    etype = event.get("type")
+    if etype == "metric.start" or (etype == "verify.start" and type(event.get("call_id")) is int):
+        name = "run_metric_command" if etype == "metric.start" else "run_verify_command"
+        return "tool", f"{name} argv={_arg_preview('argv', event.get('command'))}"
+    name = event.get("name")
+    if not isinstance(name, str):
+        return None
+    if etype == "tool.call":
+        fields = _ARG_FIELDS.get(name, ())
+        args = event.get("args_preview", event.get("args"))
+        pairs = (
+            [f"{k}={_arg_preview(k, v)}" for k, v in args.items() if k in fields]
+            if isinstance(args, dict)
+            else []
+        )
+        return "tool", " ".join((name, *pairs))
+    if etype == "tool.result":
+        summary = event.get("summary")
+        if not isinstance(summary, str):
+            summary = f"exit {event['exit_code']}" if type(event.get("exit_code")) is int else ""
+        return "tool", f"{name} result: {terminal.line_preview(summary, limit=200)}".rstrip()
+    return None
+
+
+def read_entries(
+    layout: sessions_layout.SessionLayout, args: schema.ReadSessionInput
+) -> results.SessionEntriesResult:
+    """Read a bounded page, numbering the entries before filtering.
+
+    Args:
+        layout: The session resolved from the project's roster of ids.
+        args: The entry range, filters and character budget.
+
+    Returns:
+        The page, plus the first omitted match's number when there is another page.
+    """
+    lines: list[str] = []
+    remaining = args.max_chars
+    next_start = None
+    number = 0
+    mode = kinds.bucket_mode(layout.subdir)
+    needle = args.query.casefold()
+    try:
+        for event in _journal(layout):
+            if not (entry := _entry(event, mode)):
+                continue
+            number += 1
+            kind, body = entry
+            if number < args.start or (args.kinds and kind not in args.kinds):
+                continue
+            try:
+                when = datetime.datetime.fromisoformat(str(event.get("ts", ""))).strftime("%H:%M")
+            except ValueError:
+                when = "--:--"
+            line = f"#{number} {when} {kind}: {body}"
+            if needle and needle not in line.casefold():
+                continue
+            if len(lines) == args.limit or (lines and len(line) > remaining):
+                next_start = number
+                break
+            if len(line) > remaining:
+                line = line[: remaining - 1] + "…"
+            lines.append(line)
+            remaining -= len(line) + 1
+    except (OSError, path_safety.ContainmentError) as exc:
+        return results.SessionEntriesResult(f"(no readable journal: {exc})"[: args.max_chars])
+    return results.SessionEntriesResult("\n".join(lines) or "(no matching entries)", next_start)
 
 
 def roster(state_dir: pathlib.Path, query: str) -> Roster:

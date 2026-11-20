@@ -1070,14 +1070,16 @@ class ToolDispatcher:
             location=got.location,
         )
 
-    def _read_session(self, raw: dict[str, Any]) -> results.SessionsResult:
-        """List the project's sessions, and read one's conversation when asked.
+    def _read_session(
+        self, raw: dict[str, Any]
+    ) -> results.SessionsResult | results.SessionEntriesResult:
+        """List the project's sessions or read entries from one journal.
 
         Args:
             raw: The tool call's arguments.
 
         Returns:
-            The roster, with the conversation when an id was given.
+            The roster or the selected page.
 
         Raises:
             ToolError: No state dir was wired, or the session does not exist.
@@ -1085,15 +1087,12 @@ class ToolDispatcher:
         args = schema.ReadSessionInput.model_validate(raw)
         if self._state_dir is None:
             raise tool_errors.ToolError("read_session needs the project state dir; none was wired")
-        lines = sessions.roster(self._state_dir, args.query).lines()
         if not args.id:
-            return results.SessionsResult(sessions=lines)
+            return results.SessionsResult(sessions.roster(self._state_dir, args.query).lines())
         layout = sessions_layout.session_layout(self._state_dir, args.id)
         if layout is None:
             raise tool_errors.ToolError(f"no session {args.id!r} in this project")
-        return results.SessionsResult(
-            sessions=lines, conversation=sessions.conversation(layout, max_chars=args.max_chars)
-        )
+        return sessions.read_entries(layout, args)
 
     def _list_findings(self, raw: dict[str, Any]) -> results.FindingsResult:
         """List the session's findings: the open ones, or every one with `all`.

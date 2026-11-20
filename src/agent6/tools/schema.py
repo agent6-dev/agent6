@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
-from typing import Annotated, Any, ClassVar, get_args
+from typing import Annotated, Any, ClassVar, Literal, get_args
 
 import pydantic
 
@@ -293,14 +293,18 @@ class ReadSessionInput(_ToolInput):
 
     TOOL_NAME: ClassVar[str] = "read_session"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Read another session's transcript summary by id; with no id, list the"
-        " sessions. `query` keeps the sessions whose task or journal contains"
-        f" it ({ROSTER_MAX} newest); `max_chars` bounds the transcript, which keeps its"
-        " tail. Read-only."
+        "Read numbered journal entries by session id, oldest first. `start` is the first"
+        " eligible entry number; `limit` caps matches. `kinds` selects speakers or tools;"
+        " `query` matches a literal substring, ignoring case. `max_chars` bounds the page;"
+        " `next_start` names the next match. Without an id, list sessions whose task or"
+        f" journal contains `query` ({ROSTER_MAX} newest)."
     )
 
     id: str = ""
     query: str = ""
+    kinds: tuple[Literal["operator", "model", "tool"], ...] = ()
+    start: int = pydantic.Field(default=1, ge=1)
+    limit: int = pydantic.Field(default=100, ge=1, le=1000)
     max_chars: int = pydantic.Field(default=20_000, ge=500, le=200_000)
 
 

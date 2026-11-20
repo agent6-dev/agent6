@@ -142,5 +142,5 @@ def parallel_description(cfg: Config) -> str:
         + f". Configured providers: {providers}. Each child is an ordinary run, a worker with"
         " this run's tools, guards and limits, that may edit its clone; the children share this"
         f" run's remaining budget, at most {cfg.harness.parallel.max_children} run at once"
-        " (`harness.parallel.max_children`), and `read_session` reads a child's whole transcript."
+        " (`harness.parallel.max_children`), and `read_session` reads a child's journal entries."
     )

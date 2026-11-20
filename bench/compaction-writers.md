@@ -260,3 +260,16 @@ A separate check of the twelve new functions and their error rules, in six group
 The tail is 18% of the restart limit here and 8% with the defaults on a 272,000-token window, so the extra restarts overstate the tail's cost at the default sizes.
 The ranges of turns and of uncached input overlap between the arms.
 
+## Reading an early steer after compaction
+
+The installed CLI ran against a scripted loopback provider in a fresh `/tmp` repository with separate XDG state, config, cache and data directories per run.
+`agent6 steer` sent a field label between two `read_file` calls, then `/compact` requested a worker summary with `keep_recent_chars = 0`.
+The label reached the summary request and was absent from the restarted request in all six runs.
+
+| Scripted lookup | Labels recovered | `read_session` calls per run | Tool-result characters per run |
+| --- | ---: | ---: | ---: |
+| Roster query, then id read | 3/3 | 2 | 524, 520, 524 |
+| Id from restart notice, `kinds=["operator"]` and literal query | 3/3 | 1 | 63, 63, 63 |
+
+These counts measure the two retrieval paths, not whether a model chooses either path.
+No live-model comparison was run.

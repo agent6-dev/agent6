@@ -2008,6 +2008,9 @@ class Harness:
             return compaction_prompts.context_restart_notice(
                 self.mode,
                 endpoint_task=task,
+                session_id=self.session_id
+                if any(t.name == schema.ReadSessionInput.TOOL_NAME for t in tools)
+                else "",
                 pins=state.pins,
                 decisions=self._load_decisions(),
                 dag_available=self.dispatcher.dag_available,

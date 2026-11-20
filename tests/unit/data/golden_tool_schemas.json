@@ -96,8 +96,11 @@
     "required": [],
     "properties": {
       "id": "string",
+      "kinds": "array[string]",
+      "limit": "integer",
       "max_chars": "integer",
-      "query": "string"
+      "query": "string",
+      "start": "integer"
     }
   },
   {

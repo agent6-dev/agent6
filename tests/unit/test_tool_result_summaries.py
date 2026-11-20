@@ -156,8 +156,8 @@ CASES: list[tuple[str, results_mod.ToolResult, str]] = [
     ),
     (
         "sessions_read",
-        results_mod.SessionsResult(sessions=("[a] run: x", "[b] ask: y"), conversation="user: hi"),
-        "2 sessions",
+        results_mod.SessionEntriesResult(conversation="#1 12:31 operator: hi"),
+        "1 session",
     ),
     # background commands
     (

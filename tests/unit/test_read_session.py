@@ -8,6 +8,7 @@ import json
 import pathlib
 import tracemalloc
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -186,11 +187,7 @@ def test_no_path_from_the_model_reaches_the_filesystem(tmp_path: pathlib.Path, e
 
 
 def test_the_tool_returns_the_roster_and_refuses_an_unknown_id(tmp_path: pathlib.Path) -> None:
-    """The tool returns the roster and refuses an unknown id.
-
-    At the dispatch level: the roster rides on every answer (like read_background), and an id the
-    project does not have is an error, not an empty read.
-    """
+    """An id lookup returns just the requested conversation or a refusal."""
     from agent6.config import Config
     from agent6.tools import dispatch, tool_errors
 
@@ -201,8 +198,137 @@ def test_the_tool_returns_the_roster_and_refuses_an_unknown_id(tmp_path: pathlib
     assert "conversation" not in out
     got = d.dispatch("read_session", {"id": "quiet-fox-AAAAAA"}).to_wire()
     assert "use ffmpeg" in got["conversation"]
+    assert "sessions" not in got
     with pytest.raises(tool_errors.ToolError, match="no session"):
         d.dispatch("read_session", {"id": "nope"})
+
+
+def _reader(state: pathlib.Path, rows: list[dict[str, Any]]) -> Callable[..., dict[str, Any]]:
+    from agent6.config import Config
+    from agent6.tools import dispatch
+
+    session = _session(state, "runs", "calm-owl-AAAAAA", "run", "the task", [])
+    (session / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    d = dispatch.ToolDispatcher(root=state, config=Config(), state_dir=state)
+
+    def read(**filters: Any) -> dict[str, Any]:
+        return d.dispatch("read_session", {"id": session.name, **filters}).to_wire()
+
+    return read
+
+
+def test_filtered_entries_keep_their_journal_number_and_time(tmp_path: pathlib.Path) -> None:
+    read = _reader(
+        tmp_path,
+        [
+            {"ts": "2026-07-31T12:31:07+00:00", "type": "session.start", "user_task": "Keep [a]."},
+            {"type": "model.text_delta", "text": "not a second copy"},
+            {"type": "model.result", "role": "summariser", "text": "side call"},
+            {"ts": "2026-07-31T12:32:18+00:00", "type": "model.result", "text": "Check [a]."},
+            {"ts": "2026-07-31T12:31:59+00:00", "type": "steer.injected", "text": "Use [A]."},
+            {"type": "steer.parent", "text": "Also [a]."},
+        ],
+    )
+    assert read(query="[a]", kinds=["operator"], limit=1) == {
+        "conversation": "#1 12:31 operator: Keep [a].",
+        "next_start": 3,
+    }
+    assert read(start=3, query="[a]", kinds=["operator"]) == {
+        "conversation": "#3 12:31 operator: Use [A]."
+    }
+    text = read()["conversation"]
+    assert text.splitlines() == [
+        "#1 12:31 operator: Keep [a].",
+        "#2 12:32 model: Check [a].",
+        "#3 12:31 operator: Use [A].",
+        "#4 --:-- model: parent: Also [a].",
+    ]
+    assert "no matching entries" in read(query=".*")["conversation"]
+
+
+def test_tool_entries_show_bounded_arguments_and_only_the_recorded_summary(
+    tmp_path: pathlib.Path,
+) -> None:
+    read = _reader(
+        tmp_path,
+        [
+            {
+                "type": "tool.call",
+                "name": "read_file",
+                "args_preview": {"path": "x" * 230, "start_line": 8, "api_key": "private key"},
+                "args": {"path": "not the preview"},
+            },
+            {"type": "steer.injected", "text": "Arrived before the result."},
+            {
+                "type": "tool.result",
+                "name": "read_file",
+                "ok": True,
+                "summary": "y" * 230,
+                "head_tail": "private file content",
+                "stdout_tail": "private output",
+            },
+        ],
+    )
+    session = tmp_path / "sessions" / "runs" / "calm-owl-AAAAAA"
+    (session / "transcripts").mkdir()
+    (session / "transcripts" / "1.json").write_text('{"text": "private provider request"}')
+    assert read(kinds=["tool"])["conversation"].splitlines() == [
+        f"#1 --:-- tool: read_file path={'x' * 199}… start_line=8",
+        f"#3 --:-- tool: read_file result: {'y' * 199}…",
+    ]
+    assert "no matching entries" in read(query="private")["conversation"]
+
+
+def test_nested_arguments_keep_declared_fields_without_opaque_data(tmp_path: pathlib.Path) -> None:
+    read = _reader(
+        tmp_path,
+        [
+            {
+                "type": "tool.call",
+                "name": "ask_user",
+                "args_preview": {
+                    "questions": [{"question": "Which?", "options": ["blue"], "token": "private"}]
+                },
+            },
+            {
+                "type": "tool.call",
+                "name": "finish_session",
+                "args_preview": {"result": {"token": "private"}},
+            },
+            {
+                "type": "tool.call",
+                "name": "mcp__service__get",
+                "args_preview": {"token": "private"},
+            },
+        ],
+    )
+    text = read()["conversation"]
+    assert "Which?" in text and "blue" in text and "private" not in text
+
+
+def test_a_journal_symlink_cannot_substitute_a_transcript(tmp_path: pathlib.Path) -> None:
+    read = _reader(tmp_path, [])
+    session = tmp_path / "sessions" / "runs" / "calm-owl-AAAAAA"
+    (session / "transcripts").mkdir()
+    transcript = session / "transcripts" / "1.json"
+    transcript.write_text(json.dumps({"type": "model.result", "text": "private request"}))
+    (session / "logs.jsonl").unlink()
+    (session / "logs.jsonl").symlink_to(transcript)
+    text = read()["conversation"]
+    assert "no readable journal" in text and "private request" not in text
+
+
+def test_max_chars_keeps_the_entry_header_and_the_next_page(tmp_path: pathlib.Path) -> None:
+    read = _reader(
+        tmp_path,
+        [{"type": "model.result", "text": text} for text in ("first", "x" * 600, "last")],
+    )
+    assert read(max_chars=500) == {"conversation": "#1 --:-- model: first", "next_start": 2}
+    page = read(start=2, max_chars=500)
+    assert page["conversation"].startswith("#2 --:-- model: ")
+    assert len(page["conversation"]) == 500 and page["conversation"].endswith("…")
+    assert page["next_start"] == 3
+    assert read(start=3) == {"conversation": "#3 --:-- model: last"}
 
 
 def test_the_tool_is_unwired_without_a_project_state_dir(tmp_path: pathlib.Path) -> None:
@@ -215,11 +341,7 @@ def test_the_tool_is_unwired_without_a_project_state_dir(tmp_path: pathlib.Path)
 
 
 def test_a_project_with_many_sessions_does_not_flood_the_context(tmp_path: pathlib.Path) -> None:
-    """Every read_session call pays for the roster.
-
-    At 2000 sessions the uncapped list rendered ~70k tokens, so one lookup cost more than the
-    answer.
-    """
+    """The roster stays bounded: 2000 sessions rendered about 70k tokens without the cap."""
     for i in range(schema.ROSTER_MAX + 25):
         _session(tmp_path, "runs", f"s{i:04d}-AAAAAA", "run", "t", [])
     got = sessions.roster(tmp_path, "")
