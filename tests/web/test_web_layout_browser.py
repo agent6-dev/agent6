@@ -436,9 +436,12 @@ def test_a_short_screens_dock_fits_between_the_bars_and_covers_no_row(
       return row.top >= document.querySelector('header').getBoundingClientRect().bottom
         && row.bottom <= Math.min(dock.top, tabs.top);
     }"""
+    page.keyboard.press("Shift+Tab")  # the list's one Tab stop
+    assert page.evaluate(clear)
+    page.keyboard.press("End")  # the last row, beside the dock
     for _ in range(3):
-        page.keyboard.press("Shift+Tab")
         assert page.evaluate(clear)
+        page.keyboard.press("ArrowUp")
     # A message raised at the page's end shows between the bars, off the dock's Start.
     message = """() => {
       window.scrollTo(0, document.scrollingElement.scrollHeight);
