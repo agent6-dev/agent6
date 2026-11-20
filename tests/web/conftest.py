@@ -77,14 +77,25 @@ def tour_page(
                     assert time.monotonic() < deadline, log.read_text()
                     time.sleep(0.1)
             with browser.new_context(viewport={"width": 1440, "height": 1000}) as context:
-                context.add_init_script(f"localStorage.setItem('a6-token', {json.dumps(token)})")
+                context.add_init_script(
+                    "if (window === top && location.pathname === '/') "
+                    f"localStorage.setItem('a6-token', {json.dumps(token)})"
+                )
                 errors: list[str] = []
 
                 def read_only(route: Route) -> None:
                     request = route.request
-                    if (
-                        parse.urlsplit(request.url).netloc == f"127.0.0.1:{port}"
-                        and request.method == "GET"
+                    if parse.urlsplit(request.url).netloc == f"127.0.0.1:{port}" and (
+                        request.method == "GET"
+                        or (
+                            request.method == "POST"
+                            and parse.urlsplit(request.url).path
+                            in {
+                                "/api/files/preview",
+                                "/api/files/preview/close",
+                                "/api/files/preview/renew",
+                            }
+                        )
                     ):
                         route.continue_()
                     else:

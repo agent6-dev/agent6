@@ -37,9 +37,13 @@ def test_show_ignored_is_remembered_and_opens_ignored_markdown(
     expect(row).to_be_visible()
     expect(row.locator(".gf-st")).to_have_text("I")
     row.click()
-    expect(page.locator(".md-view h1")).to_have_text("Work queue")
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view h1")).to_have_text(
+        "Work queue"
+    )
     page.reload()
-    expect(page.locator(".md-view h1")).to_have_text("Work queue")
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view h1")).to_have_text(
+        "Work queue"
+    )
     expect(toggle).to_have_attribute("aria-pressed", "true")
     expect(row).to_be_visible()
     toggle.click()

@@ -91,7 +91,10 @@ def open_page(browser: Browser) -> Iterator[Callable[[int], tuple[Page, list[str
         context = browser.new_context(viewport={"width": 1280, "height": 900})
         contexts.append(context)
         token = json.dumps(signin.token(port))
-        context.add_init_script(f"localStorage.setItem('a6-token', {token})")
+        context.add_init_script(
+            f"if (window === top && location.pathname === '/') "
+            f"localStorage.setItem('a6-token', {token})"
+        )
         page = context.new_page()
         errors: list[str] = []
         page.on("pageerror", lambda exc: errors.append(f"pageerror: {exc}"))

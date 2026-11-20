@@ -324,7 +324,12 @@ def test_a_narrow_file_head_keeps_its_height_while_the_text_loads(
     for path, loaded in (("b.txt", ".files-blame:enabled"), ("notes.md", ".md-view h1")):
         page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/{path}")
         page.reload()  # a fresh document, so the heights recorded are this file's alone
-        page.wait_for_selector(loaded)
+        target = (
+            page.frame_locator(".files-preview iframe").locator(loaded)
+            if loaded.startswith(".md-view")
+            else page.locator(loaded)
+        )
+        target.wait_for()
         heights = page.evaluate("window.__heads")
         assert heights and len(set(heights)) == 1, (path, heights)
         held[path] = heights[0]

@@ -580,6 +580,10 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Its CSP adds `sandbox allow-scripts` and permits only the owned nonce-authorized script and styles; raw HTML stays escaped.
   Repository images and error reads use the confined preview path.
   Remote images have no fetching attribute before consent, and `img-src` also blocks their origins.
+- The UI accepts markdown messages only from the frame it created (`event.source`).
+  A Load message requests a signed-in confirmation; its contents cannot supply hosts or markup.
+  The confirmation shows the server-held full addresses and warns what loading them discloses.
+  The markdown frame has only `sandbox="allow-scripts"`, with no same-origin, top-navigation, form or popup permission.
 - The image grant route accepts only a preview key, never a host list.
   The server grants the snapshot's HTTP image origins, not addresses from a frame message, URL parameter or later disk contents.
   Origin serialization rejects credentials, malformed ports and CSP delimiters.

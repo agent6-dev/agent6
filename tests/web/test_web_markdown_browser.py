@@ -8,13 +8,13 @@ import pytest
 
 from agent6.ui.web import git_model
 from tests.unit import test_git_history
-from tests.web import test_web_browser
+from tests.web import test_files_preview_browser, test_web_browser
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 pytestmark = pytest.mark.browser
-browser = test_web_browser.browser
+browser = test_files_preview_browser.browser
 open_page = test_web_browser.open_page
 git_port = test_web_browser.git_port
 
@@ -55,21 +55,24 @@ def test_markdown_opens_rendered_and_remembers_both_toggle_choices(
     """Markdown starts rendered; source and rendered choices survive a reload in either theme."""
     from playwright.sync_api import expect
 
-    port, sha = markdown_repo
+    port, _ = markdown_repo
     page, errors = open_page(port)
-    page.add_init_script(f"localStorage.setItem('a6-theme', '{theme}')")
+    page.add_init_script(
+        f"if (window === top && location.pathname === '/') "
+        f"localStorage.setItem('a6-theme', '{theme}')"
+    )
     page.set_viewport_size({"width": width, "height": 900})
     image_auth: list[str] = []
     page.on(
         "request",
         lambda request: (
             image_auth.append(request.headers.get("authorization", ""))
-            if "/api/git/blob?" in request.url
+            if "/preview/" in request.url and request.url.endswith("/logo.png")
             else None
         ),
     )
     page.goto(f"http://127.0.0.1:{port}/#/files/HEAD/docs/guide%20%23%25.md")
-    heading = page.locator(".md-view h1")
+    heading = page.frame_locator(".files-preview iframe").locator(".md-view h1")
     expect(heading).to_have_text("Workspace guide")
     expect(heading).to_be_visible()
     source = page.get_by_role("button", name="Source", exact=True)
@@ -77,31 +80,33 @@ def test_markdown_opens_rendered_and_remembers_both_toggle_choices(
     expect(rendered).to_have_attribute("aria-pressed", "true")
     expect(page.locator(".files-view .src")).to_be_hidden()
     expect(page.locator(".files-blame")).to_be_hidden()
-    expect(page.locator(".md-view table")).to_be_visible()
-    expect(page.locator(".md-view s")).to_have_text("old")
-    expect(page.locator(".md-view blockquote")).to_contain_text("A quoted note.")
-    expect(page.locator(".md-view li")).to_have_count(2)
-    fence = page.locator(".md-view pre:not(.md-raw)")
-    assert fence.evaluate(
-        "e => getComputedStyle(e).fontFamily === "
-        "getComputedStyle(document.querySelector('.src')).fontFamily"
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view table")).to_be_visible()
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view s")).to_have_text("old")
+    expect(
+        page.frame_locator(".files-preview iframe").locator(".md-view blockquote")
+    ).to_contain_text("A quoted note.")
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view li")).to_have_count(2)
+    fence = page.frame_locator(".files-preview iframe").locator(".md-view pre:not(.md-raw)")
+    expect(fence).to_have_css(
+        "font-family", page.locator(".src").evaluate("e => getComputedStyle(e).fontFamily")
     )
-    assert fence.evaluate(
-        "e => getComputedStyle(e).backgroundColor === "
-        "getComputedStyle(document.querySelector('header')).backgroundColor"
+    expect(fence).to_have_css(
+        "background-color",
+        page.locator("header").evaluate("e => getComputedStyle(e).backgroundColor"),
     )
-    expect(page.locator(".md-view script, .md-view [onerror]")).to_have_count(0)
-    expect(page.locator(".md-view pre.md-raw")).to_have_text(
+    expect(
+        page.frame_locator(".files-preview iframe").locator(".md-view script, .md-view [onerror]")
+    ).to_have_count(0)
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view pre.md-raw")).to_have_text(
         "<script>window.markdownExecuted = true</script>"
     )
     assert page.evaluate("window.markdownExecuted") is None
-    assert (
-        page.locator(".md-view img").get_attribute("data-blob-src")
-        == f"/api/git/blob?rev={sha}&path=logo.png"
+    image = page.frame_locator(".files-preview iframe").locator(".md-view img")
+    expect(image).to_have_js_property("naturalWidth", 1)
+    assert image_auth and not any(image_auth)
+    assert image.evaluate(
+        "e => new URL(e.src).pathname.startsWith('/preview/') && e.src.endsWith('/logo.png')"
     )
-    page.wait_for_function("document.querySelector('.md-view img')?.naturalWidth === 1")
-    assert image_auth and all(value.startswith("Bearer ") for value in image_auth)
-    assert page.locator(".md-view img").evaluate("e => e.src.startsWith('data:image/png;')")
     assert page.locator(".files-view").evaluate("e => e.scrollWidth <= e.clientWidth")
     source.click()
     expect(page.locator(".files-view .src")).to_be_visible()
@@ -130,20 +135,30 @@ def test_markdown_toc_and_relative_links_keep_the_files_route_and_revision(
     port, _ = markdown_repo
     page, errors = open_page(port)
     page.goto(f"http://127.0.0.1:{port}/#/files/HEAD/docs/guide%20%23%25.md")
-    page.get_by_role("link", name="details", exact=True).click()
+    page.frame_locator(".files-preview iframe").get_by_role(
+        "link", name="details", exact=True
+    ).click()
     expect(page).to_have_url(
         f"http://127.0.0.1:{port}/#/files/HEAD/docs/guide%20%23%25.md?anchor=details"
     )
-    expect(page.locator(".md-view #details")).to_be_in_viewport()
+    expect(
+        page.frame_locator(".files-preview iframe").locator(".md-view #details")
+    ).to_be_in_viewport()
     page.reload()
-    expect(page.locator(".md-view #details")).to_be_in_viewport()
-    page.get_by_role("link", name="next", exact=True).click()
-    expect(page.locator(".md-view h1")).to_have_text("Next step")
+    expect(
+        page.frame_locator(".files-preview iframe").locator(".md-view #details")
+    ).to_be_in_viewport()
+    page.frame_locator(".files-preview iframe").get_by_role("link", name="next", exact=True).click()
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view h1")).to_have_text(
+        "Next step"
+    )
     expect(page).to_have_url(
         f"http://127.0.0.1:{port}/#/files/HEAD/docs/next.markdown?anchor=next-step"
     )
     page.reload()
-    expect(page.locator(".md-view h1")).to_have_text("Next step")
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view h1")).to_have_text(
+        "Next step"
+    )
     expect(page.get_by_role("combobox", name="revision")).to_have_value("HEAD")
     assert not errors
 
@@ -164,7 +179,9 @@ def test_truncated_markdown_keeps_the_source_note_until_opened_whole(
     expect(page.locator(".files-text")).to_contain_text("the file is cut at")
     expect(page.get_by_role("button", name="Rendered", exact=True)).to_have_count(0)
     page.get_by_role("button", name="Show the whole file", exact=True).click()
-    expect(page.locator(".md-view h1")).to_have_text("Workspace guide")
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view h1")).to_have_text(
+        "Workspace guide"
+    )
     expect(page.get_by_role("button", name="Rendered", exact=True)).to_have_attribute(
         "aria-pressed", "true"
     )
@@ -184,20 +201,30 @@ def test_a_heading_link_in_the_open_file_scrolls_in_place(
         "request", lambda request: reads.append(request.url) if "/api/" in request.url else None
     )
     page.goto(f"http://127.0.0.1:{port}/#/files/HEAD/docs/guide%20%23%25.md")
-    expect(page.locator(".md-view h1")).to_have_text("Workspace guide")
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view h1")).to_have_text(
+        "Workspace guide"
+    )
     page.wait_for_load_state("networkidle")
     before = len(reads)
-    link = page.get_by_role("link", name="details", exact=True)
+    link = page.frame_locator(".files-preview iframe").get_by_role(
+        "link", name="details", exact=True
+    )
     link.click()
     url = f"http://127.0.0.1:{port}/#/files/HEAD/docs/guide%20%23%25.md"
     expect(page).to_have_url(url + "?anchor=details")
-    expect(page.locator(".md-view #details")).to_be_in_viewport()
-    page.locator(".files-text").evaluate("e => e.scrollTo(0, 0)")
+    expect(
+        page.frame_locator(".files-preview iframe").locator(".md-view #details")
+    ).to_be_in_viewport()
+    page.frame_locator(".files-preview iframe").locator("body").evaluate(
+        "() => window.scrollTo(0, 0)"
+    )
     link.click()  # the hash already shown
-    expect(page.locator(".md-view #details")).to_be_in_viewport()
+    expect(
+        page.frame_locator(".files-preview iframe").locator(".md-view #details")
+    ).to_be_in_viewport()
     page.go_back()
     expect(page).to_have_url(url)
-    expect(page.locator(".md-view h1")).to_be_in_viewport()
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view h1")).to_be_in_viewport()
     assert reads[before:] == []
     expect(page.get_by_role("combobox", name="revision")).to_have_value("HEAD")
     assert not errors
@@ -213,9 +240,13 @@ def test_a_heading_link_leaves_the_page_undimmed(
     page, errors = open_page(port)
     url = f"http://127.0.0.1:{port}/#/files/HEAD/docs/guide%20%23%25.md"
     page.goto(url)
-    expect(page.locator(".md-view h1")).to_have_text("Workspace guide")
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view h1")).to_have_text(
+        "Workspace guide"
+    )
     app = page.locator(".files-app")
-    page.get_by_role("link", name="details", exact=True).click()
+    page.frame_locator(".files-preview iframe").get_by_role(
+        "link", name="details", exact=True
+    ).click()
     for step, hash_, heading in (
         (None, "?anchor=details", "#details"),
         (page.go_back, "", "h1"),
@@ -224,7 +255,9 @@ def test_a_heading_link_leaves_the_page_undimmed(
         if step:
             step()
         expect(page).to_have_url(url + hash_)
-        expect(page.locator(".md-view " + heading)).to_be_in_viewport()  # the route has run
+        expect(
+            page.frame_locator(".files-preview iframe").locator(".md-view " + heading)
+        ).to_be_in_viewport()  # the route has run
         expect(app).not_to_have_attribute("aria-busy", "true")
         assert app.evaluate("e => getComputedStyle(e).opacity") == "1"
     assert not errors
@@ -251,7 +284,7 @@ def test_table_cells_keep_whole_words(
     page, errors = open_page(git_port)
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/table.md")
-    header = page.locator(".md-view th", has_text="Default")
+    header = page.frame_locator(".files-preview iframe").locator(".md-view th", has_text="Default")
     expect(header).to_be_visible()
     lines = header.evaluate(
         "th => { const r = document.createRange(); r.selectNodeContents(th);"
@@ -273,8 +306,11 @@ def test_tables_and_minor_headings_set_their_own_styles(
     test_git_history._git(tmp_path, "commit", "-m", "minor elements")
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/minor.md")
-    page.wait_for_selector(".md-view h6")
-    style = page.evaluate("""() => {
+    page.frame_locator(".files-preview iframe").locator("h6").wait_for()
+    style = (
+        page.frame_locator(".files-preview iframe")
+        .locator("body")
+        .evaluate("""() => {
       const md = document.querySelector('.md-view'), css = e => getComputedStyle(e);
       const shaded = md.querySelector('tbody tr:nth-child(2)');
       return {chip: css(shaded.querySelector('code')).backgroundColor,
@@ -282,6 +318,7 @@ def test_tables_and_minor_headings_set_their_own_styles(
         td: css(md.querySelector('td')).verticalAlign,
         h6: parseFloat(css(md.querySelector('h6')).fontSize), body: parseFloat(css(md).fontSize)};
     }""")
+    )
     assert style["chip"] != style["row"], style
     assert style["th"] in ("start", "left") and style["td"] == "top", style
     assert style["h6"] >= 0.8 * style["body"], style
@@ -298,9 +335,11 @@ def test_code_in_a_quote_reads_at_aa_in_the_light_theme(
     test_git_history._git(tmp_path, "add", "quote.md")
     test_git_history._git(tmp_path, "commit", "-m", "a quote")
     page, errors = open_page(git_port)
-    page.add_init_script("localStorage.setItem('a6-theme', 'light')")
+    page.add_init_script(
+        "if (window === top && location.pathname === '/') localStorage.setItem('a6-theme', 'light')"
+    )
     page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/quote.md")
-    code = page.locator(".md-view blockquote code")
+    code = page.frame_locator(".files-preview iframe").locator(".md-view blockquote code")
     expect(code).to_have_text("code")
     ratio = code.evaluate("""e => {
       const rgba = c => { const v = c.match(/[\\d.]+/g).map(Number);
@@ -329,8 +368,8 @@ def test_a_missing_image_keeps_its_place_with_the_reason(
     test_git_history._git(tmp_path, "commit", "-m", "a missing picture")
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/pictures.md")
-    missing = page.locator(".md-view .md-missing")
+    missing = page.frame_locator(".files-preview iframe").locator(".md-view .md-missing")
     expect(missing.locator(":scope > :first-child")).to_have_text("The hub")
     expect(missing.locator(".muted")).to_contain_text("no file 'out/hub.png'")
-    expect(page.locator(".md-view .err")).to_have_count(0)
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view .err")).to_have_count(0)
     assert [e for e in errors if "422" not in e] == []  # the missing file's response

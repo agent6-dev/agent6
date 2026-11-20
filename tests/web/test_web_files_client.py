@@ -26,6 +26,7 @@ class Element {
   set innerHTML(_) {
     this.children.forEach(c => c.parent = null); this.children = []; this.text = '';
   }
+  replaceChildren(...children) { this.innerHTML = ''; this.append(...children); }
   get firstChild() { return this.children[0] || null; }
   get parentElement() { return this.parent; }
   get textContent() { return this.text + this.children.map(c => c.textContent).join(''); }
@@ -69,6 +70,7 @@ class Element {
 }
 const el = (tag, cls, text = '') => new Element(tag, cls, text);
 const document = {
+  documentElement: el('html'),
   createTextNode: text => el('text', '', text),
   createElementNS: (_, tag) => el(tag),
   querySelectorAll: s => view.querySelectorAll(s),
@@ -79,9 +81,10 @@ const history = {
   pushState: (_, title, hash) => location.hash = hash,
   replaceState: (_, title, hash) => location.hash = hash,
 };
-const window = {addEventListener() {}, matchMedia: () => ({matches:false})};
+const window = {isSecureContext: true, addEventListener() {}, removeEventListener() {},
+  matchMedia: () => ({matches:false})};
 const getComputedStyle = () => ({fontSize: '16px'});
-const MutationObserver = class { observe() {} };
+const MutationObserver = class { observe() {} disconnect() {} };
 const ResizeObserver = class { observe() {} };
 let activeTab = '';
 const setTab = tab => activeTab = tab;
@@ -97,6 +100,8 @@ const boot = () => {};
 const esc = x => x;
 const actionable = (node, fn) => node.onclick = fn;
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+let postJSON = async () => ({key:'key', url:'/preview/key/README.md',
+  rev:'old', kind:'markdown', images:[]});
 let chooseRevision;
 const picker = (_, value, choose) => {
   chooseRevision = choose;
@@ -140,7 +145,8 @@ def _run(scenario: str) -> None:
         + source
         + "\ngitPicker = picker; routeGen = 1;\nlet finished = false;\n(async () => {\n"
         + scenario
-        + "\nfinished = true;\n})().catch(e => { console.error(e); process.exitCode = 1; });\n"
+        + "\ncloseFilePreview(); finished = true;\n"
+        + "})().catch(e => { console.error(e); process.exitCode = 1; });\n"
         + "process.on('beforeExit', () => { if (!finished && !process.exitCode) {"
         + " console.error('the scenario did not finish'); process.exitCode = 1; } });"
     )
@@ -388,7 +394,7 @@ getJSON = async url => {
     return {rev:worktree ? 'WORKTREE' : 'tip',ignored,
       files:ignored ? [{path:'plan.md',kind:'file',size:7,state:'ignored'}] : [],truncated:false};
   }
-  return {text:'# Plan\n',lines:1,spans:[],rendered_html:'<h1>Plan</h1>',
+  return {text:'# Plan\n',lines:1,spans:[],digest:'same',
     binary:false,truncated:false};
 };
 await renderFiles(1, 'HEAD');
@@ -404,7 +410,7 @@ assert.equal(view.querySelector('.gf-st').textContent, 'I');
 assert.equal(view.querySelector('.gf-st').title, '1 ignored');
 await view.querySelector('.gf').onclick();
 assert.ok(requests.some(url => url.startsWith('/api/git/text?') && url.includes('ignored=1')));
-assert.ok(view.querySelector('.md-view'));
+assert.ok(view.querySelector('.files-preview'));
 await renderFiles(1, 'WORKTREE');
 toggle = view.querySelector('.files-ignored');
 assert.equal(toggle['aria-pressed'], 'true');
@@ -424,7 +430,7 @@ const opening = renderFiles(1, 'HEAD', 'notes.md'); await tick();
 const modes = view.querySelector('.files-md-mode');
 assert.ok(modes && modes.children.every(b => b.disabled), 'mode buttons not held while loading');
 assert.equal(view.querySelector('.files-blame').hidden, true);
-pending[pending.length - 1].resolve({text:'', lines:0, spans:[], digest:'d', rendered_html:null,
+pending[pending.length - 1].resolve({text:'', lines:0, spans:[], digest:'d',
   binary:true, truncated:false, language:''});
 await opening;
 assert.equal(view.querySelector('.files-md-mode'), null);
@@ -438,7 +444,7 @@ def test_markdown_mode_switches_content_and_blame_and_survives_reopening() -> No
     """The remembered markdown mode changes visibility without losing source or blame state."""
     _run(r"""
 const answer = {text:'# Heading\n',lines:1,spans:[],digest:'same',
-  rendered_html:'<h1 id="heading">Heading</h1>\n',binary:false,truncated:false};
+  binary:false,truncated:false};
 async function open() {
   view.innerHTML = ''; // another page in between, so the file opens anew
   const opening = renderFiles(1, 'HEAD', 'README.md'); await tick();
@@ -450,12 +456,12 @@ assert.ok(modes, 'markdown toggle missing');
 let [rendered, source] = modes.children;
 assert.equal(rendered['aria-pressed'], 'true');
 assert.equal(source['aria-pressed'], 'false');
-assert.equal(view.querySelector('.md-view').hidden, false);
+assert.equal(view.querySelector('.files-preview').hidden, false);
 assert.equal(view.querySelector('.files-source').hidden, true);
 assert.equal(view.querySelector('.files-blame').hidden, true);
 source.onclick();
 assert.equal(source['aria-pressed'], 'true');
-assert.equal(view.querySelector('.md-view').hidden, true);
+assert.equal(view.querySelector('.files-preview').hidden, true);
 assert.equal(view.querySelector('.files-source').hidden, false);
 assert.ok(view.querySelector('.src').textContent.includes('# Heading'));
 assert.equal(view.querySelector('.files-blame').hidden, false);
@@ -468,47 +474,35 @@ await open();
 modes = view.querySelector('.files-md-mode');
 [rendered, source] = modes.children;
 assert.equal(source['aria-pressed'], 'true', 'source choice lost on reopening');
-assert.equal(view.querySelector('.md-view').hidden, true);
+assert.equal(view.querySelector('.files-preview').hidden, true);
 rendered.onclick();
 await open();
 assert.equal(view.querySelector('.files-md-mode').children[0]['aria-pressed'], 'true',
   'rendered choice lost on reopening');
-assert.equal(view.querySelector('.md-view').hidden, false);
+assert.equal(view.querySelector('.files-preview').hidden, false);
 """)
 
 
-def test_markdown_images_use_authenticated_blob_reads_and_opaque_data_urls() -> None:
-    """An inline API image cannot send a bearer token; the client fetches its bytes first."""
+def test_markdown_uses_a_frame_bound_to_the_source_digest() -> None:
+    """Rendered content stays out of the UI document and keeps the displayed snapshot."""
     _run(r"""
-const url = '/api/git/blob?rev=old&path=logo.png';
-const image = el('img'); image.dataset.blobSrc = url;
-const setHTML = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML').set;
-const queryAll = Element.prototype.querySelectorAll;
-Object.defineProperty(Element.prototype, 'innerHTML', {set(html) {
-  setHTML.call(this, html);
-  if (this.cls.has('md-view')) this.appendChild(image);
-}});
-Element.prototype.querySelectorAll = function(selector) {
-  return selector === 'img[data-blob-src]' ? this.children.filter(c => c === image)
-    : queryAll.call(this, selector);
-};
-let fetched = '';
-globalThis.getBlob = async request => { fetched = request; return new Blob(['pixels']); };
-globalThis.FileReader = class {
-  readAsDataURL(blob) {
-    blob.text().then(text => {
-      this.result = 'data:image/png;base64,' + Buffer.from(text).toString('base64');
-      this.onload();
-    });
-  }
+const opens = [];
+postJSON = async (url, body) => {
+  opens.push({url, body});
+  return {key:'key', url:'/preview/key/README.md', rev:'old', kind:'markdown', images:[]};
 };
 const opening = renderFiles(1, 'HEAD', 'README.md'); await tick();
-pending[0].resolve({text:'![Logo](logo.png)',lines:1,spans:[],
-  rendered_html:'<p><img data-blob-src="' + url + '" alt="Logo"></p>',
+pending[0].resolve({text:'![Logo](logo.png)',lines:1,spans:[],digest:'displayed',
   binary:false,truncated:false});
-await opening; await new Promise(setImmediate);
-assert.equal(fetched, url, 'image bytes did not use getBlob');
-assert.equal(image.src, 'data:image/png;base64,cGl4ZWxz', 'image lacks an opaque data URL');
+await opening; await tick();
+const frame = view.querySelector('iframe');
+assert.equal(frame.sandbox, 'allow-scripts');
+assert.equal(frame.src, '/preview/key/README.md');
+assert.equal(opens[0].url, '/api/files/preview');
+assert.equal(opens[0].body.digest, 'displayed');
+assert.equal(opens[0].body.rev, 'old');
+assert.equal(view.querySelector('.md-view'), null);
+assert.equal(view.querySelector('img'), null);
 """)
 
 
@@ -519,7 +513,7 @@ remember(MARKDOWN_MODE_KEY, 'source');
 const opening = renderFiles(1, 'HEAD', 'README.md', new URLSearchParams('anchor=heading'));
 await tick();
 pending[0].resolve({text:'# Heading\n',lines:1,spans:[],
-  rendered_html:'<h1 id="heading">Heading</h1>\n',binary:false,truncated:false});
+  binary:false,truncated:false});
 await opening;
 assert.equal(location.hash, '#/files/HEAD/README.md?anchor=heading');
 assert.equal(view.querySelector('.files-md-mode').children[1]['aria-pressed'], 'true',

@@ -406,8 +406,8 @@ function openStream(url, onData) {
   connect();
   return stream;
 }
-function closeLive() {
-  closeFilePreview();
+function closeLive(keepFilePreview = false) {
+  if (!keepFilePreview) closeFilePreview();
   staleLine.remove();
   if (live) { live.close(); live = null; }
   if (hubTimer) { clearInterval(hubTimer); hubTimer = null; }
@@ -524,7 +524,7 @@ async function route() {
   const gen = ++routeGen;
   const held = document.activeElement; // the next paint hands its focus on (refocus)
   const repaint = location.hash === shownHash; // a navigation matches nothing: a control of the same name on the new page acts on something else
-  closeLive();
+  closeLive(true);
   document.querySelector('dialog[open]')?.close();
   document.querySelectorAll('.wmenu-btn').forEach(b => b.remove()); // header-mounted by the run view
   // The page this route replaces is busy, and dims after a beat (styles.css) so a quick hop never
@@ -551,6 +551,7 @@ async function route() {
   const [routePath, queryText = ''] = h.split('?');
   const query = new URLSearchParams(queryText);
   const parts = routePath.split('/').filter(Boolean); // e.g. ['session','abc']
+  if (parts[0] !== 'files' || query.has('panel')) closeFilePreview();
   try {
     if (parts.length === 0) { setTab('hub'); await renderHub(undefined, gen); }
     else if (parts[0] === 'machines') { setTab('machines'); await renderHub('machines', gen); }

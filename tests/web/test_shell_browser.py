@@ -434,9 +434,13 @@ def test_a_markdown_files_link_to_its_own_heading_leaves_it_undimmed(
     test_git_history._git(tmp_path, "commit", "-m", "guide")
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/files/HEAD/guide.md")
-    expect(page.locator(".md-view h1")).to_have_text("Guide")
-    page.get_by_role("link", name="Last part", exact=True).click()
-    expect(page.locator(".md-view #last-part")).to_be_in_viewport()
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view h1")).to_have_text("Guide")
+    page.frame_locator(".files-preview iframe").get_by_role(
+        "link", name="Last part", exact=True
+    ).click()
+    expect(
+        page.frame_locator(".files-preview iframe").locator(".md-view #last-part")
+    ).to_be_in_viewport()
     assert page.evaluate("location.hash").endswith("?anchor=last-part")
     expect(page.locator("#view > [aria-busy=true]")).to_have_count(0)
     assert not errors

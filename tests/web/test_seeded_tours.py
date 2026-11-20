@@ -94,8 +94,10 @@ def test_git_and_files_tour(tour_page: Page, tmp_path: pathlib.Path) -> None:
     _stop(page, tmp_path, "04-split-diff")
     page.locator("aside.rail a[data-tab='files']").click()
     page.locator(".gtree [data-path='README.md']").click()
-    expect(page.locator(".md-view")).to_be_visible()
-    expect(page.locator(".md-view h1")).to_have_text(re.compile("stats", re.IGNORECASE))
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view")).to_be_visible()
+    expect(page.frame_locator(".files-preview iframe").locator(".md-view h1")).to_have_text(
+        re.compile("stats", re.IGNORECASE)
+    )
     _stop(page, tmp_path, "05-readme-rendered")
     page.locator(".files-md-mode").get_by_role("button", name="Source", exact=True).click()
     expect(page.locator("pre.src")).to_be_visible()

@@ -5,12 +5,12 @@
 // picked revision and the folders opened outlive a visit to another tab; the tree is fetched
 // again on return.
 // The picker's { rev, label }; each folder path → open; the page's in-place opener, if any.
-const filesState = { rev: null, folders: new Map(), open: null, closePreview: null };
+const filesState = { rev: null, folders: new Map(), open: null, closePreview: null, previewScroll: null };
 const MARKDOWN_MODE_KEY = 'a6-markdown-mode';
 
 function closeFilePreview() { filesState.closePreview?.(); }
 
-async function openFilePreview(host, rev, path, ignored) {
+async function openFilePreview(host, rev, path, ignored, {digest = '', anchor = '', filesPrefix = ''} = {}) {
   closeFilePreview();
   if (!window.isSecureContext) {
     host.replaceChildren(el('p', 'err gf-note', 'Previews need HTTPS or localhost.'));
@@ -20,10 +20,45 @@ async function openFilePreview(host, rev, path, ignored) {
   const frame = el('iframe'); frame.title = 'Preview of ' + path;
   frame.setAttribute('sandbox', ''); frame.referrerPolicy = 'no-referrer';
   host.replaceChildren(note);
-  let key = null, closed = false, timer;
+  let key = null, closed = false, timer, opened, grantDialog;
+  const viewState = (scroll = false) => frame.contentWindow?.postMessage({type: 'preview-state', ...(scroll ? {anchor: anchor || ''} : {}),
+    theme: ['light', 'dark'].find(name => document.documentElement.classList.contains(name)) || ''}, '*');
+  const theme = new MutationObserver(() => viewState());
+  const message = event => {
+    if (closed || opened?.kind !== 'markdown' || event.source !== frame.contentWindow) return;
+    if (event.data?.type === 'preview-link' && typeof event.data.href === 'string') {
+      const href = event.data.href, listed = '#/files/' + encodeURIComponent(opened.rev) + '/';
+      if (href.startsWith(listed)) {
+        const target = filesPrefix + href.slice(listed.length);
+        if (location.hash === target) route(); else location.hash = target;
+      } else if (/^https?:\/\//i.test(href)) window.open(href, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (event.data?.type !== 'preview-images' || !opened.images.length) return;
+    grantDialog = openDialog('Load remote images?', 'confirm');
+    if (!grantDialog) return;
+    grantDialog.appendChild(el('p', null, 'This page can send anything it can read to these servers. Loading an image sends its full address and your IP address.'));
+    const addresses = el('ul', 'files-image-addresses');
+    for (const address of opened.images) addresses.appendChild(el('li', null, address));
+    grantDialog.appendChild(addresses);
+    const row = el('div', 'form-row'), load = el('button', 'primary', 'Load'), cancel = el('button', null, 'Cancel');
+    const error = el('p', 'err'); error.setAttribute('role', 'status');
+    row.append(load, cancel); grantDialog.append(row, error);
+    const dialog = grantDialog;
+    cancel.onclick = () => dialog.close();
+    load.onclick = async () => {
+      load.disabled = true; error.textContent = '';
+      try {
+        await postJSON('/api/files/preview/images', {key});
+        if (closed) return;
+        dialog.close(); frame.src = opened.url;
+      } catch (e) { error.textContent = e.message; load.disabled = false; }
+    };
+  };
   const close = () => {
-    closed = true; clearTimeout(timer); frame.remove();
-    if (filesState.closePreview === close) filesState.closePreview = null;
+    closed = true; clearTimeout(timer); frame.remove(); theme.disconnect(); grantDialog?.close();
+    window.removeEventListener('message', message);
+    if (filesState.closePreview === close) { filesState.closePreview = null; filesState.previewScroll = null; }
     if (key) {
       const expired = key; key = null;
       postJSON('/api/files/preview/close', {key: expired}, {keepalive: true}).catch(e => toast(e.message, true));
@@ -41,10 +76,16 @@ async function openFilePreview(host, rev, path, ignored) {
     }
   };
   try {
-    const opened = await postJSON('/api/files/preview', {rev, path, ignored});
+    opened = await postJSON('/api/files/preview', {rev, path, ignored, digest});
     key = opened.key;
     if (closed) { close(); return; }
-    note.textContent = 'Scripts are off for this page.';
+    if (opened.kind === 'markdown') {
+      note.remove(); frame.setAttribute('sandbox', 'allow-scripts');
+      window.addEventListener('message', message);
+      frame.onload = () => viewState(true);
+      theme.observe(document.documentElement, {attributes: true, attributeFilter: ['class']});
+      filesState.previewScroll = id => { anchor = id || ''; viewState(true); };
+    } else note.textContent = 'Scripts are off for this page.';
     frame.src = opened.url; host.appendChild(frame);
     timer = setTimeout(renew, 10000);
   } catch (e) {
@@ -144,6 +185,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   // A hash at the revision listed, or naming none, moves within the page: the tree keeps its state.
   const inPlace = (!revision || revision === filesState.rev?.rev) && filesState.open?.(path, query);
   if (inPlace) return inPlace;
+  closeFilePreview();
   const refsData = await getJSON('/api/git/refs');
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';
@@ -370,7 +412,8 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
       }
       if (!md) return;
       md.hidden = !rendered; sourceBox.hidden = rendered;
-      if (rendered && anchor) [...md.querySelectorAll('[id]')].find(h => h.id === anchor)?.scrollIntoView({ block: 'start' });
+      if (rendered) openFilePreview(md, rev, f.path, ignored, {digest: t.digest, anchor, filesPrefix: filesHash() + '/'});
+      else closeFilePreview();
     };
     if (rendersMarkdown) {
       modes.setAttribute('role', 'group'); modes.setAttribute('aria-label', 'Markdown view');
@@ -453,31 +496,9 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     }
     if (!rendersMarkdown) return;
     // A Markdown file cut at the size cap has no rendering: its text alone shows.
-    if (typeof t.rendered_html !== 'string') { modes.remove(); blame.hidden = false; return; }
-    md = el('div', 'md-view'); md.innerHTML = t.rendered_html; box.appendChild(md);
-    // The server's links to files name the commit listed; the page's name the revision picked.
-    const listed = '#/files/' + encodeURIComponent(rev) + '/';
-    for (const a of md.querySelectorAll('a[href^="#/files/"]')) {
-      const href = a.getAttribute('href');
-      if (href.startsWith(listed)) a.setAttribute('href', filesHash() + '/' + href.slice(listed.length));
-    }
-    markdown = { path: f.path, view: md, scroll: (id) => {
-      const heading = id && [...md.querySelectorAll('[id]')].find(h => h.id === id);
-      if (heading) heading.scrollIntoView({ block: 'start' }); else box.scrollTo(0, 0);
-    } };
-    // A link to the hash already shown changes nothing a hashchange sees: route it again.
-    md.addEventListener('click', (e) => { if (e.target.closest('a')?.href === location.href) route(); });
-    for (const image of md.querySelectorAll('img[data-blob-src]')) {
-      blobImageData(image.dataset.blobSrc).then(data => {
-        if (current()) image.src = data.url;
-      }).catch(e => {
-        if (!current()) return;
-        const missing = el('span', 'md-missing');
-        missing.appendChild(el('span', null, image.alt || 'image'));
-        missing.appendChild(el('span', 'muted', e.message));
-        image.replaceWith(missing);
-      });
-    }
+    if (t.truncated) { modes.remove(); blame.hidden = false; return; }
+    md = el('div', 'files-preview'); box.appendChild(md);
+    markdown = { path: f.path, view: md, scroll: id => filesState.previewScroll?.(id) };
     for (const button of modes.children) button.disabled = false;
     selectMode(recall(MARKDOWN_MODE_KEY, 'rendered'));
   };
