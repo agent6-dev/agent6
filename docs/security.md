@@ -581,7 +581,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - Preview HTML requires `Sec-Fetch-Dest: iframe`; resource reads accept only the needed destinations and media types.
   Missing metadata, standalone documents, objects, embeds and ungranted scripts receive 403.
   Fetch Metadata is browser-controlled and sent only to HTTPS or localhost; non-browser clients can forge it but still need the random key.
-  This gate supplies the standalone-navigation restriction that CSP lacks ([containment probe](../bench/web-preview-containment.md)).
+  This gate supplies the standalone-navigation restriction that CSP lacks ([containment probe](https://github.com/agent6-dev/agent6/blob/master/bench/web-preview-containment.md)).
 - Every preview response carries CSP `sandbox`, `default-src 'none'`, `frame-ancestors 'self'`, `base-uri 'none'` and `object-src 'none'`.
   HTML scripts are off by default in both the frame and its policy.
   HTML styles, images, fonts and media are restricted to the key's preview path; inline styles are allowed.

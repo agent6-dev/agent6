@@ -279,7 +279,7 @@ It can compact during a blocking command, a background wait, an approval, a ques
 The whole context must exceed `providers.<name>.idle_compact_min_chars` (default `240000`).
 The summary does not end the wait or add a worker turn.
 Set the limit to `0` to turn it off.
-See the [provider defaults](config.md#providers).
+See the [provider defaults](config.md#providersname).
 
 `steer_child` (`id`, `text`), offered with the `parallel` tool, sends a running child an instruction or continues a stopped child and returns at once.
 A stopped child continues the same conversation in its retained clone, under the parent's remaining budget and approval policy, with the text as its next instruction.
