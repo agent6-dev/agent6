@@ -697,6 +697,7 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
 - on completion a child's branch is fetched into the origin; a failed-to-start child keeps its clone, and a child whose import is refused keeps its clone and says where it is (never the only copy lost)
 - the child watch waits for this execution's `session.start` or `session.resume`; until then the roster says `starting` and the parent can take turns or stop the child
   The operator can inspect or stop a live preflight worker before its report.
+  Reviewers in a panel batch not yet submitted read `not started`.
   A process that exits without its report fails with its stderr or exit code.
 - the kernel ties the child to the watch thread that spawned it with PDEATHSIG (SIGTERM).
   On a stop before the start report, or if a running child ignores its stop request, the watch sends TERM to its process group, escalates to KILL after the grace and reaps it.

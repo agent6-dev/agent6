@@ -367,7 +367,8 @@ def _recorded_child(
         return dataclasses.replace(row, status="being ranked")
     if record.state == "complete" and not row.launched:
         return dataclasses.replace(row, status="failed", error=record.message or "never started")
-    if record.state == "running" and not row.launched:
+    # A panel announces later batches before submitting them.
+    if record.state == "running" and not row.launched and record.source != "panel":
         return dataclasses.replace(
             row, status="ended, task pending" if child.reported else "starting"
         )

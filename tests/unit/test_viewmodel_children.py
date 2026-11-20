@@ -263,6 +263,28 @@ def test_an_unpriced_childs_spend_reads_unknown_on_the_receipt(tmp_path: pathlib
     assert "spend includes the children's ~$0.20" in text
 
 
+def test_a_running_panel_does_not_start_its_later_batches(tmp_path: pathlib.Path) -> None:
+    """The whole panel is announced while only the first batch has workers."""
+    parent = _session(tmp_path, "root")
+    first, later = "root-panel-b1-l1", "root-panel-b2-l1"
+    record = _record("root-panel", [(first, None, None), (later, None, None)])
+    child_dispatch.write_record(
+        parent,
+        record.model_copy(
+            update={"state": "running", "source": "panel", "join_policy": "record_only"}
+        ),
+        now=1.0,
+    )
+    directory = parent.parent.parent / "reviewers" / first
+    directory.mkdir(parents=True)
+    process.write_worker_pid(directory, os.getpid())
+    (directory / "logs.jsonl").write_text(
+        '{"type":"approval.prompt","id":"approval-1","prompt":"Setup?","standing":false}\n'
+    )
+    rows = vm_children.children_of(parent)
+    assert [(r.status, r.launched) for r in rows] == [("starting", True), ("not started", False)]
+
+
 def test_a_reviewer_has_a_child_row_and_its_verdict(tmp_path: pathlib.Path) -> None:
     """A reviewed run read `(2 children)` and listed its passing reviewers as unchanged children."""
     state = tmp_path / "state"
