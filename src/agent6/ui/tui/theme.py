@@ -213,7 +213,7 @@ ANSI_THEME_DARK = TerminalTheme(
         (152, 224, 36),  # green
         (253, 151, 31),  # yellow
         (157, 101, 255),  # blue
-        (255, 55, 133),  # magenta
+        (180, 142, 173),  # magenta: the web's mauve, so a commit never reads as red
         (88, 209, 235),  # cyan
         (196, 197, 181),  # white
     ],
@@ -223,7 +223,7 @@ ANSI_THEME_DARK = TerminalTheme(
         (152, 224, 36),  # bright green
         (224, 213, 97),  # bright yellow
         (157, 101, 255),  # bright blue
-        (255, 55, 133),  # bright magenta
+        (180, 142, 173),  # bright magenta
         (88, 209, 235),  # bright cyan
         (246, 246, 239),  # bright white
     ],

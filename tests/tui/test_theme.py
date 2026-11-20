@@ -8,12 +8,13 @@ import asyncio
 import pathlib
 
 import pytest
+from rich import style as rich_style
 from textual import app as textual_app
 from textual import color as textual_color
 from textual import theme as textual_theme
 from textual import widgets
 
-from agent6.ui.tui import forms, settings, theme
+from agent6.ui.tui import conversation, forms, settings, theme
 
 
 @pytest.fixture
@@ -152,7 +153,7 @@ def test_dark_ansi_text_uses_its_own_palette(cfg: pathlib.Path) -> None:
                 (152, 224, 36),
                 (253, 151, 31),
                 (157, 101, 255),
-                (255, 55, 133),
+                (180, 142, 173),
                 (88, 209, 235),
                 (196, 197, 181),
                 (135, 131, 113),
@@ -160,7 +161,7 @@ def test_dark_ansi_text_uses_its_own_palette(cfg: pathlib.Path) -> None:
                 (152, 224, 36),
                 (224, 213, 97),
                 (157, 101, 255),
-                (255, 55, 133),
+                (180, 142, 173),
                 (88, 209, 235),
                 (246, 246, 239),
             ]
@@ -169,6 +170,20 @@ def test_dark_ansi_text_uses_its_own_palette(cfg: pathlib.Path) -> None:
             assert _contrast(ansi.ansi_colors[8], surface) >= 4.5
 
     asyncio.run(scenario())
+
+
+def test_a_commit_line_never_takes_the_failed_verify_colour() -> None:
+    """The conversation paints a commit line and a failed verify line in two colours.
+
+    Dark ANSI red and magenta were one pink, so a commit read as a failure.
+    """
+    commit, failed = (
+        rich_style.Style.parse(conversation._STYLE_RICH[name]).color
+        for name in ("commit", "verify-fail")
+    )
+    assert commit and failed
+    for ansi in (theme.ANSI_THEME_DARK, theme.ANSI_THEME_LIGHT):
+        assert commit.get_truecolor(ansi) != failed.get_truecolor(ansi)
 
 
 def test_light_ansi_text_uses_its_own_palette(cfg: pathlib.Path) -> None:
