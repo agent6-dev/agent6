@@ -27,6 +27,7 @@ from agent6.harness import (
     loop_conversation,
     loop_state,
     parallel_dispatch,
+    parallel_panel,
     parallel_recovery,
     run_chain,
 )
@@ -98,8 +99,11 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
             contract=contract,
             limits=child_records.ChildLimits(deadline_at=time.time() + 1800),
         )
-        result = executor.dispatch_panel(
-            [request], panel_id="reviewer-test", at=child_env.git(clone, "rev-parse", "HEAD")
+        result = parallel_panel.dispatch_panel(
+            executor,
+            [request],
+            panel_id="reviewer-test",
+            at=child_env.git(clone, "rev-parse", "HEAD"),
         )
         assert result.dispatched and len(result.children) == 1, result.message
         assert result.children[0].status == "no_changes"
@@ -222,7 +226,8 @@ def test_panel_recovery_never_relaunches_merges_or_grants_twice(
         with monkeypatch.context() as patch:
             patch.setattr(parallel_dispatch.ParallelDispatcher, "write", crash_after_write)
             with pytest.raises(_Crash):
-                executor.dispatch_panel(
+                parallel_panel.dispatch_panel(
+                    executor,
                     [child_records.ChildTask("review", "reviewer", contract=contract)],
                     panel_id="recovery",
                     at=child_env.git(clone, "rev-parse", "HEAD"),

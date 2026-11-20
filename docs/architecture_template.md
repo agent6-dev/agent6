@@ -119,7 +119,7 @@ What the turn leans on sits beside it, one module each:
 - `finish_gates` (what a finish call declares, what it must satisfy and what an end is called)
 - `standing_goal` (the standing goal's re-entry)
 - `operator_tasks` (the operator's writes to the task graph: the root, the goal, `/task` and `/retire`)
-- `parallel_dispatch` (a run's children: the dispatch, the landing at a turn boundary, the panel batches), `parallel_recovery` (a resumed execution finishing the dispatches left behind) and `child_work` (the children as the run's tools reach them)
+- `parallel_dispatch` (a run's children: the dispatch, the landing at a turn boundary), `parallel_panel` (a panel's reviewers, in batches through the same dispatcher), `parallel_recovery` (a resumed execution settling the dispatches left behind) and `child_work` (the children as the run's tools reach them)
 - `run_checkpoint` (the per-turn commit and the final one)
 - `compaction_driver` (the compaction driver over `compaction_rules`'s tier-1 rules, `compaction_elision`'s markers and caps, and `compaction_window`'s sizing and restart rules)
 - `memory_touch` (what a tool call did to the memory store)
@@ -610,7 +610,7 @@ Every child bootstrap sets `AGENT6_CHILD=1`; a matching private worker launch re
 An unproven child, including unrelated machine-state execution, gets neither authority.
 A conversation contract grants neither authority, so the structure ends at the reviewer.
 
-`ParallelDispatcher.dispatch_panel` accepts reviewers' contracts and a retained target through an internal record-only policy, independent of `harness.parallel.tool`.
+`parallel_panel.dispatch_panel` accepts reviewers' contracts and a retained target through an internal record-only policy, independent of `harness.parallel.tool`.
 It shares the work dispatch's executor, reservation, import, settlement and recovery paths; `parallel_join` owns merge and DAG projections.
 `review_gate.run_panel` prepares ordered requests using provider-free reviewers resolved by `app.role_providers.resolve_reviewers`.
 The dispatcher reserves the entire roster before launching batches of at most `min(review.concurrency, harness.parallel.max_children)` reviewers; no reviewer is dropped.

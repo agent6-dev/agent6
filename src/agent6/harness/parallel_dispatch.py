@@ -5,8 +5,8 @@
 `ParallelDispatcher` owns the policy: when to cut children, the DAG stamps, the events, the
 injected group spawner. A work dispatch starts its children in the background and returns;
 `settle` lands what finished at a turn boundary. `parallel_join` projects child results into
-ordered merges, DAG stamps and notices; record-only panel batches share the executor, block
-and merge nothing, and a rank join lands the one child its injected ranker puts first.
+ordered merges, DAG stamps and notices; `parallel_panel` runs a panel's record-only batches
+through the same executor, and a rank join lands the one child its injected ranker puts first.
 """
 
 from __future__ import annotations
@@ -27,9 +27,6 @@ from agent6.vcs.git import read as git_read
 
 if TYPE_CHECKING:
     from agent6.harness import loop_conversation, loop_state
-
-# The window one batch of a panel's reviewers runs in; a work child has no deadline of its own.
-PANEL_BATCH_DEADLINE_S = 1800.0
 
 
 def segment_children(
@@ -233,101 +230,6 @@ class ParallelDispatcher:
             tuple(group for one in started for group in one.groups),
         )
 
-    def dispatch_panel(  # noqa: PLR0911  # one return per refusal
-        self,
-        children: list[child_records.ChildTask],
-        *,
-        panel_id: str,
-        at: str,
-        turn: int = 0,
-        concurrency: int | None = None,
-    ) -> child_records.DispatchResult:
-        """Reserve a harness-owned roster and submit bounded batches through the child executor.
-
-        The retained target is supplied by the harness; no checkpoint or merge changes it.
-        The review policy selects reviewers and concurrency; this executor bounds each batch.
-
-        Args:
-            children: The complete roster of bounded conversations with resolved reviewer settings.
-            panel_id: The harness's stable panel/batch id.
-            at: The retained immutable target commit.
-            turn: The owning worker's completed turn.
-            concurrency: The policy's concurrency cap; None uses harness.parallel.max_children.
-
-        Returns:
-            The record-only joins, or a refusal before launch.
-        """
-        if not self.authority.panels or self.child_spawner is None:
-            return self.refusal("harness panel scheduling is unavailable in this execution.")
-        if (
-            self.session_dir is None
-            or not at
-            or not panel_id
-            or not panel_id.replace("-", "").isalnum()
-        ):
-            return self.refusal("a panel needs a session dir, retained target and safe panel id.")
-        if not children or any(child.contract is None for child in children):
-            return self.refusal("a panel dispatches reviewers only.")
-        group = f"r{panel_id}"
-        identity = f"{self.session_id}-{group}"
-        if child_dispatch.record_path(self.session_dir, identity).exists():
-            return self.refusal(
-                "the panel batch already has a dispatch record; reconcile it instead."
-            )
-        width = max(1, min(self.max_children, concurrency or self.max_children))
-        child_ids = [
-            f"{identity}-l{i + 1}"
-            if len(children) <= width
-            else f"{identity}-b{i // width + 1}-l{i % width + 1}"
-            for i in range(len(children))
-        ]
-        if self.budget is not None and self.budget.is_exhausted():
-            reason = self.budget.snapshot().exhausted_reason
-            return self.refusal(f"the panel budget is exhausted ({reason}); nothing dispatched.")
-        bounded: list[child_records.ChildTask] = []
-        start = self.clock()
-        for i, child in enumerate(children):
-            assert child.contract is not None
-            # Batches run one after another: each gets its own window, fixed before launch.
-            deadlines = [start + PANEL_BATCH_DEADLINE_S * (i // width + 1)]
-            if self.authority.deadline_at is not None:
-                deadlines.append(self.authority.deadline_at)
-            if child.limits is not None and child.limits.deadline_at is not None:
-                deadlines.append(child.limits.deadline_at)
-            bounded.append(
-                dataclasses.replace(
-                    child,
-                    limits=child_records.ChildLimits(
-                        max_turns=child.contract.max_turns, deadline_at=min(deadlines)
-                    ),
-                )
-            )
-        record = child_dispatch.DispatchRecord(
-            identity=identity,
-            source="panel",
-            join_policy="record_only",
-            owner=self.execution_id,
-            turn=turn,
-            base=at,
-            children=tuple(
-                child_dispatch.ChildRecord(
-                    session_id=child_id,
-                    number=i,
-                    task=child.task,
-                    model=child.model,
-                    limits=child.limits,
-                )
-                for i, (child_id, child) in enumerate(zip(child_ids, bounded, strict=True), start=1)
-            ),
-        )
-        try:
-            self.write(record)
-        except OSError as exc:
-            return self.refusal(
-                f"could not persist the panel dispatch ({exc}); nothing dispatched."
-            )
-        return self.execute(record, bounded, group, batch_width=width)
-
     def launch(
         self, record: child_dispatch.DispatchRecord, children: list[child_records.ChildTask]
     ) -> child_records.Started:
@@ -368,59 +270,6 @@ class ParallelDispatcher:
         return child_records.Started(
             ids, parallel_join.started_text(ids), groups=(record.identity,)
         )
-
-    def execute(
-        self,
-        record: child_dispatch.DispatchRecord,
-        children: list[child_records.ChildTask],
-        group: str,
-        *,
-        batch_width: int,
-    ) -> child_records.DispatchResult:
-        """Run a recorded panel in batches, waiting for each, then settle and record it.
-
-        Args:
-            record: The durable prepared dispatch.
-            children: Its bounded tasks, in child order.
-            group: The group suffix used by the shared spawner.
-            batch_width: The maximum children submitted together.
-
-        Returns:
-            The completed result, or a diagnosed spawner failure with unresolved holds.
-        """  # noqa: DOC501  # the spawner's ChildRepoError is caught below
-        assert self.child_spawner is not None
-        record = self.announce(record, children, group)
-        started: list[child_records.StartedChild] = []
-        try:
-            results: list[child_records.ChildResult] = []
-            for offset in range(0, len(children), batch_width):
-                # Each batch starts under what the run has left then; its children share it.
-                ceiling = self.budget.available() if self.budget is not None else None
-                batch = [
-                    dataclasses.replace(child, allowance=ceiling)
-                    for child in children[offset : offset + batch_width]
-                ]
-                batch_group = (
-                    group
-                    if len(children) <= batch_width
-                    else f"{group}-b{offset // batch_width + 1}"
-                )
-                started = self.child_spawner(batch, batch_group, at=record.base or None)
-                results.extend(child.result.result() for child in started)
-            if len(results) != len(children):
-                raise child_repo.ChildRepoError(
-                    f"group spawner returned {len(results)} result(s)"
-                    f" for {len(children)} child(ren)"
-                )
-        except Exception as exc:
-            # The front-end callback may fail after launching: the children's usage is unknown.
-            for child in started:
-                child.stop()
-            failed = self.failed_launch(record, exc)
-            return child_records.DispatchResult(
-                failed.identity, True, (), failed.message, base=failed.base
-            )
-        return self.land(record, results)
 
     def announce(
         self,
@@ -1017,11 +866,6 @@ class ParallelDispatcher:
         except (errors.GitError, OSError) as exc:
             self.log(f"PARALLEL: checkpoint before {what} failed: {exc}")
         return not self.chain.dirty()
-
-    def refusal(self, msg: str) -> child_records.DispatchResult:
-        """Return the result of a panel refused before any reviewer ran, logged once."""
-        self.log(f"PARALLEL: {msg}")
-        return child_records.DispatchResult("", False, (), f"[parallel] {msg}")
 
     def refused(self, msg: str) -> child_records.Started:
         """Return a work dispatch refused before any child started, logged once."""

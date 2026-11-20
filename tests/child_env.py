@@ -29,6 +29,7 @@ from agent6.harness import (
     loop_conversation,
     loop_state,
     parallel_dispatch,
+    parallel_panel,
     run_chain,
 )
 from agent6.sessions import (
@@ -225,7 +226,8 @@ def run_panel_worker(url: str) -> None:
     process.write_worker_pid(directory, os.getpid())
     meter = budget.BudgetTracker(max_usd=5, max_tokens_fallback=1000, max_plan_points=20)
     executor = dispatcher(launch.worktree, directory, config(url), meter)
-    executor.dispatch_panel(
+    parallel_panel.dispatch_panel(
+        executor,
         [
             child_records.ChildTask(
                 "review",

@@ -7,7 +7,7 @@ import pytest
 
 from agent6 import budget, child_records, kinds, review_records
 from agent6.app import role_providers
-from agent6.harness import parallel_dispatch, toolset
+from agent6.harness import parallel_panel, toolset
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import verdict as review_verdict
 from agent6.sessions import completion
@@ -82,7 +82,8 @@ def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
     executor.child_spawner = spawn
     contract = kinds.ConversationContract("s", "o", 1)
     requests = [child_records.ChildTask(str(i), "reviewer", contract=contract) for i in range(5)]
-    result = executor.dispatch_panel(
+    result = parallel_panel.dispatch_panel(
+        executor,
         requests,
         panel_id="roster",
         at=child_env.git(repo, "rev-parse", "HEAD"),
@@ -93,7 +94,7 @@ def test_a_roster_runs_in_batches_each_under_what_the_run_has_left(
     assert meter.estimate_usd()[0] == 5 and meter.snapshot().usd_running_children == 0
     assert [j.detail for j in result.children] == ["scripted failure"] * 5
     # A later batch waits for the earlier ones: its window starts where theirs ends.
-    window = parallel_dispatch.PANEL_BATCH_DEADLINE_S
+    window = parallel_panel.PANEL_BATCH_DEADLINE_S
     assert deadlines == [1000 + window] * 2 + [1000 + 2 * window] * 2 + [1000 + 3 * window]
 
 

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import pydantic
 
 from agent6 import budget, child_records, errors, kinds, review_records, terminal
-from agent6.harness import parallel_dispatch, repo_context, run_chain
+from agent6.harness import parallel_dispatch, parallel_panel, repo_context, run_chain
 from agent6.harness.review import history as review_history
 from agent6.harness.review import panel as review_panel
 from agent6.harness.review import verdict as review_verdict
@@ -153,8 +153,13 @@ def run_panel(
                 contract=contract,
             )
         )
-    dispatched = executor.dispatch_panel(
-        requests, panel_id=panel_id, at=target.snapshot_commit, turn=turn, concurrency=concurrency
+    dispatched = parallel_panel.dispatch_panel(
+        executor,
+        requests,
+        panel_id=panel_id,
+        at=target.snapshot_commit,
+        turn=turn,
+        concurrency=concurrency,
     )
     verdicts: list[review_records.ReviewVerdict] = []
     for i, (reviewer, request) in enumerate(zip(reviewers, requests, strict=True)):
