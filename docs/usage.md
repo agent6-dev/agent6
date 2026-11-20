@@ -162,7 +162,8 @@ Task text keeps its internal whitespace and newlines, including later `--` token
 
 A live run starts the children and goes on: its model keeps taking turns while they work.
 When a child ends, the model reads a notice with the summary the child finished with (`summary: ...`), so a child sent to find something out answers its parent without a commit.
-A finished task lands at the run's next turn boundary, after every task written before it.
+A task lands at the run's next turn boundary once its children have ended; a task still running holds no other.
+Tasks that finish before the same boundary land in the order written, so when two touch the same lines the later one to land gets the conflict.
 The run's uncommitted work is committed first, and one notice per task names each child's outcome: `joined at <sha>`, `finished with no changes to join` (the child ended with a result and committed nothing), `ranked 2 of 3` (an attempt that did not land), `CONFLICT` with the files (nothing lands, and the child's branch holds its work for the operator) or `FAILED` with the reason.
 A child the run ended at its budget, or one that was stopped, says so on its line (`stopped at the run's budget with no changes to join`, `joined at <sha> (stopped by its parent)`), and a task whose children were all ended before changing anything is marked failed.
 

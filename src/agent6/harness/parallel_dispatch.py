@@ -486,11 +486,10 @@ class ParallelDispatcher:
         )
 
     def settle(self, conversation: loop_conversation.Conversation, turn: int) -> bool:
-        """Tell the model which children ended, then land each finished dispatch, oldest first.
+        """Tell the model which children ended, then land each dispatch whose children all have.
 
-        Called at a turn boundary. A dispatch lands only after every dispatch written before
-        it, so one still running holds the later ones; their children's ends are told all
-        the same.
+        Called at a turn boundary. The finished dispatches land in the order written; one
+        with a child still running lands at a later boundary and holds no other.
 
         Args:
             conversation: The run's conversation, which takes the notices.
@@ -499,7 +498,7 @@ class ParallelDispatcher:
         Returns:
             Whether the conversation gained a notice.
         """
-        told = held = False
+        told = False
         for identity, task in list(self.open.items()):
             results = [
                 self.result_of(task.record, child) for child in task.children if child.result.done()
@@ -507,8 +506,7 @@ class ParallelDispatcher:
             record = self.reported(conversation, task.record, results)
             told = told or record is not task.record
             task.record = record
-            held = held or len(results) < len(task.children)
-            if held:
+            if len(results) < len(task.children):
                 continue
             result = self.land(record, results, turn=turn)
             if not result.message:
@@ -517,7 +515,6 @@ class ParallelDispatcher:
                 task.record = child_dispatch.read_record(
                     child_dispatch.record_path(self.session_dir, identity)
                 )
-                held = True
                 continue
             self.deliver(conversation, result)
             del self.open[identity]

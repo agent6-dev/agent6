@@ -222,12 +222,13 @@ def _events(session_dir: pathlib.Path, event_type: str) -> list[dict[str, Any]]:
     return [row for row in rows if row["type"] == event_type]
 
 
-def test_two_tasks_started_in_one_turn_run_while_the_parent_works_and_land_in_order(
+def test_a_finished_task_lands_at_the_next_boundary_while_an_earlier_one_still_runs(
     tmp_path: pathlib.Path,
 ) -> None:
-    """The `parallel` tool returns at once; ends are told as they come; landing keeps the order.
+    """The `parallel` tool returns at once; each task lands at the boundary after its child ends.
 
-    The second task ends first: its end is told at once, and its work waits for the first's.
+    A finished task waited for every task started before it: a slow child held the work of
+    every later one.
     """
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -249,14 +250,14 @@ def test_two_tasks_started_in_one_turn_run_while_the_parent_works_and_land_in_or
     for sid in (one, two):
         assert f"[parallel] started child {sid}." in provider.seen[1]
     assert "[parallel] child" not in provider.seen[2]
-    # Turn 4 read the second task's end, and no landing: the first task still ran.
+    # Turn 4 read the second task's end and its landing, while the first task still ran.
     assert f"[parallel] child {two} finished.\\nsummary: wrote b" in provider.seen[3]
-    assert "[parallel] group" not in provider.seen[3]
-    # Turn 5 read the first task's end and both landings, the first task's first.
+    assert "[parallel] group run-p2 complete (1 child(ren))" in provider.seen[3]
+    assert "[parallel] group run-p1" not in provider.seen[3]
+    # Turn 5 read the first task's end and its landing.
     last = provider.seen[4]
     assert f"[parallel] child {one} finished.\\nsummary: wrote a" in last
-    first_landing = last.index("[parallel] group run-p1 complete (1 child(ren))")
-    assert first_landing < last.index("[parallel] group run-p2 complete (1 child(ren))")
+    assert "[parallel] group run-p1 complete (1 child(ren))" in last
     assert (repo / "a.txt").exists() and (repo / "b.txt").exists()
     records = child_dispatch.read_records(tmp_path / "run")
     assert [(r.identity, r.state, r.delivered, r.source) for r in records] == [
@@ -266,15 +267,39 @@ def test_two_tasks_started_in_one_turn_run_while_the_parent_works_and_land_in_or
     first, second = (record.children[0].join for record in records)
     assert first is not None and second is not None
     assert (first.status, second.status) == ("joined", "joined")
-    # The second task merged onto the tip the first left, though it ended a turn earlier.
-    assert second.target_before == first.target_after == first.sha
+    # The first task merged onto the tip the second left: it landed a boundary later.
+    assert first.target_before == second.target_after == second.sha
     assert [row["group"] for row in _events(tmp_path / "run", "parallel.joined")] == [
-        "run-p1",
         "run-p2",
+        "run-p1",
     ]
     # A landing's rows carry the turn they are written at: the views read the turn off any row.
     turns = [row["turn"] for row in _events(tmp_path / "run", "budget.turn")]
     assert turns == sorted(turns) and turns[-1] == 5
+
+
+def test_tasks_that_end_before_one_boundary_land_in_the_order_written(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Several finished tasks land at one boundary oldest first; the later gets a conflict."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    children = _Children(repo, "root")
+    dispatcher = _dispatcher(repo, children)
+    conversation = loop_conversation.Conversation()
+    started = _start(dispatcher, ("", "slow"), ("", "write x"), ("", "write x too"))
+    children.end("root-p3-l1", path="x.txt", text="third\n")
+    children.end("root-p2-l1", path="x.txt", text="second\n")
+
+    assert dispatcher.settle(conversation, 2)
+
+    assert dispatcher.joins(started.groups[0]) == []
+    (second,) = dispatcher.joins(started.groups[1])
+    (third,) = dispatcher.joins(started.groups[2])
+    assert (second.status, third.status) == ("joined", "conflict")
+    assert third.detail == "merge conflict in x.txt"
+    assert (repo / "x.txt").read_text(encoding="utf-8") == "second\n"
+    assert list(dispatcher.open) == ["root-p1"]
 
 
 def test_an_end_stops_the_children_still_running_and_a_resume_lands_their_work(
@@ -526,8 +551,8 @@ def test_the_model_reads_a_running_child_waits_for_it_and_stops_another(
     waited = answers(provider.seen[4])[-1]
     assert waited["children"][0] == f"[{one}] ended, not landed: write a"
     last = provider.seen[4]
-    assert last.index("[parallel] group run-p1 complete") < last.index(
-        "[parallel] group run-p2 complete"
+    assert last.index("[parallel] group run-p2 complete") < last.index(
+        "[parallel] group run-p1 complete"
     )
     assert f"{two} (agent6/{two}): joined at" in last and "(stopped by its parent)" in last
     roster = child_work.roster(wf.parallel)

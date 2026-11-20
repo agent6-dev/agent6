@@ -63,13 +63,13 @@ def _started(body: dict[str, Any]) -> list[str]:
     return ids
 
 
-def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_both_land_in_order(
+def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_each_lands_as_it_ends(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Two `parallel` calls in one turn start two real children; the parent takes turns meanwhile.
 
-    The second task's child ends first and is read; its work waits for the first task's, so
-    both land in the order written, and the parent finishes only after reading both notices.
+    The second task's child ends first and is read; its work lands at the next boundary while
+    the first task's child still runs, and the parent finishes after reading both landings.
     """
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -147,17 +147,20 @@ def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_both_land_in_
             if line.startswith("[parallel] ")
         ]
 
-    # The parent's third call read the second task's end, and no landing: the first task ran on.
-    assert notices(parent[2]) == [f"[parallel] child {two} finished."]
+    # The parent's third call read the second task's end and its landing: the first task ran on.
+    assert notices(parent[2]) == [
+        f"[parallel] child {two} finished.",
+        f"[parallel] group {session}-p2 complete (1 child(ren)):",
+    ]
     assert "summary: wrote b.txt" in json.dumps(parent[2])
     order = [(who, turn) for who, turn, _body in seen]
     assert order.index(("PARENT", 2)) < order.index(("CHILD-A", 1))
-    # Its fourth call read the first task's end and both landings, in the order written.
+    # Its fourth call read the first task's end and its landing.
     assert notices(parent[3]) == [
         f"[parallel] child {two} finished.",
+        f"[parallel] group {session}-p2 complete (1 child(ren)):",
         f"[parallel] child {one} finished.",
         f"[parallel] group {session}-p1 complete (1 child(ren)):",
-        f"[parallel] group {session}-p2 complete (1 child(ren)):",
     ]
     assert "summary: wrote a.txt" in json.dumps(parent[3])
     # The read of the ended child returned its line and transcript while the other still ran.
@@ -174,7 +177,7 @@ def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_both_land_in_
         "[tool] finish_session",
     ]
     assert read_b["children"][0] == f"[{one}] running: CHILD-A: write a.txt"
-    # Both children's work is in the parent's tree and on its chain, the second on the first.
+    # Both children's work is in the parent's tree and on its chain, the first on the second.
     assert (repo / "a.txt").read_text(encoding="utf-8") == "CHILD-A\n"
     assert (repo / "b.txt").read_text(encoding="utf-8") == "CHILD-B\n"
     first, second = child_dispatch.read_records(session_dir)
@@ -184,11 +187,11 @@ def test_a_parent_starts_two_tasks_keeps_working_reads_a_child_and_both_land_in_
     a_join, b_join = first.children[0].join, second.children[0].join
     assert a_join is not None and b_join is not None
     assert (a_join.status, b_join.status) == ("joined", "joined")
-    assert b_join.target_before == a_join.target_after
+    assert a_join.target_before == b_join.target_after
     assert first.children[0].limits is None, "a child the model starts has no cap of its own"
     rows = [json.loads(line) for line in (session_dir / "logs.jsonl").read_text().splitlines()]
     assert [row["group"] for row in rows if row["type"] == "parallel.joined"] == [
-        f"{session}-p1",
         f"{session}-p2",
+        f"{session}-p1",
     ]
     assert [row["reason"] for row in rows if row["type"] == "session.stop"] == ["finish_session"]

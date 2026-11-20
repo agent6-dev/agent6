@@ -597,7 +597,7 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
     - write each record, then start each task's children (`GroupChildSpawner`), each on a watch thread that clones, spawns, awaits and imports it
 - the loop takes its turns meanwhile; at each turn boundary `loop_steer.operator_boundary` calls `ParallelDispatcher.settle`, and saves the resume snapshot when it told the model anything:
     - each child that ended is told to the model once (`parallel_join.end_notice`, with its finish summary)
-    - each finished task lands, in the order written: a task waits for every task written before it
+    - each task whose children have all ended lands, in the order written; a task with a child still running lands at a later boundary and holds no other
     - landing chain-commits the parent's uncommitted work, then merges one child (`chain_merge` syncs merged files into the worktree) or ranks several and merges the first; where `git.commit_per_turn` is off and the tree holds uncommitted work, nothing merges and the branch holds the child's work
 - a child that ended with a result and no commit beyond its base joins as `no_changes` and merges nothing
 - a task gets its DAG node when it lands or its dispatch fails, under the node it was dispatched from: `passed` with the last joined sha (none when every child made no changes), or `failed` when every child failed or conflicted; a conflict aborts that merge and names its files and the branch; the run continues either way
