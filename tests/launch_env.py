@@ -20,6 +20,9 @@ from agent6.sessions import manifest
 
 FINISH: tuple[str, dict[str, Any]] = ("finish_session", {"summary": "Local child completed."})
 
+# One turn's answer: a tool call, several in order, or the turn's text.
+type Reply = tuple[str, dict[str, Any]] | Sequence[tuple[str, dict[str, Any]]] | str
+
 
 @contextlib.contextmanager
 def scripted_provider(
@@ -27,6 +30,7 @@ def scripted_provider(
     *,
     cost_usd: float | None = None,
     before_reply: Callable[[dict[str, Any]], None] | None = None,
+    reply_for: Callable[[dict[str, Any]], Reply] | None = None,
 ) -> Generator[tuple[str, list[dict[str, Any]]]]:
     """Serve an OpenAI-shaped endpoint that answers each call with the next scripted reply.
 
@@ -37,6 +41,8 @@ def scripted_provider(
         replies: `(tool name, arguments)` or an answer's text per call, in order.
         cost_usd: The reported cost per response; None exercises fallback-token accounting.
         before_reply: An optional barrier after recording the request and before answering.
+        reply_for: Answers a request from its body instead of the script, so one endpoint
+            serves a parent and its children; it may return several tool calls for one turn.
 
     Yields:
         The endpoint's `base_url` and the recorded request bodies.
@@ -55,33 +61,44 @@ def scripted_provider(
             calls.append(body)
             if before_reply is not None:
                 before_reply(body)
-            reply = replies[min(len(calls) - 1, len(replies) - 1)]
+            reply: Reply = (
+                reply_for(body)
+                if reply_for is not None
+                else replies[min(len(calls) - 1, len(replies) - 1)]
+            )
             message: dict[str, Any] = {"role": "assistant", "content": reply}
             if not isinstance(reply, str):
-                name, args = reply
+                # One `(name, arguments)` pair is one call; a sequence of pairs is a turn's calls.
+                asked = [reply] if isinstance(reply[0], str) else reply
+                number = len(calls)
                 message = {
                     "role": "assistant",
                     "content": None,
                     "tool_calls": [
                         {
-                            "index": 0,
-                            "id": f"call-{len(calls)}",
+                            "index": index,
+                            "id": f"call-{number}-{index}" if index else f"call-{number}",
                             "type": "function",
                             "function": {"name": name, "arguments": json.dumps(args)},
                         }
+                        for index, (name, args) in enumerate(asked)
                     ],
                 }
+            # A run whose output nobody streams asks for the whole completion at once.
+            streamed = bool(body.get("stream"))
             self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
+            self.send_header(
+                "Content-Type", "text/event-stream" if streamed else "application/json"
+            )
             self.end_headers()
             chunk: dict[str, Any] = {
                 "id": f"local-{len(calls)}",
-                "object": "chat.completion.chunk",
+                "object": "chat.completion.chunk" if streamed else "chat.completion",
                 "model": body["model"],
                 "choices": [
                     {
                         "index": 0,
-                        "delta": message,
+                        "delta" if streamed else "message": message,
                         "finish_reason": "stop" if isinstance(reply, str) else "tool_calls",
                     }
                 ],
@@ -89,8 +106,11 @@ def scripted_provider(
             }
             if cost_usd is not None:
                 chunk["usage"]["cost"] = cost_usd
+            sent = json.dumps(chunk)
             with contextlib.suppress(BrokenPipeError, ConnectionResetError):
-                self.wfile.write(("data: " + json.dumps(chunk) + "\n\ndata: [DONE]\n\n").encode())
+                self.wfile.write(
+                    (f"data: {sent}\n\ndata: [DONE]\n\n" if streamed else sent).encode()
+                )
 
         def log_message(self, format: str, *args: object) -> None:
             del format, args
