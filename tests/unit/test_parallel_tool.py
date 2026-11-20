@@ -344,8 +344,8 @@ def test_child_reads_show_the_command_and_its_exit_without_output(
     else:
         text = d.dispatch(reader, {"id": child.name}).to_wire()["conversation"]
         command, result = text.splitlines()[-2:]
-        assert name in command and "sh -c" in command and "cat <<" in command
-        assert command.endswith("…") and f"{name} result: exit 7" in result
+        assert command.endswith(f"{name} program=sh")
+        assert f"{name} result: exit 7" in result
     assert "HEREDOC BODY" not in text and "OUTPUT" not in text
 
 
