@@ -167,8 +167,9 @@ def repo_driver_overrides(cwd: pathlib.Path) -> tuple[str, ...]:
     """Return the `-c` flags that blank every content driver the repo's own config defines.
 
     An empty `filter.<n>.clean` passes through and an empty `merge.<n>.driver` reports
-    a conflict instead of running. Only the repo's `.git/config` and its includes are
-    read: a filter in the operator's `~/.gitconfig` is trusted. Re-read per call, so a
+    a conflict instead of running. git names the scope of each key: a driver in the
+    operator's global or system config is trusted, and every other scope is the repo's
+    (`.git/config`, a worktree's `config.worktree`, their includes). Re-read per call, so a
     driver a jailed command writes mid-run is caught too.
 
     Args:
@@ -186,9 +187,10 @@ def repo_driver_overrides(cwd: pathlib.Path) -> tuple[str, ...]:
                 "-C",
                 str(cwd),
                 "config",
-                "--local",
+                "--show-scope",
                 # A git op follows `[include]` to a repo-controlled file; this enumeration must too.
                 "--includes",
+                "-z",
                 "--name-only",
                 "--get-regexp",
                 _DRIVER_KEY_RE,
@@ -204,7 +206,10 @@ def repo_driver_overrides(cwd: pathlib.Path) -> tuple[str, ...]:
     # A filter with both clean and smudge yields two keys for one driver.
     filters: set[str] = set()
     merges: set[str] = set()
-    for key in proc.stdout.split():
+    fields = proc.stdout.split("\0")
+    for scope, key in zip(fields[::2], fields[1::2], strict=False):
+        if scope in ("global", "system"):
+            continue
         if key.startswith("filter."):
             filters.add(key[len("filter.") : key.rindex(".")])
         elif key.startswith("merge."):

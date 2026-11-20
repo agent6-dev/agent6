@@ -19,6 +19,7 @@ from collections.abc import Iterator
 import pytest
 
 from agent6 import errors
+from agent6.vcs.git import command as git_command
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import policy as git_policy
 
@@ -165,6 +166,41 @@ def test_a_driver_hidden_behind_an_include_is_still_neutralized(tmp_path: pathli
     assert "filter.pwn.clean=" in git_policy.repo_driver_overrides(root)
     git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
     assert not marker.exists(), "an include-hidden clean filter ran a host command"
+
+
+def test_a_driver_in_a_worktrees_own_config_is_neutralized(tmp_path: pathlib.Path) -> None:
+    """The driver enumeration covers `config.worktree`, which `git config --local` skips.
+
+    A filter defined there under `extensions.worktreeConfig` ran on the auto-commit.
+    """
+    root = _repo(tmp_path / "r")
+    base = _git(root, "rev-parse", "HEAD").stdout.strip()
+    marker = tmp_path / "pwned"
+    _git(root, "config", "extensions.worktreeConfig", "true")
+    _git(root, "config", "--worktree", "filter.pwn.clean", f"touch {marker}")
+    (root / ".gitattributes").write_text("* filter=pwn\n", encoding="utf-8")
+    (root / "f.txt").write_text("v2\n", encoding="utf-8")
+    git_policy.set_policy(git_policy.GitPolicy())
+    assert "filter.pwn.clean=" in git_policy.repo_driver_overrides(root)
+    git_ops.chain_commit(root, "step", ref="refs/agent6/t", fallback_parent=base)
+    assert not marker.exists(), "a clean filter in config.worktree ran a host command"
+
+
+def test_a_driver_in_the_operators_global_config_is_left_on(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the repository's scopes are blanked; a global filter (Git LFS) is the operator's."""
+    root = _repo(tmp_path / "r")
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".gitconfig").write_text('[filter "mine"]\n\tclean = cat\n', encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    _git(root, "config", "filter.theirs.clean", "cat")
+    git_policy.set_policy(git_policy.GitPolicy())
+    assert git_command.run(root, "config", "filter.mine.clean").stdout == "cat\n"
+    overrides = git_policy.repo_driver_overrides(root)
+    assert "filter.theirs.clean=" in overrides
+    assert "filter.mine.clean=" not in overrides
 
 
 def test_blame_and_the_other_diff_family_verbs_do_not_run_a_repo_textconv(
