@@ -28,7 +28,7 @@ from agent6.harness import (
     tool_effects,
 )
 from agent6.sessions import journal
-from agent6.tools import background, command_tools, results
+from agent6.tools import background, command_tools, results, schema
 from agent6.viewmodel.session import status as session_status
 from tests.unit.turn_context import turn_context
 
@@ -262,9 +262,9 @@ def test_a_background_read_counts_only_the_selected_jobs_returned_state(
     shells.read.return_value = (selected, "output")
     shells.roster.return_value = [selected, sibling]
     outcome = command_tools.read_background(
-        {"id": "bg1" if selected_state else "", "wait_s": wait_s},
+        schema.ReadBackgroundInput(id="bg1" if selected_state else "", wait_s=wait_s),
         get_background=lambda: shells,
-        checkin=1,
+        wait_s=wait_s,
         interrupted=lambda: False,
     )
     wf = loop.Harness(

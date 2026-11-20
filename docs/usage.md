@@ -187,7 +187,10 @@ The call starts its children through the `/parallel` path (a checkpoint, fresh c
 Each child is an ordinary run with the same tools as the parent and may edit its clone.
 Its finished work follows the [parallel merge policy](#parallel-directive).
 A child runs under the parent's own config and the run's remaining budget, with no turn cap or deadline of its own.
-`read_background` with a child's id reads the child (its state and the tail of its transcript) after waiting up to `wait_s` for it to end; with no id and a `wait_s` it waits for the next child to end.
+`read_background` with a child's id reads the child (its state and the tail of its transcript); with no id and a positive `wait_s` it waits for the next child to end.
+Every background wait uses the shorter of `wait_s` and [`harness.command_checkin_s`](config.md#harness); a check-in of 0 disables this cap.
+With an id, an omitted `wait_s` uses the check-in interval; without an id, it returns the roster at once.
+When the check-in ends a wait, the result names the interval and lists the work still running.
 `steer_child` (`id`, `text`), offered with the `parallel` tool, sends a running child an instruction or continues a stopped child and returns at once.
 A stopped child continues the same conversation in its retained clone, under the parent's remaining budget and approval policy, with the text as its next instruction.
 Its finished work follows the same merge policy as a new child's work.

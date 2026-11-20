@@ -956,23 +956,41 @@ class ToolDispatcher:
             gives an `id`.
         """
         args = schema.ReadBackgroundInput.model_validate(raw)
+        checkin = self._config.harness.command_checkin_s
+        wait_s = checkin if args.wait_s is None else args.wait_s
+        limited = checkin > 0 and wait_s >= checkin
+        if limited:
+            wait_s = checkin
+        started = time.monotonic()
         roster = self.children.roster() if self.children is not None else ()
         if self.children is not None and child_tools.addressed(args, roster):
-            return child_tools.read(
+            result = child_tools.read(
                 args,
                 self.children,
                 shells=tuple(view.line() for view in self._background().roster()),
-                checkin=self._config.harness.command_checkin_s,
+                wait_s=wait_s,
                 interrupted=self._background_wait_interrupted,
                 state_dir=self._state_dir,
             )
-        result = command_tools.read_background(
-            raw,
-            get_background=self._background,
-            checkin=self._config.harness.command_checkin_s,
-            interrupted=self._background_wait_interrupted,
-        )
-        return dataclasses.replace(result, children=tuple(child.line() for child in roster))
+        else:
+            result = command_tools.read_background(
+                args,
+                get_background=self._background,
+                wait_s=wait_s,
+                interrupted=self._background_wait_interrupted,
+            )
+            result = dataclasses.replace(result, children=tuple(child.line() for child in roster))
+        if (
+            limited
+            and result.running
+            and time.monotonic() - started >= checkin
+            and not self._background_wait_interrupted()
+        ):
+            note = f"Wait ended at harness.command_checkin_s = {checkin:g}s."
+            result = dataclasses.replace(
+                result, output=f"{result.output}\n\n{note}" if result.output else note
+            )
+        return result
 
     def _stop_background(self, raw: dict[str, Any]) -> results.BackgroundResult:
         """Return the background rosters after stopping a command or a child.

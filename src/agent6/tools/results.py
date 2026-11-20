@@ -737,8 +737,8 @@ class BackgroundResult(ToolResult):
 
     Attributes:
         shells: The formatted command roster.
-        output: The selected command's output or child's transcript, absent for roster-only
-            and stop responses.
+        output: The selected command's output or child's transcript, with a note when the
+            check-in ends the wait; absent for immediate rosters and stop responses.
         running: The selected job was still running when this read returned; off the wire.
         children: The formatted roster of the run's children; off the wire when it has none.
     """

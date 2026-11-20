@@ -487,8 +487,9 @@ class HarnessConfig(pydantic.BaseModel):
             "seconds before the model's `run_command` returns as a background job; no timeout "
             "or kill, command still running; response: `returncode: null`, `still_running: "
             "true`, `background_id`; model options: wait with `read_background`, stop the job "
-            "or carry on; `harness.command_checkin_s = 0`: hand-back disabled, command killed "
-            "at 600 s"
+            "or carry on; also bounds each `read_background` wait, including children; "
+            "`harness.command_checkin_s = 0`: background wait cap and hand-back disabled, "
+            "foreground command killed at 600 s"
         ),
     )
     standing_patience: int = pydantic.Field(

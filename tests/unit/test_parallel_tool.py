@@ -207,7 +207,8 @@ def test_a_blank_task_is_refused_before_any_handler(tmp_path: pathlib.Path) -> N
 def test_a_default_run_reads_the_background_tools_text_unchanged(tmp_path: pathlib.Path) -> None:
     """The two background tools mention children only in a run that has the `parallel` tool."""
     plain = _dispatcher(tmp_path, _config(tool=False), work=_Work())
-    assert _description(plain, "read_background") == schema.ReadBackgroundInput.TOOL_DESCRIPTION
+    assert "`harness.command_checkin_s` (900s)" in _description(plain, "read_background")
+    assert "child" not in _description(plain, "read_background")
     assert _description(plain, "stop_background") == schema.StopBackgroundInput.TOOL_DESCRIPTION
     assert "child" not in schema.ReadBackgroundInput.TOOL_DESCRIPTION
     assert "child" not in schema.StopBackgroundInput.TOOL_DESCRIPTION
@@ -216,9 +217,8 @@ def test_a_default_run_reads_the_background_tools_text_unchanged(tmp_path: pathl
 
     offered = _dispatcher(tmp_path, _config(tool=True), work=_Work())
     read, stop = (_description(offered, name) for name in ("read_background", "stop_background"))
-    assert read == (
-        schema.ReadBackgroundInput.TOOL_DESCRIPTION + schema.ReadBackgroundInput.CHILDREN_NOTE
-    )
+    assert read.endswith(schema.ReadBackgroundInput.CHILDREN_NOTE)
+    assert "`harness.command_checkin_s` (900s)" in read
     assert "With no `id`, a `wait_s` above 0 waits for the next child to end" in read
     assert stop.endswith(
         " A child's id stops that child at once; a stopped child's work does not merge, and its"

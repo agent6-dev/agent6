@@ -92,7 +92,7 @@ def read(
     children: Children,
     *,
     shells: tuple[str, ...],
-    checkin: float,
+    wait_s: float,
     interrupted: Callable[[], bool],
     state_dir: pathlib.Path | None,
 ) -> results.BackgroundResult:
@@ -102,14 +102,14 @@ def read(
         args: The read's arguments, which `addressed` took for the children's.
         children: The run's children.
         shells: The command roster, which rides on every background result.
-        checkin: Seconds to wait for the child to end when the call gives no `wait_s`.
+        wait_s: The resolved maximum seconds to wait for the child to end.
         interrupted: Cuts the wait short.
         state_dir: The project's state dir, where a child's journal is; None renders none.
 
     Returns:
         Both rosters; for one child, its line and the tail of its transcript.
     """
-    children.wait(args.id, checkin if args.wait_s is None else args.wait_s, interrupted)
+    children.wait(args.id, wait_s, interrupted)
     roster = children.roster()
     lines = tuple(child.line() for child in roster)
     if not args.id:

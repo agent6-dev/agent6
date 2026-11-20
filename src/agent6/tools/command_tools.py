@@ -185,18 +185,18 @@ def run_model_command(
 
 
 def read_background(
-    raw: dict[str, Any],
+    args: schema.ReadBackgroundInput,
     *,
     get_background: Callable[[], background.BackgroundShells],
-    checkin: float,
+    wait_s: float,
     interrupted: Callable[[], bool],
 ) -> results.BackgroundResult:
     """Read a background command's output, or the roster when no id is given.
 
     Args:
-        raw: The tool call's arguments.
+        args: The tool call's validated arguments.
         get_background: Returns the run's background roster.
-        checkin: Seconds to wait for the command to end when the call gives no `wait_s`.
+        wait_s: The resolved maximum seconds to wait for the command to end.
         interrupted: Cuts the wait short.
 
     Returns:
@@ -205,11 +205,9 @@ def read_background(
     Raises:
         ToolError: No session directory was wired, or the id is unknown.
     """
-    args = schema.ReadBackgroundInput.model_validate(raw)
     shells = get_background()
     if not args.id:
         return results.BackgroundResult(shells=_roster(shells))
-    wait_s = checkin if args.wait_s is None else args.wait_s
     try:
         view, output = shells.read(
             args.id,

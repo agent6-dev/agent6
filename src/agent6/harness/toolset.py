@@ -61,7 +61,10 @@ def tool_definitions(
             cls is tools_schema.MergeChildInput and not dispatcher.merge_child_available()
         ):
             continue
-        description = cls.TOOL_DESCRIPTION
+        description = cls.TOOL_DESCRIPTION.replace(
+            "the run's configured check-in interval",
+            f"`harness.command_checkin_s` ({dispatcher.config.harness.command_checkin_s:g}s)",
+        )
         if cls is tools_schema.ListFindingsInput and dispatcher.session_id:
             description = description.replace("<session_id>", dispatcher.session_id)
         if cls is tools_schema.ParallelInput:
