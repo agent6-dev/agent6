@@ -2019,10 +2019,19 @@ Source: [`ui.web.server._Handler._route_post`](https://github.com/agent6-dev/age
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `preview` | `JSON` | The requested tasks and attempts, or the reason the draft cannot start. |
-| `session_id` | `JSON` | The session created by new work. |
 | `draft` | `JSON` | The machine-authoring draft identifier. |
 | `message` | `JSON` | The action's result text. |
+
+### Composer POST result fields
+
+**Support: public.** Preview a composer draft or start it as new work.
+
+Source: [`ui.web.server._Handler._route_composer_post`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `session_id` | `JSON` | The session created by new work. |
+| `preview` | `JSON` | The requested tasks and attempts, or the reason the draft cannot start. |
 
 ### `/api/session/<id>/fork` result
 

@@ -707,8 +707,6 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         """Dispatch a POST by path.
 
         Attributes:
-            session_id: The session created by new work.
-            preview: The requested tasks and attempts, or the reason the draft cannot start.
             message: The action's result text.
             draft: The machine-authoring draft identifier.
 
@@ -735,35 +733,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if path.startswith("/api/git/"):
             self._route_git_post(path.removeprefix("/api/git/"))
             return
-        if path == "/api/parallel-preview":
-            draft = ParallelPreviewBody.model_validate(self._read_body())
-            preview = parallel_preview.describe(
-                draft.text,
-                self.cwd,
-                self.config_paths,
-                preset=draft.preset,
-                new_work=not draft.session_id,
-                session_dir=model.session_dir_for(self.cwd, draft.session_id)
-                if draft.session_id
-                else None,
-            )
-            self._send_json({"preview": preview.text if preview is not None else ""})
-            return
-        if path == "/api/new":
-            body = NewWorkBody.model_validate(self._read_body())
-            session_dir, err = spawn.spawn_new_work(
-                self.cwd,
-                body.mode,
-                body.task,
-                preset=body.preset,
-                model=body.model,
-                options=spawn.RunOptions(
-                    worktree=body.worktree, seed_from=body.seed_from, max_usd=body.max_usd
-                ),
-                config_paths=self.config_paths,
-            )
-            session_id = session_dir.name if session_dir is not None else None
-            self._ok_or_err(session_id is not None, {"session_id": session_id}, err)
+        if path in ("/api/new", "/api/parallel-preview"):
+            self._route_composer_post(path)
             return
         if path in ("/api/sessions/rm_asks", "/api/sessions/prune"):
             self._route_sessions_post(path)
@@ -799,6 +770,45 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._route_machine_post(parts[2], parts[3])
             return
         self._post_not_found(f"not found: {path}")
+
+    def _route_composer_post(self, path: str) -> None:
+        """Preview a composer draft or start it as new work.
+
+        Attributes:
+            session_id: The session created by new work.
+            preview: The requested tasks and attempts, or the reason the draft cannot start.
+
+        Args:
+            path: The requested route path.
+        """
+        if path == "/api/parallel-preview":
+            draft = ParallelPreviewBody.model_validate(self._read_body())
+            preview = parallel_preview.describe(
+                draft.text,
+                self.cwd,
+                self.config_paths,
+                preset=draft.preset,
+                new_work=not draft.session_id,
+                session_dir=model.session_dir_for(self.cwd, draft.session_id)
+                if draft.session_id
+                else None,
+            )
+            self._send_json({"preview": preview.text if preview is not None else ""})
+            return
+        body = NewWorkBody.model_validate(self._read_body())
+        session_dir, err = spawn.spawn_new_work(
+            self.cwd,
+            body.mode,
+            body.task,
+            preset=body.preset,
+            model=body.model,
+            options=spawn.RunOptions(
+                worktree=body.worktree, seed_from=body.seed_from, max_usd=body.max_usd
+            ),
+            config_paths=self.config_paths,
+        )
+        session_id = session_dir.name if session_dir is not None else None
+        self._ok_or_err(session_id is not None, {"session_id": session_id}, err)
 
     def _route_findings_post(self, session_id: str, rest: list[str]) -> None:
         """Dispatch a finding action: `<finding-id>/<action>`, or `fix` for several findings."""

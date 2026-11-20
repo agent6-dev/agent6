@@ -394,6 +394,7 @@ WEB = (
     Producer("ui.web.server", "_Handler._send_sign_in_required", "Web API sign-in refusal"),
     Producer("ui.web.server", "_Handler._ok_or_err", "Web POST result envelope"),
     Producer("ui.web.server", "_Handler._route_post", "Web POST result fields"),
+    Producer("ui.web.server", "_Handler._route_composer_post", "Composer POST result fields"),
     Producer("ui.web.actions", "fork_run", "`/api/session/<id>/fork` result"),
     Producer("ui.web.actions", "undo_session", "`/api/session/<id>/undo` result"),
     Producer("ui.web.actions", "review_run", "`/api/session/<id>/review` result"),
