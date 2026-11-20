@@ -113,6 +113,26 @@ With an id it returns numbered entries in journal order, such as `#41 12:31 oper
 An entry too long to fit on its own ends in `…`; `next_start` gives the first match on the next page, if any.
 After compaction the restart notice names the session id when the model can use `read_session`.
 
+## Measure a run
+
+Give one run a score to improve, independent of its verify gate and any standing goal:
+
+```sh
+agent6 run --metric 'minimize -- python3 elapsed.py' "Reduce elapsed time"
+agent6 run --metric "maximize 'score: ([0-9.]+)' -- python3 bench.py" "Improve the score"
+```
+
+The flag and the live `/metric` directive take the same spec: `maximize|minimize ["capture pattern"] -- command`.
+Quote the whole spec on the command line so the shell passes one argument.
+The command is an argument list, not a shell script.
+With a pattern, the first capture group supplies the score; without one, agent6 takes the last printed number from stdout followed by stderr.
+The command uses the run's command jail and approval policy, including for automatic readings after committed edits.
+The next turn sees the score and trend; a plateau can end a metric run.
+
+`/metric` shows the applied setting; `/metric SPEC` replaces it at the next turn boundary and starts a new trend; `/metric off` retires it.
+A resume, including Resume to fix, keeps the last setting; a fork takes the one at the selected checkpoint.
+Children start without a metric.
+
 ## Follow and steer a run
 
 Every surface follows a run and sends it the same steers; the command-line verbs are on [Command line](cli.md#follow-and-steer-a-run).
@@ -130,6 +150,7 @@ The tokens and the points against `max_plan_points` on `sessions show` are the l
 The steer directives work from every composer, the pause menu, and `agent6 steer ID "/task ..."` from a script.
 
 - `/task <text>` adds work to the task graph (the turn in flight never sees it); `/retire <id>` drops a task, by the number `sessions graph` prints
+- `/metric` shows, changes or retires [the run's score](#measure-a-run)
 - `/standing <text>` sets the goal the run returns to whenever its queue drains, replacing any it had
 - `/pin <text>` survives every compaction; `/compact [focus]` compacts now; `/now <text>` interrupts the call in flight
 - `/btw <question>` asks a side question; `/parallel [SPEC --] TASK` dispatches children ([parallel](config.md#harnessparallel))

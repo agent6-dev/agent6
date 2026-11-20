@@ -162,7 +162,7 @@ What the turn leans on sits beside it, one module each:
 - `operator_bridge` (the operator's callables, the steer verbs, the pin cap, and what a steer's text means)
 - `advice` (what an advisor answers with, a nudge, a stop or a refusal, and the turn's context it reads)
 - `guards` (the advisors, one function per heuristic with its counters: no progress, settled, stagnation, the memory flip, the loop guard, the tool-error ladder, reachability, focus, the budget nudges)
-- `metric_rules` (a metric run's plateau, ceiling and early-finish rules) and `metric_sampler` (the readings a run takes)
+- `metric_rules` (a metric run's plateau, ceiling and early-finish rules) and `metric_sampler` (the readings a run takes); `metric.set` in the session journal records the operator's setting or retirement, and each checkpoint names the revision its scores describe
 - `quiet_turns` (a turn with no tool call: the nudges it draws, the silent finish, the went-quiet end)
 - `tool_effects` (what a dispatched tool did to the turn: the verify result, the metric sample, the tree edit, the memory touch, the finish, the error)
 - `finish_gates` (what a finish call declares, what it must satisfy and what an end is called)

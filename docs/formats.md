@@ -569,6 +569,15 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `exit_code` | `int, optional` | Command exit code; null when unavailable. |
 | `sha` | `str` | The commit identifier, possibly abbreviated. |
 
+### metric.set
+
+**Support: public.** The operator set, replaced or retired the run's metric.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `revision` | `int` | The metric revision a checkpoint refers to. |
+| `spec` | `str` | The operator's metric spec, or null for off. |
+
 ### metric.start
 
 **Support: public.** The metric command started.

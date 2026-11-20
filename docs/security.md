@@ -405,6 +405,8 @@ Memory (`<state_dir>/memory/`) holds facts the model may correct; rules belong i
 ### 4. Commands and environment
 
 Every command tool (`run_command`, `run_verify_command`, `run_metric_command`, `stop_background`) answers to `[sandbox].run_commands`; the first three run jailed, and `stop_background` signals a jailed child agent6 already started.
+Only the operator can set a run's metric: neither a machine config nor a child launch can supply its command, pattern or direction.
+`run_metric_command` takes no arguments and executes the same approved argv as an automatic reading; a metric widens no file or network grant.
 `run_commands = "deny"` withholds the verify gate too.
 Under `ask`, a denied gate is withheld the same way for the rest of the run (no retry loop can discharge a refusal), and the run ends unverified.
 

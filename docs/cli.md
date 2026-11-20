@@ -28,6 +28,7 @@ This page is the reference for the command-line surface; the patterns behind the
 - `--worktree`: from the repository's top level, the run works in its own git worktree at HEAD's commit, under `[git.worktree].base_dir`
     - your checkout and its uncommitted changes stay as they are and are not carried, and neither is anything git does not track ([worktrees](usage.md#worktrees)), so you can keep working there or start more runs
     - `sessions merge` lands the work and `sessions prune` then removes the worktree, as it does for a run that committed nothing and left no edits
+- `--metric SPEC`: [measure a run](usage.md#measure-a-run), for example `--metric 'minimize -- python3 elapsed.py'`
 - `--standing "<goal>"`: a fallback goal the run returns to whenever its queue drains; only the operator retires it, and ceilings still end the run (`harness.standing_patience`)
 - `--pin "<text>"`: an instruction re-shown after every compaction
 - `--from <id>`: seed from another session's task, outcome, diff and plan; a plan id alone runs that plan, and `sessions show` prints `seeded from`

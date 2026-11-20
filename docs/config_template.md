@@ -342,12 +342,7 @@ Placement and setup of the worktrees agent6 makes: child and machine-state clone
 
 <!-- config-table: harness -->
 
-### `[harness.metric]` (optional)
-
-A continuous score for measurable goals; `command` runs in the jail like `harness.verify.command`.
-Set its required fields together: `agent6 config set --repo harness.metric '{ command = ["python3", "bench.py"], pattern = "score: ([0-9.]+)", goal = "minimize" }'`.
-
-<!-- config-table: harness.metric -->
+For a continuous score beside the pass/fail gate, [give the run a metric](usage.md#measure-a-run).
 
 ### `[harness.parallel]`
 

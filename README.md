@@ -95,6 +95,8 @@ Changes are global unless you add `--repo` for a repository override, for exampl
 agent6 config set --repo harness.verify.command '["uv", "run", "pytest"]'
 ```
 
+To [measure one run](https://agent6.dev/usage/#measure-a-run), pass `--metric 'minimize -- python3 bench.py'` to `agent6 run`.
+
 The worker, planner, reviewer, and helper inherit each unset model, effort, and temperature from the required `models.default`.
 [Budgets][budgets] limit spending, tokens for unpriced calls, and supported subscription usage.
 

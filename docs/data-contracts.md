@@ -142,7 +142,7 @@ The loop-owned conversation: typed messages over the provider wire.
 
 - **Written by:** harness/loop
 - **Read by:** harness/{child_merge, loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, parallel_recovery, provider_call, quiet_turns, standing_goal}, harness/compaction/{calls, rules, strategy, window, writers}, harness/verify/gate
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (47 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (49 test files exercise it)
 
 ## SessionManifest
 
@@ -180,6 +180,7 @@ Hold a session's end and the snapshot a resume re-enters.
 | `verify_ever_passed` | `bool` | `False` |
 | `verify_ever_failed` | `bool` | `False` |
 | `gateless_ever_edited` | `bool` | `False` |
+| `metric_revision` | `int` | `0` |
 | `metric_best_score` | `float | None` | `None` |
 | `metric_at_ceiling` | `bool` | `False` |
 | `final_verify_id` | `str | None` | `None` |
