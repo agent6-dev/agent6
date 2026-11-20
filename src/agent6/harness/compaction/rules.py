@@ -145,13 +145,13 @@ def compact_old_tool_results(
 ) -> CompactionStats:
     """Elide old tool_result blocks once their content exceeds the threshold.
 
-    The walk is oldest-first and stops once the total is back under the bound.
+    The walk is oldest-first and aims for half the bound to leave room for growth.
     The newest `keep_recent` results stay, as does every result in the newest
     result message until an assistant message has consumed it: the loop compacts
     before the provider call that would deliver it, and a placeholder there
     triggers a paid re-call. Protected reads are elided only after every other
     candidate. With a gister, a large unprotected read decays to a gist
-    placeholder; when the total still exceeds the bound, gists are demoted
+    placeholder; when the total still exceeds the target, gists are demoted
     oldest-first to the bare marker, after even the protected reads: losing a
     gist costs correctness, losing a hot read one paid re-read. Idempotent on
     already-elided entries.
@@ -170,11 +170,12 @@ def compact_old_tool_results(
     if total <= max_total_bytes or len(pointers) <= keep_recent:
         return CompactionStats()
 
+    target = max_total_bytes // 2
     # Dedup first: freeing duplicate bytes is lossless and may spare real content.
     deduped_calls = _dedupe_identical_results(conversation, pointers, keep_recent=keep_recent)
     if deduped_calls:
         pointers, total = _tool_result_pointers(conversation)
-        if total <= max_total_bytes:
+        if total <= target:
             return CompactionStats(deduped_calls=deduped_calls)
 
     def _is_protected(message_idx: int, item_idx: int) -> bool:
@@ -199,7 +200,7 @@ def compact_old_tool_results(
 
     walk = _Tier1Pass(
         conversation=conversation,
-        max_total_bytes=max_total_bytes,
+        max_total_bytes=target,
         protect_paths=protect_paths,
         candidates=candidates,
         total=total,

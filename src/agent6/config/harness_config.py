@@ -528,7 +528,8 @@ class CompactionConfig(pydantic.BaseModel):
         gt=0,
         description=(
             "tier-1 threshold in accumulated tool-result characters (about 4 per token); above "
-            "it: oldest results replaced by short, re-fetchable placeholders; unset: about 45% "
+            "it: oldest results replaced by short, re-fetchable placeholders down to half "
+            "the threshold where result protections allow; unset: about 45% "
             "of the model's context window; explicit thresholds: both `compaction.drop_at_chars` "
             "and `compaction.summarise_at_chars` required"
         ),
@@ -553,7 +554,8 @@ class CompactionConfig(pydantic.BaseModel):
     keep_thinking_turns: validation.NoLimitOrPositive = pydantic.Field(
         default=-1,
         description=(
-            "thinking retained at tier 1 for the newest N assistant turns with "
+            "thinking retained when tier 1 rewrites tool results for the newest N assistant "
+            "turns with "
             "`compaction.keep_thinking_turns = N` (`N >= 1`); "
             "`compaction.keep_thinking_turns = -1`: "
             "all thinking; `compaction.keep_thinking_turns = 0`: invalid, newest signed thinking "

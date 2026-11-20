@@ -135,7 +135,7 @@ class CompactionSettings:
 
     Attributes:
         drop_at_chars: Tier 1 turns the oldest tool results into placeholders
-            past this.
+            past this, aiming for half the threshold where protections allow.
         summarise_at_chars: Tier 2 summarises and restarts past this.
         tool_result_cap_bytes: The bound on one result before it enters the
             conversation.

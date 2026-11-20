@@ -261,7 +261,9 @@ A resume after a death there runs none of the turn's calls again: the model gets
 
 **Context compaction has two tiers**, thresholds in `[compaction]`.
 
-- tier 1, `drop_at_chars`: the oldest tool results become placeholders naming the elided call; reads of recently-edited files elide last
+- tier 1, `drop_at_chars`: above this bound, the oldest tool results become placeholders until the total reaches half the bound or no eligible results remain
+- the newest two results, undelivered results and operator answers stay whole; reads of recently-edited files elide last
+- dedup runs in the same tier-1 pass; `keep_thinking_turns` strips old thinking only when that pass rewrites results, avoiding separate cache breaks
 - a large `read_file` decays in two stages: a model-written gist first, the bare marker under continued pressure (oldest gists first); files changing under edits are never gisted
 - tier 2, `summarise_at_chars`: the elided history is summarised by the `helper` model; the conversation restarts from the task, that summary, the pins and decisions block, the verify fact (the last full verification's command, verdict and tree, and whether the tree changed since), and the last `keep_recent_chars` (default 80000) of history verbatim
 - the DAG survives the restart: the current task re-surfaces, the summariser reports finished/new tasks (finished marked `passed`, new queued)

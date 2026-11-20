@@ -145,14 +145,14 @@ def test_continued_pressure_demotes_gists_oldest_first() -> None:
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"docs/spec.md": "spec facts " * 30})
     first = compaction_rules.compact_old_tool_results(
-        conv, max_total_bytes=1800, keep_recent=2, gister=gister
+        conv, max_total_bytes=3600, keep_recent=2, gister=gister
     )
     assert (len(first.gist_paths), len(first.demoted_paths)) == (1, 0)
     gist_ph = _contents(conv)[0]
     assert gist_ph.startswith(compaction_elision.ELISION_GIST_PREFIX)
     # Re-running under the same budget is a no-op (idempotent).
     again = compaction_rules.compact_old_tool_results(
-        conv, max_total_bytes=1800, keep_recent=2, gister=gister
+        conv, max_total_bytes=3600, keep_recent=2, gister=gister
     )
     assert (len(again.elided_calls), len(again.gist_paths), len(again.demoted_paths)) == (0, 0, 0)
     assert _contents(conv)[0] == gist_ph
@@ -169,7 +169,7 @@ def test_continued_pressure_demotes_gists_oldest_first() -> None:
 
 def test_gist_longer_than_content_stays_bare() -> None:
     # A gist placeholder that would not shrink the block is pointless.
-    text = "z" * 2100  # just over GIST_MIN_SOURCE_CHARS
+    text = "z" * 4100  # above GIST_MIN_SOURCE_CHARS
     conv = loop_conversation.Conversation()
     # raw (non-JSON) read result: read_file_text_from_result falls back verbatim
     _add_call(conv, "read_file", {"path": "a.md"}, text)
@@ -177,10 +177,10 @@ def test_gist_longer_than_content_stays_bare() -> None:
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"a.md": "g" * 3000})  # clipped to GIST_MAX_CHARS, still fits
     stats = compaction_rules.compact_old_tool_results(
-        conv, max_total_bytes=2000, keep_recent=2, gister=gister
+        conv, max_total_bytes=4000, keep_recent=2, gister=gister
     )
     assert len(stats.gist_paths) == 1
-    assert len(_contents(conv)[0]) < 2100
+    assert len(_contents(conv)[0]) < 4100
 
 
 def test_the_headroom_goes_to_the_newest_read() -> None:
@@ -193,7 +193,7 @@ def test_the_headroom_goes_to_the_newest_read() -> None:
     gister = _SpyGister({"old.py": "OLD " + "g" * 380, "new.py": "NEW " + "g" * 380})
 
     stats = compaction_rules.compact_old_tool_results(
-        conv, max_total_bytes=1600, keep_recent=2, gister=gister
+        conv, max_total_bytes=3200, keep_recent=2, gister=gister
     )
 
     assert stats.gist_paths == ("new.py",)
@@ -284,7 +284,7 @@ def test_stats_carry_gist_and_demotion_identities() -> None:
     _add_read(conv, "c.py", "y" * 500)
     gister = _SpyGister({"docs/spec.md": "spec facts " * 30})
     first = compaction_rules.compact_old_tool_results(
-        conv, max_total_bytes=1800, keep_recent=2, gister=gister
+        conv, max_total_bytes=3600, keep_recent=2, gister=gister
     )
     assert first.elided_calls == ("read_file docs/spec.md",)
     assert first.gist_paths == ("docs/spec.md",)
@@ -323,7 +323,7 @@ def test_gist_placeholder_identity_matches_bare_for_a_ranged_read() -> None:
     _add_read(conv, "b.py", "y" * 500)
     _add_read(conv, "c.py", "y" * 500)
     compaction_rules.compact_old_tool_results(
-        conv, max_total_bytes=1800, keep_recent=2, gister=_SpyGister({"a.py": "the gist " * 10})
+        conv, max_total_bytes=3600, keep_recent=2, gister=_SpyGister({"a.py": "the gist " * 10})
     )
 
     text = str(conv.messages[1].items[0].content)  # pyright: ignore[reportAttributeAccessIssue]

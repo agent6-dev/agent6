@@ -217,6 +217,74 @@ def test_compact_elides_oldest_when_over_threshold() -> None:
     assert contents[2] == c
 
 
+def test_compact_drops_to_half_the_bound_then_leaves_room_to_grow() -> None:
+    """A drop frees several turns of headroom instead of trimming each turn."""
+    conv = loop_conversation.Conversation()
+    _reads(conv, *(ch * 1000 for ch in "abcdefg"))
+    stats = compaction_rules.compact_old_tool_results(conv, max_total_bytes=6801)
+    contents = _result_contents(conv)
+    assert len(stats.elided_calls) == 5
+    assert sum(map(len, contents)) <= 3400
+    assert contents[-2:] == ["f" * 1000, "g" * 1000]
+    for ch in "hi":
+        _reads(conv, ch * 1000)
+        assert (
+            compaction_rules.compact_old_tool_results(conv, max_total_bytes=6801)
+            == compaction_rules.CompactionStats()
+        )
+
+
+def test_dedup_does_not_stop_the_drop_above_half_the_bound() -> None:
+    """Duplicate savings count toward the same half-bound target as elision."""
+    conv = loop_conversation.Conversation()
+    _reads(conv, *(ch * 1000 for ch in "aabcdef"))
+    stats = compaction_rules.compact_old_tool_results(conv, max_total_bytes=6801)
+    assert len(stats.deduped_calls) == 1
+    assert len(stats.elided_calls) == 4
+    assert sum(map(len, _result_contents(conv))) <= 3400
+
+
+def test_dedup_leaves_history_unchanged_at_the_bound() -> None:
+    conv = loop_conversation.Conversation()
+    _reads(conv, *("a" * 1000 for _ in range(4)))
+    before = conv.to_wire()
+    assert (
+        compaction_rules.compact_old_tool_results(conv, max_total_bytes=4000)
+        == compaction_rules.CompactionStats()
+    )
+    assert conv.to_wire() == before
+
+
+def test_thinking_is_not_stripped_without_a_tool_result_rewrite(tmp_path: pathlib.Path) -> None:
+    """Whole-context pressure alone must not cause rolling thinking rewrites."""
+    from agent6.config import Config
+    from agent6.harness import loop, loop_state
+
+    wf = loop.Harness(
+        chain=run_chain.RunChain(tmp_path),
+        config=Config(),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(
+            last_verification=None, execution_id="execution", verify_withheld=False
+        ),
+        logger=lambda _m: None,
+        compaction=compaction_window.CompactionSettings(
+            drop_at_chars=3000,
+            summarise_at_chars=10**9,
+            keep_thinking_turns=1,
+            elision_gists=False,
+        ),
+    )
+    conv = loop_conversation.Conversation()
+    conv.notice("task")
+    for _ in range(3):
+        conv.assistant([{"type": "thinking", "thinking": "reasoning" * 1000}])
+        _reads(conv, "small")
+    before = conv.to_wire()
+    wf.compactor.compact(conv, loop_state.LoopState(original_task="task", tool_calls=3))
+    assert conv.to_wire() == before
+
+
 def test_compact_preserves_keep_recent_floor() -> None:
     """Even when over threshold, the newest `keep_recent` entries are never elided."""
     bodies = [ch * 10_000 for ch in "abcde"]  # distinct: dedup must not fire
@@ -429,7 +497,7 @@ def test_compact_elides_protected_reads_last_but_bound_still_holds() -> None:
     def build() -> loop_conversation.Conversation:
         conv = loop_conversation.Conversation()
         _add_exchange(conv, ("read_file", {"path": "hot.py"}, "H" * 1000))
-        _add_exchange(conv, ("read_file", {"path": "cold.py"}, "C" * 1000))
+        _add_exchange(conv, ("read_file", {"path": "cold.py"}, "C" * 5000))
         _add_exchange(conv, ("grep", {"pattern": "x"}, "G" * 1000))
         _add_exchange(conv, ("list_dir", {"path": "."}, "L" * 1000))
         return conv
@@ -437,7 +505,7 @@ def test_compact_elides_protected_reads_last_but_bound_still_holds() -> None:
     # The budget forces one elision: with hot.py protected, the cold read goes first.
     conv = build()
     n = compaction_rules.compact_old_tool_results(
-        conv, max_total_bytes=3500, keep_recent=2, protect_paths=frozenset({"hot.py"})
+        conv, max_total_bytes=7000, keep_recent=2, protect_paths=frozenset({"hot.py"})
     )
     assert len(n.elided_calls) == 1
     contents = _result_contents(conv)

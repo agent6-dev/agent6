@@ -111,12 +111,8 @@ class Compactor:
         n_elided = len(stats.elided_calls)
         n_gisted = len(stats.gist_paths)
         n_demoted = len(stats.demoted_paths)
-        if self.settings.keep_thinking_turns > 0 and (
-            n_deduped
-            or n_elided
-            or compaction_window.context_chars(conversation) > self.settings.drop_at_chars
-        ):
-            # As with dedup: only at tier-1 pressure, never as a rolling per-turn rewrite.
+        if self.settings.keep_thinking_turns > 0 and (n_deduped or n_elided or n_demoted):
+            # Strip only alongside a result rewrite, so thinking adds no cache break.
             n_messages, n_chars = compaction_window.strip_old_thinking(
                 conversation, keep_messages=self.settings.keep_thinking_turns
             )
