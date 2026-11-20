@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime
 import pathlib
 
+import pydantic
 import pytest
 
 from agent6.graph import models, storage
@@ -64,6 +65,32 @@ def test_frontmatter_round_trips_adversarial_scalars(evil: str) -> None:
     assert rt.title == evil
     assert rt.rationale == evil
     assert rt.acceptance == evil
+
+
+@pytest.mark.parametrize(
+    "scalar",
+    [
+        "plain",
+        'quote" back\\slash \\n not a newline',
+        "newline\nand\rreturn",
+        "raw tab\there, escape\x1b[31m, nul\x00, del\x7f, nel\x85, sep\u2028",
+        "caf\u00e9 \U0001f600 trailing backslash\\",
+    ],
+)
+def test_a_scalar_in_the_stored_hand_escaped_format_reads_back(scalar: str) -> None:
+    """Node files on disk hold scalars with only backslash, quote, newline and return escaped.
+
+    Every other character sits raw inside the quotes, control characters included; the JSON
+    reader takes them all.
+    """
+    stored = scalar.replace("\\", "\\\\").replace('"', '\\"')
+    stored = stored.replace("\n", "\\n").replace("\r", "\\r")
+    text = storage._dump_frontmatter(_mk_node("0" * 26))
+    assert 'title: "t"' in text and "relevant_paths:\n" in text
+    text = text.replace('title: "t"', f'title: "{stored}"')
+    text = text.replace("relevant_paths:\n", f'relevant_paths:\n  - "{stored}"\n')
+    node = storage._parse_frontmatter(text)
+    assert node.title == scalar and node.relevant_paths == (scalar,)
 
 
 def test_layout_ensure_creates_dirs(tmp_path: pathlib.Path) -> None:
@@ -149,6 +176,14 @@ def test_load_graph_skips_a_path_traversing_node_id(tmp_path: pathlib.Path, caps
     )
     nodes = storage.load_graph(layout)
     assert bad_id not in nodes  # skipped, not loaded
+
+
+@pytest.mark.parametrize("bad_id", ["../zz", "0000A\n", "01I", "0a", "A B", "A/B", "", "0" * 27])
+def test_a_node_id_outside_the_ulid_alphabet_or_length_is_refused(bad_id: str) -> None:
+    """An id is a path component under graph_dir; the pattern anchors past a trailing newline."""
+    with pytest.raises(pydantic.ValidationError):
+        _mk_node(bad_id)
+    assert _mk_node("0").id == "0" and _mk_node("01ARZ3NDEKTSV4RRFFQ69G5FAV").id
 
 
 def test_graph_version_round_trips_and_old_files_default_zero(tmp_path: pathlib.Path) -> None:

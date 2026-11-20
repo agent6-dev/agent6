@@ -84,53 +84,26 @@ def flock(path: pathlib.Path) -> Generator[None]:
 
 
 def _yaml_quote(s: str) -> str:
-    """Quote a scalar so it round-trips through `_yaml_unquote`.
-
-    Args:
-        s: The scalar.
-
-    Returns:
-        The double-quoted text, backslash, quote, newline and carriage return escaped.
-    """
-    # `\r` is escaped too: the parser splits on "\n" only, so an unescaped one would be
-    # emitted literally; the other Unicode line separators survive for the same reason.
-    escaped = s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
-    return f'"{escaped}"'
+    """Return the scalar as a JSON string: a YAML double-quoted scalar on one line."""
+    return json.dumps(s, ensure_ascii=False)
 
 
 def _yaml_unquote(s: str) -> str:
-    """Unquote a scalar `_yaml_quote` wrote; an unquoted value is returned stripped.
+    """Return the scalar a quoted value holds; an unquoted value is returned stripped.
 
     Args:
         s: The raw text.
 
     Returns:
         The scalar.
+
+    Raises:
+        ValueError: The quoted value is not a JSON string.
     """
     s = s.strip()
     if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
-        body = s[1:-1]
-        out: list[str] = []
-        i = 0
-        while i < len(body):
-            c = body[i]
-            if c == "\\" and i + 1 < len(body):
-                nxt = body[i + 1]
-                if nxt == "n":
-                    out.append("\n")
-                elif nxt == "r":
-                    out.append("\r")
-                elif nxt == '"':
-                    out.append('"')
-                elif nxt == "\\":
-                    out.append("\\")
-                else:
-                    out.append(nxt)
-                i += 2
-                continue
-            out.append(c)
-            i += 1
-        return "".join(out)
+        # strict=False: a stored scalar may hold raw control characters.
+        return json.loads(s, strict=False)
     return s
 
 

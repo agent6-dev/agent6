@@ -121,7 +121,8 @@ class TaskNode(pydantic.BaseModel):
 
     model_config = _MODEL_CONFIG
 
-    id: str = pydantic.Field(min_length=1, max_length=26)
+    # The id is a path component under graph_dir: the ULID alphabet keeps a separator out at reload.
+    id: str = pydantic.Field(min_length=1, max_length=26, pattern=f"^[{ulid.CROCKFORD}]+$")
     parent_id: str | None
     title: str = pydantic.Field(min_length=1)
     rationale: str = ""
@@ -137,28 +138,6 @@ class TaskNode(pydantic.BaseModel):
     notes: str = ""
     standing: bool = False
     graph_version: int = 0
-
-    @pydantic.field_validator("id")
-    @classmethod
-    def _id_is_crockford(cls, v: str) -> str:
-        """Refuse an id outside the Crockford alphabet at the reload trust boundary.
-
-        The id becomes a path component under graph_dir, so a crafted id carrying separators
-        would let the next write escape it; a bad-id file fails validation and `load_graph`
-        skips it with a warning.
-
-        Args:
-            v: The id.
-
-        Returns:
-            The id unchanged.
-
-        Raises:
-            ValueError: A character is outside the alphabet.
-        """
-        if any(ch not in ulid.CROCKFORD for ch in v):
-            raise ValueError(f"node id is not Crockford base32: {v!r}")
-        return v
 
 
 class AddSubtaskIntent(pydantic.BaseModel):
