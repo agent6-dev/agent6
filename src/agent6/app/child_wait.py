@@ -48,7 +48,7 @@ def observe_commits(res: child_records.ChildResult) -> None:
         if count is not None:
             child_dispatch.write_commit_count(res.session_dir, count)
     except (errors.GitError, manifest.ManifestError, OSError):
-        # A missing observation must not stop the child or affect its join.
+        # A missing observation must not stop the child or affect its merge.
         return
 
 

@@ -97,11 +97,11 @@ class LogLine:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class DiffView:
-    """One auto-commit diff plus the task in focus when it landed.
+    """One auto-commit diff plus the task in focus when it was made.
 
     Attributes:
         patch: The auto-commit's unified patch.
-        task_id: The task in focus when the commit landed, or null.
+        task_id: The task in focus when the commit was made, or null.
         sha: The auto-commit identifier.
     """
 
@@ -294,7 +294,7 @@ class Lifecycle:
         stop_reason: The session.stop reason word, "" while an execution runs.
         verification: The final verification word, or None when unknown.
         verify_scoped: The judging gate ran scoped.
-        stranded: This execution finished with its edits uncommitted and no commit landed.
+        stranded: This execution finished with uncommitted edits and no commit.
         end_summary: The end sentence the journal carries, "" when it carries none.
         finish_summary: The finish tool's summary, the agent's closing statement.
         undone_to: The session `/undo` forked, "" when it was never undone.
@@ -526,7 +526,7 @@ class SessionState:
         verification: The final verification word, or None when unknown.
         verify_scoped: The judging gate ran scoped.
         stop_reason: The session.stop reason word.
-        stranded: This execution finished with its edits uncommitted and no commit landed.
+        stranded: This execution finished with uncommitted edits and no commit.
         end_summary: The end sentence the journal carries, "" when it carries none.
         unattended_questions: Questions the harness answered empty because nobody was
             attached, in the current execution.

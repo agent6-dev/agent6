@@ -487,7 +487,7 @@ function paintRun(cards, s) {
     cards._rm_btn.title = isDead ? "delete this session's history" : 'the session is still live; stop or let it finish first';
   }
   // Merge needs a finished run with unmerged commits: a live run (the server
-  // refuses one), a run that recorded none (an ask, or no commit landed), or
+  // refuses one), a run that recorded none (an ask, or no commit was made), or
   // already-merged work can't be merged. commits_ref is the run branch while
   // it exists, else the chain ref a branch_per_run=false run commits to.
   cards._run_branch = s.run_branch || '';
@@ -498,9 +498,9 @@ function paintRun(cards, s) {
   }
   if (cards._merge_btn) {
     const reviewRefusal = reviewMergeReason(s.review);
-    cards._merge_btn.disabled = !!chainRefusal || !notLive(s) || !s.commits_ref || !!s.merged_into || !!reviewRefusal;
+    cards._merge_btn.disabled = !!chainRefusal || !notLive(s) || !s.commits_ref || !!s.merged_into_checkout || !!reviewRefusal;
     cards._merge_btn.title = chainRefusal || reviewRefusal || (!notLive(s) ? 'the session is still live; stop or let it finish first'
-      : s.merged_into ? 'already merged into ' + s.merged_into
+      : s.merged_into_checkout ? 'already merged into ' + s.merged_into_checkout
       : s.commits_ref ? 'merge ' + s.commits_ref + (s.base_branch ? ' into ' + s.base_branch : '')
       : 'this session recorded no commits to merge');
   }
@@ -525,7 +525,7 @@ function paintRun(cards, s) {
   // itself is the conversation's last line, beside this panel.
   const modelEnds = ['answered', 'finish_planning', 'finish_session', 'silent_finish'];
   if (s.finished && s.end_summary && !modelEnds.includes(s.stop_reason)) add('ended', s.end_summary);
-  // Where the run's work lives and where Merge lands: consecutive spawns chain
+  // Where the run's work lives and where Merge puts it: consecutive spawns chain
   // branches, which is invisible without this line.
   if (s.forked_from) add('forked from', s.forked_from);
   if (s.branch_line) add('branch', s.branch_line);

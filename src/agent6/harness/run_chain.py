@@ -43,13 +43,13 @@ def commit_identity(commit: GitCommitConfig, trailer: str | None) -> git_read.Co
 class RunChain:
     """The run's commit line in the repository at `root`.
 
-    Per-turn commits land on `ref` through a temp index: HEAD, the operator's
+    Each turn records its commit on `ref` through a temp index: HEAD, the operator's
     index and the checkout are never touched, so git activity mid-run cannot
     collide with the run's own record.
 
     Attributes:
         root: The repository root.
-        ref: The hidden ref the commits land on (`refs/agent6/<session>/head`, the
+        ref: The hidden ref that holds the commits (`refs/agent6/<session>/head`, the
             gc anchor); None (a plan, an ask, an embedder) means the loop never commits.
         branch: The visible `refs/heads/<name>` advanced to the same tip
             (`[git].branch_per_run`); None keeps the hidden ref only.
@@ -64,7 +64,7 @@ class RunChain:
         per_turn: `[git].commit_per_turn`; False keeps the work in the worktree only,
             and resume-from-git, `sessions diff`, `merge` and a `/parallel` dispatch
             from a changed tree degrade.
-        base_sha: Where the run's un-landed work starts, the base of the review diff and
+        base_sha: Where the run's unmerged work starts, the base of the review diff and
             the gate's scope; "" when unknown.
         mirror_into: The repository a session in a clone copies each commit into; None in
             the repository itself or a linked worktree of it.

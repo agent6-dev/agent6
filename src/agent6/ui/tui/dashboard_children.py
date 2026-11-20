@@ -37,8 +37,8 @@ def child_cells(child: children.ChildView) -> tuple[text.Text, ...]:
     """
     status = child.status
     result: list[str] = []
-    if child.outcome == "joined":
-        result.append(child.join_label)
+    if child.outcome == "merged":
+        result.append(child.parent_merge_label)
     if not child.launched and child.status == "failed":
         result.append("not started")
     if child.commit_count_text:

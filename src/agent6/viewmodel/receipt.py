@@ -41,7 +41,7 @@ def revert_plan(root: pathlib.Path, stamp: manifest.MergeStamp | None) -> Revert
     """Derive reversal guidance from a merge stamp and existing commit objects.
 
     Args:
-        root: The repository containing the landed objects.
+        root: The repository containing the merged objects.
         stamp: The recorded merge, if any.
 
     Returns:
@@ -55,7 +55,7 @@ def revert_plan(root: pathlib.Path, stamp: manifest.MergeStamp | None) -> Revert
         return RevertPlan(
             "manual",
             explanation=(
-                "The recorded landing added no commit; "
+                "The recorded merge added no commit; "
                 "cannot determine a safe revert of this run alone."
             ),
         )
@@ -63,7 +63,7 @@ def revert_plan(root: pathlib.Path, stamp: manifest.MergeStamp | None) -> Revert
         return RevertPlan(
             "manual",
             explanation=(
-                "This run landed through another run; "
+                "This run merged through another run; "
                 "cannot determine a safe revert of this run alone."
             ),
         )
@@ -97,13 +97,13 @@ def revert_plan(root: pathlib.Path, stamp: manifest.MergeStamp | None) -> Revert
         elif stamp.method in ("tasks", "ff_only") and git_read.is_ancestor(
             root, stamp.target_before, stamp.sha
         ):
-            # Both land a straight line of single-parent commits on the target.
-            commits = commit_graph.landed_commits(root, stamp.target_before, stamp.sha)
+            # Both add a straight line of single-parent commits on the target.
+            commits = commit_graph.merged_commits(root, stamp.target_before, stamp.sha)
             if commits and all(len(commit_graph.parents(root, c)) == 1 for c in commits):
                 plan = RevertPlan(
                     stamp.method,
                     commits,
-                    explanation="Revert landed commits in reverse topological order.",
+                    explanation="Revert merged commits in reverse topological order.",
                 )
             else:
                 plan = RevertPlan(
@@ -138,7 +138,7 @@ class ReceiptView:
         review: The review evidence compared against the final tree.
         revert: The reversal plan derived from recorded merge facts.
         evidence_notes: Diagnostics for absent or unreadable evidence.
-        merged: The MergeStamp, or null without a recorded landing.
+        merged: The MergeStamp, or null without a recorded merge.
         targets: The recorded execution targets, without runtime queries.
         settings: The non-default settings observed at each execution start.
         setups: Every recorded setup result.
@@ -289,14 +289,14 @@ def revert_request(view: ReceiptView) -> str:
     Returns:
         The proposed task, which asks the worker to inspect and verify a reversal.
     """
-    lines = [f"Prepare a reversal of the landed change from session {view.session_id}."]
+    lines = [f"Prepare a reversal of the merged change from session {view.session_id}."]
     if stamp := view.merged:
         lines.extend(
             (
-                f"Recorded landing method: {stamp.method or 'not recorded'}",
+                f"Recorded merge method: {stamp.method or 'not recorded'}",
                 f"Target: {stamp.into or 'not recorded'}",
-                f"Target before landing: {stamp.target_before or 'not recorded'}",
-                f"Landed commit: {stamp.sha or 'not recorded'}",
+                f"Target before merge: {stamp.target_before or 'not recorded'}",
+                f"Merged commit: {stamp.sha or 'not recorded'}",
                 f"Source tip: {stamp.tip or 'not recorded'}",
             )
         )
@@ -432,8 +432,8 @@ def children_section(views: tuple[vm_children.ChildView, ...]) -> list[str]:
         label = f"{child.group_label}: {child.session_id}"
         if child.model:
             label += f" ({child.model})"
-        if child.outcome == "joined":
-            what = child.join_label
+        if child.outcome == "merged":
+            what = child.parent_merge_label
         elif child.outcome == "no_changes":
             what = "no changes"
         elif child.outcome == "retained":

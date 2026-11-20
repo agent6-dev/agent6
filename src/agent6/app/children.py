@@ -109,7 +109,7 @@ class ChildRuntime:
         parent_events: event_log.EventSink | None,
         watch: PollChild | None,
     ) -> Generator[PollChild | None]:
-        """Give the observer a last read before the parent can join the child.
+        """Give the observer a last read before the parent can merge the child.
 
         Args:
             spec: The child to watch.
@@ -646,7 +646,7 @@ def recorded_result(
         last_run_at=recorded.last_event_at,
     )
     if not produced_result(summary.status):
-        # Only a deliberate end joins the parent as a success.
+        # Only a child that finishes deliberately can merge into its parent as a success.
         return child_records.ChildResult(
             spec=spec,
             session_dir=dest,
@@ -961,7 +961,7 @@ def build_rank_recorder(
             rows=rows,
             committed={res.spec.session_id: res.has_commits for res in results},
             model_refs=model_refs,
-            joins=parent_dir.name,
+            merge_parent=parent_dir.name,
             reporter=reporter,
         )
 

@@ -310,7 +310,7 @@ def _manifest_refusal(
     """Return why the session's record rules out an undo, before anything is committed.
 
     A model-controlled run has no chain, and a chain ref written for it is one auto_merge
-    lands. Landed work predates the checkpoint, other sessions' work included. A worktree
+    would merge. Merged work predates the checkpoint, other sessions' work included. A worktree
     the manifest cannot place, or that is gone, leaves nothing to rewind.
 
     Args:
@@ -326,7 +326,7 @@ def _manifest_refusal(
         return refusal
     if (stamp := resume.covering_stamp(cwd, manifest)) is not None:
         return (
-            f"cannot undo {session_id}: its commits are {stamp.landed()}; take them back in"
+            f"cannot undo {session_id}: its commits are {stamp.description()}; take them back in"
             f" git, or continue from a turn with `agent6 fork {session_id} --at-turn N`."
         )
     if (
@@ -466,7 +466,7 @@ def _journal_undone(undone: sessions_layout.SessionLayout, child: str, undone_te
     """Append the undone end to a finished source's journal, so every surface reads it.
 
     Without it the source would read passed with a merge line, and `sessions merge` would
-    land the taken-back work.
+    merge the taken-back work.
 
     Args:
         undone: The session being undone.

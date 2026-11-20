@@ -34,7 +34,7 @@ def _candidate_diff(
     """Return the diff a run introduced, read-only, without checking out its branch.
 
     A pruned branch reads from the recorded merge: its merged tip while the objects exist,
-    else the commit it landed as.
+    else the commit it merged as.
 
     Args:
         cwd: The repo.
@@ -183,7 +183,7 @@ def _cmd_compare(
 ) -> int:
     """Print an advisory ranking of two or more already-run candidates.
 
-    The same ranked report a run's rank join prints (each of `[harness.parallel].judges` a
+    The same ranked report a run's rank merge prints (each of `[harness.parallel].judges` a
     reviewer child that ranks the runs, else the mechanical verify-then-cost ranking), for
     runs picked by hand, not necessarily from one group or one task. No merges, no stamps;
     the judges' own sessions stay in the reviewers bucket. A group id prints the verdict it

@@ -35,7 +35,7 @@ _TOOL_KINDS = {
     "list_dir": "read",
     "agent6_docs": "read",
     "read_session": "read",
-    "parallel": "execute",  # children run and join; the closest ACP kind
+    "parallel": "execute",  # children run and merge; the closest ACP kind
     "merge_child": "execute",
     "steer_child": "other",
     "list_findings": "read",

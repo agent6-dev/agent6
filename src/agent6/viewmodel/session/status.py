@@ -176,7 +176,7 @@ def status_word(
         gate_red: This execution's last verify ran and failed; False also covers a
             stale green and a gate nothing ran.
         gate_timed_out: That verify ended on its timeout, so it gave no verdict.
-        stranded: The run finished with its edits uncommitted and no commit landed.
+        stranded: The run finished with uncommitted edits and no commit.
 
     Returns:
         The `(word, detail)` pair.
@@ -272,7 +272,7 @@ class StatusFacts:
         unattended_questions: Questions this execution's harness answered empty because nobody
             was attached.
         pending_questions: Questions nobody has answered, across every execution.
-        stranded: This execution finished with its edits uncommitted and no commit landed.
+        stranded: This execution finished with uncommitted edits and no commit.
         in_review: This execution's latest review panel is running.
     """
 
@@ -438,7 +438,7 @@ RESULT_WORDS = frozenset({"passed", "finished", "stopped", "planned", "answered"
 def produced_result(status: str) -> bool:
     """Return whether the status word means a deliberate end that left mergeable work.
 
-    Only such a child is a compare candidate or joins a parent's branch.
+    Only such a child is a compare candidate or merges into a parent's chain.
 
     Args:
         status: The session's status word.

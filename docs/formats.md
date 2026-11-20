@@ -141,18 +141,18 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### checkpoint.committed
 
-**Support: public.** A turn's checkpoint commit landed.
+**Support: public.** The turn produced a checkpoint commit.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `turn` | `int` | The execution's turn number. |
 | `sha` | `str` | The commit identifier, possibly abbreviated. |
-| `subject` | `str` | The landed commit's subject. |
+| `subject` | `str` | The checkpoint commit's subject. |
 | `task_id` | `str, optional` | Task identifier. |
 
 ### checkpoint.failed
 
-**Support: public.** A checkpoint commit could not land.
+**Support: public.** The checkpoint commit failed.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -327,7 +327,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### diff.updated
 
-**Support: public.** A chain commit landed with its patch.
+**Support: public.** The chain gained a commit and its patch.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -914,7 +914,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `children` | `list, optional` | Child count for dispatch, or child results for completion. |
 | `error` | `str, optional` | The failure diagnostic. |
 
-### parallel.joined
+### parallel.merged
 
 **Support: public.** Parallel child results returned.
 
@@ -1288,7 +1288,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### session.stranded
 
-**Support: public.** A finished run left edits uncommitted and no commit landed.
+**Support: public.** A finished run left edits uncommitted and made no commit.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1769,10 +1769,10 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `children` | `list[dict[str, Any]]` | ChildView rows in dispatch order. Lineage-only groups keep their listing fields. |
 | `run_branch` | `str \| None` | The existing run branch, or null. |
 | `base_branch` | `str \| None` | The base branch, or null when unknown. |
-| `merged_into` | `str \| None` | The merge destination, or null without a covering merge stamp. |
+| `merged_into_checkout` | `str \| None` | The checkout branch, or null without a covering merge stamp. |
 | `retained_ref` | `str \| None` | The retained model-owned ref, or null without one. |
-| `joined_to` | `str \| None` | The parent whose chain this child joined, or null without a recorded join. |
-| `join_sha` | `str \| None` | The recorded parent-chain join commit, or null. |
+| `merged_into_parent` | `str \| None` | The parent whose chain received this child, or null without a merge. |
+| `parent_merge_sha` | `str \| None` | The recorded parent-chain merge commit, or null. |
 | `pins` | `list[str]` | The operator's active pinned instructions. |
 
 ## CLI text
@@ -1831,7 +1831,7 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `verification` | `Literal['passed', 'failed', 'unverified', 'not_applicable'] \| None` | The final verification word, or None when unknown. |
 | `verify_scoped` | `bool` | The judging gate ran scoped. |
 | `stop_reason` | `str` | The session.stop reason word. |
-| `stranded` | `bool` | This execution finished with its edits uncommitted and no commit landed. |
+| `stranded` | `bool` | This execution finished with uncommitted edits and no commit. |
 | `end_summary` | `str` | The end sentence the journal carries, "" when it carries none. |
 | `unattended_questions` | `int` | Questions the harness answered empty because nobody was attached, in the current execution. |
 | `undone_to` | `str` | The child session /undo forked, which surfaces follow. |
@@ -1864,7 +1864,7 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `base_branch` | `JSON` | The recorded base branch when known. |
 | `worktree` | `JSON` | The linked worktree path when recorded. |
 | `commits_ref` | `JSON` | The ref holding the run's commits when available. |
-| `merged_into` | `JSON` | The merge destination while the stamp still covers the run. |
+| `merged_into_checkout` | `JSON` | The merge destination while the stamp still covers the run. |
 | `branch_line` | `JSON` | The rendered branch and merge facts. |
 | `session_actions` | `JSON` | Whether each session action applies to this session kind. |
 | `git_control` | `JSON` | The launch git-control policy. |
@@ -2075,7 +2075,7 @@ Source: [`ui.web.server._Handler._post_merge`](https://github.com/agent6-dev/age
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `ok` | `JSON` | Whether the merge landed or had nothing to land. |
+| `ok` | `JSON` | Whether the merge succeeded or had nothing to merge. |
 | `error` | `JSON` | What the merge said when it did not. |
 | `resume_merge` | `JSON` | The branch a resume merges into the run's work to resolve a conflict; present only on a conflict in a run with its own worktree. |
 | `message` | `JSON` | What the merge said when it did. |
@@ -2822,8 +2822,8 @@ Source: [`agent6.sessions.child_dispatch.DispatchRecord`](https://github.com/age
 | `version` | `int` | The record's shape; a newer one refuses the read. |
 | `identity` | `str` | The dispatch's id, the group id `<parent>-p<n>`. |
 | `source` | `Literal['operator', 'model', 'panel']` | Who asked. |
-| `join_policy` | `Literal['merge', 'record_only', 'rank']` | How the work merges: a task's one child merged, a panel's records imported and nothing merged, or the best-ranked of a task's attempts alone. |
-| `ranking` | `RankRecord \| None` | A rank join's order; None before it ranked and under the other policies. |
+| `merge_policy` | `Literal['merge', 'record_only', 'rank']` | How the work merges: a task's one child merged, a panel's records imported and nothing merged, or the best-ranked of a task's attempts alone. |
+| `ranking` | `RankRecord \| None` | A rank merge's order; None before it ranked and under the other policies. |
 | `owner` | `str` | The execution that made it. |
 | `turn` | `int` | The turn it was dispatched after. |
 | `base` | `str` | The chain tip the children were cut from. |
@@ -2831,7 +2831,7 @@ Source: [`agent6.sessions.child_dispatch.DispatchRecord`](https://github.com/age
 | `parent_node` | `str \| None` | The DAG node the task was dispatched under; None without a graph and for a panel. |
 | `node_id` | `str \| None` | The task's DAG node, added when its work merges or its dispatch fails; None until then, without a graph and for a panel. |
 | `children` | `tuple[ChildRecord, ...]` | The children, in child order. |
-| `state` | `Literal['prepared', 'running', 'settling', 'ranking', 'joining', 'complete']` | How far the dispatch got; `ranking` while a task's judges run. |
+| `state` | `Literal['prepared', 'running', 'settling', 'ranking', 'merging', 'complete']` | How far the dispatch got; `ranking` while a task's judges run. |
 | `message` | `str` | The notice of what merged, "" until complete. |
 | `delivered` | `bool` | Whether that notice reached the conversation. |
 | `written_at` | `float` | When this version of the record was written, as epoch seconds. |
@@ -2851,7 +2851,7 @@ Source: [`agent6.sessions.manifest.SessionManifest`](https://github.com/agent6-d
 | `start_ts` | `str` | When the session started. |
 | `user_task` | `str` | A 4000-character fallback for listings whose journal is missing. |
 | `continued_task` | `str` | The latest resume steer, clipped the same way; the fallback for the continuation line. |
-| `base_sha` | `str` | The commit the run's un-landed work starts from: where it started, or the commit a resume continued from after its work landed. |
+| `base_sha` | `str` | The commit the run's unmerged work starts from: where it started, or the commit a resume continued from after its work merged. |
 | `base_branch` | `str` | The branch that commit was on. |
 | `review_base_tree` | `str` | The base tree of a `/review` session, whose AGENTS.md binds it. |
 | `run_branch` | `str \| None` | The run's own branch, or None. |
@@ -2872,7 +2872,7 @@ Source: [`agent6.sessions.manifest.SessionManifest`](https://github.com/agent6-d
 | `worktree_git_dir` | `pathlib.Path \| None` | The repository git dir granted to a linked checkout's jail, recorded before any model command, including for an operator-owned checkout. Resume and same-checkout forks inherit it; a writable `.git` pointer cannot replace it. |
 | `worktree_set_up` | `bool` | Whether the setup command ran in the session's own worktree or clone; a resume runs it only while this is False. A fork's new worktree starts False, and an `/undo` fork carries its source's. |
 | `merged` | `MergeStamp \| None` | The merge record, None until the run branch is merged. |
-| `includes` | `IncludedRun \| None` | The unmerged run this run took in under `dirty_tree = "include"`, stamped merged when this run lands; None when it took none, or more than that run's tip. |
+| `includes` | `IncludedRun \| None` | The unmerged run this run took in under `dirty_tree = "include"`, stamped merged when this run merges; None when it took none, or more than that run's tip. |
 | `parallel` | `ParallelLineage \| None` | A child's lineage, or None. |
 | `placement` | `PlacementStamp \| None` | A child's rank and group reference, or None. |
 | `comparison` | `ComparisonStamp \| None` | The group's ranking and judge spend on its parent, or None. |
@@ -2925,7 +2925,7 @@ Source: [`agent6.viewmodel.receipt.ReceiptView`](https://github.com/agent6-dev/a
 | `review` | `ReviewView` | The review evidence compared against the final tree. |
 | `revert` | `RevertPlan` | The reversal plan derived from recorded merge facts. |
 | `evidence_notes` | `tuple[str, ...]` | Diagnostics for absent or unreadable evidence. |
-| `merged` | `MergeStamp \| None` | The MergeStamp, or null without a recorded landing. |
+| `merged` | `MergeStamp \| None` | The MergeStamp, or null without a recorded merge. |
 | `targets` | `tuple[ExecutionTargetEvidence, ...]` | The recorded execution targets, without runtime queries. |
 | `setups` | `tuple[SetupEvidence, ...]` | Every recorded setup result. |
 | `jobs` | `tuple[JobsObservation, ...]` | Job-settlement observations. |
@@ -2987,10 +2987,10 @@ Source: [`agent6.viewmodel.children.ChildView`](https://github.com/agent6-dev/ag
 | `task` | `str` | Its task text; "" when unknown. |
 | `model` | `str \| None` | Its selector, None for the worker's own settings. |
 | `route` | `str` | The `provider/model` its manifest records; "" when it never started. |
-| `status` | `str` | Where the child stands in its task, including a chain join or a ranking. |
+| `status` | `str` | Where the child stands in its task, including a chain merge or a ranking. |
 | `outcome` | `str` | The recorded dispatch outcome, including `stopped`, `ranked` and `retained`. An empty string means the parent has recorded no outcome. |
-| `join_sha` | `str` | The join commit on the parent's chain, "" when none. |
-| `imported_ref` | `str` | The branch the join read, "" when none. |
+| `parent_merge_sha` | `str` | The merge commit on the parent's chain, "" when none. |
+| `imported_ref` | `str` | The branch the merge read, "" when none. |
 | `error` | `str` | The status detail or the reason a child failed to start or merge. |
 | `spend_usd` | `float` | The cumulative child spend. |
 | `usd_partial` | `bool` | Whether unpriced calls make the spend a lower bound. |
@@ -3003,7 +3003,7 @@ Source: [`agent6.viewmodel.children.ChildView`](https://github.com/agent6-dev/ag
 | `commits` | `int \| None` | Its measured commits beyond its start, None when unknown. |
 | `verdict_order` | `tuple[str, ...]` | A reviewer's order of attempts, best first. |
 | `verdict_summary` | `str` | The summary from the reviewer's verdict. |
-| `joined_to` | `str` | The parent session whose chain received the join, "" without a join. |
+| `merged_into_parent` | `str` | The parent session whose chain received the merge, "" without a merge. |
 
 ### DispatchView
 
@@ -3430,7 +3430,7 @@ Source: [`agent6.review_records.ReviewBinding`](https://github.com/agent6-dev/ag
 
 ### RankRecord
 
-**Support: public.** The order a rank join merged by, written before the first join so no resume ranks twice.
+**Support: public.** The ranking recorded before the first merge, so a resume never ranks twice.
 
 Source: [`agent6.sessions.child_dispatch.RankRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
 
@@ -3439,7 +3439,7 @@ Source: [`agent6.sessions.child_dispatch.RankRecord`](https://github.com/agent6-
 | `order` | `tuple[str, ...]` | The ranked children's session ids, best first; empty when no child had a result. |
 | `ranked_by` | `Literal['judge', 'mechanical']` | `judge` or `mechanical`. |
 | `rationale` | `str` | The judges' words; "" for the mechanical order. |
-| `winner` | `str` | The one child the join merges; "" when the order crowns none. |
+| `winner` | `str` | The child selected to merge; "" when the order crowns none. |
 | `fallback` | `str` | Why the mechanical order ranked; "" when judges did. |
 
 ### ChildRecord
@@ -3455,7 +3455,7 @@ Source: [`agent6.sessions.child_dispatch.ChildRecord`](https://github.com/agent6
 | `task` | `str` | Its task text. |
 | `model` | `str \| None` | Its selector, None for the worker's own settings. |
 | `limits` | `ChildLimits \| None` | Its turn cap and deadline, None for the config's own. |
-| `join` | `JoinRecord \| None` | How it joined, None until it did. |
+| `merge` | `MergeRecord \| None` | The merge outcome, or None until recorded. |
 | `report` | `str` | What it said at its end, its finish summary; "" until its end was reported or when it gave none. |
 | `reported` | `bool` | Whether its parent's conversation holds the notice of its end. |
 | `usage` | `UsageRecord \| None` | What it used, None until settled with known usage. |
@@ -3550,9 +3550,9 @@ Source: [`agent6.sessions.manifest.MergeStamp`](https://github.com/agent6-dev/ag
 | `ts` | `str` | When it was merged. |
 | `tip` | `str` | The run branch tip that was merged. `sessions prune --delete-squashed` deletes only while the branch still points here: a resumed run's later commits exist in no other ref. |
 | `into_tip` | `str` | For a merge that added nothing, the base's own tip at the time, the commit that already held the run's content; the delete checks it as it checks `sha`. |
-| `via` | `str` | The run whose merge landed this one, when a later run took its work in under `dirty_tree = "include"`; "" for the run's own merge. |
-| `method` | `Literal['ff_only', 'merge', 'squash', 'tasks'] \| None` | The landing method, or null when unrecorded. |
-| `target_before` | `str \| None` | The target commit before landing, or null when unrecorded. |
+| `via` | `str` | The run whose merge included this one, when a later run took its work in under `dirty_tree = "include"`; "" for the run's own merge. |
+| `method` | `Literal['ff_only', 'merge', 'squash', 'tasks'] \| None` | The merge method, or null when unrecorded. |
+| `target_before` | `str \| None` | The target commit before the merge, or null when unrecorded. |
 
 ### IncludedRun
 
@@ -3784,14 +3784,14 @@ Source: [`agent6.viewmodel.session.records.QuestionPrompt`](https://github.com/a
 
 ### DiffView
 
-**Support: public.** One auto-commit diff plus the task in focus when it landed.
+**Support: public.** One auto-commit diff plus the task in focus when it was made.
 
 Source: [`agent6.viewmodel.session.records.DiffView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `patch` | `str` | The auto-commit's unified patch. |
-| `task_id` | `str \| None` | The task in focus when the commit landed, or null. |
+| `task_id` | `str \| None` | The task in focus when the commit was made, or null. |
 | `sha` | `str` | The auto-commit identifier. |
 
 ### RunCommit
@@ -4038,21 +4038,21 @@ Source: [`agent6.review_records.ReviewTarget`](https://github.com/agent6-dev/age
 | `hidden_paths` | `tuple[str, ...]` | Paths withheld from the review. |
 | `snapshot_ref` | `str` | The session-owned hidden ref retaining the comparison; empty on old records. |
 
-### JoinRecord
+### MergeRecord
 
-**Support: public.** How one child's work joined, with the chain tip on either side of the merge.
+**Support: public.** How one child's work merged, with the chain tip on either side of the merge.
 
-Source: [`agent6.sessions.child_dispatch.JoinRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
+Source: [`agent6.sessions.child_dispatch.MergeRecord`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/child_dispatch.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `branch` | `str` | The child's branch. |
-| `status` | `Literal['joined', 'no_changes', 'conflict', 'failed', 'ranked', 'stopped', 'retained']` | The join's outcome. |
+| `status` | `Literal['merged', 'no_changes', 'conflict', 'failed', 'ranked', 'stopped', 'retained']` | The merge's outcome. |
 | `sha` | `str` | The merge commit, "" when none. |
 | `detail` | `str` | The failure's reason, a conflict's files, a ranked child's place, or what stopped a stopped child; "" when none. |
 | `commits` | `int` | The count beyond start on a stopped, ranked or retained ref, or 0 without a count. |
 | `context` | `ChildContext` | The child's last measured conversation size and activity. |
-| `target_before` | `str` | The chain tip before the join. |
+| `target_before` | `str` | The chain tip before the merge. |
 | `target_after` | `str` | The chain tip after it; equal to `target_before` when nothing merged. |
 
 ### UsageRecord
@@ -4076,7 +4076,7 @@ Source: [`agent6.sessions.child_dispatch.MergeRequest`](https://github.com/agent
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `result` | `JoinRecord \| None` | The merge outcome; None while the request awaits a turn boundary. |
+| `result` | `MergeRecord \| None` | The merge outcome; None while the request awaits a turn boundary. |
 | `delivered` | `bool` | Whether the parent's conversation holds the outcome. |
 
 ### ContinuationRecord
@@ -4160,7 +4160,7 @@ Source: [`agent6.viewmodel.session.records.Lifecycle`](https://github.com/agent6
 | `stop_reason` | `str` | The session.stop reason word, "" while an execution runs. |
 | `verification` | `Literal['passed', 'failed', 'unverified', 'not_applicable'] \| None` | The final verification word, or None when unknown. |
 | `verify_scoped` | `bool` | The judging gate ran scoped. |
-| `stranded` | `bool` | This execution finished with its edits uncommitted and no commit landed. |
+| `stranded` | `bool` | This execution finished with uncommitted edits and no commit. |
 | `end_summary` | `str` | The end sentence the journal carries, "" when it carries none. |
 | `finish_summary` | `str` | The finish tool's summary, the agent's closing statement. |
 | `undone_to` | `str` | The session `/undo` forked, "" when it was never undone. |

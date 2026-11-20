@@ -305,10 +305,10 @@ class StatusJSON(TypedDict):
     children: list[dict[str, Any]]
     run_branch: str | None
     base_branch: str | None
-    merged_into: str | None
+    merged_into_checkout: str | None
     retained_ref: str | None
-    joined_to: str | None
-    join_sha: str | None
+    merged_into_parent: str | None
+    parent_merge_sha: str | None
     pins: list[str]
 
 
@@ -360,10 +360,10 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         children: ChildView rows in dispatch order. Lineage-only groups keep their listing fields.
         run_branch: The existing run branch, or null.
         base_branch: The base branch, or null when unknown.
-        merged_into: The merge destination, or null without a covering merge stamp.
+        merged_into_checkout: The checkout branch, or null without a covering merge stamp.
         retained_ref: The retained model-owned ref, or null without one.
-        joined_to: The parent whose chain this child joined, or null without a recorded join.
-        join_sha: The recorded parent-chain join commit, or null.
+        merged_into_parent: The parent whose chain received this child, or null without a merge.
+        parent_merge_sha: The recorded parent-chain merge commit, or null.
         pins: The operator's active pinned instructions.
 
         session_id: The session identifier.
@@ -405,13 +405,13 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     tips = git_read.run_ref_tips(pathlib.Path.cwd())
     summary = summarize_session_dir(target, branch_tips=tips)
     children = sessions_children.read_children(target, tips=tips)
-    join = child_views.parent_join(target, manifest.parallel)
-    chain_join = join is not None or any(c.view.joined_to for c in children)
+    merge = child_views.parent_merge(target, manifest.parallel)
+    chain_merge = merge is not None or any(c.view.merged_into_parent for c in children)
     status, status_cell, status_detail = _status_state(
         summary,
         scan,
         last_age=last_age,
-        mark_unmerged=not chain_join,
+        mark_unmerged=not chain_merge,
     )
     state = f"{status_cell} ({status_detail})" if status_detail else status_cell
 
@@ -461,10 +461,10 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             "children": [child.as_dict() for child in children],
             "run_branch": existing_run_branch(manifest, pathlib.Path.cwd()) or None,
             "base_branch": manifest.base_branch or None,
-            "merged_into": changes.merged_into or None,
+            "merged_into_checkout": changes.merged_into_checkout or None,
             "retained_ref": summary.retained_ref or None,
-            "joined_to": join.parent if join else None,
-            "join_sha": (join.sha or None) if join else None,
+            "merged_into_parent": merge.parent if merge else None,
+            "parent_merge_sha": (merge.sha or None) if merge else None,
             "pins": list(scan.pins),
         }
 
@@ -497,7 +497,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             if item.kind == "verify"
         ),
     )
-    changes.print_merge(join, chain_join=chain_join)
+    changes.print_merge(merge, chain_merge=chain_merge)
     for prefix, task in [
         ("task:       ", summary.task_label.task),
         *(
@@ -547,30 +547,30 @@ class _Changes:
 
     Attributes:
         line: The text row; "" for a session with no run branch.
-        merged_into: The base the run branch is merged into, else "".
+        merged_into_checkout: The base the run branch is merged into, else "".
     """
 
     line: str
-    merged_into: str
+    merged_into_checkout: str
 
-    def print_merge(self, join: child_views.ParentJoin | None, *, chain_join: bool) -> None:
-        """Print the checkout merge separately from the parent's chain join.
+    def print_merge(self, merge: child_views.ParentMerge | None, *, chain_merge: bool) -> None:
+        """Print the checkout merge separately from the parent's chain merge.
 
         Args:
-            join: This child's join, when the parent recorded one.
-            chain_join: This run received joined children or joined its own parent.
+            merge: This child's merge, when the parent recorded one.
+            chain_merge: This run received a child merge or merged into its own parent.
         """
-        if join:
-            print(f"parent join: {join.label}")
-        if not chain_join:
+        if merge:
+            print(f"parent merge: {merge.label}")
+        if not chain_merge:
             if self.line:
                 print(f"changes:    {self.line}")
-        elif self.merged_into:
+        elif self.merged_into_checkout:
             print(f"checkout:   {self.line}")
-        elif join:
+        elif merge:
             print(
                 "checkout:   no direct merge recorded for this tip; "
-                f"see agent6 sessions show {join.parent}"
+                f"see agent6 sessions show {merge.parent}"
             )
         else:
             detail = f"; {self.line}" if self.line else ""

@@ -243,7 +243,7 @@ def same_path_runs(
 ) -> dict[str, tuple[str, ...]]:
     """Return the other ended, unmerged runs that changed paths a run changed.
 
-    A merge reports them: each one's own merge now meets what this run landed.
+    A merge reports them: each one's own merge now meets the work this run merged.
 
     Args:
         cwd: The repository.

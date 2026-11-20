@@ -176,7 +176,7 @@ def stop_reason(code: int, *, stop_reason: str = "") -> acp_session.StopReason:
         return "max_turn_requests"
     return (
         "end_turn"
-        if code in (0, finalize.EXIT_VERIFY_FAILED, finalize.EXIT_NO_COMMIT_LANDED)
+        if code in (0, finalize.EXIT_VERIFY_FAILED, finalize.EXIT_NO_COMMIT)
         else "refusal"
     )
 

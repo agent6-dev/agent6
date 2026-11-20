@@ -169,9 +169,9 @@ def run_panel(
     verdicts: list[review_records.ReviewVerdict] = []
     for i, (reviewer, request) in enumerate(zip(reviewers, requests, strict=True)):
         assert request.contract is not None and request.contract.review_binding is not None
-        joined = dispatched.children[i] if i < len(dispatched.children) else None
-        sid = joined.session_id if joined is not None else ""
-        error = dispatched.message if joined is None else None
+        outcome = dispatched.children[i] if i < len(dispatched.children) else None
+        sid = outcome.session_id if outcome is not None else ""
+        error = dispatched.message if outcome is None else None
         artifact = None
         if sid and executor.session_dir is not None:
             try:
@@ -182,15 +182,15 @@ def run_panel(
             except completion.CompletionError as exc:
                 error = str(exc)
         # Only the turn limit can leave usable evidence after an execution failure.
-        if joined is not None and joined.status == "failed":
+        if outcome is not None and outcome.status == "failed":
             ceiling = artifact is not None and artifact.stop_reason == "max_turns"
-            if not ceiling or "deadline" in joined.detail:
+            if not ceiling or "deadline" in outcome.detail:
                 diagnostic = (
                     "; ".join(artifact.diagnostics)
                     if artifact is not None and artifact.stop_reason == "provider_error"
                     else ""
                 )
-                error = error or diagnostic or joined.detail or "reviewer execution failed"
+                error = error or diagnostic or outcome.detail or "reviewer execution failed"
         if artifact is None:
             error = error or "missing completion artifact"
         verdicts.append(

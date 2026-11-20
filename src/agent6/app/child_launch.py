@@ -159,7 +159,7 @@ class ChildLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
 
 
 def is_child() -> bool:
-    """Return whether this process runs a child, whose work the session that dispatched it joins."""
+    """Return whether this process runs a child session."""
     return bool(os.environ.get("AGENT6_CHILD"))
 
 

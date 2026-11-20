@@ -2,7 +2,7 @@ async function confirmMerge(r) {
   let same = '';
   try { same = (await getJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge')).same_paths; }
   catch (err) { toast(err.message, true); return false; }
-  return confirmDialog('Merge run ' + r.session_id + '?', 'Lands its branch on its base with your git.merge_method, as `agent6 sessions merge` does; the checkout never moves.' + (same ? '\n\n' + same : ''), 'Merge');
+  return confirmDialog('Merge run ' + r.session_id + '?', 'Merges its branch into its base with your git.merge_method, as `agent6 sessions merge` does; the checkout never moves.' + (same ? '\n\n' + same : ''), 'Merge');
 }
 async function postMerge(r) {
   try { const d = await postJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge', {}); toast(d.message || 'merged'); route(); return true; }

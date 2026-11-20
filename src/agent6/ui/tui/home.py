@@ -506,7 +506,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self.app.push_screen(
             modals.ConfirmModal(
                 f"Merge run {session_dir.name}?",
-                "Lands this run's branch on its base using your git.merge_method, as"
+                "Merges this run's branch into its base using your git.merge_method, as"
                 " `agent6 sessions merge` does. Ref plumbing only: the checkout never moves."
                 + (f"\n\n{same}" if same else ""),
                 confirm_label="Merge",
@@ -616,7 +616,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 "Prune merged runs, squash-merged too?",
                 "Runs `agent6 sessions prune --delete-squashed`: also force-deletes branches"
                 " and chain refs the manifest confirms were squash-merged into a base that"
-                " still holds what the merge landed. Each deletion prints its undelete command.",
+                " still holds the merged work. Each deletion prints its undelete command.",
                 confirm_label="Prune",
             ),
             self._on_prune_confirm(delete_squashed=True),

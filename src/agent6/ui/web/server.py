@@ -1061,7 +1061,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         """Merge the run; a conflict the run can resolve is a 422 naming the branch to merge in.
 
         Attributes:
-            ok: Whether the merge landed or had nothing to land.
+            ok: Whether the merge succeeded or had nothing to merge.
             message: What the merge said when it did.
             error: What the merge said when it did not.
             resume_merge: The branch a resume merges into the run's work to resolve a conflict;

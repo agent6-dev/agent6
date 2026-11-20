@@ -1,5 +1,5 @@
 /* --- git: the commit graph on the left, a commit or the compare on the right. The
-   lane SVG is exactly one row tall and rows stack with no gap, so a lane's line runs
+   column SVG is exactly one row tall and rows stack with no gap, so a column's line runs
    unbroken from row to row. Below 781px the side panel opens over the graph. --- */
 .git-bar { margin-bottom: var(--page-top); }
 .git-app:has(> .git-body.diffing) > .git-bar { display: none; }
@@ -51,19 +51,19 @@
 .gc-row[aria-current=true] { --row-bg: var(--surface2); box-shadow: inset 2px 0 0 var(--accent); }
 /* A graph loading for more than a moment dims; it reads busy (aria-busy) at once. */
 .git-graph[aria-busy=true] { opacity: .6; transition: opacity .2s .3s; }
-.gc-lanes { flex: none; display: block; height: 100%; margin-left: 0.375rem; overflow: visible; }
-.gc-lanes path { fill: none; stroke-width: 2; }
-/* The lanes take the theme's colours, which read at 3:1 or more on a row in either theme. */
-.gc-lanes .l0 { stroke: var(--accent); } .gc-lanes .l1 { stroke: var(--ok); }
-.gc-lanes .l2 { stroke: var(--warn); } .gc-lanes .l3 { stroke: var(--err); }
-.gc-lanes .l4 { stroke: var(--accent2); } .gc-lanes .l5 { stroke: var(--hl-operator); }
-.gc-lanes .l6 { stroke: var(--hl-constant); } .gc-lanes .l7 { stroke: var(--hl-string); }
+.gc-columns { flex: none; display: block; height: 100%; margin-left: 0.375rem; overflow: visible; }
+.gc-columns path { fill: none; stroke-width: 2; }
+/* The columns take the theme's colours, which read at 3:1 or more on a row in either theme. */
+.gc-columns .l0 { stroke: var(--accent); } .gc-columns .l1 { stroke: var(--ok); }
+.gc-columns .l2 { stroke: var(--warn); } .gc-columns .l3 { stroke: var(--err); }
+.gc-columns .l4 { stroke: var(--accent2); } .gc-columns .l5 { stroke: var(--hl-operator); }
+.gc-columns .l6 { stroke: var(--hl-constant); } .gc-columns .l7 { stroke: var(--hl-string); }
 /* A dash period that divides the row height, so the working tree's line runs on unbroken. */
-.gc-lanes path.wt { stroke-dasharray: 3 2; }
+.gc-columns path.wt { stroke-dasharray: 3 2; }
 .gc-dot { fill: currentColor; stroke-width: 2; }
-.gc-lanes .gc-dot { fill: var(--text); }
-.gc-lanes .gc-dot.merge, .gc-lanes .gc-dot.wt { fill: var(--row-bg); }
-.gc-lanes .gc-dot.wt { stroke-dasharray: 2 2; }
+.gc-columns .gc-dot { fill: var(--text); }
+.gc-columns .gc-dot.merge, .gc-columns .gc-dot.wt { fill: var(--row-bg); }
+.gc-columns .gc-dot.wt { stroke-dasharray: 2 2; }
 .gc-wt .gc-text { font-weight: 600; }
 .gc-subj { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--fs-m); }
 .gc-author { flex: none; width: 6.875rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--fs-s); }

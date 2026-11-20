@@ -68,7 +68,7 @@ class OperatorBridge:
             so the watchdog ends the turn and the loop reaches its steer boundary at once.
         take_requests: What the operator queued for the graph or metric
             since the last call, oldest first.
-        after_auto_commit: Called with the turn and sha of each landed auto-commit; "stop"
+        after_auto_commit: Called with the turn and sha of each auto-commit; "stop"
             ends the loop as interactive_stop, "undo" takes the `/undo` path, "continue" runs on.
         undo_forker: `/undo`: commits the tree onto the session's ref, forks the session before
             its last operator message and restores that tree; returns the new session id and

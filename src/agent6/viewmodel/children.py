@@ -21,16 +21,16 @@ from agent6.viewmodel.session import status as session_status
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class ParentJoin:
-    """A child's recorded join on a parent's chain, not a checkout merge."""
+class ParentMerge:
+    """A child's recorded merge on a parent's chain, not a checkout merge."""
 
     parent: str
     sha: str
 
     @property
     def label(self) -> str:
-        """Name the parent and its join commit."""
-        return f"joined {self.parent}'s chain" + (f" at {self.sha[:12]}" if self.sha else "")
+        """Name the parent and its merge commit."""
+        return f"merged into {self.parent}'s chain" + (f" at {self.sha[:12]}" if self.sha else "")
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -45,12 +45,12 @@ class ChildView:
         task: Its task text; "" when unknown.
         model: Its selector, None for the worker's own settings.
         route: The `provider/model` its manifest records; "" when it never started.
-        status: Where the child stands in its task, including a chain join or a ranking.
+        status: Where the child stands in its task, including a chain merge or a ranking.
         outcome: The recorded dispatch outcome, including `stopped`, `ranked` and `retained`.
             An empty string means the parent has recorded no outcome.
-        join_sha: The join commit on the parent's chain, "" when none.
-        joined_to: The parent session whose chain received the join, "" without a join.
-        imported_ref: The branch the join read, "" when none.
+        parent_merge_sha: The merge commit on the parent's chain, "" when none.
+        merged_into_parent: The parent session whose chain received the merge, "" without a merge.
+        imported_ref: The branch the merge read, "" when none.
         error: The status detail or the reason a child failed to start or merge.
         spend_usd: The cumulative child spend.
         usd_partial: Whether unpriced calls make the spend a lower bound.
@@ -74,7 +74,7 @@ class ChildView:
     route: str = ""
     status: str = "not started"
     outcome: str = ""
-    join_sha: str = ""
+    parent_merge_sha: str = ""
     imported_ref: str = ""
     error: str = ""
     spend_usd: float = 0.0
@@ -88,12 +88,12 @@ class ChildView:
     commits: int | None = None
     verdict_order: tuple[str, ...] = ()
     verdict_summary: str = ""
-    joined_to: str = ""
+    merged_into_parent: str = ""
 
     @property
-    def join_label(self) -> str:
-        """Name the recorded chain join without implying a checkout merge."""
-        return ParentJoin(self.joined_to, self.join_sha).label
+    def parent_merge_label(self) -> str:
+        """Name the recorded chain merge without implying a checkout merge."""
+        return ParentMerge(self.merged_into_parent, self.parent_merge_sha).label
 
     @property
     def number_label(self) -> str:
@@ -222,7 +222,7 @@ def _session_child(
         None
         if row.source == "panel"
         else child_dispatch.read_commit_count(
-            child_dir, child.join if child else None, version=version
+            child_dir, child.merge if child else None, version=version
         )
     )
     if listing.is_session_husk(child_dir):
@@ -276,17 +276,17 @@ def _session_child(
     )
 
 
-def parent_join(
+def parent_merge(
     session_dir: pathlib.Path, lineage: sessions_manifest.ParallelLineage | None
-) -> ParentJoin | None:
-    """Read a child's join from its parent's dispatch, not from the child's merge stamp.
+) -> ParentMerge | None:
+    """Read a child's merge from its parent's dispatch, not from the child's merge stamp.
 
     Args:
         session_dir: The child's run directory.
         lineage: Its recorded parent and group.
 
     Returns:
-        The parent and its join commit; None without a recorded join.
+        The parent and its merge commit; None without a recorded merge.
     """
     if not lineage or not all(
         layout.is_safe_session_id(s) for s in (lineage.parent, lineage.group)
@@ -295,11 +295,11 @@ def parent_join(
     parent = session_dir.parent / lineage.parent
     try:
         record = child_dispatch.read_record(child_dispatch.record_path(parent, lineage.group))
-        join = record.child(session_dir.name).join
+        merge = record.child(session_dir.name).merge
     except (KeyError, child_dispatch.DispatchRecordError):
         return None
-    if record.identity == lineage.group and join and join.status == "joined":
-        return ParentJoin(parent.name, join.sha)
+    if record.identity == lineage.group and merge and merge.status == "merged":
+        return ParentMerge(parent.name, merge.sha)
     return None
 
 
@@ -343,24 +343,24 @@ def _recorded_child(
             usd_partial=child.usage.usd_partial,
             settled=child.settled,
         )
-    join = child.join
-    if join is not None:
+    merge = child.merge
+    if merge is not None:
         status = {
-            "joined": "joined",
+            "merged": "merged",
             "conflict": "failed",
             "failed": "failed",
             "stopped": "stopped",
-        }.get(join.status)
+        }.get(merge.status)
         if not status:
             status = row.status if row.status in ("failed", "stopped") else "finished"
         return dataclasses.replace(
             row,
             status=status,
-            outcome=join.status,
-            imported_ref=join.branch,
-            join_sha=join.sha,
-            joined_to=parent if join.status == "joined" else "",
-            error=join.detail or row.error,
+            outcome=merge.status,
+            imported_ref=merge.branch,
+            parent_merge_sha=merge.sha,
+            merged_into_parent=parent if merge.status == "merged" else "",
+            error=merge.detail or row.error,
             current_tool="",
         )
     if record.state == "ranking" and row.status not in ("failed", "stopped"):

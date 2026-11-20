@@ -348,7 +348,7 @@ def _cmd_run(
         common.error(problem)
         return 2
 
-    # `--parallel` is a run that opens with a dispatch joined by rank; run mode only.
+    # `--parallel` is a run that opens with a dispatch merged by rank; run mode only.
     opening: directive.Segment | None = None
     if parallel_spec and mode == "run":
         # Depth 1: a child (AGENT6_CHILD) never dispatches work itself.

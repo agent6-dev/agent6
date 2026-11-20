@@ -181,10 +181,10 @@ def reconcile(  # noqa: PLR0912  # each durable dispatch state has its recovery 
         dispatcher.open[record.identity] = reopened(record, results)
     dispatcher.settle(conversation, turn)
     stopped = [
-        f"  - {child.session_id}: {parallel_merge.join_words(parallel_merge.join_of(child))}"
+        f"  - {child.session_id}: {parallel_merge.merge_words(parallel_merge.merge_of(child))}"
         for record in child_dispatch.read_records(dispatcher.session_dir)
         for child in record.children
-        if record.source != "panel" and child.join is not None and child.join.status == "stopped"
+        if record.source != "panel" and child.merge is not None and child.merge.status == "stopped"
     ]
     if stopped:
         conversation.notice("[parallel] stopped children:\n" + "\n".join(stopped))

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Join imported children and project their dispatch outcomes into the task graph."""
+"""Merge imported children and project their dispatch outcomes into the task graph."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from agent6.vcs.git import read as git_read
 from agent6.viewmodel import format
 
 
-def join_child_result(
+def merge_child_result(
     root: pathlib.Path,
     res: child_records.ChildResult,
     *,
@@ -28,8 +28,8 @@ def join_child_result(
     fallback_parent: str | None,
     identity: git_read.CommitIdentity | None,
     also_branch: str | None,
-) -> child_records.ChildJoin:
-    """Join one returned child's branch onto the parent's chain.
+) -> child_records.ChildMerge:
+    """Merge one returned child's branch onto the parent's chain.
 
     `chain_merge` leaves HEAD and the operator's checkout alone; the worktree gains the child's
     files. Never raises; the DAG stamp is the segment's (`segment_stamp`). Stopped work
@@ -44,15 +44,15 @@ def join_child_result(
         also_branch: A checked-out branch to move with the ref, or None.
 
     Returns:
-        `joined` with the sha, `no_changes` for a child whose imported tip holds no commit
+        `merged` with the sha, `no_changes` for a child whose imported tip holds no commit
         beyond its base (nothing merged), `conflict` naming the files, or `failed` for a
         child that imported nothing.
     """
     rid = res.spec.session_id
     if not res.ok:
-        return child_records.ChildJoin(rid, res.branch, "failed", "", res.error)
+        return child_records.ChildMerge(rid, res.branch, "failed", "", res.error)
     if not res.has_commits:
-        return child_records.ChildJoin(rid, res.branch, "no_changes", "", "")
+        return child_records.ChildMerge(rid, res.branch, "no_changes", "", "")
     rev = res.imported_ref or res.branch
     try:
         sha = git_ops.chain_merge(
@@ -65,7 +65,7 @@ def join_child_result(
             also_branch=also_branch,
         )
     except (errors.GitError, OSError) as exc:
-        return child_records.ChildJoin(rid, res.branch, "failed", "", str(exc))
+        return child_records.ChildMerge(rid, res.branch, "failed", "", str(exc))
     if sha is None:
         try:
             tip = git_read.chain_tip(root, ref) or fallback_parent
@@ -74,13 +74,13 @@ def join_child_result(
             paths = ()  # the conflict stands, its files unnamed
         names = ", ".join(terminal.printable_name(path) for path in paths)
         detail = f"merge conflict in {names}" if names else "merge conflict"
-        return child_records.ChildJoin(rid, res.branch, "conflict", "", detail)
-    return child_records.ChildJoin(rid, res.branch, "joined", sha, "")
+        return child_records.ChildMerge(rid, res.branch, "conflict", "", detail)
+    return child_records.ChildMerge(rid, res.branch, "merged", sha, "")
 
 
-def stopped_join(res: child_records.ChildResult) -> child_records.ChildJoin:
-    """Return the join of a stopped child: nothing merges, and its branch holds its commits."""
-    return child_records.ChildJoin(
+def stopped_merge(res: child_records.ChildResult) -> child_records.ChildMerge:
+    """Return the merge of a stopped child: nothing merges, and its branch holds its commits."""
+    return child_records.ChildMerge(
         res.spec.session_id,
         res.imported_ref or res.branch,
         "stopped",
@@ -119,30 +119,30 @@ def stopped_words(
 
 
 def segment_stamp(
-    children: Sequence[child_records.ChildJoin],
+    children: Sequence[child_records.ChildMerge],
 ) -> tuple[graph_models.NodeStatus, str, str]:
-    """Reduce one segment's child joins to its DAG stamp.
+    """Reduce one segment's child merges to its DAG stamp.
 
-    A finished result can join, have no changes, or retain its ref under model-owned git.
-    Only a join records a commit on the parent task.
+    A finished result can merge, have no changes, or retain its ref under model-owned git.
+    Only a merge records a commit on the parent task.
 
     Args:
-        children: The segment's joins.
+        children: The segment's merges.
 
     Returns:
         The status, the note and the sha ("" when failed).
     """
-    joined = [j for j in children if j.status == "joined"]
+    merged = [j for j in children if j.status == "merged"]
     note = "; ".join(child_note(j) for j in children)
-    if joined or any(j.status in ("no_changes", "retained") for j in children):
-        return "passed", note, joined[-1].sha if joined else ""
+    if merged or any(j.status in ("no_changes", "retained") for j in children):
+        return "passed", note, merged[-1].sha if merged else ""
     return "failed", note, ""
 
 
-def join_words(j: child_records.ChildJoin) -> str:
-    """Return how a child's work joined, as the background roster states it."""
-    if j.status == "joined":
-        return f"joined at {j.sha[:12]}"
+def merge_words(j: child_records.ChildMerge) -> str:
+    """Return how a child's work merged, as the background roster states it."""
+    if j.status == "merged":
+        return f"merged into parent chain at {j.sha[:12]}"
     if j.status == "ranked":
         return f"ranked {j.detail}; not merged; {j.branch} holds its work"
     if j.status == "retained":
@@ -154,16 +154,16 @@ def join_words(j: child_records.ChildJoin) -> str:
     return "no changes" if j.status == "no_changes" else j.status
 
 
-def child_note(j: child_records.ChildJoin) -> str:
+def child_note(j: child_records.ChildMerge) -> str:
     """Return one child's outcome as a DAG note line."""
-    if j.status in ("joined", "retained"):
-        return f"{j.session_id} {join_words(j)}"
+    if j.status in ("merged", "retained"):
+        return f"{j.session_id} {merge_words(j)}"
     if j.status == "no_changes":
         return f"{j.session_id} made no changes"
     if j.status == "conflict":
         return f"{j.session_id} conflicted; merge manually"
     if j.status == "ranked":
-        return f"{j.session_id} ranked {j.detail}; not joined"
+        return f"{j.session_id} ranked {j.detail}; not merged"
     if j.status == "stopped":
         return f"{j.session_id} {j.detail}; not merged"
     return f"{j.session_id} failed: {j.detail}"
@@ -230,14 +230,14 @@ def ranked_by(ranking: child_dispatch.RankRecord) -> str:
 
 def summary_text(
     group: str,
-    children: list[child_records.ChildJoin],
+    children: list[child_records.ChildMerge],
     ranking: child_dispatch.RankRecord | None = None,
 ) -> str:
-    """Return the one notice that says how each child of a completed dispatch joined.
+    """Return the one notice that says how each child of a completed dispatch merged.
 
     Args:
         group: The dispatch's group id.
-        children: Each child's join, in dispatch order.
+        children: Each child's merge, in dispatch order.
         ranking: How its attempts were ranked; None for a task with one child and for a panel.
 
     Returns:
@@ -246,14 +246,16 @@ def summary_text(
     """
     lines = [f"[parallel] group {group} complete ({len(children)} child(ren)):"]
     for j in children:
-        if j.status == "joined":
-            lines.append(f"  - {j.session_id} ({j.branch}): joined at {j.sha[:12]}")
+        if j.status == "merged":
+            lines.append(
+                f"  - {j.session_id} ({j.branch}): merged into parent chain at {j.sha[:12]}"
+            )
         elif j.status == "no_changes":
             # A panel's reviewer the deadline ended did not finish: the line says so.
             ended = j.detail or "finished"
-            lines.append(f"  - {j.session_id} ({j.branch}): {ended} with no changes to join.")
+            lines.append(f"  - {j.session_id} ({j.branch}): {ended} with no changes to merge.")
         elif j.status == "retained":
-            lines.append(f"  - {j.session_id}: {join_words(j)}.")
+            lines.append(f"  - {j.session_id}: {merge_words(j)}.")
         elif j.status == "stopped":
             words = stopped_words(j.detail, "the branch", j.commits, j.context)
             lines.append(f"  - {j.session_id} ({j.branch}): {words}.")
@@ -266,16 +268,16 @@ def summary_text(
             )
         elif j.status == "ranked":
             lines.append(
-                f"  - {j.session_id} ({j.branch}): ranked {j.detail}; not joined, the branch"
+                f"  - {j.session_id} ({j.branch}): ranked {j.detail}; not merged, the branch"
                 " holds its work."
             )
         else:
-            lines.append(f"  - {j.session_id} ({j.branch}): FAILED -- {j.detail}; nothing joined.")
+            lines.append(f"  - {j.session_id} ({j.branch}): FAILED -- {j.detail}; nothing merged.")
     if ranking is not None and ranking.order:
         lines.append(ranked_by(ranking))
     if children and all(j.status == "stopped" for j in children):
         lines.append("Every child stopped: nothing merged.")
-    elif any(j.status == "joined" for j in children):
+    elif any(j.status == "merged" for j in children):
         lines.append("Review what merged and continue.")
     else:
         lines.append(
@@ -286,27 +288,27 @@ def summary_text(
     return "\n".join(lines)
 
 
-def rank_summary(children: Sequence[child_records.ChildJoin]) -> str:
-    """Return what a rank join did, for the operator: one line per child, in child order.
+def rank_summary(children: Sequence[child_records.ChildMerge]) -> str:
+    """Return what a rank merge did, for the operator: one line per child, in child order.
 
     Args:
-        children: Each child's join.
+        children: Each child's merge.
 
     Returns:
-        The count line and each child's outcome: joined, changed nothing, its place with the
+        The count line and each child's outcome: merged, changed nothing, its place with the
         branch that holds its work, stopped, or its failure.
     """
-    ranked = sum(1 for j in children if j.status in ("joined", "no_changes", "ranked", "retained"))
+    ranked = sum(1 for j in children if j.status in ("merged", "no_changes", "ranked", "retained"))
     lines = [f"{ranked} of {len(children)} child(ren) ranked:"]
     for j in children:
-        if j.status == "joined":
-            what = f"first; joined at {j.sha[:12]}"
+        if j.status == "merged":
+            what = f"first; merged into parent chain at {j.sha[:12]}"
         elif j.status == "no_changes":
             what = "first; it changed nothing"
         elif j.status == "ranked":
             what = f"{j.detail}; {j.branch} holds its work"
         elif j.status == "retained":
-            what = join_words(j)
+            what = merge_words(j)
         elif j.status == "conflict":
             what = f"first; its merge conflicted, {j.branch} holds its work"
         elif j.status == "stopped":
@@ -317,20 +319,20 @@ def rank_summary(children: Sequence[child_records.ChildJoin]) -> str:
     return "\n".join(lines)
 
 
-def join_of(child: child_dispatch.ChildRecord) -> child_records.ChildJoin:
-    """Return a recorded child's join; a child never joined reads as failed."""
-    join = child.join
-    if join is None:
-        return child_records.ChildJoin(child.session_id, "", "failed", "", "not joined")
-    return child_records.ChildJoin(
+def merge_of(child: child_dispatch.ChildRecord) -> child_records.ChildMerge:
+    """Return a recorded child's merge; a child never merged reads as failed."""
+    merge = child.merge
+    if merge is None:
+        return child_records.ChildMerge(child.session_id, "", "failed", "", "not merged")
+    return child_records.ChildMerge(
         child.session_id,
-        join.branch,
-        join.status,
-        join.sha,
-        join.detail,
+        merge.branch,
+        merge.status,
+        merge.sha,
+        merge.detail,
         child.report,
-        commits=join.commits,
-        context=join.context,
+        commits=merge.commits,
+        context=merge.context,
     )
 
 
@@ -393,7 +395,7 @@ def stamp_parallel_node(
     sha: str = "",
     log: Callable[[str], None],
 ) -> None:
-    """Record a dispatched node's join sha, when given, then its final status.
+    """Record a dispatched node's merge sha, when given, then its final status.
 
     A curator fault is logged, never raised.
 
@@ -402,7 +404,7 @@ def stamp_parallel_node(
         node_id: The node, or None.
         status: The final status.
         note: The status note.
-        sha: The join sha, or "".
+        sha: The merge sha, or "".
         log: The run's text logger.
     """
     if curator is None or node_id is None:
@@ -420,10 +422,10 @@ def stamp_parallel_node(
 def stamp_segment_node(
     curator: graph_curator.GraphCurator | None,
     node_id: str | None,
-    children: list[child_records.ChildJoin],
+    children: list[child_records.ChildMerge],
     *,
     log: Callable[[str], None],
 ) -> None:
-    """Stamp one segment's DAG node from its children's joins (`segment_stamp`)."""
+    """Stamp one segment's DAG node from its children's merges (`segment_stamp`)."""
     status, note, sha = segment_stamp(children)
     stamp_parallel_node(curator, node_id, status=status, note=note, sha=sha, log=log)

@@ -381,7 +381,7 @@ def replies(
 
     Args:
         dispatcher: The run's dispatcher.
-        record: The judges' record, each child joined.
+        record: The dispatch record with an outcome for each judge.
         ids: The attempts' session ids.
 
     Returns:
@@ -393,8 +393,8 @@ def replies(
     out: list[JudgeReply] = []
     for child in record.children:
         failed = ""
-        if child.join is not None and child.join.status == "failed":
-            failed = child.join.detail or "its run failed"
+        if child.merge is not None and child.merge.status == "failed":
+            failed = child.merge.detail or "its run failed"
         out.append(
             read_reply(
                 child.model or "worker",
@@ -448,7 +448,7 @@ def start(
     record = child_dispatch.DispatchRecord(
         identity=identity,
         source="panel",
-        join_policy="record_only",
+        merge_policy="record_only",
         owner=dispatcher.execution_id,
         turn=turn,
         base=task.base,
@@ -506,7 +506,7 @@ def rank(
 
     Args:
         dispatcher: The run's dispatcher.
-        task: The open rank join.
+        task: The open rank merge.
         results: Its children's results.
         turn: The turn just completed.
 

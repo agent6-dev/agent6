@@ -388,9 +388,9 @@ def stamp_model(session_dir: pathlib.Path, route: kinds.ModelRoute) -> None:
 
 
 def stamp_continued_from(session_dir: pathlib.Path, sha: str, branch: str) -> None:
-    """Move the run's base to the commit its chain continues from after its work landed.
+    """Move the run's base to the commit its chain continues from after its work merged.
 
-    The merge record's tip moves with it: the commit adds nothing over what landed, so the
+    The merge record's tip moves with it: the commit adds nothing to the merged work, so the
     run still reads merged, and its next merge starts from there.
 
     Args:

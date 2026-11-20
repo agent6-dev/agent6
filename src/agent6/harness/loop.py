@@ -152,7 +152,7 @@ class Harness:
         contract: The bounded conversation a `reviewer` session drives in place of a
             worker's: its own system prompt and opening, a call ceiling told on every turn,
             no gates, no advisors; None for the worker's execution.
-        opening: The dispatch a fresh run makes in place of its first model call, joined by
+        opening: The dispatch a fresh run makes in place of its first model call, merged by
             rank: `run --parallel`'s spec and task. The run ends after the task completes.
             None for a run that opens with the model.
         turns_reached: The turn being driven, 0 before the loop starts; the app's

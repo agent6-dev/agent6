@@ -50,7 +50,7 @@ def commits_ref(manifest: sessions_manifest.SessionManifest, repo: pathlib.Path)
     """Return the ref holding the run's commits, what merge, diff and the footer read.
 
     The chain is the record and the branch a view of it: an operator's commit on the
-    run branch takes it off the chain, and the run's later commits land on the chain
+    run branch takes it off the chain, and the run's later commits go on the chain
     alone, so the branch would show a frozen prefix of the run.
 
     Args:
@@ -75,16 +75,16 @@ def manifest_branches(
     """Return the run header's branch facts from the session's manifest.
 
     The event fold does not carry them, and an operator needs to see where a run's
-    work lives and where Merge lands.
+    work lives and where Merge puts the work.
 
     Args:
         session_dir: The session's state dir.
         repo: The repository; with it, `run_branch` is claimed only while the branch
-            exists and `merged_into` only while the merge stamp still describes it
+            exists and `merged_into_checkout` only while the merge stamp still describes it
             (a resumed run commits past its stamp).
 
     Returns:
-        `run_branch`, `base_branch`, `merged_into`, `commits_ref` and `branch_line`
+        `run_branch`, `base_branch`, `merged_into_checkout`, `commits_ref` and `branch_line`
         (their one wording), each present when known; empty for a run with no manifest.
     """
     try:
@@ -104,7 +104,7 @@ def branch_facts(
         base_branch: The recorded base branch when known.
         worktree: The linked worktree's absolute path when recorded.
         commits_ref: The ref holding the run's commits when available.
-        merged_into: The merge destination while the stamp still covers the run.
+        merged_into_checkout: The merge destination while the stamp still covers the run.
         branch_line: The rendered branch and merge facts.
 
     Args:
@@ -125,17 +125,17 @@ def branch_facts(
     if repo is not None and (ref := commits_ref(manifest, repo)):
         out["commits_ref"] = ref
     stamp = manifest.merged
-    merged_into = ""
+    merged_into_checkout = ""
     if stamp and stamp.into:
         holds = repo is None or git_read.merge_stamp_holds(
             repo, manifest.session_id, manifest.run_branch or "", stamp.tip
         )
-        merged_into = stamp.into if holds else ""
-    if merged_into:
-        out["merged_into"] = merged_into
+        merged_into_checkout = stamp.into if holds else ""
+    if merged_into_checkout:
+        out["merged_into_checkout"] = merged_into_checkout
     # The line names the manifest's branch when merged, pruned or not, else the existing one.
-    named = (manifest.run_branch or "") if merged_into else run_branch
-    line = format.format_branch(named, manifest.base_branch or "", merged_into)
+    named = (manifest.run_branch or "") if merged_into_checkout else run_branch
+    line = format.format_branch(named, manifest.base_branch or "", merged_into_checkout)
     if line:
         out["branch_line"] = line
     return out

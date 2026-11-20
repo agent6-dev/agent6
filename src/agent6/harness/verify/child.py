@@ -34,12 +34,12 @@ def covering_pass(
         for record in records
         if record.state == "complete" and record.source != "panel"
         for child in record.children
-        if child.join is not None
-        and child.join.status not in ("failed", "conflict", "stopped")
+        if child.merge is not None
+        and child.merge.status not in ("failed", "conflict", "stopped")
         and layout.is_safe_session_id(child.session_id)
     ]
-    # If several children tested identical content, cite the one whose work joined first.
-    for child in sorted(candidates, key=lambda c: not (c.join and c.join.status == "joined")):
+    # If several children tested identical content, cite the one whose work merged first.
+    for child in sorted(candidates, key=lambda c: not (c.merge and c.merge.status == "merged")):
         scan = log.scan_session_log(session_dir.parent / child.session_id / layout.LOGS_NAME)
         if (
             not scan.finished

@@ -208,7 +208,7 @@
     "10:00:11.000  steer.signalled   ",
     "10:00:11.500  steer.injected    ",
     "10:00:12.000  parallel.dispatched",
-    "10:00:13.000  parallel.joined   ",
+    "10:00:13.000  parallel.merged   ",
     "10:00:13.500  parallel.failed   ",
     "10:00:14.000  totally.new       ",
     "10:00:14.500  ?                 ",

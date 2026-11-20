@@ -2,19 +2,19 @@
 // The Git tab: the commit graph over the refs the filter keeps, the working tree's
 // uncommitted files on top when there are any, a commit's files with each file's diff,
 // and a compare of any two revisions. The server lists, verifies and caps (/api/git/*);
-// this file lays out the lanes and paints. Filter and compare state outlive a visit to
+// this file lays out the columns and paints. Filter and compare state outlive a visit to
 // another tab; the graph and the working tree are fetched again on return, and on ↻.
 
-// A lane draws in a 14-by-30 box the stylesheet scales to the row's height.
-const GIT_LANE_W = 14, GIT_ROW_H = 30, GIT_LANES_MAX = 16;
+// A column draws in a 14-by-30 box the stylesheet scales to the row's height.
+const GIT_COLUMN_W = 14, GIT_ROW_H = 30, GIT_COLUMNS_MAX = 16;
 // The server's sentinel revision for the working tree, a diff or compare head.
 const GIT_WORKTREE = 'WORKTREE';
 // How a file's diff is shown; the choice is kept per browser.
 const DIFF_MODE_KEY = 'a6-diff-mode';
 const DIFF_MODES = ['inline', 'split', 'old', 'new'];
 const GIT_WORKTREE_PICK = { rev: GIT_WORKTREE, label: 'working tree' };
-// Lane n draws in class `l<n mod 8>`, one of the theme's eight colours (styles_git.css).
-const GIT_LANE_COLORS = 8;
+// Column n draws in class `l<n mod 8>`, one of the theme's eight colours (styles_git.css).
+const GIT_COLUMN_COLORS = 8;
 const GIT_KIND_TITLE = { branch: 'branch', remote: 'remote-tracking branch', tag: 'tag', agent6: 'agent6 run ref', head: 'detached HEAD' };
 const gitState = {
   groupOn: { branch: true, remote: true, tag: true, agent6: false }, // agent6 chain refs are off until asked for
@@ -22,9 +22,9 @@ const gitState = {
   compare: { base: null, head: null }, // each { rev, label } or null
 };
 
-// Lanes, as git log --graph draws them: each slot waits for one sha, and several slots may
+// Columns, as git log --graph draws them: each slot waits for one sha, and several slots may
 // wait for the same one. A commit takes the lowest slot waiting for it (or a free one when
-// none was) and hands it on to its first parent, so a branch keeps its lane down to its
+// none was) and hands it on to its first parent, so a branch keeps its column down to its
 // root; every other slot waiting for the commit curves into its dot. Each further parent
 // gets the slot waiting for it, or a new one. The working tree lays out as a commit whose
 // parent is HEAD; its line down to HEAD keeps a slot of its own, `wt` on each row it enters.
@@ -35,13 +35,13 @@ function gitLayout(commits) {
   const free = () => { let i = slots.indexOf(null); if (i < 0) { slots.push(null); i = slots.length - 1; } return i; };
   for (const c of commits) {
     const before = slots.slice(), wtAbove = wt;
-    let lane = slots.indexOf(c.sha);
-    if (lane < 0) lane = free();
+    let column = slots.indexOf(c.sha);
+    if (column < 0) column = free();
     const joins = [];
-    for (let i = lane + 1; i < slots.length; i++) if (slots[i] === c.sha) { joins.push(i); slots[i] = null; }
-    if (lane === wt || joins.includes(wt)) wt = -1;
-    slots[lane] = c.parents[0] || null;
-    if (c.sha === GIT_WORKTREE && c.parents.length) wt = lane;
+    for (let i = column + 1; i < slots.length; i++) if (slots[i] === c.sha) { joins.push(i); slots[i] = null; }
+    if (column === wt || joins.includes(wt)) wt = -1;
+    slots[column] = c.parents[0] || null;
+    if (c.sha === GIT_WORKTREE && c.parents.length) wt = column;
     const merges = [];
     for (const p of c.parents.slice(1)) {
       let k = slots.findIndex((s, i) => s === p && i !== wt);
@@ -49,41 +49,41 @@ function gitLayout(commits) {
       merges.push(k);
     }
     while (slots.length && slots[slots.length - 1] === null) slots.pop();
-    rows.push({ lane, before, after: slots.slice(), joins, merges, wt: wtAbove });
+    rows.push({ column, before, after: slots.slice(), joins, merges, wt: wtAbove });
   }
   return rows;
 }
 
-// One row's lanes and its dot: `dot` is '', 'merge' (hollow) or 'wt' (the working tree,
+// One row's columns and its dot: `dot` is '', 'merge' (hollow) or 'wt' (the working tree,
 // dashed), and HEAD's is larger. The working tree's line down to HEAD is dashed.
-function gitLanesSvg(lay, cols, dot, isHead) {
+function gitColumnsSvg(lay, cols, dot, isHead) {
   const NS = 'http://www.w3.org/2000/svg';
   // A line leaving the row runs one unit past its edge, so rows meeting mid-pixel show no seam.
-  const W = GIT_LANE_W, H = GIT_ROW_H, mid = H / 2, top = -1, bottom = H + 1;
+  const W = GIT_COLUMN_W, H = GIT_ROW_H, mid = H / 2, top = -1, bottom = H + 1;
   const x = i => W / 2 + i * W;
-  const color = i => 'l' + i % GIT_LANE_COLORS;
+  const color = i => 'l' + i % GIT_COLUMN_COLORS;
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', `0 0 ${cols * W} ${H}`);
-  svg.setAttribute('class', 'gc-lanes'); svg.setAttribute('aria-hidden', 'true');
-  const path = (d, lane, dashed) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); p.setAttribute('class', color(lane) + (dashed ? ' wt' : '')); svg.appendChild(p); };
+  svg.setAttribute('class', 'gc-columns'); svg.setAttribute('aria-hidden', 'true');
+  const path = (d, column, dashed) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); p.setAttribute('class', color(column) + (dashed ? ' wt' : '')); svg.appendChild(p); };
   // A merge curves down out of the dot into its parent's slot; a join curves down into the dot.
   const curve = (from, to) => `M${x(from)} ${mid} C${x(from)} ${H} ${x(to)} ${mid} ${x(to)} ${H} V${bottom}`;
   const join = (from, to) => `M${x(from)} ${top} V0 C${x(from)} ${mid} ${x(to)} 0 ${x(to)} ${mid}`;
   const n = Math.max(lay.before.length, lay.after.length);
   for (let i = 0; i < n && i < cols; i++) {
-    if (i !== lay.lane && lay.before[i] && lay.after[i] === lay.before[i]) path(`M${x(i)} ${top} V${bottom}`, i, i === lay.wt);
+    if (i !== lay.column && lay.before[i] && lay.after[i] === lay.before[i]) path(`M${x(i)} ${top} V${bottom}`, i, i === lay.wt);
   }
-  if (lay.lane < cols) {
-    if (lay.before[lay.lane]) path(`M${x(lay.lane)} ${top} V${mid}`, lay.lane, lay.lane === lay.wt);
+  if (lay.column < cols) {
+    if (lay.before[lay.column]) path(`M${x(lay.column)} ${top} V${mid}`, lay.column, lay.column === lay.wt);
     // It starts a unit up, under the dot, so a dashed line keeps its step into the next row.
-    if (lay.after[lay.lane]) path(`M${x(lay.lane)} ${mid - 1} V${bottom}`, lay.lane, dot === 'wt');
-    for (const j of lay.joins) if (j < cols) path(join(j, lay.lane), j, j === lay.wt);
-    for (const k of lay.merges) if (k < cols) path(curve(lay.lane, k), k);
+    if (lay.after[lay.column]) path(`M${x(lay.column)} ${mid - 1} V${bottom}`, lay.column, dot === 'wt');
+    for (const j of lay.joins) if (j < cols) path(join(j, lay.column), j, j === lay.wt);
+    for (const k of lay.merges) if (k < cols) path(curve(lay.column, k), k);
   }
-  // A commit on a lane past the cap draws its dot in the last column, so every commit keeps one.
+  // A commit on a column past the cap draws its dot in the last column, so every commit keeps one.
   const circle = document.createElementNS(NS, 'circle');
-  circle.setAttribute('cx', x(Math.min(lay.lane, cols - 1))); circle.setAttribute('cy', mid); circle.setAttribute('r', isHead ? 5 : 4);
-  circle.setAttribute('class', 'gc-dot ' + color(lay.lane) + (dot ? ' ' + dot : ''));
+  circle.setAttribute('cx', x(Math.min(lay.column, cols - 1))); circle.setAttribute('cy', mid); circle.setAttribute('r', isHead ? 5 : 4);
+  circle.setAttribute('class', 'gc-dot ' + color(lay.column) + (dot ? ' ' + dot : ''));
   svg.appendChild(circle);
   return svg;
 }
@@ -506,12 +506,12 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     const dirty = wt.files.length > 0;
     const lays = gitLayout(dirty ? [{ sha: GIT_WORKTREE, parents: head.sha ? [head.sha] : [] }, ...commits] : commits);
     let cols = 1;
-    for (const l of lays) cols = Math.max(cols, l.before.length, l.after.length, l.lane + 1);
-    cols = Math.min(cols, GIT_LANES_MAX);
+    for (const l of lays) cols = Math.max(cols, l.before.length, l.after.length, l.column + 1);
+    cols = Math.min(cols, GIT_COLUMNS_MAX);
     if (dirty) {
       const row = el('div', 'gc-row gc-wt');
       row.dataset.sha = GIT_WORKTREE;
-      row.appendChild(gitLanesSvg(lays.shift(), cols, 'wt', false));
+      row.appendChild(gitColumnsSvg(lays.shift(), cols, 'wt', false));
       const n = wt.files.length + (wt.truncated ? '+' : '');
       const subj = el('div', 'gc-subj');
       subj.appendChild(el('span', 'gc-text', 'Working tree · ' + n + (wt.files.length === 1 && !wt.truncated ? ' uncommitted file' : ' uncommitted files')));
@@ -522,7 +522,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     commits.forEach((c, i) => {
       const row = el('div', 'gc-row');
       row.dataset.sha = c.sha;
-      row.appendChild(gitLanesSvg(lays[i], cols, c.is_merge ? 'merge' : '', c.sha === head.sha));
+      row.appendChild(gitColumnsSvg(lays[i], cols, c.is_merge ? 'merge' : '', c.sha === head.sha));
       const subj = el('div', 'gc-subj');
       // The row shows its first ref and counts the rest; its name and the commit panel list them all.
       const named = commitRefs(c);

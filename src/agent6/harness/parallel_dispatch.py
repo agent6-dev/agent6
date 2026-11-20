@@ -6,7 +6,7 @@
 injected group spawner. A work dispatch starts its children in the background and returns;
 `settle` merges what finished at a turn boundary. `parallel_merge` projects child results into
 ordered merges, DAG stamps and notices; `parallel_panel` runs a panel's record-only batches
-through the same executor, and a rank join merges the one child `parallel_rank` puts first.
+through the same executor. Only the first-ranked child merges into the parent chain.
 """
 
 from __future__ import annotations
@@ -209,7 +209,7 @@ class ParallelDispatcher:
             record = child_dispatch.DispatchRecord(
                 identity=identity,
                 source=source,
-                join_policy="rank" if len(children) > 1 else "merge",
+                merge_policy="rank" if len(children) > 1 else "merge",
                 owner=self.execution_id,
                 turn=turn,
                 base=base,
@@ -344,7 +344,7 @@ class ParallelDispatcher:
                     )
                 )
         self.emit(journal.ParallelFailed(group=identity, error=str(exc)))
-        message = f"[parallel] group {identity} dispatch failed: {exc}. Nothing was joined."
+        message = f"[parallel] group {identity} dispatch failed: {exc}. Nothing was merged."
         record = self.settled(record, {}).advanced("complete", message=message)
         self.write(record)
         return record
@@ -391,7 +391,7 @@ class ParallelDispatcher:
             task.record = record
             if len(results) < len(task.children):
                 continue
-            if record.join_policy == "rank" and record.ranking is None:
+            if record.merge_policy == "rank" and record.ranking is None:
                 record = task.record = parallel_rank.rank(self, task, results, turn=turn)
                 if record.ranking is None:
                     # Its judges run, or a stop holds them: a later boundary or the end settles it.
@@ -457,12 +457,14 @@ class ParallelDispatcher:
                 error=f"its watch failed: {exc}",
             )
 
-    def joins(self, group: str) -> list[child_records.ChildJoin]:
-        """Return the joins a dispatch has recorded, in child order; none before it completed."""
+    def merges(self, group: str) -> list[child_records.ChildMerge]:
+        """Return the merges a dispatch has recorded, in child order; none before it completed."""
         if self.session_dir is None:
             return []
         record = child_dispatch.read_record(child_dispatch.record_path(self.session_dir, group))
-        return [parallel_merge.join_of(child) for child in record.children if child.join is not None]
+        return [
+            parallel_merge.merge_of(child) for child in record.children if child.merge is not None
+        ]
 
     def close(self, turn: int) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """End the execution's children: stop each still running, wait, charge what it used.
@@ -511,11 +513,11 @@ class ParallelDispatcher:
         *,
         turn: int | None = None,
     ) -> child_records.DispatchResult:
-        """Settle, join, stamp and complete a dispatch whose children have returned.
+        """Settle, merge, stamp and complete a dispatch whose children have returned.
 
         Work merges on a clean tree: the parent's uncommitted work is committed first. Each
         boundary advances the record first, so a crash in between leaves a resume one step to
-        finish, never one to repeat. A rank join comes here with its ranking written.
+        finish, never one to repeat. A rank merge comes here with its ranking written.
 
         Args:
             record: The dispatch's record.
@@ -528,14 +530,14 @@ class ParallelDispatcher:
         by_id = {res.spec.session_id: res for res in results}
         turn = record.turn if turn is None else turn
         record = self.settled(record, by_id, turn=turn)
-        clean = record.join_policy == "record_only" or self.ensure_clean(turn, "merging children")
-        record = self.joined(record, by_id, clean=clean)
-        joins = [parallel_merge.join_of(child) for child in record.children]
+        clean = record.merge_policy == "record_only" or self.ensure_clean(turn, "merging children")
+        record = self.merged(record, by_id, clean=clean)
+        merges = [parallel_merge.merge_of(child) for child in record.children]
         if record.node_id is None:
             # Its id is on the record before its stamp: a resume never adds a second node.
             record = self.noded(record)
             self.write(record)
-        parallel_merge.stamp_segment_node(self.curator, record.node_id, joins, log=self.log)
+        parallel_merge.stamp_segment_node(self.curator, record.node_id, merges, log=self.log)
         self.emit_graph_snapshot()
         payload = [
             {
@@ -547,24 +549,24 @@ class ParallelDispatcher:
                 "commits": j.commits,
                 "context": dataclasses.asdict(j.context),
             }
-            for j in joins
+            for j in merges
         ]
         self.emit(
-            journal.ParallelJoined(group=record.identity, children=payload, source=record.source)
+            journal.ParallelMerged(group=record.identity, children=payload, source=record.source)
         )
         failures = [
             p
-            for p, j in zip(payload, joins, strict=True)
-            # A stopped child is no failed join: nothing of it was meant to merge.
-            if j.status not in ("joined", "no_changes", "ranked", "stopped", "retained")
+            for p, j in zip(payload, merges, strict=True)
+            # A stopped child is no failed merge: nothing of it was meant to merge.
+            if j.status not in ("merged", "no_changes", "ranked", "stopped", "retained")
         ]
         if failures:
             self.emit(journal.ParallelFailed(group=record.identity, children=failures))
-        message = parallel_merge.summary_text(record.identity, joins, record.ranking)
+        message = parallel_merge.summary_text(record.identity, merges, record.ranking)
         record = record.advanced("complete", message=message)
         self.write(record)
         return child_records.DispatchResult(
-            record.identity, True, tuple(joins), message, base=record.base
+            record.identity, True, tuple(merges), message, base=record.base
         )
 
     def settled(
@@ -616,17 +618,17 @@ class ParallelDispatcher:
         self.write(record)
         return record
 
-    def joined(
+    def merged(
         self,
         record: child_dispatch.DispatchRecord,
         by_id: dict[str, child_records.ChildResult],
         *,
         clean: bool = True,
     ) -> child_dispatch.DispatchRecord:
-        """Join each child not yet joined, in child order, recording each join as it merges.
+        """Merge the remaining children in order and record each outcome.
 
-        A rank join joins its ranking's winner alone; with no winner it joins none.
-        A stopped child never joins: its record names the branch that holds its commits.
+        A ranked dispatch merges only its winner, if any.
+        A stopped child never merges: its record names the branch that holds its commits.
 
         Args:
             record: The dispatch's record.
@@ -634,19 +636,19 @@ class ParallelDispatcher:
             clean: Whether the tree holds only committed work; a merge needs it.
 
         Returns:
-            The record in the `joining` state with every child's join recorded.
+            The record in the `merging` state with every child's merge recorded.
         """
-        record = record.advanced("joining")
+        record = record.advanced("merging")
         self.write(record)
         order = record.ranking.order if record.ranking is not None else ()
         winner = record.ranking.winner if record.ranking is not None else ""
         for child in record.children:
-            if child.join is not None:
+            if child.merge is not None:
                 continue
             before = self.chain.tip() or ""
             res = by_id.get(child.session_id)
-            if record.join_policy == "record_only":
-                join = child_records.ChildJoin(
+            if record.merge_policy == "record_only":
+                merge = child_records.ChildMerge(
                     child.session_id,
                     "",
                     "no_changes" if res is not None and res.ok else "failed",
@@ -654,7 +656,7 @@ class ParallelDispatcher:
                     (res.error or res.stopped_by) if res is not None else "no imported record",
                 )
             elif res is not None and res.ok and res.stopped_by:
-                join = parallel_merge.stopped_join(res)
+                merge = parallel_merge.stopped_merge(res)
             elif (
                 res is not None
                 and res.ok
@@ -669,7 +671,7 @@ class ParallelDispatcher:
                     if child.session_id in order
                     else ""
                 )
-                join = child_records.ChildJoin(
+                merge = child_records.ChildMerge(
                     child.session_id,
                     res.imported_ref or (res.branch if self.chain.ref else ""),
                     "ranked"
@@ -683,7 +685,7 @@ class ParallelDispatcher:
                 )
             elif not clean and res is not None and res.ok and res.has_commits:
                 # Its branch stays imported: nothing merges over work no commit holds.
-                join = child_records.ChildJoin(
+                merge = child_records.ChildMerge(
                     child.session_id,
                     res.imported_ref or res.branch,
                     "failed",
@@ -692,17 +694,17 @@ class ParallelDispatcher:
                     " (git.commit_per_turn is off)",
                 )
             else:
-                join = self.join_child(child, res)
+                merge = self.merge_child(child, res)
             record = record.with_child(
                 child.model_copy(
                     update={
-                        "join": child_dispatch.JoinRecord(
-                            branch=join.branch,
-                            status=join.status,
-                            sha=join.sha,
-                            detail=join.detail,
-                            commits=join.commits,
-                            context=join.context,
+                        "merge": child_dispatch.MergeRecord(
+                            branch=merge.branch,
+                            status=merge.status,
+                            sha=merge.sha,
+                            detail=merge.detail,
+                            commits=merge.commits,
+                            context=merge.context,
                             target_before=before,
                             target_after=self.chain.tip() or "",
                         ),
@@ -713,21 +715,21 @@ class ParallelDispatcher:
             self.write(record)
         return record
 
-    def join_child(
+    def merge_child(
         self, child: child_dispatch.ChildRecord, res: child_records.ChildResult | None
-    ) -> child_records.ChildJoin:
-        """Join one child, or recognise a merge already on the chain.
+    ) -> child_records.ChildMerge:
+        """Merge one child, or recognise a merge already on the chain.
 
         Args:
             child: The child's record.
             res: Its result, None when it never started.
 
         Returns:
-            The join.
+            The merge.
         """
         if res is None:
             branch = git_read.run_branch_for(child.session_id)
-            return child_records.ChildJoin(child.session_id, branch, "failed", "", "never started")
+            return child_records.ChildMerge(child.session_id, branch, "failed", "", "never started")
         ref = self.chain.ref or ""
         if (
             res.ok
@@ -738,10 +740,10 @@ class ParallelDispatcher:
         ):
             # Merged before the record advanced: recorded now, never merged twice.
             sha = git_read.merge_commit_for(self.chain.root, ref, res.imported_tip)
-            return child_records.ChildJoin(
-                res.spec.session_id, res.branch, "joined", sha or (self.chain.tip() or ""), ""
+            return child_records.ChildMerge(
+                res.spec.session_id, res.branch, "merged", sha or (self.chain.tip() or ""), ""
             )
-        return parallel_merge.join_child_result(
+        return parallel_merge.merge_child_result(
             self.chain.root,
             res,
             ref=ref,

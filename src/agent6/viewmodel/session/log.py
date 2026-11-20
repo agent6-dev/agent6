@@ -38,7 +38,7 @@ class LogScan:
         verification: The final verification word, or None when unknown.
         verify_scoped: The judging gate ran scoped.
         stop_reason: The session.stop reason word.
-        stranded: The latest execution finished with its edits uncommitted and no commit landed.
+        stranded: The latest execution finished with uncommitted edits and no commit.
         setup_output: The workspace's setup command and retained output, or its failure diagnostic.
         end_summary: The journaled end sentence, "" while an execution runs or none was recorded.
         gate_swapped: The verify gate changed between executions, so the first baseline is

@@ -200,7 +200,7 @@ class RunHeader(widgets.Static):
         """Return the branch line: the run branch and its base, or the branch merged.
 
         Cached while the run lives. A finished run re-reads it every few seconds,
-        since the auto-merge lands after the end while a held screen keeps
+        since the auto-merge happens after the end while a held screen keeps
         repainting; a resume in place drops the cache, since a commit past the stamp
         unmakes the merge.
 

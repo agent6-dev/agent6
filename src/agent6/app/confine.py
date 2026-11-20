@@ -83,7 +83,7 @@ def _confinement_warning(
             "kernel-enforced isolation."
             + (
                 " git.control = 'agent6' is not enforced without the sandbox; "
-                "a commit the model runs lands on the checkout's branch."
+                "a commit the model makes goes on the checkout's branch."
                 if cfg.git.control == "agent6"
                 else ""
             )

@@ -111,7 +111,7 @@ class TaskNode(pydantic.BaseModel):
         created_at: When it was added.
         updated_at: When it was last written.
         created_by: The actor that added it.
-        commit_sha: The commit that landed it, or "".
+        commit_sha: The commit for its work, or "".
         notes: Appended prose.
         standing: The never-passing fallback node.
         graph_version: The version of the mutation that last wrote the node, the number its
@@ -181,7 +181,7 @@ class AddDependencyIntent(pydantic.BaseModel):
 
 
 class RecordCommitIntent(pydantic.BaseModel):
-    """Record the commit that landed a node."""
+    """Record the commit for a node."""
 
     model_config = _MODEL_CONFIG
 

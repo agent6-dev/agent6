@@ -451,7 +451,7 @@ class GraphCurator:
             return updated
 
     def record_commit(self, intent: models.RecordCommitIntent) -> models.TaskNode:
-        """Record the commit that landed a node.
+        """Record the commit for a node.
 
         Args:
             intent: The intent.

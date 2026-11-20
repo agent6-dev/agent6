@@ -56,8 +56,8 @@ class ChildRow:
         state = self.lineage["status_label"] if self.lineage is not None else c.status
         if not c.launched and c.status == "failed":
             state += " (never started)"
-        if c.outcome == "joined":
-            state = c.join_label
+        if c.outcome == "merged":
+            state = c.parent_merge_label
         elif c.outcome and c.outcome != state:
             state += f" · {c.outcome.replace('_', ' ')}"
         if c.error and c.error not in state:

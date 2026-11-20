@@ -188,8 +188,8 @@ class GitConfig(pydantic.BaseModel):
             "Tracked files' uncommitted changes at run start; asking requires someone to "
             "answer, with cancellation parking the run for resume; stashes are restored per "
             "`git.auto_stash_pop`, otherwise a printed restore command names the stash by "
-            "sha and the worktree directory without switching branches; included changes "
-            "mark an unmerged run merged on landing if its work matches exactly; files "
+            "sha and the worktree directory without switching branches; merging included changes "
+            "also marks a run merged if its unmerged work matches exactly; files "
             "already untracked at the start stay out of the run's commits, and files the run "
             "creates are its own; `--parallel` refuses asking; a resume applies the same "
             "policy to changes since the last execution, the run's own files included, "
@@ -246,28 +246,28 @@ class GitConfig(pydantic.BaseModel):
         json_schema_extra={
             "choice_meanings": {
                 "tasks": "Squash consecutive checkpoints by task",
-                "squash": "Land as one commit",
+                "squash": "Merge as one commit",
                 "merge": "Merge while preserving per-turn history",
                 "ff_only": "Require a fast-forward merge",
             }
         },
         default="tasks",
         description=(
-            "Method for `agent6 sessions merge` to land a run on its base; a task's commit "
+            "Method for `agent6 sessions merge` to merge a run into its base; a task's commit "
             "follows `git.commit.squash_message` under the `model` style with the subtask's "
             "title and acceptance as its body, else the subtask's title; checkpoints outside "
-            "subtasks follow `git.commit.squash_message`, so a run that never decomposed lands "
+            "subtasks follow `git.commit.squash_message`, so a run that never decomposed merges "
             "as one commit; "
             "consolidation only, per-turn commits stay on the run's chain; `sessions merge "
-            "-m` lands one commit with that message"
+            "-m` creates one commit with that message"
         ),
     )
-    # With auto_stash_pop the merge lands first, then the stash goes back on top.
+    # With auto_stash_pop the merge happens first, then the stash goes back on top.
     auto_merge: bool = pydantic.Field(
         default=False,
         description=(
             "automatic merge into the base branch only for end reason `finish_session`, or "
-            "`children_ranked` for a `run --parallel` run that joined its best-ranked child, with "
+            "`children_ranked` for a `run --parallel` run that merged its first-ranked child, with "
             "a passed or absent verify gate; other ends: no auto-merge, reason printed; hidden "
             "chain ref merged with `git.branch_per_run = false`; conflict: nothing moved, "
             "instructions printed"

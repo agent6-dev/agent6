@@ -45,7 +45,7 @@ def dispatch_panel(  # noqa: PLR0911  # one return per refusal
         concurrency: The policy's concurrency cap; None uses harness.parallel.max_children.
 
     Returns:
-        The record-only joins, or a refusal before launch.
+        The reviewer outcomes, or a refusal before launch.
     """
     if not dispatcher.authority.panels or dispatcher.child_spawner is None:
         return refusal(dispatcher, "harness panel scheduling is unavailable in this execution.")
@@ -97,7 +97,7 @@ def dispatch_panel(  # noqa: PLR0911  # one return per refusal
     record = child_dispatch.DispatchRecord(
         identity=identity,
         source="panel",
-        join_policy="record_only",
+        merge_policy="record_only",
         owner=dispatcher.execution_id,
         turn=turn,
         base=at,

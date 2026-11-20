@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The child records every group shares: what a child runs, what it returned, how it joined.
+"""The child records every group shares: what a child runs, what it returned, how it merged.
 
 `run --parallel`, the `/parallel` steer and the import plumbing read and write these; the
 code that clones, spawns and merges lives in `harness.child_repo`, `app.children` and
@@ -21,9 +21,9 @@ from agent6 import budget, kinds
 DispatchSource = Literal["operator", "model", "panel"]
 # How a dispatch merges its children: each merged in order, none (a panel's records), or the
 # best-ranked one alone.
-JoinPolicy = Literal["merge", "record_only", "rank"]
-# How one child's work joined the parent's chain.
-JoinStatus = Literal["joined", "no_changes", "conflict", "failed", "ranked", "stopped", "retained"]
+MergePolicy = Literal["merge", "record_only", "rank"]
+# How one child's work merged into the parent's chain.
+MergeStatus = Literal["merged", "no_changes", "conflict", "failed", "ranked", "stopped", "retained"]
 
 
 def number_label(number: int, *, reviewer: bool) -> str:
@@ -290,13 +290,13 @@ class CandidateBrief:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Ranking:
-    """The order a rank join merges by.
+    """The ranked candidates in merge order.
 
     Attributes:
         order: The ranked children's session ids, best first.
         ranked_by: `judge` when a judge's order ranked them, else `mechanical`.
         rationale: The judges' words; "" for the mechanical order.
-        winner: The child the join merges, or "" when the order crowns none: every gate ran
+        winner: The child selected to merge, or "" when the order crowns none: every gate ran
             red, or a child that did not verify was ranked over one that did.
         fallback: Why the mechanical order ranked; "" when judges did.
         judge_cost_usd: What the judges spent; 0.0 when none ran.
@@ -336,17 +336,17 @@ class ChildRecoverer(Protocol):
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class ChildJoin:
+class ChildMerge:
     """One child's outcome in a dispatch.
 
     Attributes:
         session_id: The child's session.
         branch: The child's branch.
-        status: `joined` (merged, `sha` set), `no_changes` (ended with a result and no commit
-            beyond its base; nothing to merge), `conflict` (imported, the merge conflicted,
+        status: `merged` (on the parent chain, `sha` set), `no_changes` (ended with a result
+            and no commit beyond its base), `conflict` (the merge conflicted,
             the ref exists locally), `failed` (no result or nothing importable),
-            `ranked` (a rank join placed the child and did not join it: another child merged,
-            or the run has no chain to join onto; the branch holds this one's work) or
+            `ranked` (the ranking placed the child but it did not merge: another child merged,
+            or the run has no chain to merge onto; the branch holds this one's work) or
             `stopped` (the child was stopped, so nothing merged; the branch holds its work),
             or `retained` (finished under model-owned git; the imported ref holds its work).
         sha: The merge commit, or "".
@@ -359,7 +359,7 @@ class ChildJoin:
 
     session_id: str
     branch: str
-    status: JoinStatus
+    status: MergeStatus
     sha: str
     detail: str
     report: str = ""
@@ -390,13 +390,13 @@ class DispatchResult:
     Attributes:
         group: The group id the children were stamped with; "" when nothing was dispatched.
         dispatched: Whether children ran; False for a refusal before any clone.
-        children: Each child's join, in dispatch order.
+        children: Each child's merge, in dispatch order.
         message: The one notice summarizing the outcome, or the refusal.
         base: The commit the children were cut from; "" when none ran.
     """
 
     group: str
     dispatched: bool
-    children: tuple[ChildJoin, ...]
+    children: tuple[ChildMerge, ...]
     message: str
     base: str = ""

@@ -56,7 +56,7 @@ def standing(
         return "running"
     res = dispatcher.result_of(task.record, started)
     if res.ok and res.stopped_by:
-        return parallel_merge.join_words(parallel_merge.stopped_join(res))
+        return parallel_merge.merge_words(parallel_merge.stopped_merge(res))
     return "being ranked" if task.judging is not None and res.ok else "ended, task pending"
 
 
@@ -96,7 +96,7 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
 
     Returns:
         One line per child of a work dispatch: the open ones as `standing` reads them, the
-        merged ones with how their work joined.
+        merged ones with how their work merged.
     """
     if dispatcher.session_dir is None:
         return ()
@@ -114,17 +114,17 @@ def roster(dispatcher: parallel_dispatch.ParallelDispatcher) -> tuple[child_tool
         for child in record.children if record.source != "panel" else ():
             sid = child.session_id
             state = open_now.get(sid, "ended, task pending")
-            if child.join is not None:
-                state = parallel_merge.join_words(parallel_merge.join_of(child))
+            if child.merge is not None:
+                state = parallel_merge.merge_words(parallel_merge.merge_of(child))
             title = next((ln.strip() for ln in child.task.splitlines() if ln.strip()), "")
             # A wait has something to wait for: the child itself, or the judges ranking it.
             running = state in ("starting", "running", "in review", "stopping", "being ranked")
-            mergeable = child.join is not None and child.join.status == "stopped"
+            mergeable = child.merge is not None and child.merge.status == "stopped"
             if child_merge.pending(child):
                 state = "merge requested"
             commits = (
                 child_dispatch.read_commit_count(
-                    dispatcher.session_dir.with_name(sid), child.join, version=record.version
+                    dispatcher.session_dir.with_name(sid), child.merge, version=record.version
                 )
                 if sessions_layout.is_safe_session_id(sid)
                 else None

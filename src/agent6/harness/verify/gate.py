@@ -343,7 +343,7 @@ class VerifyGate:
         """Adopt a verify command a gateless run's commit makes inferable.
 
         The deterministic inference tiers (an AGENTS.md fence, repo signals; never the model
-        tier) run at each gateless commit until one lands; the model is told of the adoption.
+        tier) run at each gateless commit until a command is found. Its adoption is reported.
         `harness.verify.infer = false` pins gatelessness.
 
         Args:
@@ -471,8 +471,8 @@ class VerifyGate:
             notices.append(loop_conversation.Notice(nudges.BASELINE_RED_NOTICE))
         return notices
 
-    def after_rank_join(self, state: loop_state.LoopState) -> None:
-        """Run the gate on the tree a rank join left, as the run's own verdict.
+    def after_rank_merge(self, state: loop_state.LoopState) -> None:
+        """Run the gate on the tree a rank merge left, as the run's own verdict.
 
         A run that ends on its opening dispatch has no turn to verify in. A denied gate is
         withheld and one that cannot run records nothing, so the run ends unverified. An
@@ -484,7 +484,7 @@ class VerifyGate:
         verdict = state.verify
         if not (self.mode == "run" and self.when != "never" and self.present(verdict)):
             return
-        self.log("LOOP: harness verify (finish) on the joined tree")
+        self.log("LOOP: harness verify (finish) on the merged tree")
         self.emit(journal.VerifyRequested(reason="finish", turn=0))
         try:
             result = self.dispatcher.run_verify()

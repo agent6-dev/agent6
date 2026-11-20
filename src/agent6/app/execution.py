@@ -165,7 +165,7 @@ def headless_marker(event: dict[str, Any], *, log: Callable[[str], None]) -> Non
         "parallel.child_activity",
         "parallel.child_continued",
         "parallel.child_merged",
-        "parallel.joined",
+        "parallel.merged",
     ):
         log(f"[agent6] {transcript_text.MARKER_BODIES[event['type']](event)}")
 
@@ -750,7 +750,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 ):  # a dead journal must not skip cleanup
                     events.emit(journal.JailDegraded(detail=jail.survivors_message(survivors)))
 
-        # ExitStack runs every close even when one raises, and re-raises after: no merge lands
+        # ExitStack runs every close even when one raises, and re-raises after: no merge runs
         # on an execution whose teardown failed.
         try:
             with contextlib.ExitStack() as cleanup:

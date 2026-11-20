@@ -137,7 +137,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help=(
             "Work in a new git worktree at HEAD's commit, under [git.worktree].base_dir;"
             " uncommitted changes stay in this checkout. [git.worktree].setup_command builds"
-            " what git does not track. Land the work with `agent6 sessions merge ID`."
+            " what git does not track. Merge the work with `agent6 sessions merge ID`."
         ),
     )
     run_profile = run_p.add_argument(

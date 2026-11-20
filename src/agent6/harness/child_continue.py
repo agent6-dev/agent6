@@ -40,12 +40,12 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
     if found is None:
         raise tool_errors.ToolError(f"no child {session_id} in this run")
     record, child = found
-    if child.join is None or child.join.status != "stopped":
+    if child.merge is None or child.merge.status != "stopped":
         raise tool_errors.ToolError(f"child {session_id} is not stopped and unmerged")
     if record.state != "complete":
         raise tool_errors.ToolError("the task's other attempts have not ended; nothing continued")
     if any(
-        c.join and c.join.status in ("joined", "no_changes", "retained") for c in record.children
+        c.merge and c.merge.status in ("merged", "no_changes", "retained") for c in record.children
     ):
         raise tool_errors.ToolError("an attempt already completed this task; nothing continued")
     if any(child_merge.pending(c) for c in record.children):
@@ -64,7 +64,7 @@ def start(  # noqa: PLR0912  # each refusal precedes the durable state change
     resumed = child.model_copy(
         update={
             "continuation": continuation,
-            "join": None,
+            "merge": None,
             "merge_request": None,
             "reported": False,
             "report": "",

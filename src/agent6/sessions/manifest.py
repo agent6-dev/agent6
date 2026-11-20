@@ -174,10 +174,10 @@ class MergeStamp(pydantic.BaseModel):
             no other ref.
         into_tip: For a merge that added nothing, the base's own tip at the time, the commit
             that already held the run's content; the delete checks it as it checks `sha`.
-        via: The run whose merge landed this one, when a later run took its work in under
+        via: The run whose merge included this one, when a later run took its work in under
             `dirty_tree = "include"`; "" for the run's own merge.
-        method: The landing method, or null when unrecorded.
-        target_before: The target commit before landing, or null when unrecorded.
+        method: The merge method, or null when unrecorded.
+        target_before: The target commit before the merge, or null when unrecorded.
     """
 
     model_config = _MODEL_CONFIG
@@ -196,7 +196,7 @@ class MergeStamp(pydantic.BaseModel):
         """The merge commit's abbreviated sha; "" for a record that names none."""
         return "" if not self.sha or self.sha == NO_MERGE_COMMIT else self.sha[:12]
 
-    def landed(self) -> str:
+    def description(self) -> str:
         """Return where the merge put the run's work, one wording for every surface.
 
         Returns:
@@ -281,7 +281,7 @@ class ComparisonStamp(pydantic.BaseModel):
 
 
 # Every stamp-rewrite re-stamps it, so the on-disk claim matches the shape on disk.
-MANIFEST_VERSION = 14
+MANIFEST_VERSION = 15
 MANIFEST_NAME = "manifest.json"
 
 
@@ -301,8 +301,8 @@ class SessionManifest(pydantic.BaseModel):
         user_task: A 4000-character fallback for listings whose journal is missing.
         continued_task: The latest resume steer, clipped the same way; the fallback for the
             continuation line.
-        base_sha: The commit the run's un-landed work starts from: where it started, or the
-            commit a resume continued from after its work landed.
+        base_sha: The commit the run's unmerged work starts from: where it started, or the
+            commit a resume continued from after its work merged.
         base_branch: The branch that commit was on.
         review_base_tree: The base tree of a `/review` session, whose AGENTS.md binds it.
         run_branch: The run's own branch, or None.
@@ -334,7 +334,7 @@ class SessionManifest(pydantic.BaseModel):
             False, and an `/undo` fork carries its source's.
         merged: The merge record, None until the run branch is merged.
         includes: The unmerged run this run took in under `dirty_tree = "include"`, stamped
-            merged when this run lands; None when it took none, or more than that run's tip.
+            merged when this run merges; None when it took none, or more than that run's tip.
         parallel: A child's lineage, or None.
         placement: A child's rank and group reference, or None.
         comparison: The group's ranking and judge spend on its parent, or None.

@@ -190,17 +190,17 @@ class BudgetUpdate(Event):
 
 
 class CheckpointCommitted(Event):
-    """A turn's checkpoint commit landed."""
+    """The turn produced a checkpoint commit."""
 
     TYPE: ClassVar[str] = "checkpoint.committed"
     turn: int = pydantic.Field(description="The execution's turn number.")
     sha: str = pydantic.Field(description="The commit identifier, possibly abbreviated.")
-    subject: str = pydantic.Field(description="The landed commit's subject.")
+    subject: str = pydantic.Field(description="The checkpoint commit's subject.")
     task_id: str | None = pydantic.Field(default=None, description="Task identifier.")
 
 
 class CheckpointFailed(Event):
-    """A checkpoint commit could not land."""
+    """The checkpoint commit failed."""
 
     TYPE: ClassVar[str] = "checkpoint.failed"
     turn: int = pydantic.Field(description="The execution's turn number.")
@@ -382,7 +382,7 @@ class DecisionUnrecorded(Event):
 
 
 class DiffUpdated(Event):
-    """A chain commit landed with its patch."""
+    """The chain gained a commit and its patch."""
 
     TYPE: ClassVar[str] = "diff.updated"
     sha: str = pydantic.Field(description="The commit identifier, possibly abbreviated.")
@@ -1074,10 +1074,10 @@ class ParallelChildMerged(Event):
     detail: str = pydantic.Field(description="The conflict files or failure reason, if any.")
 
 
-class ParallelJoined(Event):
+class ParallelMerged(Event):
     """Parallel child results returned."""
 
-    TYPE: ClassVar[str] = "parallel.joined"
+    TYPE: ClassVar[str] = "parallel.merged"
     group: str = pydantic.Field(description="Parallel dispatch group identifier.")
     children: Sequence[Any] = pydantic.Field(
         description="Child count for dispatch, or child results for completion.",
@@ -1567,7 +1567,7 @@ class SessionStop(Event):
 
 
 class SessionStranded(Event):
-    """A finished run left edits uncommitted and no commit landed."""
+    """A finished run left edits uncommitted and made no commit."""
 
     TYPE: ClassVar[str] = "session.stranded"
 
@@ -2087,7 +2087,7 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "parallel.compared": ParallelCompared,
     "parallel.dispatched": ParallelDispatched,
     "parallel.failed": ParallelFailed,
-    "parallel.joined": ParallelJoined,
+    "parallel.merged": ParallelMerged,
     "pin.added": PinAdded,
     "pin.refused": PinRefused,
     "pin.restored": PinRestored,

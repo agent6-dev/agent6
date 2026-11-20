@@ -170,7 +170,7 @@ class TranscriptFold:
                 self._deferred.append(
                     transcript_items.TranscriptItem(
                         "marker",
-                        body="no commit landed: the edits sit uncommitted (not committed)",
+                        body="no commit: the edits sit uncommitted (not committed)",
                     )
                 )
             return True

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The durable record of one child dispatch: what was granted, launched, joined and settled.
+"""The durable record of one child dispatch: what was granted, launched, merged and settled.
 
 Written atomically before any child launches and advanced at each boundary, so a resumed
 execution finishes or diagnoses a dispatch its predecessor left behind: one file per
@@ -17,33 +17,33 @@ import pydantic
 
 from agent6 import child_records, portable, token_usage
 
-RECORD_VERSION = 13
+RECORD_VERSION = 14
 DIR_NAME = "dispatch"
 _COMMIT_COUNT = "commits_beyond_start"
-DispatchState = Literal["prepared", "running", "settling", "ranking", "joining", "complete"]
+DispatchState = Literal["prepared", "running", "settling", "ranking", "merging", "complete"]
 
 
 def read_commit_count(
-    child_dir: pathlib.Path, join: JoinRecord | None = None, *, version: int = RECORD_VERSION
+    child_dir: pathlib.Path, merge: MergeRecord | None = None, *, version: int = RECORD_VERSION
 ) -> int | None:
     """Return a work child's measured count beyond start.
 
     Args:
         child_dir: The child's session directory.
-        join: Its recorded outcome, when settled.
+        merge: Its recorded outcome, when settled.
         version: The dispatch format. Ranked rows first recorded a count in version 11.
 
     Returns:
         The observed count, or None without a measurement.
     """
-    if join is not None and (
-        join.status in ("stopped", "retained") or (join.status == "ranked" and version >= 11)
+    if merge is not None and (
+        merge.status in ("stopped", "retained") or (merge.status == "ranked" and version >= 11)
     ):
-        return join.commits
+        return merge.commits
     try:
         count = int((child_dir / _COMMIT_COUNT).read_text(encoding="ascii"))
     except (OSError, ValueError):
-        return 0 if join is not None and join.status == "no_changes" else None
+        return 0 if merge is not None and merge.status == "no_changes" else None
     return count if count >= 0 else None
 
 
@@ -57,42 +57,29 @@ class DispatchRecordError(Exception):
     """A record cannot be read: malformed, or written by a newer agent6."""
 
 
-class JoinRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """How one child's work joined, with the chain tip on either side of the merge.
+class MergeRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
+    """How one child's work merged, with the chain tip on either side of the merge.
 
     Attributes:
         branch: The child's branch.
-        status: The join's outcome.
+        status: The merge's outcome.
         sha: The merge commit, "" when none.
         detail: The failure's reason, a conflict's files, a ranked child's place, or what
             stopped a stopped child; "" when none.
         commits: The count beyond start on a stopped, ranked or retained ref, or 0 without a count.
         context: The child's last measured conversation size and activity.
-        target_before: The chain tip before the join.
+        target_before: The chain tip before the merge.
         target_after: The chain tip after it; equal to `target_before` when nothing merged.
     """
 
     branch: str = ""
-    status: child_records.JoinStatus
+    status: child_records.MergeStatus
     sha: str = ""
     detail: str = ""
     commits: int = 0
     context: child_records.ChildContext = child_records.ChildContext()
     target_before: str = ""
     target_after: str = ""
-
-    @pydantic.field_validator("status", mode="before")
-    @classmethod
-    def read_status(cls, value: object) -> object:
-        """Read a v12 model-owned ref as retained, regardless of a later manual merge.
-
-        Args:
-            value: The status in the dispatch record.
-
-        Returns:
-            The current spelling for field validation.
-        """
-        return "retained" if value == "unmerged" else value
 
 
 class MergeRequest(pydantic.BaseModel, frozen=True, extra="forbid"):
@@ -103,7 +90,7 @@ class MergeRequest(pydantic.BaseModel, frozen=True, extra="forbid"):
         delivered: Whether the parent's conversation holds the outcome.
     """
 
-    result: JoinRecord | None = None
+    result: MergeRecord | None = None
     delivered: bool = False
 
 
@@ -124,13 +111,13 @@ class UsageRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
 
 
 class RankRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
-    """The order a rank join merged by, written before the first join so no resume ranks twice.
+    """The ranking recorded before the first merge, so a resume never ranks twice.
 
     Attributes:
         order: The ranked children's session ids, best first; empty when no child had a result.
         ranked_by: `judge` or `mechanical`.
         rationale: The judges' words; "" for the mechanical order.
-        winner: The one child the join merges; "" when the order crowns none.
+        winner: The child selected to merge; "" when the order crowns none.
         fallback: Why the mechanical order ranked; "" when judges did.
     """
 
@@ -164,7 +151,7 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         task: Its task text.
         model: Its selector, None for the worker's own settings.
         limits: Its turn cap and deadline, None for the config's own.
-        join: How it joined, None until it did.
+        merge: The merge outcome, or None until recorded.
         report: What it said at its end, its finish summary; "" until its end was reported
             or when it gave none.
         reported: Whether its parent's conversation holds the notice of its end.
@@ -179,7 +166,7 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     task: str
     model: str | None = None
     limits: child_records.ChildLimits | None = None
-    join: JoinRecord | None = None
+    merge: MergeRecord | None = None
     report: str = ""
     reported: bool = False
     usage: UsageRecord | None = None
@@ -203,9 +190,9 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         version: The record's shape; a newer one refuses the read.
         identity: The dispatch's id, the group id `<parent>-p<n>`.
         source: Who asked.
-        join_policy: How the work merges: a task's one child merged, a panel's records
+        merge_policy: How the work merges: a task's one child merged, a panel's records
             imported and nothing merged, or the best-ranked of a task's attempts alone.
-        ranking: A rank join's order; None before it ranked and under the other policies.
+        ranking: A rank merge's order; None before it ranked and under the other policies.
         owner: The execution that made it.
         turn: The turn it was dispatched after.
         base: The chain tip the children were cut from.
@@ -224,7 +211,7 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     version: int = RECORD_VERSION
     identity: str
     source: child_records.DispatchSource
-    join_policy: child_records.JoinPolicy = "merge"
+    merge_policy: child_records.MergePolicy = "merge"
     ranking: RankRecord | None = None
     owner: str
     turn: int

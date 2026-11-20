@@ -324,12 +324,12 @@ def format_branch(run_branch: str, base_branch: str, merged_into: str) -> str:
 
     Args:
         run_branch: The run's branch, "" for a session without one.
-        base_branch: The branch a merge lands on.
+        base_branch: The target branch.
         merged_into: The branch the run was merged into, "" while unmerged.
 
     Returns:
         The run branch merged into its base, or the run branch and the base a merge
-        lands on; "" for a session with no run branch.
+        merges into; "" for a session with no run branch.
     """
     if not run_branch:
         return ""

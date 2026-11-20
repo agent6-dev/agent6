@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Rank candidates and print the ranked table.
 
-Shared by a run's rank join and `sessions compare`. Each of `[harness.parallel].judges` is a
+Shared by a run's rank merge and `sessions compare`. Each of `[harness.parallel].judges` is a
 reviewer child that ranks once, and the lowest sum of ranks wins; with no order from a judge
 the order is the mechanical one. A run starts its judges through its dispatcher
 (`harness.parallel_rank`); `rank` here starts them for a command that has no run, and waits.
@@ -164,7 +164,7 @@ def print_ranked_candidates(
     merged_into: Mapping[str, str] | None = None,
     committed: Mapping[str, bool] | None = None,
     model_refs: Mapping[str, str] | None = None,
-    joins: str = "",
+    merge_parent: str = "",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
     """Print the ranked table, the total spend and the judge's rationale.
@@ -180,7 +180,7 @@ def print_ranked_candidates(
         committed: Whether a candidate's branch holds a commit, by session id; one named
             False has nothing to merge.
         model_refs: Imported work locations for model-controlled children.
-        joins: The run the first-ranked candidate joins, when a rank join merges it; "" when
+        merge_parent: The parent whose chain receives the first-ranked candidate; "" when
             nothing merges by this ranking.
         reporter: The output channels.
     """
@@ -202,8 +202,11 @@ def print_ranked_candidates(
                 if model_refs[rid]
                 else "no imported work ref (git was model-controlled)"
             )
-        elif joins and rnk == 1 and (committed or {}).get(rid, True):
-            merge_note = f"joins {joins}; merge with: agent6 sessions merge {joins}"
+        elif merge_parent and rnk == 1 and (committed or {}).get(rid, True):
+            merge_note = (
+                f"merges into {merge_parent}'s chain; merge with: "
+                f"agent6 sessions merge {merge_parent}"
+            )
         elif (committed or {}).get(rid, True):
             merge_note = f"merge with: agent6 sessions merge {rid}"
         else:

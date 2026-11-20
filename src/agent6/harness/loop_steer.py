@@ -162,10 +162,10 @@ def ranked_opening(
     turn: int,
     state: loop_state.LoopState,
 ) -> loop_snapshot.SessionResult | None:
-    """Run the dispatch a run opens with, joined by rank, and end the run on what merged.
+    """Run the dispatch a run opens with, merged by rank, and end the run on what merged.
 
     The run waits for its children and then for their judges, as no turn of its own runs
-    meanwhile. The run applies its gate policy to the joined tree. No model call is made
+    meanwhile. The run applies its gate policy to the merged tree. No model call is made
     unless the operator steered: the run then goes on
     with that steer, as a resume with a steer does later.
 
@@ -176,7 +176,7 @@ def ranked_opening(
         state: The execution's state.
 
     Returns:
-        The end: `children_ranked` when a child joined (or, with no chain to join onto, was
+        The end: `children_ranked` when a child merged (or, with no chain to merge onto, was
         placed), `no_child_passed` when the ranking crowned none, `budget_exhausted` when the
         budget ended every child, `no_child_result` otherwise, or the operator's stop; None
         when a steer gives the run more work.
@@ -204,14 +204,14 @@ def ranked_opening(
         )
         if asked is not None or len(conversation) > size:
             return asked
-    groups = [harness.parallel.joins(group) for group in started.groups]
+    groups = [harness.parallel.merges(group) for group in started.groups]
     missing = len(groups) != len(harness.opening)
     summaries = [parallel_merge.rank_summary(group) for group in groups if group]
     if missing:
         summaries.insert(0, started.message)
     summary = "\n".join(summaries) or started.message
     # A task needs one successful attempt of its own. Model-owned git keeps the ranked ref.
-    statuses = [{join.status for join in group} for group in groups]
+    statuses = [{merge.status for merge in group} for group in groups]
     failed = [
         status
         for status, group in zip(statuses, groups, strict=True)
@@ -227,9 +227,9 @@ def ranked_opening(
             else "no_child_result"
         )
         return harness.finish(state, loop_snapshot.End(reason, summary, roots=False), turn=turn)
-    if any("joined" in group for group in statuses):
+    if any("merged" in group for group in statuses):
         try:
-            harness.gate.after_rank_join(state)
+            harness.gate.after_rank_merge(state)
         except tool_errors.OperatorCommandUnexecutableError as exc:
             return harness.unexecutable_abort(exc, turn=turn, state=state)
     return harness.finish(

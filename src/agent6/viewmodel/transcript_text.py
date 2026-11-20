@@ -186,11 +186,11 @@ def parallel_compared_body(event: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def parallel_joined_body(event: dict[str, Any]) -> str:
+def parallel_merged_body(event: dict[str, Any]) -> str:
     """Describe a completed dispatch without implying that anything merged.
 
     Args:
-        event: The `parallel.joined` event.
+        event: The `parallel.merged` event.
 
     Returns:
         The head line, then one line per child.
@@ -211,9 +211,9 @@ def parallel_joined_body(event: dict[str, Any]) -> str:
     for ln in children:
         status = str(ln.get("status", "?"))
         if panel and status == "no_changes":
-            status = "returned"  # a reviewer has no work to join; its verdict follows in the panel
-        elif status == "joined":
-            status = "joined parent chain"
+            status = "returned"  # a reviewer has no work to merge; its verdict follows in the panel
+        elif status == "merged":
+            status = "merged into parent chain"
         elif status == "no_changes":
             status = "no changes"
         elif status == "unmerged":  # v12 model-owned dispatch
@@ -237,8 +237,8 @@ def parallel_joined_body(event: dict[str, Any]) -> str:
 def child_merge_body(event: dict[str, Any]) -> str:
     """Return the result of a requested child merge."""
     child = event.get("child", "?")
-    if event.get("status") == "joined":
-        return f"child {child} joined parent chain at {str(event.get('sha', ''))[:12]}"
+    if event.get("status") == "merged":
+        return f"child {child} merged into parent chain at {str(event.get('sha', ''))[:12]}"
     why = event.get("detail") or str(event.get("status", "")).replace("_", " ")
     return f"child {child} not merged ({event.get('ref', '?')}): {why}"
 
@@ -251,7 +251,7 @@ def parallel_failed_body(event: dict[str, Any]) -> str | None:
 
     Returns:
         The dispatch error when the event carries one; None for a failure after the children
-        ran, whose joined event or end summary already showed each child's status.
+        ran, whose merged event or end summary already showed each child's status.
     """
     error = str(event.get("error", "")).strip()
     return f"{parallel_group_label(event)} dispatch failed: {error}" if error else None
@@ -347,7 +347,7 @@ MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
         f"child {e.get('child', '?')} continued ({e.get('sequence', '?')})"
     ),
     "parallel.dispatched": parallel_dispatched_body,
-    "parallel.joined": parallel_joined_body,
+    "parallel.merged": parallel_merged_body,
     "parallel.failed": parallel_failed_body,
     "parallel.compared": parallel_compared_body,
     "task.queued": task_queued_body,

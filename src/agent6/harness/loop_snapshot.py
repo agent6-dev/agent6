@@ -184,7 +184,7 @@ class SessionSnapshot(pydantic.BaseModel):
         original_task: The composed task.
         operator_task: The words before composition; absent in old snapshots.
         base_sha: The base the run's work starts from, which `baseline_ok` describes; a resume
-            whose work landed moves it.
+            whose work merged moves it.
         verify_command: The gate the run resolved, () when gateless; a resume reuses it rather
             than inferring again.
         review_rejections_total: The ends the before-finish panel rejected in the run; at

@@ -39,11 +39,11 @@ def request(dispatcher: parallel_dispatch.ParallelDispatcher, child_id: str) -> 
         for child in record.children if record.source != "panel" else ():
             if child.session_id != child_id:
                 continue
-            if record.state != "complete" or child.join is None or child.join.status != "stopped":
+            if record.state != "complete" or child.merge is None or child.merge.status != "stopped":
                 raise tool_errors.ToolError(
                     f"child {child_id} is not stopped with a completed task and unmerged work"
                 )
-            if any(c.join and c.join.status in ("joined", "no_changes") for c in record.children):
+            if any(c.merge and c.merge.status in ("merged", "no_changes") for c in record.children):
                 raise tool_errors.ToolError(
                     "another attempt already completed this task; nothing merged"
                 )
@@ -90,26 +90,26 @@ def settle(
             outcome = asked.result
             if outcome is None:
                 before = dispatcher.chain.tip() or ""
-                join = merge(dispatcher, record, child, turn)
-                outcome = child_dispatch.JoinRecord(
-                    branch=join.branch,
-                    status=join.status,
-                    sha=join.sha,
-                    detail=join.detail,
-                    commits=join.commits,
+                result = merge(dispatcher, record, child, turn)
+                outcome = child_dispatch.MergeRecord(
+                    branch=result.branch,
+                    status=result.status,
+                    sha=result.sha,
+                    detail=result.detail,
+                    commits=result.commits,
                     target_before=before,
                     target_after=dispatcher.chain.tip() or "",
                 )
                 asked = asked.model_copy(update={"result": outcome})
                 child = child.model_copy(update={"merge_request": asked})
-                if join.status in ("joined", "no_changes"):
-                    child = child.model_copy(update={"join": outcome})
+                if result.status in ("merged", "no_changes"):
+                    child = child.model_copy(update={"merge": outcome})
                 record = record.with_child(child)
                 dispatcher.write(record)
             parallel_merge.stamp_segment_node(
                 dispatcher.curator,
                 record.node_id,
-                [parallel_merge.join_of(c) for c in record.children],
+                [parallel_merge.merge_of(c) for c in record.children],
                 log=dispatcher.log,
             )
             dispatcher.emit_graph_snapshot()
@@ -123,7 +123,7 @@ def settle(
                     detail=outcome.detail,
                 )
             )
-            result = parallel_merge.join_of(child.model_copy(update={"join": outcome}))
+            result = parallel_merge.merge_of(child.model_copy(update={"merge": outcome}))
             conversation.notice(parallel_merge.summary_text(record.identity, [result]))
             record = record.with_child(
                 child.model_copy(
@@ -140,7 +140,7 @@ def merge(
     record: child_dispatch.DispatchRecord,
     child: child_dispatch.ChildRecord,
     turn: int,
-) -> child_records.ChildJoin:
+) -> child_records.ChildMerge:
     """Merge the stopped ref through the same chain operation as a finished child.
 
     Args:
@@ -152,18 +152,18 @@ def merge(
     Returns:
         The merge result; a refusal changes neither the chain nor the worktree.
     """
-    assert child.join is not None
-    ref = child.join.branch
+    assert child.merge is not None
+    ref = child.merge.branch
     refusal = ""
     if not dispatcher.chain.ref:
         refusal = "git.control is model; merge the ref with git"
     elif not dispatcher.ensure_clean(turn, "merging a stopped child"):
         refusal = "the working tree holds uncommitted work; commit it before retrying"
     if refusal:
-        return child_records.ChildJoin(child.session_id, ref, "failed", "", refusal)
-    tip = git_read.chain_tip(dispatcher.chain.root, ref) if child.join.commits else ""
-    if child.join.commits and not tip:
-        return child_records.ChildJoin(
+        return child_records.ChildMerge(child.session_id, ref, "failed", "", refusal)
+    tip = git_read.chain_tip(dispatcher.chain.root, ref) if child.merge.commits else ""
+    if child.merge.commits and not tip:
+        return child_records.ChildMerge(
             child.session_id, ref, "failed", "", "the work ref is missing"
         )
     res = child_records.ChildResult(
@@ -175,6 +175,6 @@ def merge(
         imported_ref=ref,
         imported_tip=tip or "",
         has_commits=bool(tip and tip != record.base),
-        commits=child.join.commits,
+        commits=child.merge.commits,
     )
-    return dispatcher.join_child(child, res)
+    return dispatcher.merge_child(child, res)

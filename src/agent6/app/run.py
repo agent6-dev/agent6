@@ -497,7 +497,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                     stash_pop = stash_pop or choice == "stash"
                 if choice == "cancel":
                     settle = (
-                        f"`agent6 sessions merge {unmerged_run}` lands them (the unmerged work"
+                        f"`agent6 sessions merge {unmerged_run}` merges them (the unmerged work"
                         f" of run {unmerged_run})"
                         if unmerged_run
                         else "commit or stash them"
@@ -537,7 +537,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             untracked_at_start = git_read.untracked_paths(cwd)
             sessions_layout.write_untracked_at_start(layout.session_dir, untracked_at_start)
             if unmerged_run and not stashed:
-                # Included: when the tree is exactly that run's tip, this run's merge lands it.
+                # A merge includes the earlier run only if its entire tip matches this tree.
                 included = preflight.included_run(
                     cwd,
                     unmerged_run,
