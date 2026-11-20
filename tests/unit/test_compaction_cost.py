@@ -103,6 +103,62 @@ def test_run_end_uses_the_same_journal_summary(tmp_path: pathlib.Path) -> None:
     assert any("Worker input cache (session): 90.0% (900/1,000 tokens)" in s for s in output)
 
 
+def test_receipt_names_both_summary_attempts_and_their_usage(tmp_path: pathlib.Path) -> None:
+    rows = [
+        {"type": "compact.summarise.call", "writer": "worker", "model_call_id": "summary1"},
+        *_call("summary1", input_tokens=50, cache_read_tokens=950, cache_write_tokens=10),
+        {
+            "type": "compact.summarise.failed",
+            "writer": "worker",
+            "error": "summary contains a tool call",
+        },
+        {
+            "type": "compact.summarise.call",
+            "writer": "helper",
+            "model_call_id": "summary2",
+            "fallback_reason": "summary contains a tool call",
+        },
+        *_call("summary2", role="summariser", input_tokens=300, cache_read_tokens=0),
+        {
+            "type": "compact.summarise.done",
+            "writer": "helper",
+            "summary_chars": 10,
+            "fallback_reason": "summary contains a tool call",
+        },
+        *_call("ordinary", input_tokens=200, cache_read_tokens=800),
+    ]
+    _write(tmp_path / "logs.jsonl", rows)
+    view = receipt.read_receipt(tmp_path, tmp_path)
+    text = receipt.render(view)
+    assert (
+        "Summary attempt 1: worker; 60 uncached, 950 cached input tokens; "
+        "rejected: summary contains a tool call" in text
+    )
+    assert (
+        "Summary attempt 2: helper; 300 uncached, 0 cached input tokens; "
+        "accepted; fallback: summary contains a tool call" in text
+    )
+    assert "Worker input cache (session): 80.0% (800/1,000 tokens)" in text
+    assert "After compaction (session): 1 worker call, 200 uncached input tokens" in text
+    assert len(receipt.as_dict(view)["cache_usage"]["summaries"]) == 2
+
+
+def test_unreported_summary_usage_stays_unknown(tmp_path: pathlib.Path) -> None:
+    _write(
+        tmp_path / "logs.jsonl",
+        [
+            {"type": "compact.summarise.call", "writer": "worker", "model_call_id": "s"},
+            *_call("s", input_tokens=10),
+            {"type": "compact.summarise.done", "writer": "worker", "summary_chars": 10},
+        ],
+    )
+    text = receipt.render(receipt.read_receipt(tmp_path, tmp_path))
+    assert (
+        "Summary attempt 1: worker; 10 uncached, unreported cached input tokens; accepted" in text
+    )
+    assert "Worker input cache" not in text
+
+
 @pytest.mark.parametrize("details", [{}, {"cached_tokens": 0}])
 def test_openai_usage_keeps_absent_cache_counts_absent(details: dict[str, int]) -> None:
     parsed = openai_parse.parse_response(

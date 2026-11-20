@@ -459,6 +459,7 @@ MODELS = (
     ("viewmodel.review", "MergeReviewGuard"),
     ("viewmodel.receipt", "ReceiptView"),
     ("viewmodel.cache_usage", "CacheUsage"),
+    ("viewmodel.cache_usage", "SummaryAttempt"),
     ("viewmodel.children", "ChildView"),
     ("viewmodel.children", "DispatchView"),
     ("review_records", "FindingAction"),
@@ -546,6 +547,8 @@ def _nested_record(annotation: Any) -> tuple[type[Any] | None, str]:
 
 
 def _record_kind(annotation: Any) -> str:
+    if typing.get_origin(annotation) is typing.Literal:
+        return _type_text(annotation)
     text = _type_text(annotation).replace("\\|", "|")
     base = text.replace(" | None", "")
     return _RECORD_KINDS[base]

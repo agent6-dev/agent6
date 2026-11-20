@@ -255,6 +255,9 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `writer` | `Literal['worker', 'helper'], optional` | The summary writer. |
+| `fallback_reason` | `str, optional` | Why the worker yielded to the helper. |
+| `model_call_id` | `str, optional` | The summary attempt identity. |
 | `messages` | `int` | Number of conversation messages. |
 
 ### compact.summarise.done
@@ -263,6 +266,8 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `writer` | `Literal['worker', 'helper'], optional` | The summary writer. |
+| `fallback_reason` | `str, optional` | Why the worker yielded to the helper. |
 | `summary_chars` | `int` | Length of the summary in characters. |
 | `summary` | `str` | The result or outcome in words. |
 | `kept_messages` | `int` | Number of recent messages kept after the summary. |
@@ -273,6 +278,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `writer` | `Literal['worker', 'helper'], optional` | The summary writer. |
 | `error` | `str` | The failure diagnostic. |
 
 ### compact.thinking_dropped
@@ -2779,6 +2785,22 @@ Source: [`agent6.viewmodel.cache_usage.CacheUsage`](https://github.com/agent6-de
 | `cache_write_tokens` | `int` | Input written to cache on reported calls. |
 | `post_compaction_calls` | `int` | Reported worker calls following a history rewrite. |
 | `post_compaction_uncached_tokens` | `int` | Fresh plus cache-write input on those calls. |
+| `summaries` | `tuple[SummaryAttempt, ...]` | Summary attempts in journal order, excluded from ordinary worker usage. |
+
+### SummaryAttempt
+
+**Support: public.** Keep one summary writer's outcome and reported input.
+
+Source: [`agent6.viewmodel.cache_usage.SummaryAttempt`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/cache_usage.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `writer` | `str` | The writer selected for this attempt. |
+| `model_call_id` | `str` | The matching logical model call. |
+| `fallback_reason` | `str` | Why the helper took over, if it did. |
+| `outcome` | `str` | Acceptance, rejection or no recorded outcome. |
+| `uncached_tokens` | `int \| None` | Fresh plus cache-write input, when reported. |
+| `cached_tokens` | `int \| None` | Input served from cache, when reported. |
 
 ### ChildView
 

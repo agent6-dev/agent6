@@ -542,6 +542,8 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             )
         case "compact.summarise.done":
             return journal.CompactSummariseDone(
+                writer="worker" if raw.get("writer") == "worker" else "helper",
+                fallback_reason=_text(raw, "fallback_reason"),
                 summary_chars=as_int(raw.get("summary_chars")),
                 summary=_text(raw, "summary"),
                 kept_messages=as_int(raw.get("kept_messages")),
