@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from importlib import resources
 
 import pytest
 
@@ -648,13 +649,19 @@ assert.equal(body.querySelectorAll('.blame-cell').length, 0);
 """)
 
 
-def test_client_javascript_parses() -> None:
-    """The composed source parses without a browser or network."""
+@pytest.mark.parametrize("subject", ["client", "markdown"])
+def test_client_javascript_parses(subject: str) -> None:
+    """The page script and the separate Markdown preview script each parse in Node."""
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is needed to parse the client")
+    source = (
+        page.CLIENT_JS
+        if subject == "client"
+        else resources.files("agent6.ui.web").joinpath("markdown.js").read_text(encoding="utf-8")
+    )
     result = subprocess.run(
-        [node, "--check", "-"], input=page.CLIENT_JS, check=False, capture_output=True, text=True
+        [node, "--check", "-"], input=source, check=False, capture_output=True, text=True
     )
     assert result.returncode == 0, result.stderr
 
