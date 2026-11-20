@@ -512,7 +512,7 @@ def test_a_fan_outs_children_table_leaves_the_conversation_its_share(
     box = card.bounding_box()
     conversation = page.locator(".card-conv .conv-box").bounding_box()
     assert box and conversation
-    assert name == ["left", "400"]
+    assert name == ["left", "600"]  # the card-label style
     assert box["height"] <= 900 * 0.3
     assert conversation["height"] > 300
     assert not errors

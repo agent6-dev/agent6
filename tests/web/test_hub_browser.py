@@ -235,6 +235,26 @@ def test_a_rows_status_leads_its_sub_line_and_its_text_keeps_the_width(
     assert not errors
 
 
+def test_a_tables_column_names_read_as_labels(
+    open_page: Callable[[int], tuple[Page, list[str]]], fan_port: int
+) -> None:
+    """The Children table's column names were plain muted text beside Config's small capitals."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(fan_port)
+    look = """e => { const s = getComputedStyle(e);
+      return [s.fontSize, s.fontWeight, s.textTransform, s.letterSpacing, s.color]; }"""
+    page.goto(f"http://127.0.0.1:{fan_port}/#/session/fan")
+    children = page.locator(".card-children th").first
+    expect(children).to_be_visible()
+    names = children.evaluate(look)
+    page.goto(f"http://127.0.0.1:{fan_port}/#/config")
+    config = page.locator(".cfg th").first
+    expect(config).to_be_visible()
+    assert names == config.evaluate(look)
+    assert not errors
+
+
 def test_space_opens_a_focused_row_as_enter_does(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:

@@ -139,7 +139,7 @@ main { flex: 1 0 auto; display: flex; flex-direction: column; padding: 0; }
 /* A card's or panel's heading, and a group's in the keyboard list, is a label: small muted capitals,
    so it stays apart from the bold line under it (Commit over the commit subject, Findings over its
    counts). */
-.card h2, .keys th { margin: 0 0 0.5rem; font-size: var(--fs-s); font-weight: 600; line-height: 1.25rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.card h2, .keys th, .card-children th { margin: 0 0 0.5rem; font-size: var(--fs-s); font-weight: 600; line-height: 1.25rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .card.scroll { max-height: 26.25rem; overflow: auto; }
 
 .row { display: flex; gap: 0.625rem; align-items: center; }
