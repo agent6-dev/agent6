@@ -18,8 +18,12 @@ function gitDiffViewer(body) {
   // -- a file's diff: it takes the whole body; the list is one step back --------------
   const diffView = el('div', 'git-diff'); body.appendChild(diffView);
   const diffs = new Map();
-  let showing = 0, blameOn = false;
-  const closeDiff = () => { showing++; body.classList.remove('diffing'); diffView.innerHTML = ''; delete diffView.dataset.key; };
+  let showing = 0, blameOn = false, repaint = null, narrowLayout = null;
+  const isNarrow = () => diffView.getBoundingClientRect().width <= 48.75 * parseFloat(getComputedStyle(document.documentElement).fontSize);
+  new ResizeObserver(() => {
+    if (repaint && diffView.checkVisibility() && isNarrow() !== narrowLayout) repaint();
+  }).observe(diffView);
+  const closeDiff = () => { showing++; repaint = null; body.classList.remove('diffing'); diffView.innerHTML = ''; delete diffView.dataset.key; };
   const showDiff = async (ctx, i, whole, fullContext = false) => {
     const request = ++showing;
     const f = ctx.files[i];
@@ -78,9 +82,9 @@ function gitDiffViewer(body) {
     // A binary file has no text to lay out, widen or blame: it shows inline, with none of those controls.
     let mode = f.binary ? 'inline' : recall(DIFF_MODE_KEY, 'inline');
     if (!DIFF_MODES.includes(mode)) mode = 'inline';
-    // A phone has no room for split: it shows inline, says so when split was the choice, and
-    // offers split disabled; the choice stays for a wider screen.
-    const narrow = window.matchMedia('(width <= 48.75em)').matches;
+    // The pane's width decides whether split fits; the saved choice survives a resize.
+    const narrow = isNarrow(); narrowLayout = narrow;
+    repaint = () => showDiff(ctx, i, whole, fullContext);
     const splitWanted = narrow && mode === 'split';
     if (splitWanted) mode = 'inline';
     // A deleted file has no new side and an added one no old side, handled as split is on a phone.
@@ -93,7 +97,7 @@ function gitDiffViewer(body) {
       for (const m of DIFF_MODES) {
         const b = el('button', 'mini', m); b.setAttribute('aria-pressed', String(m === mode));
         b.title = { inline: 'the unified patch', split: 'old and new side by side', old: 'the file at the base, deletions marked', new: 'the file at the head, additions marked' }[m];
-        if (m === 'split' && narrow) { b.disabled = true; b.title = 'split needs a wider screen'; }
+        if (m === 'split' && narrow) { b.disabled = true; b.title = 'split needs a wider pane'; }
         if (m === absent) { b.disabled = true; b.title = gone; }
         b.onclick = () => { remember(DIFF_MODE_KEY, m); showDiff(ctx, i, whole, fullContext); };
         modes.appendChild(b);
@@ -156,7 +160,7 @@ function gitDiffViewer(body) {
       file.hunks = [{header: 'Full file', lines: splitLines(d.context).map((text, n) => ({kind: 'ctx', text, old: n + 1, new: n + 1}))}];
       if (!parsed.length) parsed.push(file);
     }
-    if (splitWanted) patch.appendChild(el('div', 'muted gf-note', 'split needs a wider screen: showing inline'));
+    if (splitWanted) patch.appendChild(el('div', 'muted gf-note', 'split needs a wider pane: showing inline'));
     if (sideWanted) patch.appendChild(el('div', 'muted gf-note', gone + ': showing inline'));
     let sideText = null;
     if (mode === 'inline') patch.appendChild(renderUnified(parsed, true, d.old_spans, d.new_spans));
