@@ -196,19 +196,25 @@ def test_an_export_posts_every_signal_and_a_rerun_resends_only_the_metrics(
 
 
 @pytest.mark.parametrize(
-    ("capture", "actor"), [("metadata", "reviewer"), ("content", "reviewer:API design")]
+    ("capture", "focus", "actor"),
+    [
+        ("metadata", "API design", "reviewer"),
+        ("content", "API design", "reviewer:API design"),
+        ("content", "a" * 1596 + "tail", "reviewer:" + "a" * 1014 + "…"),
+    ],
+    ids=["metadata", "content", "content-excerpt"],
 )
 @pytest.mark.parametrize("index", [None, 2])
 def test_a_reviewer_exports_its_focus_only_in_content_capture(
-    repo: pathlib.Path, capture: str, actor: str, index: int | None
+    repo: pathlib.Path, capture: str, focus: str, actor: str, index: int | None
 ) -> None:
-    """A metadata collector sees the reviewer role even when the call has no panel index."""
+    """Metadata names the role. Content capture includes a capped excerpt of the actor."""
     _write_session(
         repo,
         "reviewer-a",
         [
             {"type": "session.start", "execution_id": "e", "mode": "reviewer"},
-            {"type": "model.call", "actor": "reviewer:API design", "reviewer_index": index},
+            {"type": "model.call", "actor": f"reviewer:{focus}", "reviewer_index": index},
             {"type": "model.result", "ok": True},
             {"type": "session.stop", "reason": "finish_session"},
         ],
@@ -221,7 +227,7 @@ def test_a_reviewer_exports_its_focus_only_in_content_capture(
     attrs = {a["key"]: a["value"] for a in call["attributes"]}
     assert attrs.get("agent6.reviewer") == ({"intValue": str(index)} if index is not None else None)
     assert attrs["agent6.actor"] == {"stringValue": actor}
-    assert ("API design" in json.dumps(collector.requests)) == (capture == "content")
+    assert (focus in json.dumps(collector.requests)) == actor.endswith(focus)
 
 
 @pytest.mark.parametrize("capture", ["metadata", "content"])

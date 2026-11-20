@@ -646,7 +646,7 @@ The [`--secret` target](#creating-and-inspecting) writes and removes them; `[tel
 | `logs` | `"none"` | Export destination for significant events as log records.<ul><li><code>none</code>: Do not export log records</li><li><code>otlp</code>: Post log records to telemetry endpoint</li></ul> |
 | `endpoint` | `""` | The OTLP/HTTP base URL; `/v1/traces`, `/v1/metrics` and `/v1/logs` are appended; `https://`, or `http://` to a loopback host |
 | `headers` | `[]` | Header names sent with every export; each value comes from `[telemetry.headers]` in `secrets.toml`, written by `agent6 config set --secret telemetry.headers.<name> <value>`. |
-| `capture` | `"metadata"` | Export detail; content excerpts cover the task, steers, tool arguments, gate command, model errors, finding titles and degradation details.<ul><li><code>metadata</code>: Export outcomes, counts, timings and identifiers</li><li><code>content</code>: Also export capped content excerpts</li></ul> |
+| `capture` | `"metadata"` | Export detail; content excerpts cover the task, steers, tool arguments, gate command, reviewer actor, model errors, finding titles and degradation details.<ul><li><code>metadata</code>: Export outcomes, counts, timings and identifiers</li><li><code>content</code>: Also export capped content excerpts</li></ul> |
 | `prometheus_file` | `""` | The absolute path `metrics = "prometheus"` writes atomically, in a directory node_exporter's textfile collector reads. |
 
 ## `[mcp]` and `[mcp.servers.<name>]` (optional)

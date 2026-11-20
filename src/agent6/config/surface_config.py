@@ -259,7 +259,7 @@ class TelemetryConfig(pydantic.BaseModel):
         default="metadata",
         description=(
             "Export detail; content excerpts cover the task, steers, tool arguments, gate "
-            "command, model errors, finding titles and degradation details."
+            "command, reviewer actor, model errors, finding titles and degradation details."
         ),
     )
     prometheus_file: str = pydantic.Field(

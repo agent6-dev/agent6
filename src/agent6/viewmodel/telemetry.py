@@ -232,8 +232,8 @@ class TelemetryFold:
             parent = next(reversed(execution.panels.values())).span_id
         model = str(event.get("model", ""))
         actor = str(event.get("actor", ""))
-        if self.capture == "metadata" and actor.startswith("reviewer:"):
-            actor = "reviewer"
+        if actor.startswith("reviewer:"):
+            actor = "reviewer" if self.capture == "metadata" else telemetry_records.excerpt(actor)
         fields: dict[str, telemetry_records.AttributeValue] = {
             "gen_ai.operation.name": telemetry_records.OPERATION_CHAT,
             "gen_ai.provider.name": str(event.get("provider", "")),
