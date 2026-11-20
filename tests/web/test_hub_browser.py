@@ -956,6 +956,35 @@ def test_review_fills_the_entry_on_screen_and_focuses_it(
     assert not errors
 
 
+def test_a_hovered_rows_buttons_keep_their_fill(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
+) -> None:
+    """A hovered row took its Review button's fill, so the button read as a bare outline."""
+    for args in (
+        ("init", "-q", "-b", "master"),
+        ("config", "user.name", "t"),
+        ("config", "user.email", "t@example.invalid"),
+        ("commit", "-q", "--allow-empty", "-m", "base"),
+        ("branch", "agent6/review-BBBBBB"),
+    ):
+        subprocess.run(["git", "-C", str(tmp_path), *args], check=True)
+    _manifest(tmp_path, "review-BBBBBB", run_branch="agent6/review-BBBBBB")
+    _run(tmp_path, "review-BBBBBB", "Review me", STOP)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    row = page.locator(".item", has_text="review-BBBBBB")
+    review = row.get_by_role("button", name="Review")
+    fill = "e => getComputedStyle(e).backgroundColor"
+    resting = review.evaluate(fill)
+    row.locator(".sub").first.hover()
+    page.wait_for_timeout(400)  # the fills' transitions end
+    assert review.evaluate(fill) != row.evaluate(fill)
+    review.hover()
+    page.wait_for_timeout(400)
+    assert review.evaluate(fill) not in (row.evaluate(fill), resting)  # its own hover
+    assert not errors
+
+
 def test_a_missing_worktree_is_named_once_in_its_row(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int, tmp_path: pathlib.Path
 ) -> None:
