@@ -19,7 +19,23 @@ def passthrough_env() -> dict[str, str]:
     return {k: os.environ[k] for k in PASSTHROUGH_ENV_KEYS if k in os.environ}
 
 
-def parse_metric_score(stdout: str, stderr: str, *, pattern: str) -> float | None:
+_NUMBER = re.compile(r"([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)")
+
+
+def metric_match(text: str, pattern: str | None) -> re.Match[str] | None:
+    """Return the score capture, or the last number when the operator gave no pattern."""
+    if pattern is None:
+        last = None
+        for match in _NUMBER.finditer(text):
+            last = match
+        return last
+    try:
+        return re.search(pattern, text)
+    except re.error:
+        return None
+
+
+def parse_metric_score(stdout: str, stderr: str, *, pattern: str | None) -> float | None:
     """Apply the metric regex to the combined output and read its first capture group.
 
     The harness and the tool handler score the same command output through this one parser.
@@ -27,17 +43,16 @@ def parse_metric_score(stdout: str, stderr: str, *, pattern: str) -> float | Non
     Args:
         stdout: The command's stdout.
         stderr: The command's stderr.
-        pattern: The regex whose first group is the score.
+        pattern: The regex whose first group is the score, or None for the last number.
 
     Returns:
         The score, or None when the regex does not compile, does not match, or captures a
         non-number; the caller treats that as no score this turn.
     """
-    combined = f"{stdout}\n{stderr}"
-    try:
-        m = re.search(pattern, combined)
-    except re.error:
-        return None
+    text = f"{stdout}\n{stderr}"
+    if pattern is None:
+        text = terminal.scrub_terminal_escapes(text)
+    m = metric_match(text, pattern)
     if m is None:
         return None
     try:

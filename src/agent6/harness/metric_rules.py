@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Score a metric run and decide when it plateaus or may finish.
 
-For a run with a `[harness.metric]`, the loop measures a score after each verified step and
+For a run with a session metric, the loop measures a score after each verified step and
 feeds the trajectory back to the worker. This module holds the pure pieces: the sample record,
 the score and threshold parsing, the feedback block, the plateau stop and the early-finish gate.
 The loop decides when to measure.
@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from agent6.harness import advice, loop_snapshot
 from agent6.sessions import journal
+from agent6.tools import result_format
 
 if TYPE_CHECKING:
     from agent6.harness import loop_state
@@ -128,7 +129,7 @@ def next_metric_target(
 METRIC_FRACTION_RE = re.compile(r"([0-9]+(?:\.[0-9]+)?)\s*/\s*([0-9]+(?:\.[0-9]+)?)")
 
 
-def metric_at_fraction_ceiling(text: str, score: float, *, pattern: str) -> bool:
+def metric_at_fraction_ceiling(text: str, score: float, *, pattern: str | None) -> bool:
     """Return whether the text reports the score as a maxed-out `X/Y` fraction.
 
     Graders print a bounded score as `SCORE: 27/27`: a numerator equal to both the parsed score
@@ -138,15 +139,12 @@ def metric_at_fraction_ceiling(text: str, score: float, *, pattern: str) -> bool
     Args:
         text: The metric command's output.
         score: The parsed score.
-        pattern: The `[harness.metric].pattern` regex the score was parsed with.
+        pattern: The operator's score pattern, or None for the last number.
 
     Returns:
         Whether the score is at its ceiling; a bad pattern reads as no score line.
     """
-    try:
-        m = re.search(pattern, text)
-    except re.error:  # as parse_metric_score: a bad pattern means no score line
-        return False
+    m = result_format.metric_match(text, pattern)
     if m is None:
         return False
     start = text.rfind("\n", 0, m.start()) + 1
@@ -203,14 +201,6 @@ def format_metric_sample(sample: MetricSample) -> str:
     if sample.error:
         parts.append(f"error={sample.error[:200]}")
     return ", ".join(parts)
-
-
-def metric_goal(metric_cfg: Any) -> Literal["minimize", "maximize"] | None:
-    """Return the metric config's goal, or None without a metric."""
-    goal = getattr(metric_cfg, "goal", None)
-    if goal in ("minimize", "maximize"):
-        return goal
-    return None
 
 
 def format_metric_feedback(

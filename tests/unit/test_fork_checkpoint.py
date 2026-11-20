@@ -851,6 +851,30 @@ def test_fork_at_turn_selects_that_checkpoint(
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["forked_from_turn"] == 2
 
 
+def test_fork_seeds_the_checkpoint_metric_not_a_later_retirement(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    head = _git_repo(repo)
+    monkeypatch.chdir(repo)
+    state = paths.state_dir(repo)
+    src = _seed_source_run(state, "old-AAAA11", head_sha=head, turns=(1, 2, 3))
+    src.logs_path.write_text(
+        '{"type":"metric.set","revision":1,"spec":"maximize -- score"}\n'
+        '{"type":"metric.set","revision":2,"spec":null}\n',
+        encoding="utf-8",
+    )
+    cp = src.checkpoint_path(2)
+    saved = json.loads(cp.read_text())
+    cp.write_text(json.dumps(dict(saved, metric_revision=1)))
+    assert (
+        fork._cmd_fork((), src.session_id, at_turn=2, new_session_id="kid-CCCC33", no_run=True) == 0
+    )
+    dst = sessions_layout.SessionLayout(state_dir=state, session_id="kid-CCCC33")
+    rows = [json.loads(line) for line in dst.logs_path.read_text().splitlines()]
+    assert [r["spec"] for r in rows if r["type"] == "metric.set"] == ["maximize -- score"]
+
+
 def test_fork_unknown_turn_errors(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`--at-turn` with no matching checkpoint is a clean error, no fork dir."""
     repo = tmp_path / "repo"

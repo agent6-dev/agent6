@@ -23,6 +23,7 @@ def test_rows_match_the_typed_prefix() -> None:
         "/undo",
         "/btw",
         "/task",
+        "/metric",
         "/standing",
         "/retire",
         "/now",

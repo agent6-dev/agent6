@@ -31,11 +31,12 @@ from agent6.config import Config, ConfigError, layer
 from agent6.graph import replay, storage
 from agent6.harness import loop_snapshot
 from agent6.sandbox import detect
-from agent6.sessions import id, layout, retention
+from agent6.sessions import event_log, id, journal, layout, retention
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import newest_session_dir
+from agent6.viewmodel.session import log as session_log
 
 # The DAG artifacts copied verbatim when there is no version to rebuild at.
 _DAG_ARTIFACTS: tuple[str, ...] = ("graph", "graph.jsonl", "cursor.json")
@@ -193,6 +194,7 @@ class _ForkPlan:
     Attributes:
         src: The source session.
         dst: The fork's layout.
+        metric: The setting at that checkpoint, including an explicit retirement.
         checkpoint: The materialized snapshot the fork seeds from.
         graph_version: The DAG version to rebuild at.
         forked_from_turn: The turn the fork continues from.
@@ -216,6 +218,7 @@ class _ForkPlan:
     src: layout.SessionLayout
     dst: layout.SessionLayout
     checkpoint: loop_snapshot.SessionSnapshot
+    metric: journal.MetricSet | None
     graph_version: int
     forked_from_turn: int
     from_seed: bool
@@ -278,6 +281,7 @@ def _plan_fork(
         if checkpoint_path is None:
             raise _ForkRefusedError(2)
         checkpoint = loop_snapshot.load_session_snapshot(checkpoint_path)
+        metric = session_log.read_metric(src.logs_path, revision=checkpoint.metric_revision)
     except (OSError, ValueError) as exc:
         reporter.error(f"failed to load checkpoint for {src.session_id}: {exc}")
         raise _ForkRefusedError(1) from exc
@@ -337,14 +341,17 @@ def _plan_fork(
                 " ids are unique across every bucket. Pick another id."
             )
             raise _ForkRefusedError(2)
-    child_id = new_session_id or id.unused_session_id(state, kinds.session_bucket(src_mode))
     return _ForkPlan(
         src=src,
         # A fork keeps its source's mode, so its dir belongs in that mode's bucket.
         dst=layout.SessionLayout(
-            state_dir=state, session_id=child_id, subdir=kinds.session_bucket(src_mode)
+            state_dir=state,
+            session_id=new_session_id
+            or id.unused_session_id(state, kinds.session_bucket(src_mode)),
+            subdir=kinds.session_bucket(src_mode),
         ),
         checkpoint=checkpoint,
+        metric=metric,
         graph_version=checkpoint.graph_version,
         forked_from_turn=checkpoint.next_turn,
         # A fork's checkpoint 0 is its seed: it holds the source's turn, not turn 0.
@@ -501,6 +508,9 @@ def _materialize_fork(
         reporter.error(f"target session dir already exists: {dst.session_dir}")
         return 2
     dst.ensure()
+
+    if plan.metric is not None:
+        event_log.EventSink(dst.logs_path).emit(plan.metric)
 
     # The resume pointer and origin checkpoint, then the DAG as of the checkpoint.
     portable.atomic_write(dst.session_dir / "loop_state.json", plan.checkpoint.model_dump_json())

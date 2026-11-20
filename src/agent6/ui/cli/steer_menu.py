@@ -63,6 +63,7 @@ MENU_COMMANDS: dict[str, str] = {
     "/parallel": directive.STEER_COMMANDS["/parallel"],
     "/btw": directive.STEER_COMMANDS["/btw"],
     "/task": directive.STEER_COMMANDS["/task"],
+    "/metric": directive.STEER_COMMANDS["/metric"],
     "/standing": directive.STEER_COMMANDS["/standing"],
     "/retire": directive.STEER_COMMANDS["/retire"],
     "/shells": directive.STEER_COMMANDS["/shells"],
@@ -299,7 +300,7 @@ def _run_info_command(
         print(restate(list(tail_events(session_dir / layout.LOGS_NAME, follow=False))))
     elif cmd.startswith("/btw"):
         print(_start_btw(cmd, session_dir, btw_runner))
-    elif cmd.startswith(("/task", "/standing", "/retire")):
+    elif cmd.startswith(("/task", "/standing", "/retire", "/metric")):
         # The one owner of what a composer line does; `/btw` stays local for its runner.
         _did, said = directive_actions.act_on_directive(session_dir, cmd) or (False, "")
         print(f"[agent6] {said}")

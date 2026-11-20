@@ -86,7 +86,7 @@ def test_the_auto_metric_says_it_runs_after_each_committed_edit() -> None:
     """
     from unittest import mock
 
-    from agent6.config import HarnessConfig, MetricConfig
+    from agent6 import directive
     from agent6.harness import metric_sampler
     from agent6.tools import tool_errors
 
@@ -95,8 +95,8 @@ def test_the_auto_metric_says_it_runs_after_each_committed_edit() -> None:
         last_verification=None, execution_id="execution", verify_withheld=False
     )
     dispatcher.dispatch.side_effect = tool_errors.ToolError("no score")
+    dispatcher.metric = directive.parse_metric_spec("minimize -- true")
     sampler = metric_sampler.MetricSampler(
-        settings=MetricConfig(command=("true",), pattern="(\\d+)", goal="minimize"),
         enabled=True,
         dispatcher=dispatcher,
         log=lines.append,
@@ -106,8 +106,6 @@ def test_the_auto_metric_says_it_runs_after_each_committed_edit() -> None:
     sampler.auto_feedback(state, turn=3, sha="")
     assert lines == ["LOOP: auto metric after the committed edit at turn 3"]
     told = [
-        HarnessConfig.model_fields["metric"].description or "",
-        MetricConfig.model_fields["command"].description or "",
         metric_sampler.__doc__ or "",
         metric_sampler.MetricSampler.auto_feedback.__doc__ or "",
     ]

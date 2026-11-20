@@ -9,7 +9,7 @@ from collections.abc import Callable
 
 import pytest
 
-from agent6 import portable
+from agent6 import directive, portable
 from agent6.app import frontend as app_frontend
 from agent6.config import Config
 from agent6.sandbox import jail_session
@@ -179,7 +179,6 @@ def test_every_ask_command_tool_uses_the_command_scope(
             "sandbox": {"run_commands": "ask", "network": "host"},
             "harness": {
                 "verify": {"command": ["true"]},
-                "metric": {"command": ["true"], "pattern": "(true)", "goal": "minimize"},
             },
         }
     )
@@ -189,6 +188,7 @@ def test_every_ask_command_tool_uses_the_command_scope(
         session_dir=tmp_path,
         prompts=operator_prompts.OperatorPrompts(approver=refuse, session_dir=tmp_path),
     )
+    d.metric = directive.parse_metric_spec("maximize -- true")
     with pytest.raises(tool_errors.ToolDeniedError):
         d.dispatch(name, raw)
     assert len(seen) == 1

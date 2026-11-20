@@ -1036,7 +1036,7 @@ depends_on = ["agent6.paths", "agent6.portable", "agent6.sessions.event_log", "a
 [[modules]]
 # Routing and lifecycle own the command helpers' inputs; execution stays jailed.
 path = "agent6.tools.dispatch"
-depends_on = ["agent6.config", "agent6.context.memory", "agent6.context.skills", "agent6.errors", "agent6.evidence", "agent6.graph.curator", "agent6.kinds", "agent6.path_safety", "agent6.paths", "agent6.sandbox", "agent6.sessions.event_log", "agent6.sessions.ipc", "agent6.sessions.journal", "agent6.sessions.layout", "agent6.sessions.shells", "agent6.tools", "agent6.tools.command_tools", "agent6.tools.schema", "agent6.tools.target_policy", "agent6.vcs.git.read"]
+depends_on = ["agent6.config", "agent6.context.memory", "agent6.context.skills", "agent6.directive", "agent6.errors", "agent6.evidence", "agent6.graph.curator", "agent6.kinds", "agent6.path_safety", "agent6.paths", "agent6.sandbox", "agent6.sessions.event_log", "agent6.sessions.ipc", "agent6.sessions.journal", "agent6.sessions.layout", "agent6.sessions.shells", "agent6.tools", "agent6.tools.command_tools", "agent6.tools.schema", "agent6.tools.target_policy", "agent6.vcs.git.read"]
 
 [[modules]]
 path = "agent6.tools.command_tools"

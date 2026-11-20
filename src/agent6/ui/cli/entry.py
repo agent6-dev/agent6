@@ -319,6 +319,7 @@ def _dispatch_run_task(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
         preset=getattr(args, "preset", ""),
         parallel_spec=getattr(args, "parallel", ""),
         worktree=getattr(args, "worktree", False),
+        metric=getattr(args, "metric", None),
         standing_goal=getattr(args, "standing", ""),
         pins=tuple(args.pins),
         model=getattr(args, "model", ""),

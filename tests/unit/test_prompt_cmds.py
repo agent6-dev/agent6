@@ -159,7 +159,7 @@ def test_prompt_show_infers_the_gate_a_run_would_infer(
 def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: pathlib.Path) -> None:
     """A withheld tool gets no block and no offer.
 
-    `run_commands = "deny"` withholds every command tool. A metric with no `[harness.metric]`
+    `run_commands = "deny"` withholds every command tool. A metric with no operator setting
     can only error. A prompt block for an absent tool is one the model cannot act on, and the
     metric tool must not be offered while `run_verify_command` is hidden.
     """
@@ -174,7 +174,6 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: pathlib.Path) -> N
             "sandbox": {"run_commands": "deny"},
             "harness": {
                 "verify": {"command": ["pytest", "-q"]},
-                "metric": {"command": ["m"], "pattern": r"x:(\d+)", "goal": "minimize"},
             },
         }
     )
@@ -186,7 +185,7 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: pathlib.Path) -> N
     with tempfile.TemporaryDirectory() as td:
         plain = dispatch.ToolDispatcher(root=pathlib.Path(td), config=Config())
         names = [t.name for t in toolset.tool_definitions(plain, mode="run")]
-    assert "run_metric_command" not in names, "offered with no [harness.metric]"
+    assert "run_metric_command" not in names, "offered with no operator setting"
 
 
 def test_plan_mode_does_not_name_a_gate_it_says_is_absent(tmp_path: pathlib.Path) -> None:

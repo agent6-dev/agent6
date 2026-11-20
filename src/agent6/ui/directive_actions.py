@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Act on a composer line that is not a steer.
 
-`/btw`, `/task`, `/standing`, `/retire` and `/compact` act beside a live run and
+`/btw`, `/task`, `/standing`, `/metric`, `/retire` and `/compact` act beside a live run and
 never reach the model as a message; `/now` is a steer that interrupts the call
 in flight. Every entry point that takes a typed line routes it through here, so
 the same words do the same thing wherever they are typed. `/pin` and
@@ -20,6 +20,7 @@ from agent6.graph import order, storage
 from agent6.sessions import ipc, layout
 from agent6.ui import btw
 from agent6.viewmodel import format
+from agent6.viewmodel.session import log as session_log
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -69,6 +70,24 @@ def _task(
     """
     ipc.queue_request(session_dir, "task", text)
     return True, "task queued; it runs once the open tasks drain"
+
+
+def _metric(
+    session_dir: pathlib.Path, text: str, _config_paths: tuple[pathlib.Path, ...]
+) -> tuple[bool, str]:
+    """Return the applied metric or confirmation of a queued change."""
+    if session_dir.parent.name != "runs":
+        return False, "/metric needs a live run"
+    if not text:
+        record = session_log.read_metric(session_dir / layout.LOGS_NAME)
+        return True, f"metric: {record.spec if record and record.spec else 'off'}"
+    if text != "off":
+        try:
+            text = agent6_directive.parse_metric_spec(text).text()
+        except agent6_directive.DirectiveError as exc:
+            return False, str(exc)
+    ipc.queue_request(session_dir, "metric", text)
+    return True, f"metric at the next step: {text}"
 
 
 def _standing(
@@ -134,6 +153,7 @@ def _compact(
 
 _DIRECTIVES: tuple[_Directive, ...] = (
     _Directive(agent6_directive.parse_btw, "/btw needs a question: /btw <question>", _btw),
+    _Directive(agent6_directive.parse_metric, "", _metric),
     _Directive(agent6_directive.parse_task, "/task needs the work: /task <text>", _task),
     _Directive(
         agent6_directive.parse_standing,

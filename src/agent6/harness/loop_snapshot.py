@@ -162,7 +162,7 @@ class ResumeError(Exception):
 
 
 # Bump on any change to the persisted shape: an older in-flight run then refuses to resume or fork.
-SNAPSHOT_VERSION = 6
+SNAPSHOT_VERSION = 7
 
 
 class SessionSnapshot(pydantic.BaseModel):
@@ -192,6 +192,7 @@ class SessionSnapshot(pydantic.BaseModel):
         verify_ever_passed: Whether any verify passed.
         verify_ever_failed: Whether any verify failed.
         gateless_ever_edited: Whether a gateless run edited the tree.
+        metric_revision: The metric.set revision these scores describe, or zero without one.
         metric_best_score: The best metric score, when a metric is configured.
         metric_at_ceiling: Whether the metric reached its ceiling.
         last_verify_ok: The last verify's result, carried only onto a clean tree at `head_sha`.
@@ -240,6 +241,7 @@ class SessionSnapshot(pydantic.BaseModel):
     verify_ever_passed: bool = False
     verify_ever_failed: bool = False
     gateless_ever_edited: bool = False
+    metric_revision: int = pydantic.Field(default=0, ge=0)
     metric_best_score: float | None = None
     metric_at_ceiling: bool = False
     final_verify_id: str | None = None

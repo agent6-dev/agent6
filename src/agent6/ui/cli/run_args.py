@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 
+from agent6 import directive
 from agent6.config import layer_presets, model
 from agent6.ui.cli import common, completers
 
@@ -14,6 +15,24 @@ _INTERACTIVE_HELP = (
     "Pause for input after each automatic commit; /help lists the prompt's commands."
     " Requires a foreground terminal."
 )
+
+
+def _metric_arg(text: str) -> directive.MetricSpec:
+    """Parse the spec for argparse.
+
+    Args:
+        text: The value of --metric.
+
+    Returns:
+        The parsed metric.
+
+    Raises:
+        argparse.ArgumentTypeError: The spec is invalid.
+    """
+    try:
+        return directive.parse_metric_spec(text)
+    except directive.DirectiveError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def _add_model_flag(parser: argparse.ArgumentParser) -> None:
@@ -78,6 +97,16 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help=(
             "Make the agent split the task into ordered subtasks before editing, then work on"
             " one at a time. Sets harness.prompt.decompose to `on` for this run."
+        ),
+    )
+    run_p.add_argument(
+        "--metric",
+        type=_metric_arg,
+        metavar="SPEC",
+        help=(
+            f"Score this run after each committed edit: {directive.METRIC_SYNTAX}. "
+            "Quote the whole spec. Without a pattern, read the last printed number. "
+            "Use /metric to show or replace it, /metric off to retire it."
         ),
     )
     run_p.add_argument(

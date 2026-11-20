@@ -81,9 +81,22 @@ def seed_carryover(
         state: The execution's state.
         conversation: The conversation the pins are announced into.
         resume_from: The snapshot a resumed execution restores; None for a fresh run.
+
+    Raises:
+        loop_snapshot.ResumeError: The journal is missing the saved metric revision.
     """
     if resume_from is not None:
         loop_state.restore_completion_state(state, resume_from)
+        if harness.mode == "run" and harness.events is not None:
+            harness.metrics.restore(harness.events.path)
+            revision = harness.metrics.revision
+            if revision < resume_from.metric_revision:
+                raise loop_snapshot.ResumeError("the journal is missing the saved metric revision")
+            if revision != resume_from.metric_revision:
+                # A setting reached the journal just before the execution lost its checkpoint.
+                state.metric = metric_rules.MetricGuard()
+            if revision:
+                conversation.notice(harness.metrics.notice())
         state.verify.adopted = harness.adopted_on_resume
         carry_verify_verdict(harness, state, resume_from)
         if resume_from.verify_withheld and harness.dispatcher.command_policy() == "deny":
@@ -230,6 +243,7 @@ def save_resume_snapshot(
         parallel_groups_dispatched=state.parallel_groups_dispatched,
         pins=tuple(state.pins),
         delivered_questions=tuple(state.delivered_questions),
+        metric_revision=harness.metrics.revision,
         metric_best_score=best.score if best is not None else None,
         metric_at_ceiling=state.metric.at_ceiling(),
         last_verify_ok=state.verify.last_ok,

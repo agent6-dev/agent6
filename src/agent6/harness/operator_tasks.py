@@ -26,55 +26,37 @@ class OperatorTasks:
 
     Attributes:
         curator: The graph, or None for a run without one.
-        take_requests: The bridge's queue: `/task`, `/standing`, `/retire`, or `agent6 steer`
-            with the same words.
         log: The run's text logger.
         emit: The run's event sink.
         emit_graph_snapshot: Publishes the graph after a write.
     """
 
     curator: graph_curator.GraphCurator | None
-    take_requests: Callable[[], list[ipc.OperatorRequest]]
     log: Callable[[str], None]
     emit: Callable[..., None]
     emit_graph_snapshot: Callable[[], None]
 
-    def take(self, root_task_id: str | None) -> bool:
-        """Apply what the operator asked since the last turn boundary, in the order asked.
-
-        A refused request is logged and emitted (`task.request_refused`); the rest still land.
-
-        Args:
-            root_task_id: The run's root task, or None before the graph is seeded.
-
-        Returns:
-            Whether anything landed.
-        """
+    def apply_request(self, root_task_id: str | None, request: ipc.OperatorRequest) -> bool:
+        """Return whether the request changed the graph, journaling a refusal."""
         if self.curator is None or root_task_id is None:
             return False
-        landed = False
-        for request in self.take_requests():
-            try:
-                if request.kind == "task":
-                    self.queue(root_task_id, request.text)
-                elif request.kind == "standing":
-                    self.set_standing(root_task_id, request.text)
-                else:
-                    self.retire(request.text)
-            except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
-                self.log(f"LOOP: {request.kind} request refused: {exc}")
-                self.emit(
-                    journal.TaskRequestRefused(
-                        kind=request.kind,
-                        text=request.text[:200],
-                        error=str(exc),
-                    )
+        try:
+            if request.kind == "task":
+                self.queue(root_task_id, request.text)
+            elif request.kind == "standing":
+                self.set_standing(root_task_id, request.text)
+            else:
+                assert request.kind == "retire"
+                self.retire(request.text)
+        except (graph_curator.CuratorError, OSError, pydantic.ValidationError) as exc:
+            self.log(f"LOOP: {request.kind} request refused: {exc}")
+            self.emit(
+                journal.TaskRequestRefused(
+                    kind=request.kind, text=request.text[:200], error=str(exc)
                 )
-                continue
-            landed = True
-        if landed:
-            self.emit_graph_snapshot()
-        return landed
+            )
+            return False
+        return True
 
     def seed_root(self, user_task: str) -> str | None:
         """Seed the run's root task, the user's task itself.

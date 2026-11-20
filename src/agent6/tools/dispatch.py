@@ -23,7 +23,7 @@ from typing import Any
 
 import pydantic
 
-from agent6 import errors, evidence, kinds, path_safety, paths
+from agent6 import directive, errors, evidence, kinds, path_safety, paths
 from agent6.config import Config
 from agent6.context import memory, skills
 from agent6.graph import curator as graph_curator
@@ -142,6 +142,7 @@ class ToolDispatcher:
         self._closed = False
         self.last_verification: evidence.VerificationEvidence | None = None
         self.verify_withheld = False
+        self.metric: directive.MetricSpec | None = None
         self._config = config
         # Memory files are read and edited with the ordinary tools, in-process only.
         mem = memory.memory_dir(state_dir) if state_dir is not None else None
@@ -289,8 +290,8 @@ class ToolDispatcher:
         return ipc.effective_run_commands(configured, self._session_dir)
 
     def metric_configured(self) -> bool:
-        """Return whether `[harness.metric]` gives `run_metric_command` anything to run."""
-        return self._config.harness.metric is not None
+        """Return whether this session has an operator-set metric."""
+        return self.metric is not None
 
     def tool_is_withheld(self, name: str) -> bool:
         """Return whether the model is denied the tool, extras included."""
@@ -1213,10 +1214,12 @@ class ToolDispatcher:
             OperatorCommandUnexecutableError: The command cannot run in the jail.
         """
         schema.RunMetricInput.model_validate(raw)
-        metric_cfg = self._config.harness.metric
-        if metric_cfg is None:
-            raise tool_errors.ToolError("no [harness.metric] configured")
-        argv = metric_cfg.command
+        metric = self.metric
+        if metric is None:
+            raise tool_errors.ToolError(
+                "no session metric; the operator can set one with --metric or /metric"
+            )
+        argv = metric.command
         self._approve_command("run_metric_command", argv)
         self._emit(journal.MetricStart(command=list(argv)))
         outcome, timeout_s = command_tools.run_argv_raw(
@@ -1235,7 +1238,7 @@ class ToolDispatcher:
             )
         # Scored from the unclipped outcome: the display clip's marker matches a loose pattern.
         score = result_format.parse_metric_score(
-            outcome.stdout, outcome.stderr, pattern=metric_cfg.pattern
+            outcome.stdout, outcome.stderr, pattern=metric.pattern
         )
         res = result_format.exec_result(outcome, timeout_s=timeout_s)
         self._emit(

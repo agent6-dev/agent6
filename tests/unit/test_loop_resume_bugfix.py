@@ -18,6 +18,7 @@ from unittest import mock
 
 import pytest
 
+from agent6 import directive
 from agent6.config import Config
 from agent6.harness import (
     loop,
@@ -93,7 +94,10 @@ def _wf(
         "logger": _silent,
     }
     defaults.update(kw)
-    return loop.Harness(**defaults)
+    metric = defaults.pop("metric", None)
+    wf = loop.Harness(**defaults)
+    wf.dispatcher.metric = metric if wf.mode == "run" else None
+    return wf
 
 
 def _git_repo(path: pathlib.Path) -> None:
@@ -125,10 +129,13 @@ def test_snapshot_persists_completion_scalars(tmp_path: pathlib.Path) -> None:
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal="maximize"),
         ),
     )
-    wf = _wf(resume_state_path=snap, config=config)
+    wf = _wf(
+        metric=directive.parse_metric_spec(r"maximize -- score"),
+        resume_state_path=snap,
+        config=config,
+    )
     state = loop_state.LoopState(original_task="t", tool_calls=2)
     state.verify.ever_passed = True
     state.verify.scoped = True
@@ -162,7 +169,6 @@ def test_snapshot_preserves_run_lifetime_memory_state(tmp_path: pathlib.Path) ->
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
@@ -243,10 +249,13 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: pathlib
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal="maximize"),
         ),
     )
-    wf = _wf(resume_state_path=snap, config=config)
+    wf = _wf(
+        metric=directive.parse_metric_spec(r"maximize -- score"),
+        resume_state_path=snap,
+        config=config,
+    )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.parallel_groups_dispatched = 2
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
@@ -275,10 +284,13 @@ def test_snapshot_persists_and_restores_pins(tmp_path: pathlib.Path) -> None:
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal="maximize"),
         ),
     )
-    wf = _wf(resume_state_path=snap, config=config)
+    wf = _wf(
+        metric=directive.parse_metric_spec(r"maximize -- score"),
+        resume_state_path=snap,
+        config=config,
+    )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.pins.extend(["never touch schema files", "goal:\nship X"])
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
@@ -369,7 +381,6 @@ def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatc
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal="maximize"),
         ),
     )
     provider = mock.MagicMock()
@@ -395,7 +406,13 @@ def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatc
         last_verification=None, execution_id="execution", verify_withheld=False
     )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
-    wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run")
+    wf = _wf(
+        metric=directive.parse_metric_spec(r"maximize -- score"),
+        provider=provider,
+        dispatcher=dispatcher,
+        config=config,
+        mode="run",
+    )
 
     captured: dict[str, Any] = {}
     orig = metric_rules.MetricGuard.at_ceiling
@@ -461,7 +478,6 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal="maximize"),
         ),
     )
     provider = mock.MagicMock()
@@ -488,7 +504,14 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
     )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture()
-    wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run", events=ev)
+    wf = _wf(
+        metric=directive.parse_metric_spec(r"maximize -- score"),
+        provider=provider,
+        dispatcher=dispatcher,
+        config=config,
+        mode="run",
+        events=ev,
+    )
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=loop_conversation.Conversation.from_wire(
@@ -544,7 +567,6 @@ def test_resume_start_carries_the_execution_identity(tmp_path: pathlib.Path) -> 
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal="maximize"),
         ),
     )
     provider = mock.MagicMock()
@@ -572,6 +594,7 @@ def test_resume_start_carries_the_execution_identity(tmp_path: pathlib.Path) -> 
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture(path=session_dir / "logs.jsonl")
     wf = _wf(
+        metric=directive.parse_metric_spec(r"maximize -- score"),
         provider=provider,
         dispatcher=dispatcher,
         config=config,
@@ -604,7 +627,6 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal="maximize"),
         ),
     )
     provider = mock.MagicMock()
@@ -631,7 +653,14 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
     )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture()
-    wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run", events=ev)
+    wf = _wf(
+        metric=directive.parse_metric_spec(r"maximize -- score"),
+        provider=provider,
+        dispatcher=dispatcher,
+        config=config,
+        mode="run",
+        events=ev,
+    )
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
         conversation=loop_conversation.Conversation.from_wire(
@@ -679,7 +708,6 @@ def test_snapshot_written_after_tool_dispatch_advances_turn(tmp_path: pathlib.Pa
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     provider = mock.MagicMock()
@@ -832,7 +860,6 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: pathlib.
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     emitted: list[tuple[str, dict[str, Any]]] = []
@@ -905,7 +932,6 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: pathlib.Path
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     head = subprocess.run(
@@ -948,7 +974,6 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal="maximize"),
         ),
     )
     provider = mock.MagicMock()
@@ -966,7 +991,14 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
     )
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture()
-    wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run", events=ev)
+    wf = _wf(
+        metric=directive.parse_metric_spec(r"maximize -- score"),
+        provider=provider,
+        dispatcher=dispatcher,
+        config=config,
+        mode="run",
+        events=ev,
+    )
     # A restored context carrying two bare elisions and one distilled gist.
     restored = loop_conversation.Conversation.from_wire(
         [
@@ -1218,7 +1250,6 @@ def test_a_gate_swapped_between_executions_is_announced_to_the_worker(
                 timeout_s=60.0,
                 infer=True,
             ),  # the operator pinned one since
-            metric=types.SimpleNamespace(goal="maximize"),
         ),
     )
     provider = mock.MagicMock()
@@ -1246,6 +1277,7 @@ def test_a_gate_swapped_between_executions_is_announced_to_the_worker(
     dispatcher.dispatch.return_value = results.RawResult({"ok": True})
     ev = _EventCapture(path=session_dir / "logs.jsonl")
     wf = _wf(
+        metric=directive.parse_metric_spec(r"maximize -- score"),
         provider=provider,
         dispatcher=dispatcher,
         config=config,
@@ -1292,7 +1324,6 @@ def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: pathlib.Path)
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), timeout_s=60.0, infer=True
             ),
-            metric=types.SimpleNamespace(goal="maximize"),
         ),
     )
     provider = mock.MagicMock()
@@ -1321,6 +1352,7 @@ def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: pathlib.Path)
     dispatcher.adopt_verify_command.return_value = True
     ev = _EventCapture(path=session_dir / "logs.jsonl")
     wf = _wf(
+        metric=directive.parse_metric_spec(r"maximize -- score"),
         provider=provider,
         dispatcher=dispatcher,
         config=config,
@@ -1551,7 +1583,6 @@ def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), timeout_s=60.0, infer=True
             ),  # dropped at execution start: commands are withheld
-            metric=types.SimpleNamespace(goal="maximize"),
         ),
     )
     provider = mock.MagicMock()
@@ -1580,6 +1611,7 @@ def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(
     dispatcher.command_policy.return_value = "deny"
     ev = _EventCapture(path=session_dir / "logs.jsonl")
     wf = _wf(
+        metric=directive.parse_metric_spec(r"maximize -- score"),
         provider=provider,
         dispatcher=dispatcher,
         config=config,

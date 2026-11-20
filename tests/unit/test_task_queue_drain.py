@@ -20,6 +20,7 @@ from agent6.graph import models
 from agent6.harness import (
     dag_focus,
     loop,
+    loop_conversation,
     loop_state,
     loop_steer,
     operator_bridge,
@@ -52,6 +53,14 @@ def _workflow(curator: graph_curator.GraphCurator, sink: event_log.EventSink) ->
     )
 
 
+def _take_requests(wf: loop.Harness, root: str | None) -> None:
+    loop_steer.take_requests(
+        wf,
+        loop_state.LoopState(original_task="t", tool_calls=0, root_task_id=root),
+        loop_conversation.Conversation(),
+    )
+
+
 def _state(root: str) -> loop_state.LoopState:
     return loop_state.LoopState(original_task="t", tool_calls=0, root_task_id=root, system="")
 
@@ -79,7 +88,7 @@ def test_a_queued_task_lands_under_the_root_whole(tmp_path: pathlib.Path) -> Non
     ipc.queue_request(sink.path.parent, "task", "second thing")
     wf = _workflow(curator, sink)
 
-    wf.operator_tasks.take(root)
+    _take_requests(wf, root)
 
     children = [curator.nodes()[cid] for cid in curator.get(root).children]
     assert [c.title for c in children] == ["Add a --json flag", "second thing"]
@@ -95,8 +104,8 @@ def test_the_drain_takes_each_task_once(tmp_path: pathlib.Path) -> None:
     wf = _workflow(curator, sink)
     state = _state(root)
 
-    wf.operator_tasks.take(state.root_task_id)
-    wf.operator_tasks.take(state.root_task_id)
+    _take_requests(wf, state.root_task_id)
+    _take_requests(wf, state.root_task_id)
 
     assert len(curator.get(root).children) == 1
 
@@ -107,7 +116,7 @@ def test_a_queued_task_is_journalled_for_the_surfaces(tmp_path: pathlib.Path) ->
     ipc.queue_request(sink.path.parent, "task", "note it")
     wf = _workflow(curator, sink)
 
-    wf.operator_tasks.take(root)
+    _take_requests(wf, root)
 
     kinds = [e["type"] for e in _events(sink)]
     assert "task.queued" in kinds
@@ -120,7 +129,7 @@ def test_an_empty_queue_journals_nothing(tmp_path: pathlib.Path) -> None:
     curator, sink, root = _run_dir(tmp_path)
     wf = _workflow(curator, sink)
 
-    wf.operator_tasks.take(root)
+    _take_requests(wf, root)
 
     assert _events(sink) == []
 

@@ -32,12 +32,13 @@ from agent6.app.review import directive as review_directive
 from agent6.app.session import prepare as session_prepare
 from agent6.app.session import setup as session_setup
 from agent6.config import Config, layer_data
-from agent6.sessions import id, ipc, lock, process
+from agent6.sessions import id, ipc, journal, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import ops as git_ops
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import listing
+from agent6.viewmodel.session import log as session_log
 
 
 def discard_husk_dir(session_dir: pathlib.Path) -> None:
@@ -61,6 +62,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     interactive: bool = False,
     tui: bool = False,
     mode: kinds.LoopMode = "run",
+    metric: directive.MetricSpec | None = None,
     standing_goal: str = "",
     budget_overrides: session_setup.BudgetOverrides | None = None,
     sandbox_overrides: session_setup.SandboxOverrides | None = None,
@@ -97,6 +99,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         interactive: Whether the ask REPL drives the session.
         tui: Whether `--tui` was asked for.
         mode: The session mode.
+        metric: The operator's metric for this run, or None.
         standing_goal: The standing goal, when set.
         budget_overrides: The budget flags the lifecycle re-reads.
         sandbox_overrides: The sandbox flags the lifecycle re-reads.
@@ -426,6 +429,13 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             review_base_tree=review_world.target.base_tree if review_world is not None else "",
             budget=budget_overrides.stamp() if budget_overrides is not None else None,
         )
+        if metric is not None and mode == "run":
+            previous = session_log.read_metric(layout.logs_path) if parked else None
+            events.emit(
+                journal.MetricSet(
+                    revision=previous.revision + 1 if previous else 1, spec=metric.text()
+                )
+            )
         if parked is not None:
             stamps.stamp_parked(
                 layout.session_dir, task=parked[0], reason=parked[1], operator_task=parked[2]

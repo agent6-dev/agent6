@@ -66,7 +66,7 @@ class OperatorBridge:
         should_abort: Polled during a streaming call; True once the operator asked to stop.
         should_interrupt: Polled during a streaming call; True once the operator asked to steer,
             so the watchdog ends the turn and the loop reaches its steer boundary at once.
-        take_requests: What the operator queued for the graph (`/task`, `/standing`, `/retire`)
+        take_requests: What the operator queued for the graph or metric
             since the last call, oldest first.
         after_auto_commit: Called with the turn and sha of each landed auto-commit; "stop"
             ends the loop as interactive_stop, "undo" takes the `/undo` path, "continue" runs on.

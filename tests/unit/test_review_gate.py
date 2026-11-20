@@ -546,7 +546,6 @@ def test_a_settled_end_is_reviewed_like_a_finish() -> None:
     """
     wf = _wf(review=review_gate.ReviewSettings(when="finish", reviewers=[mock.MagicMock()]))
     wf.mode = "run"
-    wf.config.harness.metric = None
     panel = _PanelScript(
         [
             review_gate.CritiqueResult(text="* a test is missing", satisfied=False),
@@ -585,7 +584,6 @@ def test_a_periodic_finding_on_a_settling_turn_is_delivered_once() -> None:
         )
     )
     wf.mode = "run"
-    wf.config.harness.metric = None
     panel = _PanelScript(
         [review_gate.CritiqueResult(text="* one periodic finding", satisfied=True)]
     )

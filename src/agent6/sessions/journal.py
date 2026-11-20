@@ -629,6 +629,14 @@ class MetricEnd(Event):
     )
 
 
+class MetricSet(Event):
+    """The operator set, replaced or retired the run's metric."""
+
+    TYPE: ClassVar[str] = "metric.set"
+    revision: int = pydantic.Field(ge=1, description="The metric revision a checkpoint refers to.")
+    spec: str | None = pydantic.Field(description="The operator's metric spec, or null for off.")
+
+
 class MetricSample(Event):
     """A metric sample was recorded."""
 
@@ -2029,6 +2037,7 @@ EVENT_TYPES: dict[str, type[Event]] = {
     "metric.ceiling_reached": MetricCeilingReached,
     "metric.end": MetricEnd,
     "metric.sample": MetricSample,
+    "metric.set": MetricSet,
     "metric.start": MetricStart,
     "model.attempt": ModelAttempt,
     "model.call": ModelCall,

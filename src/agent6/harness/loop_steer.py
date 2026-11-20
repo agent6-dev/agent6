@@ -8,12 +8,13 @@ import time
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from agent6 import terminal
+from agent6 import directive, terminal
 from agent6.harness import (
     loop_conversation,
     loop_resume,
     loop_snapshot,
     loop_state,
+    metric_rules,
     parallel_join,
     parallel_recovery,
 )
@@ -60,6 +61,32 @@ def seeded_steer(
         turn,
         state,
     )
+
+
+def take_requests(
+    harness: loop.Harness, state: loop_state.LoopState, conversation: loop_conversation.Conversation
+) -> bool:
+    """Return whether operator requests changed this turn's metric or graph."""
+    graph_changed = metric_changed = False
+    for request in harness.bridge.take_requests():
+        if request.kind != "metric":
+            graph_changed |= harness.operator_tasks.apply_request(state.root_task_id, request)
+            continue
+        if harness.mode != "run":
+            continue
+        try:
+            spec = None if request.text == "off" else directive.parse_metric_spec(request.text)
+        except directive.DirectiveError as exc:
+            harness.log(f"LOOP: refused metric: {exc}")
+            continue
+        harness.metrics.change(spec)
+        state.metric = metric_rules.MetricGuard(denied=state.metric.denied)
+        metric_changed = True
+    if graph_changed:
+        harness.operator_tasks.emit_graph_snapshot()
+    if metric_changed:
+        conversation.notice(harness.metrics.notice())
+    return metric_changed or graph_changed
 
 
 def operator_boundary(
@@ -433,7 +460,7 @@ def park_for_steer(
             harness.emit(journal.LoopParkedResumed(turn=turn))
             return None
         # A queued task, goal or retirement is work, and so is a child's end or merged work.
-        if harness.operator_tasks.take(state.root_task_id) or (
+        if take_requests(harness, state, conversation) or (
             harness.children is not None and harness.children.settle(conversation, turn)
         ):
             harness.emit(journal.LoopParkedResumed(turn=turn))

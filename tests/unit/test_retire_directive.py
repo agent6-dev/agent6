@@ -21,6 +21,7 @@ from agent6.sessions import layout as sessions_layout
 from agent6.ui import directive_actions
 from agent6.viewmodel import format
 from tests.unit.test_task_queue_drain import (
+    _take_requests,  # pyright: ignore[reportPrivateUsage]
     _workflow,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -130,7 +131,7 @@ def test_the_loop_retires_what_the_operator_named(tmp_path: pathlib.Path) -> Non
     for task_id in kids:
         directive_actions.act_on_directive(session_dir, f"/retire {task_id}")
 
-    wf.operator_tasks.take(root)
+    _take_requests(wf, root)
 
     assert [curator.nodes()[k].status for k in kids] == ["obsolete", "obsolete"]
     assert [r.text for r in ipc.drain_requests(session_dir)] == []
@@ -140,7 +141,7 @@ def test_an_id_that_vanished_is_logged_and_skipped(tmp_path: pathlib.Path) -> No
     curator, session_dir, root, kids, wf = _graph(tmp_path)
     ipc.queue_request(session_dir, "retire", "01MISSINGMISSINGMISSINGMIS")
 
-    wf.operator_tasks.take(root)
+    _take_requests(wf, root)
 
     assert [curator.nodes()[k].status for k in kids] == ["pending", "pending"]
     # The composer said "retiring"; the refusal is the event that takes it back.

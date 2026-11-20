@@ -152,7 +152,7 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         "text",
         nargs="?",
         help=(
-            "The instruction, or a composer directive (/pin, /compact, /task, /standing,"
+            "The instruction, or a composer directive (/pin, /compact, /task, /standing, /metric,"
             " /retire, /btw, /now)."
         ),
     )

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import pathlib
 
-from agent6 import kinds
+from agent6 import directive, kinds
 from agent6.config import Config, plan_metered
 from agent6.context import memory, skills
 from agent6.prompts import loop
@@ -238,6 +238,7 @@ def build_system_prompt(
     decisions: str = "",
     skills: skills.ResolvedSkills | None,
     isolation: kinds.IsolationLevel = "full",
+    metric: directive.MetricSpec | None = None,
     commands_allowed: bool | None = None,
     protected_paths: bool = False,
     dag_available: bool = True,
@@ -258,6 +259,7 @@ def build_system_prompt(
         decisions: The rulings text, clipped to the cap.
         skills: The resolved skills, or None.
         isolation: The jail level.
+        metric: This run's operator-set metric.
         commands_allowed: Whether the model may run commands; None reads the config.
         protected_paths: Whether the jail has protect paths beyond `.git`.
         dag_available: Whether the run has a curator.
@@ -359,13 +361,12 @@ def build_system_prompt(
         parts.append(loop.V2_NO_VERIFY_BLOCK)
 
     # Run mode with commands allowed only: elsewhere the model has no run_metric_command.
-    if mode == "run" and config.harness.metric is not None and allowed:
-        m = config.harness.metric
+    if mode == "run" and metric is not None and allowed:
         parts.append(
             loop.V2_METRIC_BLOCK_TEMPLATE.format(
-                argv=json.dumps(list(m.command)),
-                pattern=m.pattern,
-                goal=m.goal,
+                argv=json.dumps(list(metric.command)),
+                pattern=metric.pattern or "last printed number",
+                goal=metric.goal,
             )
         )
 

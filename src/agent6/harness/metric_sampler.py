@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Take the metric readings of a run with a `[harness.metric]`.
+"""Take the metric readings of a run with an operator-set metric.
 
 A `run_metric_command` result, the model's own call or the harness's after each committed edit,
 becomes a sample with its event and the feedback block the model reads. The pure rules live
@@ -10,45 +10,68 @@ in `metric_rules`; the loop decides when to measure.
 from __future__ import annotations
 
 import dataclasses
+import pathlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Literal
 
-from agent6.config import MetricConfig
+from agent6 import directive
 from agent6.harness import metric_rules
 from agent6.sessions import journal
 from agent6.tools import dispatch, results, tool_errors
+from agent6.viewmodel.session import log as session_log
 
 if TYPE_CHECKING:
     from agent6.harness import loop_state
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(slots=True)
 class MetricSampler:
     """The run's metric sampler.
 
     Attributes:
-        settings: The `[harness.metric]` table, or None without a metric.
         enabled: Run mode; plan and ask never sample.
         dispatcher: Runs the harness's own `run_metric_command`.
         log: The run's text logger.
         emit: The run's event sink.
     """
 
-    settings: MetricConfig | None
     enabled: bool
     dispatcher: dispatch.ToolDispatcher
     log: Callable[[str], None]
     emit: Callable[..., None]
 
+    revision: int = 0
+
+    def change(self, spec: directive.MetricSpec | None) -> None:
+        """Journal one operator change before using the new command."""
+        revision = self.revision + 1
+        self.emit(journal.MetricSet(revision=revision, spec=spec.text() if spec else None))
+        self.dispatcher.metric = spec
+        self.revision = revision
+
+    def restore(self, logs: pathlib.Path) -> None:
+        """Bind this execution to the last operator setting in its own journal."""
+        setting = session_log.read_metric(logs)
+        self.dispatcher.metric = (
+            directive.parse_metric_spec(setting.spec) if setting and setting.spec else None
+        )
+        self.revision = setting.revision if setting else 0
+
+    def notice(self) -> str:
+        """Return the metric instruction that supersedes the frozen system prompt."""
+        if not self.active or self.dispatcher.metric is None:
+            return "[harness metric] No active metric. Disregard any earlier metric instructions."
+        return f"[harness metric] The operator's current metric: {self.dispatcher.metric.text()}"
+
     @property
     def goal(self) -> Literal["minimize", "maximize"] | None:
         """The configured direction, or None without a metric."""
-        return metric_rules.metric_goal(self.settings)
+        return self.dispatcher.metric.goal if self.dispatcher.metric else None
 
     @property
     def active(self) -> bool:
         """Whether this run measures: run mode with a configured goal."""
-        return self.enabled and self.goal is not None
+        return self.enabled and self.goal is not None and self.dispatcher.command_policy() != "deny"
 
     def record(
         self,
@@ -72,7 +95,7 @@ class MetricSampler:
             The feedback block for the model, or None without a metric.
         """
         goal = self.goal
-        if goal is None or self.settings is None:
+        if goal is None or self.dispatcher.metric is None:
             return None
         score = metric_rules.coerce_metric_score(result.score)
         combined = f"{result.stdout}\n{result.stderr}"
@@ -88,7 +111,7 @@ class MetricSampler:
             at_ceiling=goal == "maximize"
             and score is not None
             and metric_rules.metric_at_fraction_ceiling(
-                combined, score, pattern=self.settings.pattern
+                combined, score, pattern=self.dispatcher.metric.pattern
             ),
         )
         history.append(sample)

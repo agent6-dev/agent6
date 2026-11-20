@@ -13,7 +13,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from agent6 import evidence, kinds, terminal
-from agent6.sessions import journal
+from agent6.sessions import event_log, journal
 from agent6.viewmodel import cache_usage as vm_cache_usage
 from agent6.viewmodel import events, format, review
 from agent6.viewmodel.session import core as session_core
@@ -225,6 +225,31 @@ def events_backward(logs: pathlib.Path) -> Iterator[dict[str, Any]]:
                 end = start
     except OSError:
         return
+
+
+def read_metric(logs: pathlib.Path, *, revision: int | None = None) -> journal.MetricSet | None:
+    """Read the latest operator metric, or the precise revision saved in a checkpoint.
+
+    Args:
+        logs: The session's journal.
+        revision: None for the latest, zero before the first setting.
+
+    Returns:
+        The setting, including a retirement, or None if no metric has been set.
+
+    Raises:
+        ValueError: The checkpoint's metric event is missing or malformed.
+    """
+    if revision == 0:
+        return None
+    for row in events_backward(logs):
+        if row.get("type") == journal.MetricSet.TYPE and (
+            revision is None or row.get("revision") == revision
+        ):
+            return journal.MetricSet.model_validate(event_log.payload(row))
+    if revision is not None:
+        raise ValueError(f"metric revision {revision} missing from {logs}")
+    return None
 
 
 def last_event_epoch(logs: pathlib.Path) -> float | None:

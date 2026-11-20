@@ -218,6 +218,7 @@ class Harness:
         """Hand the dispatcher the run's children, which the loop owns."""
         if self.compactor is None:
             self.compactor = harness_compaction.default_strategy(self.compaction.endpoint)
+        self.dispatcher.metric = None
         self.dispatcher.children = child_work.ChildWork(self)
 
     # ---- run / resume entry --------------------------------------------------
@@ -250,6 +251,8 @@ class Harness:
                 execution_id=self.execution_id,
             )
         )
+        if self.mode == "run" and self.events is not None:
+            self.metrics.restore(self.events.path)
         system, conversation, root_id = (
             self._open_task(user_task)
             if self.contract is None
@@ -292,6 +295,7 @@ class Harness:
             decisions=self._load_decisions(),
             skills=self._load_skills(),
             isolation=self.dispatcher.isolation,
+            metric=self.dispatcher.metric,
             commands_allowed=self.dispatcher.command_policy() != "deny",
             protected_paths=bool(self.dispatcher.extra_protect_paths),
             dag_available=self.dispatcher.dag_available,
@@ -545,6 +549,7 @@ class Harness:
                 )
                 if opened is not None:
                     return opened
+            loop_steer.take_requests(self, state, conversation)
             # Rebuilt per turn: a gate adopted or a policy denied mid-run changes the tool list.
             tools = toolset.tool_definitions(self.dispatcher, mode=self.mode)
             ctx = self._turn_context(state, turn=turn, execution_start=start_turn)
@@ -798,7 +803,6 @@ class Harness:
             state: The execution's state.
             ctx: This turn's context.
         """
-        self.operator_tasks.take(state.root_task_id)
         self._maybe_surface_current_task(conversation, state)
         for advisor in guards.BEFORE_CALL:
             self.tell(conversation, advisor(state, ctx))
@@ -1413,7 +1417,7 @@ class Harness:
             verify_when=self.gate.when,
             verify_retries=self.gate.retries,
             finish_validator=self.finish_validator,
-            metric=self.metrics.goal is not None,
+            metric=self.metrics.active,
             memory_advisory=self.state_dir is not None and self.config.harness.memory_advisory,
             end_rejected=lambda turn, ending: self.review_gate.end_rejected(
                 state, turn, ending=ending
@@ -2055,7 +2059,6 @@ class Harness:
     def metrics(self) -> metric_sampler.MetricSampler:
         """Return the metric sampler."""
         return metric_sampler.MetricSampler(
-            settings=self.config.harness.metric,
             enabled=self.mode == "run",
             dispatcher=self.dispatcher,
             log=self.log,
@@ -2067,7 +2070,6 @@ class Harness:
         """Return the taker of the operator's queued tasks."""
         return operator_tasks.OperatorTasks(
             curator=self.curator,
-            take_requests=self.bridge.take_requests,
             log=self.log,
             emit=self.emit,
             emit_graph_snapshot=self._emit_graph_snapshot,

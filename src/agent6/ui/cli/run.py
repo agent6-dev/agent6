@@ -282,6 +282,7 @@ def _cmd_run(
     preset: str = "",
     parallel_spec: str = "",
     worktree: bool = False,
+    metric: directive.MetricSpec | None = None,
     standing_goal: str = "",
     pins: tuple[str, ...] = (),
     model: str = "",
@@ -311,6 +312,7 @@ def _cmd_run(
         preset: The `--preset` name.
         parallel_spec: The `--parallel` child spec, or "".
         worktree: Give the run its own git worktree.
+        metric: The operator's metric for this run, or None.
         standing_goal: The `--standing` goal, or "".
         pins: The pinned session ids.
         model: The `--model` override.
@@ -376,6 +378,7 @@ def _cmd_run(
         sandbox_overrides=sandbox_overrides,
         preset=preset,
         pins=pins,
+        metric=metric,
         standing_goal=standing_goal,
         model=model,
         explicit_leaves=explicit_leaves,

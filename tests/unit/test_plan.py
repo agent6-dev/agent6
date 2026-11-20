@@ -13,7 +13,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import kinds
+from agent6 import directive, kinds
 from agent6.config import Config, load_config
 from agent6.harness import dag_focus, loop_state, prompt_blocks, provider_call, run_chain, toolset
 from agent6.harness import loop as loopmod
@@ -327,9 +327,7 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: pathlib.Pa
     # `run_commands = "deny"` withholds every command tool, the metric included,
     # and the block describing it goes with the tool.
     p.write_text(
-        _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"')
-        + '\n[harness.metric]\ncommand = ["python3", "bench.py"]\n'
-        + 'pattern = "CYCLES: (\\\\d+)"\ngoal = "minimize"\n',
+        _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"'),
         encoding="utf-8",
     )
     cfg = load_config(p)
@@ -343,7 +341,11 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: pathlib.Pa
         recent_log="",
     )
     text = prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
-        config=cfg, repo=repo, mode="run", skills=None
+        metric=directive.parse_metric_spec(r"minimize 'CYCLES: (\d+)' -- python3 bench.py"),
+        config=cfg,
+        repo=repo,
+        mode="run",
+        skills=None,
     )
     assert "the harness runs the metric and" in text
     assert "[harness metric]" in text
@@ -351,7 +353,11 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: pathlib.Pa
     # auto-metric-after-verify behaviour the block describes is the run loop's.
     for mode in ("plan", "ask"):
         other = prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
-            config=cfg, repo=repo, mode=mode, skills=None
+            metric=directive.parse_metric_spec(r"minimize 'CYCLES: (\d+)' -- python3 bench.py"),
+            config=cfg,
+            repo=repo,
+            mode=mode,
+            skills=None,
         )
         assert "<metric-command>" not in other, mode
         assert "run_metric_command" not in other, mode
@@ -371,9 +377,7 @@ def test_run_commands_deny_withholds_the_command_tools_and_every_rule_about_them
     p.write_text(
         _VALID_TOML.replace(  # carries run_commands = "deny" and a verify_command
             'verify.command = ["true"]', 'verify.command = ["true"]\nverify.when = "turn"'
-        )
-        + '\n[harness.metric]\ncommand = ["python3", "bench.py"]\n'
-        + 'pattern = "CYCLES: (\\\\d+)"\ngoal = "minimize"\n',
+        ),
         encoding="utf-8",
     )
     cfg = load_config(p)
@@ -388,7 +392,11 @@ def test_run_commands_deny_withholds_the_command_tools_and_every_rule_about_them
     )
 
     text = prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
-        config=cfg, repo=repo, mode="run", skills=None
+        metric=directive.parse_metric_spec(r"minimize 'CYCLES: (\d+)' -- python3 bench.py"),
+        config=cfg,
+        repo=repo,
+        mode="run",
+        skills=None,
     )
     assert "<no-verify-command>" in text
     assert "<metric-command>" not in text

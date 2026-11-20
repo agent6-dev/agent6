@@ -23,7 +23,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import kinds
+from agent6 import directive, kinds
 from agent6.config import Config, load_config
 from agent6.graph import curator, models
 from agent6.harness import nudges, tool_effects
@@ -317,15 +317,14 @@ def test_command_results_and_log_tails_are_scrubbed(
     """Every execution handler gives the model and the journal escape-free output."""
     from agent6.sessions import event_log
 
-    toml = _VALID_TOML + (
-        '\n[harness.metric]\ncommand = ["true"]\npattern = "score: ([0-9.]+)"\ngoal = "maximize"\n'
-    )
+    toml = _VALID_TOML
     config_path = tmp_path / "agent6.toml"
     config_path.write_text(toml, encoding="utf-8")
     logs = tmp_path / "logs.jsonl"
     d = build_dispatcher(
         root=tmp_path, config=load_config(config_path), events=event_log.EventSink(logs)
     )
+    d.metric = directive.parse_metric_spec("maximize 'score: ([0-9.]+)' -- true")
     with mock.patch.object(
         jail_session.JailSession,
         "run",
@@ -344,13 +343,11 @@ def test_metric_pattern_reads_raw_output_before_the_scrub_and_clip(
     tmp_path: pathlib.Path, build_dispatcher: Callable[..., dispatch.ToolDispatcher]
 ) -> None:
     """An operator's regex can still match escape bytes in an early score line."""
-    toml = _VALID_TOML + (
-        '\n[harness.metric]\ncommand = ["true"]\n'
-        'pattern = "\\\\x1b\\\\[31mSCORE: ([0-9.]+)"\ngoal = "maximize"\n'
-    )
+    toml = _VALID_TOML
     config_path = tmp_path / "agent6.toml"
     config_path.write_text(toml, encoding="utf-8")
     d = build_dispatcher(root=tmp_path, config=load_config(config_path))
+    d.metric = directive.parse_metric_spec("maximize '\\x1b\\[31mSCORE: ([0-9.]+)' -- true")
     with mock.patch.object(
         jail_session.JailSession,
         "run",
@@ -523,13 +520,7 @@ def test_wire_run_command_clip_names_dropped_chars(
     stdout = _wire(out)["stdout"]
     assert stdout.startswith("... 5000 earlier chars clipped ...\n")
     assert stdout.endswith("x" * 100) and len(stdout) < 20_100
-    extra = (
-        "\n[harness.metric]\n"
-        'command = ["/usr/bin/true"]\n'
-        'pattern = "CYCLES: (\\\\d+)"\n'
-        'goal = "minimize"\n'
-    )
-    d = build_dispatcher(root=tmp_path, config=_config(tmp_path, extra=extra))
+    d.metric = directive.parse_metric_spec("minimize 'CYCLES: (\\d+)' -- /usr/bin/true")
     with mock.patch.object(
         jail_session.JailSession, "run", return_value=_cmd_result(stdout="CYCLES: 42")
     ):
@@ -549,12 +540,11 @@ def test_metric_score_survives_the_display_clip(
     Parsed from the display-clipped stdout, a real score before the tail window was lost, or a
     permissive pattern matched the clip marker's own dropped-byte count.
     """
-    toml = _VALID_TOML + (
-        '\n[harness.metric]\ncommand = ["/usr/bin/true"]\npattern = "(\\\\d+)"\ngoal = "minimize"\n'
-    )
+    toml = _VALID_TOML
     p = tmp_path / "agent6.toml"
     p.write_text(toml, encoding="utf-8")
     d = build_dispatcher(root=tmp_path, config=load_config(p))
+    d.metric = directive.parse_metric_spec("minimize '(\\d+)' -- /usr/bin/true")
     stdout = "CYCLES: 42\n" + "y" * 25_000
     with mock.patch.object(
         jail_session.JailSession, "run", return_value=_cmd_result(stdout=stdout)

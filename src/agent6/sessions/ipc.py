@@ -96,7 +96,7 @@ def queue_path(session_dir: pathlib.Path) -> pathlib.Path:
     return session_dir / QUEUE_DIR_NAME
 
 
-RequestKind = Literal["task", "standing", "retire"]
+RequestKind = Literal["task", "standing", "retire", "metric"]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -104,8 +104,8 @@ class OperatorRequest:
     """One thing the operator asked of a live run from a composer or `agent6 steer`.
 
     Attributes:
-        kind: A task for the graph, a standing goal, or a task to retire.
-        text: The task text, the goal, or the task id.
+        kind: A change to the task graph or the session metric.
+        text: The operator's argument to the directive.
     """
 
     kind: RequestKind
@@ -121,7 +121,7 @@ def queue_request(session_dir: pathlib.Path, kind: RequestKind, text: str) -> No
     Args:
         session_dir: The session directory.
         kind: The request kind.
-        text: The task text, the goal, or the task id.
+        text: The operator's argument to the directive.
     """
     target = queue_dir(session_dir) / f"{time.time_ns():020d}-{os.getpid()}.{kind}"
     portable.atomic_write(target, text)
@@ -155,7 +155,7 @@ def drain_requests(session_dir: pathlib.Path) -> list[OperatorRequest]:
     return out
 
 
-_REQUEST_KINDS: frozenset[str] = frozenset({"task", "standing", "retire"})
+_REQUEST_KINDS: frozenset[str] = frozenset({"task", "standing", "retire", "metric"})
 
 
 def _contained(

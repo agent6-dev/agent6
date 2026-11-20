@@ -148,12 +148,16 @@ def test_second_run_parks_with_the_verbatim_task(repo: pathlib.Path) -> None:
     from agent6.app import run
 
     state = paths.state_dir(repo)
+    from agent6 import directive
+    from agent6.viewmodel.session import log as session_log
+
     long_task = "fix the thing " + "x" * 5000  # > the 4000-char display cap
     holder_fd = lock.acquire_repo_writer(state, repo, "run-LIVE")
     try:
         rc = run.run_task(
             _load_cfg(),
             long_task,
+            metric=directive.parse_metric_spec("maximize -- score"),
             started_at=time.time(),
             frontend=mock.MagicMock(),
             session_id="run-PARKED",
@@ -164,6 +168,9 @@ def test_second_run_parks_with_the_verbatim_task(repo: pathlib.Path) -> None:
     assert rc == 2
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="run-PARKED")
     m = manifest.read_manifest(layout.session_dir)
+    assert (
+        metric := session_log.read_metric(layout.logs_path)
+    ) and metric.spec == "maximize -- score"
     assert m.parked_task == long_task  # verbatim, not the truncated display twin
     assert m.run_branch is None
     # No branch was cut and the tree is untouched.

@@ -17,7 +17,7 @@ from unittest import mock
 import pydantic
 import pytest
 
-from agent6 import kinds
+from agent6 import directive, kinds
 from agent6.app.session import runtime as session_runtime
 from agent6.config import Config
 from agent6.sandbox import jail_session
@@ -269,14 +269,9 @@ def test_run_metric_refused_outside_run_mode(
 ) -> None:
     """run_metric_command is run-only, and the dispatcher backstops it in every other mode.
 
-    It executes the operator's metric command with no approval gate.
+    An operator-set metric is still run-only.
     """
-    body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"') + (
-        "\n[harness.metric]\n"
-        'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
-        'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
-        'goal = "minimize"\n'
-    )
+    body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"')
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
     from agent6.config import load_config
@@ -288,6 +283,9 @@ def test_run_metric_refused_outside_run_mode(
         fired.append(policy)
 
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode=mode)  # type: ignore[arg-type]
+    d.metric = directive.parse_metric_spec(
+        "minimize 'CYCLES:\\s*(\\d+)' -- /usr/bin/python3 -c 'print(\"CYCLES: 42\")'"
+    )
     monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
     with pytest.raises(tool_errors.ToolError, match=f"not available in {mode} mode"):
         d.dispatch("run_metric_command", {})
@@ -1294,9 +1292,7 @@ def test_empty_input_command_tools_reject_arguments(
     """A no-argument tool's empty schema is a contract, not a suggestion."""
     from agent6.config import load_config
 
-    body = _VALID_TOML.replace(
-        'run_commands = "deny"', 'run_commands = "allow"\nnetwork = "host"'
-    ) + ('\n[harness.metric]\ncommand = ["true"]\npattern = "(true)"\ngoal = "minimize"\n')
+    body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"\nnetwork = "host"')
     path = tmp_path / "agent6.toml"
     path.write_text(body, encoding="utf-8")
 
@@ -1307,6 +1303,7 @@ def test_empty_input_command_tools_reject_arguments(
 
     monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
     d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(path))
+    d.metric = directive.parse_metric_spec("minimize '(true)' -- true")
     with pytest.raises(tool_errors.ToolError, match="invalid arguments: unexpected: Extra inputs"):
         d.dispatch(name, {"unexpected": True})
 
@@ -1314,7 +1311,7 @@ def test_empty_input_command_tools_reject_arguments(
 def test_run_metric_command_no_config(tmp_path: pathlib.Path) -> None:
     cfg = _config_with_run_commands(tmp_path, "allow")
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
-    with pytest.raises(tool_errors.ToolError, match=r"no \[harness.metric\]"):
+    with pytest.raises(tool_errors.ToolError, match="no session metric"):
         d.dispatch("run_metric_command", {})
     # Not in the LLM-visible tool surface either.
     assert "run_metric_command" not in d.available_tool_names()
@@ -1326,17 +1323,15 @@ def test_run_metric_command_is_withheld_when_commands_are(tmp_path: pathlib.Path
     It runs the operator's argv in the same jail as often as the model asks; it was exposed
     under "deny" and prompted under "ask" only because the harness calls it itself.
     """
-    body = _VALID_TOML + (
-        "\n[harness.metric]\n"
-        'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
-        'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
-        'goal = "minimize"\n'
-    )
+    body = _VALID_TOML
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
     from agent6.config import load_config
 
     d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(p))
+    d.metric = directive.parse_metric_spec(
+        "minimize 'CYCLES:\\s*(\\d+)' -- /usr/bin/python3 -c 'print(\"CYCLES: 42\")'"
+    )
 
     assert "run_metric_command" not in d.available_tool_names()
     with pytest.raises(tool_errors.ToolError, match="run_commands = 'deny'"):
@@ -1348,12 +1343,7 @@ def test_run_metric_command_invokes_jail(
     monkeypatch: pytest.MonkeyPatch,
     build_dispatcher: Callable[..., dispatch.ToolDispatcher],
 ) -> None:
-    body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"') + (
-        "\n[harness.metric]\n"
-        'command = ["/usr/bin/python3", "-c", "print(\\"CYCLES: 42\\")"]\n'
-        'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
-        'goal = "minimize"\n'
-    )
+    body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"')
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
     from agent6.config import load_config
@@ -1372,6 +1362,9 @@ def test_run_metric_command_invokes_jail(
 
     monkeypatch.setattr(jail_session.JailSession, "run", fake_run)
     d = build_dispatcher(root=tmp_path, config=cfg)
+    d.metric = directive.parse_metric_spec(
+        "minimize 'CYCLES:\\s*(\\d+)' -- /usr/bin/python3 -c 'print(\"CYCLES: 42\")'"
+    )
     out = d.dispatch("run_metric_command", {}).to_wire()
     assert out["returncode"] == 0
     assert "CYCLES: 42" in out["stdout"]
@@ -1390,9 +1383,7 @@ def test_run_metric_command_honors_verify_timeout(
 
     The metric path ran on the jail's fixed 600s default.
     """
-    body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"') + (
-        '\n[harness.metric]\ncommand = ["/usr/bin/true"]\npattern = "(\\\\d+)"\ngoal = "minimize"\n'
-    )
+    body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"')
     body = body.replace("[harness]\n", "[harness]\nverify.timeout_s = 7.0\n")
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
@@ -1411,6 +1402,7 @@ def test_run_metric_command_honors_verify_timeout(
 
     monkeypatch.setattr(jail_session.JailSession, "run", fake_run)
     d = build_dispatcher(root=tmp_path, config=cfg)
+    d.metric = directive.parse_metric_spec("minimize '(\\d+)' -- /usr/bin/true")
     d.dispatch("run_metric_command", {})
     assert captured["timeout_s"] == 7.0
 
@@ -1421,12 +1413,7 @@ def test_run_metric_command_score_null_on_no_match(
     build_dispatcher: Callable[..., dispatch.ToolDispatcher],
 ) -> None:
     """A pattern that compiles but does not match yields a null score and an unchanged result."""
-    body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"') + (
-        "\n[harness.metric]\n"
-        'command = ["/usr/bin/python3", "-c", "print(\\"no number here\\")"]\n'
-        'pattern = "CYCLES:\\\\s*(\\\\d+)"\n'
-        'goal = "minimize"\n'
-    )
+    body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"')
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
     from agent6.config import load_config
@@ -1442,6 +1429,9 @@ def test_run_metric_command_score_null_on_no_match(
 
     monkeypatch.setattr(jail_session.JailSession, "run", fake_run)
     d = build_dispatcher(root=tmp_path, config=cfg)
+    d.metric = directive.parse_metric_spec(
+        "minimize 'CYCLES:\\s*(\\d+)' -- /usr/bin/python3 -c 'print(\"no number here\")'"
+    )
     out = d.dispatch("run_metric_command", {}).to_wire()
     assert out["score"] is None
     assert out["returncode"] == 0

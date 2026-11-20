@@ -20,7 +20,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import child_records, kinds
+from agent6 import child_records, directive, kinds
 from agent6.config import Config
 from agent6.harness import (
     advice,
@@ -179,7 +179,7 @@ def _wf(
                 stagnation_notice_after_s=300.0,
                 verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
-                parallel=types.SimpleNamespace(max_children=4, judges=()),
+                parallel=Config().harness.parallel,
             ),
         ),
         "provider": mock.MagicMock(),
@@ -194,7 +194,10 @@ def _wf(
     defaults.update(kw)
     if not isinstance(getattr(defaults["dispatcher"], "execution_id", None), str):
         defaults["dispatcher"].execution_id = "test-execution"
-    return loop.Harness(**defaults)
+    metric = defaults.pop("metric", None)
+    wf = loop.Harness(**defaults)
+    wf.dispatcher.metric = metric if wf.mode == "run" else None
+    return wf
 
 
 def _state(**kw: Any) -> Any:
@@ -292,7 +295,6 @@ def _cfg_with_verify() -> Any:
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
             verify=mock.MagicMock(command=("true",), when="never", at_start=True, retries=2),
-            metric=types.SimpleNamespace(goal=None),
             prompt=mock.MagicMock(system_prompt_file=""),
         ),
     )
@@ -930,10 +932,15 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: pathlib.Path
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), timeout_s=60.0, infer=True
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
-    wf = _wf(root=repo, config=config, dispatcher=_Dispatcher(), per_turn=False)
+    wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
+        root=repo,
+        config=config,
+        dispatcher=_Dispatcher(),
+        per_turn=False,
+    )
     state = _state()
 
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # the run's edit
@@ -1024,10 +1031,10 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         root=tmp_path,
         config=config,
         provider=provider,
@@ -1110,7 +1117,6 @@ def test_drive_loop_tracks_turns_reached(tmp_path: pathlib.Path) -> None:
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -1233,7 +1239,6 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: pathlib.Pa
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     logs: list[str] = []
@@ -1295,7 +1300,6 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: pathlib.Path)
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     provider = ProviderStub()
@@ -1525,7 +1529,6 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: pathlib.Path) -> No
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -1585,7 +1588,6 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: pathlib.Path) -> 
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     # No steer callables: steer_requested() is False, so the up-front check is a no-op.
@@ -1671,10 +1673,16 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: pathlib
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
-    wf = _wf(root=tmp_path, config=config, provider=provider, dispatcher=dispatcher, max_turns=5)
+    wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
+        root=tmp_path,
+        config=config,
+        provider=provider,
+        dispatcher=dispatcher,
+        max_turns=5,
+    )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]}]
 
     with mock.patch("agent6.vcs.git.ops.chain_commit", return_value="abc1234567890"):
@@ -1738,11 +1746,11 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: path
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     ev = _EventCapture(tmp_path / "logs.jsonl")
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         root=tmp_path,
         config=config,
         provider=ProviderStub(),
@@ -1840,7 +1848,6 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=None,
             prompt=types.SimpleNamespace(decompose=False),
         ),
     )
@@ -1925,7 +1932,6 @@ def test_an_editing_turn_checkpoints_whatever_the_gate_policy(tmp_path: pathlib.
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=None,
             prompt=types.SimpleNamespace(decompose=False),
         ),
     )
@@ -1978,10 +1984,9 @@ def test_worker_max_tokens_starvation_backoff() -> None:
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         )
     )
-    wf = _wf(config=metric_cfg)
+    wf = _wf(metric=directive.parse_metric_spec(r"minimize -- score"), config=metric_cfg)
     wmt = wf._worker_max_tokens  # pyright: ignore[reportPrivateUsage]
     full = max(wf.call.per_call_max_tokens, wf.call.metric_task_max_tokens)
     assert wmt(_state(quiet=quiet_turns.QuietGuard(went_quiet_nudges_used=0))) == full
@@ -2016,9 +2021,8 @@ def test_worker_max_tokens_starvation_backoff() -> None:
                     timeout_s=60.0,
                     infer=True,
                 ),
-                metric=None,
             ),
-        )
+        ),
     )
     pwmt = plain._worker_max_tokens  # pyright: ignore[reportPrivateUsage]
     assert (
@@ -2089,10 +2093,10 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: pathlib.Path)
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         root=tmp_path,
         config=config,
         provider=provider,
@@ -2174,10 +2178,10 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: pathlib.Path) -> None:
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         root=tmp_path,
         config=config,
         provider=provider,
@@ -2271,10 +2275,10 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: pathlib.Path) -> No
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         root=tmp_path,
         config=config,
         provider=provider,
@@ -2370,10 +2374,10 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: pa
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         root=tmp_path,
         config=config,
         provider=provider,
@@ -2595,7 +2599,6 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> 
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -2669,7 +2672,6 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     events: list[dict[str, Any]] = []
@@ -2809,7 +2811,6 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -2867,7 +2868,6 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: pathlib.Path) -
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -2944,10 +2944,10 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: pathlib.Path
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         root=tmp_path,
         config=config,
         mode="run",
@@ -3039,13 +3039,13 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: pathlib.Pa
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     # Huge ceilings keep fraction_remaining ~1.0, so the plateau never becomes terminal.
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     max_turns = 12
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         root=tmp_path,
         config=config,
         provider=provider,
@@ -3121,12 +3121,12 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: pathlib.Pat
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     # Huge ceilings keep fraction_remaining ~1.0, well above the final slice.
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         root=tmp_path,
         config=config,
         provider=provider,
@@ -3193,10 +3193,10 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: pathlib.Path) 
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         root=tmp_path,
         config=config,
         provider=provider,
@@ -3277,10 +3277,10 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: pathlib.Path
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         root=tmp_path,
         config=config,
         provider=provider,
@@ -3407,12 +3407,12 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="maximize", pattern=r"SCORE:\s*([\d.]+)"),
         ),
     )
     # Huge ceilings keep fraction_remaining ~1.0: without the ceiling guard the finish is rejected.
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     wf = _wf(
+        metric=directive.parse_metric_spec(r"maximize 'SCORE:\s*([\d.]+)' -- score"),
         root=tmp_path,
         config=config,
         provider=provider,
@@ -3529,10 +3529,10 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         config=config,
         mode="run",
         call=provider_call.CallSettings(
@@ -3561,7 +3561,6 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -3593,10 +3592,10 @@ def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         config=config,
         mode="plan",
         call=provider_call.CallSettings(
@@ -4628,7 +4627,6 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=None,
             prompt=types.SimpleNamespace(decompose=False),
         ),
     )
@@ -4734,7 +4732,6 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=None,
             prompt=types.SimpleNamespace(decompose=False),
         ),
     )
@@ -5534,7 +5531,6 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=None,
             prompt=types.SimpleNamespace(decompose=False),
         ),
     )
@@ -5657,7 +5653,6 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: pathlib.Path) -> Non
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -5708,7 +5703,6 @@ def test_resume_snapshot_carries_verify_command(tmp_path: pathlib.Path) -> None:
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
@@ -5765,7 +5759,6 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: pathlib
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), timeout_s=60.0, infer=True
             ),
-            metric=None,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config, logger=logs.append)
@@ -5862,7 +5855,6 @@ def test_question_nudge_then_accept(tmp_path: pathlib.Path) -> None:
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), timeout_s=60.0, infer=True
             ),
-            metric=None,
         ),
     )
     wf = _wf(
@@ -5971,7 +5963,6 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: pathlib.P
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -6051,7 +6042,6 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: pathlib.Pa
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -6140,7 +6130,6 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: pat
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -6203,7 +6192,6 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: pathlib.
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -6277,7 +6265,6 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: pathlib.P
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -6371,10 +6358,10 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: pathlib.Path) ->
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         root=tmp_path,
         config=config,
         mode="run",
@@ -6442,7 +6429,6 @@ def test_drive_loop_leaves_result_deduplication_to_its_compactor(
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -6533,7 +6519,6 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: pathlib.Path) 
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -6631,7 +6616,6 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: path
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -6707,7 +6691,6 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: pathlib.Path) 
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -6901,7 +6884,6 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: pathlib.P
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -6966,7 +6948,6 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),  # GATELESS
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     events: list[dict[str, Any]] = []
@@ -7036,7 +7017,6 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     events: list[dict[str, Any]] = []
@@ -7109,7 +7089,6 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> 
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     events: list[dict[str, Any]] = []
@@ -7182,7 +7161,6 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     events: list[dict[str, Any]] = []
@@ -7444,7 +7422,6 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: pathlib
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -7508,7 +7485,6 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: pathlib.P
             verify=types.SimpleNamespace(
                 when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -7647,7 +7623,6 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(
@@ -8364,7 +8339,6 @@ def _loop_config() -> Any:
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=None,
         ),
     )
 
@@ -8939,27 +8913,18 @@ def _metric_wf(
     repo: pathlib.Path, base: str, dispatcher: mock.MagicMock, *, commit_per_turn: bool = True
 ) -> loop.Harness:
     """A gateless run with an operator metric on a chain."""
-    return loop.Harness(
+    wf = loop.Harness(
         chain=run_chain.RunChain(
             repo, ref="refs/agent6/metric-run/head", fallback_parent=base, per_turn=commit_per_turn
         ),
-        config=Config.model_validate(
-            {
-                "harness": {
-                    "verify": {"command": []},
-                    "metric": {
-                        "command": ["score.sh"],
-                        "pattern": r"SCORE: ([0-9.]+)",
-                        "goal": "maximize",
-                    },
-                }
-            }
-        ),
+        config=Config(),
         provider=mock.MagicMock(),
         dispatcher=dispatcher,
         logger=_silent,
         mode="run",
     )
+    wf.dispatcher.metric = directive.parse_metric_spec("maximize 'SCORE: ([0-9.]+)' -- score.sh")
+    return wf
 
 
 def _metric_result(score: float) -> tools_results.MetricResult:
@@ -9483,10 +9448,10 @@ def test_a_turn_declaring_two_ends_reviewers_the_panel_once(tmp_path: pathlib.Pa
                 timeout_s=60.0,
                 infer=True,
             ),
-            metric=types.SimpleNamespace(goal="minimize"),
         ),
     )
     wf = _wf(
+        metric=directive.parse_metric_spec(r"minimize -- score"),
         root=tmp_path,
         config=config,
         provider=ProviderStub(),
@@ -9575,7 +9540,6 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
                 infer=False,
                 timeout_s=60.0,
             ),
-            metric=types.SimpleNamespace(goal=None),
         ),
     )
     wf = _wf(

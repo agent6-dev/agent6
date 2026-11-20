@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import dataclasses
 import re
+import shlex
+from typing import Literal
 
 # A whitespace-delimited `/parallel` token; not MULTILINE, so the anchors are the whole string's.
 _SEPARATOR = re.compile(r"(?:\A|(?<=\s))/parallel(?=\s|\Z)", re.IGNORECASE)
@@ -28,6 +30,65 @@ _SPEC_SEPARATOR = re.compile(r"(?:\A|(?<=\s))--(?=\s|\Z)")
 
 class DirectiveError(ValueError):
     """A directive or spec is malformed: a bare token, a missing task, a bad child count."""
+
+
+METRIC_SYNTAX = 'maximize|minimize ["capture pattern"] -- command'
+_METRIC_TOKEN = re.compile(r"\A\s*/metric(?=\s|\Z)", re.IGNORECASE)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class MetricSpec:
+    """The operator's score direction, capture pattern and jailed argv."""
+
+    goal: Literal["maximize", "minimize"]
+    pattern: str | None
+    command: tuple[str, ...]
+
+    def text(self) -> str:
+        """Return the spec as input the operator can reuse."""
+        pattern = (self.pattern,) if self.pattern is not None else ()
+        return shlex.join((self.goal, *pattern, "--", *self.command))
+
+
+def parse_metric(text: str) -> str | None:
+    """Return the text after a leading `/metric`, empty to show the current metric."""
+    match = _METRIC_TOKEN.match(text)
+    return text[match.end() :].strip() if match else None
+
+
+def parse_metric_spec(text: str) -> MetricSpec:
+    """Parse a metric flag or directive as argv, without shell evaluation.
+
+    Args:
+        text: The spec after `--metric` or `/metric`.
+
+    Returns:
+        The operator's metric.
+
+    Raises:
+        DirectiveError: The spec, capture pattern or argv is invalid.
+    """
+    refusal = f"metric expects: {METRIC_SYNTAX}"
+    parts = text.strip().split(maxsplit=1)
+    if len(parts) != 2 or parts[0] not in ("maximize", "minimize"):
+        raise DirectiveError(refusal)
+    goal, rest = parts
+    try:
+        args = shlex.split(rest)
+    except ValueError as exc:
+        raise DirectiveError(f"{refusal} ({exc})") from exc
+    pattern = None
+    if rest.startswith(("'", '"')):
+        pattern = args.pop(0)
+        try:
+            groups = re.compile(pattern).groups
+        except re.error as exc:
+            raise DirectiveError(f"invalid metric pattern: {exc}") from exc
+        if not groups:
+            raise DirectiveError("metric pattern needs a capture group for the score")
+    if len(args) < 2 or args[0] != "--" or any(not a.strip() or "\x00" in a for a in args[1:]):
+        raise DirectiveError(refusal)
+    return MetricSpec("maximize" if goal == "maximize" else "minimize", pattern, tuple(args[1:]))
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -236,7 +297,7 @@ def spec_fragment(text: str) -> str | None:
 
 # Directives a front-end acts on itself; the loop parses none, so none can start an execution.
 LIVE_RUN_COMMANDS: frozenset[str] = frozenset(
-    {"/compact", "/btw", "/now", "/retire", "/standing", "/stop", "/task"}
+    {"/compact", "/btw", "/metric", "/now", "/retire", "/standing", "/stop", "/task"}
 )
 _FRONT_END_COMMANDS: frozenset[str] = LIVE_RUN_COMMANDS | {"/restate", "/shells"}
 _FRONT_END_TOKEN = re.compile(
@@ -352,6 +413,7 @@ STEER_COMMANDS: dict[str, str] = {
     "/undo": "fork back to before your last message (the text returns to edit and resend)",
     "/btw": "ask a question beside the run: /btw <question> (answers inline, later)",
     "/task": "queue work into the task graph: /task <text> (worked when the queue drains)",
+    "/metric": f"Show the metric, set {METRIC_SYNTAX}, or turn it off.",
     "/standing": "set the goal the run returns to when the queue drains: /standing <text>",
     "/retire": "drop a task from the graph: /retire <task id>, the number the task tree shows",
     "/now": "steer at once, aborting the call in flight: /now <text> (Ctrl+Enter on the web)",
