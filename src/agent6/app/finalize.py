@@ -448,6 +448,8 @@ def print_session_end(
         # The stream's done line carries a clean finish's summary only; a failure's reason
         # reaches the operator here alone.
         reporter.out(f"  {result.summary}")
+    if result.child_verification:
+        reporter.out(f"  final tree {result.child_verification.label}")
     if unreachable := _sandbox_unreachable_tools(layout):
         # One remedy for the set, not one per binary.
         names = ", ".join(f"`{b}`" for b in unreachable)

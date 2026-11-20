@@ -1431,6 +1431,38 @@ class SessionStart(Event):
     execution_id: str = pydantic.Field(description="Execution identifier.")
 
 
+class ChildVerification(pydantic.BaseModel, frozen=True, extra="forbid"):
+    """Identify the child's full gate pass covering the parent's final tree."""
+
+    session_id: str = pydantic.Field(min_length=1)
+    verify_id: str = pydantic.Field(min_length=1)
+    tree: str = pydantic.Field(min_length=1)
+    command: tuple[str, ...] = pydantic.Field(min_length=1)
+
+    @property
+    def label(self) -> str:
+        """Name the session that ran the gate."""
+        return f"verified by child {self.session_id}"
+
+    @classmethod
+    def from_stop(cls, event: dict[str, Any]) -> ChildVerification | None:
+        """Read a child proof only for the passed tree it names.
+
+        Args:
+            event: A session.stop row.
+
+        Returns:
+            Its proof, or None when absent or damaged.
+        """
+        if event.get("verification") != "passed" or not event.get("child_verification"):
+            return None
+        try:
+            proof = cls.model_validate(event["child_verification"])
+        except pydantic.ValidationError:
+            return None
+        return proof if proof.tree == event.get("tree") else None
+
+
 class SessionStop(Event):
     """The execution stopped, with its reason; the session stays resumable."""
 
@@ -1454,7 +1486,11 @@ class SessionStop(Event):
     )
     final_verify_id: str | None = pydantic.Field(
         default=None,
-        description="The final verification attempt identifier.",
+        description="The session's final verification attempt identifier.",
+    )
+    child_verification: ChildVerification | None = pydantic.Field(
+        default=None,
+        description="The child's full gate pass covering this tree, when used instead.",
     )
     tree: str | None = pydantic.Field(
         default=None,

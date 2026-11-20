@@ -77,6 +77,7 @@ class LogScan:
         source_tip: The most recent diff checkpoint's commit.
         verifications: Every recorded verification, including baseline observations.
         final_verify_id: The end event's verification id, absent if evidence is damaged.
+        child_verification: The child's full gate pass covering this end, when recorded.
         evidence_notes: Missing or unreadable execution evidence.
         targets: Immutable target observations, never inferred from current runtime state.
         current_target: The journal's current target binding, None when unproved.
@@ -131,6 +132,7 @@ class LogScan:
     source_tip: str | None = None
     verifications: tuple[evidence.VerificationEvidence, ...] = ()
     final_verify_id: str | None = None
+    child_verification: journal.ChildVerification | None = None
     end_ep: float | None = None
     evidence_notes: tuple[str, ...] = ()
     targets: tuple[evidence.ExecutionTargetEvidence, ...] = ()
@@ -350,6 +352,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     final_verify_id: str | None = None
     end_ep: float | None = None
     verifications: list[evidence.VerificationEvidence] = []
+    child_verification: journal.ChildVerification | None = None
     pending_verifications: set[str] = set()
     evidence_notes: list[str] = []
     observations = evidence.ExecutionObservations()
@@ -380,6 +383,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     evidence_notes.append(f"journal line {line_number}: {exc}")
                 if etype in ("session.start", "session.resume"):
                     final_verify_id = None
+                    child_verification = None
                 elif etype == "diff.updated":
                     source_tip = ev.get("sha") or source_tip
                 ep = events.event_epoch(ev.get("ts"))
@@ -433,6 +437,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         setup_output = terminal.scrub_terminal_controls(str(ev["summary"]))
                     end_tree = str(ev.get("tree") or "")
                     final_verify_id = ev.get("final_verify_id")
+                    child_verification = journal.ChildVerification.from_stop(ev)
                     end_ep = ep
                 elif etype == "session.resume":
                     end_ep = None
@@ -494,6 +499,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         acquisitions=tuple(observations.acquisitions),
         environment=life.environment,
         final_verify_id=None if evidence_notes else final_verify_id,
+        child_verification=None if evidence_notes else child_verification,
         end_ep=end_ep,
         evidence_notes=tuple(evidence_notes)
         + tuple(f"Verification {v} has no recorded result." for v in sorted(pending_verifications)),

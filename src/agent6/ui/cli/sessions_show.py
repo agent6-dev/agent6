@@ -214,6 +214,8 @@ def _print_end_facts(
         )
     # An end with no word (a crash, a log written before the field) prints no line.
     if gated and (verify := _VERIFY_LINES.get(scan.gate_word())):
+        if scan.child_verification:
+            verify += f" ({scan.child_verification.label})"
         if scan.baseline_ok is not None:
             verify += f" ({'green' if scan.baseline_ok else 'red'} before the run)"
         print(f"verify:     {verify}")
@@ -278,6 +280,7 @@ class StatusJSON(TypedDict):
     stop_reason: str | None
     baseline_ok: bool | None
     verification: kinds.Verification | None
+    child_verification: dict[str, Any] | None
     budget: dict[str, Any]
     unattended_questions: int
     setup_output: str | None
@@ -327,6 +330,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         stop_reason: The journaled end reason, or null while unfinished.
         baseline_ok: Whether baseline verification passed, or null when unrecorded.
         verification: The final gate word, or null when unrecorded.
+        child_verification: The child attempt covering the final tree, or null.
         budget: The BudgetView with its rendered `usd_text` and `plan_text`, as `attach --json`
             carries it.
         unattended_questions: Questions answered empty because nobody was attached.
@@ -417,6 +421,9 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             "stop_reason": scan.stop_reason if scan.finished else None,
             "baseline_ok": scan.baseline_ok,
             "verification": scan.verification or None,
+            "child_verification": (
+                scan.child_verification.model_dump(mode="json") if scan.child_verification else None
+            ),
             "budget": state_view.budget_dict(scan.budget),
             "unattended_questions": scan.unattended_questions,
             "setup_output": scan.setup_output or None,

@@ -1055,7 +1055,7 @@ depends_on = ["agent6.errors", "agent6.vcs.git.command"]
 
 [[modules]]
 path = "agent6.viewmodel.receipt"
-depends_on = ["agent6.budget", "agent6.errors", "agent6.evidence", "agent6.sessions.manifest", "agent6.vcs.commit_graph", "agent6.vcs.git.read", "agent6.viewmodel"]
+depends_on = ["agent6.budget", "agent6.errors", "agent6.evidence", "agent6.sessions.journal", "agent6.sessions.manifest", "agent6.vcs.commit_graph", "agent6.vcs.git.read", "agent6.viewmodel"]
 
 [[modules]]
 path = "agent6.media"

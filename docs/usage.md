@@ -149,7 +149,10 @@ A reviewer shows its order and summary when it returns a verdict.
 To act on one running child, use `agent6 steer <child-id> "<message>"` or `agent6 stop <child-id>`.
 With `git.control = "agent6"`, every entry merges a task once: one child's work is merged onto the run's chain, and several children on one task are attempts, of which the first-ranked merges.
 With `git.control = "model"`, agent6 merges nothing; each child's work stays on the ref its notice names for the model to merge with git.
-`run --parallel` is a run that makes no model call of its own and waits for its children: [`harness.parallel.judges`](config.md#harnessparallel) rank several children, the first-ranked child follows this merge policy, the run's own gate judges the result, and the run ends `finished · children ranked`.
+`run --parallel` waits for its children without a model call of its own: [`harness.parallel.judges`](config.md#harnessparallel) rank several children, the first-ranked child follows this merge policy, and the run ends `finished · children ranked`.
+If a child passed the parent's full verify command on content identical to the parent's final tree, the parent can cite that pass instead of rerunning the gate.
+`sessions show` and `sessions receipt` name the child that verified it.
+A different tree or command, or a scoped check, leaves verification to the parent's own gate policy.
 A judge is a reviewer child of the run, one per entry: its clone is cut at the commit the attempts started from and holds every attempt, its opening lists each attempt with its verify result, cost, finish summary and diff, and it has the tools a reviewer is handed (the reading tools, and `run_command` and `run_verify_command` where the run may run commands).
 It answers with an order and its reason, within `review.max_turns` replies; the orders are summed, and the lowest sum wins.
 With no judge, with one candidate, or when no judge gives a usable order, the order is verify-pass first, then the cheaper, and the merge notice says which (`Ranked by verify result, then cost: no judge gave a usable order (reviewer: no verdict within 20 replies).`).

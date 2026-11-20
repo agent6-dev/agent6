@@ -138,9 +138,8 @@ def ranked_opening(
     """Run the dispatch a run opens with, joined by rank, and end the run on what merged.
 
     The run waits for its children and then for their judges, as no turn of its own runs
-    meanwhile. The ranking's winner joins the run's chain; the run's own gate then judges
-    the joined tree. No model
-    call is made unless the operator steered while the children ran: the run then goes on
+    meanwhile. The run applies its gate policy to the joined tree unless a child already
+    verified it. No model call is made unless the operator steered: the run then goes on
     with that steer, as a resume with a steer does later.
 
     Args:
@@ -198,7 +197,11 @@ def ranked_opening(
             else "no_child_result"
         )
         return harness.finish(state, loop_snapshot.End(reason, summary, roots=False), turn=turn)
-    if any("joined" in group for group in statuses):
+    if (
+        any("joined" in group for group in statuses)
+        and harness.gate.when != "never"
+        and harness.child_verification(state, harness.chain.tree_sha()) is None
+    ):
         try:
             harness.gate.after_rank_join(state)
         except tool_errors.OperatorCommandUnexecutableError as exc:

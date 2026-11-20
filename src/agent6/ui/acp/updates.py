@@ -161,6 +161,10 @@ class RunInfo:
                 except ValueError:
                     self._verification = None
             case "session.stop":
+                if child := journal.ChildVerification.from_stop(event):
+                    return [
+                        message_update(self.acp_session_id, f"Final tree passed ({child.label})")
+                    ]
                 record = self._verification
                 if record is not None:
                     final = record.verify_id == event.get("final_verify_id") and record.certifies(

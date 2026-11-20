@@ -72,6 +72,7 @@ from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import history as review_history
 from agent6.harness.review import panel as review_panel
+from agent6.harness.verify import child as child_verify
 from agent6.harness.verify import gate as verify_gate
 from agent6.harness.verify import verdict as verify_verdict
 from agent6.prompts import compaction as compaction_prompts
@@ -1585,6 +1586,27 @@ class Harness:
 
     # ---- the end -------------------------------------------------------------
 
+    def child_verification(
+        self, state: loop_state.LoopState, tree: str
+    ) -> journal.ChildVerification | None:
+        """Find a child's full pass unless the local gate judged this tree or was withheld.
+
+        Args:
+            state: The execution's verification state.
+            tree: The parent's worktree content id.
+
+        Returns:
+            The child proof when the parent's gate and tree match it.
+        """
+        if not self.resume_state_path or not self.gate.present(state.verify):
+            return None
+        self.gate.sync_evidence(state.verify)
+        if state.verify.final_verify_id and state.verify.verify_tree in (None, tree):
+            return None
+        return child_verify.covering_pass(
+            self.resume_state_path.parent, tree, self.gate.command(state.verify)
+        )
+
     def finish(
         self, state: loop_state.LoopState, end: loop_snapshot.End, *, turn: int
     ) -> loop_snapshot.SessionResult:
@@ -1626,13 +1648,22 @@ class Harness:
         roots = end.roots if end.roots is not None else end.verdict != "failed"
         if roots:
             self._pass_pending_root_tasks()
+        tree = self.chain.tree_sha() if end.event and self.mode == "run" else ""
         verification = self.gate.verification(state.verify)
+        child_pass = (
+            self.child_verification(state, tree)
+            if tree and end.completed and verification != "passed" and end.reason != "settled"
+            else None
+        )
+        if child_pass:
+            verification = "passed"
         if end.reason == "settled" and verification == "passed":
             # The base's green is not the run's pass: the settled guard says so in its reason.
             verification = "unverified"
-        # The tree a run leaves: at its next start, what differs from it changed outside the run.
-        tree = self.chain.tree_sha() if end.event and self.mode == "run" else ""
-        left: dict[str, Any] = {"final_verify_id": state.verify.final_verify_id}
+        final_verify_id = None if child_pass else state.verify.final_verify_id
+        left: dict[str, Any] = {"final_verify_id": final_verify_id}
+        if child_pass:
+            left["child_verification"] = child_pass
         if tree:
             left["tree"] = tree
         if end.event:
@@ -1643,7 +1674,8 @@ class Harness:
                     summary=end.summary,
                     turns=turn,
                     verification=verification,
-                    scoped=state.verify.scoped if end.verdict == "grounded" else end.scoped,
+                    scoped=not child_pass
+                    and (state.verify.scoped if end.verdict == "grounded" else end.scoped),
                     **left,
                     **end.fields,
                 )
@@ -1687,7 +1719,8 @@ class Harness:
             tool_calls=state.tool_calls,
             finish_payload=end.finish_payload,
             stale_gate=state.gates.stale_gate,
-            final_verify_id=state.verify.final_verify_id,
+            final_verify_id=final_verify_id,
+            child_verification=child_pass,
         )
 
     def _pass_pending_root_tasks(self) -> None:

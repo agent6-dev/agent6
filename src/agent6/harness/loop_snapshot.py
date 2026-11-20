@@ -19,7 +19,7 @@ import pydantic
 
 from agent6 import kinds, media, portable
 from agent6.harness import loop_conversation
-from agent6.sessions import objects
+from agent6.sessions import journal, objects
 
 # Every way a session can end; `SessionResult` says what each means.
 SessionEndReason = Literal[
@@ -109,6 +109,7 @@ class SessionResult:
         stale_gate: The replacement gate the worker last proposed in any finish_session call
             of the execution; recorded, never acted on.
         verification: The gate's word for the final tree, also carried by `session.stop`.
+        child_verification: The child attempt behind a pass the parent did not run.
     """
 
     completed: bool
@@ -120,6 +121,7 @@ class SessionResult:
     stale_gate: str = ""
     verification: kinds.Verification = "not_applicable"
     final_verify_id: str | None = None
+    child_verification: journal.ChildVerification | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

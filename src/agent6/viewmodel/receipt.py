@@ -11,7 +11,7 @@ from typing import Any, Literal
 import pydantic
 
 from agent6 import budget, errors, evidence
-from agent6.sessions import manifest
+from agent6.sessions import journal, manifest
 from agent6.vcs import commit_graph
 from agent6.vcs.git import read as git_read
 from agent6.viewmodel import cache_usage as vm_cache_usage
@@ -134,6 +134,7 @@ class ReceiptView:
         end_tree: The final observed tree, or null when unrecorded.
         verifications: The recorded VerificationEvidence attempts.
         final_verify_id: The attempt covering the final tree, or null when absent.
+        child_verification: The full pass a child recorded on the final tree, when used.
         review: The review evidence compared against the final tree.
         revert: The reversal plan derived from recorded merge facts.
         evidence_notes: Diagnostics for absent or unreadable evidence.
@@ -166,6 +167,7 @@ class ReceiptView:
     cache_usage: vm_cache_usage.CacheUsage = dataclasses.field(
         default_factory=vm_cache_usage.CacheUsage
     )
+    child_verification: journal.ChildVerification | None = None
 
 
 def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
@@ -186,7 +188,7 @@ def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
         notes.append(f"Manifest unreadable: {exc}")
     fold = session_log.scan_session_log(session_dir / "logs.jsonl")
     notes.extend(fold.evidence_notes)
-    if not fold.verifications:
+    if not fold.verifications and not fold.child_verification:
         notes.append("No verification recorded.")
     review = fold.review
     if fold.end_tree and fold.review.panels and fold.review.panels[-1].target:
@@ -213,6 +215,7 @@ def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
         fold.acquisitions,
         vm_children.children_of(session_dir),
         fold.cache_usage,
+        fold.child_verification,
     )
 
 
@@ -434,10 +437,13 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
         ),
         None,
     )
-    certified = final is not None and final.certifies(view.end_tree)
+    child = view.child_verification
+    certified = child is not None or (final is not None and final.certifies(view.end_tree))
     word = "Final tree passed" if certified else "Final tree not certified"
     if certified and final is not None and final.scoped:
         word += " (scoped only)"
+    if child:
+        word += f" ({child.label})"
     lines = [
         f"Receipt {view.session_id}",
         f"Execution: {view.execution_id or 'unknown'}",
@@ -453,6 +459,8 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
         lines.append(verification_summary(record))
         if include_output:
             lines.extend((f"stdout:\n{record.stdout_tail}", f"stderr:\n{record.stderr_tail}"))
+    if child:
+        lines.append(f"Child attempt: {child.verify_id}; command: {shlex.join(child.command)}")
     lines.extend(view.evidence_notes)
     lines.extend(
         (
