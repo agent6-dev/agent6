@@ -74,7 +74,7 @@ def test_a_graph_row_shows_its_first_ref_and_counts_the_rest(
 ) -> None:
     """A row's ref badges hid its subject; one badge in git's order hid HEAD's branch.
 
-    The row shows HEAD's ref, else a branch, a tag, a remote-tracking branch, an agent6 run ref.
+    The row shows HEAD's ref, else a branch, a remote-tracking branch, a tag, an agent6 run ref.
     """
     page, errors = open_page(git_port)
     page.goto(f"http://127.0.0.1:{git_port}/#/git")
@@ -84,12 +84,12 @@ def test_a_graph_row_shows_its_first_ref_and_counts_the_rest(
         return row.locator(".gref").all_inner_texts(), row.locator(".more").get_attribute("title")
 
     page.locator(".gc-row").first.wait_for()
-    assert badges("merge feature") == (["main", "+2"], "v2, origin/main")
+    assert badges("merge feature") == (["main", "+2"], "origin/main, v2")
     assert badges("feature: rename") == (["feature", "+1"], "agent6/run-1/head")
     _git(tmp_path, "checkout", "-q", "-b", "topic")  # HEAD on a branch git lists after main
     page.reload()
     page.locator(".gc-row").first.wait_for()
-    assert badges("merge feature") == (["topic", "+3"], "main, v2, origin/main")
+    assert badges("merge feature") == (["topic", "+3"], "main, origin/main, v2")
     assert errors == [], errors
 
 
@@ -549,6 +549,22 @@ def test_the_compare_pickers_reached_option_stays_in_view_and_is_named(
     assert errors == [], errors
 
 
+def test_a_revision_picker_lists_refs_in_the_refs_filters_order(
+    open_page: OpenPage, git_port: int
+) -> None:
+    """A revision picker listed refs in git's refname order: agent6 run refs before branches."""
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.get_by_role("button", name="Compare", exact=True).click()
+    page.get_by_label("base", exact=True).click()
+    page.locator("#gpick-base .gref").first.wait_for()
+    kinds = page.locator("#gpick-base .gref").evaluate_all(
+        "gs => gs.map(g => g.classList[1]).filter((k, i, all) => all.indexOf(k) === i)"
+    )
+    assert kinds == ["branch", "remote", "tag", "agent6"], kinds
+    assert errors == [], errors
+
+
 def test_a_binary_files_diff_offers_no_text_controls(
     open_page: OpenPage, git_port: int, tmp_path: pathlib.Path
 ) -> None:
@@ -698,6 +714,20 @@ def test_a_segmented_toggle_draws_one_seam_and_a_whole_focus_ring(
         "b => +getComputedStyle(b).zIndex"
     )
     assert split.evaluate(z) > pressed, split.evaluate(z)
+    assert errors == [], errors
+
+
+def test_the_refs_filter_lists_refs_in_its_groups_order(open_page: OpenPage, git_port: int) -> None:
+    """The Refs list ran in git's refname order: the switched-off agent6 run refs came first."""
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/git")
+    page.get_by_role("button", name="Refs ▾").click()
+    kinds = page.locator(".gfilter-item .gref").evaluate_all(
+        "gs => gs.map(g => g.classList[1]).filter((k, i, all) => all.indexOf(k) === i)"
+    )
+    groups = page.locator(".gfilter-group").all_inner_texts()
+    assert kinds == ["branch", "remote", "tag", "agent6"], kinds
+    assert [g.split(" (")[0] for g in groups] == ["Branches", "Remotes", "Tags", "agent6 runs"]
     assert errors == [], errors
 
 

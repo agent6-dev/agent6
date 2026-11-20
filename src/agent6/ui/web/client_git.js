@@ -93,11 +93,9 @@ function refBadge(r) {
   b.title = r.name + ' · ' + (GIT_KIND_TITLE[r.kind] || r.kind);
   return b;
 }
-// A commit's refs as its row and its panel list them: HEAD's first, then the branches, tags,
-// remote-tracking branches and agent6 run refs, each kind in git's order.
+// A commit's refs as its row and panel list them: HEAD's first, then in the server's order.
 function orderedRefs(refs) {
-  const rank = (r) => r.head ? 0 : 1 + ['branch', 'tag', 'remote', 'agent6'].indexOf(r.kind);
-  return refs.toSorted((a, b) => rank(a) - rank(b));
+  return refs.toSorted((a, b) => Number(b.head) - Number(a.head));
 }
 function statusBadge(status) {
   const s = el('span', 'gf-st st-' + esc(status), status);

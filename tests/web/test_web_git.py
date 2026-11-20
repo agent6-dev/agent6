@@ -906,9 +906,11 @@ def test_search_finds_refs_and_messages(
 def test_search_caps_its_lists_and_says_so(
     repo: tuple[pathlib.Path, dict[str, str]], port: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The cap cut refs in git's order: agent6 run refs led a picker's list, ahead of branches."""
     monkeypatch.setattr(git_model, "SEARCH_MAX", 2)
     body = _ok(port, "/api/git/search?q=")
     assert (len(body["refs"]), len(body["commits"]), body["truncated"]) == (2, 2, True)
+    assert [r["name"] for r in body["refs"]] == ["feature", "main"]
 
 
 def test_outside_a_repository_every_git_route_says_so(tmp_path: pathlib.Path) -> None:

@@ -161,6 +161,15 @@ def _resolve(
     return sha
 
 
+# The page's one order of ref kinds, which the Refs filter's groups follow.
+_KIND_ORDER = ("branch", "remote", "tag", "agent6")
+
+
+def _refs_by_kind(repo: pathlib.Path) -> tuple[git_history.RefRow, ...]:
+    """Return the repository's refs in the page's order of kinds, each kind in git's order."""
+    return tuple(sorted(git_history.list_refs(repo), key=lambda r: _KIND_ORDER.index(r.kind)))
+
+
 def _decorations(refs: tuple[git_history.RefRow, ...]) -> dict[str, list[dict[str, Any]]]:
     """Return the refs at each sha, in listing order.
 
@@ -299,7 +308,7 @@ def refs_payload(repo: pathlib.Path) -> dict[str, Any]:
     sha, branch = git_history.head_commit(repo)
     return {
         "head": {"sha": sha, "branch": branch},
-        "refs": [_ref_row(r) for r in git_history.list_refs(repo)],
+        "refs": [_ref_row(r) for r in _refs_by_kind(repo)],
         "remotes": [{"name": r.name, "url": r.shown_url} for r in git_fetch.list_remotes(repo)],
     }
 
@@ -344,7 +353,7 @@ def graph_payload(
     _repo(repo)
     page = min(_whole_number(limit, "limit", GRAPH_PAGE), GRAPH_PAGE_MAX)
     start = _whole_number(skip, "skip", 0)
-    listed = git_history.list_refs(repo)
+    listed = _refs_by_kind(repo)
     head_sha, _branch = git_history.head_commit(repo)
     known = {r.full: r.sha for r in listed}
     known["HEAD"] = head_sha
@@ -430,7 +439,7 @@ def commit_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
         },
         "subject": info.subject,
         "body": info.body,
-        "refs": _decorations(git_history.list_refs(repo)).get(sha, []),
+        "refs": _decorations(_refs_by_kind(repo)).get(sha, []),
         "is_merge": len(info.parents) > 1,
         "base": base,
         "files": files,
@@ -831,6 +840,7 @@ def search_payload(repo: pathlib.Path, query: str) -> dict[str, Any]:
 
     An empty query lists every ref and the newest commits, the picker's opening list.
     Each list stops at `SEARCH_MAX`; `truncated` says when one did.
+    Refs come in the page's order of kinds, so the cap drops agent6 run refs first.
 
     Attributes:
         refs: Matching ref rows.
@@ -849,7 +859,7 @@ def search_payload(repo: pathlib.Path, query: str) -> dict[str, Any]:
     if q.startswith("-"):
         return {"refs": [], "commits": [], "truncated": False}
     needle = q.lower()
-    refs = [r for r in git_history.list_refs(repo) if needle in r.name.lower()]
+    refs = [r for r in _refs_by_kind(repo) if needle in r.name.lower()]
     commits = list(git_history.search_log(repo, q, limit=SEARCH_MAX + 1))
     if q and all(c in "0123456789abcdef" for c in needle) and len(needle) >= 4:
         sha = git_history.resolve_commit(repo, needle)
