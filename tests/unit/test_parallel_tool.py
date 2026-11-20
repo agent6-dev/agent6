@@ -283,25 +283,31 @@ def test_read_background_reads_a_child_by_its_id_and_waits_for_the_next(
 
 
 @pytest.mark.parametrize("reader", ["read_background", "read_session"])
+@pytest.mark.parametrize("name", ["run_command", "run_verify_command", "run_metric_command"])
 def test_a_child_command_and_its_exit_fit_on_one_transcript_line(
-    tmp_path: pathlib.Path, reader: str
+    tmp_path: pathlib.Path, reader: str, name: str
 ) -> None:
     state = tmp_path / "state"
     child = state / "sessions" / "runs" / "run-p1-l1"
     child.mkdir(parents=True)
     (child / "manifest.json").write_text(json.dumps({"mode": "run", "user_task": "write a"}))
-    identity = {"name": "run_command", "call_id": 1, "execution_id": "worker"}
-    events = [
+    identity = {"name": name, "call_id": 1, "execution_id": "worker"}
+    argv = ["sh", "-c", "cat <<'EOF' # " + "x" * 200 + "\nHEREDOC BODY\nEOF"]
+    events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "write a"},
         {
             "type": "tool.call",
             **identity,
-            "args_preview": {
-                "argv": ["sh", "-c", "cat <<'EOF' # " + "x" * 200 + "\nHEREDOC BODY\nEOF"]
-            },
+            "args_preview": {"argv": argv} if name == "run_command" else {},
         },
         {"type": "tool.result", **identity, "exit_code": 7, "ok": True, "stdout_tail": "OUTPUT"},
     ]
+    if name == "run_verify_command":
+        events.insert(
+            -1, {"type": "verify.start", "call_id": 1, "execution_id": "worker", "command": argv}
+        )
+    elif name == "run_metric_command":
+        events.insert(-1, {"type": "metric.start", "command": argv})
     (child / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in events))
     work = _Work()
     d = _dispatcher(tmp_path, _config(tool=True), work=work, state_dir=state)
@@ -313,7 +319,7 @@ def test_a_child_command_and_its_exit_fit_on_one_transcript_line(
     else:
         text = d.dispatch(reader, {"id": child.name}).to_wire()["conversation"]
     line = text.splitlines()[-1]
-    assert "run_command" in line and "sh -c" in line and "cat <<" in line and "exit 7" in line
+    assert name in line and "sh -c" in line and "cat <<" in line and "exit 7" in line
     assert len(line) <= 180 and "…" in line
     assert "HEREDOC BODY" not in text and "OUTPUT" not in text
 

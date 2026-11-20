@@ -136,7 +136,7 @@ def conversation(layout: sessions_layout.SessionLayout, *, max_chars: int) -> st
             commands.clear()
         said = _SPEAKER.get(etype)
         if said is None:
-            if etype in ("tool.call", "tool.result"):
+            if etype in ("tool.call", "tool.result", "verify.start", "metric.start"):
                 _tool_line(event, lines, commands)
             continue
         if etype == "model.result" and kinds.is_side_role(str(event.get("role", ""))):
@@ -164,17 +164,31 @@ def _tool_line(
         lines: The conversation so far.
         commands: The unsettled command line positions in this execution.
     """
+    etype = event["type"]
     name = str(event.get("name", ""))
+    if etype == "verify.start":
+        name = "run_verify_command"
+    elif etype == "metric.start":
+        name = "run_metric_command"
     call_id = event.get("call_id")
     key = (str(event.get("execution_id") or ""), name, call_id if type(call_id) is int else None)
-    if event["type"] == "tool.call":
+    if etype in ("verify.start", "metric.start"):
+        if etype == "verify.start":
+            # A harness gate has no tool call to label.
+            index = commands.get(key) if type(call_id) is int else None
+        else:
+            # A metric start has no call id. Do not guess if more than one call is open.
+            pending = [i for (_, tool, _), i in commands.items() if tool == name]
+            index = pending[0] if len(pending) == 1 else None
+        if index is not None:
+            lines[index] = _command_line(name, event.get("command"))
+    elif etype == "tool.call":
         line = f"[tool] {name}"
         if name in ("run_command", "run_verify_command", "run_metric_command"):
             commands[key] = len(lines)
             args = event.get("args_preview", event.get("args"))
             argv = args.get("argv") if isinstance(args, dict) else None
-            if isinstance(argv, list) and all(isinstance(a, str) for a in argv):
-                line += " " + terminal.line_preview(shlex.join(argv))
+            line = _command_line(name, argv)
         lines.append(line)
     elif (index := commands.pop(key, None)) is not None:
         if type(code := event.get("exit_code")) is int:
@@ -183,6 +197,14 @@ def _tool_line(
             lines[index] += f" (running as {terminal.line_preview(str(event['background_id']))})"
         elif event.get("ok") is False:
             lines[index] += " (refused)"
+
+
+def _command_line(name: str, argv: object) -> str:
+    """Return a tool label with one bounded line of its recorded command."""
+    label = f"[tool] {name}"
+    if isinstance(argv, list) and argv and all(isinstance(a, str) for a in argv):
+        return f"{label} {terminal.line_preview(shlex.join(argv))}"
+    return label
 
 
 def roster(state_dir: pathlib.Path, query: str) -> Roster:
