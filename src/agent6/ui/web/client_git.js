@@ -79,11 +79,12 @@ function gitLanesSvg(lay, cols, dot, isHead) {
     if (lay.after[lay.lane]) path(`M${x(lay.lane)} ${mid - 1} V${bottom}`, lay.lane, dot === 'wt');
     for (const j of lay.joins) if (j < cols) path(join(j, lay.lane), j, j === lay.wt);
     for (const k of lay.merges) if (k < cols) path(curve(lay.lane, k), k);
-    const circle = document.createElementNS(NS, 'circle');
-    circle.setAttribute('cx', x(lay.lane)); circle.setAttribute('cy', mid); circle.setAttribute('r', isHead ? 5 : 4);
-    circle.setAttribute('class', 'gc-dot ' + color(lay.lane) + (dot ? ' ' + dot : ''));
-    svg.appendChild(circle);
   }
+  // A commit on a lane past the cap draws its dot in the last column, so every commit keeps one.
+  const circle = document.createElementNS(NS, 'circle');
+  circle.setAttribute('cx', x(Math.min(lay.lane, cols - 1))); circle.setAttribute('cy', mid); circle.setAttribute('r', isHead ? 5 : 4);
+  circle.setAttribute('class', 'gc-dot ' + color(lay.lane) + (dot ? ' ' + dot : ''));
+  svg.appendChild(circle);
   return svg;
 }
 

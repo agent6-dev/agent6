@@ -780,6 +780,25 @@ def test_the_fetch_row_hides_in_a_repository_without_a_remote(
     assert errors == [], errors
 
 
+def test_a_commit_past_the_lane_cap_keeps_its_dot(
+    open_page: OpenPage, port: int, tmp_path: pathlib.Path
+) -> None:
+    """Twenty branches off one root: the commits on lanes past the 16th drew no dot."""
+    from playwright.sync_api import expect
+
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "commit", "-q", "--allow-empty", "-m", "root")
+    for n in range(20):
+        _git(tmp_path, "checkout", "-q", "-b", f"f{n}", "main")
+        _git(tmp_path, "commit", "-q", "--allow-empty", "-m", f"feature {n}")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/git")
+    rows = page.locator(".gc-row")
+    expect(rows).to_have_count(21)
+    assert rows.evaluate_all("rs => rs.filter(r => !r.querySelector('circle')).length") == 0
+    assert errors == [], errors
+
+
 def test_an_empty_repository_reads_as_one(
     open_page: OpenPage, port: int, tmp_path: pathlib.Path
 ) -> None:
