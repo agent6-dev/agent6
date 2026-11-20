@@ -57,8 +57,8 @@ class CacheUsage:
         cache_write_tokens: Input written to cache on reported calls.
         post_compaction_calls: Reported worker calls following a history rewrite.
         post_compaction_uncached_tokens: Fresh plus cache-write input on those calls.
-        thinking_blocks_dropped: Thinking blocks the endpoint dropped during the session.
-        tool_results_cleared: Tool results the endpoint cleared during the session.
+        thinking_blocks_dropped: The most thinking blocks the endpoint dropped on one request.
+        tool_results_cleared: The most tool results the endpoint cleared on one request.
         summaries: Summary attempts in journal order, excluded from ordinary worker usage.
         idle_notices: Cold idle summary notices in execution order.
     """
@@ -85,8 +85,8 @@ class CacheUsage:
         attempts = tuple(s.line(i) for i, s in enumerate(self.summaries, start=1))
         if self.thinking_blocks_dropped or self.tool_results_cleared:
             attempts += (
-                f"Endpoint (session): {self.thinking_blocks_dropped:,} thinking blocks dropped, "
-                f"{self.tool_results_cleared:,} tool results cleared",
+                f"Endpoint (most on one request): {self.thinking_blocks_dropped:,} thinking blocks"
+                f" dropped, {self.tool_results_cleared:,} tool results cleared",
             )
         if not self.reported_calls or not total:
             return attempts
@@ -134,11 +134,12 @@ class CacheUsageFold:
         if kind == "model.result":
             dropped = _count(row, "thinking_blocks_dropped") or 0
             cleared = _count(row, "tool_results_cleared") or 0
+            # The history is sent whole each time, so a request repeats the last one's counts.
             if dropped or cleared:
                 self.usage = dataclasses.replace(
                     self.usage,
-                    thinking_blocks_dropped=self.usage.thinking_blocks_dropped + dropped,
-                    tool_results_cleared=self.usage.tool_results_cleared + cleared,
+                    thinking_blocks_dropped=max(self.usage.thinking_blocks_dropped, dropped),
+                    tool_results_cleared=max(self.usage.tool_results_cleared, cleared),
                 )
         if self._summary(row):
             return

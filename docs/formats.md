@@ -2893,8 +2893,8 @@ Source: [`agent6.viewmodel.cache_usage.CacheUsage`](https://github.com/agent6-de
 | `cache_write_tokens` | `int` | Input written to cache on reported calls. |
 | `post_compaction_calls` | `int` | Reported worker calls following a history rewrite. |
 | `post_compaction_uncached_tokens` | `int` | Fresh plus cache-write input on those calls. |
-| `thinking_blocks_dropped` | `int` | Thinking blocks the endpoint dropped during the session. |
-| `tool_results_cleared` | `int` | Tool results the endpoint cleared during the session. |
+| `thinking_blocks_dropped` | `int` | The most thinking blocks the endpoint dropped on one request. |
+| `tool_results_cleared` | `int` | The most tool results the endpoint cleared on one request. |
 | `summaries` | `tuple[SummaryAttempt, ...]` | Summary attempts in journal order, excluded from ordinary worker usage. |
 | `idle_notices` | `tuple[str, ...]` | Cold idle summary notices in execution order. |
 

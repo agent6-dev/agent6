@@ -211,8 +211,10 @@ def test_receipt_counts_endpoint_changes_on_ordinary_and_summary_results(
         *_call("s", input_tokens=60, cache_read_tokens=33050, thinking_blocks_dropped=1),
         {"type": "compact.summarise.done", "writer": "endpoint", "summary_chars": 18},
         *_call("w", thinking_blocks_dropped=1, tool_results_cleared=3),
+        *_call("x", thinking_blocks_dropped=1, tool_results_cleared=3),
     ]
     _write(tmp_path / "logs.jsonl", rows)
     text = receipt.render(receipt.read_receipt(tmp_path, tmp_path))
     assert "Summary attempt 1: endpoint; 60 uncached, 33,050 cached" in text
-    assert "Endpoint (session): 2 thinking blocks dropped, 3 tool results cleared" in text
+    # A later request repeats the counts of the one before: the receipt does not add them up.
+    assert "Endpoint (most on one request): 1 thinking blocks dropped, 3 tool results" in text
