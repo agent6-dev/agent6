@@ -28,6 +28,7 @@ from agent6.providers import (
     ProviderError,
     TranscriptSink,
     anthropic,
+    anthropic_parse,
     request_headers,
 )
 
@@ -443,7 +444,7 @@ def test_streaming_preserves_thinking_blocks(
 
 def test_two_text_blocks_in_a_response_stay_separated() -> None:
     """Two text blocks in a response stay separated in the settled text."""
-    resp = anthropic._parse_response(
+    resp = anthropic_parse.parse_response(
         {
             "content": [
                 {"type": "text", "text": "First message."},

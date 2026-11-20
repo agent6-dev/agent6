@@ -31,7 +31,14 @@ import httpx2
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6.providers import anthropic, openai, openai_parse, provider_types, stream_lifecycle
+from agent6.providers import (
+    anthropic,
+    anthropic_parse,
+    openai,
+    openai_parse,
+    provider_types,
+    stream_lifecycle,
+)
 
 
 # --------------------------------------------------------------------------
@@ -733,7 +740,7 @@ def test_anthropic_malformed_content_is_provider_error() -> None:
         {"content": [{"type": "text", "text": "hi"}, "oops"], "usage": {}},
     ):
         with pytest.raises(provider_types.ProviderError) as ei:
-            anthropic._parse_response(body)
+            anthropic_parse.parse_response(body)
         assert ei.value.status_code is None
 
 
@@ -748,7 +755,7 @@ def test_metered_gate_coerces_gateway_typed_counts() -> None:
     openai._require_metered_usage(
         {"prompt_tokens": "700"}, source="t"
     )  # missing completion is fine
-    anthropic._require_metered_usage({"input_tokens": 700.0, "output_tokens": 3}, source="t")
+    anthropic_parse.require_metered_usage({"input_tokens": 700.0, "output_tokens": 3}, source="t")
     for bad in ({"prompt_tokens": 0}, {"prompt_tokens": "abc"}, {}):
         with pytest.raises(provider_types.ProviderError) as ei:
             openai._require_metered_usage(bad, source="t")
@@ -946,13 +953,13 @@ def test_anthropic_usage_counts_are_non_negative_integers(field: str, value: obj
     """Malformed usage must not be truncated, coerced from bool, or recorded negative."""
     usage: dict[str, object] = {"input_tokens": 1, "output_tokens": 1, field: value}
     with pytest.raises(provider_types.ProviderError, match=rf"usage\.{field}"):
-        anthropic._parse_response(
+        anthropic_parse.parse_response(
             {"content": [{"type": "text", "text": "ok"}], "stop_reason": "end_turn", "usage": usage}
         )
 
 
 def test_anthropic_usage_counts_accept_integer_strings_and_integral_floats() -> None:
-    response = anthropic._parse_response(
+    response = anthropic_parse.parse_response(
         {
             "content": [],
             "stop_reason": "end_turn",
@@ -975,7 +982,7 @@ def test_anthropic_usage_counts_accept_integer_strings_and_integral_floats() -> 
 @pytest.mark.parametrize("value", [None, "", True, {}, []])
 def test_anthropic_final_stop_reason_must_be_a_nonempty_string(value: object) -> None:
     with pytest.raises(provider_types.ProviderError, match="stop_reason"):
-        anthropic._parse_response(
+        anthropic_parse.parse_response(
             {
                 "content": [{"type": "text", "text": "ok"}],
                 "stop_reason": value,
@@ -1004,7 +1011,7 @@ def test_anthropic_content_block_fields_keep_the_replay_wire_valid(
 ) -> None:
     """A malformed response block must not be stored verbatim for the next request."""
     with pytest.raises(provider_types.ProviderError, match="content"):
-        anthropic._parse_response(
+        anthropic_parse.parse_response(
             {
                 "content": [block],
                 "stop_reason": "end_turn",
@@ -1016,7 +1023,7 @@ def test_anthropic_content_block_fields_keep_the_replay_wire_valid(
 def test_anthropic_tool_use_ids_are_unique() -> None:
     """Duplicate IDs cannot be paired to distinct tool results on the next request."""
     with pytest.raises(provider_types.ProviderError, match=r"duplicate.*tool_use.id"):
-        anthropic._parse_response(
+        anthropic_parse.parse_response(
             {
                 "content": [
                     {"type": "tool_use", "id": "tu_1", "name": "list_dir", "input": {}},
