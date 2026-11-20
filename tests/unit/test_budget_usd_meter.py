@@ -174,7 +174,7 @@ def test_reported_zero_is_never_table_priced(model: str) -> None:
     assert bt.snapshot().unmetered_tokens == 0
     assert bt.snapshot().per_model[route].reported_calls == 1
     bt.check()
-    assert "$0.0000 (reported)" in bt.format_summary()
+    assert "$0 (reported)" in bt.format_summary()
 
 
 def test_unreported_call_after_free_call_is_estimated() -> None:
@@ -333,6 +333,35 @@ def test_partially_reported_unpriced_model_keeps_the_reported_spend() -> None:
     usd, partial = bt.estimate_usd()
     assert usd == pytest.approx(0.60)  # not dropped to 0.0
     assert partial is True  # and flagged as an under-estimate
+
+
+@pytest.mark.parametrize(
+    ("reported", "line"),
+    [
+        (0.03, "calls=2 ~$0.03 (reported, some calls unpriced)"),
+        (0.0, "calls=2 $? (reported, some calls unpriced)"),
+    ],
+)
+def test_a_partly_priced_route_reads_as_a_lower_bound(reported: float, line: str) -> None:
+    """A route with unpriced calls printed `$0.0300` and `$0.0000`, an exact figure and a zero."""
+    route = kinds.ModelRoute("future/unpriced-model", "future/unpriced-model")
+    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
+    for cost in (reported, None):
+        bt.record(
+            route=route,
+            input_tokens=1_000,
+            output_tokens=500,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+            cost_usd=cost,
+        )
+    assert line in bt.format_summary()
+
+
+def test_nothing_spent_reads_0_and_nothing_priced_reads_unknown() -> None:
+    """A run that spent nothing read `$0.0000`, and one whose every call was unpriced `~$0.0000`."""
+    assert budget.format_usd(0.0) == "$0"
+    assert budget.format_usd(0.0, partial=True) == "$?"
 
 
 def test_a_sub_cent_cap_prints_at_the_spends_precision() -> None:

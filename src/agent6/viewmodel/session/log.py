@@ -148,7 +148,7 @@ class LogScan:
 
     @property
     def usage_cell(self) -> str:
-        """The session's cost as `usage_cell` spells it; "" for a clean $0."""
+        """The session's cost as `usage_cell` spells it."""
         usage, account = self.budget.session, self.budget.account
         return session_status.usage_cell(
             self.budget.usd_so_far,

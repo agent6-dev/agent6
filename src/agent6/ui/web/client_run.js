@@ -469,7 +469,7 @@ function paintRun(cards, s) {
         return { id: link, model: child.model || '', status: pill(child.status_level, child.status_label),
                  usage: child.usage || '', join: outcomes[child.session_id] || '' };
       });
-      // A column shows only when some child has a value: model, usage and join are often ''.
+      // A column shows only when some child has a value: model and join are often ''.
       const columns = ['id', 'model', 'status', 'usage', 'join'].filter(key => rows.some(row => row[key]));
       const table = el('table');
       const head = el('tr');

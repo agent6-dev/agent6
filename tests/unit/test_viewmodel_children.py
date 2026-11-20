@@ -218,6 +218,27 @@ def test_the_receipt_lists_its_children_and_labels_the_inclusive_spend(
     assert alone.children == () and "Children" not in receipt.render(alone)
 
 
+def test_an_unpriced_childs_spend_reads_unknown_on_the_receipt(tmp_path: pathlib.Path) -> None:
+    """A settled child whose calls were all unpriced read `$0.0000` on the receipt."""
+    state = tmp_path / "state"
+    parent = _session(state, "run-abc", usd=0.2)
+    _session(state, "run-abc-p1-l1", parent="run-abc", number=1, group="run-abc-p1")
+    _session(state, "run-abc-p1-l2", parent="run-abc", number=2, group="run-abc-p1", usd=0.2)
+    record = _record(
+        "run-abc-p1", [("run-abc-p1-l1", _joined(), 0.0), ("run-abc-p1-l2", _joined(), 0.2)]
+    )
+    unpriced = record.children[0].model_copy(
+        update={"usage": child_dispatch.UsageRecord(usd=0.0, usd_partial=True)}
+    )
+    child_dispatch.write_record(
+        parent, record.model_copy(update={"children": (unpriced, record.children[1])}), now=1.0
+    )
+    text = receipt.render(receipt.read_receipt(parent, tmp_path))
+    assert "child 1 run-abc-p1-l1 (reviewer): joined at bbbbbbbbbbbb, $?" in text
+    assert "child 2 run-abc-p1-l2: joined at bbbbbbbbbbbb, $0.20" in text
+    assert "spend includes the children's ~$0.20" in text
+
+
 def test_a_panel_reviewer_is_evidence_of_its_panel_and_no_child(tmp_path: pathlib.Path) -> None:
     """A reviewed run read `(2 children)` and listed its passing reviewers as unchanged children."""
     state = tmp_path / "state"

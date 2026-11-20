@@ -927,19 +927,21 @@ def test_hub_cost_cell_uses_plan_points_for_a_plan_metered_run(tmp_path: pathlib
     asyncio.run(scenario())
 
 
-def test_cost_cell_marks_partial_and_keeps_zero_clean() -> None:
+def test_cost_cell_marks_partial_and_spells_a_zero() -> None:
     """The listing rows render the `~` lower-bound marker as `sessions show` does.
 
-    An all-unpriced run's ~$0.0000 is information; a clean $0 stays blank.
+    A run that spent nothing read blank, and an all-unpriced run `~$0.0000`, a zero for a cost
+    nothing priced.
     """
     from agent6.viewmodel import format
 
     assert format.format_usage_cell(0.0123, partial=True) == "~$0.01"
-    assert format.format_usage_cell(0.0, partial=True) == "~$0.0000"
-    assert format.format_usage_cell(0.0, partial=False) == ""
+    assert format.format_usage_cell(0.0, partial=True) == "$?"
+    assert format.format_usage_cell(0.0, partial=False) == "$0"
     assert format.format_usage_cell(0.0123, partial=False) == "$0.01"
     # A run that spent plan points and dollars shows both: the dollars were hidden.
     assert format.format_usage_cell(0.0, plan_points=1) == "1pt"
+    assert format.format_usage_cell(0.0, partial=True, plan_points=1) == "1pt + $?"
     assert format.format_usage_cell(0.03, plan_points=1) == "1pt + $0.03"
     assert format.format_usage_cell(0.03, partial=True, plan_points=1) == "1pt + ~$0.03"
 

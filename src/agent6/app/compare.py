@@ -232,8 +232,7 @@ def print_ranked_candidates(
     width = max(len(label) for label in labels.values())
     reporter.out("ranked candidates (best first):")
     for rnk, rid in enumerate(outcome.ranking, start=1):
-        # A clean $0 is a blank cell in a listing; a report line spells it out.
-        cost = rows[rid].usage_cell or agent6_budget.format_usd(0.0)
+        cost = rows[rid].usage_cell
         into = (merged_into or {}).get(rid, "")
         if into:
             landing = f"merged into {into}"
@@ -252,20 +251,25 @@ def print_ranked_candidates(
         reporter.out(f"  {rnk}. {rid}  {labels[rid]:<{width}}  {cost}   {landing}")
     if len(candidates) > 1:
         cand_total = sum(c.cost_usd for c in candidates)
-        plan_total = sum(
-            rows[c.session_id].plan_observed_points for c in candidates if c.session_id in rows
-        )
+        cand_rows = [rows[c.session_id] for c in candidates if c.session_id in rows]
+        cand_partial = any(row.usd_partial for row in cand_rows)
+        plan_total = sum(row.plan_observed_points for row in cand_rows)
+        plan_read = max((row.plan_used_percent for row in cand_rows), default=0.0)
         candidates_cell = session_status.usage_cell(
-            cand_total, partial=False, plan_observed_points=plan_total, plan_used_percent=0.0
-        ) or agent6_budget.format_usd(0.0)
+            cand_total,
+            partial=cand_partial,
+            plan_observed_points=plan_total,
+            plan_used_percent=plan_read,
+        )
         judge = outcome.judge_cost_usd
         partial = outcome.judge_cost_partial
         line = f"total: candidates {candidates_cell}"
         if judge > 0 or partial:
             line += f" + judge {agent6_budget.format_usd(judge, partial=partial)}"
-            if plan_total <= 0:
+            if plan_total <= 0 and plan_read <= 0:
                 # Points and dollars do not add; the sum is for an all-dollar line.
-                line += f" = {agent6_budget.format_usd(cand_total + judge, partial=partial)}"
+                lower = partial or cand_partial
+                line += f" = {agent6_budget.format_usd(cand_total + judge, partial=lower)}"
         reporter.out(line)
     if outcome.rationale:
         reporter.out(f"\njudge: {outcome.rationale}")

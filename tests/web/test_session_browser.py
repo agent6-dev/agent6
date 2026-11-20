@@ -651,7 +651,7 @@ def test_a_fan_outs_children_table_leaves_the_conversation_its_share(
     page.goto(f"http://127.0.0.1:{port}/#/session/fan")
     card = page.locator(".card-children")
     expect(card.locator("tr")).to_have_count(21)
-    expect(card.locator("th")).to_have_text(["id", "status"])
+    expect(card.locator("th")).to_have_text(["id", "status", "usage"])
     name = card.locator("th").first.evaluate(
         "e => [getComputedStyle(e).textAlign, getComputedStyle(e).fontWeight]"
     )

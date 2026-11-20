@@ -695,9 +695,7 @@ def _print_run_total_across_executions(
     """
     scan = scan_session_log(layout.session_dir / sessions_layout.LOGS_NAME)
     if scan.executions > 1 and scan.budget_seen:
-        # The listing's cell, with a clean $0 spelled out.
-        cost = scan.usage_cell or agent6_budget.format_usd(scan.budget.session.usd)
-        reporter.cost(f"  RUN TOTAL (all {scan.executions} executions): {cost}")
+        reporter.cost(f"  RUN TOTAL (all {scan.executions} executions): {scan.usage_cell}")
 
 
 def print_interrupt_end(

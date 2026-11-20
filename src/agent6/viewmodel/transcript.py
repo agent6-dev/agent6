@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from agent6 import budget, evidence, kinds
+from agent6 import evidence, kinds
 from agent6.sessions import journal
 from agent6.viewmodel import events as viewmodel_events
 from agent6.viewmodel import format, review, transcript_items, transcript_text
@@ -38,6 +38,9 @@ _BETWEEN_TURNS: dict[str, tuple[transcript_items.ItemKind, str]] = {
 
 # Where the operator's own words live in the journal; `tools.sessions._SPEAKER` quotes them.
 _OPERATOR_TEXT = {"session.start": "user_task", "steer.injected": "text"}
+
+# An execution's spend before its first budget row: it made no model call, so nothing.
+_NOTHING_SPENT = journal.BudgetUpdate(usd_total=0.0)
 
 
 def worker_models(events: Iterable[dict[str, Any]]) -> tuple[str, ...]:
@@ -104,8 +107,8 @@ class TranscriptFold:
         self._tools = 0
         self._commits = 0
         self._mode = ""
-        self._usd = 0.0
-        self._usd_partial = False
+        # The execution's last budget row: its spend and the plan's reading.
+        self._budget = _NOTHING_SPENT
         self._first_ep: float | None = None
         self._last_ep: float | None = None
         self._commit_subject = ""
@@ -133,8 +136,7 @@ class TranscriptFold:
             self._tools = 0
             self._commits = 0
             self._commit_subject = ""
-            self._usd = 0.0
-            self._usd_partial = False
+            self._budget = _NOTHING_SPENT
             self._gate = None
             self._stranded = False
             self._ended = False
@@ -146,8 +148,9 @@ class TranscriptFold:
             )
             return True
         if etype == "budget.update":
-            self._usd = float(event.get("usd_total", 0) or 0)
-            self._usd_partial = bool(event.get("usd_partial")) or self._usd_partial
+            row = viewmodel_events.parse_event(event)
+            if isinstance(row, journal.BudgetUpdate):
+                self._budget = row
             return True
         if etype == "checkpoint.committed":
             self._commit_subject = str(event.get("subject", "")).strip()
@@ -172,16 +175,23 @@ class TranscriptFold:
         return False
 
     def _receipt_detail(self) -> str:
-        """Return the done item's detail: cost, wall time, counts and commit subject.
+        """Return the done item's detail: usage, wall time, counts and commit subject.
 
         Returns:
-            The pieces the journal carried, joined by " · ".
+            The execution's usage as the listings spell it, `$0` before any budget row, then
+            the pieces the journal carried, joined by " · ".
         """
         tools = f"{self._tools} tool{'' if self._tools == 1 else 's'}"
         commits = f"{self._commits} commit{'' if self._commits == 1 else 's'}"
-        parts = []
-        if self._usd:
-            parts.append(budget.format_usd(self._usd, partial=self._usd_partial))
+        row = self._budget
+        parts = [
+            session_status.usage_cell(
+                row.usd_total,
+                partial=bool(row.usd_partial),
+                plan_observed_points=row.plan_observed_points or 0.0,
+                plan_used_percent=row.account.used_percent if row.account else 0.0,
+            )
+        ]
         if self._first_ep is not None and self._last_ep is not None:
             parts.append(f"{max(0, round(self._last_ep - self._first_ep))}s")
         # An ask or a plan never commits, so "0 commits" there is noise.

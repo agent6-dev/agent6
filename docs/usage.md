@@ -111,6 +111,7 @@ See [Media retention](security.md#media-retention) for containment and the upstr
 Every surface follows a run and sends it the same steers; the command-line verbs are on [Command line](cli.md#follow-and-steer-a-run).
 
 A session's usage covers every execution, in dollars or in plan points, and in both for a run that spent both (`1pt + $0.03`); `sessions list`, `sessions show`, the end-of-run total and a ranking's table print the same figure.
+A run that spent nothing reads `$0`; unpriced calls make the figure a lower bound (`~$0.03`), or `$?` with nothing priced beside them.
 These points measure account-wide window movement between readings, accumulated across resets, not the run's own spend; other consumers sharing the plan contribute too.
 
 The tokens and the points against `max_plan_points` on `sessions show` are the latest execution's.

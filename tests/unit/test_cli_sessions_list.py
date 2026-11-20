@@ -480,8 +480,8 @@ def test_a_merge_names_the_unmerged_runs_that_changed_the_same_paths(
     assert rows["run-two-BBBBBB"]["merge_note"] == "open findings: 2 block"
     assert sessions_cmds._cmd_list() == 0
     text = capsys.readouterr().out
-    assert re.search(r"passed · unmerged\s+run-one-AAAAAA", text), text
-    assert re.search(r"unmerged · open findings: 2 block\s+run-two-BBBBBB", text), text
+    assert re.search(r"passed · unmerged\s+\$0\s+run-one-AAAAAA", text), text
+    assert re.search(r"unmerged · open findings: 2 block\s+\$0\s+run-two-BBBBBB", text), text
     assert "same paths" not in text
 
     # A front-end's confirm states the line before the click; the merge prints the same one.

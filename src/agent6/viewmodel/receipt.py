@@ -396,12 +396,17 @@ def children_section(views: tuple[vm_children.ChildView, ...]) -> list[str]:
             what = f"{child.outcome}: {child.error}" if child.error else child.outcome
         else:
             what = child.status or "not started"
-        spend = f", {budget.format_usd(child.spend_usd)}" if child.settled else ""
+        spend = (
+            f", {budget.format_usd(child.spend_usd, partial=child.usd_partial)}"
+            if child.settled
+            else ""
+        )
         lines.append(f"{label}: {what}{spend}")
     settled = math.fsum(child.spend_usd for child in views if child.settled)
     if settled:
         # The parent's total already holds this: a reader adds nothing.
-        lines.append(f"spend includes the children's {budget.format_usd(settled)}")
+        partial = any(child.usd_partial for child in views if child.settled)
+        lines.append(f"spend includes the children's {budget.format_usd(settled, partial=partial)}")
     return lines
 
 
@@ -466,7 +471,7 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
                 continue
             spend = next(
                 (
-                    f", {budget.format_usd(child.spend_usd)}"
+                    f", {budget.format_usd(child.spend_usd, partial=child.usd_partial)}"
                     for child in view.children
                     if child.session_id == reviewer.session_id and child.settled
                 ),

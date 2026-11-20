@@ -119,6 +119,15 @@ def test_format_log_line_keeps_the_compaction_reason() -> None:
     assert "keep the auth work" in requested
 
 
+def test_a_budget_row_spells_spend_as_every_surface_does() -> None:
+    """The event log printed `$0.0000` for a run that spent nothing and for an unpriced one."""
+    row = {"ts": "t", "type": "budget.update", "input_total": 9, "output_total": 2}
+    assert log_line.format_log_line({**row, "usd_total": 0.0}).endswith("in=9 out=2 $0")
+    unpriced = {**row, "usd_total": 0.0, "usd_partial": True}
+    assert log_line.format_log_line(unpriced).endswith("in=9 out=2 $?")
+    assert log_line.format_log_line({**row, "usd_total": 0.25}).endswith("in=9 out=2 $0.25")
+
+
 def test_a_jail_degraded_row_carries_its_reason() -> None:
     """A degraded sandbox and a stop that left a process behind render their detail in the log."""
     line = log_line.format_log_line(

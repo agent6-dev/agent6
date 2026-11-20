@@ -146,7 +146,7 @@ def test_finish_tool_becomes_the_verdict_not_a_step() -> None:
     assert [i.kind for i in items] == ["done"]
     done = items[0]
     assert done.ok is True and done.body == "all green"
-    assert done.detail == "0 tools · 0 commits"
+    assert done.detail == "$0 · 0 tools · 0 commits"
 
 
 def test_a_plans_finish_summary_pairs_with_its_done_line() -> None:
@@ -597,14 +597,78 @@ def test_the_receipt_spells_dollars_the_way_every_other_surface_does() -> None:
     assert done.detail.startswith("~$0.25 · ")
 
 
-def test_done_item_degrades_to_counts_on_a_journal_without_receipt_fields() -> None:
+def test_the_receipt_carries_a_journaled_zero_and_an_unknown_one() -> None:
+    """An execution whose journal says it spent nothing closed with no cost on its done line.
+
+    One whose every call was unpriced closes on `$?`, never `$0`.
+    """
+    for partial, cost in ((False, "$0"), (True, "$?")):
+        events = [
+            {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "user_task": "t"},
+            {"type": "budget.update", "usd_total": 0.0, "usd_partial": partial},
+            {
+                "type": "session.stop",
+                "ts": "2026-08-09T20:00:30+00:00",
+                "reason": "provider_error",
+                "verification": "unverified",
+            },
+        ]
+        done = next(it for it in fold_transcript(events) if it.kind == "done")
+        assert done.detail == f"{cost} · 30s · 0 tools · 0 commits"
+
+
+def _account(used_percent: float) -> dict[str, object]:
+    return {
+        "provider": "chatgpt",
+        "used_percent": used_percent,
+        "resets_at": 1793606851.0,
+        "windows": [
+            {
+                "name": "primary",
+                "used_percent": used_percent,
+                "window_minutes": 10080,
+                "resets_at": 1793606851.0,
+            }
+        ],
+        "credits_has": False,
+        "credits_unlimited": False,
+        "credits_balance": "",
+    }
+
+
+def test_a_plan_metered_execution_closes_on_its_points() -> None:
+    """A plan run's done line read `$0`, against the `2pt` its listing row and Budget card show.
+
+    A row written before the account record keys the points `plan_consumed` and the reading flat.
+    """
+    rows = (
+        ({"usd_total": 0.0, "plan_consumed": 2.0, "plan_used_percent": 57.0}, "2pt"),
+        ({"usd_total": 0.0, "plan_observed_points": 3.0, "account": _account(58.0)}, "3pt"),
+        ({"usd_total": 0.0, "plan_observed_points": 0.0, "account": _account(95.0)}, "0pt"),
+        (
+            {"usd_total": 0.03, "plan_observed_points": 1.0, "account": _account(58.0)},
+            "1pt + $0.03",
+        ),
+    )
+    for row, usage in rows:
+        events = [
+            {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "user_task": "t"},
+            {"type": "budget.update", **row},
+            {"type": "session.stop", "ts": "2026-08-09T20:00:30+00:00", "reason": "finish_session"},
+        ]
+        done = next(it for it in fold_transcript(events) if it.kind == "done")
+        assert done.detail == f"{usage} · 30s · 0 tools · 0 commits"
+
+
+def test_a_done_item_without_a_budget_row_reads_nothing_spent() -> None:
+    """A run that ended before its first model call closed with no figure, beside a `$0` row."""
     events = [
         {"type": "tool.call", "name": "read_file", "args_preview": {"path": "a"}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
         {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     done = next(it for it in fold_transcript(events) if it.kind == "done")
-    assert done.detail == "1 tool · 0 commits"
+    assert done.detail == "$0 · 1 tool · 0 commits"
 
 
 def test_tool_items_carry_bounded_previews() -> None:
@@ -688,10 +752,10 @@ def test_an_asks_receipt_carries_no_commit_count() -> None:
         {"type": "session.stop", "reason": "answered", "verification": "unverified"},
     ]
     done = next(it for it in fold_transcript(ask) if it.kind == "done")
-    assert done.detail == "1 tool"
+    assert done.detail == "$0 · 1 tool"
     run = [{**ask[0], "mode": "run"}, *ask[1:]]
     done = next(it for it in fold_transcript(run) if it.kind == "done")
-    assert done.detail == "1 tool · 0 commits"
+    assert done.detail == "$0 · 1 tool · 0 commits"
     # A resumed execution starts with session.resume (never a second
     # session.start): the mode rides on it too, or the resumed plan's receipt
     # reads "0 commits".
@@ -700,7 +764,7 @@ def test_an_asks_receipt_carries_no_commit_count() -> None:
         {"type": "session.stop", "reason": "finish_planning", "verification": "unverified"},
     ]
     done = next(it for it in fold_transcript(resumed_plan) if it.kind == "done")
-    assert done.detail == "0 tools"
+    assert done.detail == "$0 · 0 tools"
 
 
 _DONE_LABELS = {
@@ -795,7 +859,7 @@ def test_a_resumed_execution_that_stops_before_spending_has_no_stale_cost() -> N
     """A zero-call resumed execution never presents its prior execution's cost as spend.
 
     It can honor a queued stop before its first provider call, so no budget.update resets the
-    receipt.
+    receipt: it reads `$0`, as its execution spent nothing.
     """
     events = [
         {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "mode": "run"},
@@ -815,7 +879,7 @@ def test_a_resumed_execution_that_stops_before_spending_has_no_stale_cost() -> N
         },
     ]
     dones = [it for it in fold_transcript(events) if it.kind == "done"]
-    assert dones[-1].detail == "1s · 0 tools · 0 commits"
+    assert dones[-1].detail == "$0 · 1s · 0 tools · 0 commits"
 
 
 def test_a_tool_call_is_in_flight_until_its_result_settles_it() -> None:

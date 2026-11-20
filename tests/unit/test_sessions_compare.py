@@ -57,11 +57,13 @@ def _setup_run(
     cost: float = 0.05,
     plan_points: float = 0.0,
     manifest_extra: dict[str, Any] | None = None,
+    budget_extra: dict[str, Any] | None = None,
 ) -> None:
     """Cut agent6/<session_id> off base_sha with commits and write the run's state fixture.
 
     Writes manifest.json and logs.jsonl, then returns the checkout to where it was;
-    *manifest_extra* merges extra manifest fields (a child's lineage, a compare stamp).
+    *manifest_extra* merges extra manifest fields (a child's lineage, a compare stamp) and
+    *budget_extra* extra budget row fields.
     """
     branch = f"agent6/{session_id}"
     current = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
@@ -97,6 +99,7 @@ def _setup_run(
             "usd_total": cost,
             "plan_observed_points": plan_points,
             "plan_used_percent": plan_points,
+            **(budget_extra or {}),
         },
     ]
     if status == "passed":
@@ -566,6 +569,63 @@ def test_without_a_judge_the_candidates_keep_their_points(
     assert "total: candidates 2pt\n" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    ("first", "second", "total"),
+    [
+        ({"cost": 0.0, "budget_extra": {"usd_partial": True}}, None, "candidates $?\n"),
+        ({"cost": 0.05}, None, "candidates ~$0.05\n"),
+        (
+            {"cost": 0.0, "budget_extra": {"plan_used_percent": 95.0}},
+            {"cost": 0.0, "budget_extra": {"plan_used_percent": 95.0}},
+            "candidates 0pt\n",
+        ),
+    ],
+)
+def test_the_candidates_total_reads_as_their_rows_do(
+    repo: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    first: dict[str, Any],
+    second: dict[str, Any] | None,
+    total: str,
+) -> None:
+    """Rows of `$?` totalled `candidates $0`, and plan rows of `0pt` too.
+
+    An unpriced candidate makes the total a lower bound, as its own row is.
+    """
+    unpriced: dict[str, Any] = {"cost": 0.0, "budget_extra": {"usd_partial": True}}
+    base = _init_repo(repo)
+    for (sid, name), spend in zip(
+        (("run-AAAA11", "a"), ("run-BBBB22", "b")), (first, second or unpriced), strict=True
+    ):
+        _setup_run(
+            repo, sid, base_sha=base, commits=[(f"{name}.txt", f"{name}\n", f"add {name}")], **spend
+        )
+    assert main(["sessions", "compare", "run-AAAA11", "run-BBBB22"]) == 0
+    assert f"total: {total}" in capsys.readouterr().out
+
+
+def test_unpriced_candidates_make_the_sum_with_the_judge_a_lower_bound(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Unpriced candidates and a priced judge summed to `= $0.01`, an exact total."""
+    base = _init_repo(repo)
+    for sid, name in (("run-AAAA11", "a"), ("run-BBBB22", "b")):
+        _setup_run(
+            repo,
+            sid,
+            base_sha=base,
+            commits=[(f"{name}.txt", f"{name}\n", f"add {name}")],
+            cost=0.0,
+            budget_extra={"usd_partial": True},
+        )
+    _write_reviewer_config(repo)
+    verdict = '{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b is cleaner"}'
+    provider = _CostingFakeProvider([verdict])
+    monkeypatch.setattr(role_providers, "build_role_provider", _costing_stub_builder(provider))
+    assert main(["sessions", "compare", "run-AAAA11", "run-BBBB22"]) == 0
+    assert "total: candidates $? + judge $0.01 = ~$0.01\n" in capsys.readouterr().out
+
+
 def _child_extra(*, winner: bool, rank: int) -> dict[str, Any]:
     return {
         "parallel": {"group": "fan", "number": rank, "parent": "fan"},
@@ -683,7 +743,7 @@ class _UnpricedFakeProvider(_FakeProvider):
 def test_unpriced_judge_spend_reads_as_a_lower_bound_not_nothing(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An unpriced reviewer with no reported cost renders as the ~ lower bound, never hidden."""
+    """An unpriced reviewer with no reported cost reads as unknown, never hidden or `$0`."""
     base = _init_repo(repo)
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")], cost=0.10)
     _setup_run(repo, "run-BBBB22", base_sha=base, commits=[("b.txt", "b\n", "add b")], cost=0.02)
@@ -701,7 +761,7 @@ def test_unpriced_judge_spend_reads_as_a_lower_bound_not_nothing(
 
     assert rc == 0
     out = capsys.readouterr().out
-    assert "+ judge ~$0.0000 = ~$0.12" in out  # marked lower bound, not hidden
+    assert "+ judge $? = ~$0.12" in out
 
 
 def test_compare_falls_back_to_mechanical_on_judge_error(

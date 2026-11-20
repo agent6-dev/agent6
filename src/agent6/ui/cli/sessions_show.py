@@ -333,7 +333,7 @@ def _usage_line(scan: LogScan) -> str:
     Returns:
         `in` and `out`, the cached side when the journal recorded it, the plan movement a
         percent-metered execution observed against its cap, then the usage as the listing's
-        cell spells it (blank for a clean $0).
+        cell spells it.
     """
     run = scan.budget.execution
     tokens = f"in={run.input_tokens or 0} out={run.output_tokens or 0}"
@@ -343,10 +343,8 @@ def _usage_line(scan: LogScan) -> str:
     if run.plan_cap is not None and run.plan_cap > 0:
         tokens += f" plan moved={run.plan_observed_points:g}/{run.plan_cap:g}pt"
     execution_s = " (latest execution)" if scan.executions > 1 else ""
-    cell = scan.usage_cell
     executions_s = f" (all {scan.executions} executions)" if scan.executions > 1 else ""
-    cost_s = f"  usage {cell}{executions_s}" if cell else ""
-    return f"{tokens}{execution_s}{cost_s}"
+    return f"{tokens}{execution_s}  usage {scan.usage_cell}{executions_s}"
 
 
 class StatusJSON(TypedDict):
@@ -580,8 +578,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     # First start to last event: the time between executions is in it.
     spans = f" (wall, {scan.executions} executions)" if scan.executions > 1 else ""
     print(f"elapsed:    {_fmt_dur(elapsed)}{spans}")
-    if scan.budget_seen:
-        print(f"usage:      {_usage_line(scan)}")
+    print(f"usage:      {_usage_line(scan)}")
     _print_end_facts(
         scan,
         target.name,

@@ -115,7 +115,7 @@ def usage_cell(
 
     Returns:
         The points once a subscription plan answered a call, the dollars when any were
-        spent, both for a run that spent both; "" for a clean $0.
+        spent, both for a run that spent both; `$0` for a run that spent nothing.
     """
     metered = plan_used_percent > 0 or plan_observed_points > 0
     return format.format_usage_cell(

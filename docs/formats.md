@@ -1667,7 +1667,7 @@ Source: [`budget.BudgetTracker.format_summary`](https://github.com/agent6-dev/ag
 | `cache_r` | `text` | Cache-read tokens for the route. |
 | `cache_w` | `text` | Cache-write tokens for the route. |
 | `calls` | `text` | Calls recorded for the route. |
-| `cost` | `text` | USD spend, reported or estimated from that route's prices. The TOTAL includes purchased credits spent. `=` marks an exact total, `~` an estimate or lower bound, and `+` unpriced calls. |
+| `cost` | `text` | USD spend, reported or estimated from that route's prices. The TOTAL includes purchased credits spent. `=` marks an exact total, `~` an estimate or lower bound, and `+` unpriced calls; a TOTAL of unpriced calls over nothing priced is `$?`. |
 | `of` | `text` | The USD cap when a route is USD-metered; `unlimited` means no cap. |
 | `unmetered` | `text` | Tokens counted against the fallback cap, followed by that cap. |
 | `plan` | `text` | One plan usage line per provider, with its binding window's used percent, observed window movement in points, optional cap, reset time and credit balance. Account-wide movement includes other consumers. |

@@ -113,7 +113,7 @@ def test_a_plan_call_zeroes_only_its_own_calls_not_the_model_id() -> None:
     summary = bt.format_summary()
     assert "$1.05" in summary
     assert "plan/claude-sonnet-4-5: in=10 out=10" in summary
-    assert "$0.0000 (subscription)" in summary
+    assert "$0 (subscription)" in summary
 
 
 def test_a_pure_subscription_model_still_costs_an_authoritative_zero() -> None:

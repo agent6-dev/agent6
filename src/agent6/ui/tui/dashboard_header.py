@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, cast
 from rich import markup, text
 from textual import widgets
 
-from agent6 import budget as agent6_budget
 from agent6 import kinds
 from agent6.graph import order
 from agent6.sessions import manifest, process
@@ -89,7 +88,7 @@ class RunHeader(widgets.Static):
             partial=b.session.usd_partial,
             plan_observed_points=b.session.plan_observed_points,
             plan_used_percent=b.account.used_percent if b.account else 0.0,
-        ) or agent6_budget.format_usd(0.0)
+        )
         segments = ["[b]agent6[/]"]
         if finished:
             segments.append(finished)

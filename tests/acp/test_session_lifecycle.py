@@ -293,7 +293,7 @@ def test_load_replays_the_recorded_conversation_before_answering(tmp_path: pathl
         "[agent6] Finding f1 · block · parser.py:3-4\nDefect f1\nReproduce with an empty input.\n"
     )
     assert updates[7]["content"]["text"] == "[agent6] committed abc1234 · 1 lines\n"
-    assert updates[8]["content"]["text"] == "[agent6] Session passed - 1 tool · 1 commit\n"
+    assert updates[8]["content"]["text"] == "[agent6] Session passed - $0 · 1 tool · 1 commit\n"
     assert (d / "logs.jsonl").read_text(encoding="utf-8") == journal
 
 

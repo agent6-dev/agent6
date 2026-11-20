@@ -197,14 +197,14 @@ def format_usage_cell(
         plan_points: The plan movement observed on a subscription-metered execution, in points.
 
     Returns:
-        The points as `Npt` when given, the dollars through `format_usd` when any were
-        spent, both joined by ` + ` for a run that spent both; "" for a clean $0.
+        The dollars through `format_usd`, `$0` for a run that spent nothing; with the points
+        given, `Npt`, then ` + ` and the dollars when any were spent or are unknown.
     """
-    dollars = "" if usd <= 0 and not partial else budget.format_usd(usd, partial=partial)
+    dollars = budget.format_usd(usd, partial=partial)
     if plan_points is None:
         return dollars
     points = f"{plan_points:g}pt"
-    return f"{points} + {dollars}" if dollars else points
+    return f"{points} + {dollars}" if usd > 0 or partial else points
 
 
 def attention_line(event: Mapping[str, Any]) -> str | None:
@@ -285,29 +285,29 @@ def plan_readout(
 def budget_usd_text(
     session_usd: float,
     *,
-    partial: bool,
     execution_usd: float,
+    execution_partial: bool,
     usd_cap: float | None,
-    cell: str = "",
+    cell: str,
 ) -> str:
     """Return the run view's usage line.
 
     Args:
         session_usd: The spend across every execution.
-        partial: The figure is a lower bound.
         execution_usd: This execution's spend.
+        execution_partial: This execution's spend is a lower bound.
         usd_cap: This execution's cap; -1 for unlimited, 0 for refused, None for unknown.
-        cell: The listings' usage cell (plan points, dollars or both), the figure when given.
+        cell: The listings' usage cell (plan points, dollars or both), the session figure.
 
     Returns:
         The session figure, then this execution's spend against its cap when earlier
         executions spent; `(unlimited)` for a cap of -1.
     """
-    text = cell or budget.format_usd(session_usd, partial=partial)
+    text = cell
     if usd_cap is not None and usd_cap > 0:
         cap = budget.format_usd(usd_cap)
         if execution_usd < session_usd:
-            execution = budget.format_usd(max(0.0, execution_usd), partial=partial)
+            execution = budget.format_usd(max(0.0, execution_usd), partial=execution_partial)
             return f"{text} · execution {execution} / {cap}"
         return f"{text} / {cap}"
     return f"{text} (unlimited)" if usd_cap == -1 else text

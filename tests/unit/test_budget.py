@@ -201,7 +201,7 @@ def test_format_summary_names_no_ceiling_before_any_call() -> None:
     made calls names no dollar ceiling.
     """
     t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
-    assert "  TOTAL: in=0 out=0 cost=$0.0000\n" in t.format_summary() + "\n"
+    assert "  TOTAL: in=0 out=0 cost=$0\n" in t.format_summary() + "\n"
 
 
 def test_format_summary_marks_exhausted() -> None:
@@ -658,9 +658,10 @@ def test_plan_usage_line_does_not_invent_a_window_length() -> None:
 
 
 def test_an_all_unpriced_run_does_not_claim_a_usd_ceiling() -> None:
-    """An all-unpriced run's receipt claims no USD ceiling and spells the fallback cap.
+    """An all-unpriced run's receipt claims no USD ceiling or total and spells the fallback cap.
 
-    The cap reads as the preflight spells it, with the lower-bound `+` before the parenthetical.
+    The cap reads as the preflight spells it. The total read `cost~$0.0000+`, a zero for a cost
+    nothing priced.
     """
     t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=2_000_000, max_plan_points=-1)
     t.record(
@@ -675,7 +676,8 @@ def test_an_all_unpriced_run_does_not_claim_a_usd_ceiling() -> None:
     total = next(ln for ln in t.format_summary().splitlines() if "TOTAL" in ln)
 
     assert "of $" not in total, total
-    assert "cost~$0.0000+" in total
+    assert "cost~$? " in total
+    assert total.endswith(" (some models unpriced)"), total
     assert "2,000,000 fallback tokens" in total
 
 

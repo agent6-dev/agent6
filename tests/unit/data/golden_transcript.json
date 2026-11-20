@@ -126,7 +126,7 @@
     "name": "passed",
     "arg": "finish_session",
     "ok": true,
-    "detail": "2s · 0 tools · 0 commits",
+    "detail": "$0 · 2s · 0 tools · 0 commits",
     "tail": "",
     "call_id": "",
     "args_full": ""

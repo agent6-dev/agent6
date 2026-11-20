@@ -215,8 +215,11 @@ def format_usd(usd: float, *, partial: bool = False) -> str:
         partial: The figure is a known under-estimate, marked with a leading "~".
 
     Returns:
-        Cents from one cent up, four decimals below it, so a sub-cent spend is never $0.00.
+        `$0` for nothing spent, `$?` for a lower bound of nothing, an unknown cost; cents from
+        one cent up, four decimals below it, so a sub-cent spend is never $0.00.
     """
+    if not usd:
+        return "$?" if partial else "$0"
     mark = "~" if partial else ""
     return f"{mark}${usd:.2f}" if usd >= 0.01 else f"{mark}${usd:.4f}"
 
@@ -901,7 +904,7 @@ class BudgetTracker:
                     note = ""
                 if cost.cache_assumed:
                     note += " (cache rates assumed: 0.1x read, 1.25x write)"
-                cost_str = f"{format_usd(cost.usd)}{note}"
+                cost_str = f"{format_usd(cost.usd, partial=cost.partial)}{note}"
             lines.append(
                 f"  {route.spec}: "
                 f"in={totals.input_tokens} out={totals.output_tokens} "
@@ -930,7 +933,8 @@ class BudgetTracker:
             calls: Calls recorded for the route.
             cost: USD spend, reported or estimated from that route's prices.
                 The TOTAL includes purchased credits spent.
-                `=` marks an exact total, `~` an estimate or lower bound, and `+` unpriced calls.
+                `=` marks an exact total, `~` an estimate or lower bound, and `+` unpriced calls;
+                a TOTAL of unpriced calls over nothing priced is `$?`.
             of: The USD cap when a route is USD-metered; `unlimited` means no cap.
             unmetered: Tokens counted against the fallback cap, followed by that cap.
             plan: One plan usage line per provider, with its binding window's used percent,
@@ -946,7 +950,12 @@ class BudgetTracker:
         lines.extend(model_lines)
         any_unknown = any_unknown or priced < len(snap.per_model)
         approx = "~" if any_unknown or any_estimated else "="
-        total = format_usd(total_usd) + ("+" if any_unknown else "")
+        if any_unknown and not total_usd:
+            # Unpriced calls over nothing priced: no figure to bound.
+            total, note = format_usd(total_usd, partial=True), " (some models unpriced)"
+        else:
+            total = format_usd(total_usd) + ("+" if any_unknown else "")
+            note = " (some models unpriced; figure is a lower bound)" if any_unknown else ""
         # `of <cap>` names what meters this spend; with nothing USD-metered, max_usd meters none.
         cap = ""
         if metered:
@@ -962,9 +971,7 @@ class BudgetTracker:
                 else f"{snap.max_tokens_fallback:,}"  # as the preflight NOTE prints it
             )
             budget_line += f" (unmetered: {snap.unmetered_tokens}/{fb_cap} fallback tokens)"
-        if any_unknown:
-            budget_line += " (some models unpriced; figure is a lower bound)"
-        lines.append(budget_line)
+        lines.append(budget_line + note)
         if snap.usd_running_children or snap.tokens_running_children:
             parts = [format_usd(snap.usd_running_children)] if snap.usd_running_children else []
             if snap.tokens_running_children:

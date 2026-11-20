@@ -53,31 +53,56 @@ def test_the_page_carries_no_cost_formatter_and_no_glyph_map() -> None:
     assert "★" not in page.PAGE_HTML and "▸" not in page.PAGE_HTML
 
 
+def _usd_text(usd: float, *, partial: bool, execution_usd: float, usd_cap: float | None) -> str:
+    cell = format.format_usage_cell(usd, partial=partial)
+    return format.budget_usd_text(
+        usd, execution_usd=execution_usd, execution_partial=partial, usd_cap=usd_cap, cell=cell
+    )
+
+
 def test_the_budget_line_is_rendered_once() -> None:
-    assert format.budget_usd_text(0.42, partial=False, execution_usd=0.42, usd_cap=None) == "$0.42"
-    assert format.budget_usd_text(0.42, partial=True, execution_usd=0.42, usd_cap=-1) == (
-        "~$0.42 (unlimited)"
-    )
-    assert format.budget_usd_text(0.42, partial=False, execution_usd=0.42, usd_cap=1.0) == (
-        "$0.42 / $1.00"
-    )
+    assert _usd_text(0.42, partial=False, execution_usd=0.42, usd_cap=None) == "$0.42"
+    assert _usd_text(0.42, partial=True, execution_usd=0.42, usd_cap=-1) == "~$0.42 (unlimited)"
+    assert _usd_text(0.42, partial=False, execution_usd=0.42, usd_cap=1.0) == "$0.42 / $1.00"
     # A plan-metered run's figure is the listings' cell, the cap text unchanged.
     assert format.budget_usd_text(
-        0.0, partial=False, execution_usd=0.0, usd_cap=1.0, cell="2.5pt"
+        0.0, execution_usd=0.0, execution_partial=False, usd_cap=1.0, cell="2.5pt"
     ) == ("2.5pt / $1.00")
     # Earlier executions spent: this execution's figure follows the session's.
-    assert format.budget_usd_text(0.42, partial=False, execution_usd=0.32, usd_cap=1.0) == (
+    assert _usd_text(0.42, partial=False, execution_usd=0.32, usd_cap=1.0) == (
         "$0.42 · execution $0.32 / $1.00"
     )
     # A refused ledger (cap 0) and an unknown cap (None) both show the bare figure.
-    assert format.budget_usd_text(0.42, partial=False, execution_usd=0.42, usd_cap=0.0) == "$0.42"
+    assert _usd_text(0.42, partial=False, execution_usd=0.42, usd_cap=0.0) == "$0.42"
 
 
-def test_a_partial_total_marks_the_execution_figure_too() -> None:
-    """A resumed execution's dollar figure carries the `~` its cumulative total carries."""
-    assert format.budget_usd_text(0.42, partial=True, execution_usd=0.32, usd_cap=1.0) == (
-        "~$0.42 · execution ~$0.32 / $1.00"
+@pytest.mark.parametrize(
+    ("spent", "partial", "usd_text"),
+    [
+        (0.0, False, "~$0.10 · execution $0 / $1.00"),
+        (0.05, False, "~$0.15 · execution $0.05 / $1.00"),
+        (0.32, True, "~$0.42 · execution ~$0.32 / $1.00"),
+    ],
+)
+def test_the_execution_figure_carries_its_own_lower_bound_mark(
+    tmp_path: pathlib.Path, spent: float, partial: bool, usd_text: str
+) -> None:
+    """A priced execution after an unpriced one read `execution $?` for its `$0`, `~` for its spend.
+
+    The session's figure stays a lower bound; the execution's says how this execution was priced.
+    """
+    resumed = _run(
+        tmp_path,
+        "resumed",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "x"},
+            {"type": "budget.update", "usd_total": 0.1, "usd_partial": True, "usd_cap": 1.0},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
+            {"type": "session.resume", "mode": "run"},
+            {"type": "budget.update", "usd_total": spent, "usd_partial": partial, "usd_cap": 1.0},
+        ],
     )
+    assert wire.session_snapshot(resumed)["budget"]["usd_text"] == usd_text
 
 
 def test_the_hub_row_and_the_run_view_carry_rendered_cells(tmp_path: pathlib.Path) -> None:
@@ -91,7 +116,7 @@ def test_the_hub_row_and_the_run_view_carry_rendered_cells(tmp_path: pathlib.Pat
     )
     clean = _run(tmp_path, "clean", [{"type": "session.start", "mode": "run", "user_task": "y"}])
     assert listing.summary_row(listing.summarize_session_dir(spent))["usage"] == "$0.16"
-    assert listing.summary_row(listing.summarize_session_dir(clean))["usage"] == ""
+    assert listing.summary_row(listing.summarize_session_dir(clean))["usage"] == "$0"
     assert (
         listing.summary_row(listing.summarize_session_dir(clean), winner=True)["id_cell"]
         == "clean ★"
@@ -142,6 +167,6 @@ def test_machine_transitions_and_spend_arrive_rendered(
         first["line"] == f"[{first['seq']}] {first['state']} --{first['label']}--> {first['goto']}"
     )
     assert first["state"] == "route" and first["goto"] == "done"
-    assert snap["spend"]["text"] == "$0.0000"
+    assert snap["spend"]["text"] == "$0"
     marks = {st["name"]: st["mark"] for st in snap["states"]}
     assert marks["done"] == "▸" and marks["route"] == "·"

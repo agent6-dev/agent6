@@ -168,7 +168,7 @@ def test_status_reports_waiting_state_and_spend(
     assert "waiter_delayed" in out
     # A parked instance reads "waiting", not the engine's raw "incomplete".
     assert "status: waiting" in out
-    assert "spend: $0.0000" in out
+    assert "spend: $0 (in=0 tok, out=0 tok)" in out
 
 
 def test_status_of_a_parked_instance_with_no_worker_names_the_resume_command(

@@ -255,8 +255,8 @@ def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
 ) -> None:
     """The usage line carries the cached input side and the listing's usage cell.
 
-    It kept only the uncached `in=` (a 500k-token run read as `in=18`) and spelled a clean $0
-    as `usage $0.0000` where the listing blanks it.
+    It kept only the uncached `in=` (a 500k-token run read as `in=18`), and a run that spent
+    nothing showed no figure.
     """
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -278,7 +278,7 @@ def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
     )
     assert main(["sessions", "show", "cached"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
-    assert usage.split(None, 1)[1] == "in=18 out=2194 cache_r=42486 cache_w=22617"
+    assert usage.split(None, 1)[1] == "in=18 out=2194 cache_r=42486 cache_w=22617  usage $0"
     layout.logs_path.write_text(
         "\n".join([lines[0], json.dumps({**budget, "usd_total": 0.5}), *lines[1:]]) + "\n",
         encoding="utf-8",
@@ -286,6 +286,20 @@ def test_show_usage_carries_the_cached_tokens_and_the_listings_cost_cell(
     assert main(["sessions", "show", "cached"]) == 0
     usage = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:"))
     assert usage.endswith("cache_w=22617  usage $0.50")
+
+
+def test_show_usage_reads_nothing_spent_without_a_budget_row(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run that ended before its first model call printed no usage line, beside a `$0` row."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    _session(repo, "refused", {})
+    assert main(["sessions", "show", "refused"]) == 0
+    lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("usage:")]
+    assert lines == ["usage:      in=0 out=0  usage $0"]
 
 
 def test_show_usage_and_json_carry_the_plan_points(

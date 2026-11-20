@@ -1014,7 +1014,7 @@ function paintSession(r, depth, regroup) {
     // The status leads the first sub line, so every row's dot sits in one column: the server's
     // status and merge note, paired as the CLI and TUI status cells pair them, then the mode.
     // id_cell is the id with the winner and worktree marks the CLI and TUI id cells carry; a
-    // missing worktree's note wraps. usage is blank for a clean $0.
+    // missing worktree's note wraps.
     const status = [statusOnly(r), r.merge_note].filter(Boolean).join(' · ');
     const cell = esc(r.id_cell || r.session_id), cut = cell.indexOf(' (', r.session_id.length);
     let id = cell;

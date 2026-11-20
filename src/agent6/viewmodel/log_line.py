@@ -7,7 +7,7 @@ from __future__ import annotations
 import shlex
 from typing import Any
 
-from agent6 import evidence, terminal
+from agent6 import budget, evidence, terminal
 from agent6.viewmodel import events, format, review
 
 
@@ -181,7 +181,11 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
             salient = f"turn={event.get('turn')} messages={event.get('messages')}"
         case "budget.update":
             usd = event.get("usd_total")
-            usd_s = f"${usd:.4f}" if isinstance(usd, (int, float)) else f"${usd}"
+            usd_s = (
+                budget.format_usd(usd, partial=bool(event.get("usd_partial")))
+                if isinstance(usd, (int, float))
+                else f"${usd}"
+            )
             salient = f"in={event.get('input_total')} out={event.get('output_total')} {usd_s}"
         case "session.start":
             salient = _cut(str(event.get("user_task", "")), 80)

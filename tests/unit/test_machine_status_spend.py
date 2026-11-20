@@ -101,7 +101,7 @@ def test_read_budget_totals_offset_scopes_to_one_call(tmp_path: pathlib.Path) ->
 
 
 def test_unpriced_spend_reads_as_a_partial_lower_bound(tmp_path: pathlib.Path) -> None:
-    """An unpriced model's spend is a lower bound, marked '~' on every surface."""
+    """An unpriced model's spend is a lower bound: `$?` with nothing priced, never `$0`."""
     import json
 
     from agent6 import budget
@@ -122,7 +122,7 @@ def test_unpriced_spend_reads_as_a_partial_lower_bound(tmp_path: pathlib.Path) -
     )
     spend = machine_logs.read_budget_totals(log)
     assert spend.partial is True
-    assert budget.format_usd(spend.usd, partial=spend.partial).startswith("~$")
+    assert budget.format_usd(spend.usd, partial=spend.partial) == "$?"
     # The flag survives folding with priced (non-partial) slices.
     assert (spend + machine_logs.Spend(1.0)).partial is True
 

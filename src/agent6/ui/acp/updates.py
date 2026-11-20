@@ -15,6 +15,7 @@ from typing import Any
 
 from agent6 import directive, evidence
 from agent6.sessions import journal
+from agent6.viewmodel import events as viewmodel_events
 from agent6.viewmodel import receipt, transcript, transcript_items
 from agent6.viewmodel.session import status as session_status
 from agent6.viewmodel.session import view as state_view
@@ -176,14 +177,18 @@ class RunInfo:
                 self._used = used if used > 0 else self._used
                 return self._settle("model.result")
             case "budget.update":
-                # The listing's cost cell rule: dollars only when some were spent and all priced.
-                usd = event.get("usd_total")
-                total = self.banked_usd + (float(usd) if isinstance(usd, int | float) else 0.0)
-                self._cost = (
-                    {"amount": total, "currency": "USD"}
-                    if total > 0 and not event.get("usd_partial")
-                    else None
-                )
+                # The listing's cell: the dollars, $0 included, unless unpriced or a plan's points.
+                row = viewmodel_events.parse_event(event)
+                if isinstance(row, journal.BudgetUpdate):
+                    total = self.banked_usd + row.usd_total
+                    plan = (row.plan_observed_points or 0.0) > 0 or (
+                        row.account is not None and row.account.used_percent > 0
+                    )
+                    self._cost = (
+                        {"amount": total, "currency": "USD"}
+                        if not row.usd_partial and (total > 0 or not plan)
+                        else None
+                    )
                 return self._settle("budget.update")
             case _:
                 pass

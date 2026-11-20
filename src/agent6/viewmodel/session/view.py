@@ -150,8 +150,8 @@ def budget_dict(budget: state_types.BudgetView) -> dict[str, Any]:
     account = budget.account
     d["usd_text"] = format.budget_usd_text(
         budget.usd_so_far,
-        partial=budget.session.usd_partial,
         execution_usd=budget.execution.usd + budget.execution.usd_running_children,
+        execution_partial=budget.execution.usd_partial,
         usd_cap=budget.execution.usd_cap,
         cell=session_status.usage_cell(
             budget.usd_so_far,

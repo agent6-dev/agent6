@@ -594,6 +594,59 @@ def test_usage_is_silent_without_a_window_and_costless_while_unpriced() -> None:
     ]
 
 
+def test_a_run_that_spent_nothing_carries_a_zero_cost() -> None:
+    """A priced run that spent nothing carried no cost, as the listing's cell left it blank.
+
+    A plan's account reading alone still makes points the spend, as its cell shows them.
+    """
+    result = {
+        "type": "model.result",
+        "role": "worker",
+        "ok": True,
+        "input_tokens": 5,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+    }
+    call = {"type": "model.call", "role": "worker", "model": "big", "provider": "p"}
+    free = [call, result, {"type": "budget.update", "usd_total": 0.0, "usd_partial": False}]
+    assert _updates_of(_info(), free) == [
+        {
+            "sessionUpdate": "usage_update",
+            "used": 5,
+            "size": 200_000,
+            "cost": {"amount": 0.0, "currency": "USD"},
+        }
+    ]
+    account = {
+        "provider": "chatgpt",
+        "used_percent": 40.0,
+        "resets_at": 0.0,
+        "windows": [],
+        "credits_has": False,
+        "credits_unlimited": False,
+        "credits_balance": "",
+    }
+    plan = {"type": "budget.update", "usd_total": 0.0, "account": account}
+    assert _updates_of(_info(), [call, result, plan]) == [
+        {"sessionUpdate": "usage_update", "used": 5, "size": 200_000}
+    ]
+
+
+def test_a_plan_row_written_before_the_account_record_keeps_its_points_the_spend() -> None:
+    """A plan run's row in the older shape, the points keyed `plan_consumed`, sent a `$0` cost."""
+    result = {"type": "model.result", "role": "worker", "ok": True, "input_tokens": 5}
+    call = {"type": "model.call", "role": "worker", "model": "big", "provider": "p"}
+    plan = {
+        "type": "budget.update",
+        "usd_total": 0.0,
+        "plan_consumed": 2.0,
+        "plan_used_percent": 57.0,
+    }
+    assert _updates_of(_info(), [call, result, plan]) == [
+        {"sessionUpdate": "usage_update", "used": 5, "size": 200_000}
+    ]
+
+
 def test_a_stops_sentence_is_agent6s_line_and_a_finish_summary_the_models() -> None:
     """A harness-written end sentence is not sent in the model's voice.
 
