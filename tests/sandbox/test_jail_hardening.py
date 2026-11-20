@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+from typing import Any
 
 import pytest
 
@@ -501,51 +502,99 @@ def test_a_fully_populated_policy_holds_every_invariant(
     assert "PROTECT refused" in out, f"a protect path was writable: {out}"
 
 
-def test_the_jail_root_is_per_uid_and_named_in_the_refusal(tmp_path: pathlib.Path) -> None:
-    """The jail root carries the uid, and an unusable one names itself.
+# One `full` launch in a mount namespace whose /tmp is a fresh tmpfs holding one regular file,
+# /tmp/agent6-jail-root-<uid>. The workspace is /tmp, as in the trial launch that decides `auto`.
+# Prints the launch and what it left in /tmp.
+_LAUNCH_IN_A_TAKEN_TMP = """
+import ctypes, json, os, pathlib, sys
 
-    A shared /tmp/agent6-jail-root is a cross-user denial of service: any local user can
-    create it or plant a symlink, and every other user's jail then fails.
-    """
-    import os
-    import re
+uid, gid = os.getuid(), os.getgid()
+try:
+    os.unshare(os.CLONE_NEWUSER | os.CLONE_NEWNS)
+    pathlib.Path("/proc/self/setgroups").write_text("deny")
+    pathlib.Path("/proc/self/uid_map").write_text(f"{uid} {uid} 1")
+    pathlib.Path("/proc/self/gid_map").write_text(f"{gid} {gid} 1")
+    if ctypes.CDLL(None, use_errno=True).mount(b"tmpfs", b"/tmp", b"tmpfs", 0, None):
+        raise OSError(ctypes.get_errno(), "mount")
+except OSError as exc:
+    sys.exit(f"no private /tmp: {exc}")
+pathlib.Path(f"/tmp/agent6-jail-root-{uid}").touch()
 
-    crate_main = (
-        pathlib.Path(__file__).resolve().parents[2] / "src" / "agent6" / "jail" / "src" / "main.rs"
-    )
-    src = crate_main.read_text(encoding="utf-8")
-    assert '"/tmp/agent6-jail-root"' not in src, "the jail root must not be a shared path"
-    assert re.search(r"agent6-jail-root-\{", src), "the jail root must carry the uid"
+from agent6 import kinds
+from agent6.sandbox import jail
 
-    from agent6 import kinds
-    from agent6.sandbox import jail
-
+mounts_under_tmp = (
+    "while read -r _ _ _ _ at _; do case $at in /tmp/*) echo mounted $at;; esac; done"
+    " < /proc/self/mountinfo"
+)
+try:
     res = jail.run_in_jail(
         kinds.JailPolicy(
-            cwd=tmp_path,
-            argv=("sh", "-c", "pwd; ls /tmp | head -5"),
+            cwd=pathlib.Path("/tmp"),
+            argv=("sh", "-c", "ls -A /tmp; " + mounts_under_tmp),
             isolation="full",
+            extra_rw_paths=tuple(map(pathlib.Path, sys.argv[1:])),
             timeout_s=20.0,
         )
     )
-    # The child lands in its cwd at that cwd's REAL path: every mount in the
-    # jail is where it is outside, so nothing has to be translated.
-    assert str(tmp_path) in res.stdout, res.stdout + res.stderr
-    # The root the run actually created carries the CALLER's uid, not the 0 the
-    # user namespace maps it to -- otherwise every user collides on -0 again.
-    assert pathlib.Path(f"/tmp/agent6-jail-root-{os.getuid()}").exists()
+    report = {"returncode": res.returncode, "stdout": res.stdout, "stderr": res.stderr}
+except jail.JailUnavailableError as exc:
+    report = {"refused": str(exc)}
+print(json.dumps(report | {"left": sorted(os.listdir("/tmp"))}))
+"""
+
+
+def _launch_in_a_taken_tmp(*write_grants: str) -> dict[str, Any]:
+    import json
+    import subprocess
+    import sys
+
+    proc = subprocess.run(
+        [sys.executable, "-c", _LAUNCH_IN_A_TAKEN_TMP, *write_grants],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    if proc.stderr.startswith("no private /tmp"):
+        pytest.skip(proc.stderr.strip())
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout)
+
+
+def test_a_full_launch_needs_no_fixed_name_in_tmp() -> None:
+    """A `full` launch runs with /tmp/agent6-jail-root-<uid> taken by a file.
+
+    Regression: the root was mounted on that fixed name. Another local user who created it
+    first failed the `full` trial launch, and `auto` ran at `partial`. The launch also leaves
+    /tmp as it found it, and a workspace that contains /tmp shows no copy of the root.
+    """
+    taken = f"agent6-jail-root-{os.getuid()}"
+    report = _launch_in_a_taken_tmp()
+    assert report.get("returncode") == 0, report
+    assert report["stdout"] == f"{taken}\n", report
+    assert report["left"] == [taken]
+
+
+def test_a_failed_full_launch_leaves_no_directory_in_tmp() -> None:
+    """A `full` launch that fails while building its root leaves no directory in /tmp.
+
+    A refused grant stops the build after the root and its system binds are mounted.
+    """
+    report = _launch_in_a_taken_tmp("/dev")
+    assert "/dev cannot be granted" in report["refused"], report
+    assert report["left"] == [f"agent6-jail-root-{os.getuid()}"]
 
 
 @pytest.mark.needs_namespaces
 def test_launchers_starting_at_once_do_not_wipe_each_others_root(tmp_path: pathlib.Path) -> None:
     """Two launchers starting together on one uid both come up, each in its own mount namespace.
 
-    The jail root is shared per uid and setup clears nothing: each launcher mounts its own
-    tmpfs over the shared mount point in its own namespace, so neither can remove the tree
-    the other is building. Reachable from /parallel children (separate agent6 processes, one
-    uid) and from any command run while an MCP server's launcher is alive. Asserted with
-    real concurrency, and on the mount namespaces: a per-child namespace keeps one child's
-    grants out of another's view.
+    Each launcher builds its root in a fresh directory of its own and in its own mount
+    namespace, so neither can remove the tree the other is building. Reachable from /parallel
+    children (separate agent6 processes, one uid) and from any command run while an MCP
+    server's launcher is alive. Asserted with real concurrency, and on the mount namespaces:
+    a per-child namespace keeps one child's grants out of another's view.
     """
     import threading
 

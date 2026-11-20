@@ -296,7 +296,6 @@ fn main() {
 }
 
 fn run_full(policy: &Policy, join: Option<(RawFd, RawFd)>) -> ! {
-    let real_uid = getuid().as_raw();
     if let Err(e) = setup_namespaces(&policy.network, join) {
         die(format!("namespace setup failed: {e}"));
     }
@@ -335,7 +334,7 @@ fn run_full(policy: &Policy, join: Option<(RawFd, RawFd)>) -> ! {
             if Path::new("/proc/self").exists() && !Path::new(&launcher_proc).exists() {
                 die("launcher died before the death-signal tie landed");
             }
-            if let Err(e) = setup_rootfs(policy, real_uid) {
+            if let Err(e) = setup_rootfs(policy) {
                 die(format!("rootfs setup failed: {e}"));
             }
             let ruleset = Some(
@@ -752,31 +751,47 @@ const RO_FLOOR: MsFlags = MsFlags::MS_RDONLY
 /// The floor alone, for the binds that are writable by design.
 const RW_FLOOR: MsFlags = MsFlags::MS_NOSUID.union(MsFlags::MS_NODEV);
 
-fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
-    // Per-uid: a shared path in a sticky /tmp is a cross-user denial of
-    // service, since whoever creates it first owns it and every other user's
-    // jail then fails closed forever. *real_uid* is the caller's, captured
-    // before entering the user namespace, which maps it to itself.
-    //
-    // Shared by every launcher this user runs: each mounts its own tmpfs over
-    // it in its own mount namespace, so they see different roots through the
-    // same mount point, and create_dir_all is idempotent. Nothing needs
-    // clearing: everything a launcher writes goes inside the tmpfs, so the
-    // directory underneath is empty by construction, and a remove_dir_all here
-    // would delete the tree a concurrent launcher is still building.
-    let new_root = PathBuf::from(format!("/tmp/agent6-jail-root-{real_uid}"));
-    fs::create_dir_all(&new_root).map_err(|e| {
-        io::Error::other(format!(
-            "jail root {} is unusable: {e} (remove it, or point TMPDIR elsewhere)",
-            new_root.display()
-        ))
-    })?;
+/// Make the directory the jail's root is built in: a fresh one in /tmp, mode
+/// 0700, under a name mkdtemp picks. Another local user can take a fixed name
+/// in the sticky /tmp first, and every `full` launch of this user then fails.
+fn make_stage() -> io::Result<PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    let mut template = *b"/tmp/agent6-jail-root-XXXXXX\0";
+    if unsafe { libc::mkdtemp(template.as_mut_ptr().cast()) }.is_null() {
+        return Err(io::Error::other(format!(
+            "cannot create the jail root directory in /tmp: {} (`full` isolation needs a \
+             /tmp this user can write)",
+            io::Error::last_os_error()
+        )));
+    }
+    // Resolved: after the pivot the directory is reached under /.old_root,
+    // where a symlinked /tmp would point into the jail.
+    Path::new(OsStr::from_bytes(&template[..template.len() - 1])).canonicalize()
+}
+
+/// Mount the jail's root at `new_root` inside `stage`, and in it everything
+/// the policy shows.
+fn build_rootfs(policy: &Policy, stage: &Path, new_root: &Path) -> io::Result<()> {
+    // Unbindable: a recursive bind skips the stage and all under it. The bind
+    // of a workspace or grant that contains /tmp would otherwise carry a copy
+    // of the root as built so far. The copy keeps the stage's directory busy,
+    // and a writable bind's floor remounts the read-only binds in it writable.
+    mount(
+        Some("tmpfs"),
+        stage,
+        Some("tmpfs"),
+        MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
+        Some(""),
+    )
+    .map_err(io_err)?;
+    mount(Some(""), stage, Some(""), MsFlags::MS_UNBINDABLE, Some("")).map_err(io_err)?;
+    fs::create_dir(new_root)?;
     // Make new_root a mount point (pivot_root requirement).
     // The floor here too. The /dev nodes bound underneath keep their own flags
     // (a bind's options are its own), so they stay usable.
     mount(
-        Some(new_root.as_path()),
-        &new_root,
+        Some(new_root),
+        new_root,
         Some("tmpfs"),
         MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
         Some("size=64m"),
@@ -965,7 +980,7 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
     std::os::unix::fs::symlink("pts/ptmx", new_root.join("dev/ptmx"))?;
     // Grants outside the workspace first: the workspace bind below lands on
     // top of a grant that contains it, and stays writable under a read grant.
-    bind_grants(policy, &new_root, false)?;
+    bind_grants(policy, new_root, false)?;
     // Bind the cwd RW, at its REAL path. Every mount in this root is at the
     // path it has outside -- tool dirs, operator grants, and the workspace
     // alike -- so a path means the same thing on both sides of the boundary.
@@ -1002,7 +1017,7 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
     // whole point there too.
     floor_submounts(&cwd_in, RW_FLOOR)?;
     // Grants inside the workspace, on top of it.
-    bind_grants(policy, &new_root, true)?;
+    bind_grants(policy, new_root, true)?;
     // Re-bind each protect path RO, after every grant bind: a grant at or
     // above a protect path would cover a bind made before it. Subdirs
     // and individual files are both supported; non-existent entries are
@@ -1085,12 +1100,34 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
         floor_submounts(&target, RO_FLOOR)?;
     }
 
-    mask_hidden_paths(policy, &new_root)?;
+    mask_hidden_paths(policy, new_root)
+}
 
-    // pivot_root into new_root.
-    let put_old = new_root.join(".old_root");
-    fs::create_dir_all(&put_old)?;
-    pivot_root(&new_root, &put_old).map_err(io_err)?;
+/// Build the jail's root in a directory of its own, pivot into it, and remove
+/// the directory.
+fn setup_rootfs(policy: &Policy) -> io::Result<()> {
+    let stage = make_stage()?;
+    let new_root = stage.join("root");
+    let pivoted = build_rootfs(policy, &stage, &new_root).and_then(|()| {
+        let put_old = new_root.join(".old_root");
+        fs::create_dir_all(&put_old)?;
+        pivot_root(&new_root, &put_old).map_err(io_err)
+    });
+    // The stage has served, pivoted or failed. After a pivot the host's tree,
+    // the stage in it, is under /.old_root.
+    let host_stage = match pivoted {
+        Ok(()) => Path::new("/.old_root").join(stage.strip_prefix("/").unwrap_or(&stage)),
+        Err(_) => stage.clone(),
+    };
+    // Not mounted when the build failed at the stage's own mount.
+    let _ = umount2(&host_stage, MntFlags::MNT_DETACH);
+    if let Err(e) = fs::remove_dir(&host_stage) {
+        eprintln!(
+            "[agent6-jail] warning: could not remove {}: {e}",
+            stage.display()
+        );
+    }
+    pivoted?;
     chdir("/").map_err(io_err)?;
 
     // We are in the forked child (called from main after fork), which IS in the
