@@ -50,6 +50,34 @@ def test_expanded_shows_the_full_tool_detail() -> None:
     assert "line 49" in lines[52][0][0]  # the last detail line is present, no "+N more"
 
 
+def test_expanded_multi_line_arguments_sit_under_their_label() -> None:
+    """An argument list of several lines starts under `arguments:`, each line indented past it.
+
+    Its later lines started at the label's own column, a block key reading as the label's sibling.
+    """
+    item = transcript_items.TranscriptItem(
+        "tool",
+        name="apply_edit",
+        arg="a.py",
+        ok=True,
+        detail="applied",
+        args_full="path=a.py\nedits:\n  - old_string:\n      x = 1\n\n      y = 2",
+    )
+    assert transcript_style.item_lines(item, detail="expanded")[1:8] == [
+        [("  arguments:", "arg")],
+        [("    path=a.py", "arg")],
+        [("    edits:", "arg")],
+        [("      - old_string:", "arg")],
+        [("          x = 1", "arg")],
+        [("    ", "arg")],
+        [("          y = 2", "arg")],
+    ]
+    one = dataclasses.replace(item, args_full="path=a.py")
+    assert transcript_style.item_lines(one, detail="expanded")[1] == [
+        ("  arguments: path=a.py", "arg")
+    ]
+
+
 def test_short_single_line_detail_is_not_clipped_and_has_no_more_note() -> None:
     item = transcript_items.TranscriptItem("tool", name="read_file", ok=True, detail="2440 bytes")
     result = transcript_style.item_lines(item, detail="collapsed")[1]

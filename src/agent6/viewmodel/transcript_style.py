@@ -67,9 +67,12 @@ def _tool_lines(item: transcript_items.TranscriptItem, *, expanded: bool) -> lis
         head.append((f"  {item.arg}", "arg"))
     lines: list[Line] = [head]
     if expanded:
-        lines.extend(
-            [(f"  {ln}", "arg")] for ln in f"arguments: {item.args_full or '(none)'}".split("\n")
-        )
+        first, *rest = (item.args_full or "(none)").split("\n")
+        if rest:
+            lines.append([("  arguments:", "arg")])
+            lines.extend([(f"    {ln}", "arg")] for ln in (first, *rest))
+        else:
+            lines.append([(f"  arguments: {first}", "arg")])
     if item.ok is None:
         head.append((f"  · {item.detail or 'running'}", "more"))
         return lines

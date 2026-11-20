@@ -96,7 +96,7 @@ class PendingItems:
             name=name,
             arg=transcript_text.salient_arg(args),
             call_id=str(key),
-            args_full=terminal.scrub_terminal_controls(log_line.render_args(args, max_value=None)),
+            args_full=terminal.scrub_terminal_controls(log_line.render_args_full(args)),
         )
         self._pending[key] = (pending, transcript_text.call_preview(name, args))
         out.append(pending)

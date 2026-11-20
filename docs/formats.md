@@ -3369,7 +3369,7 @@ Source: [`agent6.viewmodel.session.records.ToolCallView`](https://github.com/age
 | --- | --- | --- |
 | `name` | `str` | The tool's name. |
 | `args_preview` | `str` | The args rendered with each value truncated, for the inline table. |
-| `args_full` | `str` | The args rendered with a generous per-value cap, for the detail view. |
+| `args_full` | `str` | Every arg as journaled, a multi-line string as its lines, for the detail view. |
 | `result_summary` | `str` | The result's summary once it landed. |
 | `ok` | `bool \| None` | The tool's verdict; None while in flight. |
 | `task_id` | `str \| None` | The task in focus when the call ran, for filtering. |

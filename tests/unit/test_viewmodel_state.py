@@ -18,6 +18,7 @@ from agent6.viewmodel import (
     TaskNodeView,
     approval_parts,
     context_fill,
+    fold_transcript,
     log_line,
     session_state_as_dict,
 )
@@ -42,6 +43,49 @@ def test_expanded_tool_args_are_uncapped_and_keep_nested_values() -> None:
     assert "old_string" in call.args_full and "options" in call.args_full
     assert "LAST ARGUMENT BYTE" not in call.args_preview
     assert len(log_line.render_args({"new_string": words})) < 100
+
+
+def test_expanded_tool_args_print_a_multi_line_string_as_its_lines() -> None:
+    """A string with newlines inside an arg prints as its lines, indented under its key.
+
+    The detail views printed a list or a mapping as its repr, its newlines escaped: an edit read
+    as one run of text.
+    """
+    args = {
+        "path": "a.py",
+        "edits": [
+            {"old_string": "def f():\n    return 1\n", "new_string": "x = 1", "kind": "replace"}
+        ],
+        "patch": "-a\n\n+b",
+        "argv": ["python", "-c", "import os\nprint(os.sep)"],
+    }
+    whole = "\n".join(
+        [
+            "path=a.py",
+            "edits:",
+            "  - old_string:",
+            "      def f():",
+            "          return 1",
+            "    new_string: 'x = 1'",
+            "    kind: 'replace'",
+            "patch:",
+            "  -a",
+            "",
+            "  +b",
+            "argv:",
+            "  - 'python'",
+            "  - '-c'",
+            "  - import os",
+            "    print(os.sep)",
+        ]
+    )
+    call = {"type": "tool.call", "name": "apply_edit", "args_preview": args}
+    assert viewmodel_state.fold_session([call]).tool_calls[0].args_full == whole
+    (item,) = fold_transcript([call])
+    assert item.args_full == whole
+    assert log_line.render_args(args) == (
+        "path=a.py, edits=replace, patch=-a\n\n+b, argv=python -c 'import os\nprint(os.sep)'"
+    )
 
 
 def test_the_wire_carries_needs_new_work_from_the_one_predicate() -> None:

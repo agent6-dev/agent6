@@ -170,6 +170,35 @@ def test_every_tool_item_has_complete_expanded_arguments() -> None:
                 assert "(none)" in full
 
 
+def test_an_expanded_edit_prints_its_strings_as_lines() -> None:
+    """An expanded edit shows each old and new string as its own lines under its key.
+
+    It printed the edit list's repr, its newlines escaped, in one long run.
+    """
+    edit = {"old_string": "if a:\n    b()", "new_string": "if a:\n    c()"}
+    events: list[dict[str, object]] = [
+        {
+            "type": "tool.call",
+            "name": "apply_edit",
+            "args_preview": {"path": "a.py", "edits": [edit]},
+        },
+        {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "applied"},
+    ]
+    (item,) = model.conversation_items(events)
+    full = ["".join(text for text, _ in line) for line in item["full"]]
+    assert full[1:9] == [
+        "  arguments:",
+        "    path=a.py",
+        "    edits:",
+        "      - old_string:",
+        "          if a:",
+        "              b()",
+        "        new_string:",
+        "          if a:",
+    ]
+    assert not any("\\n" in line for line in full)
+
+
 def test_conversation_payload_folds_the_event_log(tmp_path: pathlib.Path) -> None:
     # A multi-line result is clipped to its first line plus a note; the full text rides beside.
     dump = "3 validation errors for ApplyEditInput\npath\n  Field required"

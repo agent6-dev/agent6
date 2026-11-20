@@ -48,23 +48,86 @@ def _as_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, (list, tuple)) else []
 
 
-def render_args(args: dict[str, Any], *, max_value: int | None = 80) -> str:
-    """Render an args dict as `k=v, ...`.
+def render_args(args: dict[str, Any], *, max_value: int = 80) -> str:
+    """Render an args dict as `k=v, ...` on one line.
 
     Args:
         args: The tool call's args.
-        max_value: The inline value cap; None renders every value without abbreviation.
+        max_value: The characters each value keeps.
 
     Returns:
         The pairs joined by ", ".
     """
     pairs: list[str] = []
     for k, v in args.items():
-        s = (v if isinstance(v, str) else repr(v)) if max_value is None else _render_arg_value(k, v)
-        if max_value is not None and len(s) > max_value:
+        s = _render_arg_value(k, v)
+        if len(s) > max_value:
             s = s[:max_value] + "…"
         pairs.append(f"{k}={s}")
     return ", ".join(pairs)
+
+
+def _holds_newline(value: Any) -> bool:
+    """Return whether a string with a newline sits anywhere in the value."""
+    if isinstance(value, str):
+        return "\n" in value
+    if isinstance(value, dict):
+        return any(_holds_newline(v) for v in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_holds_newline(v) for v in value)
+    return False
+
+
+def _indent(lines: list[str]) -> list[str]:
+    """Return the lines indented by two spaces, a blank line left blank."""
+    return [f"  {ln}" if ln else "" for ln in lines]
+
+
+def _block(value: Any) -> list[str]:
+    """Return a value holding a multi-line string as YAML-like lines.
+
+    Args:
+        value: A string, a mapping or a list holding a multi-line string.
+
+    Returns:
+        A string's own lines, a mapping's `k: v` lines or a list's `- v` lines; a value
+        holding a multi-line string sits indented under its key, any other one is its repr.
+    """
+    if isinstance(value, str):
+        return value.removesuffix("\n").split("\n")
+    lines: list[str] = []
+    if isinstance(value, dict):
+        for k, v in value.items():
+            if _holds_newline(v):
+                lines.extend([f"{k}:", *_indent(_block(v))])
+            else:
+                lines.append(f"{k}: {v!r}")
+        return lines
+    for v in value:
+        first, *rest = _block(v) if _holds_newline(v) else [repr(v)]
+        lines.extend([f"- {first}", *_indent(rest)])
+    return lines
+
+
+def render_args_full(args: dict[str, Any]) -> str:
+    """Render every arg whole, for a detail view.
+
+    Args:
+        args: The tool call's args.
+
+    Returns:
+        The one-line values as `k=v, ...`, then each value holding a multi-line string as
+        `k:` with its lines indented under it.
+    """
+    inline = ", ".join(
+        f"{k}={v if isinstance(v, str) else repr(v)}"
+        for k, v in args.items()
+        if not _holds_newline(v)
+    )
+    blocks = [
+        ln for k, v in args.items() if _holds_newline(v) for ln in (f"{k}:", *_indent(_block(v)))
+    ]
+    return "\n".join([inline, *blocks] if inline else blocks)
 
 
 def _cut(text: str, limit: int) -> str:

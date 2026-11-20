@@ -60,7 +60,7 @@ class ToolCallView:
     Attributes:
         name: The tool's name.
         args_preview: The args rendered with each value truncated, for the inline table.
-        args_full: The args rendered with a generous per-value cap, for the detail view.
+        args_full: Every arg as journaled, a multi-line string as its lines, for the detail view.
         result_summary: The result's summary once it landed.
         ok: The tool's verdict; None while in flight.
         task_id: The task in focus when the call ran, for filtering.
