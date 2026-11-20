@@ -823,6 +823,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             frontend.save_ask_transcript(layout, inputs.ask_transcript_task, result.summary)
             reporter.err(f"\n[agent6] answer saved to {layout.session_dir / 'transcript.md'}")
         reporter.err(budget.format_summary())
+        finalize.print_session_usage(layout, emit=reporter.err)
         return ExecutionEnd(finalize.session_exit_code(result, harness_gate=harness_gate))
 
     stranded = finalize.stranded_edits(result, layout, cwd, hidden=hidden)

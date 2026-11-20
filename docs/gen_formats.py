@@ -458,6 +458,7 @@ MODELS = (
     ("viewmodel.machine.state", "MachineState"),
     ("viewmodel.review", "MergeReviewGuard"),
     ("viewmodel.receipt", "ReceiptView"),
+    ("viewmodel.cache_usage", "CacheUsage"),
     ("viewmodel.children", "ChildView"),
     ("viewmodel.children", "DispatchView"),
     ("review_records", "FindingAction"),
@@ -660,7 +661,9 @@ def build_markdown() -> str:
     sections.append(
         "## CLI text\n\n### Token + cost summary\n\n"
         "The end-of-run summary groups usage by provider/model route.\n"
-        "The journal's `budget.update` event carries the cumulative totals above.\n\n"
+        "The journal's `budget.update` event carries the cumulative totals above.\n"
+        "The run-end block also prints session-wide worker cache use from `CacheUsage`, "
+        "shared with the receipt; see [Session receipts](usage.md#session-receipts).\n\n"
         f"Source: [`budget.BudgetTracker.format_summary`]({_BLOB}src/agent6/budget.py).\n\n"
         + _table(
             Field(name, "text", meaning)

@@ -878,6 +878,7 @@ A run started from a hub, or detached mid-run with `/detach`, keeps going with n
 `VerifyVerdict` and `SessionSnapshot` carry the final verification ID and tested tree across resume.
 A pass covers the final tree only when both observations and the end tree match; commit identity alone does not invalidate unchanged content.
 `viewmodel/receipt.py` derives `ReceiptView` from the journal and manifest, with no second receipt file or duplicate event.
+`viewmodel/cache_usage.py` folds worker cache share and post-compaction input from `model.call`, `model.result` and actual compaction events for both the receipt and run-end token summary.
 The CLI `sessions receipt`, web receipt route, TUI screen and ACP `/receipt` read that view without a provider call, verification run or environment probe.
 `VerifyRun` in `harness/review/session.py` retains IDs, trees and capture facts in the bounded digest supplied to `sessions review`.
 

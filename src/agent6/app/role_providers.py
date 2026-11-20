@@ -357,7 +357,7 @@ def _usage_fields(usage: provider_types.ProviderUsage | None) -> dict[str, Any]:
     """Return a result's reported usage fields; an unobserved usage stays absent."""
     if usage is None:
         return {}
-    fields: dict[str, int | float] = {
+    fields: dict[str, int | float | None] = {
         "input_tokens": usage.input_tokens,
         "output_tokens": usage.output_tokens,
         "cache_read_tokens": usage.cache_read_tokens,
@@ -365,7 +365,7 @@ def _usage_fields(usage: provider_types.ProviderUsage | None) -> dict[str, Any]:
     }
     if usage.cost_usd is not None:
         fields["cost_usd"] = usage.cost_usd
-    return fields
+    return {key: value for key, value in fields.items() if value is not None}
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

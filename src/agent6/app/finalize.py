@@ -12,7 +12,7 @@ import contextlib
 import json
 import pathlib
 import shlex
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 
 from agent6 import budget as agent6_budget
 from agent6 import errors, terminal
@@ -472,7 +472,7 @@ def print_session_end(
     _print_settled(result, layout=layout, reporter=reporter)
     reporter.out("")
     reporter.cost(budget.format_summary(include_stop_reason=result.reason != "budget_exhausted"))
-    _print_run_total_across_executions(layout, reporter=reporter)
+    print_session_usage(layout, emit=reporter.cost)
     reporter.out(f"  evidence:    agent6 sessions receipt {layout.session_id}")
     _print_run_branch_footer(result, layout=layout, cwd=cwd, reporter=reporter, hidden=hidden)
 
@@ -684,18 +684,20 @@ def _print_no_commit_footer(
         reporter.out("\nno changes were committed")
 
 
-def _print_run_total_across_executions(
-    layout: sessions_layout.SessionLayout, *, reporter: app_reporter.Reporter
+def print_session_usage(
+    layout: sessions_layout.SessionLayout, *, emit: Callable[[str], None]
 ) -> None:
-    """Print the run's cumulative spend when earlier executions precede this one.
+    """Print session-wide cache use and spend across executions.
 
     Args:
         layout: The session's layout.
-        reporter: Receives the line.
+        emit: Receives the lines on the caller's cost channel.
     """
     scan = scan_session_log(layout.session_dir / sessions_layout.LOGS_NAME)
+    for line in scan.cache_usage.lines():
+        emit(f"  {line}")
     if scan.executions > 1 and scan.budget_seen:
-        reporter.cost(f"  RUN TOTAL (all {scan.executions} executions): {scan.usage_cell}")
+        emit(f"  RUN TOTAL (all {scan.executions} executions): {scan.usage_cell}")
 
 
 def print_interrupt_end(
@@ -715,7 +717,7 @@ def print_interrupt_end(
     """
     reporter.out("")
     reporter.cost(budget.format_summary())
-    _print_run_total_across_executions(layout, reporter=reporter)
+    print_session_usage(layout, emit=reporter.cost)
     reporter.out(f"\nresume with:  agent6 resume {layout.session_id}")
     run_branch = ""
     base_branch = ""

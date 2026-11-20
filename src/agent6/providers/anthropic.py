@@ -594,6 +594,7 @@ class AnthropicProvider:
         usage_output = 0
         usage_cache_read = 0
         usage_cache_write = 0
+        reported_cache: dict[str, int] = {}
         saw_usage = False
         saw_input_usage = False
         saw_output_usage = False
@@ -654,6 +655,9 @@ class AnthropicProvider:
                     usage_output = _usage_count(u, "output_tokens")
                     usage_cache_read = _usage_count(u, "cache_read_input_tokens")
                     usage_cache_write = _usage_count(u, "cache_creation_input_tokens")
+                    for key in ("cache_read_input_tokens", "cache_creation_input_tokens"):
+                        if u.get(key) is not None:
+                            reported_cache[key] = _usage_count(u, key)
                 elif et == "content_block_start":
                     idx = _non_negative_integer(evt.get("index", 0), "content block index")
                     if idx in open_blocks:
@@ -842,8 +846,8 @@ class AnthropicProvider:
             call.transcript.usage = provider_types.ProviderUsage(
                 input_tokens=usage_input,
                 output_tokens=usage_output,
-                cache_read_tokens=usage_cache_read,
-                cache_write_tokens=usage_cache_write,
+                cache_read_tokens=reported_cache.get("cache_read_input_tokens"),
+                cache_write_tokens=reported_cache.get("cache_creation_input_tokens"),
             )
             return call.transcript.usage
 
@@ -875,8 +879,7 @@ class AnthropicProvider:
                 "usage": {
                     "input_tokens": usage_input,
                     "output_tokens": usage_output,
-                    "cache_read_input_tokens": usage_cache_read,
-                    "cache_creation_input_tokens": usage_cache_write,
+                    **reported_cache,
                 },
             }
             call.record(status=200, response=synthesised)

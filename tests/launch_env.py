@@ -29,6 +29,7 @@ def scripted_provider(
     replies: Sequence[tuple[str, dict[str, Any]] | str] = (FINISH,),
     *,
     cost_usd: float | None = None,
+    usage: dict[str, Any] | None = None,
     before_reply: Callable[[dict[str, Any]], None] | None = None,
     reply_for: Callable[[dict[str, Any]], Reply] | None = None,
 ) -> Generator[tuple[str, list[dict[str, Any]]]]:
@@ -40,6 +41,7 @@ def scripted_provider(
     Args:
         replies: `(tool name, arguments)` or an answer's text per call, in order.
         cost_usd: The reported cost per response; None exercises fallback-token accounting.
+        usage: Wire token counts; None uses one input and one output token.
         before_reply: An optional barrier after recording the request and before answering.
         reply_for: Answers a request from its body instead of the script, so one endpoint
             serves a parent and its children; it may return several tool calls for one turn.
@@ -102,7 +104,9 @@ def scripted_provider(
                         "finish_reason": "stop" if isinstance(reply, str) else "tool_calls",
                     }
                 ],
-                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                "usage": dict(usage)
+                if usage is not None
+                else {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
             }
             if cost_usd is not None:
                 chunk["usage"]["cost"] = cost_usd

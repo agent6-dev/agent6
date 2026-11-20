@@ -189,6 +189,44 @@ def _tool_use_stream() -> list[str]:
     )
 
 
+@pytest.mark.parametrize("truncated", [False, True])
+def test_streaming_does_not_invent_cache_counts(
+    monkeypatch: pytest.MonkeyPatch, truncated: bool
+) -> None:
+    """A missing stream cache count stays unreported on success and failure."""
+    lines = [
+        line.replace(', "cache_read_input_tokens": 7', "").replace(
+            ', "cache_creation_input_tokens": 0', ""
+        )
+        for line in _basic_text_stream()
+    ]
+    if truncated:
+        lines = lines[:-3]
+
+    def fake_stream(*_args: Any, **_kwargs: Any) -> FakeStreamResponse:
+        return FakeStreamResponse(status_code=200, lines=lines)
+
+    monkeypatch.setattr(httpx2, "stream", fake_stream)
+    provider = AnthropicProvider(api_key="sk-test", model="claude-test")
+    if truncated:
+        with pytest.raises(ProviderError) as exc:
+            provider.call(
+                system="sys",
+                messages=[{"role": "user", "content": "hi"}],
+                text_delta_callback=lambda _s: None,
+            )
+        usage = exc.value.usage
+        assert usage is not None
+    else:
+        usage = provider.call(
+            system="sys",
+            messages=[{"role": "user", "content": "hi"}],
+            text_delta_callback=lambda _s: None,
+        ).usage
+    assert usage.cache_read_tokens is None
+    assert usage.cache_write_tokens is None
+
+
 def test_streaming_calls_back_on_each_text_delta(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:

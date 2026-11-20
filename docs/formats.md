@@ -1572,8 +1572,8 @@ Source: [`providers.provider_types.TranscriptAttempt.write`](https://github.com/
 | `error` | `JSON` | The exception type and reason; empty when none was raised. |
 | `usage.input_tokens` | `int` | Fresh input tokens billed. |
 | `usage.output_tokens` | `int` | Completion tokens billed. |
-| `usage.cache_read_tokens` | `int` | Prompt tokens served from the cache. |
-| `usage.cache_write_tokens` | `int` | Prompt tokens written to the cache. |
+| `usage.cache_read_tokens` | `int \| None` | Prompt tokens served from cache; None when unreported. |
+| `usage.cache_write_tokens` | `int \| None` | Prompt tokens written to cache; None when unreported. |
 | `usage.cost_usd` | `float \| None` | The reported cost; None means unreported and zero means a free call. |
 
 ## CLI JSON
@@ -1686,6 +1686,7 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 
 The end-of-run summary groups usage by provider/model route.
 The journal's `budget.update` event carries the cumulative totals above.
+The run-end block also prints session-wide worker cache use from `CacheUsage`, shared with the receipt; see [Session receipts](usage.md#session-receipts).
 
 Source: [`budget.BudgetTracker.format_summary`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/budget.py).
 
@@ -2761,6 +2762,23 @@ Source: [`agent6.viewmodel.receipt.ReceiptView`](https://github.com/agent6-dev/a
 | `environments` | `tuple[EnvironmentObservation, ...]` | Environment lifecycle observations. |
 | `acquisitions` | `tuple[AcquisitionObservation, ...]` | The container leases the run's executions acquired. |
 | `children` | `tuple[ChildView, ...]` | The session's children, from its dispatch records or its children's lineage. |
+| `cache_usage` | `CacheUsage` | Session-wide worker cache use and post-compaction input. |
+
+### CacheUsage
+
+**Support: public.** Keep session-wide worker usage from logical model results.
+
+Source: [`agent6.viewmodel.cache_usage.CacheUsage`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/cache_usage.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `calls` | `int` | Worker results, including those without usage. |
+| `reported_calls` | `int` | Worker results with input and cache-read counts. |
+| `input_tokens` | `int` | Fresh input on reported calls. |
+| `cache_read_tokens` | `int` | Input served from cache on reported calls. |
+| `cache_write_tokens` | `int` | Input written to cache on reported calls. |
+| `post_compaction_calls` | `int` | Reported worker calls following a history rewrite. |
+| `post_compaction_uncached_tokens` | `int` | Fresh plus cache-write input on those calls. |
 
 ### ChildView
 

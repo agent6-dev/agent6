@@ -134,7 +134,7 @@ def test_failed_stream_usage_reaches_the_journal_and_telemetry(
         "input_tokens": 100,
         "output_tokens": 10,
         "cache_read_tokens": 25,
-        "cache_write_tokens": 0,
+        "cache_write_tokens": None,
     }
     if reported_cost is None:
         assert "cost_usd" not in result
@@ -189,9 +189,9 @@ def test_successful_stream_reports_the_same_usage_fields(
     assert (
         result["input_tokens"],
         result["output_tokens"],
-        result["cache_read_tokens"],
-        result["cache_write_tokens"],
-    ) == (100, 10, 0, 0)
+        result.get("cache_read_tokens"),
+        result.get("cache_write_tokens"),
+    ) == (100, 10, None, None)
     if reported_cost is None:
         assert "cost_usd" not in result
     else:

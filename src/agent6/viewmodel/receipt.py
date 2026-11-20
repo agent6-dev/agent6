@@ -14,6 +14,7 @@ from agent6 import budget, errors, evidence
 from agent6.sessions import manifest
 from agent6.vcs import commit_graph
 from agent6.vcs.git import read as git_read
+from agent6.viewmodel import cache_usage as vm_cache_usage
 from agent6.viewmodel import children as vm_children
 from agent6.viewmodel import review as review_view
 from agent6.viewmodel.session import log as session_log
@@ -143,6 +144,7 @@ class ReceiptView:
         environments: Environment lifecycle observations.
         acquisitions: The container leases the run's executions acquired.
         children: The session's children, from its dispatch records or its children's lineage.
+        cache_usage: Session-wide worker cache use and post-compaction input.
     """
 
     session_id: str
@@ -161,6 +163,9 @@ class ReceiptView:
     environments: tuple[evidence.EnvironmentObservation, ...] = ()
     acquisitions: tuple[evidence.AcquisitionObservation, ...] = ()
     children: tuple[vm_children.ChildView, ...] = ()
+    cache_usage: vm_cache_usage.CacheUsage = dataclasses.field(
+        default_factory=vm_cache_usage.CacheUsage
+    )
 
 
 def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
@@ -207,6 +212,7 @@ def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
         fold.environments,
         fold.acquisitions,
         vm_children.children_of(session_dir),
+        fold.cache_usage,
     )
 
 
@@ -437,6 +443,7 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
         f"Execution: {view.execution_id or 'unknown'}",
         f"Source tip: {view.source_tip or 'unknown'}",
         environment_summary(view),
+        *view.cache_usage.lines(),
         "",
         "Testing (output cap: 2000 characters per stream)",
         f"{word}: {view.end_tree or 'unknown'}",

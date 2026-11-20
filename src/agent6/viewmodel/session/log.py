@@ -14,6 +14,7 @@ from typing import Any
 
 from agent6 import evidence, kinds, terminal
 from agent6.sessions import journal
+from agent6.viewmodel import cache_usage as vm_cache_usage
 from agent6.viewmodel import events, format, review
 from agent6.viewmodel.session import core as session_core
 from agent6.viewmodel.session import records as state_types
@@ -51,6 +52,7 @@ class LogScan:
             `provider_error` end; "" when none failed.
         budget: The usage, each amount with one lifetime, as the viewers' fold holds it.
         budget_seen: A budget.update was read.
+        cache_usage: Session-wide worker cache use and post-compaction input.
         executions: One plus the completed resume executions.
         turn: The last event's turn.
         start_ep: session.start's epoch, else the first event's (a fork's log has none).
@@ -102,6 +104,9 @@ class LogScan:
     undone_to: str = ""
     provider_error: str = ""
     budget: state_types.BudgetView = dataclasses.field(default_factory=state_types.BudgetView)
+    cache_usage: vm_cache_usage.CacheUsage = dataclasses.field(
+        default_factory=vm_cache_usage.CacheUsage
+    )
     budget_seen: bool = False
     executions: int = 1
     turn: int | None = None
@@ -321,6 +326,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         The scan; an empty one when the file cannot be read.
     """
     core = state_types.SessionCore()
+    cache = vm_cache_usage.CacheUsageFold()
     setup_output = ""
     baseline_ok: bool | None = None
     gate_swapped = False
@@ -362,6 +368,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                 if not isinstance(ev, dict):
                     evidence_notes.append(f"journal line {line_number}: expected an event object")
                     continue
+                cache.observe(ev)
                 review_view = review.apply_event(review_view, ev)
                 etype = ev.get("type")
                 try:
@@ -496,6 +503,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         undone_to=life.undone_to,
         provider_error=life.provider_error,
         budget=core.budget,
+        cache_usage=cache.usage,
         budget_seen=saw_budget,
         executions=life.executions,
         unattended_questions=life.unattended_questions,

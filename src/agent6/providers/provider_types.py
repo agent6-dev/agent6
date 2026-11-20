@@ -31,15 +31,15 @@ class ProviderUsage:
     Attributes:
         input_tokens: Fresh input tokens billed.
         output_tokens: Completion tokens billed.
-        cache_read_tokens: Prompt tokens served from the cache.
-        cache_write_tokens: Prompt tokens written to the cache.
+        cache_read_tokens: Prompt tokens served from cache; None when unreported.
+        cache_write_tokens: Prompt tokens written to cache; None when unreported.
         cost_usd: The reported cost; None means unreported and zero means a free call.
     """
 
     input_tokens: int
     output_tokens: int
-    cache_read_tokens: int
-    cache_write_tokens: int
+    cache_read_tokens: int | None
+    cache_write_tokens: int | None
     cost_usd: float | None = None
 
 
@@ -595,11 +595,21 @@ class ProviderResponse:
     @property
     def usage(self) -> ProviderUsage:
         """The response's usage, without its content."""
+        raw_usage = self.raw.get("usage") or {}
+        details = raw_usage.get("input_tokens_details") or raw_usage.get("prompt_tokens_details")
+        read_reported = raw_usage.get("cache_read_input_tokens") is not None or (
+            isinstance(details, dict) and details.get("cached_tokens") is not None
+        )
+        write_reported = raw_usage.get("cache_creation_input_tokens") is not None
         return ProviderUsage(
             input_tokens=self.input_tokens,
             output_tokens=self.output_tokens,
-            cache_read_tokens=self.cache_read_tokens,
-            cache_write_tokens=self.cache_write_tokens,
+            cache_read_tokens=self.cache_read_tokens
+            if read_reported or self.cache_read_tokens
+            else None,
+            cache_write_tokens=self.cache_write_tokens
+            if write_reported or self.cache_write_tokens
+            else None,
             cost_usd=self.cost_usd,
         )
 
