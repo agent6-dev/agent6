@@ -107,6 +107,13 @@ def _snapshot(path: str, data: bytes | None) -> dict[str, Any]:
         path: The repository-relative file path.
         text: The complete text with CRLF normalized to LF, or null if absent.
         digest: SHA-256 of the exact bytes on disk, or null if absent.
+
+    Args:
+        path: The repository-relative file path.
+        data: The file's bytes, or None when the file is absent.
+
+    Returns:
+        The edit snapshot.
     """
     return {
         "path": path,

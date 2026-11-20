@@ -201,7 +201,7 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
     - blob, text and blame share a working-tree reader that refuses ancestor and leaf symlinks, paths resolving outside the repository, and non-regular files
     - a revision or path starting with `-`, an unknown revision, a graph ref neither listed in `/api/git/refs` nor a verified full sha, or a path in neither tree answers `422`
 - working-tree text: `GET /api/files/text?path=` returns the complete UTF-8 text and its SHA-256 `digest`, with both null when the file is absent
-    - `POST /api/files/text` accepts `{path, text, digest}`; a matching digest saves the text, and null creates only if absent
+    - `POST` `/api/files/text` accepts `{path, text, digest}`; a matching digest saves the text, and null creates only if absent
     - a mismatch returns 409; no force flag bypasses this check
     - both routes require the sign-in header and refuse hidden path components, symlinks, hardlinks, special files, binary content and invalid UTF-8; files are limited to 20 MiB
     - saves preserve CRLF line endings and create no directories; these routes neither stage nor commit
