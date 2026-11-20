@@ -503,6 +503,62 @@ def test_the_empty_pane_says_how_to_open_a_file(
     assert not errors
 
 
+def test_the_pane_offers_a_file_only_beside_a_listing_with_files(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """The pane said to click a file while the tree loaded, beside a failed listing or no match."""
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(big_tree)
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    page.route("**/api/git/tree*", hold)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD")
+    prompt = page.locator(".files-view .empty")
+    while not held:
+        page.wait_for_timeout(50)
+    expect(prompt).to_have_count(0)
+    held.pop().continue_()
+    expect(prompt).to_have_text("click a file to read it")
+    search = page.locator(".files-bar input.filter")
+    search.fill("no-such-file")
+    expect(page.locator(".files-tree .empty")).to_have_text("no file matches")
+    expect(prompt).to_be_hidden()
+    search.fill("")
+    expect(prompt).to_be_visible()
+    page.unroute("**/api/git/tree*", hold)
+    page.route("**/api/git/tree*", lambda route: route.fulfill(status=500, json={"error": "nope"}))
+    page.reload()
+    expect(page.locator(".files-tree .err")).to_have_text("nope")
+    expect(prompt).to_have_count(0)
+    assert [e for e in errors if "500" not in e] == []  # the failed listing's response
+
+
+def test_the_pane_says_loading_and_failure_in_one_style(
+    open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
+) -> None:
+    """A failed text load was 14px red text flush on the head, unlike every other pane note."""
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(big_tree)
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    page.route("**/api/git/text*", hold)
+    page.goto(f"http://127.0.0.1:{big_tree}/#/files/HEAD/b.txt")
+    expect(page.locator(".files-text > .gf-note")).to_have_text("loading…")
+    while not held:
+        page.wait_for_timeout(50)
+    held.pop().fulfill(status=500, json={"error": "nope"})
+    expect(page.locator(".files-text > .gf-note.err")).to_have_text("nope")
+    assert [e for e in errors if "500" not in e] == []  # the failed read's response
+
+
 def test_a_file_open_on_a_phone_keeps_the_focus_out_of_the_tree_under_it(
     open_page: Callable[[int], tuple[Page, list[str]]], big_tree: int
 ) -> None:

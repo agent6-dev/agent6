@@ -380,7 +380,7 @@ function renderBlame(rows) {
         g.card.onmouseleave = hide;
         if (!blameCommits.has(line.sha)) blameCommits.set(line.sha, getJSON('/api/git/commit/' + encodeURIComponent(line.sha)));
         blameCommits.get(line.sha).then(c => { if (g.card.isConnected) title.textContent = c.subject; })
-          .catch(e => { if (g.card.isConnected) title.textContent = 'Commit unavailable: ' + e.message; blameCommits.delete(line.sha); });
+          .catch(e => { if (g.card.isConnected) title.replaceWith(el('span', 'err', 'Commit unavailable: ' + e.message)); blameCommits.delete(line.sha); });
       }
       if (g.card.parentNode !== cell) cell.appendChild(g.card); // a moved popover closes
       if (!g.card.matches(':popover-open')) g.card.showPopover();

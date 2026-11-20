@@ -53,8 +53,8 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     min: rem => 11.25 * rem, max: rem => body.getBoundingClientRect().width - 15.375 * rem,
   }));
   const pane = el('div', 'files-view'); body.appendChild(pane);
-  // With no file open the pane says how to open one: from the tree, or by showing the tree first.
-  const unopened = el('div', 'empty'); pane.appendChild(unopened);
+  // With no file open and rows to click, the pane says how to open one: from the tree, or by showing it.
+  const unopened = el('div', 'empty');
   const toggle = el('button', 'files-tree-toggle');
   toggle.setAttribute('aria-controls', tree.id);
   const setTreeOpen = open => {
@@ -100,13 +100,14 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     tree.innerHTML = '';
     const q = filter.value.trim().toLowerCase();
     const kept = q ? entries.filter(f => f.path.toLowerCase().includes(q)) : entries;
+    unopened.hidden = !kept.length;
     if (truncated) tree.appendChild(el('div', 'err gf-note', 'the list is cut: more files than are shown'));
     // A large tree starts folded and keeps the folders opened by hand; a filter opens every folder holding a match.
     if (!kept.length) tree.appendChild(el('div', 'empty', entries.length ? 'no file matches' : 'no files'));
     else tree.appendChild(treeView(buildTree(kept), fileRow, folderNote, !q && kept.length > 200, d => stateMark(treeFiles(d)), q ? null : filesState.folders));
     count((q ? kept.length + ' of ' : '') + fileCount(entries.length) + (truncated ? '+' : ''));
   };
-  const closeFile = () => { pane.innerHTML = ''; pane.appendChild(unopened); body.classList.remove('viewing'); };
+  const closeFile = () => { pane.innerHTML = ''; if (entries.length) pane.appendChild(unopened); body.classList.remove('viewing'); };
   // A new listing (another revision, ignored files shown or hidden) keeps the open file open
   // when it still lists it; the file stays on screen until the listing answers, and the hash
   // names it again only then.
@@ -127,9 +128,8 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     } catch (e) { if (n === loading && app.isConnected) { closeFile(); tree.innerHTML = ''; tree.appendChild(el('div', 'empty err', e.message)); } return; }
     const file = entries.find(f => f.path === openPath) || (openPath && !relisting ? { path: openPath, kind: 'file', size: null } : null);
     if (file) { reveal(file.path); shown = file.path; }
-    else if (relisting) closeFile();
     paintTree();
-    if (file) await showFile(file, false, true);
+    if (file) await showFile(file, false, true); else closeFile();
   };
   filter.oninput = paintTree;
   // The listed path a symlink names, or null: a target outside the repository or not listed.
@@ -189,7 +189,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     if (isImagePath(f.path)) {
       // The head's note takes the image's size and dimensions, as it takes a text file's facts.
       // The image takes the place of "loading…" once it has loaded or failed.
-      const loading = el('div', 'muted', 'loading…'); box.appendChild(loading);
+      const loading = el('div', 'muted gf-note', 'loading…'); box.appendChild(loading);
       blobImageData('/api/git/blob?rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(f.path) + (ignored ? '&ignored=1' : '')).then(image => {
         if (!current()) return;
         if (!facts.length) facts.push(fmtBytes(image.size));
@@ -201,7 +201,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
       }).catch(e => { if (current()) loading.replaceWith(el('div', 'err gf-note', e.message)); });
       return;
     }
-    box.appendChild(el('div', 'muted', 'loading…'));
+    box.appendChild(el('div', 'muted gf-note', 'loading…'));
     // The buttons hold their places in the head while the text loads: Blame, and Rendered and
     // Source for a name the server renders as Markdown (.md or .markdown, as text_payload in
     // git_model.py decides).
@@ -234,7 +234,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     let t;
     const readQuery = 'rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(f.path) + (whole ? '&whole=1' : '') + (ignored ? '&ignored=1' : '');
     try { t = await getJSON('/api/git/text?' + readQuery); }
-    catch (e) { if (current()) { blame.remove(); modes.remove(); box.innerHTML = ''; box.appendChild(el('div', 'err', e.message)); } return; }
+    catch (e) { if (current()) { blame.remove(); modes.remove(); box.innerHTML = ''; box.appendChild(el('div', 'err gf-note', e.message)); } return; }
     if (!current()) return;
     box.innerHTML = '';
     if (t.language) facts.push(t.language);

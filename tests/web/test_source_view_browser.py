@@ -304,6 +304,26 @@ def test_the_blame_card_dates_its_commit_as_the_commit_panel_does(
     assert not errors
 
 
+def test_a_blame_card_whose_commit_fails_says_so_without_a_link(
+    open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
+) -> None:
+    """A failed commit read showed its reason as the card's accent link to that commit."""
+    from playwright.sync_api import expect
+
+    port, _, _ = long_file
+    page, errors = open_page(port)
+    page.route(
+        "**/api/git/commit/*", lambda route: route.fulfill(status=500, json={"error": "nope"})
+    )
+    page.goto(f"http://127.0.0.1:{port}/#/files/HEAD/long.txt")
+    page.locator(".files-blame").click()
+    page.locator("[data-line='50'] .blame-commit").focus()
+    card = page.locator(".blame-card:visible")
+    expect(card.locator(".err")).to_have_text("Commit unavailable: nope")
+    expect(card.locator("a")).to_have_count(0)
+    assert [e for e in errors if "500" not in e] == []  # the failed commit's response
+
+
 def test_the_blame_card_text_can_be_selected(
     open_page: Callable[[int], tuple[Page, list[str]]], long_file: tuple[int, str, str]
 ) -> None:
