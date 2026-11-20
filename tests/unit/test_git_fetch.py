@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import subprocess
@@ -68,6 +69,30 @@ def test_a_fetch_moves_only_the_remotes_tracking_refs(
         "agent6: fetch origin"
     )
     assert git_fetch.fetch_remote(work, "origin") == "origin is up to date"
+
+
+@pytest.mark.parametrize("suffix", ["topic\u2028notes", os.fsdecode(b"topic-\xff")])
+def test_a_fetch_preserves_a_ref_name_byte_for_byte(
+    pair: tuple[pathlib.Path, pathlib.Path], suffix: str
+) -> None:
+    upstream, work = pair
+    tip = _git(upstream, "rev-parse", "HEAD")
+    _git(upstream, "branch", suffix)
+    git_fetch.fetch_remote(work, "origin")
+    assert _git(work, "rev-parse", "--verify", f"refs/remotes/origin/{suffix}") == tip
+
+
+def test_a_branch_cannot_use_the_pull_request_namespace(
+    pair: tuple[pathlib.Path, pathlib.Path],
+) -> None:
+    upstream, work = pair
+    git_fetch.fetch_remote(work, "origin", pull=7)
+    before = _git(work, "for-each-ref")
+    _git(upstream, "branch", "pr/7", "main")
+    _commit(upstream, "later")
+    with pytest.raises(errors.GitError, match="reserved"):
+        git_fetch.fetch_remote(work, "origin")
+    assert _git(work, "for-each-ref") == before
 
 
 def test_a_branch_fetch_prunes_only_vanished_tracking_branches(

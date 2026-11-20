@@ -13,12 +13,13 @@ only new history travels). The new pack is then copied in, and the caller writes
 from __future__ import annotations
 
 import dataclasses
+import os
 import pathlib
 import re
 import shutil
 import tempfile
 
-from agent6 import errors, paths
+from agent6 import errors, paths, terminal
 from agent6.vcs.git import command as git_command
 
 # The transports a fetch may use; `ext::`, `fd::`, `git://`, plain http and every remote
@@ -144,7 +145,7 @@ def fetch_remote(path: pathlib.Path, name: str, *, pull: int | None = None) -> s
     ):
         raise errors.GitError(f"no remote {name!r}")
     # A nested remote name shares tracking refs with branch names under its parent.
-    for other in git_command.run(path, "remote").stdout.splitlines():
+    for other in _lines(path, "remote"):
         if name.startswith(other + "/") or other.startswith(name + "/"):
             raise errors.GitError(
                 f"overlapping remote names {name!r} and {other!r}; rename one before fetching here"
@@ -157,6 +158,17 @@ def fetch_remote(path: pathlib.Path, name: str, *, pull: int | None = None) -> s
     )
     before = refs(path, tracking)
     after = scratch_fetch(path, url, [refspec], protocols=ALLOWED_PROTOCOLS, source=name)
+    if any(not ref.startswith(tracking) for ref in before.keys() | after.keys()):
+        raise errors.GitError(f"ref outside {tracking}; no refs changed")
+    if pull is not None and set(after) != {f"{tracking}pr/{pull}"}:
+        raise errors.GitError(f"unexpected refs for pull request {pull}; no refs changed")
+    if pull is None and any(
+        ref in (tracking + "HEAD", tracking + "pr") or ref.startswith(tracking + "pr/")
+        for ref in after
+    ):
+        raise errors.GitError(
+            f"remote {name} has a branch at a reserved tracking ref; no refs changed"
+        )
     moved = {ref: sha for ref, sha in after.items() if before.get(ref) != sha}
     # HEAD is the remote's default branch link. PR refs come from separate fetches.
     stale = sorted(
@@ -172,15 +184,19 @@ def fetch_remote(path: pathlib.Path, name: str, *, pull: int | None = None) -> s
             "-m",
             f"agent6: fetch {name}",
             "--stdin",
-            stdin_text="".join(f"update {ref} {sha}\n" for ref, sha in moved.items())
-            + "".join(f"delete {ref} {before[ref]}\n" for ref in stale),
+            "-z",
+            stdin_text="".join(
+                f"update {ref}\0{sha}\0{before.get(ref, '0' * len(sha))}\0"
+                for ref, sha in moved.items()
+            )
+            + "".join(f"delete {ref}\0{before[ref]}\0" for ref in stale),
         )
     if pull is not None:
         return f"fetched {name}/pr/{pull} at {after[f'{tracking}pr/{pull}'][:12]}"
     if not moved and not stale:
         return f"{name} is up to date"
-    names = [ref.removeprefix(tracking) for ref in moved]
-    names.extend(f"pruned {ref.removeprefix(tracking)}" for ref in stale)
+    names = [terminal.printable_name(ref.removeprefix(tracking)) for ref in moved]
+    names.extend(f"pruned {terminal.printable_name(ref.removeprefix(tracking))}" for ref in stale)
     more = f" and {len(names) - 3} more" if len(names) > 3 else ""
     return f"fetched {name}: {', '.join(names[:3])}{more}"
 
@@ -286,10 +302,29 @@ def refs(path: pathlib.Path, *patterns: str, env: dict[str, str] | None = None) 
     Returns:
         The refs' full names and shas.
     """
-    out = git_command.run(
-        path, "for-each-ref", "--format=%(refname) %(objectname)", *patterns, env_extra=env
-    ).stdout
-    return dict(line.split(" ", 1) for line in out.splitlines() if " " in line)
+    rows = _lines(path, "for-each-ref", "--format=%(refname) %(objectname)", *patterns, env=env)
+    return dict(line.split(" ", 1) for line in rows)
+
+
+def _lines(path: pathlib.Path, *args: str, env: dict[str, str] | None = None) -> list[str]:
+    """Return Git's LF-delimited names with their original bytes.
+
+    Args:
+        path: The repository.
+        *args: A Git listing with no LF in its fields.
+        env: Environment entries for a scratch repository.
+
+    Returns:
+        Each record decoded for use in a filesystem operation.
+
+    Raises:
+        GitError: The listing failed.
+    """
+    _, code, out, err = git_command.spawn(path, args, env, None)
+    if code:
+        error = git_command.failure(args, code, os.fsdecode(out), os.fsdecode(err))
+        raise error
+    return os.fsdecode(out).removesuffix("\n").split("\n") if out else []
 
 
 def _adopt_packs(source: pathlib.Path, target: pathlib.Path) -> None:

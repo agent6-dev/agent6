@@ -662,6 +662,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Each is refused while a session is live in the checkout; the page never deletes an untracked file, pushes, pulls, rebases, amends or resets.
 - The Git page's **Fetch** brings a remote's branches, or one pull request, into `refs/remotes/<name>/` and merges nothing.
     - a branch fetch prunes deleted remote-tracking branches but keeps the default-branch link and fetched PRs
+    - Fetch refuses all ref changes if a remote branch would occupy the default-branch link or the pull request namespace.
     - Fetch and Fetch PR refuse overlapping remote names because their tracking refs share a namespace.
     - tags, submodules and `FETCH_HEAD` are left alone.
     - The network step runs in a scratch repository in agent6's state base (`$XDG_STATE_HOME/agent6/fetch/`), which no jail reaches.
