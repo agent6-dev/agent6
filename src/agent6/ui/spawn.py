@@ -442,9 +442,7 @@ def _located(
 ) -> pathlib.Path | None:
     """Return the new dir the child with this pid owns, or None while none does.
 
-    A session writes its worker pid before its journal's first event, so a dir recording
-    another worker belongs to a session that appeared at the same moment, not to this
-    child; a dir recording no worker (a machine draft) is the child's.
+    A parked submission or unstarted fork can have a journal without a worker.
 
     Args:
         list_dirs: Lists the candidate dirs, newest first.
@@ -457,8 +455,7 @@ def _located(
     for d in list_dirs():
         if d in before or not (d / layout.LOGS_NAME).exists():
             continue
-        recorded = process.read_worker_pid(d)
-        if recorded is None or recorded == pid:
+        if process.read_worker_pid(d) == pid:
             return d
     return None
 

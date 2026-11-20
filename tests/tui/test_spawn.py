@@ -10,7 +10,7 @@ import sys
 import pytest
 
 from agent6 import paths
-from agent6.sessions import layout
+from agent6.sessions import event_log, journal, layout, process
 from agent6.ui import spawn
 
 
@@ -22,13 +22,12 @@ def test_spawn_and_locate_finds_new_log_dir(
 
     class _Proc:
         pid = 424242
-        # A detached child is registered with the escapee sweep by pid, so the stub needs one.
-        pid = 424242
 
         def __init__(self) -> None:
             # The "child" produces a new dir with a logs.jsonl the moment it starts.
             (base / "new").mkdir()
             (base / "new" / "logs.jsonl").write_text("", encoding="utf-8")
+            process.write_worker_pid(base / "new", self.pid)
 
         def poll(self) -> int | None:
             return None  # still running
@@ -309,15 +308,18 @@ def test_spawn_and_locate_skips_a_session_another_worker_owns(
     The hub navigated to a CLI run started in the same minute: the newest new dir was taken
     for the child's.
     """
-    from agent6.sessions import process
-
-    base = tmp_path / "dirs"
-    base.mkdir()
+    base = layout.bucket_dir(tmp_path, "runs")
+    base.mkdir(parents=True)
 
     class _Proc:
         pid = 424242
 
         def __init__(self) -> None:
+            fork = base / "a-fork"
+            fork.mkdir()
+            event_log.EventSink(fork / layout.LOGS_NAME).emit(
+                journal.MetricSet(revision=1, spec="maximize -- score")
+            )
             for name, pid in (("a-decoy", 1), ("b-mine", 424242)):
                 (base / name).mkdir()
                 (base / name / "logs.jsonl").write_text("", encoding="utf-8")
