@@ -303,8 +303,7 @@ def rows_for(
 def is_reviewer_record(summary: SessionSummary) -> bool:
     """Return whether a session is a reviewer its parent dispatched.
 
-    A reviewer is evidence of its panel, reached from the receipt and the findings; it
-    has no work to join, so no listing counts it among its parent's children or rows.
+    The parent's dispatch roster lists reviewers; they have no top-level work row.
 
     Args:
         summary: The session.

@@ -316,7 +316,8 @@ function drawReceipt(host, receipt) {
     link.href = '#/session/' + encodeURIComponent(child.session_id);
     const reviewer = (receipt.review?.panels || []).flatMap(p => p.reviewers || [])
       .find(s => s.session_id === child.session_id);
-    line.appendChild(el('span', null, reviewer ? `reviewer ${reviewer.reviewer_index + 1} (${reviewer.focus}) ` : `child ${child.number} `));
+    const seat = child.source === 'panel' ? 'reviewer' : 'attempt';
+    line.appendChild(el('span', null, `${child.group} ${seat} ${child.number}${reviewer ? ` (${reviewer.focus})` : ''} `));
     line.appendChild(link);
     host.appendChild(line);
   }

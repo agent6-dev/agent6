@@ -104,7 +104,9 @@ def test_an_ordinary_parent_shows_its_children_and_the_receipt_links_them(
     page.get_by_role("button", name="Receipt", exact=True).click()
     receipt = page.locator(".receipt")
     expect(receipt).to_contain_text("Children")
-    expect(receipt).to_contain_text("child 1 co-p1-l1: joined co's chain at bbbbbbbbbbbb, $0.50")
+    expect(receipt).to_contain_text(
+        "co-p1 attempt 1: co-p1-l1: joined co's chain at bbbbbbbbbbbb, $0.50"
+    )
     receipt.get_by_role("link", name="co-p1-l1", exact=True).click()
     expect(page).to_have_url(f"http://127.0.0.1:{parent_port}/#/session/co-p1-l1")
     assert not errors

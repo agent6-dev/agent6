@@ -212,8 +212,11 @@ def test_the_receipt_lists_its_children_and_labels_the_inclusive_spend(
     )
     text = receipt.render(view)
     assert "Children" in text
-    assert "child 1 run-abc-p1-l1 (reviewer): joined run-abc's chain at bbbbbbbbbbbb, $0.50" in text
-    assert "child 2 run-abc-p1-l2: failed: never started" in text
+    assert (
+        "run-abc-p1 attempt 1: run-abc-p1-l1 (reviewer): joined run-abc's chain at bbbbbbbbbbbb, $0.50"
+        in text
+    )
+    assert "run-abc-p1 attempt 2: run-abc-p1-l2: failed: never started" in text
     assert "spend includes the children's $0.50" in text
     # A session with no children renders no section and the review fields are untouched.
     alone = receipt.read_receipt(_session(state, "alone"), tmp_path)
@@ -236,8 +239,13 @@ def test_an_unpriced_childs_spend_reads_unknown_on_the_receipt(tmp_path: pathlib
         parent, record.model_copy(update={"children": (unpriced, record.children[1])}), now=1.0
     )
     text = receipt.render(receipt.read_receipt(parent, tmp_path))
-    assert "child 1 run-abc-p1-l1 (reviewer): joined run-abc's chain at bbbbbbbbbbbb, $?" in text
-    assert "child 2 run-abc-p1-l2: joined run-abc's chain at bbbbbbbbbbbb, $0.20" in text
+    assert (
+        "run-abc-p1 attempt 1: run-abc-p1-l1 (reviewer): joined run-abc's chain at bbbbbbbbbbbb, $?"
+        in text
+    )
+    assert (
+        "run-abc-p1 attempt 2: run-abc-p1-l2: joined run-abc's chain at bbbbbbbbbbbb, $0.20" in text
+    )
     assert "spend includes the children's ~$0.20" in text
 
 
@@ -281,7 +289,27 @@ def test_a_reviewer_has_a_child_row_and_its_verdict(tmp_path: pathlib.Path) -> N
     (child,) = vm_children.children_of(parent)
     assert child.source == "panel" and child.launched and child.settled
     text = receipt.render(receipt.read_receipt(parent, tmp_path))
-    assert "Children" not in text and "child 1" not in text
+    roster = text.partition("\nChildren\n")[2].partition("\nHow to revert")[0]
+    assert f"run-abc-rpanel reviewer 1: {reviewer_id}" in roster
+    assert "spend includes the children's $0.25" in roster
+
+
+def test_the_children_section_names_each_group_and_its_ranking_reviewer(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Attempt numbers restart in each dispatch; the reviewer is not another attempt 1."""
+    parent = _session(tmp_path, "root")
+    for group in ("root-p1", "root-p2", "root-rp2"):
+        record = _record(group, [(f"{group}-l1", None, 0.25)])
+        if group == "root-rp2":
+            record = record.model_copy(update={"source": "panel", "join_policy": "record_only"})
+        child_dispatch.write_record(parent, record, now=1)
+    text = receipt.render(receipt.read_receipt(parent, tmp_path))
+    roster = text.partition("\nChildren\n")[2].partition("\nHow to revert")[0]
+    assert "root-p1 attempt 1: root-p1-l1" in roster
+    assert "root-p2 attempt 1: root-p2-l1" in roster
+    assert "root-rp2 reviewer 1: root-rp2-l1" in roster
+    assert "spend includes the children's $0.75" in roster
 
 
 def test_the_parent_header_reads_a_live_tool_and_usage_from_the_child(

@@ -46,9 +46,9 @@ class ChildRow:
         ident = self.lineage["id_cell"] if self.lineage is not None else c.session_id
         rank = f"rank {self.placement.rank}/{self.placement.of}  " if self.placement else ""
         heading = (
-            f"{format.child_id_cell(ident, depth)}  {rank}{c.number_label}"
+            f"{format.child_id_cell(ident, depth)}  {rank}{c.group_label}"
             if depth
-            else f"  {rank}{c.number_label}  {ident}"
+            else f"  {rank}{c.group_label}  {ident}"
         )
         route = c.route or c.model or "?"
         if c.model and c.route and c.model != c.route:

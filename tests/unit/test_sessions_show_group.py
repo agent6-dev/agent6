@@ -704,9 +704,9 @@ def test_show_on_an_ordinary_parent_lists_its_children_with_their_joins(
     out = capsys.readouterr().out
     assert "group:" not in out
     assert "children:      2" in out
-    assert "attempt 1" in out and "co-p1-l1" in out and "openai/child-1" in out
+    assert "co-p1 attempt 1" in out and "co-p1-l1" in out and "openai/child-1" in out
     assert "joined co's chain at bbbbbbbbbbbb" in out
-    assert "attempt 2" in out and "no changes" in out
+    assert "co-p1 attempt 2" in out and "no changes" in out
 
 
 def test_show_on_a_child_of_an_ordinary_parent_names_it(
@@ -806,7 +806,7 @@ def test_cli_child_roster_text(
     assert main(args) == 0
     out = capsys.readouterr().out
     for words in (
-        "attempt 1",
+        "co-p2 attempt 1",
         "co-p2-l1",
         "check running case",
         "p/small",

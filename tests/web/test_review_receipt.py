@@ -115,7 +115,8 @@ const host = el('div'); globalThis.location = {hash:''};
 const r = {session_id:'run',
  text:'Receipt run\\n\\nTesting\\n\\nReview\\n<script>raw text</script>\\n\\nHow to revert',
  revert_request:'Inspect the recorded run before reverting',
- children:[{child:1, session_id:'worker-rpanel-l1'}],
+ children:[{group:'worker-rpanel', number:1, source:'panel', session_id:'worker-rpanel-l1'},
+           {group:'worker-rp1', number:1, source:'panel', session_id:'worker-rp1-l1'}],
  review:{panels:[{panel_id:'panel',
    reviewers:[{reviewer_index:0, focus:'security', session_id:'worker-rpanel-l1'}]}]},
  verifications:[{verify_id:'v', stdout_tail:'<b>out</b>', stderr_tail:''}]};
@@ -123,6 +124,7 @@ drawReceipt(host, r);
 assert.ok(host.textContent.includes('<script>raw text</script>'));
 assert.ok(host.textContent.includes('<b>out</b>'));
 assert.ok(host.textContent.includes('reviewer 1 (security)'));
+assert.ok(host.textContent.includes('worker-rp1 reviewer 1'));
 assert.equal(host.querySelector('a').href, '#/session/worker-rpanel-l1');
 assert.ok(host.textContent.includes('Testing') && host.textContent.includes('How to revert'));
 host.querySelector('button').onclick();

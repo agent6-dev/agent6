@@ -264,7 +264,8 @@ A question nobody answers on that run (`away mode deny`) returns `unanswered` to
 Children end with the execution that started them: when the run stops, or ends any other way, its running children are stopped and their spend is charged.
 A resumed run merges nothing of a child that was stopped: before its first call the model reads each stopped child with the branch that holds its work and its commit count.
 A task whose children had ended by themselves when the run ended completes then under the same merge policy as a turn boundary; each child's spend is settled once.
-Every session that dispatched children shows them: `sessions show`, the hubs and `attach --json` list a run's children under it whether it is a `run --parallel` group or a run that used `/parallel`, and the run's receipt carries a `Children` section (one line per child: its join, its spend) with the spend the children added to the run's total named, so the total is read as inclusive.
+`sessions list --children`, `sessions show` and the receipt list attempts and reviewers by dispatch group and number.
+The receipt's `Children` section names the settled spend already included in the run's total.
 The refusal names the child session IDs.
 While a steer waits on disk, `sessions show`, the TUI header and the web session status show `steer queued, not yet delivered` with its text and the count waiting behind it.
 Steers sent while one waits queue in order, one per subsequent step; `abort`, `exit`, `/undo` and `detach` take the slot at once.
@@ -364,7 +365,8 @@ A reviewer opens on the task, the rules, the verification and the diff, and inve
 A reviewer edits nothing and dispatches nothing; `sandbox.run_commands = "deny"` withholds `run_command` and `run_verify_command` from a reviewer as it does from the run.
 A reviewer takes at most `review.max_turns` turns.
 Each turn tells it which reply it is (`reply 14 of 20`), and the last that it is the last: a tool call in that reply is not run, so the verdict is due then at the latest.
-Each reviewer has a session of its own, named on the receipt and the findings card; no listing counts it among the run's children.
+Each reviewer has a session of its own, listed under its parent rather than as a top-level run.
+The findings card links to the reviewers on its panel.
 A reviewer still running 30 minutes after its batch started is stopped and abstains; batches run one after another, each with its own 30 minutes.
 Failed or unparseable reviewers remain abstentions with their diagnostics; an all-abstain panel is inconclusive, not a clean review.
 Child review does not certify a later or different parent tree.

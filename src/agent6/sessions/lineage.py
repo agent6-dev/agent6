@@ -61,7 +61,7 @@ def descendants_of(session_dir: pathlib.Path) -> tuple[pathlib.Path, ...]:
 def reviewer_records(state_dir: pathlib.Path, parents: Collection[str]) -> tuple[pathlib.Path, ...]:
     """Find the reviewers the named sessions dispatched.
 
-    No listing shows a reviewer's record, so whatever removes its parent removes it too.
+    Reviewers have no top-level row, so whatever removes a parent removes its reviewers too.
 
     Args:
         state_dir: The repository's state dir.

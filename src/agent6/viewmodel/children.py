@@ -107,6 +107,11 @@ class ChildView:
             return ""
         return f"{self.commits} commit{'' if self.commits == 1 else 's'} beyond start"
 
+    @property
+    def group_label(self) -> str:
+        """Name the attempt or reviewer in the group that numbered it."""
+        return f"{self.group} {self.number_label}"
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class DispatchView:

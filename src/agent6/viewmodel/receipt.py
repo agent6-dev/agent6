@@ -384,17 +384,16 @@ def children_section(views: tuple[vm_children.ChildView, ...]) -> list[str]:
     """Return the receipt's `Children` lines: one per child, then the spend they add to the total.
 
     Args:
-        views: The session's children; a panel's reviewers are listed with their panel.
+        views: The session's attempts and reviewers, in dispatch order.
 
     Returns:
         The lines; none for a session without children.
     """
-    views = tuple(child for child in views if child.source != "panel")
     if not views:
         return []
     lines = ["", "Children"]
     for child in views:
-        label = f"child {child.number} {child.session_id}"
+        label = f"{child.group_label}: {child.session_id}"
         if child.model:
             label += f" ({child.model})"
         if child.outcome == "joined":
