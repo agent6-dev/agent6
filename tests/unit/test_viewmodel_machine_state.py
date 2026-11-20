@@ -374,6 +374,7 @@ def test_machine_verb_refusal_is_one_reading_per_state_and_verb(tmp_path: pathli
         '{"type":"question.prompt","id":"q1","questions":[{"question":"Which?"}]}\n',
         encoding="utf-8",
     )
+    (log.parent / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     assert machine_state.machine_verb_refusal(d, "tiny", "poke")
     assert all(
         machine_state.machine_verb_refusal(d, "tiny", v) == "" for v in ("stop", "steer", "answer")
@@ -396,6 +397,7 @@ def test_an_open_prompt_in_the_newest_state_blocks_the_machine(tmp_path: pathlib
     log = states / "0001-attempt" / "logs.jsonl"
     prompt = {"type": "approval.prompt", "id": "a1", "prompt": "Allow run_command: pytest"}
     log.write_text(json.dumps(prompt) + "\n", encoding="utf-8")
+    (log.parent / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     assert machine_logs.newest_agent_execution(tmp_path).blocked_in == "0001-attempt"
     answer = {"type": "approval.answer", "id": "a1", "approved": True}
     log.write_text(json.dumps(prompt) + "\n" + json.dumps(answer) + "\n", encoding="utf-8")
@@ -414,7 +416,8 @@ def test_a_blocked_summary_names_an_answer_whichever_prompt_waits(tmp_path: path
     log.parent.mkdir(parents=True)
     prompt = {"type": "question.prompt", "id": "q1", "questions": [{"question": "Which?"}]}
     log.write_text(json.dumps(prompt) + "\n", encoding="utf-8")
-    (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    for owner in (tmp_path, log.parent):
+        (owner / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
 
     assert (
         machine_state.summarize_machine_dir(tmp_path).reason
@@ -496,6 +499,37 @@ def test_verb_refusals_fold_no_state_log_unless_a_live_execution_could_read(
         tail.tail_events = real_tail
 
 
+def test_an_agent_state_whose_worker_died_takes_no_steer(tmp_path: pathlib.Path) -> None:
+    """A started agent state whose worker died reads closed, as a run whose worker died does.
+
+    The engine kills a state at its timeout and moves on; the killed state logs no session.stop,
+    so its log read open and a steer reached it while the machine ran its next state. Its open
+    question held the machine "waiting" and took an answer nobody reads.
+    """
+    d = tmp_path / "inst"
+    d.mkdir()
+    (d / "machine.asm.toml").write_text(TINY, encoding="utf-8")
+    machine_journal.MachineJournal(d).begin(machine="tiny", version=1)
+    (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # the supervisor lives
+    state = d / "states" / "0000-route"
+    state.mkdir(parents=True)
+    start = {"type": "session.start", "mode": "run", "user_task": "t"}
+    ask = {"type": "question.prompt", "id": "q1", "questions": [{"question": "Which?"}]}
+    (state / "logs.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in (start, ask)), encoding="utf-8"
+    )
+    (state / "worker.pid").write_text("999999999", encoding="utf-8")  # never alive
+
+    refusals = machine_state.machine_verb_refusals(d, "tiny")
+    assert refusals["steer"] == "machine 'tiny' has no open agent state to steer"
+    assert refusals["answer"] == "machine 'tiny' has no open prompt to answer"
+    assert machine_state.summarize_machine_dir(d).status == "running"
+    (state / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    assert machine_state.machine_verb_refusal(d, "tiny", "steer") == ""
+    assert machine_state.machine_verb_refusal(d, "tiny", "answer") == ""
+    assert machine_state.summarize_machine_dir(d).status == "waiting"
+
+
 def test_a_parked_summary_with_no_worker_says_so(tmp_path: pathlib.Path) -> None:
     """A parked instance nothing drives reads "no worker" in the listing; a live wait does not."""
     (tmp_path / "machine.asm.toml").write_text(TINY, encoding="utf-8")
@@ -562,6 +596,7 @@ def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: path
     log = d / "states" / "0000-route" / "logs.jsonl"
     log.parent.mkdir(parents=True)
     log.write_text('{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8")
+    (log.parent / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     fold = machine_logs.NewestExecutionFold()
     assert fold.refresh(d) == log
     assert fold.execution() == machine_logs.AgentExecution(open=True, blocked_in="")
@@ -582,6 +617,7 @@ def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: path
         newer.write_text(
             '{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8"
         )
+        (newer.parent / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
         assert fold.refresh(d) == newer
         assert fold.execution() == machine_logs.AgentExecution(open=True, blocked_in="")
         # A rewritten (shorter) log: the fold starts over rather than folding

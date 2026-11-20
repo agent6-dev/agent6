@@ -309,10 +309,10 @@ def _build_machine_bridges(
         ipc.clear_steer_request(agent_state)
 
     def steer_prompt() -> str | None:
-        if not process.frontend_is_live(instance_dir):
-            ipc.clear_steer_request(agent_state)
-            return None
-        answer = ipc.read_steer_answer(agent_state, live_dir=instance_dir)
+        # A steer already on disk is taken, as a run takes it, whether or not its writer stayed.
+        answer = ipc.take_steer_answer(agent_state)
+        if answer is None and process.frontend_is_live(instance_dir):
+            answer = ipc.read_steer_answer(agent_state, live_dir=instance_dir)
         if answer is None:
             ipc.clear_steer_request(agent_state)
         return answer
@@ -477,6 +477,8 @@ def run_one(
             summariser_provider=summariser_provider,
             budget=budget,
             reporter=reporter,
+            # The authoring agent's draft log is `machine create`'s, which opens and closes it.
+            events=events_sink if r.state_name else None,
         )
     finally:
         dispatcher.close()
@@ -494,6 +496,7 @@ def _drive_state(
     summariser_provider: Provider | None,
     budget: agent6_budget.BudgetTracker,
     reporter: app_reporter.Reporter,
+    events: event_log.EventSink | None,
 ) -> AgentExecResult:
     """Run the setup command, build the harness and drive the state to its end.
 
@@ -508,6 +511,8 @@ def _drive_state(
         summariser_provider: The compaction summariser.
         budget: The tracker both providers bill.
         reporter: Where status and refusals go.
+        events: The state's log, which the harness opens with `session.start` and closes
+            with `session.stop`; None emits nothing.
 
     Returns:
         The state's result.
@@ -555,6 +560,7 @@ def _drive_state(
         dispatcher=dispatcher,
         prompts=prompts,
         logger=reporter.err,
+        events=events,
         mode="read_only" if mode == "read_only" else "run",
         state_dir=paths.state_dir(req.cwd),
         compaction=compaction_window.CompactionSettings(

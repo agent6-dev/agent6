@@ -555,7 +555,8 @@ def test_machine_prompt_answers_already_on_disk_are_refused(tmp_path: pathlib.Pa
     state.mkdir(parents=True)
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     (inst / "journal.jsonl").write_text("", encoding="utf-8")
-    (inst / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    for owner in (inst, state):
+        (owner / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (state / "logs.jsonl").write_text(
         '{"type":"session.start","mode":"run","user_task":"t"}\n'
         '{"type":"approval.prompt","id":"approval-1","prompt":"Allow it?"}\n'
@@ -599,7 +600,8 @@ def test_machine_prompt_answers_must_match_the_open_prompt(tmp_path: pathlib.Pat
     state.mkdir(parents=True)
     (inst / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     (inst / "journal.jsonl").write_text("", encoding="utf-8")
-    (inst / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    for owner in (inst, state):
+        (owner / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (state / "logs.jsonl").write_text(
         '{"type":"session.start","mode":"run","user_task":"t"}\n'
         '{"type":"approval.prompt","id":"approval-2","prompt":"Allow it?"}\n'

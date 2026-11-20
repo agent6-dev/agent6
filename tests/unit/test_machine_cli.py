@@ -2041,6 +2041,7 @@ def test_status_and_list_name_a_parked_approval(
         + "\n",
         encoding="utf-8",
     )
+    process.write_worker_pid(execution, os.getpid())
     assert main(["machine", "status", "waiter_delayed"]) == 0
     out = capsys.readouterr().out
     assert "status: waiting" in out

@@ -686,9 +686,10 @@ Mirrors the per-run layout under the per-repo state dir, out of the workspace:
   journal.jsonl              # append-only, fsync'd, one event per line
   snapshots/<n>.json         # blackboard + current state, atomic temp+rename
   agent_transcripts/<utc-iso>-<seq>.json  # one request/response per file
-  states/<seq>-<state>/logs.jsonl  # per-execution event stream (role.*/tool.*),
+  states/<seq>-<state>/logs.jsonl  # per-execution event stream (model.*/tool.*),
                                    #   the watchable live view; pruned to recent;
                                    #   <seq> is four digits: 0003-classify
+  states/<seq>-<state>/worker.pid  # that execution's worker; stale once it exits
   states/<seq>-<state>/approvals/, questions/  # that execution's answer bridge
                                    #   (`<id>.answer` from a front-end), steer files beside them
   data/                      # writable scratch ($AGENT6_MACHINE_DATA_DIR)
@@ -703,7 +704,7 @@ Mirrors the per-run layout under the per-repo state dir, out of the workspace:
   approvals/away.mode        # a hub-spawned instance's away mode ("wait")
 ```
 
-- each `agent` state execution emits a `logs.jsonl` stream under `states/<seq>-<state>/` (the same `role.*_delta` / `tool.*` events a run emits): a running machine follows live like a run
+- each `agent` state execution emits a `logs.jsonl` stream under `states/<seq>-<state>/`, the events a run emits from `session.start` to `session.stop`: a running machine follows live like a run
 - the heavy per-state logs prune to the most recent `keep_state_logs` (default 50); the journal stays the complete transition history
 
 Journal spend is the sum of agent facts in step records, `attempt.spend` records and any unbooked slice in `machine.end`.

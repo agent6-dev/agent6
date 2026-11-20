@@ -11,7 +11,7 @@ import pathlib
 from collections.abc import Sequence
 
 from agent6.machine import journal
-from agent6.sessions import layout
+from agent6.sessions import layout, process
 from agent6.viewmodel import tail as viewmodel_tail
 from agent6.viewmodel.session import records as state_types
 from agent6.viewmodel.session import state as viewmodel_state
@@ -22,9 +22,9 @@ class AgentExecution:
     """The newest agent state's execution as the operator verbs see it.
 
     Attributes:
-        open: The execution has begun and not ended, so a steer has a reader.
-        blocked_in: The state dir (`0001-attempt`) holding an unanswered approval or
-            question, else "".
+        open: The execution has begun, not ended and its worker lives, so a steer has a reader.
+        blocked_in: The state dir (`0001-attempt`) whose live worker holds an unanswered
+            approval or question, else "".
     """
 
     open: bool = False
@@ -42,9 +42,11 @@ def execution_of(state: state_types.SessionState, log: pathlib.Path) -> AgentExe
         The execution facts.
     """
     open_prompts = [*state.approvals, *state.questions]
+    # A killed state never logs its session.stop; its pid record, as a run's, says it died.
+    live = process.worker_is_alive(log.parent)
     return AgentExecution(
-        open=state.started and not state.finished,
-        blocked_in=log.parent.name if any(not p.answered for p in open_prompts) else "",
+        open=state.started and not state.finished and live,
+        blocked_in=log.parent.name if live and any(not p.answered for p in open_prompts) else "",
     )
 
 

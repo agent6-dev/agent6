@@ -800,6 +800,7 @@ def test_watch_footer_steer_key_follows_liveness(tmp_path: pathlib.Path) -> None
     log = instance / "states" / "0000-route" / "logs.jsonl"
     log.parent.mkdir(parents=True)
     log.write_text('{"type":"session.start","mode":"run","user_task":"t"}\n', encoding="utf-8")
+    (log.parent / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (instance / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
 
     class _LiveHost(textual_app.App[None]):
@@ -836,9 +837,10 @@ def _blocked_machine(tmp_path: pathlib.Path, *, alive: bool) -> tuple[pathlib.Pa
     state.mkdir(parents=True)
     instance.joinpath("machine.asm.toml").write_text(TINY, encoding="utf-8")
     instance.joinpath("journal.jsonl").write_text("", encoding="utf-8")  # started, not ended
-    instance.joinpath("worker.pid").write_text(
-        str(os.getpid()) if alive else "999999999", encoding="utf-8"
-    )
+    for owner in (instance, state):
+        owner.joinpath("worker.pid").write_text(
+            str(os.getpid()) if alive else "999999999", encoding="utf-8"
+        )
     (state / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
         + "\n"
@@ -1134,6 +1136,7 @@ reason = "done"
         ]
     evs.append({"type": "model.call", "role": "worker", "model": "m1"})  # in flight
     (sd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
+    (sd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (root / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
 
     class WatchApp(textual_app.App[int]):
@@ -1257,7 +1260,8 @@ def test_a_steer_refused_while_its_modal_is_open_writes_nothing(tmp_path: pathli
     state.mkdir(parents=True)
     (instance / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     machine_journal.MachineJournal(instance).begin(machine="tiny", version=1)
-    (instance / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
+    for owner in (instance, state):
+        (owner / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     (state / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
         + "\n"

@@ -753,6 +753,7 @@ def _make_machine_with_state(
     )
     if running:
         process.write_worker_pid(inst, os.getpid())
+        process.write_worker_pid(state, os.getpid())
     return inst, state
 
 
@@ -1750,6 +1751,7 @@ def test_machine_answer_for_a_state_the_machine_left_is_refused(
     (new_state / "logs.jsonl").write_text(
         '{"type":"approval.prompt","id":"approval-1","prompt":"Allow it?"}\n', encoding="utf-8"
     )
+    process.write_worker_pid(new_state, os.getpid())
     status, body = _post(
         port,
         "/api/machine/adv/approve",
@@ -1773,6 +1775,7 @@ def test_machine_answer_defaults_to_newest_state_without_hint(
         '{"type":"question.prompt","id":"question-1","questions":[{"question":"Continue?"}]}\n',
         encoding="utf-8",
     )
+    process.write_worker_pid(new_state, os.getpid())
     status, body = _post(port, "/api/machine/adv2/answer", {"id": "question-1", "answers": ["hi"]})
     assert status == 200 and body["ok"] is True
     assert (new_state / "questions" / "question-1.answer").read_text(

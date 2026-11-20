@@ -142,6 +142,8 @@ def _machine(
         state = machine / "states" / "0000-work"
         state.mkdir(parents=True)
         (state / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in log))
+        if alive:
+            process.write_worker_pid(state, os.getpid())
     if alive:
         process.write_worker_pid(machine, os.getpid())
     return machine
