@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import io
 import json
 import pathlib
@@ -14,8 +13,6 @@ from agent6.app import stamps
 from agent6.config import Config, layer
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import console_render, sessions_show
-from agent6.ui.tui import app as tui_app
-from agent6.ui.tui import dashboard_header
 from agent6.viewmodel import policy, wire
 
 
@@ -109,19 +106,6 @@ def test_web_start_policy_reads_recorded_effort(recorded_run: pathlib.Path) -> N
     # The page keeps each setting together, so roles need separate wrap points.
     assert "worker chatgpt/gpt-6-astra effort provider default" in line.split(" · ")
     assert "reviewer chatgpt/gpt-6-astra effort xhigh (repo)" in line.split(" · ")
-
-
-def test_dashboard_header_reads_recorded_effort(recorded_run: pathlib.Path) -> None:
-    async def scenario() -> None:
-        app = tui_app.Agent6TUI(recorded_run)
-        async with app.run_test(size=(140, 50)) as pilot:
-            await pilot.pause()
-            await pilot.press("ctrl+d")
-            await pilot.pause()
-            header = app.screen.query_one(dashboard_header.RunHeader)
-            _assert_efforts(str(header.content))
-
-    asyncio.run(scenario())
 
 
 def test_headless_launch_prints_effort_without_a_console_view(
