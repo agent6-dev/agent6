@@ -262,6 +262,13 @@ def _author_date(seconds: str, tz: str) -> str:
     """Return the author time in ISO 8601 at the author's `+hhmm` offset, as `%aI` prints it.
 
     An offset Python cannot represent reads as UTC, and a time it cannot represent as `@seconds`.
+
+    Args:
+        seconds: The author time in seconds since the epoch, as blame's porcelain prints it.
+        tz: The author's offset, `+hhmm` or `-hhmm`.
+
+    Returns:
+        The ISO 8601 time, or `@seconds` when the time is out of range.
     """
     try:
         offset = datetime.timedelta(hours=int(tz[1:3]), minutes=int(tz[3:5]))
