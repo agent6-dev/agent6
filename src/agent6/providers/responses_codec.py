@@ -287,6 +287,11 @@ def parse_output_items(
             continue
         itype = item.get("type")
         if itype == "message":
+            blocks.extend(
+                part
+                for part in item.get("content") or []
+                if isinstance(part, dict) and part.get("type") == "refusal"
+            )
             text = "".join(
                 str(part.get("text", ""))
                 for part in item.get("content") or []

@@ -37,8 +37,12 @@ class _StubDispatcher:
     The loop rebuilds its tool list every turn; the defaults filter no tools and withhold nothing.
     """
 
+    config = config.Config()
     allowed_tools = None
     config = config.Config()
+
+    def merge_child_available(self) -> bool:
+        return False
 
     def parallel_available(self) -> bool:
         """A stub offers the model no `parallel` tool."""
@@ -268,7 +272,9 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
         dispatcher=_Dispatcher(compact_flag),  # type: ignore[arg-type]
         logger=lambda _msg: None,
         compaction=compaction_window.CompactionSettings(
-            summariser=summariser,  # type: ignore[arg-type]
+            summariser="helper",
+            helper_context_tokens=200000,
+            helper=summariser,  # type: ignore[arg-type]
             drop_at_chars=2_000,
         ),
         resume_state_path=snap_path,

@@ -99,6 +99,19 @@ def resolve_compaction_thresholds(
     return drop, summarise, keep
 
 
+def helper_context_window(cfg: Config) -> int | None:
+    """Return the helper's known window without querying the provider.
+
+    Args:
+        cfg: The effective configuration.
+
+    Returns:
+        The context window in tokens, or None when unknown.
+    """
+    role = cfg.models.resolve("helper")
+    return models_registry.context_window(role.provider, role.model) if role else None
+
+
 def resolve_decompose(
     cfg: Config, rm: RoleModel | None, *, log: Callable[[str], None] | None = None
 ) -> Config:

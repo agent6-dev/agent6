@@ -10,7 +10,7 @@ every record here. A sequence field serializes as a JSON list.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 import pydantic
 
@@ -289,6 +289,13 @@ class CompactSummariseCall(Event):
     """The model was asked to summarize the conversation."""
 
     TYPE: ClassVar[str] = "compact.summarise.call"
+    writer: Literal["worker", "helper"] = pydantic.Field(
+        default="helper", description="The summary writer."
+    )
+    fallback_reason: str = pydantic.Field(
+        default="", description="Why the worker yielded to the helper."
+    )
+    model_call_id: str = pydantic.Field(default="", description="The summary attempt identity.")
     messages: int = pydantic.Field(description="Number of conversation messages.")
 
 
@@ -296,6 +303,12 @@ class CompactSummariseDone(Event):
     """A summary replaced the conversation history."""
 
     TYPE: ClassVar[str] = "compact.summarise.done"
+    writer: Literal["worker", "helper"] = pydantic.Field(
+        default="helper", description="The summary writer."
+    )
+    fallback_reason: str = pydantic.Field(
+        default="", description="Why the worker yielded to the helper."
+    )
     summary_chars: int = pydantic.Field(description="Length of the summary in characters.")
     summary: str = pydantic.Field(description="The result or outcome in words.")
     kept_messages: int = pydantic.Field(
@@ -307,6 +320,9 @@ class CompactSummariseFailed(Event):
     """The conversation-summary call failed."""
 
     TYPE: ClassVar[str] = "compact.summarise.failed"
+    writer: Literal["worker", "helper"] = pydantic.Field(
+        default="helper", description="The summary writer."
+    )
     error: str = pydantic.Field(description="The failure diagnostic.")
 
 

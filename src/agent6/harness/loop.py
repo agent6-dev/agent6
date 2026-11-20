@@ -538,20 +538,13 @@ class Harness:
             # Rebuilt per turn: a gate adopted or a policy denied mid-run changes the tool list.
             tools = toolset.tool_definitions(self.dispatcher, mode=self.mode)
             ctx = self._turn_context(state, turn=turn, execution_start=start_turn)
-            wire = self._turn_pre_call(
-                conversation=conversation,
-                state=state,
-                ctx=ctx,
-                prefix_chars=compaction_window.request_prefix_chars(system, tools),
-            )
-            if isinstance(wire, loop_snapshot.SessionResult):
-                return wire
             got = self._turn_provider_call(
                 system,
                 conversation,
                 tools,
                 state,
                 turn=turn,
+                ctx=ctx,
             )
             if isinstance(got, loop_snapshot.SessionResult):
                 return got
@@ -671,18 +664,17 @@ class Harness:
         conversation: loop_conversation.Conversation,
         state: loop_state.LoopState,
         ctx: advice.TurnContext,
-        prefix_chars: int = 0,
+        tools: list[ToolDefinition],
     ) -> list[dict[str, Any]] | loop_snapshot.SessionResult:
         """Prepare the context for this turn's model call.
 
-        Budget heartbeat, compaction, the plan re-read, the before-call advisors, the cache
-        marks, then the pre-call snapshot, so the snapshot and the call carry the same wire.
+        Prepare notices and cache marks before compaction, then save the exact call history.
 
         Args:
             conversation: The conversation to prepare.
             state: The execution's state.
             ctx: This turn's context.
-            prefix_chars: The system prompt's size, counted against the context budget.
+            tools: The tools the worker receives this turn.
 
         Returns:
             The wire the model call sends, or the parked end when plan.md cannot be read.
@@ -690,13 +682,7 @@ class Harness:
         # The turn the `parallel` tool dispatches for, set before its calls run.
         self.tool_turn = (conversation, state, ctx.turn)
         self._emit_budget(ctx.turn)
-        # A restart keeps the first message, which is a contract's opening.
-        restarted = self.compactor.compact(conversation, state, prefix_chars=prefix_chars)
         if self.contract is None:
-            if restarted:
-                # A tier-2 restart wiped the focus banner and the plan block; both go back below.
-                state.focus.surfaced_task_id = None
-                state.plan_injected = ""
             parked = self._maybe_inject_plan(conversation, state, turn=ctx.turn)
             if parked is not None:
                 return parked
@@ -707,6 +693,23 @@ class Harness:
         for call_id, reason in conversation.limit_attachments():
             self.emit(journal.MediaRefused(provider_tool_call_id=call_id, reason=reason))
         conversation.roll_cache_marks()
+        restarted = self.compactor.compact(
+            conversation,
+            state,
+            prefix_chars=compaction_window.request_prefix_chars(state.system, tools),
+            tools=tools,
+        )
+        if restarted:
+            if self.contract is None:
+                state.focus.surfaced_task_id = None
+                state.plan_injected = ""
+                parked = self._maybe_inject_plan(conversation, state, turn=ctx.turn)
+                if parked is not None:
+                    return parked
+                self._maybe_surface_current_task(conversation, state)
+            else:
+                conversation.notice(review_prompts.reply_notice(ctx.turn, self.contract.max_turns))
+            conversation.roll_cache_marks()
         wire = conversation.to_wire()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
         loop_resume.save_resume_snapshot(
@@ -835,7 +838,7 @@ class Harness:
         # The cursor and status writes above bypass dispatch, which emits graph.update.
         self._emit_graph_snapshot()
 
-    def _turn_provider_call(
+    def _turn_provider_call(  # noqa: PLR0911
         self,
         system: str,
         conversation: loop_conversation.Conversation,
@@ -843,6 +846,7 @@ class Harness:
         state: loop_state.LoopState,
         *,
         turn: int,
+        ctx: advice.TurnContext,
     ) -> loop_snapshot.SessionResult | loop_state.NextTurn | ProviderResponse:
         """Make the turn's model call and classify a terminal error.
 
@@ -852,6 +856,7 @@ class Harness:
             tools: The tools offered this turn.
             state: The execution's state.
             turn: The current turn.
+            ctx: The turn advice context.
 
         Returns:
             The response, the end of the execution, or `NEXT_TURN` when a mid-stream
@@ -877,6 +882,17 @@ class Harness:
             )
 
         try:
+            binding = self.contract.review_binding if self.contract is not None else None
+            state.call_context = kinds.CallContext(
+                execution_id=self.execution_id,
+                panel_id=binding.panel_id if binding else None,
+                reviewer_index=binding.reviewer_index if binding else None,
+            )
+            prepared = self._turn_pre_call(
+                conversation=conversation, state=state, ctx=ctx, tools=tools
+            )
+            if isinstance(prepared, loop_snapshot.SessionResult):
+                return prepared
             if self.budget is not None:
                 # A child's settled spend stops the parent before its next call, not after it.
                 self.budget.check()
@@ -1898,6 +1914,10 @@ class Harness:
             log=self.log,
             emit=self.emit,
             emit_graph_snapshot=self._emit_graph_snapshot,
+            should_abort=self.bridge.should_abort,
+            should_interrupt=self.bridge.should_interrupt,
+            check_budget=self.budget.check if self.budget is not None else lambda: None,
+            temperature=self.call.temperature,
         )
 
     @functools.cached_property

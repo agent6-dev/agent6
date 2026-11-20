@@ -263,7 +263,9 @@ def test_helper_jobs_do_not_use_the_reviewer_route(
     )
     assert session.summariser_provider is not None
     compactor = compaction_driver.Compactor(
-        settings=compaction_window.CompactionSettings(summariser=session.summariser_provider),
+        settings=compaction_window.CompactionSettings(
+            summariser="helper", helper_context_tokens=200000, helper=session.summariser_provider
+        ),
         provider=session.provider,
         curator=None,
         mode="run",

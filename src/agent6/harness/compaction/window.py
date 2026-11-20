@@ -8,6 +8,7 @@ import dataclasses
 import json
 import re
 from collections.abc import Sequence
+from typing import Literal
 
 from agent6 import media
 from agent6.harness import loop_conversation
@@ -144,7 +145,10 @@ class CompactionSettings:
             assistant messages (N >= 1); -1 keeps all.
         elision_gists: A large read decays through a model-written gist first.
         summary_max_tokens: The summariser's output cap.
-        summariser: The helper role's provider; the worker's when None.
+        summariser: The writer selected for tier 2.
+        helper: The helper role's provider; the worker's when None.
+        helper_context_tokens: The helper's known window; None refuses a helper summary.
+        worker_backend: The driving provider's backend, for the Claude Code exception.
     """
 
     drop_at_chars: int = DROP_BLOCKS_AT_CHARS
@@ -154,7 +158,10 @@ class CompactionSettings:
     keep_thinking_turns: int = -1
     elision_gists: bool = True
     summary_max_tokens: int = 2048
-    summariser: Provider | None = None
+    summariser: Literal["worker", "helper"] = "worker"
+    helper: Provider | None = None
+    helper_context_tokens: int | None = None
+    worker_backend: str = ""
 
 
 def strip_old_thinking(

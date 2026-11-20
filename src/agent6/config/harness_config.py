@@ -522,6 +522,16 @@ class CompactionConfig(pydantic.BaseModel):
 
     model_config = validation.MODEL_CONFIG
 
+    summariser: Literal["worker", "helper"] = pydantic.Field(
+        default="worker",
+        description=(
+            "tier-2 writer: worker continues its own request with a summary instruction; "
+            "helper reads replaced history without tool output, bounded by its known window; "
+            "worker falls back once to helper on rejection or unusable output; claude_code "
+            "always uses helper because its live session cannot be rolled back"
+        ),
+    )
+
     # Unset thresholds are sized in models.registry.compaction_thresholds.
     drop_at_chars: int | None = pydantic.Field(
         default=None,

@@ -531,6 +531,7 @@ def _drive_state(
             # What the command left untracked is the environment, never the state's work.
             setup_left = git_read.untracked_paths(req.root)
     rm = cfg.models.resolve("worker")
+    assert rm is not None
     compact_drop, compact_summarise, keep_recent = role_providers.resolve_compaction_thresholds(
         cfg, rm, log=reporter.err
     )
@@ -548,9 +549,7 @@ def _drive_state(
             hidden=git_read.hidden_in_repo(req.root, cfg.sandbox.hide_paths),
             identity=run_chain.commit_identity(
                 cfg.git.commit,
-                commit_message.render_commit_trailer(
-                    cfg.git.commit.trailer, models=(rm.model if rm is not None else "",)
-                ),
+                commit_message.render_commit_trailer(cfg.git.commit.trailer, models=(rm.model,)),
             ),
             per_turn=cfg.git.commit_per_turn,
         ),
@@ -571,7 +570,10 @@ def _drive_state(
             keep_thinking_turns=cfg.compaction.keep_thinking_turns,
             elision_gists=cfg.compaction.elision_gists,
             summary_max_tokens=cfg.compaction.summary_max_tokens,
-            summariser=summariser_provider,
+            summariser=cfg.compaction.summariser,
+            helper=summariser_provider,
+            helper_context_tokens=role_providers.helper_context_window(cfg),
+            worker_backend=cfg.providers[rm.provider].backend,
         ),
         bridge=operator_bridge.OperatorBridge(
             steer_requested=bridges.steer_requested,
