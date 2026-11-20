@@ -158,17 +158,6 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     if (over > 0) window.scrollBy(0, over);
   } else if (state.action) [...bar.children].find(b => b.textContent === state.action)?.focus({preventScroll: true});
 }
-// Fill `node` with text that may wrap after each `mark` (a key's dots, a value's or a path's
-// slashes): a <wbr> marks the place, so a copy of the text holds no extra character. The <wbr> is
-// hidden from screen readers, as Chrome reads it as a space.
-function breakable(node, text, mark) {
-  const parts = String(text).split(mark);
-  parts.forEach((part, i) => {
-    if (i) node.appendChild(el('wbr')).setAttribute('aria-hidden', 'true');
-    node.appendChild(document.createTextNode(i < parts.length - 1 ? part + mark : part));
-  });
-  return node;
-}
 // The preset the page edits, read off the payload's `agent6.preset` row; '' for none.
 function selectedPreset(data) {
   const value = data['agent6.preset'] && data['agent6.preset'].value;

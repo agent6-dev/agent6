@@ -568,3 +568,5 @@ aside.rail, #rail-show { display: none; }
 button.active, button[aria-pressed=true] {
   border-color: var(--accent); color: var(--accent); background-color: color-mix(in srgb, var(--accent) 12%, var(--surface2));
 }
+
+.path-part { display: inline-block; max-width: 100%; overflow-wrap: anywhere; vertical-align: bottom; }

@@ -1,3 +1,13 @@
+// Keep each path component whole unless it is wider than its column.
+function breakable(node, text, mark) {
+  const parts = String(text).split(mark);
+  parts.forEach((part, i) => {
+    if (i) node.appendChild(el('wbr')).setAttribute('aria-hidden', 'true');
+    node.appendChild(el('span', 'path-part', part + (i < parts.length - 1 ? mark : '')));
+  });
+  return node;
+}
+
 let fieldLabels = 0;
 function fieldLabel(input, text) {
   if (!input.id) input.id = 'field-' + ++fieldLabels;
